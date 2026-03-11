@@ -1,0 +1,17 @@
+fn main() {
+  let x = 10
+  let label = if x > 5 { "big" } else { "small" }
+  println(label)
+
+  mut sum = 0
+  for i in 0..5 {
+    sum = sum + i
+  }
+  println(string(sum))
+
+  mut n = 1
+  while n < 100 {
+    n = n * 2
+  }
+  println(string(n))
+}

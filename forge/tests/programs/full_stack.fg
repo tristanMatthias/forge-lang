@@ -1,0 +1,20 @@
+use @std.model.{model, service}
+use @std.http.{server, route, mount}
+
+model Todo {
+  id: int @primary @auto_increment
+  title: string
+  done: bool @default(false)
+}
+
+service TodoService for Todo {
+  before create(todo) {
+    assert todo.title.length > 0, "title required"
+  }
+}
+
+server :8080 {
+  mount TodoService at /todos
+
+  route GET /health -> { status: "ok", count: Todo.count() }
+}

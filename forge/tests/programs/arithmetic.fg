@@ -1,0 +1,16 @@
+fn main() {
+  let x = 10
+  let y = 3
+  println(string(x + y))
+  println(string(x - y))
+  println(string(x * y))
+  println(string(x / y))
+  println(string(x % y))
+
+  let a = 3.14
+  let b = 2.0
+  println(string(a * b))
+
+  let flag = true
+  println(string(!flag))
+}

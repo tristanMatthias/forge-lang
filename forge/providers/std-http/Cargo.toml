@@ -1,0 +1,11 @@
+[package]
+name = "forge-http"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_http"
+crate-type = ["staticlib"]
+
+[dependencies]
+tiny_http = "0.12"

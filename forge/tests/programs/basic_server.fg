@@ -1,0 +1,9 @@
+use @std.http.{server, route}
+
+server :3000 {
+  route GET /health -> { status: "ok" }
+
+  route GET /hello/:name -> (req) {
+    { message: `hello ${req.params.get("name") ?? "world"}` }
+  }
+}

@@ -1,0 +1,35 @@
+use @std.model.{model, service}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string @unique
+  active: bool @default(true)
+}
+
+service UserService for User {
+  before create(user) {
+    assert user.name.length > 0, "name required"
+    assert user.email.contains("@"), "invalid email"
+  }
+
+  after create(user) {
+    println(`created: ${user.name} <${user.email}>`)
+  }
+
+  fn deactivate(user: User) -> User {
+    User.update(user, { active: false })
+  }
+}
+
+fn main() {
+  let alice = UserService.create({ name: "Alice", email: "alice@test.com" })
+  let bob = UserService.create({ name: "Bob", email: "bob@test.com" })
+
+  UserService.deactivate(alice)
+
+  let users = UserService.list()
+  for u in users {
+    println(`${u.name}: active=${u.active}`)
+  }
+}

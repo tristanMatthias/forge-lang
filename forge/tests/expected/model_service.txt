@@ -1,0 +1,4 @@
+created: Alice <alice@test.com>
+created: Bob <bob@test.com>
+Alice: active=false
+Bob: active=true

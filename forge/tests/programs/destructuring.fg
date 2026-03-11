@@ -1,0 +1,19 @@
+fn swap(pair: (int, int)) -> (int, int) {
+  let (a, b) = pair
+  (b, a)
+}
+
+fn main() {
+  let (x, y) = swap((1, 2))
+  println(string(x))               // 2
+  println(string(y))               // 1
+
+  let point = { x: 10, y: 20, z: 30 }
+  let { x, z } = point
+  println(string(x))               // 10
+  println(string(z))               // 30
+
+  let [first, second, ...rest] = [1, 2, 3, 4, 5]
+  println(string(first))           // 1
+  println(string(rest.length))     // 3
+}

@@ -1,0 +1,2 @@
+extern fn forge_http_add_route(method: string, path: string, handler: string)
+extern fn forge_http_serve(port: i16)

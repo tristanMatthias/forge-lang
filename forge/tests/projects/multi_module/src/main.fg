@@ -1,0 +1,6 @@
+use math.{add, multiply}
+
+fn main() {
+  println(string(add(3, 4)))
+  println(string(multiply(5, 6)))
+}

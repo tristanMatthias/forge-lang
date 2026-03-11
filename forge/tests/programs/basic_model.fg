@@ -1,0 +1,30 @@
+use @std.model.{model}
+
+model Task {
+  id: int @primary @auto_increment
+  title: string
+  done: bool @default(false)
+}
+
+fn main() {
+  let t1 = Task.create({ title: "Buy groceries" })
+  let t2 = Task.create({ title: "Write code" })
+  let t3 = Task.create({ title: "Take a nap", done: true })
+
+  println(string(Task.count()))
+
+  let task = Task.get(1)
+  println(task?.title ?? "not found")
+
+  let all = Task.list()
+  for task in all {
+    println(`${task.id}: ${task.title} [${task.done}]`)
+  }
+
+  Task.update(t1, { done: true })
+  let updated = Task.get(1)
+  println(string(updated?.done ?? false))
+
+  Task.delete(2)
+  println(string(Task.count()))
+}

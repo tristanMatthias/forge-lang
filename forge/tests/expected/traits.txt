@@ -1,0 +1,4 @@
+circle with radius 5
+CIRCLE WITH RADIUS 5
+square with side 3
+SQUARE WITH SIDE 3

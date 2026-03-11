@@ -1,0 +1,13 @@
+60
+8
+true
+true
+false
+0: alice
+1: bob
+2: charlie
+alice, bob, charlie
+24
+true
+87
+alice, bob, charlie

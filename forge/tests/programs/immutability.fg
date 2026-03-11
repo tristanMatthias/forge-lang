@@ -1,0 +1,11 @@
+fn main() {
+  let x = 42
+
+  mut counter = 0
+  counter = counter + 1
+  counter = counter + 1
+  println(string(counter))
+
+  const MAX = 100
+  println(string(MAX))
+}

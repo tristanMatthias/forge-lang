@@ -1,0 +1,22 @@
+fn find_user(id: int) -> string? {
+  if id == 1 { "alice" } else { null }
+}
+
+fn main() {
+  let name = find_user(1)
+  let display = name ?? "unknown"
+  println(display)
+
+  let missing = find_user(99)
+  let display2 = missing ?? "unknown"
+  println(display2)
+
+  // Safe navigation
+  let len = name?.length ?? 0
+  println(string(len))
+
+  // Smart narrowing
+  if name != null {
+    println(name.upper())
+  }
+}

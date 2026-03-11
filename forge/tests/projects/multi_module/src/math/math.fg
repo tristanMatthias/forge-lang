@@ -1,0 +1,4 @@
+export fn add(a: int, b: int) -> int { a + b }
+export fn multiply(a: int, b: int) -> int { a * b }
+
+fn internal_helper() -> int { 42 }

@@ -1,0 +1,116 @@
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    Int,
+    Float,
+    Bool,
+    String,
+    Void,
+    Never,
+
+    Nullable(Box<Type>),
+    List(Box<Type>),
+    Map(Box<Type>, Box<Type>),
+    Tuple(Vec<Type>),
+
+    Struct {
+        name: Option<String>,
+        fields: Vec<(String, Type)>,
+    },
+    Enum {
+        name: String,
+        variants: Vec<EnumVariantType>,
+    },
+    Function {
+        params: Vec<Type>,
+        return_type: Box<Type>,
+    },
+
+    Result(Box<Type>, Box<Type>),
+    Range(Box<Type>),
+
+    TypeVar(u32),
+    Unknown,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariantType {
+    pub name: String,
+    pub fields: Vec<(String, Type)>,
+}
+
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        matches!(self, Type::Int | Type::Float)
+    }
+
+    pub fn is_nullable(&self) -> bool {
+        matches!(self, Type::Nullable(_))
+    }
+
+    pub fn inner_nullable(&self) -> Option<&Type> {
+        match self {
+            Type::Nullable(inner) => Some(inner),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Int => write!(f, "int"),
+            Type::Float => write!(f, "float"),
+            Type::Bool => write!(f, "bool"),
+            Type::String => write!(f, "string"),
+            Type::Void => write!(f, "void"),
+            Type::Never => write!(f, "never"),
+            Type::Nullable(inner) => write!(f, "{}?", inner),
+            Type::List(inner) => write!(f, "List<{}>", inner),
+            Type::Map(k, v) => write!(f, "Map<{}, {}>", k, v),
+            Type::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, ")")
+            }
+            Type::Struct { name, fields } => {
+                if let Some(n) = name {
+                    write!(f, "{}", n)
+                } else {
+                    write!(f, "{{ ")?;
+                    for (i, (k, v)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", k, v)?;
+                    }
+                    write!(f, " }}")
+                }
+            }
+            Type::Enum { name, .. } => write!(f, "{}", name),
+            Type::Function {
+                params,
+                return_type,
+            } => {
+                write!(f, "(")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") -> {}", return_type)
+            }
+            Type::Result(ok, err) => write!(f, "Result<{}, {}>", ok, err),
+            Type::Range(inner) => write!(f, "Range<{}>", inner),
+            Type::TypeVar(id) => write!(f, "T{}", id),
+            Type::Unknown => write!(f, "unknown"),
+            Type::Error => write!(f, "<error>"),
+        }
+    }
+}

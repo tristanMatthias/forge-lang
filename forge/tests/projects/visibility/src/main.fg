@@ -1,0 +1,6 @@
+use secret.{public_fn, PUBLIC_VALUE}
+
+fn main() {
+  println(public_fn())
+  println(string(PUBLIC_VALUE))
+}

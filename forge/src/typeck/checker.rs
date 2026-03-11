@@ -1,0 +1,743 @@
+use crate::errors::Diagnostic;
+use crate::parser::ast::*;
+use crate::typeck::env::TypeEnv;
+use crate::typeck::types::{EnumVariantType, Type};
+
+pub struct TypeChecker {
+    pub env: TypeEnv,
+    pub diagnostics: Vec<Diagnostic>,
+    pub current_fn_return_type: Option<Type>,
+}
+
+impl TypeChecker {
+    pub fn new() -> Self {
+        Self {
+            env: TypeEnv::new(),
+            diagnostics: Vec::new(),
+            current_fn_return_type: None,
+        }
+    }
+
+    pub fn check_program(&mut self, program: &Program) {
+        // First pass: register all top-level declarations
+        for stmt in &program.statements {
+            self.register_top_level(stmt);
+        }
+
+        // Second pass: type check
+        for stmt in &program.statements {
+            self.check_statement(stmt);
+        }
+    }
+
+    fn register_top_level(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::FnDecl {
+                name,
+                params,
+                return_type,
+                ..
+            } => {
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        p.type_ann
+                            .as_ref()
+                            .map(|t| self.resolve_type_expr(t))
+                            .unwrap_or(Type::Unknown)
+                    })
+                    .collect();
+                let ret = return_type
+                    .as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or(Type::Void);
+                self.env.functions.insert(
+                    name.clone(),
+                    Type::Function {
+                        params: param_types,
+                        return_type: Box::new(ret),
+                    },
+                );
+            }
+            Statement::EnumDecl {
+                name, variants, ..
+            } => {
+                let variant_types: Vec<EnumVariantType> = variants
+                    .iter()
+                    .map(|v| EnumVariantType {
+                        name: v.name.clone(),
+                        fields: v
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                let ty = f
+                                    .type_ann
+                                    .as_ref()
+                                    .map(|t| self.resolve_type_expr(t))
+                                    .unwrap_or(Type::Unknown);
+                                (f.name.clone(), ty)
+                            })
+                            .collect(),
+                    })
+                    .collect();
+                let enum_type = Type::Enum {
+                    name: name.clone(),
+                    variants: variant_types,
+                };
+                self.env.enum_types.insert(name.clone(), enum_type);
+            }
+            Statement::TypeDecl { name, value, .. } => {
+                let ty = self.resolve_type_expr(value);
+                // For struct types, add the name so it can be used for trait dispatch
+                let ty = match ty {
+                    Type::Struct { name: None, fields } => Type::Struct {
+                        name: Some(name.clone()),
+                        fields,
+                    },
+                    other => other,
+                };
+                self.env.type_aliases.insert(name.clone(), ty);
+            }
+            _ => {}
+        }
+    }
+
+    fn check_statement(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::Let {
+                name,
+                type_ann,
+                value,
+                ..
+            } => {
+                let val_type = self.check_expr(value);
+                let ty = if let Some(ann) = type_ann {
+                    self.resolve_type_expr(ann)
+                } else {
+                    val_type
+                };
+                self.env.define(name.clone(), ty, false);
+            }
+            Statement::Mut {
+                name,
+                type_ann,
+                value,
+                ..
+            } => {
+                let val_type = self.check_expr(value);
+                let ty = if let Some(ann) = type_ann {
+                    self.resolve_type_expr(ann)
+                } else {
+                    val_type
+                };
+                self.env.define(name.clone(), ty, true);
+            }
+            Statement::Const {
+                name,
+                type_ann,
+                value,
+                ..
+            } => {
+                let val_type = self.check_expr(value);
+                let ty = if let Some(ann) = type_ann {
+                    self.resolve_type_expr(ann)
+                } else {
+                    val_type
+                };
+                self.env.define(name.clone(), ty, false);
+            }
+            Statement::LetDestructure { pattern, value, .. } => {
+                let val_type = self.check_expr(value);
+                self.bind_destructure_pattern(pattern, &val_type);
+            }
+            Statement::Assign { target, value, span } => {
+                if let Expr::Ident(name, _) = target {
+                    if let Some(info) = self.env.lookup(name) {
+                        if !info.mutable {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E0013",
+                                format!("cannot assign to immutable variable '{}'", name),
+                                *span,
+                            ));
+                        }
+                    }
+                }
+                self.check_expr(value);
+            }
+            Statement::FnDecl {
+                name,
+                params,
+                return_type,
+                body,
+                ..
+            } => {
+                self.env.push_scope();
+
+                let ret_type = return_type
+                    .as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or(Type::Void);
+
+                let old_return = self.current_fn_return_type.take();
+                self.current_fn_return_type = Some(ret_type.clone());
+
+                for param in params {
+                    let ty = param
+                        .type_ann
+                        .as_ref()
+                        .map(|t| self.resolve_type_expr(t))
+                        .unwrap_or(Type::Unknown);
+                    self.env.define(param.name.clone(), ty, false);
+                }
+
+                self.check_block(body);
+
+                self.current_fn_return_type = old_return;
+                self.env.pop_scope();
+
+                // Also define the function in the current scope as a value
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        p.type_ann
+                            .as_ref()
+                            .map(|t| self.resolve_type_expr(t))
+                            .unwrap_or(Type::Unknown)
+                    })
+                    .collect();
+                self.env.define(
+                    name.clone(),
+                    Type::Function {
+                        params: param_types,
+                        return_type: Box::new(ret_type),
+                    },
+                    false,
+                );
+            }
+            Statement::Expr(expr) => {
+                self.check_expr(expr);
+            }
+            Statement::Return { value, .. } => {
+                if let Some(val) = value {
+                    self.check_expr(val);
+                }
+            }
+            Statement::For {
+                pattern,
+                iterable,
+                body,
+                ..
+            } => {
+                let iter_type = self.check_expr(iterable);
+                self.env.push_scope();
+                // Bind the pattern variable
+                if let Pattern::Ident(name, _) = pattern {
+                    let elem_type = match &iter_type {
+                        Type::Range(inner) => *inner.clone(),
+                        Type::List(inner) => *inner.clone(),
+                        _ => Type::Int, // assume range produces ints
+                    };
+                    self.env.define(name.clone(), elem_type, false);
+                }
+                self.check_block(body);
+                self.env.pop_scope();
+            }
+            Statement::While { condition, body, .. } => {
+                self.check_expr(condition);
+                self.env.push_scope();
+                self.check_block(body);
+                self.env.pop_scope();
+            }
+            Statement::Loop { body, .. } => {
+                self.env.push_scope();
+                self.check_block(body);
+                self.env.pop_scope();
+            }
+            Statement::Break { value, .. } => {
+                if let Some(val) = value {
+                    self.check_expr(val);
+                }
+            }
+            Statement::Continue { .. } => {}
+            Statement::Defer { body, .. } => {
+                self.check_expr(body);
+            }
+            Statement::EnumDecl { .. } | Statement::TypeDecl { .. } => {
+                // Already handled in register_top_level
+            }
+            Statement::Use { .. }
+            | Statement::TraitDecl { .. }
+            | Statement::ImplBlock { .. }
+            | Statement::ModelDecl { .. }
+            | Statement::ServiceDecl { .. }
+            | Statement::ServerBlock { .. }
+            | Statement::ExternFn { .. } => {
+                // Phase 2/3 constructs; extern fns are declarations only
+            }
+        }
+    }
+
+    fn check_block(&mut self, block: &Block) {
+        for stmt in &block.statements {
+            self.check_statement(stmt);
+        }
+    }
+
+    fn check_expr(&mut self, expr: &Expr) -> Type {
+        match expr {
+            Expr::IntLit(_, _) => Type::Int,
+            Expr::FloatLit(_, _) => Type::Float,
+            Expr::StringLit(_, _) => Type::String,
+            Expr::BoolLit(_, _) => Type::Bool,
+            Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
+            Expr::TemplateLit { .. } => Type::String,
+
+            Expr::Ident(name, span) => {
+                if let Some(info) = self.env.lookup(name) {
+                    info.ty.clone()
+                } else if let Some(ty) = self.env.lookup_function(name).cloned() {
+                    ty
+                } else if name.starts_with('.') {
+                    // Enum variant shorthand
+                    Type::Unknown
+                } else if name.starts_with("__destructure") {
+                    Type::Void
+                } else {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E0010",
+                        format!("undefined variable '{}'", name),
+                        *span,
+                    ));
+                    Type::Error
+                }
+            }
+
+            Expr::Binary { left, op, right, span } => {
+                let left_type = self.check_expr(left);
+                let right_type = self.check_expr(right);
+
+                match op {
+                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                        if left_type == Type::Float || right_type == Type::Float {
+                            Type::Float
+                        } else if left_type == Type::Int || left_type == Type::Unknown {
+                            Type::Int
+                        } else if left_type == Type::String && matches!(op, BinaryOp::Add) {
+                            Type::String
+                        } else {
+                            Type::Int
+                        }
+                    }
+                    BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq => {
+                        Type::Bool
+                    }
+                    BinaryOp::And | BinaryOp::Or => Type::Bool,
+                }
+            }
+
+            Expr::Unary { op, operand, .. } => {
+                let operand_type = self.check_expr(operand);
+                match op {
+                    UnaryOp::Not => Type::Bool,
+                    UnaryOp::Neg => operand_type,
+                }
+            }
+
+            Expr::Call { callee, args, span } => {
+                let callee_type = self.check_expr(callee);
+                for arg in args {
+                    self.check_expr(&arg.value);
+                }
+
+                match &callee_type {
+                    Type::Function { return_type, .. } => *return_type.clone(),
+                    _ => {
+                        // Could be a built-in or unresolved
+                        if let Expr::Ident(name, _) = callee.as_ref() {
+                            match name.as_str() {
+                                "println" | "print" => Type::Void,
+                                "string" => Type::String,
+                                _ => Type::Unknown,
+                            }
+                        } else {
+                            Type::Unknown
+                        }
+                    }
+                }
+            }
+
+            Expr::MemberAccess { object, field, .. } => {
+                let obj_type = self.check_expr(object);
+                match &obj_type {
+                    Type::Struct { fields, .. } => {
+                        fields
+                            .iter()
+                            .find(|(name, _)| name == field)
+                            .map(|(_, ty)| ty.clone())
+                            .unwrap_or(Type::Unknown)
+                    }
+                    Type::String => match field.as_str() {
+                        "length" => Type::Int,
+                        _ => Type::Unknown,
+                    },
+                    Type::List(_) => match field.as_str() {
+                        "length" => Type::Int,
+                        _ => Type::Unknown,
+                    },
+                    _ => Type::Unknown,
+                }
+            }
+
+            Expr::Index { object, .. } => {
+                let obj_type = self.check_expr(object);
+                match &obj_type {
+                    Type::List(inner) => *inner.clone(),
+                    Type::String => Type::String,
+                    _ => Type::Unknown,
+                }
+            }
+
+            Expr::Pipe { left, right, .. } => {
+                self.check_expr(left);
+                self.check_expr(right)
+            }
+
+            Expr::Closure {
+                params, body, ..
+            } => {
+                self.env.push_scope();
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        let ty = p
+                            .type_ann
+                            .as_ref()
+                            .map(|t| self.resolve_type_expr(t))
+                            .unwrap_or(Type::Unknown);
+                        self.env.define(p.name.clone(), ty.clone(), false);
+                        ty
+                    })
+                    .collect();
+                let ret_type = self.check_expr(body);
+                self.env.pop_scope();
+                Type::Function {
+                    params: param_types,
+                    return_type: Box::new(ret_type),
+                }
+            }
+
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.check_expr(condition);
+                self.env.push_scope();
+                let then_type = self.check_block_type(then_branch);
+                self.env.pop_scope();
+                if let Some(else_b) = else_branch {
+                    self.env.push_scope();
+                    let _else_type = self.check_block_type(else_b);
+                    self.env.pop_scope();
+                }
+                then_type
+            }
+
+            Expr::Match {
+                subject, arms, ..
+            } => {
+                self.check_expr(subject);
+                let mut result_type = Type::Unknown;
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        self.check_expr(guard);
+                    }
+                    self.env.push_scope();
+                    self.bind_pattern(&arm.pattern);
+                    let arm_type = self.check_expr(&arm.body);
+                    if result_type == Type::Unknown {
+                        result_type = arm_type;
+                    }
+                    self.env.pop_scope();
+                }
+                result_type
+            }
+
+            Expr::Block(block) => {
+                self.env.push_scope();
+                let ty = self.check_block_type(block);
+                self.env.pop_scope();
+                ty
+            }
+
+            Expr::NullCoalesce { left, right, .. } => {
+                let left_type = self.check_expr(left);
+                let right_type = self.check_expr(right);
+                // Result is the inner type of the nullable, or the right type
+                match &left_type {
+                    Type::Nullable(inner) => *inner.clone(),
+                    _ => right_type,
+                }
+            }
+
+            Expr::NullPropagate { object, field, .. } => {
+                let obj_type = self.check_expr(object);
+                let inner = match &obj_type {
+                    Type::Nullable(inner) => inner.as_ref(),
+                    _ => &obj_type,
+                };
+                let field_type = match inner {
+                    Type::Struct { fields, .. } => {
+                        fields
+                            .iter()
+                            .find(|(name, _)| name == field)
+                            .map(|(_, ty)| ty.clone())
+                            .unwrap_or(Type::Unknown)
+                    }
+                    Type::String => match field.as_str() {
+                        "length" => Type::Int,
+                        _ => Type::Unknown,
+                    },
+                    _ => Type::Unknown,
+                };
+                Type::Nullable(Box::new(field_type))
+            }
+
+            Expr::ErrorPropagate { operand, .. } => {
+                let op_type = self.check_expr(operand);
+                match &op_type {
+                    Type::Result(ok, _) => *ok.clone(),
+                    _ => op_type,
+                }
+            }
+
+            Expr::With { base, updates, .. } => {
+                let base_type = self.check_expr(base);
+                for (_, val) in updates {
+                    self.check_expr(val);
+                }
+                base_type
+            }
+
+            Expr::Range { start, .. } => {
+                let start_type = self.check_expr(start);
+                Type::Range(Box::new(start_type))
+            }
+
+            Expr::OkExpr { value, .. } => {
+                let val_type = self.check_expr(value);
+                Type::Result(Box::new(val_type), Box::new(Type::String))
+            }
+
+            Expr::ErrExpr { value, .. } => {
+                let val_type = self.check_expr(value);
+                Type::Result(Box::new(Type::Unknown), Box::new(val_type))
+            }
+
+            Expr::Catch { expr, handler, binding, .. } => {
+                let expr_type = self.check_expr(expr);
+                self.env.push_scope();
+                if let Some(name) = binding {
+                    self.env.define(name.clone(), Type::String, false);
+                }
+                let handler_type = self.check_block_type(handler);
+                self.env.pop_scope();
+                match &expr_type {
+                    Type::Result(ok, _) => *ok.clone(),
+                    _ => handler_type,
+                }
+            }
+
+            Expr::ListLit { elements, .. } => {
+                let elem_type = if let Some(first) = elements.first() {
+                    self.check_expr(first)
+                } else {
+                    Type::Unknown
+                };
+                for elem in elements.iter().skip(1) {
+                    self.check_expr(elem);
+                }
+                Type::List(Box::new(elem_type))
+            }
+
+            Expr::MapLit { entries, .. } => {
+                let (key_type, val_type) = if let Some((k, v)) = entries.first() {
+                    (self.check_expr(k), self.check_expr(v))
+                } else {
+                    (Type::Unknown, Type::Unknown)
+                };
+                Type::Map(Box::new(key_type), Box::new(val_type))
+            }
+
+            Expr::StructLit { fields, .. } => {
+                let field_types: Vec<(String, Type)> = fields
+                    .iter()
+                    .map(|(name, val)| (name.clone(), self.check_expr(val)))
+                    .collect();
+                Type::Struct {
+                    name: None,
+                    fields: field_types,
+                }
+            }
+
+            Expr::TupleLit { elements, .. } => {
+                let types: Vec<Type> = elements.iter().map(|e| self.check_expr(e)).collect();
+                Type::Tuple(types)
+            }
+        }
+    }
+
+    fn check_block_type(&mut self, block: &Block) -> Type {
+        let mut last_type = Type::Void;
+        for stmt in &block.statements {
+            match stmt {
+                Statement::Expr(expr) => {
+                    last_type = self.check_expr(expr);
+                }
+                Statement::Return { value, .. } => {
+                    if let Some(val) = value {
+                        last_type = self.check_expr(val);
+                    }
+                    return last_type;
+                }
+                _ => {
+                    self.check_statement(stmt);
+                    last_type = Type::Void;
+                }
+            }
+        }
+        last_type
+    }
+
+    fn bind_destructure_pattern(&mut self, pattern: &Pattern, val_type: &Type) {
+        match pattern {
+            Pattern::Tuple(elems, _) => {
+                if let Type::Tuple(types) = val_type {
+                    for (i, elem) in elems.iter().enumerate() {
+                        if let Pattern::Ident(name, _) = elem {
+                            let ty = types.get(i).cloned().unwrap_or(Type::Unknown);
+                            self.env.define(name.clone(), ty, false);
+                        }
+                    }
+                } else {
+                    for elem in elems {
+                        if let Pattern::Ident(name, _) = elem {
+                            self.env.define(name.clone(), Type::Unknown, false);
+                        }
+                    }
+                }
+            }
+            Pattern::Struct { fields, .. } => {
+                if let Type::Struct { fields: type_fields, .. } = val_type {
+                    for (field_name, pat) in fields {
+                        if let Pattern::Ident(name, _) = pat {
+                            let ty = type_fields
+                                .iter()
+                                .find(|(n, _)| n == field_name)
+                                .map(|(_, t)| t.clone())
+                                .unwrap_or(Type::Unknown);
+                            self.env.define(name.clone(), ty, false);
+                        }
+                    }
+                } else {
+                    for (_, pat) in fields {
+                        if let Pattern::Ident(name, _) = pat {
+                            self.env.define(name.clone(), Type::Unknown, false);
+                        }
+                    }
+                }
+            }
+            Pattern::List { elements, rest, .. } => {
+                let elem_type = if let Type::List(inner) = val_type {
+                    *inner.clone()
+                } else {
+                    Type::Unknown
+                };
+                for elem in elements {
+                    if let Pattern::Ident(name, _) = elem {
+                        self.env.define(name.clone(), elem_type.clone(), false);
+                    }
+                }
+                if let Some(rest_name) = rest {
+                    self.env.define(rest_name.clone(), Type::List(Box::new(elem_type)), false);
+                }
+            }
+            Pattern::Ident(name, _) => {
+                self.env.define(name.clone(), val_type.clone(), false);
+            }
+            _ => {}
+        }
+    }
+
+    fn bind_pattern(&mut self, pattern: &Pattern) {
+        match pattern {
+            Pattern::Ident(name, _) => {
+                self.env.define(name.clone(), Type::Unknown, false);
+            }
+            Pattern::Enum { fields, .. } => {
+                for field in fields {
+                    self.bind_pattern(field);
+                }
+            }
+            Pattern::Tuple(elems, _) => {
+                for elem in elems {
+                    self.bind_pattern(elem);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn resolve_type_expr(&self, type_expr: &TypeExpr) -> Type {
+        match type_expr {
+            TypeExpr::Named(name) => self.env.resolve_type_name(name),
+            TypeExpr::Generic { name, args } => {
+                let resolved_args: Vec<Type> = args.iter().map(|a| self.resolve_type_expr(a)).collect();
+                match name.as_str() {
+                    "List" => {
+                        if let Some(inner) = resolved_args.into_iter().next() {
+                            Type::List(Box::new(inner))
+                        } else {
+                            Type::List(Box::new(Type::Unknown))
+                        }
+                    }
+                    "Map" => {
+                        let mut it = resolved_args.into_iter();
+                        let key = it.next().unwrap_or(Type::Unknown);
+                        let val = it.next().unwrap_or(Type::Unknown);
+                        Type::Map(Box::new(key), Box::new(val))
+                    }
+                    "Result" => {
+                        let mut it = resolved_args.into_iter();
+                        let ok = it.next().unwrap_or(Type::Unknown);
+                        let err = it.next().unwrap_or(Type::String);
+                        Type::Result(Box::new(ok), Box::new(err))
+                    }
+                    _ => Type::Error,
+                }
+            }
+            TypeExpr::Nullable(inner) => {
+                Type::Nullable(Box::new(self.resolve_type_expr(inner)))
+            }
+            TypeExpr::Union(_) => Type::Unknown, // simplified for Phase 1
+            TypeExpr::Tuple(elems) => {
+                Type::Tuple(elems.iter().map(|e| self.resolve_type_expr(e)).collect())
+            }
+            TypeExpr::Function {
+                params,
+                return_type,
+            } => Type::Function {
+                params: params.iter().map(|p| self.resolve_type_expr(p)).collect(),
+                return_type: Box::new(self.resolve_type_expr(return_type)),
+            },
+            TypeExpr::Struct { fields } => Type::Struct {
+                name: None,
+                fields: fields
+                    .iter()
+                    .map(|(name, ty)| (name.clone(), self.resolve_type_expr(ty)))
+                    .collect(),
+            },
+        }
+    }
+}

@@ -1,0 +1,4 @@
+inside scope
+dropping beta
+dropping alpha
+dropped 2 resources

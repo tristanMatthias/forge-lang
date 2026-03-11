@@ -1,0 +1,7 @@
+3
+Buy groceries
+1: Buy groceries [false]
+2: Write code [false]
+3: Take a nap [true]
+true
+2

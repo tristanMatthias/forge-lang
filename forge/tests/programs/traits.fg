@@ -1,0 +1,35 @@
+trait Describable {
+  fn describe(self) -> string
+
+  fn describe_loud(self) -> string {
+    self.describe().upper()
+  }
+}
+
+type Circle = { radius: float }
+type Square = { side: float }
+
+impl Describable for Circle {
+  fn describe(self) -> string {
+    `circle with radius ${self.radius}`
+  }
+}
+
+impl Describable for Square {
+  fn describe(self) -> string {
+    `square with side ${self.side}`
+  }
+}
+
+fn print_description<T: Describable>(item: T) {
+  println(item.describe())
+  println(item.describe_loud())
+}
+
+fn main() {
+  let c = Circle { radius: 5.0 }
+  let s = Square { side: 3.0 }
+
+  print_description(c)
+  print_description(s)
+}

@@ -1,0 +1,5 @@
+fn main() {
+  let name = "forge"
+  let version = 1
+  println(`welcome to ${name} v${version}`)
+}

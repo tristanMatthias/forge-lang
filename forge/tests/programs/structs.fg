@@ -1,0 +1,16 @@
+type Point = { x: float, y: float }
+
+fn distance(p: Point) -> float {
+  p.x * p.x + p.y * p.y
+}
+
+fn main() {
+  let origin = { x: 0.0, y: 0.0 }
+  let p = { x: 3.0, y: 4.0 }
+
+  println(string(distance(p)))
+
+  let moved = p with { x: 10.0 }
+  println(string(moved.x))
+  println(string(moved.y))
+}

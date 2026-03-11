@@ -1,0 +1,23 @@
+enum Shape {
+  circle(radius: float)
+  rectangle(width: float, height: float)
+  point
+}
+
+fn describe(s: Shape) -> string {
+  match s {
+    .circle(r) -> `circle with radius ${r}`
+    .rectangle(w, h) -> `${w}x${h} rectangle`
+    .point -> "a point"
+  }
+}
+
+fn main() {
+  let c = Shape.circle(radius: 5.0)
+  let r = Shape.rectangle(width: 3.0, height: 4.0)
+  let p = Shape.point
+
+  println(describe(c))
+  println(describe(r))
+  println(describe(p))
+}

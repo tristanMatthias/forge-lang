@@ -1,0 +1,7 @@
+extern fn forge_model_init(path: string)
+extern fn forge_model_exec(sql: string) -> i32
+extern fn forge_model_insert(sql: string, params: string, count: int) -> int
+extern fn forge_model_update(sql: string, params: string, count: int) -> int
+extern fn forge_model_query(sql: string, params: string, count: int) -> string
+extern fn forge_model_count(sql: string) -> int
+extern fn forge_model_free_string(ptr: string)

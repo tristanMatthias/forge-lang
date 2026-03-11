@@ -1,0 +1,11 @@
+[package]
+name = "forge-model"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_model"
+crate-type = ["staticlib"]
+
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }

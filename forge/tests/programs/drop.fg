@@ -1,0 +1,19 @@
+mut drop_count = 0
+
+type Resource = { name: string }
+
+impl Drop for Resource {
+  fn drop(self) {
+    drop_count = drop_count + 1
+    println(`dropping ${self.name}`)
+  }
+}
+
+fn main() {
+  {
+    let a = Resource { name: "alpha" }
+    let b = Resource { name: "beta" }
+    println("inside scope")
+  }
+  println(`dropped ${drop_count} resources`)
+}
