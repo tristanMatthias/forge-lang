@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge Language Specification</title>
+  <meta name="description" content="Forge - A compiled, agent-oriented programming language for building services, APIs, and tools.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="content">
+    <div class="loading">Loading specification...</div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    marked.setOptions({
+      gfm: true,
+      breaks: false,
+    });
+
+    fetch('spec.md')
+      .then(res => res.text())
+      .then(md => {
+        document.getElementById('content').innerHTML = marked.parse(md);
+
+        // Add syntax highlighting class hints for forge code blocks
+        document.querySelectorAll('pre code').forEach(block => {
+          block.parentElement.classList.add('code-block');
+        });
+      })
+      .catch(err => {
+        document.getElementById('content').innerHTML = '<p class="error">Error loading specification.</p>';
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
