@@ -556,5 +556,40 @@ fn main() {
     assert "hello".length == 5, "string length"
     println("all assertions passed")
 
+    // ---- 27. Is Keyword ----
+    println("--- 27. Is Keyword ---")
+    let ok_res: Result<int, string> = Ok(42)
+    let err_res: Result<int, string> = Err("fail")
+    println(ok_res is Ok)
+    println(ok_res is Err)
+    println(err_res is Err)
+
+    let maybe: string? = "hello"
+    let nothing: string? = null
+    println(maybe is not null)
+    println(nothing is null)
+
+    // ---- 28. Table Literal ----
+    println("--- 28. Table Literal ---")
+    let users = table {
+        name    | age | active
+        "alice" | 30  | true
+        "bob"   | 25  | false
+        "carol" | 35  | true
+    }
+    println(string(users.length))
+    println(users[0].name)
+    println(string(users[1].age))
+    println(string(users[2].active))
+
+    let single = table {
+        value
+        10
+        20
+        30
+    }
+    println(string(single.length))
+    println(string(single[2].value))
+
     println("--- ALL TESTS PASSED ---")
 }

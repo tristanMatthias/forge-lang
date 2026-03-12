@@ -19,6 +19,7 @@ Everything for a feature lives in its directory. Don't grep — go to the direct
 - Core is infrastructure only: lexer, AST types, type system, codegen context
 - Every example file must have a `/// expect:` comment
 - Feature status must be accurate: draft (no tests), wip (some pass), testing (most pass), stable (all pass)
+- When adding a new feature, update `forge/tests/programs/comprehensive.fg` to include a test section for it
 
 ## Build
 
