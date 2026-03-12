@@ -70,6 +70,14 @@ pub fn extract_expected_output(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// Extract `/// expect-error: <code>` from a .fg file (e.g., "F0030")
+pub fn extract_expected_error(source: &str) -> Option<String> {
+    source.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed.strip_prefix("/// expect-error:").map(|rest| rest.trim().to_string())
+    })
+}
+
 /// Extract the doc comment block (/// lines) from a .fg file
 pub fn extract_doc_comment(source: &str) -> Vec<String> {
     source
@@ -102,19 +110,24 @@ pub fn run_example(forge_bin: &Path, fg_file: &Path, feature: &str) -> TestResul
     };
 
     let expected = extract_expected_output(&source);
-    if expected.is_empty() {
+    let expected_error = extract_expected_error(&source);
+
+    if expected.is_empty() && expected_error.is_none() {
         return TestResult {
             file: fg_file.to_path_buf(),
             feature: feature.to_string(),
             passed: false,
             expected: vec![],
             actual: vec![],
-            error: Some("no /// expect: comments found".to_string()),
+            error: Some("no /// expect: or /// expect-error: comments found".to_string()),
         };
     }
 
+    // For expect-error tests, use `check` instead of `run`
+    let cmd = if expected_error.is_some() { "check" } else { "run" };
+
     let output = Command::new(forge_bin)
-        .arg("run")
+        .arg(cmd)
         .arg(fg_file)
         .output();
 
@@ -122,6 +135,32 @@ pub fn run_example(forge_bin: &Path, fg_file: &Path, feature: &str) -> TestResul
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
+
+            // Handle expect-error tests
+            if let Some(ref error_code) = expected_error {
+                let passed = !out.status.success() && stderr.contains(error_code);
+                return TestResult {
+                    file: fg_file.to_path_buf(),
+                    feature: feature.to_string(),
+                    passed,
+                    expected: vec![format!("error: {}", error_code)],
+                    actual: if !out.status.success() {
+                        vec![format!("error: {}", error_code)]
+                    } else {
+                        vec!["no error (compiled successfully)".to_string()]
+                    },
+                    error: if !passed {
+                        if out.status.success() {
+                            Some("expected compilation to fail, but it succeeded".to_string())
+                        } else {
+                            Some(format!("expected error code {}, got: {}", error_code, stderr.lines().next().unwrap_or("")))
+                        }
+                    } else {
+                        None
+                    },
+                };
+            }
+
             let actual: Vec<String> = stdout
                 .lines()
                 .map(|l| l.to_string())

@@ -1,6 +1,6 @@
 use crate::lexer::Span;
 use crate::typeck::types::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct VarInfo {
@@ -24,6 +24,9 @@ pub struct TypeEnv {
     pub enum_types: HashMap<String, Type>,
     pub functions: HashMap<String, Type>,
     pub fn_spans: HashMap<String, Span>,
+    /// Known namespace identifiers (e.g., "json", "fs", "process", "channel")
+    /// used as static method targets: `json.stringify()`, `fs.read()`, etc.
+    pub namespaces: HashSet<String>,
 }
 
 impl TypeEnv {
@@ -34,6 +37,7 @@ impl TypeEnv {
             enum_types: HashMap::new(),
             functions: HashMap::new(),
             fn_spans: HashMap::new(),
+            namespaces: HashSet::new(),
         };
         // Register built-in functions
         env.functions.insert(
@@ -57,6 +61,30 @@ impl TypeEnv {
                 return_type: Box::new(Type::String),
             },
         );
+        env.functions.insert(
+            "assert".to_string(),
+            Type::Function {
+                params: vec![Type::Bool],
+                return_type: Box::new(Type::Void),
+            },
+        );
+        env.functions.insert(
+            "sleep".to_string(),
+            Type::Function {
+                params: vec![Type::Int],
+                return_type: Box::new(Type::Void),
+            },
+        );
+        env.functions.insert(
+            "channel".to_string(),
+            Type::Function {
+                params: vec![],
+                return_type: Box::new(Type::Int),
+            },
+        );
+        // Register built-in namespaces (static method targets handled by codegen)
+        env.namespaces.insert("json".to_string());
+        env.namespaces.insert("string".to_string());
         env
     }
 

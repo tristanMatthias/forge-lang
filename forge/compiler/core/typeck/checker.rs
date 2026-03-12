@@ -102,6 +102,41 @@ impl TypeChecker {
                 };
                 self.env.type_aliases.insert(name.clone(), ty);
             }
+            Statement::ExternFn {
+                name,
+                params,
+                return_type,
+                span,
+                ..
+            } => {
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        p.type_ann
+                            .as_ref()
+                            .map(|t| self.resolve_type_expr(t))
+                            .unwrap_or(Type::Unknown)
+                    })
+                    .collect();
+                let ret = return_type
+                    .as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or(Type::Void);
+                self.env.fn_spans.insert(name.clone(), *span);
+                self.env.functions.insert(
+                    name.clone(),
+                    Type::Function {
+                        params: param_types,
+                        return_type: Box::new(ret),
+                    },
+                );
+                // Extract namespace from provider extern fn names (forge_<ns>_<method>)
+                if let Some(rest) = name.strip_prefix("forge_") {
+                    if let Some(ns_end) = rest.find('_') {
+                        self.env.namespaces.insert(rest[..ns_end].to_string());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -307,7 +342,13 @@ impl TypeChecker {
                     if let Some(guard) = &arm.guard {
                         self.check_expr(guard);
                     }
+                    // Register the binding variable in a new scope for the arm body
+                    self.env.push_scope();
+                    if let Pattern::Ident(name, _) = &arm.binding {
+                        self.env.define(name.clone(), Type::Unknown, false);
+                    }
                     self.check_block(&arm.body);
+                    self.env.pop_scope_silent();
                 }
             }
         }
@@ -337,6 +378,15 @@ impl TypeChecker {
                     Type::Unknown
                 } else if name.starts_with("__destructure") {
                     Type::Void
+                } else if self.env.enum_types.contains_key(name) {
+                    // Enum name used as a namespace (e.g., Shape.circle)
+                    self.env.enum_types[name].clone()
+                } else if self.env.type_aliases.contains_key(name) {
+                    // Named type used as constructor (e.g., Point { x: 1 })
+                    self.env.type_aliases[name].clone()
+                } else if self.env.namespaces.contains(name) {
+                    // Provider namespace (e.g., json, fs, process)
+                    Type::Unknown
                 } else {
                     let scope_names = self.env.all_names_in_scope();
                     let candidates: Vec<&str> = scope_names.iter().map(|s| s.as_str()).collect();
@@ -673,6 +723,9 @@ impl TypeChecker {
                 self.check_expr(value);
                 Type::Bool
             }
+            Expr::TableLit { columns, rows, .. } => {
+                self.check_table_literal(columns, rows)
+            }
         }
     }
 
@@ -769,10 +822,7 @@ impl TypeChecker {
         type_ann_span: Option<Span>,
         value_expr: Option<&Expr>,
     ) {
-        if matches!(expected, Type::Unknown | Type::Error) || matches!(actual, Type::Unknown | Type::Error) {
-            return;
-        }
-        if expected == actual {
+        if self.types_compatible(expected, actual) {
             return;
         }
 
@@ -837,6 +887,34 @@ impl TypeChecker {
         }
 
         self.diagnostics.push(diag);
+    }
+
+    /// Check if two types are compatible, treating Unknown as a wildcard.
+    /// This is more permissive than strict equality — it allows Unknown to match anything,
+    /// even when nested inside Nullable, Result, List, etc.
+    pub(crate) fn types_compatible(&self, expected: &Type, actual: &Type) -> bool {
+        if matches!(expected, Type::Unknown | Type::Error) || matches!(actual, Type::Unknown | Type::Error) {
+            return true;
+        }
+        if expected == actual {
+            return true;
+        }
+        match (expected, actual) {
+            (Type::Nullable(e), Type::Nullable(a)) => self.types_compatible(e, a),
+            (Type::List(e), Type::List(a)) => self.types_compatible(e, a),
+            (Type::Map(ek, ev), Type::Map(ak, av)) => {
+                self.types_compatible(ek, ak) && self.types_compatible(ev, av)
+            }
+            (Type::Result(eok, eerr), Type::Result(aok, aerr)) => {
+                self.types_compatible(eok, aok) && self.types_compatible(eerr, aerr)
+            }
+            (Type::Tuple(es), Type::Tuple(as_)) if es.len() == as_.len() => {
+                es.iter().zip(as_.iter()).all(|(e, a)| self.types_compatible(e, a))
+            }
+            // ptr and string are interchangeable at FFI boundary
+            (Type::Ptr, Type::String) | (Type::String, Type::Ptr) => true,
+            _ => false,
+        }
     }
 
     /// Format function signature for error messages

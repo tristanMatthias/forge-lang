@@ -192,6 +192,24 @@ impl Driver {
 
         bp.fn_count = count_functions(&program);
 
+        // 7b. Type check
+        let t = Instant::now();
+        let mut checker = crate::typeck::TypeChecker::new();
+        // Register component instance names as namespaces (e.g., ticker, Task)
+        for (type_name, _, _) in &all_static_methods {
+            checker.env.namespaces.insert(type_name.clone());
+        }
+        checker.check_program(&program);
+        for d in &checker.diagnostics {
+            diag_bag.report(d.clone());
+        }
+        bp.add("typeck", t.elapsed());
+
+        if diag_bag.has_errors() {
+            self.emit_diagnostics(&diag_bag, &source, filename);
+            return Err("type check errors".into());
+        }
+
         // 8. Codegen
         let t = Instant::now();
         let context = Context::create();
