@@ -169,10 +169,12 @@ impl<'ctx> Codegen<'ctx> {
             let payload_ptr = self.builder.build_struct_gep(struct_val.get_type(), result_alloca, 1, "ok_payload_ptr").unwrap();
             let val_ptr = self.builder.build_bit_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "ok_val_ptr").unwrap();
             let ok_val = self.builder.build_load(ok_type, val_ptr.into_pointer_value(), "ok_val").unwrap();
-            let ok_end = self.builder.get_insert_block().unwrap();
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
+            // Don't branch yet — we may need to coerce the ok value in this block
 
             // Error path: extract err value through memory reinterpret, run handler
+            // (save insertion point, compile handler, come back to patch ok branch)
+            let ok_bb_saved = self.builder.get_insert_block().unwrap();
+
             self.builder.position_at_end(err_bb);
             self.push_scope();
             if let Some(name) = binding {
@@ -198,13 +200,22 @@ impl<'ctx> Codegen<'ctx> {
             let err_end = self.builder.get_insert_block().unwrap();
             self.builder.build_unconditional_branch(merge_bb).unwrap();
 
+            // Now go back to ok block and coerce if needed, then branch
+            self.builder.position_at_end(ok_bb_saved);
+            let ok_final = if let Some(hv) = handler_val {
+                self.coerce_value(ok_val, hv.get_type())
+            } else {
+                ok_val
+            };
+            let ok_end = self.builder.get_insert_block().unwrap();
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+
             self.builder.position_at_end(merge_bb);
 
             // Phi result
             if let Some(hv) = handler_val {
-                let ok_coerced = self.coerce_value(ok_val, hv.get_type());
                 let phi = self.builder.build_phi(hv.get_type(), "catch_result").unwrap();
-                phi.add_incoming(&[(&ok_coerced, ok_end), (&hv, err_end)]);
+                phi.add_incoming(&[(&ok_final, ok_end), (&hv, err_end)]);
                 return Some(phi.as_basic_value());
             }
 

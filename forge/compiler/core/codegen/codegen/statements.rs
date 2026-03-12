@@ -80,6 +80,8 @@ impl<'ctx> Codegen<'ctx> {
                             } else {
                                 ty
                             }
+                        } else if val.is_float_value() {
+                            Type::Float
                         } else {
                             ty
                         }

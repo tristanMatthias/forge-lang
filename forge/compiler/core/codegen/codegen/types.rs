@@ -516,10 +516,21 @@ impl<'ctx> Codegen<'ctx> {
             Expr::ErrExpr { value, .. } => {
                 Type::Result(Box::new(Type::Unknown), Box::new(self.infer_type(value)))
             }
-            Expr::Catch { expr, .. } => {
+            Expr::Catch { expr, handler, .. } => {
                 let et = self.infer_type(expr);
                 match &et {
-                    Type::Result(ok, _) => *ok.clone(),
+                    Type::Result(ok, _) => {
+                        let ok_type = *ok.clone();
+                        // If Ok type is Unknown (e.g., generic with no info),
+                        // use the handler's last expression type instead
+                        if matches!(ok_type, Type::Unknown) {
+                            handler.statements.iter().rev().find_map(|s| {
+                                if let Statement::Expr(e) = s { Some(self.infer_type(e)) } else { None }
+                            }).unwrap_or(ok_type)
+                        } else {
+                            ok_type
+                        }
+                    }
                     _ => et,
                 }
             }
@@ -533,6 +544,24 @@ impl<'ctx> Codegen<'ctx> {
                 match &ot {
                     Type::Result(ok, _) => *ok.clone(),
                     _ => ot,
+                }
+            }
+            Expr::TableLit { columns, rows, .. } => {
+                let fields: Vec<(String, Type)> = if let Some(first_row) = rows.first() {
+                    columns.iter().zip(first_row.iter())
+                        .map(|(name, expr)| (name.clone(), self.infer_type(expr)))
+                        .collect()
+                } else {
+                    columns.iter().map(|n| (n.clone(), Type::Unknown)).collect()
+                };
+                Type::List(Box::new(Type::Struct { name: None, fields }))
+            }
+            Expr::Index { object, .. } => {
+                let obj_type = self.infer_type(object);
+                match &obj_type {
+                    Type::List(inner) => *inner.clone(),
+                    Type::String => Type::String,
+                    _ => Type::Unknown,
                 }
             }
             Expr::With { base, .. } => self.infer_type(base),
