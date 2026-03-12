@@ -662,3 +662,40 @@ component spec(name: string) {
 | Expression introspection | Compiler embeds expr source in `then` blocks |
 
 Zero new language features. Everything is components, functions, `is`, `table`, and existing error handling.
+
+---
+
+# Implementation Notes & Open Questions
+
+## Concerns
+
+### Per-`then` Isolation
+The spec says each `then` block should run in isolation so side effects don't leak between tests. Three options:
+1. **Re-run setup**: Re-execute all `given` blocks before each `then`. Simple but slow — O(n×m) for n givens × m thens.
+2. **Fork**: `fork()` before each `then`, run in child process. True isolation but platform-dependent (no Windows) and complicates test output collection.
+3. **Scope snapshot**: Save/restore variable state. Requires deep-copy semantics the language doesn't have yet.
+
+**Recommendation**: Start with option 1 (re-run setup). It's correct and simple. Optimize later if benchmarks show it matters.
+
+### Expression Diff on Failure
+The spec wants `a + b == expected` to print `"expected 30, got 25"` on failure. This requires the compiler to introspect expressions at compile time — decompose `==` into LHS/RHS, stringify each side, and emit code that captures both values before comparison. This is a compiler transform (macro-like expansion), not a runtime feature. It's doable but touches core expression codegen.
+
+### `eventually` / Async Polling
+`eventually(timeout) { condition }` needs a sleep/retry loop. Forge has no `sleep()` runtime function yet. Adding one to `@std/process` is straightforward (`std::thread::sleep`), but the polling interval and timeout semantics need design — fixed interval? exponential backoff? configurable?
+
+## Questions for Design
+
+1. **Snapshot storage**: Where do `.snap` files live? Next to the test file? In a `.forge-snapshots/` dir? What's the update workflow — a CLI flag like `--update-snapshots`?
+
+2. **Fuzz testing scope**: Full property-based testing (QuickCheck-style with shrinking) is a large undertaking. Should we start with simple random input generation and add shrinking later? What types get generators — just primitives, or also structs/tables?
+
+3. **Bench timing**: `bench "name" { expr }` needs warm-up runs, multiple iterations, and statistical reporting (min/max/median/stddev). Should this be a separate `forge bench` command or integrated into `forge test`?
+
+4. **CLI `--filter`**: The `forge test --filter "pattern"` flag needs the test runner to pass filter strings to the native runtime. Should filtering happen at compile time (skip codegen for non-matching tests) or runtime (check filter before executing each test)?
+
+## Ideas
+
+- **`test.capture_stdout`**: Wrap a block and capture its stdout as a string for assertion. Useful for testing CLI output. Needs `dup2`/pipe plumbing in the runtime.
+- **`test.mock(fn_name, replacement)`**: Function-level mocking by swapping function pointers at runtime. Requires an indirection table for mockable functions.
+- **`test.timeout(ms) { block }`**: Per-test timeout via `alarm()`/signal handler or thread-based watchdog.
+- **Parallel test execution**: Run spec blocks concurrently. Requires test output buffering per-spec and a merge step. The `atexit` summary handler would need atomic counters (already using statics, would need `AtomicU32`).
