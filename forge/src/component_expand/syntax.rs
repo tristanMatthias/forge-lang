@@ -130,10 +130,42 @@ impl SyntaxPattern {
                             i += 1;
                         }
                     } else {
-                        // Last segment — capture all remaining tokens on this line
+                        // Last segment — capture remaining tokens, with brace/paren balancing
+                        // for multi-line expressions (e.g., closures, blocks)
+                        let mut brace_depth: i32 = 0;
+                        let mut paren_depth: i32 = 0;
+                        let mut started_group = false;
                         while i < tokens.len() {
-                            if matches!(tokens[i].kind, TokenKind::Newline | TokenKind::Eof) {
-                                break;
+                            match &tokens[i].kind {
+                                TokenKind::LBrace => {
+                                    brace_depth += 1;
+                                    started_group = true;
+                                }
+                                TokenKind::RBrace => {
+                                    brace_depth -= 1;
+                                    if started_group && brace_depth <= 0 && paren_depth <= 0 {
+                                        // Capture the closing brace and stop
+                                        captured.push(tokens[i].clone());
+                                        i += 1;
+                                        break;
+                                    }
+                                }
+                                TokenKind::LParen => {
+                                    paren_depth += 1;
+                                    started_group = true;
+                                }
+                                TokenKind::RParen => {
+                                    paren_depth -= 1;
+                                }
+                                TokenKind::Newline | TokenKind::Eof => {
+                                    if brace_depth <= 0 && paren_depth <= 0 {
+                                        break;
+                                    }
+                                    // Skip newlines inside balanced groups
+                                    i += 1;
+                                    continue;
+                                }
+                                _ => {}
                             }
                             captured.push(tokens[i].clone());
                             i += 1;

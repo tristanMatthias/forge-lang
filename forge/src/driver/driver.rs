@@ -1,7 +1,7 @@
 use crate::codegen::Codegen;
 use crate::driver::project::ForgeProject;
 use crate::errors::DiagnosticBag;
-use crate::component_expand::ComponentExpander;
+use crate::component_expand::{ComponentExpander, ExpansionResult};
 use crate::lexer::Lexer;
 use crate::parser::ast::{ComponentTemplateDef, Program, Statement};
 use crate::parser::{ComponentMeta, Parser};
@@ -131,9 +131,9 @@ impl Driver {
         for stmt in program.statements.drain(..) {
             if let Statement::ComponentBlock(ref decl) = stmt {
                 let result = if let Some(template) = find_template(&loaded_providers, &decl.component) {
-                    ComponentExpander::expand_from_template(template, decl)
+                    ComponentExpander::expand_from_template(template, decl, &service_infos)
                 } else {
-                    ComponentExpander::expand(&decl.component, decl, &service_infos)
+                    ExpansionResult::new()
                 };
 
                 if let Some(type_decl) = result.type_decl {

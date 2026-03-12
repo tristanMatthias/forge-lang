@@ -861,7 +861,8 @@ impl Parser {
     fn parse_pipe(&mut self) -> Option<Expr> {
         let mut left = self.parse_null_coalesce()?;
 
-        while self.check(&TokenKind::Pipe) {
+        while self.check(&TokenKind::Pipe) || self.next_meaningful_is(&TokenKind::Pipe) {
+            self.skip_newlines();
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_null_coalesce()?;
@@ -1765,7 +1766,25 @@ impl Parser {
         self.skip_newlines();
         self.expect(&TokenKind::Arrow)?;
         self.skip_newlines();
-        let body = self.parse_expr()?;
+        let body = {
+            let expr = self.parse_expr()?;
+            // Check for assignment: expr = value (e.g., count = count + 1)
+            if self.check(&TokenKind::Eq) {
+                let eq_span = self.advance()?.span;
+                self.skip_newlines();
+                let value = self.parse_expr()?;
+                Expr::Block(Block {
+                    statements: vec![Statement::Assign {
+                        target: expr,
+                        value,
+                        span: eq_span,
+                    }],
+                    span: eq_span,
+                })
+            } else {
+                expr
+            }
+        };
         self.skip_newlines();
 
         // Optional newline separator
@@ -2113,7 +2132,8 @@ impl Parser {
             Expr::Index { .. } |
             Expr::ListLit { .. } |
             Expr::MapLit { .. } |
-            Expr::NullPropagate { .. }
+            Expr::NullPropagate { .. } |
+            Expr::ErrorPropagate { .. }
         )
     }
 
@@ -2324,18 +2344,6 @@ impl Parser {
                 TokenKind::Ident(name) if name == "before" || name == "after" => {
                     // Hook: before/after operation(param) { body }
                     if let Some(stmt) = self.parse_component_hook() {
-                        blocks.push(stmt);
-                    }
-                }
-                TokenKind::Ident(name) if name == "route" => {
-                    // Legacy hardcoded route parsing
-                    if let Some(stmt) = self.parse_component_route() {
-                        blocks.push(stmt);
-                    }
-                }
-                TokenKind::Ident(name) if name == "mount" => {
-                    // Legacy hardcoded mount parsing
-                    if let Some(stmt) = self.parse_component_mount() {
                         blocks.push(stmt);
                     }
                 }
@@ -2759,68 +2767,6 @@ impl Parser {
         }))
     }
 
-    fn parse_component_route(&mut self) -> Option<Statement> {
-        // route METHOD /path -> handler
-        let _start = self.advance()?.span; // consume 'route'
-        self.skip_newlines();
-
-        let method = match &self.peek()?.kind {
-            TokenKind::Ident(m) => m.to_uppercase(),
-            _ => { self.error("expected HTTP method"); return None; }
-        };
-        self.advance();
-        self.skip_newlines();
-
-        let path = self.parse_url_path();
-        self.skip_newlines();
-
-        self.expect(&TokenKind::Arrow)?;
-        self.skip_newlines();
-
-        let handler = self.parse_expr()?;
-
-        // Encode as a function call expression for the expansion engine
-        Some(Statement::Expr(Expr::Call {
-            callee: Box::new(Expr::Ident("__component_route".to_string(), _start)),
-            args: vec![
-                CallArg { name: Some("method".to_string()), value: Expr::StringLit(method, _start) },
-                CallArg { name: Some("path".to_string()), value: Expr::StringLit(path, _start) },
-                CallArg { name: Some("handler".to_string()), value: handler },
-            ],
-            span: _start,
-        }))
-    }
-
-    fn parse_component_mount(&mut self) -> Option<Statement> {
-        // mount ServiceName at /path
-        let start = self.advance()?.span; // consume 'mount'
-        self.skip_newlines();
-
-        let service = match &self.peek()?.kind {
-            TokenKind::Ident(n) => n.clone(),
-            _ => { self.error("expected service name"); return None; }
-        };
-        self.advance();
-        self.skip_newlines();
-
-        match &self.peek()?.kind {
-            TokenKind::Ident(n) if n == "at" => { self.advance(); }
-            _ => { self.error("expected 'at' after service name"); return None; }
-        };
-        self.skip_newlines();
-
-        let path = self.parse_url_path();
-
-        Some(Statement::Expr(Expr::Call {
-            callee: Box::new(Expr::Ident("__component_mount".to_string(), start)),
-            args: vec![
-                CallArg { name: Some("service".to_string()), value: Expr::StringLit(service, start) },
-                CallArg { name: Some("path".to_string()), value: Expr::StringLit(path, start) },
-            ],
-            span: start,
-        }))
-    }
-
     /// Try to match the current position against registered @syntax patterns.
     /// If a pattern matches, consume the matched tokens and return a desugared
     /// function call statement: `__component_<fn_name>(captured_args...)`.
@@ -2931,34 +2877,4 @@ impl Parser {
         Some(Statement::Expr(call))
     }
 
-    /// Parse a URL path like /health or /users/:id
-    fn parse_url_path(&mut self) -> String {
-        let mut path = String::new();
-        // Expect '/' Div token or parse from tokens
-        while self.check(&TokenKind::Slash) || self.check_ident() || self.check(&TokenKind::Colon) {
-            match &self.peek().unwrap().kind {
-                TokenKind::Slash => {
-                    path.push('/');
-                    self.advance();
-                }
-                TokenKind::Colon => {
-                    path.push(':');
-                    self.advance();
-                }
-                TokenKind::Ident(name) => {
-                    path.push_str(name);
-                    self.advance();
-                }
-                _ => break,
-            }
-        }
-        if path.is_empty() {
-            path = "/".to_string();
-        }
-        path
-    }
-
-    fn check_ident(&self) -> bool {
-        matches!(self.peek(), Some(tok) if matches!(tok.kind, TokenKind::Ident(_)))
-    }
 }

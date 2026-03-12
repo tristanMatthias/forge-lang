@@ -4,6 +4,10 @@ use crate::codegen::ServiceInfo;
 use crate::lexer::Span;
 use crate::parser::ast::*;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static GENERATED_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static UNNAMED_COMPONENT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Result of expanding a component block
 #[derive(Debug, Clone)]
@@ -39,10 +43,6 @@ fn sp() -> Span {
 
 fn ident(name: &str) -> Expr {
     Expr::Ident(name.to_string(), sp())
-}
-
-fn string_lit(s: &str) -> Expr {
-    Expr::StringLit(s.to_string(), sp())
 }
 
 fn call(name: &str, args: Vec<Expr>) -> Expr {
@@ -522,6 +522,7 @@ fn expand_syntax_call(
     syntax_fn: &crate::parser::ast::SyntaxFnDef,
     args: &[CallArg],
     ctx: &SubstitutionContext,
+    service_infos: &[ServiceInfo],
 ) -> Vec<Statement> {
     // Build a map of param_name → captured value (as Expr)
     let mut arg_map: std::collections::HashMap<String, Expr> = std::collections::HashMap::new();
@@ -531,61 +532,196 @@ fn expand_syntax_call(
         }
     }
 
+    // Generate a unique name for __tpl_generated
+    let gen_id = GENERATED_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let generated_name = format!("__generated_handler_{}", gen_id);
+
     // Process the syntax fn body: substitute param references with captured values,
     // then apply the normal __tpl_* substitution
     let mut expanded_stmts = Vec::new();
     for stmt in &syntax_fn.body.statements {
         let substituted = substitute_stmt(stmt, ctx);
-        let with_args = substitute_syntax_args(&substituted, &arg_map);
-        expanded_stmts.push(with_args);
+        let with_args = substitute_syntax_args_with_services(&substituted, &arg_map, service_infos);
+        // Replace __tpl_generated with unique name
+        let with_generated = replace_tpl_generated(&with_args, &generated_name);
+        expanded_stmts.push(with_generated);
     }
     expanded_stmts
 }
 
-/// Replace identifiers that match syntax fn param names with their captured values
-fn substitute_syntax_args(stmt: &Statement, args: &std::collections::HashMap<String, Expr>) -> Statement {
+/// Like substitute_syntax_args but passes service_infos through for __tpl_resolve_service
+fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Statement {
     match stmt {
-        Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args)),
+        Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos)),
         Statement::Let { name, type_ann, value, exported, span } => Statement::Let {
             name: name.clone(),
             type_ann: type_ann.clone(),
-            value: substitute_syntax_args_expr(value, args),
+            value: substitute_syntax_args_expr(value, args, service_infos),
             exported: *exported,
             span: *span,
         },
         Statement::Return { value, span } => Statement::Return {
-            value: value.as_ref().map(|v| substitute_syntax_args_expr(v, args)),
+            value: value.as_ref().map(|v| substitute_syntax_args_expr(v, args, service_infos)),
+            span: *span,
+        },
+        Statement::FnDecl { name, type_params, params, return_type, body, exported, span } => {
+            Statement::FnDecl {
+                name: name.clone(),
+                type_params: type_params.clone(),
+                params: params.clone(),
+                return_type: return_type.clone(),
+                body: Block {
+                    statements: body.statements.iter()
+                        .map(|s| substitute_syntax_args_with_services(s, args, service_infos))
+                        .collect(),
+                    span: body.span,
+                },
+                exported: *exported,
+                span: *span,
+            }
+        }
+        _ => stmt.clone(),
+    }
+}
+
+/// Replace all occurrences of __tpl_generated in FnDecl names and Ident references
+fn replace_tpl_generated(stmt: &Statement, generated_name: &str) -> Statement {
+    match stmt {
+        Statement::FnDecl { name, type_params, params, return_type, body, exported, span } => {
+            let new_name = if name == "__tpl_generated" {
+                generated_name.to_string()
+            } else {
+                name.clone()
+            };
+            Statement::FnDecl {
+                name: new_name,
+                type_params: type_params.clone(),
+                params: params.clone(),
+                return_type: return_type.clone(),
+                body: Block {
+                    statements: body.statements.iter()
+                        .map(|s| replace_tpl_generated(s, generated_name))
+                        .collect(),
+                    span: body.span,
+                },
+                exported: *exported,
+                span: *span,
+            }
+        }
+        Statement::Expr(expr) => Statement::Expr(replace_tpl_generated_expr(expr, generated_name)),
+        Statement::Let { name, type_ann, value, exported, span } => Statement::Let {
+            name: name.clone(),
+            type_ann: type_ann.clone(),
+            value: replace_tpl_generated_expr(value, generated_name),
+            exported: *exported,
             span: *span,
         },
         _ => stmt.clone(),
     }
 }
 
-fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<String, Expr>) -> Expr {
+fn replace_tpl_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
     match expr {
         Expr::Ident(name, span) => {
+            if name == "__tpl_generated" {
+                Expr::Ident(generated_name.to_string(), *span)
+            } else {
+                expr.clone()
+            }
+        }
+        Expr::Call { callee, args, span } => Expr::Call {
+            callee: Box::new(replace_tpl_generated_expr(callee, generated_name)),
+            args: args.iter().map(|a| CallArg {
+                name: a.name.clone(),
+                value: replace_tpl_generated_expr(&a.value, generated_name),
+            }).collect(),
+            span: *span,
+        },
+        _ => expr.clone(),
+    }
+}
+
+/// Replace identifiers that match syntax fn param names with their captured values
+fn substitute_syntax_args(stmt: &Statement, args: &std::collections::HashMap<String, Expr>) -> Statement {
+    substitute_syntax_args_with_services(stmt, args, &[])
+}
+
+fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Expr {
+    match expr {
+        Expr::Ident(name, _span) => {
             if let Some(replacement) = args.get(name) {
+                // Closure unwrapping: when a handler arg is a closure, unwrap to just the body
+                if let Expr::Closure { body, .. } = replacement {
+                    return *body.clone();
+                }
                 return replacement.clone();
             }
             expr.clone()
         }
-        Expr::Call { callee, args: call_args, span } => Expr::Call {
-            callee: Box::new(substitute_syntax_args_expr(callee, args)),
-            args: call_args.iter().map(|a| CallArg {
-                name: a.name.clone(),
-                value: substitute_syntax_args_expr(&a.value, args),
-            }).collect(),
-            span: *span,
-        },
+        Expr::Call { callee, args: call_args, span } => {
+            // Handle __tpl_resolve_service() intrinsic
+            if let Expr::Ident(name, _) = callee.as_ref() {
+                if name == "__tpl_resolve_service" {
+                    if let Some(first_arg) = call_args.first() {
+                        let resolved = substitute_syntax_args_expr(&first_arg.value, args, service_infos);
+                        if let Expr::StringLit(service_name, s) = &resolved {
+                            // Look up service → model table name
+                            let table_name = service_infos
+                                .iter()
+                                .find(|si| si.name == *service_name)
+                                .map(|si| si.for_model.clone())
+                                .unwrap_or_else(|| service_name.clone());
+                            return Expr::StringLit(table_name, *s);
+                        }
+                        return resolved;
+                    }
+                }
+            }
+            Expr::Call {
+                callee: Box::new(substitute_syntax_args_expr(callee, args, service_infos)),
+                args: call_args.iter().map(|a| CallArg {
+                    name: a.name.clone(),
+                    value: substitute_syntax_args_expr(&a.value, args, service_infos),
+                }).collect(),
+                span: *span,
+            }
+        }
         Expr::MemberAccess { object, field, span } => Expr::MemberAccess {
-            object: Box::new(substitute_syntax_args_expr(object, args)),
+            object: Box::new(substitute_syntax_args_expr(object, args, service_infos)),
             field: field.clone(),
             span: *span,
         },
         Expr::Binary { left, op, right, span } => Expr::Binary {
-            left: Box::new(substitute_syntax_args_expr(left, args)),
+            left: Box::new(substitute_syntax_args_expr(left, args, service_infos)),
             op: *op,
-            right: Box::new(substitute_syntax_args_expr(right, args)),
+            right: Box::new(substitute_syntax_args_expr(right, args, service_infos)),
+            span: *span,
+        },
+        Expr::Block(block) => Expr::Block(Block {
+            statements: block.statements.iter()
+                .map(|s| substitute_syntax_args(s, args))
+                .collect(),
+            span: block.span,
+        }),
+        Expr::StructLit { name, fields, span } => Expr::StructLit {
+            name: name.clone(),
+            fields: fields.iter()
+                .map(|(k, v)| (k.clone(), substitute_syntax_args_expr(v, args, service_infos)))
+                .collect(),
+            span: *span,
+        },
+        Expr::TemplateLit { parts, span } => Expr::TemplateLit {
+            parts: parts.iter()
+                .map(|p| match p {
+                    TemplatePart::Literal(s) => TemplatePart::Literal(s.clone()),
+                    TemplatePart::Expr(e) => TemplatePart::Expr(Box::new(substitute_syntax_args_expr(e, args, service_infos))),
+                })
+                .collect(),
+            span: *span,
+        },
+        Expr::NullCoalesce { left, right, span } => Expr::NullCoalesce {
+            left: Box::new(substitute_syntax_args_expr(left, args, service_infos)),
+            right: Box::new(substitute_syntax_args_expr(right, args, service_infos)),
             span: *span,
         },
         _ => expr.clone(),
@@ -816,22 +952,19 @@ fn expand_simple_methods(
 pub struct ComponentExpander;
 
 impl ComponentExpander {
-    /// Expand a component block using the old hardcoded path (server only).
-    pub fn expand(component: &str, decl: &ComponentBlockDecl, service_infos: &[ServiceInfo]) -> ExpansionResult {
-        match component {
-            "server" => Self::expand_server(decl, service_infos),
-            _ => ExpansionResult::new(),
-        }
-    }
-
     /// Expand a component block using a provider template definition.
     pub fn expand_from_template(
         template: &ComponentTemplateDef,
         decl: &ComponentBlockDecl,
+        service_infos: &[ServiceInfo],
     ) -> ExpansionResult {
         let name = match decl.args.first() {
             Some(ComponentArg::Ident(name, _)) => name.clone(),
-            _ => return ExpansionResult::new(),
+            _ => {
+                // Auto-generate name for unnamed components (e.g., `server :3000 { ... }`)
+                let id = UNNAMED_COMPONENT_COUNTER.fetch_add(1, Ordering::SeqCst);
+                format!("__{}{}", decl.component, id)
+            }
         };
 
         let model_ref = decl
@@ -849,8 +982,23 @@ impl ComponentExpander {
             String::new()
         };
 
+        // Promote ComponentArg::Named entries to config (e.g., `server :3000` → port=3000)
+        let mut merged_config = decl.body.config.clone();
+        for arg in &decl.args {
+            if let ComponentArg::Named(key, value, span) = arg {
+                let already_set = merged_config.iter().any(|c| c.key == *key);
+                if !already_set {
+                    merged_config.push(ComponentConfig {
+                        key: key.clone(),
+                        value: value.clone(),
+                        span: *span,
+                    });
+                }
+            }
+        }
+
         // Resolve config: merge user config with schema defaults
-        let resolved_config = resolve_config(&decl.body.config, &template.config_schema);
+        let resolved_config = resolve_config(&merged_config, &template.config_schema);
 
         let ctx = SubstitutionContext { name, model_ref, schema, schema_json, config: resolved_config };
 
@@ -964,7 +1112,7 @@ impl ComponentExpander {
         }
 
         // Handle @syntax-desugared calls from user body (__component_* calls)
-        // These expand into startup statements (they run during component initialization)
+        // FnDecl results go to top-level statements, everything else to startup_stmts
         for stmt in &decl.body.blocks {
             if let Statement::Expr(Expr::Call { callee, args, .. }) = stmt {
                 if let Expr::Ident(name, _) = callee.as_ref() {
@@ -972,9 +1120,12 @@ impl ComponentExpander {
                         let fn_name = name.trim_start_matches("__component_");
                         if let Some(syntax_fn) = template.syntax_fns.iter().find(|sf| sf.fn_name == fn_name) {
                             // Substitute captured args into the syntax fn body
-                            let expanded = expand_syntax_call(syntax_fn, args, &ctx);
+                            let expanded = expand_syntax_call(syntax_fn, args, &ctx, service_infos);
                             for s in expanded {
-                                result.startup_stmts.push(s);
+                                match s {
+                                    Statement::FnDecl { .. } => result.statements.push(s),
+                                    _ => result.startup_stmts.push(s),
+                                }
                             }
                         }
                     }
@@ -1023,179 +1174,5 @@ impl ComponentExpander {
         }
 
         result
-    }
-
-    /// Expand a server component block into pure AST.
-    /// - Mount → startup stmt calling forge_http_mount_crud(table, path)
-    /// - Route → FnDecl for C ABI handler + startup stmt calling forge_http_add_route
-    /// - Serve → main_end stmt calling forge_http_serve(port)
-    fn expand_server(decl: &ComponentBlockDecl, service_infos: &[ServiceInfo]) -> ExpansionResult {
-        let mut result = ExpansionResult::new();
-
-        let port = decl
-            .args
-            .iter()
-            .find_map(|a| match a {
-                ComponentArg::Named(key, Expr::IntLit(n, _), _) if key == "port" => Some(*n),
-                _ => None,
-            })
-            .unwrap_or(3000);
-
-        for stmt in &decl.body.blocks {
-            if let Statement::Expr(Expr::Call {
-                callee,
-                args,
-                span: call_span,
-            }) = stmt
-            {
-                if let Expr::Ident(name, _) = callee.as_ref() {
-                    match name.as_str() {
-                        "__component_route" => {
-                            let method = Self::extract_string_arg(args, "method");
-                            let path = Self::extract_string_arg(args, "path");
-                            let handler = args
-                                .iter()
-                                .find_map(|a| {
-                                    if a.name.as_deref() == Some("handler") {
-                                        Some(a.value.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or(Expr::NullLit(*call_span));
-
-                            // Generate handler function + registration call with port
-                            let (handler_fn, handler_name) =
-                                Self::generate_route_handler(&method, &path, &handler);
-                            result.statements.push(handler_fn);
-                            result.startup_stmts.push(
-                                Self::route_register_stmt(port, &method, &path, &handler_name),
-                            );
-                        }
-                        "__component_mount" => {
-                            let service_name = Self::extract_string_arg(args, "service");
-                            let mount_path = Self::extract_string_arg(args, "path");
-
-                            // Resolve service → model table name
-                            let table_name = service_infos
-                                .iter()
-                                .find(|si| si.name == service_name)
-                                .map(|si| si.for_model.clone())
-                                .unwrap_or(service_name.clone());
-
-                            // Generate: forge_http_mount_crud(port, "TableName", "/path")
-                            result.startup_stmts.push(expr_stmt(call(
-                                "forge_http_mount_crud",
-                                vec![Expr::IntLit(port, sp()), string_lit(&table_name), string_lit(&mount_path)],
-                            )));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        // forge_http_serve(port) at end of main
-        result.main_end_stmts.push(expr_stmt(call(
-            "forge_http_serve",
-            vec![Expr::IntLit(port, sp())],
-        )));
-
-        result
-    }
-
-    /// Generate a route handler function (C ABI compatible) and its registration statement.
-    /// The handler function takes raw ptr/int params matching the HandlerFn signature,
-    /// evaluates the user's closure body, serializes the result with json.stringify,
-    /// and writes it to the response buffer.
-    fn generate_route_handler(
-        method: &str,
-        path: &str,
-        handler: &Expr,
-    ) -> (Statement, String) {
-        let handler_name = format!(
-            "__http_handler_{}_{}",
-            method.to_lowercase(),
-            path.replace('/', "_")
-                .replace(':', "p_")
-                .trim_start_matches('_')
-                .to_string()
-        );
-
-        // Extract closure body (or use handler expression directly)
-        let handler_body_expr = match handler {
-            Expr::Closure { body, .. } => body.as_ref().clone(),
-            other => other.clone(),
-        };
-
-        // Build function body:
-        //   let __req_params_json = __params_json
-        //   let __result = <user handler body>
-        //   let __json = json.stringify(__result)
-        //   forge_http_write_response(__response_buf, __response_buf_len, __json)
-        //   200
-        let body_stmts = vec![
-            let_stmt("__req_params_json", ident("__params_json")),
-            let_stmt("__result", handler_body_expr),
-            let_stmt(
-                "__json",
-                method_call("json", "stringify", vec![ident("__result")]),
-            ),
-            expr_stmt(call(
-                "forge_http_write_response",
-                vec![
-                    ident("__response_buf"),
-                    ident("__response_buf_len"),
-                    ident("__json"),
-                ],
-            )),
-            expr_stmt(Expr::IntLit(200, sp())),
-        ];
-
-        let handler_fn = fn_decl(
-            &handler_name,
-            vec![
-                param("__m", named_type("ptr")),
-                param("__p", named_type("ptr")),
-                param("__b", named_type("ptr")),
-                param("__params_json", named_type("ptr")),
-                param("__response_buf", named_type("ptr")),
-                param("__response_buf_len", named_type("int")),
-            ],
-            Some(named_type("int")),
-            body_stmts,
-        );
-
-        // Port is set by the caller via the returned closure
-        (handler_fn, handler_name)
-    }
-
-    /// Generate the route registration statement with port.
-    fn route_register_stmt(port: i64, method: &str, path: &str, handler_name: &str) -> Statement {
-        expr_stmt(call(
-            "forge_http_add_route",
-            vec![
-                Expr::IntLit(port, sp()),
-                string_lit(method),
-                string_lit(path),
-                ident(handler_name),
-            ],
-        ))
-    }
-
-    fn extract_string_arg(args: &[CallArg], name: &str) -> String {
-        args.iter()
-            .find_map(|a| {
-                if a.name.as_deref() == Some(name) {
-                    if let Expr::StringLit(s, _) = &a.value {
-                        Some(s.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default()
     }
 }
