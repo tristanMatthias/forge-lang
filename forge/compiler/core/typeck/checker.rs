@@ -669,6 +669,10 @@ impl TypeChecker {
                 }
                 Type::String
             }
+            Expr::Is { value, .. } => {
+                self.check_expr(value);
+                Type::Bool
+            }
         }
     }
 

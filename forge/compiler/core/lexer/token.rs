@@ -44,6 +44,7 @@ pub enum TokenKind {
     Catch,
     Select,
     Component,
+    Is,
     Null,
     Ok_,
     Err_,

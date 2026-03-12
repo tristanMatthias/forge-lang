@@ -330,6 +330,10 @@ impl<'ctx> Codegen<'ctx> {
                 Some(stdout_str)
             }
 
+            Expr::Is { value, pattern, negated, .. } => {
+                self.compile_is(value, pattern, *negated)
+            }
+
             _ => None,
         }
     }

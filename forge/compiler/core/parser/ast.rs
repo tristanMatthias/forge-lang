@@ -436,6 +436,13 @@ pub enum Expr {
         parts: Vec<TemplatePart>,
         span: Span,
     },
+    // Is expression: value is Pattern → bool
+    Is {
+        value: Box<Expr>,
+        pattern: Pattern,
+        negated: bool,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -472,7 +479,8 @@ impl Expr {
             | Expr::ChannelSend { span, .. }
             | Expr::ChannelReceive { span, .. }
             | Expr::SpawnBlock { span, .. }
-            | Expr::DollarExec { span, .. } => *span,
+            | Expr::DollarExec { span, .. }
+            | Expr::Is { span, .. } => *span,
             Expr::Block(block) => block.span,
         }
     }

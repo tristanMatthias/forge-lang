@@ -1,0 +1,15 @@
+/// expect: 3
+
+fn main() {
+  mut attempts = 0
+  mut result: Result<int, string> = Err("retry")
+
+  while result is Err {
+    attempts = attempts + 1
+    if attempts >= 3 {
+      result = Ok(42)
+    }
+  }
+
+  println(string(attempts))
+}

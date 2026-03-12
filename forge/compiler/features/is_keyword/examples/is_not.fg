@@ -1,0 +1,8 @@
+/// expect: true
+/// expect: false
+
+fn main() {
+  let r = Ok(42)
+  println(string(r is not Err))
+  println(string(r is not Ok))
+}

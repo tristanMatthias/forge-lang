@@ -1,0 +1,13 @@
+/// expect: true
+/// expect: false
+/// expect: false
+
+enum Status { pending, active, done, failed }
+
+fn main() {
+  let s = Status.active
+
+  println(string(s is .active))
+  println(string(s is .pending))
+  println(string(s is .done))
+}

@@ -412,6 +412,12 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                 .collect(),
             span: *span,
         },
+        Expr::Is { value, pattern, negated, span } => Expr::Is {
+            value: Box::new(substitute_expr(value, ctx)),
+            pattern: pattern.clone(),
+            negated: *negated,
+            span: *span,
+        },
     }
 }
 

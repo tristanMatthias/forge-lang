@@ -1,0 +1,15 @@
+/// expect: success
+/// expect: failure
+
+fn handle(result: Result<int, string>) -> string {
+  if result is Ok {
+    "success"
+  } else {
+    "failure"
+  }
+}
+
+fn main() {
+  println(handle(Ok(42)))
+  println(handle(Err("no")))
+}

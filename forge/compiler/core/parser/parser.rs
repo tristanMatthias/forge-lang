@@ -615,11 +615,11 @@ impl Parser {
     }
 
     pub(crate) fn parse_and(&mut self) -> Option<Expr> {
-        let mut left = self.parse_equality()?;
+        let mut left = self.parse_is_check()?;
         while self.check(&TokenKind::And) {
             let span = self.advance()?.span;
             self.skip_newlines();
-            let right = self.parse_equality()?;
+            let right = self.parse_is_check()?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: BinaryOp::And,

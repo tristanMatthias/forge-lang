@@ -194,7 +194,7 @@ impl<'ctx> Codegen<'ctx> {
             Expr::StringLit(_, _) => Type::String,
             Expr::TemplateLit { .. } => Type::String,
             Expr::DollarExec { .. } => Type::String,
-            Expr::BoolLit(_, _) => Type::Bool,
+            Expr::BoolLit(_, _) | Expr::Is { .. } => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
             Expr::Ident(name, _) => {
                 // Check codegen's own variable scope first

@@ -1,0 +1,10 @@
+/// expect: true
+/// expect: true
+
+fn main() {
+  let a = Ok(5)
+  let b = Err("no")
+
+  println(string(a is Ok && b is Err))
+  println(string(a is Err || b is Err))
+}
