@@ -4,7 +4,7 @@
 /// and `catch` to handle errors.
 ///
 /// expect: error: division by zero
-/// expect: 0
+/// expect: 0.0
 
 fn divide(a: float, b: float) -> Result<float, string> {
   if b == 0.0 {

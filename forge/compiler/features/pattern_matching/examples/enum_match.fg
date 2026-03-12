@@ -2,8 +2,8 @@
 ///
 /// Pattern match on enum variants.
 ///
-/// expect: circle with radius 5
-/// expect: 3x4 rectangle
+/// expect: circle with radius 5.0
+/// expect: 3.0x4.0 rectangle
 
 enum Shape {
   circle(radius: float)

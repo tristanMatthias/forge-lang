@@ -61,8 +61,30 @@ void forge_print_int(int64_t value) {
     printf("%lld", (long long)value);
 }
 
+// Format a float, ensuring at least one decimal place (5.0 not 5)
+static int fmt_float(char *buf, size_t size, double value) {
+    int len = snprintf(buf, size, "%g", value);
+    // If no decimal point or exponent, append .0
+    int has_dot = 0;
+    for (int i = 0; i < len; i++) {
+        if (buf[i] == '.' || buf[i] == 'e' || buf[i] == 'E' || buf[i] == 'n' || buf[i] == 'i') {
+            has_dot = 1;
+            break;
+        }
+    }
+    if (!has_dot && len + 2 < (int)size) {
+        buf[len] = '.';
+        buf[len+1] = '0';
+        buf[len+2] = '\0';
+        len += 2;
+    }
+    return len;
+}
+
 void forge_print_float(double value) {
-    printf("%g", value);
+    char buf[64];
+    fmt_float(buf, sizeof(buf), value);
+    fputs(buf, stdout);
 }
 
 void forge_print_string(ForgeString s) {
@@ -83,7 +105,9 @@ void forge_println_int(int64_t value) {
 }
 
 void forge_println_float(double value) {
-    printf("%g\n", value);
+    char buf[64];
+    fmt_float(buf, sizeof(buf), value);
+    puts(buf);
 }
 
 void forge_println_bool(int8_t value) {
@@ -100,7 +124,7 @@ ForgeString forge_int_to_string(int64_t value) {
 
 ForgeString forge_float_to_string(double value) {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "%g", value);
+    int len = fmt_float(buf, sizeof(buf), value);
     return forge_string_new(buf, len);
 }
 
