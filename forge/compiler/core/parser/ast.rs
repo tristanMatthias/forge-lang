@@ -155,6 +155,54 @@ pub enum Statement {
         arms: Vec<SelectArm>,
         span: Span,
     },
+    // Test framework: spec block
+    SpecBlock {
+        name: String,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: given block (inside spec or given)
+    GivenBlock {
+        name: String,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: then assertion (inside spec or given)
+    ThenBlock {
+        name: String,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: then should_fail (expects body to error)
+    ThenShouldFail {
+        name: String,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: then should_fail_with "msg" (expects specific error)
+    ThenShouldFailWith {
+        name: String,
+        expected: String,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: then "name" where table { cols | ... } { body }
+    ThenWhere {
+        name: String,
+        table: Expr,
+        body: Block,
+        span: Span,
+    },
+    // Test framework: skip block
+    SkipBlock {
+        name: String,
+        span: Span,
+    },
+    // Test framework: todo placeholder
+    TodoStmt {
+        name: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]

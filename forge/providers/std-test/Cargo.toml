@@ -1,0 +1,8 @@
+[package]
+name = "forge-test"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_test"
+crate-type = ["staticlib"]

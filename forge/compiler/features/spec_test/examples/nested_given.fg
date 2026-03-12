@@ -1,0 +1,21 @@
+/// # Nested Given
+///
+/// Given blocks group tests with shared setup.
+///
+/// expect-stderr: ✓ sum is five
+/// expect-stderr: ✓ difference is one
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn main() {
+    spec "math" {
+        given "two numbers" {
+            let a = 3
+            let b = 2
+
+            then "sum is five" { a + b == 5 }
+            then "difference is one" { a - b == 1 }
+        }
+    }
+}

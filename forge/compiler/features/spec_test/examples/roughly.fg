@@ -1,0 +1,28 @@
+/// # Roughly
+///
+/// Approximate float comparison with tolerance.
+///
+/// expect-stderr: ✓ pi approximation
+/// expect-stderr: ✓ close enough
+/// expect-stderr: ✗ too far off
+/// expect-stderr: 2 passed
+/// expect-stderr: 1 failed
+/// expect-exit: 1
+
+use @std.test
+
+fn main() {
+    spec "approximate matching" {
+        then "pi approximation" {
+            test.roughly(3.14, 3.14159, 0.01)
+        }
+
+        then "close enough" {
+            test.roughly(10.0, 10.05, 0.1)
+        }
+
+        then "too far off" {
+            test.roughly(1.0, 2.0, 0.1)
+        }
+    }
+}

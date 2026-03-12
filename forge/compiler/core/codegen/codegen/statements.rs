@@ -216,6 +216,30 @@ impl<'ctx> Codegen<'ctx> {
             Statement::Select { arms, .. } => {
                 self.compile_select(arms);
             }
+            Statement::SpecBlock { name, body, .. } => {
+                self.compile_spec_block(name, body);
+            }
+            Statement::GivenBlock { name, body, .. } => {
+                self.compile_given_block(name, body);
+            }
+            Statement::ThenBlock { name, body, span } => {
+                self.compile_then_block(name, body, span);
+            }
+            Statement::ThenShouldFail { name, body, span } => {
+                self.compile_then_should_fail(name, body, span);
+            }
+            Statement::ThenShouldFailWith { name, expected, body, span } => {
+                self.compile_then_should_fail_with(name, expected, body, span);
+            }
+            Statement::ThenWhere { name, table, body, span } => {
+                self.compile_then_where(name, table, body, span);
+            }
+            Statement::SkipBlock { name, .. } => {
+                self.compile_skip_block(name);
+            }
+            Statement::TodoStmt { name, .. } => {
+                self.compile_todo_stmt(name);
+            }
         }
     }
 

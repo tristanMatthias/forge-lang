@@ -1,0 +1,29 @@
+/// # Should Fail
+///
+/// Tests that are expected to produce falsy results.
+///
+/// expect-stderr: ✓ negative check
+/// expect-stderr: ✓ overflow check
+/// expect-stderr: ✗ valid data does not fail
+/// expect-stderr: 2 passed
+/// expect-stderr: 1 failed
+/// expect-exit: 1
+
+use @std.test
+
+fn main() {
+    spec "should_fail tests" {
+        then "negative check" should_fail {
+            -1 > 0
+        }
+
+        then "overflow check" should_fail {
+            999 < 100
+        }
+
+        then "valid data does not fail" should_fail {
+            // This succeeds (1 + 1 == 2 is true), so should_fail makes it fail
+            1 + 1 == 2
+        }
+    }
+}

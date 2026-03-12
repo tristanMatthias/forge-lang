@@ -336,6 +336,27 @@ impl TypeChecker {
             | Statement::ComponentTemplateDef(_) => {
                 // Phase 2/3 constructs; extern fns are declarations only
             }
+            Statement::SpecBlock { body, .. } => {
+                self.check_spec_block(body);
+            }
+            Statement::GivenBlock { body, .. } => {
+                self.check_given_block(body);
+            }
+            Statement::ThenBlock { body, .. } => {
+                self.check_then_block(body);
+            }
+            Statement::ThenShouldFail { body, .. } => {
+                self.check_then_should_fail(body);
+            }
+            Statement::ThenShouldFailWith { body, .. } => {
+                self.check_then_should_fail_with(body);
+            }
+            Statement::ThenWhere { table, body, .. } => {
+                self.check_then_where(table, body);
+            }
+            Statement::SkipBlock { .. } | Statement::TodoStmt { .. } => {
+                // No type checking needed
+            }
             Statement::Select { arms, .. } => {
                 for arm in arms {
                     self.check_expr(&arm.channel);

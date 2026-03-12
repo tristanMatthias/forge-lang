@@ -1,0 +1,18 @@
+/// # Skip and Todo
+///
+/// Skip and todo markers for incomplete tests.
+///
+/// expect-stderr: ✓ basic check
+/// expect-stderr: ⊘ not ready yet
+/// expect-stderr: ○ future feature
+/// expect-stderr: 1 passed
+
+use @std.test
+
+fn main() {
+    spec "features" {
+        then "basic check" { 1 + 1 == 2 }
+        skip "not ready yet" {}
+        todo "future feature"
+    }
+}

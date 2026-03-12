@@ -1,0 +1,23 @@
+/// # Where Table
+///
+/// Parameterized tests using table literals.
+///
+/// expect-stderr: ✓ addition
+/// expect-stderr: ✓ addition
+/// expect-stderr: ✓ addition
+/// expect-stderr: 3 passed
+
+use @std.test
+
+fn main() {
+    spec "parameterized" {
+        then "addition" where table {
+            a  | b  | expected
+            1  | 2  | 3
+            10 | 20 | 30
+            0  | 0  | 0
+        } {
+            a + b == expected
+        }
+    }
+}

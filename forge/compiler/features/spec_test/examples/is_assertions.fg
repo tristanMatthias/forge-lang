@@ -1,0 +1,20 @@
+/// # Is Assertions
+///
+/// Using the `is` keyword for type/value assertions in tests.
+///
+/// expect-stderr: ✓ null check
+/// expect-stderr: ✓ bool check
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn main() {
+    spec "is keyword" {
+        given "type checks" {
+            let x: int? = null
+
+            then "null check" { x is null }
+            then "bool check" { true is bool }
+        }
+    }
+}

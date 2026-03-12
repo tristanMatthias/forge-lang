@@ -1,25 +1,10 @@
-component greeter(__tpl_name, schema) {
-    config {
-        greeting: string = "hello"
-        loud: bool = false
-    }
-
-    event on_greet(name: string)
-
-    @syntax("{target} -> {message}")
-    fn say(target: string, message: string) {
-        println(message)
-    }
-
-    fn __tpl_name.greet(name: string) -> string {
-        __tpl_config_greeting
-    }
-
-    fn __tpl_name.is_loud() -> bool {
-        __tpl_config_loud
-    }
-
-    on startup {
-        println(__tpl_name_str)
-    }
-}
+extern fn forge_test_start_spec(name: string)
+extern fn forge_test_end_spec()
+extern fn forge_test_start_given(name: string)
+extern fn forge_test_end_given()
+extern fn forge_test_run_then(name: string, result: bool, file: string, line: int)
+extern fn forge_test_run_then_should_fail(name: string, did_error: bool, error_msg: string, expected_msg: string, file: string, line: int)
+extern fn forge_test_skip(name: string)
+extern fn forge_test_todo(name: string)
+extern fn forge_test_summary() -> int
+extern fn forge_test_roughly(actual: float, expected: float, tolerance: float) -> bool

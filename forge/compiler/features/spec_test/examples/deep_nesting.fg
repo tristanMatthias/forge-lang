@@ -1,0 +1,32 @@
+/// # Deep Nesting
+///
+/// Deeply nested given blocks with setup at each level.
+///
+/// expect-stderr: ✓ starts at zero
+/// expect-stderr: ✓ has one item
+/// expect-stderr: ✓ has two items
+/// expect-stderr: 3 passed
+
+use @std.test
+
+fn main() {
+    spec "counter" {
+        given "initial state" {
+            let count = 0
+
+            then "starts at zero" { count == 0 }
+
+            given "after first increment" {
+                let count = count + 1
+
+                then "has one item" { count == 1 }
+
+                given "after second increment" {
+                    let count = count + 1
+
+                    then "has two items" { count == 2 }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,25 @@
+/// # Where Table With Failures
+///
+/// Parameterized tests with some failing rows.
+///
+/// expect-stderr: ✓ comparison
+/// expect-stderr: ✓ comparison
+/// expect-stderr: ✗ comparison
+/// expect-stderr: 2 passed
+/// expect-stderr: 1 failed
+/// expect-exit: 1
+
+use @std.test
+
+fn main() {
+    spec "parameterized with failures" {
+        then "comparison" where table {
+            value | threshold | passes
+            10    | 5         | true
+            3     | 1         | true
+            2     | 5         | true
+        } {
+            value > threshold == passes
+        }
+    }
+}

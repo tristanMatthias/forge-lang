@@ -98,6 +98,11 @@ impl Parser {
                 match name.as_str() {
                     "extern" => self.parse_extern_fn(),
                     "assert" => self.parse_assert(),
+                    "spec" => self.parse_spec_block(),
+                    "given" => self.parse_given_block(),
+                    "then" => self.parse_then_block(),
+                    "skip" => self.parse_skip_block(),
+                    "todo" => self.parse_todo_stmt(),
                     _ => self.parse_expr_statement(),
                 }
             }

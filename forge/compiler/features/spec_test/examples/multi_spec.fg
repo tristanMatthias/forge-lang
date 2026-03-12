@@ -1,0 +1,19 @@
+/// # Multiple Specs
+///
+/// Multiple spec blocks in one file.
+///
+/// expect-stderr: ✓ adds correctly
+/// expect-stderr: ✓ multiplies correctly
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn main() {
+    spec "addition" {
+        then "adds correctly" { 1 + 1 == 2 }
+    }
+
+    spec "multiplication" {
+        then "multiplies correctly" { 3 * 4 == 12 }
+    }
+}

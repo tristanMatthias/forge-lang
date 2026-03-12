@@ -70,6 +70,31 @@ pub fn extract_expected_output(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// Extract `/// expect-stderr: <line>` comments from a .fg file
+pub fn extract_expected_stderr(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("/// expect-stderr:") {
+                Some(rest.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Extract `/// expect-exit: <code>` from a .fg file
+pub fn extract_expected_exit_code(source: &str) -> Option<i32> {
+    source.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix("/// expect-exit:")
+            .and_then(|rest| rest.trim().parse().ok())
+    })
+}
+
 /// Extract `/// expect-error: <code>` from a .fg file (e.g., "F0030")
 pub fn extract_expected_error(source: &str) -> Option<String> {
     source.lines().find_map(|line| {
@@ -110,16 +135,18 @@ pub fn run_example(forge_bin: &Path, fg_file: &Path, feature: &str) -> TestResul
     };
 
     let expected = extract_expected_output(&source);
+    let expected_stderr = extract_expected_stderr(&source);
     let expected_error = extract_expected_error(&source);
+    let expected_exit = extract_expected_exit_code(&source);
 
-    if expected.is_empty() && expected_error.is_none() {
+    if expected.is_empty() && expected_stderr.is_empty() && expected_error.is_none() {
         return TestResult {
             file: fg_file.to_path_buf(),
             feature: feature.to_string(),
             passed: false,
             expected: vec![],
             actual: vec![],
-            error: Some("no /// expect: or /// expect-error: comments found".to_string()),
+            error: Some("no /// expect:, /// expect-stderr:, or /// expect-error: comments found".to_string()),
         };
     }
 
@@ -154,6 +181,49 @@ pub fn run_example(forge_bin: &Path, fg_file: &Path, feature: &str) -> TestResul
                             Some("expected compilation to fail, but it succeeded".to_string())
                         } else {
                             Some(format!("expected error code {}, got: {}", error_code, stderr.lines().next().unwrap_or("")))
+                        }
+                    } else {
+                        None
+                    },
+                };
+            }
+
+            // Handle expect-stderr tests (e.g., test framework output)
+            if !expected_stderr.is_empty() {
+                // Strip ANSI escape codes from stderr for comparison
+                let clean_stderr = strip_ansi_codes(&stderr);
+                let stderr_lines: Vec<&str> = clean_stderr.lines().collect();
+
+                // Check that each expected line appears in stderr (substring match per line)
+                let mut all_found = true;
+                let mut missing = Vec::new();
+                for exp in &expected_stderr {
+                    if !stderr_lines.iter().any(|line| line.contains(exp.as_str())) {
+                        all_found = false;
+                        missing.push(exp.clone());
+                    }
+                }
+
+                // Check exit code if specified
+                let exit_ok = if let Some(expected_code) = expected_exit {
+                    out.status.code() == Some(expected_code)
+                } else {
+                    true
+                };
+
+                let passed = all_found && exit_ok;
+
+                return TestResult {
+                    file: fg_file.to_path_buf(),
+                    feature: feature.to_string(),
+                    passed,
+                    expected: expected_stderr,
+                    actual: stderr_lines.iter().map(|s| s.to_string()).collect(),
+                    error: if !passed {
+                        if !all_found {
+                            Some(format!("missing in stderr: {:?}", missing))
+                        } else {
+                            Some(format!("expected exit code {:?}, got {:?}", expected_exit, out.status.code()))
                         }
                     } else {
                         None
@@ -329,6 +399,26 @@ pub fn run_tests(target: Option<&str>) -> bool {
     }
 
     all_passed
+}
+
+/// Strip ANSI escape codes from a string for clean comparison
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until 'm' (end of ANSI escape sequence)
+            while let Some(&next) = chars.peek() {
+                chars.next();
+                if next == 'm' {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// List all features with their example counts (for `forge features` with test data)

@@ -1,0 +1,18 @@
+/// # Failing Test
+///
+/// Demonstrates test failure output.
+///
+/// expect-stderr: ✓ correct assertion
+/// expect-stderr: ✗ wrong assertion
+/// expect-stderr: 1 passed
+/// expect-stderr: 1 failed
+/// expect-exit: 1
+
+use @std.test
+
+fn main() {
+    spec "assertions" {
+        then "correct assertion" { 2 + 2 == 4 }
+        then "wrong assertion" { 2 + 2 == 5 }
+    }
+}

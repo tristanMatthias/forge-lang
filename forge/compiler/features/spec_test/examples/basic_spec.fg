@@ -1,0 +1,19 @@
+/// # Basic Spec
+///
+/// Simple spec with then assertions.
+///
+/// expect-stderr: ✓ addition works
+/// expect-stderr: ✓ multiplication works
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn main() {
+    spec "arithmetic" {
+        let a = 2
+        let b = 3
+
+        then "addition works" { a + b == 5 }
+        then "multiplication works" { a * b == 6 }
+    }
+}
