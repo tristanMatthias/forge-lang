@@ -1,0 +1,560 @@
+use @std.model
+use @std.queue
+use @std.cron
+
+// ============================================================
+// TYPE & ENUM DECLARATIONS (top-level)
+// ============================================================
+
+type Point = { x: float, y: float }
+
+enum Color {
+    red
+    green
+    blue
+    custom(r: int, g: int, b: int)
+}
+
+enum Shape {
+    circle(radius: float)
+    rect(w: float, h: float)
+    point
+}
+
+// ============================================================
+// TRAIT DECLARATIONS (top-level)
+// ============================================================
+
+trait Describable {
+    fn describe(self) -> string
+    fn shout(self) -> string {
+        self.describe().upper()
+    }
+}
+
+type Circle = { radius: float }
+type Square = { side: float }
+
+impl Describable for Circle {
+    fn describe(self) -> string {
+        `circle r=${self.radius}`
+    }
+}
+
+impl Describable for Square {
+    fn describe(self) -> string {
+        `square s=${self.side}`
+    }
+}
+
+type Vec3 = { x: float, y: float }
+
+impl Add for Vec3 {
+    type Output = Vec3
+    fn add(self, rhs: Vec3) -> Vec3 {
+        Vec3 { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+
+// ============================================================
+// DROP (top-level type + impl)
+// ============================================================
+
+type Resource = { name: string }
+
+impl Drop for Resource {
+    fn drop(self) {
+        println(`drop: ${self.name}`)
+    }
+}
+
+// ============================================================
+// FUNCTION DECLARATIONS (top-level)
+// ============================================================
+
+fn add(a: int, b: int) -> int {
+    a + b
+}
+
+fn greet_person(person: string) -> string {
+    `hello, ${person}!`
+}
+
+fn factorial(n: int) -> int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+fn color_name(c: Color) -> string {
+    match c {
+        .red -> "red"
+        .green -> "green"
+        .blue -> "blue"
+        .custom(r, g, b) -> `rgb(${r},${g},${b})`
+    }
+}
+
+fn shape_desc(s: Shape) -> string {
+    match s {
+        .circle(r) -> `circle r=${r}`
+        .rect(w, h) -> `rect ${w}x${h}`
+        .point -> "point"
+    }
+}
+
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+
+fn swap(pair: (int, int)) -> (int, int) {
+    let (a, b) = pair
+    (b, a)
+}
+
+fn find_user(id: int) -> string? {
+    if id == 1 { "alice" } else { null }
+}
+
+fn divide(a: float, b: float) -> Result<float, string> {
+    if b == 0.0 {
+        Err("division by zero")
+    } else {
+        Ok(a / b)
+    }
+}
+
+fn calculate() -> Result<float, string> {
+    let x = divide(10.0, 2.0)?
+    Ok(x)
+}
+
+fn failing_calc() -> Result<float, string> {
+    let x = divide(10.0, 0.0)?
+    Ok(x)
+}
+
+fn first_item<T>(list: List<T>) -> T? {
+    if list.length > 0 { list[0] } else { null }
+}
+
+fn pair<A, B>(a: A, b: B) -> (A, B) {
+    (a, b)
+}
+
+fn repeat_val<T: Clone>(item: T, n: int) -> List<T> {
+    mut result: List<T> = []
+    mut i = 0
+    while i < n {
+        result.push(item.clone())
+        i = i + 1
+    }
+    result
+}
+
+fn print_desc<T: Describable>(item: T) {
+    println(item.describe())
+}
+
+fn with_defer() {
+    defer { println("deferred!") }
+    println("before defer runs")
+}
+
+// ============================================================
+// MODEL DECLARATIONS (top-level, provider-expanded)
+// ============================================================
+
+model Task {
+    id: int @primary @auto_increment
+    title: string
+    done: bool @default(false)
+}
+
+model Item {
+    id: int @primary @auto_increment
+    name: string
+    active: bool @default(true)
+}
+
+service ItemService for Item {
+    before create(item) {
+        println(`creating: ${item.name}`)
+    }
+
+    after create(item) {
+        println(`created id: ${item.id}`)
+    }
+}
+
+// ============================================================
+// QUEUE & CRON DECLARATIONS (top-level)
+// ============================================================
+
+queue job_queue {}
+queue work_queue {}
+
+worker processor for work_queue {
+    on message(msg) {
+        println(`processed: ${msg}`)
+    }
+}
+
+mut tick_count = 0
+
+schedule ticker {
+    every 50
+    run {
+        tick_count = tick_count + 1
+    }
+}
+
+// ============================================================
+// MAIN: all runtime tests
+// ============================================================
+
+fn main() {
+    // ---- 1. Primitives ----
+    println("--- 1. Primitives ---")
+    let int_val = 42
+    let float_val = 3.14
+    let bool_val = true
+    let string_val = "hello"
+    println(int_val)
+    println(float_val)
+    println(bool_val)
+    println(string_val)
+
+    // ---- 2. Arithmetic ----
+    println("--- 2. Arithmetic ---")
+    println(10 + 3)
+    println(10 - 3)
+    println(10 * 3)
+    println(10 / 3)
+    println(10 % 3)
+    println(-5)
+    println(2.5 + 1.5)
+    println(10.0 / 3.0)
+
+    // ---- 3. Comparison ----
+    println("--- 3. Comparison ---")
+    println(5 == 5)
+    println(5 != 3)
+    println(3 < 5)
+    println(5 <= 5)
+    println(7 > 3)
+    println(5 >= 5)
+    println(5 == 3)
+    println(3 > 5)
+
+    // ---- 4. Logical ----
+    println("--- 4. Logical ---")
+    println(true && true)
+    println(true && false)
+    println(false || true)
+    println(false || false)
+    println(!true)
+    println(!false)
+
+    // ---- 5. Strings ----
+    println("--- 5. Strings ---")
+    let name = "forge"
+    println(name.length)
+    println(name.upper())
+    println(name.lower())
+    println(name.contains("or"))
+    println(name.contains("xyz"))
+    println(`hello ${name}!`)
+    println(`${int_val} is ${string_val}`)
+    println(string(42))
+    println(string(3.14))
+    println(string(true))
+
+    // ---- 6. Variables ----
+    println("--- 6. Variables ---")
+    let immutable = 10
+    println(immutable)
+    mut mutable = 20
+    println(mutable)
+    mutable = 25
+    println(mutable)
+    const LIMIT = 100
+    println(LIMIT)
+
+    // ---- 7. Functions ----
+    println("--- 7. Functions ---")
+    println(string(add(3, 4)))
+    println(greet_person("world"))
+    println(string(factorial(5)))
+
+    // ---- 8. Control Flow ----
+    println("--- 8. Control Flow ---")
+    let label = if 10 > 5 { "big" } else { "small" }
+    println(label)
+    let grade = 85
+    let letter = if grade >= 90 { "A" } else { if grade >= 80 { "B" } else { "C" } }
+    println(letter)
+
+    mut sum = 0
+    for i in 0..5 {
+        sum = sum + i
+    }
+    println(string(sum))
+
+    mut sum2 = 0
+    for i in 0..=5 {
+        sum2 = sum2 + i
+    }
+    println(string(sum2))
+
+    mut n = 1
+    while n < 100 {
+        n = n * 2
+    }
+    println(string(n))
+
+    mut counter = 0
+    loop {
+        counter = counter + 1
+        if counter == 5 {
+            break
+        }
+    }
+    println(string(counter))
+
+    // ---- 9. Structs ----
+    println("--- 9. Structs ---")
+    let p = Point { x: 3.0, y: 4.0 }
+    println(p.x)
+    println(p.y)
+    let p2 = p with { x: 10.0 }
+    println(p2.x)
+    println(p2.y)
+    let anon = { name: "test", value: 42 }
+    println(anon.name)
+    println(string(anon.value))
+
+    // ---- 10. Enums ----
+    println("--- 10. Enums ---")
+    println(color_name(Color.red))
+    println(color_name(Color.green))
+    println(color_name(Color.custom(r: 255, g: 128, b: 0)))
+    println(shape_desc(Shape.circle(radius: 5.0)))
+    println(shape_desc(Shape.rect(w: 3.0, h: 4.0)))
+    println(shape_desc(Shape.point))
+
+    // ---- 11. Lists ----
+    println("--- 11. Lists ---")
+    let nums = [10, 20, 30, 40, 50]
+    println(string(nums.length))
+    println(string(nums[0]))
+    println(string(nums[4]))
+
+    let evens = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(it % 2 == 0)
+    println(string(evens.length))
+    let doubled = [1, 2, 3].map(it * 2)
+    println(string(doubled[0]))
+    println(string(doubled[1]))
+    println(string(doubled[2]))
+    let total = [10, 20, 30].sum()
+    println(string(total))
+
+    let found = [5, 10, 15, 20].find(it > 12)
+    println(string(found ?? -1))
+    println([1, 2, 3].any(it > 2))
+    println([1, 2, 3].all(it > 0))
+    println([1, 2, 3].all(it > 2))
+
+    for (i, val) in ["a", "b", "c"].enumerate() {
+        println(`${i}:${val}`)
+    }
+
+    println(["hello", "world"].join(", "))
+    let product = [1, 2, 3, 4].reduce(1, (acc, n) -> acc * n)
+    println(string(product))
+
+    mut items: List<int> = []
+    items.push(1)
+    items.push(2)
+    items.push(3)
+    println(string(items.length))
+
+    // ---- 12. Maps ----
+    println("--- 12. Maps ---")
+    let scores = { "alice": 95, "bob": 87, "carol": 92 }
+    println(scores.has("alice"))
+    println(scores.has("dave"))
+    println(string(scores.get("bob") ?? 0))
+    println(string(scores.get("dave") ?? 0))
+    println(string(scores.keys().length))
+
+    // ---- 13. Pipes ----
+    println("--- 13. Pipes ---")
+    let piped = 5 |> double |> add_one
+    println(string(piped))
+    let chained = [1, 2, 3, 4, 5].filter(it > 2).map(it * 10).sum()
+    println(string(chained))
+
+    // ---- 14. Destructuring ----
+    println("--- 14. Destructuring ---")
+    let (dx, dy) = swap((1, 2))
+    println(string(dx))
+    println(string(dy))
+
+    let point_d = { x: 5, y: 10, z: 15 }
+    let { x, z } = point_d
+    println(string(x))
+    println(string(z))
+
+    let [first, second, ...rest] = [10, 20, 30, 40, 50]
+    println(string(first))
+    println(string(second))
+    println(string(rest.length))
+
+    // ---- 15. Nullability ----
+    println("--- 15. Nullability ---")
+    let user1 = find_user(1)
+    let user2 = find_user(99)
+    println(user1 ?? "unknown")
+    println(user2 ?? "unknown")
+    if user1 != null {
+        println(user1.upper())
+    }
+    if user2 != null {
+        println("should not print")
+    } else {
+        println("user2 is null")
+    }
+
+    // ---- 16. Error Handling ----
+    println("--- 16. Errors ---")
+    let ok_result = calculate()
+    let ok_val = ok_result catch (e) { 0.0 }
+    println(ok_val)
+
+    let fail_result = failing_calc()
+    let fail_val = fail_result catch (e) {
+        println(`caught: ${e}`)
+        -1.0
+    }
+    println(fail_val)
+
+    // ---- 17. Generics ----
+    println("--- 17. Generics ---")
+    let fi = first_item([100, 200, 300])
+    println(string(fi ?? 0))
+    let empty_fi = first_item([])
+    println(string(empty_fi ?? -1))
+    let p3 = pair("age", 30)
+    println(p3.0)
+    println(string(p3.1))
+    let repeated = repeat_val(7, 3)
+    println(string(repeated.length))
+    println(string(repeated[0]))
+
+    // ---- 18. Traits ----
+    println("--- 18. Traits ---")
+    let c = Circle { radius: 5.0 }
+    let s = Square { side: 3.0 }
+    println(c.describe())
+    println(c.shout())
+    println(s.describe())
+    print_desc(c)
+    print_desc(s)
+
+    let v1 = Vec3 { x: 1.0, y: 2.0 }
+    let v2 = Vec3 { x: 3.0, y: 4.0 }
+    let v3 = v1 + v2
+    println(v3.x)
+    println(v3.y)
+
+    // ---- 19. Drop ----
+    println("--- 19. Drop ---")
+    let outer = Resource { name: "outer" }
+    if true {
+        let inner = Resource { name: "inner" }
+        println(`using ${inner.name}`)
+    }
+    println(`using ${outer.name}`)
+
+    // ---- 20. Defer ----
+    println("--- 20. Defer ---")
+    with_defer()
+
+    // ---- 21. Model ----
+    println("--- 21. Model ---")
+    let id1 = Task.create({ title: "Write tests", done: false })
+    let id2 = Task.create({ title: "Review code", done: true })
+    let id3 = Task.create({ title: "Deploy", done: false })
+    println(`created ids: ${id1}, ${id2}, ${id3}`)
+
+    let task = Task.get(id1)
+    if task != null {
+        println(`task: ${task.title} done=${task.done}`)
+    }
+
+    let all = Task.list()
+    println(`total tasks: ${all.length}`)
+    println(`count: ${Task.count()}`)
+
+    Task.update(id1, { done: true })
+    let updated = Task.get(id1)
+    if updated != null {
+        println(`updated: ${updated.title} done=${updated.done}`)
+    }
+
+    Task.delete(id3)
+    println(`after delete: ${Task.count()}`)
+
+    // ---- 22. Service ----
+    println("--- 22. Service ---")
+    let item_id = ItemService.create({ name: "Widget", active: true })
+    println(`items: ${ItemService.count()}`)
+    let item_obj = ItemService.get(item_id)
+    if item_obj != null {
+        println(`item: ${item_obj.name}`)
+    }
+
+    // ---- 23. Queue ----
+    println("--- 23. Queue ---")
+    job_queue.send("job-1")
+    job_queue.send("job-2")
+    job_queue.send("job-3")
+    println(`depth: ${job_queue.depth()}`)
+
+    let msg1 = job_queue.receive()
+    println(`received: ${msg1}`)
+    println(`depth after: ${job_queue.depth()}`)
+
+    let msg2 = job_queue.receive()
+    let msg3 = job_queue.receive()
+    println(`received: ${msg2}`)
+    println(`received: ${msg3}`)
+    println(`depth final: ${job_queue.depth()}`)
+
+    job_queue.send("temp-1")
+    job_queue.send("temp-2")
+    job_queue.drain()
+    println(`after drain: ${job_queue.depth()}`)
+
+    // ---- 24. Worker ----
+    println("--- 24. Worker ---")
+    work_queue.send("task-a")
+    work_queue.send("task-b")
+    processor.start()
+    forge_sleep(100)
+    processor.stop()
+
+    // ---- 25. Cron ----
+    println("--- 25. Cron ---")
+    ticker.start()
+    forge_sleep(175)
+    ticker.stop()
+    println(`ticks: ${tick_count}`)
+
+    // ---- 26. Assert ----
+    println("--- 26. Assert ---")
+    assert 1 + 1 == 2, "basic math"
+    assert true, "true is true"
+    assert "hello".length == 5, "string length"
+    println("all assertions passed")
+
+    println("--- ALL TESTS PASSED ---")
+}

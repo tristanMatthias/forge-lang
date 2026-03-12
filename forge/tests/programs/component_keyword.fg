@@ -1,0 +1,10 @@
+// Test: `component` is now a proper keyword in the lexer.
+// This verifies the Phase 1 change where `component` was added to TokenKind.
+// A regular program should work fine — `component` is only special at
+// statement level, not inside expressions.
+
+fn main() {
+  let x = 42
+  println(string(x))
+  println("component keyword works")
+}

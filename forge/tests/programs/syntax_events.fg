@@ -1,0 +1,12 @@
+use @std.test.{greeter}
+
+greeter bot {
+    greeting "hi"
+    alice -> msg1
+    bob -> msg2
+}
+
+fn main() {
+    println(bot.greet("test"))
+    println(string(bot.is_loud()))
+}

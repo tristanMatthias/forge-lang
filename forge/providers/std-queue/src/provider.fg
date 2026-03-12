@@ -1,0 +1,56 @@
+extern fn forge_queue_create(name: string)
+extern fn forge_queue_send(name: string, payload: string)
+extern fn forge_queue_receive(name: string) -> ptr
+extern fn forge_queue_depth(name: string) -> int
+extern fn forge_queue_drain(name: string)
+extern fn forge_worker_create(name: string, queue_name: string)
+extern fn forge_worker_start(name: string, handler: ptr)
+extern fn forge_worker_stop(name: string)
+extern fn forge_sleep(ms: int)
+extern fn strlen(s: ptr) -> int
+
+component queue(__tpl_name, schema) {
+    config {
+        retries: int = 3
+        buffer_size: int = 1000
+    }
+
+    event message(msg: string)
+    event error(err: string)
+
+    on startup {
+        forge_queue_create(__tpl_name_str)
+    }
+
+    fn __tpl_name.send(data: string) {
+        forge_queue_send(__tpl_name_str, data)
+    }
+
+    fn __tpl_name.receive() -> string {
+        let __ptr: ptr = forge_queue_receive(__tpl_name_str)
+        let __len: int = strlen(__ptr)
+        forge_string_new(__ptr, __len)
+    }
+
+    fn __tpl_name.depth() -> int {
+        forge_queue_depth(__tpl_name_str)
+    }
+
+    fn __tpl_name.drain() {
+        forge_queue_drain(__tpl_name_str)
+    }
+}
+
+component worker(__tpl_name, schema) {
+    on startup {
+        forge_worker_create(__tpl_name_str, __tpl_model_ref_str)
+    }
+
+    fn __tpl_name.start() {
+        forge_worker_start(__tpl_name_str, __tpl_name_on_message)
+    }
+
+    fn __tpl_name.stop() {
+        forge_worker_stop(__tpl_name_str)
+    }
+}

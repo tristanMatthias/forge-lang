@@ -1,0 +1,47 @@
+// Cross-feature test: Drop + Scopes + Structs
+// Tests that destructors run correctly in nested scopes and with struct fields
+
+mut drop_log = ""
+
+type Resource = { name: string }
+
+impl Drop for Resource {
+  fn drop(self) {
+    drop_log = drop_log + `drop(${self.name}) `
+  }
+}
+
+fn make_resource(n: string) -> Resource {
+  Resource { name: n }
+}
+
+fn main() {
+  // Nested scope drops - inner before outer
+  {
+    let a = make_resource("outer")
+    {
+      let b = make_resource("inner")
+      println("inside inner")
+    }
+    println("inside outer")
+  }
+  println(drop_log)
+
+  // Multiple resources in same scope - reverse order
+  drop_log = ""
+  {
+    let x = Resource { name: "first" }
+    let y = Resource { name: "second" }
+    let z = Resource { name: "third" }
+    println("all alive")
+  }
+  println(drop_log)
+
+  // Drop with struct field access before scope ends
+  drop_log = ""
+  {
+    let r = Resource { name: "hello" }
+    println(r.name.upper())
+  }
+  println(drop_log)
+}

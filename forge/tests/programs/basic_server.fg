@@ -1,3 +1,4 @@
+use @std.model.{model}
 use @std.http.{server, route}
 
 server :3000 {

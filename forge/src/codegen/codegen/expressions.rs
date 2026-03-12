@@ -459,7 +459,9 @@ impl<'ctx> Codegen<'ctx> {
 
             // Handle enum constructors: EnumName.variant(args)
             // Handle regular function calls
-            if let Some(func) = self.functions.get(name).copied() {
+            if let Some(func) = self.functions.get(name).copied()
+                .or_else(|| self.module.get_function(name))
+            {
                 let compiled_args = self.compile_call_args(args, func)?;
                 let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
                 return result.try_as_basic_value().left();
@@ -553,6 +555,14 @@ impl<'ctx> Codegen<'ctx> {
         if val.is_int_value() && target_type.is_float_type() {
             return self.builder
                 .build_signed_int_to_float(val.into_int_value(), target_type.into_float_type(), "itof")
+                .unwrap()
+                .into();
+        }
+
+        // ForgeString struct → raw ptr (for extern fn calls expecting C strings)
+        if val.is_struct_value() && target_type.is_pointer_type() {
+            return self.builder
+                .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
                 .unwrap()
                 .into();
         }

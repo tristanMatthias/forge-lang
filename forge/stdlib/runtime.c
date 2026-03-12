@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <unistd.h>
 
 // ---- Reference counting ----
 
@@ -149,6 +150,12 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
 
+// ---- Sleep ----
+
+void forge_sleep(int64_t ms) {
+    usleep((useconds_t)(ms * 1000));
+}
+
 // ---- Exit ----
 
 void forge_exit(int64_t code) {
@@ -198,10 +205,12 @@ int64_t forge_json_array_count(const char* json) {
     return count;
 }
 
-// Find the i-th object in a JSON array, return pointer to its '{'
+// Find the i-th object in a JSON array (or a single top-level object), return pointer to its '{'
 static const char* json_find_object(const char* json, int64_t index) {
     if (!json) return NULL;
     const char* p = json_skip_ws(json);
+    // Support single top-level object (not wrapped in array)
+    if (*p == '{' && index == 0) return p;
     if (*p != '[') return NULL;
     p++;
 
@@ -589,4 +598,12 @@ int64_t forge_json_unwrap_first(const char* json_array, char* out_buf, int64_t o
     memcpy(out_buf, start, obj_len);
     out_buf[obj_len] = '\0';
     return obj_len;
+}
+
+// Check if a JSON string represents null (or is empty/missing)
+int8_t forge_json_is_null(const char* json) {
+    if (!json) return 1;
+    const char* p = json;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    return (*p == 'n' || *p == '\0') ? 1 : 0;
 }

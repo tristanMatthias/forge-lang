@@ -143,24 +143,10 @@ pub enum Statement {
         return_type: Option<TypeExpr>,
         span: Span,
     },
-    // Provider system (Phase 3)
-    ModelDecl {
-        name: String,
-        fields: Vec<ModelField>,
-        span: Span,
-    },
-    ServiceDecl {
-        name: String,
-        for_model: String,
-        hooks: Vec<ServiceHook>,
-        methods: Vec<Statement>,
-        span: Span,
-    },
-    ServerBlock {
-        port: i64,
-        children: Vec<ServerChild>,
-        span: Span,
-    },
+    // Generic component block (provider architecture)
+    ComponentBlock(ComponentBlockDecl),
+    // Component template definition from provider.fg
+    ComponentTemplateDef(ComponentTemplateDef),
 }
 
 #[derive(Debug, Clone)]
@@ -174,15 +160,6 @@ pub struct Param {
 #[derive(Debug, Clone)]
 pub struct Block {
     pub statements: Vec<Statement>,
-    pub span: Span,
-}
-
-// Provider system types
-#[derive(Debug, Clone)]
-pub struct ModelField {
-    pub name: String,
-    pub type_ann: TypeExpr,
-    pub annotations: Vec<Annotation>,
     pub span: Span,
 }
 
@@ -208,17 +185,96 @@ pub enum HookTiming {
     After,
 }
 
+// Generic component block types (provider architecture)
 #[derive(Debug, Clone)]
-pub enum ServerChild {
-    Route {
-        method: String,
-        path: String,
-        handler: Expr,
-        span: Span,
+pub struct ComponentConfig {
+    pub key: String,
+    pub value: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentSchemaField {
+    pub name: String,
+    pub type_ann: TypeExpr,
+    pub annotations: Vec<Annotation>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentBlockBody {
+    pub config: Vec<ComponentConfig>,
+    pub schema: Vec<ComponentSchemaField>,
+    pub blocks: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComponentArg {
+    Named(String, Expr, Span),
+    Ident(String, Span),
+    ForRef(String, Span),
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentBlockDecl {
+    pub component: String,
+    pub args: Vec<ComponentArg>,
+    pub body: ComponentBlockBody,
+    pub span: Span,
+}
+
+/// Syntax function definition from `@syntax("pattern") fn ...` in component templates
+#[derive(Debug, Clone)]
+pub struct SyntaxFnDef {
+    pub pattern: String,
+    pub fn_name: String,
+    pub params: Vec<Param>,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// Config schema entry in a component template definition
+/// e.g., `cors: bool = false`
+#[derive(Debug, Clone)]
+pub struct ConfigSchemaEntry {
+    pub key: String,
+    pub type_ann: TypeExpr,
+    pub default: Option<Expr>,
+    pub span: Span,
+}
+
+/// Component template definition from provider.fg
+/// e.g., `component model(__tpl_name, schema) { ... }`
+#[derive(Debug, Clone)]
+pub struct ComponentTemplateDef {
+    pub component_name: String,
+    pub has_schema: bool,
+    pub has_model_ref: bool,
+    pub config_schema: Vec<ConfigSchemaEntry>,
+    pub syntax_fns: Vec<SyntaxFnDef>,
+    pub body: Vec<ComponentTemplateItem>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComponentTemplateItem {
+    /// `type __tpl_name = __tpl_schema` — generate TypeDecl from user's schema
+    TypeFromSchema,
+    /// `on startup { ... }` — lifecycle statements (contain __tpl_* placeholders)
+    OnStartup(Vec<Statement>),
+    /// `on main_end { ... }` — lifecycle statements
+    OnMainEnd(Vec<Statement>),
+    /// Function template: `fn __tpl_name.method(...) { ... }`
+    FnTemplate {
+        method_name: String,
+        decl: Statement,
     },
-    Mount {
-        service: String,
-        path: String,
+    /// Extern fn needed by the template
+    ExternFn(Statement),
+    /// Event declaration: `event name(params)` — declares a hookable slot
+    EventDecl {
+        name: String,
+        params: Vec<Param>,
         span: Span,
     },
 }

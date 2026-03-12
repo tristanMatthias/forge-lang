@@ -38,6 +38,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let function = self.module.add_function(name, fn_type, None);
         self.functions.insert(name.to_string(), function);
+        self.fn_return_types.insert(name.to_string(), ret_ty);
     }
 
     pub(crate) fn compile_statement(&mut self, stmt: &Statement) {
@@ -57,12 +58,34 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_fn(name, params, return_type.as_ref(), body);
             }
             Statement::Let { name, value, type_ann, .. } => {
+                // Set json_parse_hint from type annotation (for json.parse target type)
+                if let Some(ta) = type_ann {
+                    self.json_parse_hint = Some(self.type_checker.resolve_type_expr(ta));
+                }
                 let val = self.compile_expr(value);
+                self.json_parse_hint = None;
                 if let Some(val) = val {
                     let ty = type_ann
                         .as_ref()
                         .map(|t| self.type_checker.resolve_type_expr(t))
                         .unwrap_or_else(|| self.infer_type(value));
+                    // If the inferred type doesn't match the actual value (e.g. extern fn
+                    // returning ForgeString struct but type inferred as Unknown/Int), derive
+                    // the type from the actual LLVM value type.
+                    let ty = if ty == Type::Unknown || ty == Type::Int {
+                        if val.is_struct_value() {
+                            let string_type = self.string_type();
+                            if val.into_struct_value().get_type() == string_type {
+                                Type::String
+                            } else {
+                                ty
+                            }
+                        } else {
+                            ty
+                        }
+                    } else {
+                        ty
+                    };
                     let alloca = self.create_entry_block_alloca(&ty, name);
                     self.builder.build_store(alloca, val).unwrap();
                     self.define_var(name.clone(), alloca, ty);
@@ -180,10 +203,9 @@ impl<'ctx> Codegen<'ctx> {
             Statement::ExternFn { name, params, return_type, .. } => {
                 self.compile_extern_fn(name, params, return_type.as_ref());
             }
-            Statement::ModelDecl { .. }
-            | Statement::ServiceDecl { .. }
-            | Statement::ServerBlock { .. } => {
-                // Provider blocks compiled in compile_provider_statements
+            Statement::ComponentBlock(_)
+            | Statement::ComponentTemplateDef(_) => {
+                // Component blocks already expanded before codegen
             }
         }
     }
@@ -204,11 +226,6 @@ impl<'ctx> Codegen<'ctx> {
 
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
-
-        // Inject provider init code at the start of main()
-        if name == "main" {
-            self.emit_provider_init();
-        }
 
         self.push_scope();
 
@@ -261,11 +278,6 @@ impl<'ctx> Codegen<'ctx> {
         // Implicit return
         let current_block = self.builder.get_insert_block().unwrap();
         if current_block.get_terminator().is_none() {
-            // Inject server start code at the end of main() (before return)
-            if name == "main" {
-                self.emit_server_start();
-            }
-
             if name == "main" {
                 // main returns i32 0
                 self.builder
@@ -274,7 +286,18 @@ impl<'ctx> Codegen<'ctx> {
             } else if ret_ty == Type::Void {
                 self.builder.build_return(None).unwrap();
             } else if let Some(val) = last_val {
-                self.builder.build_return(Some(&val)).unwrap();
+                let expected_llvm = self.type_to_llvm_basic(&ret_ty);
+                if val.get_type() != expected_llvm {
+                    if let Type::Nullable(_) = &ret_ty {
+                        let wrapped = self.wrap_in_nullable(val, &ret_ty);
+                        self.builder.build_return(Some(&wrapped)).unwrap();
+                    } else {
+                        let coerced = self.coerce_value(val, expected_llvm);
+                        self.builder.build_return(Some(&coerced)).unwrap();
+                    }
+                } else {
+                    self.builder.build_return(Some(&val)).unwrap();
+                }
             } else {
                 // Return default value
                 let default = self.default_value(&ret_ty);

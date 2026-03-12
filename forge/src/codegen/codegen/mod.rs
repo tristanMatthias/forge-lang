@@ -24,11 +24,11 @@ mod control_flow;
 mod errors;
 mod expressions;
 mod extern_ffi;
+mod json;
 mod linker;
 mod literals;
 mod nullability;
 mod pattern_match;
-mod providers;
 mod runtime;
 mod scope;
 mod statements;
@@ -36,29 +36,13 @@ mod strings;
 mod traits;
 mod types;
 
-/// Information about a model declaration for codegen
+/// Information about a service declaration (used by component_expand for mount resolution)
 #[derive(Debug, Clone)]
-pub(super) struct ModelInfo {
-    pub(super) name: String,
-    pub(super) fields: Vec<ModelField>,
-    pub(super) create_fields: Vec<ModelField>,
-    pub(super) sql_types: Vec<(String, String)>,
-}
-
-/// Information about a service declaration for codegen
-#[derive(Debug, Clone)]
-pub(super) struct ServiceInfo {
-    pub(super) name: String,
-    pub(super) for_model: String,
-    pub(super) hooks: Vec<ServiceHook>,
-    pub(super) methods: Vec<Statement>,
-}
-
-/// Information about a server block for codegen
-#[derive(Debug, Clone)]
-pub(super) struct ServerInfo {
-    pub(super) port: i64,
-    pub(super) children: Vec<ServerChild>,
+pub struct ServiceInfo {
+    pub name: String,
+    pub for_model: String,
+    pub hooks: Vec<ServiceHook>,
+    pub methods: Vec<Statement>,
 }
 
 /// Information about a trait declaration
@@ -110,11 +94,9 @@ pub struct Codegen<'ctx> {
     pub(super) named_types: HashMap<String, Type>,
     pub(super) global_mutables: HashMap<String, Type>,
     pub(super) scope_vars: Vec<Vec<(String, Type)>>,
-    pub(super) models: HashMap<String, ModelInfo>,
-    pub(super) services: HashMap<String, ServiceInfo>,
-    pub(super) servers: Vec<ServerInfo>,
-    pub uses_model: bool,
-    pub uses_http: bool,
+    pub static_methods: HashMap<(String, String), String>,
+    pub fn_return_types: HashMap<String, Type>,
+    pub(super) json_parse_hint: Option<Type>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -139,11 +121,9 @@ impl<'ctx> Codegen<'ctx> {
             named_types: HashMap::new(),
             global_mutables: HashMap::new(),
             scope_vars: Vec::new(),
-            models: HashMap::new(),
-            services: HashMap::new(),
-            servers: Vec::new(),
-            uses_model: false,
-            uses_http: false,
+            static_methods: HashMap::new(),
+            fn_return_types: HashMap::new(),
+            json_parse_hint: None,
         }
     }
 
@@ -207,30 +187,6 @@ impl<'ctx> Codegen<'ctx> {
                     global.set_initializer(&llvm_ty.const_zero());
                     self.global_mutables.insert(name.clone(), ty);
                 }
-                Statement::Use { path, .. } => {
-                    if path.len() >= 2 && path[0] == "@std" {
-                        if path[1] == "model" { self.uses_model = true; }
-                        if path[1] == "http" { self.uses_http = true; }
-                    }
-                }
-                Statement::ModelDecl { name, fields, .. } => {
-                    self.register_model(name, fields);
-                }
-                Statement::ServiceDecl { name, for_model, hooks, methods, .. } => {
-                    self.services.insert(name.clone(), ServiceInfo {
-                        name: name.clone(),
-                        for_model: for_model.clone(),
-                        hooks: hooks.clone(),
-                        methods: methods.clone(),
-                    });
-                }
-                Statement::ServerBlock { port, children, .. } => {
-                    self.uses_http = true;
-                    self.servers.push(ServerInfo {
-                        port: *port,
-                        children: children.clone(),
-                    });
-                }
                 Statement::ExternFn { name, params, return_type, .. } => {
                     self.compile_extern_fn(name, params, return_type.as_ref());
                 }
@@ -239,7 +195,9 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         self.compile_all_impl_methods();
-        self.compile_provider_declarations();
+
+        // Declare helper functions (snprintf, route helpers, etc.)
+        self.declare_provider_functions();
 
         for stmt in &program.statements {
             if let Statement::FnDecl { name, type_params, params, return_type, .. } = stmt {
@@ -253,16 +211,24 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_statement(stmt);
         }
 
-        if self.module.get_function("main").is_none() && !self.servers.is_empty() {
-            let i32_type = self.context.i32_type();
-            let fn_type = i32_type.fn_type(&[], false);
-            let function = self.module.add_function("main", fn_type, None);
-            self.functions.insert("main".to_string(), function);
-            let entry = self.context.append_basic_block(function, "entry");
-            self.builder.position_at_end(entry);
-            self.emit_provider_init();
-            self.emit_server_start();
-            self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+        if self.module.get_function("main").is_none() {
+            let has_startup = self.module.get_function("__forge_startup").is_some();
+            let has_main_end = self.module.get_function("__forge_main_end").is_some();
+            if has_startup || has_main_end {
+                let i32_type = self.context.i32_type();
+                let fn_type = i32_type.fn_type(&[], false);
+                let function = self.module.add_function("main", fn_type, None);
+                self.functions.insert("main".to_string(), function);
+                let entry = self.context.append_basic_block(function, "entry");
+                self.builder.position_at_end(entry);
+                if let Some(startup_fn) = self.module.get_function("__forge_startup") {
+                    self.builder.build_call(startup_fn, &[], "").unwrap();
+                }
+                if let Some(main_end_fn) = self.module.get_function("__forge_main_end") {
+                    self.builder.build_call(main_end_fn, &[], "").unwrap();
+                }
+                self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+            }
         }
     }
 

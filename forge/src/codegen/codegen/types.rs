@@ -35,7 +35,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Returns the number of i64 slots needed to store a value of the given type.
     pub(crate) fn type_i64_slots(&self, ty: &Type) -> usize {
         match ty {
-            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Unknown | Type::Error => 1,
+            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error => 1,
             Type::String => 2, // {ptr, i64} = 16 bytes
             Type::Nullable(inner) => 1 + self.type_i64_slots(inner), // {i8, inner}
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
@@ -64,6 +64,7 @@ impl<'ctx> Codegen<'ctx> {
             Type::Bool => self.context.i8_type().into(),
             Type::String => self.string_type().into(),
             Type::Void => self.context.i8_type().into(), // represent void as i8 when needed
+            Type::Ptr => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Nullable(inner) => {
                 let inner_ty = self.type_to_llvm_basic(inner);
                 self.context
@@ -271,20 +272,29 @@ impl<'ctx> Codegen<'ctx> {
                                 } else {
                                     Type::Unknown
                                 }
+                            } else if let Some(ret_ty) = self.fn_return_types.get(name) {
+                                ret_ty.clone()
                             } else {
                                 Type::Unknown
                             }
                         }
                     }
                 } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
-                    // Check model/service static methods first
+                    // json.stringify/parse intrinsics
                     if let Expr::Ident(name, _) = object.as_ref() {
-                        if let Some(model_info) = self.models.get(name.as_str()).cloned() {
-                            return self.infer_model_method_type(&model_info, field);
+                        if name == "json" {
+                            match field.as_str() {
+                                "stringify" => return Type::String,
+                                _ => {}
+                            }
                         }
-                        if let Some(svc_info) = self.services.get(name.as_str()).cloned() {
-                            if let Some(model_info) = self.models.get(&svc_info.for_model).cloned() {
-                                return self.infer_model_method_type(&model_info, field);
+                    }
+                    // Check static_methods registry (for expanded component functions)
+                    if let Expr::Ident(name, _) = object.as_ref() {
+                        let key = (name.clone(), field.clone());
+                        if let Some(fn_name) = self.static_methods.get(&key) {
+                            if let Some(ret_ty) = self.fn_return_types.get(fn_name) {
+                                return ret_ty.clone();
                             }
                         }
                     }

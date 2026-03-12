@@ -1,0 +1,2 @@
+42
+component keyword works

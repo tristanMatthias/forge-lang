@@ -7,20 +7,93 @@ impl<'ctx> Codegen<'ctx> {
         method: &str,
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
+        // Handle json.parse() and json.stringify() intrinsics
+        if let Expr::Ident(name, _) = object {
+            if name == "json" {
+                match method {
+                    "parse" => {
+                        let target = self.json_parse_hint.take()
+                            .or_else(|| self.current_fn_return_type.as_ref().and_then(|t| match t {
+                                Type::Nullable(inner) => Some(inner.as_ref().clone()),
+                                Type::List(inner) => Some(Type::List(inner.clone())),
+                                other => Some(other.clone()),
+                            }));
+                        return self.compile_json_parse_call(args, target.as_ref());
+                    },
+                    "stringify" => return self.compile_json_stringify_call(args),
+                    _ => {}
+                }
+            }
+        }
+
+        // Handle static method calls via the static_methods registry
+        if let Expr::Ident(name, _) = object {
+            let key = (name.clone(), method.to_string());
+            if let Some(fn_name) = self.static_methods.get(&key).cloned() {
+                if let Some(func) = self.module.get_function(&fn_name) {
+                    let param_count = func.count_params() as usize;
+                    let string_type = self.string_type();
+                    let mut compiled_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+                    for (i, arg) in args.iter().enumerate() {
+                        if let Some(val) = self.compile_expr(&arg.value) {
+                            // Auto-stringify: if function expects ForgeString but arg is a different struct,
+                            // serialize the struct to JSON via json.stringify
+                            if i < param_count {
+                                let param_type = func.get_nth_param(i as u32).unwrap().get_type();
+                                if val.is_struct_value()
+                                    && param_type.is_struct_type()
+                                    && param_type.into_struct_type() == string_type
+                                    && val.into_struct_value().get_type() != string_type
+                                {
+                                    let arg_type = self.infer_type(&arg.value);
+                                    if let Type::Struct { fields, .. } = &arg_type {
+                                        if let Some(json_str) =
+                                            self.compile_json_stringify_struct(val, fields)
+                                        {
+                                            compiled_args.push(json_str.into());
+                                            continue;
+                                        }
+                                    }
+                                }
+                                let val = self.coerce_value(val, param_type);
+                                compiled_args.push(val.into());
+                            } else {
+                                compiled_args.push(val.into());
+                            }
+                        }
+                    }
+                    let result = self
+                        .builder
+                        .build_call(func, &compiled_args, "static_call")
+                        .unwrap();
+                    let raw = result.try_as_basic_value().left();
+                    // If the extern fn returns ptr, wrap it as a ForgeString
+                    if let Some(val) = raw {
+                        if val.is_pointer_value() {
+                            let ptr_val = val.into_pointer_value();
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+                                let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+                                self.module.add_function("strlen", ft, None)
+                            });
+                            let len = self.builder.build_call(strlen_fn, &[ptr_val.into()], "slen")
+                                .unwrap().try_as_basic_value().left().unwrap();
+                            let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+                            let forge_str = self.builder.build_call(
+                                str_new_fn, &[ptr_val.into(), len.into()], "fstr",
+                            ).unwrap().try_as_basic_value().left();
+                            return forge_str;
+                        }
+                    }
+                    return raw;
+                }
+            }
+        }
+
         // Handle EnumName.variant(args) constructor BEFORE compiling object
         if let Expr::Ident(name, _) = object {
             if let Some(Type::Enum { variants, .. }) = self.type_checker.env.enum_types.get(name).cloned() {
                 return self.compile_enum_constructor(name, method, args, &variants);
-            }
-        }
-
-        // Handle Model.method() and Service.method() calls
-        if let Expr::Ident(name, _) = object {
-            if self.models.contains_key(name.as_str()) {
-                return self.compile_model_method_call(name, method, args);
-            }
-            if self.services.contains_key(name.as_str()) {
-                return self.compile_service_method_call(name, method, args);
             }
         }
 
@@ -37,12 +110,23 @@ impl<'ctx> Codegen<'ctx> {
                                 if let Expr::StringLit(key, _) = &arg.value {
                                     let key_str = self.builder.build_global_string_ptr(key, "param_key").unwrap();
                                     let params_get_fn = self.module.get_function("forge_params_get").unwrap();
-                                    let result = self.builder.build_call(
+                                    let raw_ptr = self.builder.build_call(
                                         params_get_fn,
                                         &[params_json.into(), key_str.as_pointer_value().into()],
                                         "param_val",
+                                    ).unwrap().try_as_basic_value().left().unwrap().into_pointer_value();
+                                    // Convert raw C string ptr to ForgeString
+                                    let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+                                        let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+                                        self.module.add_function("strlen", ft, None)
+                                    });
+                                    let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
+                                        .unwrap().try_as_basic_value().left().unwrap().into_int_value();
+                                    let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+                                    let forge_str = self.builder.build_call(
+                                        str_new_fn, &[raw_ptr.into(), len.into()], "fstr",
                                     ).unwrap();
-                                    return result.try_as_basic_value().left();
+                                    return forge_str.try_as_basic_value().left();
                                 }
                             }
                         }

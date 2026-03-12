@@ -1,7 +1,114 @@
 extern fn forge_model_init(path: string)
 extern fn forge_model_exec(sql: string) -> i32
+extern fn forge_model_free_string(ptr: string)
+
 extern fn forge_model_insert(sql: string, params: string, count: int) -> int
 extern fn forge_model_update(sql: string, params: string, count: int) -> int
 extern fn forge_model_query(sql: string, params: string, count: int) -> string
 extern fn forge_model_count(sql: string) -> int
-extern fn forge_model_free_string(ptr: string)
+
+extern fn forge_model_insert_json(table: string, data_json: string) -> string
+extern fn forge_model_get_by_id(table: string, id: int) -> string
+extern fn forge_model_update_json(table: string, id: int, changes_json: string) -> string
+extern fn forge_model_list_json(table: string, filter_json: string) -> string
+extern fn forge_model_delete_json(table: string, id: int) -> int
+extern fn forge_model_count_json(table: string, filter_json: string) -> int
+
+extern fn forge_model_create_table(table: string, schema_json: string) -> i32
+extern fn forge_json_is_null(ptr: string) -> i8
+
+component model(__tpl_name, schema) {
+    config {
+        table_name: string = __tpl_name_str
+    }
+
+    event before_create(record)
+    event after_create(record)
+    event before_update(record, changes)
+    event after_update(record)
+    event before_delete(id: int)
+    event after_delete(id: int)
+
+    type __tpl_name = __tpl_schema
+
+    on startup {
+        forge_model_init(":memory:")
+        forge_model_create_table(__tpl_name_str, __tpl_schema_json)
+    }
+
+    fn __tpl_name.create(data_json: string) -> int {
+        let __result: ptr = forge_model_insert_json(__tpl_name_str, data_json)
+        let __id = forge_json_get_int(__result, 0, "id")
+        forge_model_free_string(__result)
+        __id
+    }
+
+    fn __tpl_name.get(id: int) -> __tpl_name? {
+        let __result: ptr = forge_model_get_by_id(__tpl_name_str, id)
+        if forge_json_is_null(__result) == 0 {
+            let __obj: __tpl_name = json.parse(__result)
+            forge_model_free_string(__result)
+            __obj
+        } else {
+            forge_model_free_string(__result)
+            null
+        }
+    }
+
+    fn __tpl_name.get_internal(id: int) -> __tpl_name {
+        let __result: ptr = forge_model_get_by_id(__tpl_name_str, id)
+        let __obj: __tpl_name = json.parse(__result)
+        forge_model_free_string(__result)
+        __obj
+    }
+
+    fn __tpl_name.list() -> List<__tpl_name> {
+        let __result: ptr = forge_model_list_json(__tpl_name_str, "{}")
+        let __list: List<__tpl_name> = json.parse(__result)
+        forge_model_free_string(__result)
+        __list
+    }
+
+    fn __tpl_name.count() -> int {
+        forge_model_count_json(__tpl_name_str, "{}")
+    }
+
+    fn __tpl_name.update(id: int, changes_json: string) -> int {
+        let __result: ptr = forge_model_update_json(__tpl_name_str, id, changes_json)
+        forge_model_free_string(__result)
+        id
+    }
+
+    fn __tpl_name.delete(id: int) -> int {
+        forge_model_delete_json(__tpl_name_str, id)
+    }
+
+    extern fn forge_json_get_int(json: string, index: int, field: string) -> int
+    extern fn forge_json_array_count(json: string) -> int
+}
+
+component service(__tpl_name, for __tpl_model_ref, schema) {
+    fn __tpl_name.create(data_json: string) -> int {
+        __tpl_model_ref_create(data_json)
+    }
+
+    fn __tpl_name.get(id: int) -> __tpl_model_ref? {
+        __tpl_model_ref_get(id)
+    }
+
+    fn __tpl_name.list() -> List<__tpl_model_ref> {
+        __tpl_model_ref_list()
+    }
+
+    fn __tpl_name.count() -> int {
+        __tpl_model_ref_count()
+    }
+
+    fn __tpl_name.update(id: int, changes_json: string) -> int {
+        __tpl_model_ref_update(id, changes_json)
+    }
+
+    fn __tpl_name.delete(id: int) -> int {
+        __tpl_model_ref_delete(id)
+    }
+}

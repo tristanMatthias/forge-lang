@@ -1,0 +1,12 @@
+use @std.cron.{schedule}
+
+schedule heartbeat {
+  every 100
+  run { println("beat") }
+}
+
+fn main() {
+  heartbeat.start()
+  forge_sleep(350)
+  heartbeat.stop()
+}

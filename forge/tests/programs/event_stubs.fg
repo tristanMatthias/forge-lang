@@ -1,0 +1,17 @@
+use @std.model.{model}
+
+// Test: model with event declarations but NO user-defined hooks.
+// The event declarations (before_create, after_create, etc.) should
+// generate no-op stub functions so the template compiles without errors.
+
+model Item {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  let id = Item.create({ name: "Widget" })
+  let item = Item.get(id)
+  println(item?.name ?? "not found")
+  println(string(Item.count()))
+}

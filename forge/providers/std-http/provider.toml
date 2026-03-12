@@ -5,3 +5,8 @@ version = "0.1.0"
 
 [native]
 library = "forge_http"
+
+[components.server]
+kind = "block"
+context = "top_level"
+syntax = "server :<port> { <routes> }"

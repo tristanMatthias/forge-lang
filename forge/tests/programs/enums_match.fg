@@ -1,0 +1,47 @@
+// Cross-feature test: Enums + Match + Structs + Control flow
+// Tests enum variants with match in functions and control flow
+
+enum Animal {
+  cat(name: string)
+  dog(name: string, tricks: int)
+}
+
+fn describe(a: Animal) -> string {
+  match a {
+    .cat(n) -> `cat named ${n}`
+    .dog(n, t) -> `dog named ${n} with ${t} tricks`
+  }
+}
+
+fn is_talented(a: Animal) -> bool {
+  match a {
+    .cat(n) -> false
+    .dog(n, t) -> t > 3
+  }
+}
+
+fn main() {
+  let c1 = Animal.cat(name: "whiskers")
+  let d1 = Animal.dog(name: "rex", tricks: 5)
+  let d2 = Animal.dog(name: "spot", tricks: 2)
+  let c2 = Animal.cat(name: "felix")
+
+  println(describe(c1))
+  println(describe(d1))
+  println(describe(d2))
+  println(describe(c2))
+
+  if is_talented(d1) {
+    println("rex is talented")
+  }
+  if is_talented(d2) {
+    println("spot is talented")
+  } else {
+    println("spot needs training")
+  }
+  if is_talented(c1) {
+    println("cats are talented")
+  } else {
+    println("cats dont do tricks")
+  }
+}

@@ -1,0 +1,24 @@
+extern fn forge_cron_create(name: string)
+extern fn forge_cron_set_interval(name: string, ms: int)
+extern fn forge_cron_start_with_handler(name: string, handler: ptr)
+extern fn forge_cron_stop(name: string)
+extern fn forge_sleep(ms: int)
+
+component schedule(__tpl_name, schema) {
+    config {
+        every: int = 1000
+    }
+
+    on startup {
+        forge_cron_create(__tpl_name_str)
+        forge_cron_set_interval(__tpl_name_str, __tpl_config_every)
+    }
+
+    fn __tpl_name.start() {
+        forge_cron_start_with_handler(__tpl_name_str, __tpl_name___run)
+    }
+
+    fn __tpl_name.stop() {
+        forge_cron_stop(__tpl_name_str)
+    }
+}

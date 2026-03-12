@@ -1,0 +1,164 @@
+--- 1. Primitives ---
+42
+3.14
+true
+hello
+--- 2. Arithmetic ---
+13
+7
+30
+3
+1
+-5
+4
+3.33333
+--- 3. Comparison ---
+true
+true
+true
+true
+true
+true
+false
+false
+--- 4. Logical ---
+true
+false
+true
+false
+false
+true
+--- 5. Strings ---
+5
+FORGE
+forge
+true
+false
+hello forge!
+42 is hello
+42
+3.14
+true
+--- 6. Variables ---
+10
+20
+25
+100
+--- 7. Functions ---
+7
+hello, world!
+120
+--- 8. Control Flow ---
+big
+B
+10
+15
+128
+5
+--- 9. Structs ---
+3
+4
+10
+4
+test
+42
+--- 10. Enums ---
+red
+green
+rgb(255,128,0)
+circle r=5
+rect 3x4
+point
+--- 11. Lists ---
+5
+10
+50
+5
+2
+4
+6
+60
+15
+true
+true
+false
+0:a
+1:b
+2:c
+hello, world
+24
+3
+--- 12. Maps ---
+true
+false
+87
+0
+3
+--- 13. Pipes ---
+11
+120
+--- 14. Destructuring ---
+2
+1
+5
+15
+10
+20
+3
+--- 15. Nullability ---
+alice
+unknown
+ALICE
+user2 is null
+--- 16. Errors ---
+5
+caught: division by zero
+-1
+--- 17. Generics ---
+100
+-1
+age
+30
+3
+7
+--- 18. Traits ---
+circle r=5
+CIRCLE R=5
+square s=3
+circle r=5
+square s=3
+4
+6
+--- 19. Drop ---
+using inner
+using outer
+--- 20. Defer ---
+before defer runs
+--- 21. Model ---
+created ids: 1, 2, 3
+task: Write tests done=false
+total tasks: 3
+count: 3
+updated: Write tests done=true
+after delete: 2
+--- 22. Service ---
+creating: Widget
+created id: 1
+items: 1
+item: Widget
+--- 23. Queue ---
+depth: 3
+received: job-1
+depth after: 2
+received: job-2
+received: job-3
+depth final: 0
+after drain: 0
+--- 24. Worker ---
+processed: task-a
+processed: task-b
+--- 25. Cron ---
+ticks: 3
+--- 26. Assert ---
+all assertions passed
+--- ALL TESTS PASSED ---

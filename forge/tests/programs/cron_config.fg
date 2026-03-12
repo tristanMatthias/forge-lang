@@ -1,0 +1,13 @@
+use @std.cron.{schedule}
+
+schedule cleanup {
+  every 100
+  run { println("cleaning") }
+}
+
+fn main() {
+  cleanup.start()
+  forge_sleep(350)
+  cleanup.stop()
+  println("done")
+}

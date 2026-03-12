@@ -1,0 +1,4 @@
+mybot
+greeting_msg
+hello
+true

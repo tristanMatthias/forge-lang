@@ -1,0 +1,45 @@
+// Cross-feature test: Generics + Error Handling
+// Tests generic functions that return Result types
+
+fn safe_first<T>(list: List<T>) -> Result<T, string> {
+  if list.length > 0 {
+    Ok(list[0])
+  } else {
+    Err("empty list")
+  }
+}
+
+fn safe_divide(a: float, b: float) -> Result<float, string> {
+  if b == 0.0 {
+    Err("division by zero")
+  } else {
+    Ok(a / b)
+  }
+}
+
+fn compute() -> Result<float, string> {
+  let nums = [10.0, 20.0, 30.0]
+  let first = safe_first(nums)?
+  let result = safe_divide(first, 2.0)?
+  Ok(result)
+}
+
+fn compute_empty() -> Result<float, string> {
+  let empty: List<float> = []
+  let first = safe_first(empty)?
+  Ok(first)
+}
+
+fn main() {
+  let r1 = compute() catch (e) {
+    println(`error: ${e}`)
+    0.0
+  }
+  println(string(r1))
+
+  let r2 = compute_empty() catch (e) {
+    println(`error: ${e}`)
+    0.0
+  }
+  println(string(r2))
+}

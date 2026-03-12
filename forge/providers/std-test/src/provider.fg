@@ -1,0 +1,25 @@
+component greeter(__tpl_name, schema) {
+    config {
+        greeting: string = "hello"
+        loud: bool = false
+    }
+
+    event on_greet(name: string)
+
+    @syntax("{target} -> {message}")
+    fn say(target: string, message: string) {
+        println(message)
+    }
+
+    fn __tpl_name.greet(name: string) -> string {
+        __tpl_config_greeting
+    }
+
+    fn __tpl_name.is_loud() -> bool {
+        __tpl_config_loud
+    }
+
+    on startup {
+        println(__tpl_name_str)
+    }
+}

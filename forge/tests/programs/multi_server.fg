@@ -1,0 +1,10 @@
+use @std.model.{model}
+use @std.http.{server, route}
+
+server :9200 {
+  route GET /api -> { service: "api" }
+}
+
+server :9201 {
+  route GET /admin -> { service: "admin" }
+}

@@ -1,0 +1,8 @@
+[provider]
+name = "test"
+namespace = "std"
+version = "0.1.0"
+
+[components.greeter]
+kind = "block"
+context = "top_level"

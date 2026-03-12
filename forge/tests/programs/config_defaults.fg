@@ -1,0 +1,18 @@
+use @std.cron.{schedule}
+
+// Test: schedule component uses config default for `every` (1000ms)
+// when the user doesn't specify it. The config schema in std-cron defines:
+//   config { every: int = 1000 }
+// Here we omit `every`, so the default 1000ms should apply.
+// We sleep 2500ms and expect ~2 ticks.
+
+schedule ticker {
+  run { println("tick") }
+}
+
+fn main() {
+  ticker.start()
+  forge_sleep(2500)
+  ticker.stop()
+  println("done")
+}

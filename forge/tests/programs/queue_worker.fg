@@ -1,0 +1,18 @@
+use @std.queue.{queue, worker}
+
+queue task_queue {}
+
+worker task_processor for task_queue {
+  on message(msg) {
+    println(`processing: ${msg}`)
+  }
+}
+
+fn main() {
+  task_queue.send("hello world")
+  task_queue.send("goodbye")
+  task_processor.start()
+  forge_sleep(100)
+  task_processor.stop()
+  println(`remaining: ${string(task_queue.depth())}`)
+}

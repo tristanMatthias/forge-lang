@@ -1,0 +1,7 @@
+inside inner
+inside outer
+drop(inner) drop(outer) 
+all alive
+drop(third) drop(second) drop(first) 
+HELLO
+drop(hello) 

@@ -1,0 +1,14 @@
+use @std.queue.{queue, worker}
+
+queue work_items { max_retries 3 }
+
+worker processor for work_items {
+  on message(msg) { println(`got: ${msg}`) }
+}
+
+fn main() {
+  for i in 0..5 { work_items.send(`item-${string(i)}`) }
+  processor.start()
+  forge_sleep(200)
+  processor.stop()
+}

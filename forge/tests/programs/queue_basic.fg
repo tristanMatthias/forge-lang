@@ -1,0 +1,24 @@
+use @std.queue.{queue}
+
+queue tasks {}
+
+fn main() {
+    tasks.send("hello")
+    tasks.send("world")
+    tasks.send("!")
+
+    println(string(tasks.depth()))
+
+    let msg1 = tasks.receive()
+    println(msg1)
+
+    println(string(tasks.depth()))
+
+    let msg2 = tasks.receive()
+    println(msg2)
+
+    let msg3 = tasks.receive()
+    println(msg3)
+
+    println(string(tasks.depth()))
+}

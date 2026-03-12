@@ -1,0 +1,16 @@
+use @std.queue.{queue}
+
+queue mailbox {}
+
+fn main() {
+  assert mailbox.depth() == 0, "empty queue"
+  mailbox.send("a")
+  mailbox.send("b")
+  mailbox.send("c")
+  assert mailbox.depth() == 3, "three items"
+  let first = mailbox.receive()
+  assert first == "a", "FIFO order"
+  mailbox.drain()
+  assert mailbox.depth() == 0, "drained"
+  println("all queue tests passed")
+}

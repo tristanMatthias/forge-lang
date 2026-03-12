@@ -1,2 +1,5 @@
-extern fn forge_http_add_route(method: string, path: string, handler: string)
+extern fn forge_http_add_route(port: i16, method: string, path: string, handler: ptr)
 extern fn forge_http_serve(port: i16)
+extern fn forge_http_mount_crud(port: i16, table: string, path: string)
+extern fn forge_http_write_response(buf: ptr, buf_len: int, json: string)
+extern fn forge_params_get(params_json: ptr, key: string) -> string

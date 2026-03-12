@@ -1,0 +1,12 @@
+use @std.test.{greeter}
+
+greeter mybot {
+    loud true
+    world -> greeting_msg
+}
+
+fn main() {
+    let g = mybot.greet("test")
+    println(g)
+    println(string(mybot.is_loud()))
+}

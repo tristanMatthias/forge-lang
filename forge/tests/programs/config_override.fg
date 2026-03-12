@@ -1,0 +1,18 @@
+use @std.cron.{schedule}
+
+// Test: user-specified config overrides the schema default.
+// Config schema: every: int = 1000
+// User sets: every 100 (override)
+// Sleep 350ms → expect 3 ticks (at 100, 200, 300)
+
+schedule fast_ticker {
+  every 100
+  run { println("fast") }
+}
+
+fn main() {
+  fast_ticker.start()
+  forge_sleep(350)
+  fast_ticker.stop()
+  println("done")
+}

@@ -1,0 +1,12 @@
+use @std.cron.{schedule}
+
+schedule ticker {
+  every 150
+  run { println("tick") }
+}
+
+fn main() {
+  ticker.start()
+  forge_sleep(350)
+  ticker.stop()
+}

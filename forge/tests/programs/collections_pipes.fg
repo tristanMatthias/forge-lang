@@ -1,0 +1,30 @@
+// Cross-feature test: Collections + Pipes
+// Tests collection methods chained with pipe operator and closures
+
+fn double(x: int) -> int { x * 2 }
+fn negate(x: int) -> int { 0 - x }
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+  // Filter + map + sum via collection methods
+  let result = nums.filter(it > 5).map(it * 10).sum()
+  println(string(result))
+
+  // Pipe with collection operations
+  let piped = 3 |> double |> double
+  println(string(piped))
+
+  // Chained find + null coalescing
+  let found = nums.find(it > 100) ?? 0
+  println(string(found))
+
+  // Map then reduce
+  let product = [1, 2, 3, 4].map(it + 1).reduce(1, (acc, n) -> acc * n)
+  println(string(product))
+
+  // any/all on filtered
+  let big = nums.filter(it > 5)
+  println(string(big.any(it > 9)))
+  println(string(big.all(it > 4)))
+}

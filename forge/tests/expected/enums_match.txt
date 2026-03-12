@@ -1,0 +1,7 @@
+cat named whiskers
+dog named rex with 5 tricks
+dog named spot with 2 tricks
+cat named felix
+rex is talented
+spot needs training
+cats dont do tricks

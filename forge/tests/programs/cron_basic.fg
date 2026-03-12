@@ -1,0 +1,12 @@
+use @std.cron.{schedule}
+
+schedule cleanup {
+  every 100
+  run { println("tick") }
+}
+
+fn main() {
+  cleanup.start()
+  forge_sleep(350)
+  cleanup.stop()
+}

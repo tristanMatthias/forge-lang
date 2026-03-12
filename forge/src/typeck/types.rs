@@ -6,6 +6,7 @@ pub enum Type {
     String,
     Void,
     Never,
+    Ptr,
 
     Nullable(Box<Type>),
     List(Box<Type>),
@@ -65,6 +66,7 @@ impl std::fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Void => write!(f, "void"),
             Type::Never => write!(f, "never"),
+            Type::Ptr => write!(f, "ptr"),
             Type::Nullable(inner) => write!(f, "{}?", inner),
             Type::List(inner) => write!(f, "List<{}>", inner),
             Type::Map(k, v) => write!(f, "Map<{}, {}>", k, v),

@@ -1,0 +1,46 @@
+// Cross-feature test: Traits + Nullability
+// Tests trait methods on null-narrowed types and nullable returns
+
+type User = { name: string, age: int }
+
+trait Describable {
+  fn describe(self) -> string
+}
+
+impl Describable for User {
+  fn describe(self) -> string {
+    `${self.name} (${self.age})`
+  }
+}
+
+fn find_user(id: int) -> User? {
+  if id == 1 {
+    User { name: "alice", age: 30 }
+  } else {
+    null
+  }
+}
+
+fn main() {
+  // Found user - null narrowing allows trait method call
+  let user = find_user(1)
+  if user != null {
+    println(user.describe())
+  } else {
+    println("not found")
+  }
+
+  // Missing user - takes else branch
+  let missing = find_user(99)
+  if missing != null {
+    println(missing.describe())
+  } else {
+    println("not found")
+  }
+
+  // Null coalescing with string from nullable
+  let name = find_user(1)?.name ?? "unknown"
+  println(name)
+  let name2 = find_user(0)?.name ?? "unknown"
+  println(name2)
+}

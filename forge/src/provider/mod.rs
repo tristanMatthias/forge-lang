@@ -1,7 +1,8 @@
 use crate::lexer::Lexer;
-use crate::parser::ast::Statement;
-use crate::parser::Parser;
+use crate::parser::ast::{ComponentTemplateDef, Statement};
+use crate::parser::{ComponentKind, ComponentMeta, Parser};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Information about a loaded provider
@@ -15,14 +16,21 @@ pub struct ProviderInfo {
     pub native_lib: String,
     /// Extern fn declarations from provider.fg
     pub extern_fns: Vec<Statement>,
+    /// Exported fn declarations from provider.fg (become static methods on the provider name)
+    pub exported_fns: Vec<Statement>,
+    /// Component template definitions from provider.fg
+    pub component_templates: Vec<ComponentTemplateDef>,
     /// Path to the native library (.a file)
     pub lib_path: PathBuf,
+    /// Component metadata from provider.toml
+    pub component_metas: Vec<ComponentMeta>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ProviderToml {
     provider: ProviderMeta,
     native: Option<NativeMeta>,
+    components: Option<HashMap<String, ComponentToml>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +44,14 @@ struct ProviderMeta {
 #[derive(Debug, Deserialize)]
 struct NativeMeta {
     library: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ComponentToml {
+    kind: String,
+    context: String,
+    #[allow(dead_code)]
+    syntax: Option<String>,
 }
 
 /// Load a provider from its directory
@@ -54,12 +70,43 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
         .map(|n| n.library.clone())
         .unwrap_or_default();
 
-    // Parse provider.fg to extract extern fn declarations
+    // Parse provider.fg to extract extern fn declarations and component templates
     let fg_path = provider_dir.join("src/provider.fg");
     let extern_fns = if fg_path.exists() {
         let source = std::fs::read_to_string(&fg_path)
             .map_err(|e| format!("cannot read {}: {}", fg_path.display(), e))?;
-        parse_extern_fns(&source)
+        parse_provider_fg(&source)
+    } else {
+        (Vec::new(), Vec::new(), Vec::new())
+    };
+
+    // Parse component metas from provider.toml
+    let component_metas = if let Some(components) = &config.components {
+        components
+            .iter()
+            .map(|(name, kw)| {
+                // Find syntax patterns from corresponding template
+                let syntax_patterns: Vec<crate::parser::SyntaxPatternDef> = extern_fns.2
+                    .iter()
+                    .filter(|t| t.component_name == *name)
+                    .flat_map(|t| t.syntax_fns.iter())
+                    .map(|sf| crate::parser::SyntaxPatternDef {
+                        pattern: sf.pattern.clone(),
+                        fn_name: sf.fn_name.clone(),
+                    })
+                    .collect();
+                ComponentMeta {
+                    name: name.clone(),
+                    kind: match kw.kind.as_str() {
+                        "function" => ComponentKind::Function,
+                        _ => ComponentKind::Block,
+                    },
+                    context: kw.context.clone(),
+                    syntax: kw.syntax.clone(),
+                    syntax_patterns,
+                }
+            })
+            .collect()
     } else {
         Vec::new()
     };
@@ -73,8 +120,11 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
         name: config.provider.name,
         namespace: config.provider.namespace,
         native_lib,
-        extern_fns,
+        extern_fns: extern_fns.0,
+        exported_fns: extern_fns.1,
+        component_templates: extern_fns.2,
         lib_path,
+        component_metas,
     })
 }
 
@@ -91,16 +141,26 @@ pub fn find_provider(providers_base: &Path, namespace: &str, name: &str) -> Opti
     }
 }
 
-/// Parse a provider.fg file and extract only ExternFn statements
-fn parse_extern_fns(source: &str) -> Vec<Statement> {
+/// Parse a provider.fg file and extract ExternFn statements, exported FnDecls, and ComponentTemplateDefs
+fn parse_provider_fg(source: &str) -> (Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>) {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize();
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program();
 
-    program
-        .statements
-        .into_iter()
-        .filter(|s| matches!(s, Statement::ExternFn { .. }))
-        .collect()
+    let mut extern_fns = Vec::new();
+    let templates_placeholder: Vec<Statement> = Vec::new();
+    let mut templates = Vec::new();
+    for stmt in program.statements {
+        match &stmt {
+            Statement::ExternFn { .. } => extern_fns.push(stmt),
+            Statement::ComponentTemplateDef(_) => {
+                if let Statement::ComponentTemplateDef(def) = stmt {
+                    templates.push(def);
+                }
+            }
+            _ => {}
+        }
+    }
+    (extern_fns, templates_placeholder, templates)
 }
