@@ -443,6 +443,12 @@ pub enum Expr {
         negated: bool,
         span: Span,
     },
+    // Table literal: desugars to ListLit of StructLit
+    TableLit {
+        columns: Vec<String>,
+        rows: Vec<Vec<Expr>>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -480,7 +486,8 @@ impl Expr {
             | Expr::ChannelReceive { span, .. }
             | Expr::SpawnBlock { span, .. }
             | Expr::DollarExec { span, .. }
-            | Expr::Is { span, .. } => *span,
+            | Expr::Is { span, .. }
+            | Expr::TableLit { span, .. } => *span,
             Expr::Block(block) => block.span,
         }
     }

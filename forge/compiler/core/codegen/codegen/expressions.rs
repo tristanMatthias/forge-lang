@@ -334,6 +334,10 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_is(value, pattern, *negated)
             }
 
+            Expr::TableLit { columns, rows, span } => {
+                self.compile_table_lit(columns, rows, span)
+            }
+
             _ => None,
         }
     }

@@ -616,6 +616,7 @@ impl<'a> Lexer<'a> {
             "select" => TokenKind::Select,
             "component" => TokenKind::Component,
             "is" => TokenKind::Is,
+            "table" => TokenKind::Table,
             "true" => TokenKind::BoolLiteral(true),
             "false" => TokenKind::BoolLiteral(false),
             "null" => TokenKind::NullLiteral,

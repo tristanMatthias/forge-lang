@@ -1,0 +1,18 @@
+/// # Single column table
+///
+/// A table with just one column (no pipe separators in rows).
+///
+/// expect: 3
+/// expect: alice
+
+fn main() {
+    let names = table {
+        name
+        "alice"
+        "bob"
+        "carol"
+    }
+
+    println(string(names.length))
+    println(names[0].name)
+}

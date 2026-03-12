@@ -1,0 +1,21 @@
+/// # Table with filter and map
+///
+/// Tables work with list methods since they desugar to List<struct>.
+///
+/// expect: 4
+/// expect: 92
+/// expect: 67
+
+fn main() {
+    let scores = table {
+        name    | score
+        "alice" | 92
+        "bob"   | 67
+        "carol" | 85
+        "dave"  | 43
+    }
+
+    println(string(scores.length))
+    println(string(scores[0].score))
+    println(string(scores[1].score))
+}

@@ -1,0 +1,14 @@
+/// # Mixed data types in a column
+///
+/// All values in a table column must have the same type.
+/// The type is inferred from the first row.
+///
+/// expect-error: F0030
+
+fn main() {
+    let data = table {
+        name    | age
+        "alice" | 30
+        "bob"   | "twenty"
+    }
+}

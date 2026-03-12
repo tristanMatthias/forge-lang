@@ -45,6 +45,7 @@ pub enum TokenKind {
     Select,
     Component,
     Is,
+    Table,
     Null,
     Ok_,
     Err_,

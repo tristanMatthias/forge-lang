@@ -418,6 +418,11 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             negated: *negated,
             span: *span,
         },
+        Expr::TableLit { columns, rows, span } => Expr::TableLit {
+            columns: columns.clone(),
+            rows: rows.iter().map(|row| row.iter().map(|e| substitute_expr(e, ctx)).collect()).collect(),
+            span: *span,
+        },
     }
 }
 

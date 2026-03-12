@@ -1,0 +1,23 @@
+/// # Table with expressions in cells
+///
+/// Cell values can be any expression, not just literals.
+///
+/// expect: 100.0
+/// expect: 80.0
+/// expect: 160.0
+
+fn discount(price: float) -> float { price * 0.8 }
+
+fn main() {
+    let base = 100.0
+
+    let products = table {
+        name     | price      | discounted
+        "Widget" | base       | discount(base)
+        "Gadget" | base * 2.0 | discount(base * 2.0)
+    }
+
+    println(string(products[0].price))
+    println(string(products[0].discounted))
+    println(string(products[1].discounted))
+}

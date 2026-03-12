@@ -986,6 +986,7 @@ impl Parser {
             TokenKind::LParen => self.parse_paren_expr(),
             TokenKind::LBrace => self.parse_brace_expr(),
             TokenKind::LBracket => self.parse_list_expr(),
+            TokenKind::Table => self.parse_table_literal(),
             TokenKind::If => self.parse_if_expr(),
             TokenKind::Match => self.parse_match_expr(),
             TokenKind::Dot => {
@@ -1469,8 +1470,15 @@ impl Parser {
 
     pub(crate) fn expect_ident(&mut self) -> Option<String> {
         let tok = self.peek()?.clone();
-        if let TokenKind::Ident(name) = &tok.kind {
-            let name = name.clone();
+        let name = match &tok.kind {
+            TokenKind::Ident(name) => Some(name.clone()),
+            // Allow keywords that can also be used as identifiers (e.g., parameter names)
+            TokenKind::Table => Some("table".to_string()),
+            TokenKind::Is => Some("is".to_string()),
+            TokenKind::Underscore => Some("_".to_string()),
+            _ => None,
+        };
+        if let Some(name) = name {
             self.advance();
             Some(name)
         } else {
@@ -1491,6 +1499,8 @@ impl Parser {
             TokenKind::Component => Some("component".to_string()),
             TokenKind::Match => Some("match".to_string()),
             TokenKind::Use => Some("use".to_string()),
+            TokenKind::Table => Some("table".to_string()),
+            TokenKind::Is => Some("is".to_string()),
             _ => None,
         };
         if let Some(name) = name {

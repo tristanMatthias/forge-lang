@@ -1,0 +1,21 @@
+/// # Basic table literal
+///
+/// Table literals desugar to List<struct>.
+///
+/// expect: 2
+/// expect: alice
+/// expect: 25
+/// expect: false
+
+fn main() {
+    let users = table {
+        name    | age | active
+        "alice" | 30  | true
+        "bob"   | 25  | false
+    }
+
+    println(string(users.length))
+    println(users[0].name)
+    println(string(users[1].age))
+    println(string(users[1].active))
+}
