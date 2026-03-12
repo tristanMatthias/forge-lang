@@ -169,6 +169,9 @@ impl<'ctx> Codegen<'ctx> {
                         None
                     }
                 }
+                "split" => {
+                    self.compile_string_split(&obj_val, args)
+                }
                 _ => None,
             },
             Type::List(inner) => match method {
@@ -204,6 +207,12 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 "reduce" => {
                     self.compile_list_reduce(&obj_val, inner, args)
+                }
+                "sorted" => {
+                    self.compile_list_sorted(&obj_val, inner)
+                }
+                "each" => {
+                    self.compile_list_each(&obj_val, inner, args)
                 }
                 _ => None,
             },
@@ -979,7 +988,6 @@ impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a closure given its input type
     pub(crate) fn infer_closure_return_type(&self, closure_arg: &CallArg, input_type: &Type) -> Type {
         if let Expr::Closure { params, body, .. } = &closure_arg.value {
-            // Temporarily infer: for simple binary ops on ints, result is int
             match body.as_ref() {
                 Expr::Binary { op, .. } => {
                     match op {
@@ -987,6 +995,53 @@ impl<'ctx> Codegen<'ctx> {
                             if *input_type == Type::Int { return Type::Int; }
                             if *input_type == Type::Float { return Type::Float; }
                         }
+                        BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::LtEq |
+                        BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => {
+                            return Type::Bool;
+                        }
+                        _ => {}
+                    }
+                }
+                Expr::Call { callee, args, .. } => {
+                    if let Expr::Ident(name, _) = callee.as_ref() {
+                        match name.as_str() {
+                            "string" => return Type::String,
+                            "int" => return Type::Int,
+                            "float" => return Type::Float,
+                            _ => {}
+                        }
+                    }
+                    // Method call on the element
+                    if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
+                        let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n)) {
+                            input_type.clone()
+                        } else {
+                            self.infer_type(object)
+                        };
+                        match &obj_type {
+                            Type::String => match field.as_str() {
+                                "upper" | "lower" => return Type::String,
+                                "contains" => return Type::Bool,
+                                "length" => return Type::Int,
+                                "split" => return Type::List(Box::new(Type::String)),
+                                _ => {}
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+                Expr::MemberAccess { object, field, .. } => {
+                    // e.g., x -> x.length
+                    let obj_type = if matches!(object.as_ref(), Expr::Ident(n, _) if params.first().map_or(false, |p| p.name == *n)) {
+                        input_type.clone()
+                    } else {
+                        self.infer_type(object)
+                    };
+                    match &obj_type {
+                        Type::String => match field.as_str() {
+                            "length" => return Type::Int,
+                            _ => {}
+                        },
                         _ => {}
                     }
                 }
@@ -1161,5 +1216,145 @@ impl<'ctx> Codegen<'ctx> {
                 self.context.bool_type().const_int(0, false)
             }
         }
+    }
+
+    /// string.split(separator) -> list<string>
+    pub(crate) fn compile_string_split(
+        &mut self,
+        obj_val: &BasicValueEnum<'ctx>,
+        args: &[CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let sep_val = self.compile_expr(&args.first()?.value)?;
+        let string_type = self.string_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.context.i64_type();
+
+        let split_fn = self.module.get_function("forge_string_split").unwrap_or_else(|| {
+            let ft = i64_type.fn_type(
+                &[string_type.into(), string_type.into(), ptr_type.into()],
+                false,
+            );
+            self.module.add_function("forge_string_split", ft, None)
+        });
+
+        // Allocate output pointer on stack
+        let out_ptr = self.builder.build_alloca(ptr_type, "split_out").unwrap();
+
+        // Call split: returns count, writes data ptr to out_ptr
+        let count = self.builder
+            .build_call(split_fn, &[(*obj_val).into(), sep_val.into(), out_ptr.into()], "split_count")
+            .unwrap()
+            .try_as_basic_value()
+            .left()?
+            .into_int_value();
+
+        let data_ptr = self.builder
+            .build_load(ptr_type, out_ptr, "split_data")
+            .unwrap()
+            .into_pointer_value();
+
+        // Build list struct { ptr, i64 }
+        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::String)));
+        let list_struct_type = list_type.into_struct_type();
+        let mut result_list = list_struct_type.get_undef();
+        result_list = self.builder.build_insert_value(result_list, data_ptr, 0, "sp").unwrap().into_struct_value();
+        result_list = self.builder.build_insert_value(result_list, count, 1, "sl").unwrap().into_struct_value();
+        Some(result_list.into())
+    }
+
+    /// list.sorted() -> new sorted list (int only for now)
+    pub(crate) fn compile_list_sorted(
+        &mut self,
+        list_val: &BasicValueEnum<'ctx>,
+        elem_type: &Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let struct_val = list_val.into_struct_value();
+        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
+        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+
+        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
+        let elem_size = elem_llvm_ty.size_of().unwrap();
+        let total = self.builder.build_int_mul(elem_size, list_len, "total").unwrap();
+
+        // Clone the list data
+        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
+        let new_ptr = self.builder
+            .build_call(alloc_fn, &[total.into()], "sort_buf")
+            .unwrap()
+            .try_as_basic_value()
+            .left()?
+            .into_pointer_value();
+        self.builder.build_memcpy(new_ptr, 1, data_ptr, 1, total).ok();
+
+        // Sort in place
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let sort_fn = self.module.get_function("forge_list_sort_int").unwrap_or_else(|| {
+            let ft = self.context.void_type().fn_type(
+                &[ptr_type.into(), self.context.i64_type().into()],
+                false,
+            );
+            self.module.add_function("forge_list_sort_int", ft, None)
+        });
+        self.builder.build_call(sort_fn, &[new_ptr.into(), list_len.into()], "").unwrap();
+
+        // Build new list struct
+        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
+        let list_struct_type = list_type.into_struct_type();
+        let mut result_list = list_struct_type.get_undef();
+        result_list = self.builder.build_insert_value(result_list, new_ptr, 0, "sorted_p").unwrap().into_struct_value();
+        result_list = self.builder.build_insert_value(result_list, list_len, 1, "sorted_l").unwrap().into_struct_value();
+        Some(result_list.into())
+    }
+
+    /// list.each(closure) -> void (side-effect iteration)
+    pub(crate) fn compile_list_each(
+        &mut self,
+        list_val: &BasicValueEnum<'ctx>,
+        elem_type: &Type,
+        args: &[CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let closure_arg = args.first()?;
+        let struct_val = list_val.into_struct_value();
+        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
+        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+
+        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
+        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+
+        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "each_idx").unwrap();
+        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+
+        let loop_bb = self.context.append_basic_block(function, "each_loop");
+        let body_bb = self.context.append_basic_block(function, "each_body");
+        let next_bb = self.context.append_basic_block(function, "each_next");
+        let end_bb = self.context.append_basic_block(function, "each_end");
+
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        self.builder.position_at_end(loop_bb);
+
+        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
+        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
+        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+
+        self.builder.position_at_end(body_bb);
+        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
+        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
+
+        self.compile_closure_inline(closure_arg, elem_val, elem_type);
+
+        // Ensure we have a terminator before building next branch
+        let current_bb = self.builder.get_insert_block().unwrap();
+        if current_bb.get_terminator().is_none() {
+            self.builder.build_unconditional_branch(next_bb).unwrap();
+        }
+
+        self.builder.position_at_end(next_bb);
+        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
+        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
+        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+
+        self.builder.position_at_end(end_bb);
+        None // each returns void
     }
 }

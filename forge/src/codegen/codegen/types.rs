@@ -304,6 +304,7 @@ impl<'ctx> Codegen<'ctx> {
                             "upper" | "lower" => Type::String,
                             "contains" => Type::Bool,
                             "length" => Type::Int,
+                            "split" => Type::List(Box::new(Type::String)),
                             _ => Type::Unknown,
                         },
                         Type::List(inner) => match field.as_str() {
@@ -331,6 +332,8 @@ impl<'ctx> Codegen<'ctx> {
                             }
                             "push" => Type::Void,
                             "length" => Type::Int,
+                            "sorted" => Type::List(inner.clone()),
+                            "each" => Type::Void,
                             _ => Type::Unknown,
                         },
                         Type::Map(key_type, val_type) => match field.as_str() {
@@ -518,8 +521,15 @@ impl<'ctx> Codegen<'ctx> {
                 params: vec![],
                 return_type: Box::new(Type::Unknown),
             },
-            Expr::Pipe { right, .. } => {
-                // Pipe result is the return type of the right-hand function
+            Expr::Pipe { left, right, .. } => {
+                // Pipe: left |> right  where right is either f or f(args)
+                // Treated as left.f(args), so infer as method call on left's type
+                if let Expr::Call { callee, args, .. } = right.as_ref() {
+                    if let Expr::Ident(method_name, _) = callee.as_ref() {
+                        let left_type = self.infer_type(left);
+                        return self.infer_method_return_type(&left_type, method_name, args);
+                    }
+                }
                 let rt = self.infer_type(right);
                 match &rt {
                     Type::Function { return_type, .. } => *return_type.clone(),
@@ -554,6 +564,47 @@ impl<'ctx> Codegen<'ctx> {
                     _ => Type::Unknown,
                 }
             }
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Infer the return type of a method call on a given type
+    pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
+        match obj_type {
+            Type::String => match method {
+                "upper" | "lower" => Type::String,
+                "contains" => Type::Bool,
+                "length" => Type::Int,
+                "split" => Type::List(Box::new(Type::String)),
+                _ => Type::Unknown,
+            },
+            Type::List(inner) => match method {
+                "filter" => Type::List(inner.clone()),
+                "map" => {
+                    if let Some(first_arg) = args.first() {
+                        let out = self.infer_closure_return_type(first_arg, inner);
+                        Type::List(Box::new(out))
+                    } else {
+                        Type::List(Box::new(Type::Unknown))
+                    }
+                }
+                "sum" => Type::Int,
+                "find" => Type::Nullable(inner.clone()),
+                "any" | "all" => Type::Bool,
+                "enumerate" => Type::List(Box::new(Type::Tuple(vec![Type::Int, *inner.clone()]))),
+                "join" => Type::String,
+                "reduce" => {
+                    if let Some(first_arg) = args.first() {
+                        self.infer_type(&first_arg.value)
+                    } else {
+                        Type::Unknown
+                    }
+                }
+                "push" | "each" => Type::Void,
+                "length" => Type::Int,
+                "sorted" => Type::List(inner.clone()),
+                _ => Type::Unknown,
+            },
             _ => Type::Unknown,
         }
     }

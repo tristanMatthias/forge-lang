@@ -144,23 +144,37 @@ fn resolve_target(file: Option<PathBuf>) -> (bool, PathBuf) {
 }
 
 fn main() {
-    let result = std::panic::catch_unwind(|| {
-        run();
-    });
-
-    if let Err(panic_info) = result {
-        let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+    // Replace the default panic hook to render ICEs through ariadne.
+    // Use AtomicBool to only handle the first panic (drops can trigger secondary panics).
+    let already_panicked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let already_panicked_hook = already_panicked.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        if already_panicked_hook.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return; // Ignore secondary panics from drop during unwind
+        }
+        let raw = if let Some(s) = info.payload().downcast_ref::<&str>() {
             s.to_string()
-        } else if let Some(s) = panic_info.downcast_ref::<String>() {
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
             s.clone()
         } else {
             "unknown cause".to_string()
         };
-        eprintln!();
-        eprintln!("[F9999] Internal compiler error: {}", msg);
-        eprintln!();
-        eprintln!("This is a bug in the Forge compiler.");
-        eprintln!("Please report it at https://github.com/forge-lang/forge/issues");
+
+        // Truncate long internal messages (e.g. debug-printed LLVM values)
+        let detail = if raw.len() > 200 {
+            format!("{}...", &raw[..197])
+        } else {
+            raw
+        };
+
+        forge::errors::print_ice(&detail);
+    }));
+
+    let result = std::panic::catch_unwind(|| {
+        run();
+    });
+
+    if result.is_err() {
         process::exit(2);
     }
 }

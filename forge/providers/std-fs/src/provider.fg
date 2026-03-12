@@ -1,0 +1,20 @@
+extern fn forge_fs_read(path: string) -> string
+extern fn forge_fs_write(path: string, content: string) -> bool
+extern fn forge_fs_append(path: string, content: string) -> bool
+extern fn forge_fs_exists(path: string) -> bool
+extern fn forge_fs_is_file(path: string) -> bool
+extern fn forge_fs_is_dir(path: string) -> bool
+extern fn forge_fs_mkdir(path: string, recursive: bool) -> bool
+extern fn forge_fs_remove(path: string) -> bool
+extern fn forge_fs_remove_dir(path: string, recursive: bool) -> bool
+extern fn forge_fs_copy(from: string, to: string) -> bool
+extern fn forge_fs_rename(from: string, to: string) -> bool
+extern fn forge_fs_list(path: string) -> string
+extern fn forge_fs_size(path: string) -> int
+extern fn forge_fs_modified(path: string) -> int
+extern fn forge_fs_cwd() -> string
+extern fn forge_fs_join(a: string, b: string) -> string
+extern fn forge_fs_parent(path: string) -> string
+extern fn forge_fs_filename(path: string) -> string
+extern fn forge_fs_extension(path: string) -> string
+extern fn forge_fs_glob(pattern: string) -> string

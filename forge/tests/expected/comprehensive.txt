@@ -134,6 +134,7 @@ using inner
 using outer
 --- 20. Defer ---
 before defer runs
+deferred!
 --- 21. Model ---
 created ids: 1, 2, 3
 task: Write tests done=false

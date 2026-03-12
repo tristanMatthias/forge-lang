@@ -192,8 +192,12 @@ impl<'ctx> Codegen<'ctx> {
             Statement::Continue { .. } => {
                 // Would need loop_continue_block tracking; simplified
             }
-            Statement::EnumDecl { .. } | Statement::TypeDecl { .. } | Statement::Defer { .. } => {
-                // Type declarations handled at type-check time; defer simplified for phase 1
+            Statement::EnumDecl { .. } | Statement::TypeDecl { .. } => {
+                // Type declarations handled at type-check time
+            }
+            Statement::Defer { body, .. } => {
+                // Save deferred expression for execution before function return
+                self.deferred_stmts.push(body.clone());
             }
             Statement::Use { .. }
             | Statement::TraitDecl { .. }
@@ -249,6 +253,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let prev_return_type = self.current_fn_return_type.take();
         self.current_fn_return_type = Some(ret_ty.clone());
+        let prev_deferred = std::mem::take(&mut self.deferred_stmts);
 
         let mut last_val = None;
         for stmt in &body.statements {
@@ -257,6 +262,11 @@ impl<'ctx> Codegen<'ctx> {
                     last_val = self.compile_expr(expr);
                 }
                 Statement::Return { value, .. } => {
+                    // Execute deferred statements in reverse order before returning
+                    let deferred = self.deferred_stmts.clone();
+                    for d in deferred.iter().rev() {
+                        self.compile_expr(d);
+                    }
                     if let Some(val) = value {
                         let compiled = self.compile_expr(val);
                         if let Some(v) = compiled {
@@ -266,6 +276,7 @@ impl<'ctx> Codegen<'ctx> {
                         self.builder.build_return(None).unwrap();
                     }
                     self.pop_scope();
+                    self.deferred_stmts = prev_deferred;
                     return;
                 }
                 _ => {
@@ -273,6 +284,12 @@ impl<'ctx> Codegen<'ctx> {
                     last_val = None;
                 }
             }
+        }
+
+        // Execute deferred statements before implicit return
+        let deferred = std::mem::take(&mut self.deferred_stmts);
+        for d in deferred.iter().rev() {
+            self.compile_expr(d);
         }
 
         // Implicit return
@@ -307,6 +324,7 @@ impl<'ctx> Codegen<'ctx> {
 
         self.pop_scope();
         self.current_fn_return_type = prev_return_type;
+        self.deferred_stmts = prev_deferred;
     }
 
     pub(crate) fn compile_let_destructure(&mut self, pattern: &Pattern, value: &Expr) {

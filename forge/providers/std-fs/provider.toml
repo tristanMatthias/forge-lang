@@ -1,0 +1,8 @@
+[provider]
+name = "fs"
+namespace = "std"
+version = "0.1.0"
+description = "File system operations"
+
+[native]
+library = "forge_fs"

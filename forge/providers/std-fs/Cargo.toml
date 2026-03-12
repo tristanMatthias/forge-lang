@@ -1,0 +1,11 @@
+[package]
+name = "forge-fs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_fs"
+crate-type = ["staticlib"]
+
+[dependencies]
+glob = "0.3"

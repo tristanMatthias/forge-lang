@@ -1,0 +1,13 @@
+3
+hello
+world
+forge
+a-b-c-d
+1,2,3,4,5
+3
+line1
+HELLO WORLD FORGE
+forge file
+111
+before defer
+deferred!

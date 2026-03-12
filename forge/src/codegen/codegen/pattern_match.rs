@@ -135,6 +135,27 @@ impl<'ctx> Codegen<'ctx> {
                             )
                             .unwrap(),
                     )
+                } else if subject_val.is_struct_value() && lit_val.is_struct_value() {
+                    // String comparison via forge_string_eq
+                    let eq_fn = self.module.get_function("forge_string_eq").unwrap_or_else(|| {
+                        let string_type = self.string_type();
+                        let ft = self.context.i8_type().fn_type(
+                            &[string_type.into(), string_type.into()],
+                            false,
+                        );
+                        self.module.add_function("forge_string_eq", ft, None)
+                    });
+                    let result = self.builder.build_call(
+                        eq_fn,
+                        &[(*subject_val).into(), lit_val.into()],
+                        "str_eq",
+                    ).unwrap();
+                    let bool_val = result.try_as_basic_value().left()?.into_int_value();
+                    Some(
+                        self.builder
+                            .build_int_compare(IntPredicate::NE, bool_val, self.context.i8_type().const_zero(), "str_pat")
+                            .unwrap(),
+                    )
                 } else {
                     None
                 }

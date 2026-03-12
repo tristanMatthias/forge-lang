@@ -284,6 +284,28 @@ impl DiagnosticBag {
     }
 }
 
+/// Render an internal compiler error (F9999) using ariadne, matching the style of all other errors.
+pub fn print_ice(detail: &str) {
+    use ariadne::{Color, Label, Report, ReportKind, Source};
+
+    Report::<(&str, std::ops::Range<usize>)>::build(ReportKind::Error, "<compiler>", 0)
+        .with_code("F9999")
+        .with_message("internal compiler error")
+        .with_label(
+            Label::new(("<compiler>", 0..1))
+                .with_message(detail)
+                .with_color(Color::Red),
+        )
+        .with_help(
+            "This is a bug in the Forge compiler, not in your code.\n  \
+             Please report at https://github.com/forge-lang/forge/issues\n  \
+             Run with RUST_BACKTRACE=1 for a stack trace.",
+        )
+        .finish()
+        .write(("<compiler>", Source::from(" ")), std::io::stderr())
+        .ok();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,21 @@
+use @std.fs
+
+fn main() {
+  fs.write("test_fs_out.txt", "hello forge")
+  let content = fs.read("test_fs_out.txt")
+  println(content)
+
+  println(string(fs.exists("test_fs_out.txt")))
+  println(string(fs.exists("nope.txt")))
+
+  println(string(fs.is_file("test_fs_out.txt")))
+  println(string(fs.is_dir("test_fs_out.txt")))
+
+  println(fs.join("src", "main.fg"))
+  println(fs.parent("src/main.fg"))
+  println(fs.filename("src/main.fg"))
+  println(fs.extension("src/main.fg"))
+
+  fs.remove("test_fs_out.txt")
+  println("done")
+}

@@ -150,6 +150,56 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
 
+// ---- String split ----
+
+int64_t forge_string_split(ForgeString s, ForgeString sep, void** out_data) {
+    if (sep.len == 0) {
+        ForgeString* arr = (ForgeString*)forge_alloc(sizeof(ForgeString));
+        arr[0] = s;
+        *out_data = arr;
+        return 1;
+    }
+    // Count parts
+    int64_t count = 1;
+    for (int64_t i = 0; i <= s.len - sep.len; i++) {
+        if (memcmp(s.ptr + i, sep.ptr, sep.len) == 0) {
+            count++;
+            i += sep.len - 1;
+        }
+    }
+    ForgeString* arr = (ForgeString*)forge_alloc(count * sizeof(ForgeString));
+    int64_t part = 0;
+    int64_t start = 0;
+    for (int64_t i = 0; i <= s.len - sep.len; i++) {
+        if (memcmp(s.ptr + i, sep.ptr, sep.len) == 0) {
+            int64_t plen = i - start;
+            arr[part] = forge_string_new(s.ptr + start, plen);
+            part++;
+            start = i + sep.len;
+            i += sep.len - 1;
+        }
+    }
+    // Last part
+    arr[part] = forge_string_new(s.ptr + start, s.len - start);
+    *out_data = arr;
+    return count;
+}
+
+// ---- List sort ----
+
+void forge_list_sort_int(int64_t* data, int64_t len) {
+    // Insertion sort
+    for (int64_t i = 1; i < len; i++) {
+        int64_t key = data[i];
+        int64_t j = i - 1;
+        while (j >= 0 && data[j] > key) {
+            data[j + 1] = data[j];
+            j--;
+        }
+        data[j + 1] = key;
+    }
+}
+
 // ---- Sleep ----
 
 void forge_sleep(int64_t ms) {

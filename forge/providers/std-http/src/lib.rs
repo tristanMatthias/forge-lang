@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::io::Read;
 use std::os::raw::c_char;
 use std::sync::Mutex;
-use tiny_http::{Header, Method, Request, Response, Server};
+use std::thread::JoinHandle;
+use tiny_http::{Header, Request, Response, Server};
 
 type HandlerFn = extern "C" fn(
     method: *const c_char,
@@ -13,16 +15,33 @@ type HandlerFn = extern "C" fn(
     response_buf_len: i64,
 ) -> i64; // returns status code
 
+// Safety: HandlerFn is a plain function pointer (Send+Sync), String is Send+Sync
+unsafe impl Send for Route {}
+unsafe impl Sync for Route {}
+
 struct Route {
     method: String,
     path_pattern: String,
     handler: HandlerFn,
 }
 
-static ROUTES: Mutex<Vec<Route>> = Mutex::new(Vec::new());
+/// Routes indexed by port number
+static ROUTES: Mutex<Option<HashMap<u16, Vec<Route>>>> = Mutex::new(None);
+
+/// Handles for spawned server threads
+static SERVER_HANDLES: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+
+fn routes_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<Route>>>> {
+    let mut guard = ROUTES.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
 
 #[no_mangle]
 pub extern "C" fn forge_http_add_route(
+    port: u16,
     method: *const c_char,
     path: *const c_char,
     handler: HandlerFn,
@@ -35,25 +54,52 @@ pub extern "C" fn forge_http_add_route(
         .to_str()
         .unwrap()
         .to_string();
-    ROUTES.lock().unwrap().push(Route {
-        method,
-        path_pattern: path,
-        handler,
-    });
+    routes_map()
+        .as_mut()
+        .unwrap()
+        .entry(port)
+        .or_default()
+        .push(Route {
+            method,
+            path_pattern: path,
+            handler,
+        });
 }
 
 #[no_mangle]
 pub extern "C" fn forge_http_serve(port: u16) {
-    let addr = format!("0.0.0.0:{}", port);
-    let server = Server::http(&addr).expect("Failed to start server");
-    eprintln!("Server running on http://localhost:{}", port);
+    // Take this port's routes and check if more ports remain
+    let (routes, has_more_ports) = {
+        let mut map = routes_map();
+        let m = map.as_mut().unwrap();
+        let routes = m.remove(&port).unwrap_or_default();
+        let has_more = !m.is_empty();
+        (routes, has_more)
+    };
 
-    for request in server.incoming_requests() {
-        handle_request(request);
+    if has_more_ports {
+        // More servers to come — spawn a thread and return
+        let handle = std::thread::spawn(move || {
+            let addr = format!("0.0.0.0:{}", port);
+            let server = Server::http(&addr).expect("Failed to start server");
+            eprintln!("Server running on http://localhost:{}", port);
+            for request in server.incoming_requests() {
+                handle_request(request, &routes);
+            }
+        });
+        SERVER_HANDLES.lock().unwrap().push(handle);
+    } else {
+        // Last server — block on main thread
+        let addr = format!("0.0.0.0:{}", port);
+        let server = Server::http(&addr).expect("Failed to start server");
+        eprintln!("Server running on http://localhost:{}", port);
+        for request in server.incoming_requests() {
+            handle_request(request, &routes);
+        }
     }
 }
 
-fn handle_request(mut request: Request) {
+fn handle_request(mut request: Request, routes: &[Route]) {
     let method = request.method().to_string().to_uppercase();
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or(&url).to_string();
@@ -61,8 +107,6 @@ fn handle_request(mut request: Request) {
     // Read body
     let mut body = String::new();
     request.as_reader().read_to_string(&mut body).ok();
-
-    let routes = ROUTES.lock().unwrap();
 
     for route in routes.iter() {
         if route.method == method {
@@ -115,6 +159,247 @@ fn handle_request(mut request: Request) {
         .with_status_code(404)
         .with_header(header);
     request.respond(response).ok();
+}
+
+// ── Model functions (resolved at link time from std-model .a) ──
+extern "C" {
+    fn forge_model_list_json(table: *const c_char, filter: *const c_char) -> *const c_char;
+    fn forge_model_insert_json(table: *const c_char, data: *const c_char) -> *const c_char;
+    fn forge_model_get_by_id(table: *const c_char, id: i64) -> *const c_char;
+    fn forge_model_update_json(
+        table: *const c_char,
+        id: i64,
+        changes: *const c_char,
+    ) -> *const c_char;
+    fn forge_model_delete_json(table: *const c_char, id: i64) -> i64;
+    fn forge_model_free_string(ptr: *const c_char);
+}
+
+fn cstr(ptr: *const c_char) -> &'static str {
+    unsafe { CStr::from_ptr(ptr) }.to_str().unwrap_or("")
+}
+
+/// Mount CRUD endpoints for a model table at a base path.
+/// Registers 5 routes: GET list, POST create, GET by id, PUT update, DELETE.
+#[no_mangle]
+pub extern "C" fn forge_http_mount_crud(port: u16, table: *const c_char, base_path: *const c_char) {
+    let table_s = cstr(table).to_string();
+    let base_s = cstr(base_path).to_string();
+    let id_path = format!("{}/:id", base_s);
+
+    // GET /base — list all
+    {
+        let method_c = CString::new("GET").unwrap();
+        let path_c = CString::new(base_s.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_list_handler);
+    }
+
+    // POST /base — create
+    {
+        let method_c = CString::new("POST").unwrap();
+        let path_c = CString::new(base_s.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_create_handler);
+    }
+
+    // GET /base/:id — get by id
+    {
+        let method_c = CString::new("GET").unwrap();
+        let path_c = CString::new(id_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_get_handler);
+    }
+
+    // PUT /base/:id — update
+    {
+        let method_c = CString::new("PUT").unwrap();
+        let path_c = CString::new(id_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_update_handler);
+    }
+
+    // DELETE /base/:id — delete
+    {
+        let method_c = CString::new("DELETE").unwrap();
+        let path_c = CString::new(id_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_delete_handler);
+    }
+
+    // Register this mount in the static registry
+    MOUNTS.lock().unwrap().push(MountInfo {
+        table: table_s,
+        base_path: base_s,
+    });
+}
+
+struct MountInfo {
+    table: String,
+    base_path: String,
+}
+
+static MOUNTS: Mutex<Vec<MountInfo>> = Mutex::new(Vec::new());
+
+/// Find the table name for a given request path by matching against registered mounts.
+fn find_mount_table(path: &str) -> Option<String> {
+    let mounts = MOUNTS.lock().unwrap();
+    // Try exact base path match first, then /:id pattern
+    let clean_path = path.trim_end_matches('/');
+    for m in mounts.iter() {
+        let base = m.base_path.trim_end_matches('/');
+        if clean_path == base {
+            return Some(m.table.clone());
+        }
+        // Check if path is base/:id (one more segment)
+        if clean_path.starts_with(base) && clean_path[base.len()..].starts_with('/') {
+            let rest = &clean_path[base.len() + 1..];
+            if !rest.contains('/') && !rest.is_empty() {
+                return Some(m.table.clone());
+            }
+        }
+    }
+    None
+}
+
+extern "C" fn mount_list_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    _body: *const c_char,
+    _params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let table = match find_mount_table(path_s) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let filter_c = CString::new("{}").unwrap();
+    let json = unsafe { forge_model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
+    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    unsafe { forge_model_free_string(json) };
+    200
+}
+
+extern "C" fn mount_create_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    body: *const c_char,
+    _params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let table = match find_mount_table(path_s) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let json = unsafe { forge_model_insert_json(table_c.as_ptr(), body) };
+    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    unsafe { forge_model_free_string(json) };
+    201
+}
+
+extern "C" fn mount_get_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    _body: *const c_char,
+    params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let table = match find_mount_table(path_s) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let id = parse_id_from_params(params);
+    let json = unsafe { forge_model_get_by_id(table_c.as_ptr(), id) };
+    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    unsafe { forge_model_free_string(json) };
+    200
+}
+
+extern "C" fn mount_update_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    body: *const c_char,
+    params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let table = match find_mount_table(path_s) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let id = parse_id_from_params(params);
+    let json = unsafe { forge_model_update_json(table_c.as_ptr(), id, body) };
+    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    unsafe { forge_model_free_string(json) };
+    200
+}
+
+extern "C" fn mount_delete_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    _body: *const c_char,
+    params: *const c_char,
+    _response_buf: *mut c_char,
+    _response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let table = match find_mount_table(path_s) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let id = parse_id_from_params(params);
+    unsafe { forge_model_delete_json(table_c.as_ptr(), id) };
+    204
+}
+
+fn parse_id_from_params(params_json: *const c_char) -> i64 {
+    let s = cstr(params_json);
+    if let Some(start) = s.find("\"id\":\"") {
+        let rest = &s[start + 6..];
+        if let Some(end) = rest.find('"') {
+            return rest[..end].parse::<i64>().unwrap_or(0);
+        }
+    }
+    0
+}
+
+/// Write a Forge string (passed as C string pointer by extern fn ABI) to a response buffer.
+/// Called by generated route handlers to copy JSON response into the HTTP response buffer.
+#[no_mangle]
+pub extern "C" fn forge_http_write_response(buf: *mut c_char, buf_len: i64, json: *const c_char) {
+    if buf.is_null() || buf_len <= 0 {
+        return;
+    }
+    if json.is_null() {
+        unsafe { *buf = 0; }
+        return;
+    }
+    let s = unsafe { CStr::from_ptr(json) }.to_bytes();
+    let copy_len = std::cmp::min(s.len(), (buf_len - 1) as usize);
+    unsafe {
+        std::ptr::copy_nonoverlapping(s.as_ptr(), buf as *mut u8, copy_len);
+        *buf.add(copy_len) = 0;
+    }
+}
+
+fn copy_cstr_to_buf(src: *const c_char, dst: *mut c_char, dst_len: i64) {
+    if src.is_null() || dst.is_null() || dst_len <= 0 {
+        return;
+    }
+    let s = cstr(src);
+    let bytes = s.as_bytes();
+    let copy_len = std::cmp::min(bytes.len(), (dst_len - 1) as usize);
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst as *mut u8, copy_len);
+        *dst.add(copy_len) = 0; // null terminate
+    }
 }
 
 fn match_path(pattern: &str, actual: &str) -> Option<String> {

@@ -1,0 +1,58 @@
+fn main() {
+  // Test split
+  let parts = "hello world forge".split(" ")
+  println(string(parts.length))
+  println(parts[0])
+  println(parts[1])
+  println(parts[2])
+
+  // Test split + join roundtrip
+  let csv = "a,b,c,d"
+  let items = csv.split(",")
+  println(items.join("-"))
+
+  // Test sorted
+  let nums = [5, 3, 1, 4, 2]
+  let sorted = nums.sorted()
+  println(sorted.map(x -> string(x)).join(","))
+
+  // Test split with newlines
+  let lines = "line1\nline2\nline3".split("\n")
+  println(string(lines.length))
+  println(lines[0])
+
+  // Test pipe with method calls
+  let result = "hello,world,forge"
+    |> split(",")
+    |> map(x -> x.upper())
+    |> join(" ")
+  println(result)
+
+  // Test string match
+  let ext = "fg"
+  match ext {
+    "fg" -> println("forge file")
+    "rs" -> println("rust file")
+    _ -> println("other")
+  }
+
+  // Test match with assignment
+  mut count = 0
+  let items2 = ["a", "b", "c"]
+  for item in items2 {
+    match item {
+      "a" -> count = count + 1
+      "b" -> count = count + 10
+      _ -> count = count + 100
+    }
+  }
+  println(string(count))
+
+  // Test defer
+  test_defer()
+}
+
+fn test_defer() {
+  defer println("deferred!")
+  println("before defer")
+}

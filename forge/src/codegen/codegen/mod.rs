@@ -97,6 +97,7 @@ pub struct Codegen<'ctx> {
     pub static_methods: HashMap<(String, String), String>,
     pub fn_return_types: HashMap<String, Type>,
     pub(super) json_parse_hint: Option<Type>,
+    pub(super) deferred_stmts: Vec<Expr>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -124,6 +125,7 @@ impl<'ctx> Codegen<'ctx> {
             static_methods: HashMap::new(),
             fn_return_types: HashMap::new(),
             json_parse_hint: None,
+            deferred_stmts: Vec::new(),
         }
     }
 

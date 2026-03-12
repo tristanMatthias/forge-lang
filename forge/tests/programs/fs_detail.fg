@@ -1,0 +1,158 @@
+// test_fs_forge_patterns.fg
+// Tests Forge-specific patterns with fs operations
+
+use @std.fs
+
+// ── Pipe files through transformations ──
+fn test_pipe_transform() {
+  fs.write("pipe_test.txt", "hello\nworld\nforge")?
+  
+  let result = fs.read("pipe_test.txt")?
+    |> split("\n")
+    |> filter(it.length > 0)
+    |> map(it.upper())
+    |> join("\n")
+
+  println(result)
+  // HELLO
+  // WORLD
+  // FORGE
+
+  fs.write("pipe_output.txt", result)?
+  let verify = fs.read("pipe_output.txt")?
+  println(string(verify == result))  // true
+
+  fs.remove("pipe_test.txt")?
+  fs.remove("pipe_output.txt")?
+}
+
+// ── Pattern matching on paths ──
+fn test_pattern_match_extensions() {
+  fs.mkdir("match_test")?
+  fs.write("match_test/app.fg", "fn main() {}")?
+  fs.write("match_test/config.toml", "[project]")?
+  fs.write("match_test/readme.md", "# Hello")?
+  fs.write("match_test/data.csv", "a,b,c")?
+
+  mut fg_count = 0
+  mut toml_count = 0
+  mut other_count = 0
+
+  for file in fs.list("match_test")? {
+    match fs.extension(file) {
+      "fg" -> fg_count = fg_count + 1
+      "toml" -> toml_count = toml_count + 1
+      _ -> other_count = other_count + 1
+    }
+  }
+
+  println(string(fg_count))     // 1
+  println(string(toml_count))   // 1
+  println(string(other_count))  // 2
+
+  fs.remove_dir("match_test")?
+}
+
+// ── Defer for auto-cleanup ──
+fn test_temp_file_cleanup() {
+  let result = process_temp()?
+  println(result)                           // processed
+  println(string(fs.exists("temp_work.txt")))  // false (cleaned up)
+}
+
+fn process_temp() -> Result<string, string> {
+  fs.write("temp_work.txt", "temporary data")?
+  defer fs.remove("temp_work.txt")
+
+  let content = fs.read("temp_work.txt")?
+  Ok("processed")
+}
+
+// ── Tree walking with it ──
+fn test_tree_walk() {
+  fs.mkdir("walk_test/src")?
+  fs.mkdir("walk_test/tests")?
+  fs.write("walk_test/src/main.fg", "// TODO: implement main")?
+  fs.write("walk_test/src/utils.fg", "fn helper() {}")?
+  fs.write("walk_test/tests/test.fg", "// TODO: write tests")?
+
+  // Find all non-test files containing TODO
+  let todos = fs.glob("walk_test/**/*.fg")?
+    .filter(it.contains("/tests/") == false)
+    .filter(fs.read(it)?.contains("TODO"))
+
+  println(string(todos.length))  // 1 (only src/main.fg)
+  println(fs.filename(todos[0]))  // main.fg
+
+  fs.remove_dir("walk_test")?
+}
+
+// ── Glob + map + collect ──
+fn test_glob_collect() {
+  fs.mkdir("glob_test")?
+  fs.write("glob_test/a.txt", "aaa")?
+  fs.write("glob_test/b.txt", "bbbbb")?
+  fs.write("glob_test/c.txt", "cc")?
+
+  // Get sizes of all txt files
+  let sizes = fs.glob("glob_test/*.txt")?
+    .map(fs.size(it))
+    .sorted()
+
+  println(sizes.map(string(it)).join(", "))  // 2, 3, 5
+
+  // Total size
+  let total = sizes.sum()
+  println(string(total))  // 10
+
+  fs.remove_dir("glob_test")?
+}
+
+// ── Path manipulation chains ──
+fn test_path_chains() {
+  let full_path = "projects/forge/src/main.fg"
+
+  println(fs.filename(full_path))    // main.fg
+  println(fs.extension(full_path))   // fg
+  println(fs.parent(full_path))      // projects/forge/src
+
+  // Build a path
+  let built = ["projects", "forge", "src", "main.fg"]
+    .reduce("", (acc, part) -> fs.join(acc, part))
+  println(built)  // projects/forge/src/main.fg
+
+  // Sibling file
+  let sibling = fs.join(fs.parent(full_path), "utils.fg")
+  println(sibling)  // projects/forge/src/utils.fg
+}
+
+// ── Batch file operations ──
+fn test_batch_ops() {
+  fs.mkdir("batch_test")?
+
+  // Create 5 files
+  (0..5).each(i -> {
+    fs.write(`batch_test/file_${i}.txt`, `content ${i}`)?
+  })
+
+  println(string(fs.list("batch_test")?.length))  // 5
+
+  // Read all and combine
+  let combined = fs.glob("batch_test/*.txt")?
+    .map(fs.read(it)?)
+    .join(" | ")
+  println(combined)  // content 0 | content 1 | content 2 | content 3 | content 4
+
+  fs.remove_dir("batch_test")?
+}
+
+fn main() {
+  test_pipe_transform()
+  test_pattern_match_extensions()
+  test_temp_file_cleanup()
+  test_tree_walk()
+  test_glob_collect()
+  test_path_chains()
+  test_batch_ops()
+  println("all fs tests passed")
+}
