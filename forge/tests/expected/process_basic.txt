@@ -1,1 +1,2 @@
-{"stdout":"hello forge\n","stderr":"","code":0}
+hello forge
+0

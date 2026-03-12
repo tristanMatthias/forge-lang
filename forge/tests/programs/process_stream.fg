@@ -1,7 +1,7 @@
 use @std.process
 
 fn main() {
-  let handle = process.spawn("sh", "[\"-c\",\"echo one && echo two && echo three\"]", "{}")
+  let handle = process.spawn("sh", ["-c", "echo one && echo two && echo three"])
   sleep(500)
 
   mut lines = ""

@@ -9,12 +9,14 @@ fn main() {
   spawn {
     let r = $"echo completed"
     results <- r.trim()
+    sleep(50)
     done <- "yes"
   }
 
-  // Wait for done signal via select
+  // Collect from both channels via select
   mut got_result = ""
   mut finished = false
+  sleep(200)
   loop {
     select {
       msg <- results -> {

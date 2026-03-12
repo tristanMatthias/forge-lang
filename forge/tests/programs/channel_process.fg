@@ -5,7 +5,7 @@ fn main() {
   let logs = channel(100)
 
   spawn {
-    let handle = process.spawn("sh", "[\"-c\",\"echo alpha && echo beta && echo gamma\"]", "{}")
+    let handle = process.spawn("sh", ["-c", "echo alpha && echo beta && echo gamma"])
     sleep(200)
     loop {
       let line = process.read_line(handle)

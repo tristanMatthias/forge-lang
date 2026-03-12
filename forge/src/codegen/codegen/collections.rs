@@ -40,12 +40,37 @@ impl<'ctx> Codegen<'ctx> {
                             // serialize the struct to JSON via json.stringify
                             if i < param_count {
                                 let param_type = func.get_nth_param(i as u32).unwrap().get_type();
+                                let arg_type = self.infer_type(&arg.value);
+
+                                // Auto-stringify list args to JSON when extern fn expects ptr or string
+                                if let Type::List(_) = &arg_type {
+                                    if val.is_struct_value() {
+                                        let sv = val.into_struct_value();
+                                        let list_ptr = self.builder.build_extract_value(sv, 0, "list_ptr").unwrap();
+                                        let list_len = self.builder.build_extract_value(sv, 1, "list_len").unwrap();
+                                        let to_json_fn = self.module.get_function("forge_list_to_json").unwrap();
+                                        let json_str = self.builder.build_call(
+                                            to_json_fn, &[list_ptr.into(), list_len.into()], "list_json"
+                                        ).unwrap().try_as_basic_value().left().unwrap();
+                                        // If param expects ptr, extract the ptr from ForgeString
+                                        if param_type.is_pointer_type() {
+                                            let str_ptr = self.builder.build_extract_value(
+                                                json_str.into_struct_value(), 0, "json_ptr"
+                                            ).unwrap();
+                                            compiled_args.push(str_ptr.into());
+                                        } else {
+                                            compiled_args.push(json_str.into());
+                                        }
+                                        continue;
+                                    }
+                                }
+
+                                // Auto-stringify struct args to JSON
                                 if val.is_struct_value()
                                     && param_type.is_struct_type()
                                     && param_type.into_struct_type() == string_type
                                     && val.into_struct_value().get_type() != string_type
                                 {
-                                    let arg_type = self.infer_type(&arg.value);
                                     if let Type::Struct { fields, .. } = &arg_type {
                                         if let Some(json_str) =
                                             self.compile_json_stringify_struct(val, fields)

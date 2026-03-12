@@ -1,13 +1,20 @@
 use @std.channel
+use @std.process
 
+// Test: spawn a real OS process, capture its output, send through channel
 fn main() {
-  let ch = channel(1)
+  let ch = channel(10)
 
   spawn {
-    ch <- "hello from spawn"
+    let result_json = process.run("sh", ["-c", "echo hello from process"])
+    let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+    ch <- result.stdout.trim()
+    ch <- string(result.code)
   }
 
-  sleep(50)
+  sleep(100)
   let msg = <- ch
+  let code = <- ch
   println(msg)
+  println(code)
 }

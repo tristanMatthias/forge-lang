@@ -1,6 +1,8 @@
 use @std.process
 
 fn main() {
-  let result_json = process.run("echo", "[\"hello forge\"]", "{}")
-  println(result_json)
+  let result_json = process.run("echo", ["hello forge"])
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(result.stdout.trim())
+  println(string(result.code))
 }

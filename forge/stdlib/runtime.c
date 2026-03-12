@@ -194,6 +194,39 @@ int64_t forge_string_split(ForgeString s, ForgeString sep, void** out_data) {
     return count;
 }
 
+// ---- List to JSON ----
+
+// Serialize a list of ForgeStrings to a JSON array string: ["a","b","c"]
+ForgeString forge_list_to_json(ForgeString* data, int64_t len) {
+    // Calculate total size needed
+    int64_t total = 2; // [ and ]
+    for (int64_t i = 0; i < len; i++) {
+        total += 2 + data[i].len; // quotes around each
+        // Account for escaping
+        for (int64_t j = 0; j < data[i].len; j++) {
+            if (data[i].ptr[j] == '"' || data[i].ptr[j] == '\\') total++;
+        }
+        if (i < len - 1) total++; // comma
+    }
+
+    char* buf = (char*)forge_alloc(total + 1);
+    int64_t pos = 0;
+    buf[pos++] = '[';
+    for (int64_t i = 0; i < len; i++) {
+        buf[pos++] = '"';
+        for (int64_t j = 0; j < data[i].len; j++) {
+            char c = data[i].ptr[j];
+            if (c == '"' || c == '\\') buf[pos++] = '\\';
+            buf[pos++] = c;
+        }
+        buf[pos++] = '"';
+        if (i < len - 1) buf[pos++] = ',';
+    }
+    buf[pos++] = ']';
+    buf[pos] = '\0';
+    return (ForgeString){ .ptr = buf, .len = pos };
+}
+
 // ---- List sort ----
 
 void forge_list_sort_int(int64_t* data, int64_t len) {

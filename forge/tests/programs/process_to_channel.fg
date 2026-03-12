@@ -6,7 +6,7 @@ fn main() {
 
   // Spawn a process and feed stdout lines to channel
   spawn {
-    let handle = process.spawn("sh", "[\"-c\",\"echo INFO:started && echo ERROR:disk && echo INFO:running && echo ERROR:timeout\"]", "{}")
+    let handle = process.spawn("sh", ["-c", "echo INFO:started && echo ERROR:disk && echo INFO:running && echo ERROR:timeout"])
     sleep(200)
     mut count = 0
     loop {
