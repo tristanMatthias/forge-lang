@@ -45,6 +45,14 @@ enum Commands {
         /// Maximum number of errors to display
         #[arg(long, default_value = "20")]
         max_errors: usize,
+
+        /// Show build profiling with per-stage timings
+        #[arg(long)]
+        profile: bool,
+
+        /// Profile output format: "human" or "json"
+        #[arg(long, default_value = "human")]
+        profile_format: String,
     },
 
     /// Compile and run a Forge source file or project
@@ -73,6 +81,10 @@ enum Commands {
         /// Maximum number of errors to display
         #[arg(long, default_value = "20")]
         max_errors: usize,
+
+        /// Automatically apply high-confidence fixes
+        #[arg(long)]
+        autofix: bool,
     },
 
     /// Explain an error code (e.g., `forge explain F0020`)
@@ -88,6 +100,29 @@ enum Commands {
     Provider {
         #[command(subcommand)]
         command: ProviderCommands,
+    },
+
+    /// Explain how types are derived on a specific line
+    Why {
+        /// File and line (e.g., file.fg:5)
+        file_line: String,
+    },
+
+    /// Error diagnostic tools
+    Errors {
+        #[command(subcommand)]
+        command: ErrorCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ErrorCommands {
+    /// Compare two JSON diagnostic dumps (before/after)
+    Diff {
+        /// Path to the "before" JSON diagnostics file
+        before: PathBuf,
+        /// Path to the "after" JSON diagnostics file
+        after: PathBuf,
     },
 }
 
@@ -191,6 +226,8 @@ fn run() {
             error_format,
             output,
             max_errors,
+            profile,
+            profile_format,
             ..
         } => {
             let mut driver = Driver::new();
@@ -204,6 +241,8 @@ fn run() {
             };
             driver.output = output;
             driver.max_errors = max_errors;
+            driver.profile = profile;
+            driver.profile_format = profile_format;
 
             let (is_project, path) = resolve_target(file);
 
@@ -264,7 +303,7 @@ fn run() {
             }
         }
 
-        Commands::Check { file, error_format, max_errors } => {
+        Commands::Check { file, error_format, max_errors, autofix } => {
             let mut driver = Driver::new();
             driver.error_format = if error_format == "json" {
                 ErrorFormat::Json
@@ -272,6 +311,7 @@ fn run() {
                 ErrorFormat::Human
             };
             driver.max_errors = max_errors;
+            driver.autofix = autofix;
             if let Err(e) = driver.check(&file) {
                 eprintln!("error: {}", e);
                 process::exit(1);
@@ -305,6 +345,25 @@ fn run() {
             }
         }
 
+        Commands::Why { file_line } => {
+            // Parse file:line
+            let parts: Vec<&str> = file_line.rsplitn(2, ':').collect();
+            if parts.len() != 2 {
+                eprintln!("error: expected format file.fg:LINE (e.g., main.fg:5)");
+                process::exit(1);
+            }
+            let line: u32 = parts[0].parse().unwrap_or_else(|_| {
+                eprintln!("error: invalid line number '{}'", parts[0]);
+                process::exit(1);
+            });
+            let file = PathBuf::from(parts[1]);
+            let driver = Driver::new();
+            if let Err(e) = driver.explain_line(&file, line) {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
+
         Commands::Version => {
             println!("forge 0.1.0");
         }
@@ -314,6 +373,30 @@ fn run() {
                 if let Err(e) = scaffold_provider(&name, component) {
                     eprintln!("error: {}", e);
                     process::exit(1);
+                }
+            }
+        },
+
+        Commands::Errors { command } => match command {
+            ErrorCommands::Diff { before, after } => {
+                let before_json = std::fs::read_to_string(&before)
+                    .unwrap_or_else(|e| {
+                        eprintln!("error: cannot read {}: {}", before.display(), e);
+                        process::exit(1);
+                    });
+                let after_json = std::fs::read_to_string(&after)
+                    .unwrap_or_else(|e| {
+                        eprintln!("error: cannot read {}: {}", after.display(), e);
+                        process::exit(1);
+                    });
+                match forge::errors::diff::diff_json(&before_json, &after_json) {
+                    Ok(result) => {
+                        println!("{}", result.render());
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        process::exit(1);
+                    }
                 }
             }
         },

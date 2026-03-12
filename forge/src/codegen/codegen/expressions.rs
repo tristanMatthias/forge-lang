@@ -827,6 +827,10 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn compile_assert(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.len() < 2 { return None; }
+
+        // Get the span of the assert call for source location
+        let call_span = args[0].value.span();
+
         let cond_val = self.compile_expr(&args[0].value)?;
         let msg_val = self.compile_expr(&args[1].value)?;
 
@@ -853,14 +857,35 @@ impl<'ctx> Codegen<'ctx> {
             let msg_struct = msg_val.into_struct_value();
             let msg_ptr = self.builder.build_extract_value(msg_struct, 0, "msg_ptr").unwrap();
             let msg_len = self.builder.build_extract_value(msg_struct, 1, "msg_len").unwrap();
+
+            // Build file name as a global string constant
+            let file_str = &self.source_file;
+            let file_global = self.builder.build_global_string_ptr(
+                if file_str.is_empty() { "<unknown>" } else { file_str },
+                "assert_file",
+            ).unwrap();
+            let file_len_val = self.context.i64_type().const_int(
+                if file_str.is_empty() { 9 } else { file_str.len() as u64 },
+                false,
+            );
+            let line_val = self.context.i64_type().const_int(call_span.line as u64, false);
+            let col_val = self.context.i64_type().const_int(call_span.col as u64, false);
+
             let assert_fn = self.module.get_function("forge_assert").unwrap_or_else(|| {
+                let i8t = self.context.i8_type();
+                let ptrt = self.context.ptr_type(AddressSpace::default());
+                let i64t = self.context.i64_type();
                 let ft = self.context.void_type().fn_type(
-                    &[self.context.i8_type().into(), self.context.ptr_type(AddressSpace::default()).into(), self.context.i64_type().into()],
+                    &[i8t.into(), ptrt.into(), i64t.into(), ptrt.into(), i64t.into(), i64t.into(), i64t.into()],
                     false,
                 );
                 self.module.add_function("forge_assert", ft, None)
             });
-            self.builder.build_call(assert_fn, &[cond_i8.into(), msg_ptr.into(), msg_len.into()], "").unwrap();
+            self.builder.build_call(assert_fn, &[
+                cond_i8.into(), msg_ptr.into(), msg_len.into(),
+                file_global.as_pointer_value().into(), file_len_val.into(),
+                line_val.into(), col_val.into(),
+            ], "").unwrap();
         }
         None
     }

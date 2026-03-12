@@ -1,0 +1,8 @@
+fn get_name() -> string {
+    "Alice"
+}
+
+fn main() {
+    let x: int = get_name()
+    println(string(x))
+}

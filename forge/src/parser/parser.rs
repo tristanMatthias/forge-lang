@@ -121,12 +121,15 @@ impl Parser {
         }
 
         let name = self.expect_ident()?;
-        let type_ann = if self.check(&TokenKind::Colon) {
+        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
+            let colon_pos = self.tokens[self.pos].span.start;
             self.advance();
             self.skip_newlines();
-            Some(self.parse_type_expr()?)
+            let ty = self.parse_type_expr()?;
+            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
+            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
         } else {
-            None
+            (None, None)
         };
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
@@ -135,6 +138,7 @@ impl Parser {
         Some(Statement::Let {
             name,
             type_ann,
+            type_ann_span,
             value,
             exported,
             span: start,
@@ -271,12 +275,15 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let name = self.expect_ident()?;
-        let type_ann = if self.check(&TokenKind::Colon) {
+        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
+            let colon_pos = self.tokens[self.pos].span.start;
             self.advance();
             self.skip_newlines();
-            Some(self.parse_type_expr()?)
+            let ty = self.parse_type_expr()?;
+            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
+            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
         } else {
-            None
+            (None, None)
         };
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
@@ -285,6 +292,7 @@ impl Parser {
         Some(Statement::Mut {
             name,
             type_ann,
+            type_ann_span,
             value,
             exported,
             span: start,
@@ -299,12 +307,15 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let name = self.expect_ident()?;
-        let type_ann = if self.check(&TokenKind::Colon) {
+        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
+            let colon_pos = self.tokens[self.pos].span.start;
             self.advance();
             self.skip_newlines();
-            Some(self.parse_type_expr()?)
+            let ty = self.parse_type_expr()?;
+            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
+            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
         } else {
-            None
+            (None, None)
         };
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
@@ -313,6 +324,7 @@ impl Parser {
         Some(Statement::Const {
             name,
             type_ann,
+            type_ann_span,
             value,
             exported,
             span: start,
@@ -2461,6 +2473,7 @@ impl Parser {
                             prologue.push(Statement::Let {
                                 name: p.name.clone(),
                                 type_ann: Some(TypeExpr::Named("string".into())),
+                                type_ann_span: None,
                                 value: Expr::Call {
                                     callee: Box::new(Expr::Ident("forge_string_new".into(), sp)),
                                     args: vec![

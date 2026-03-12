@@ -23,6 +23,7 @@ pub struct TypeEnv {
     pub type_aliases: HashMap<String, Type>,
     pub enum_types: HashMap<String, Type>,
     pub functions: HashMap<String, Type>,
+    pub fn_spans: HashMap<String, Span>,
 }
 
 impl TypeEnv {
@@ -32,6 +33,7 @@ impl TypeEnv {
             type_aliases: HashMap::new(),
             enum_types: HashMap::new(),
             functions: HashMap::new(),
+            fn_spans: HashMap::new(),
         };
         // Register built-in functions
         env.functions.insert(

@@ -1,4 +1,6 @@
+pub mod autofix;
 pub mod diagnostic;
+pub mod diff;
 pub mod registry;
 pub mod suggestions;
 

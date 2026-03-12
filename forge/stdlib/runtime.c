@@ -256,11 +256,22 @@ void forge_exit(int64_t code) {
 
 // ---- Assert ----
 
-void forge_assert(int8_t cond, const char* msg, int64_t msg_len) {
+void forge_assert(int8_t cond, const char* msg, int64_t msg_len,
+                  const char* file, int64_t file_len,
+                  int64_t line, int64_t col) {
     if (!cond) {
-        fprintf(stderr, "assertion failed: ");
+        fprintf(stderr, "\n");
+        // Print file:line location
+        if (file && file_len > 0) {
+            fprintf(stderr, "  assertion failed at ");
+            fwrite(file, 1, file_len, stderr);
+            fprintf(stderr, " line %lld, col %lld\n", (long long)line, (long long)col);
+        } else {
+            fprintf(stderr, "  assertion failed\n");
+        }
+        fprintf(stderr, "  message: ");
         fwrite(msg, 1, msg_len, stderr);
-        fputc('\n', stderr);
+        fprintf(stderr, "\n\n");
         exit(1);
     }
 }

@@ -1,9 +1,10 @@
 use crate::codegen::Codegen;
+use crate::driver::profile::{BuildProfile, count_functions};
 use crate::driver::project::ForgeProject;
 use crate::errors::DiagnosticBag;
 use crate::component_expand::{ComponentExpander, ExpansionResult};
 use crate::lexer::Lexer;
-use crate::parser::ast::{ComponentTemplateDef, Program, Statement};
+use crate::parser::ast::{ComponentTemplateDef, Expr, Program, Statement};
 use crate::parser::{ComponentMeta, Parser};
 use crate::provider::{self, ProviderInfo};
 
@@ -11,6 +12,7 @@ use inkwell::context::Context;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 pub struct Driver {
     pub emit_ir: bool,
@@ -19,6 +21,9 @@ pub struct Driver {
     pub output: Option<PathBuf>,
     pub error_format: ErrorFormat,
     pub max_errors: usize,
+    pub profile: bool,
+    pub profile_format: String,
+    pub autofix: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -57,17 +62,23 @@ impl Driver {
             output: None,
             error_format: ErrorFormat::Human,
             max_errors: 20,
+            profile: false,
+            profile_format: "human".to_string(),
+            autofix: false,
         }
     }
 
     /// Compile a single .fg file
     pub fn compile(&self, source_path: &Path) -> Result<PathBuf, String> {
+        let mut bp = BuildProfile::new();
+
         let source = std::fs::read_to_string(source_path)
             .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
 
         let filename = source_path.to_str().unwrap_or("<unknown>");
 
         // 1. Lex
+        let t = Instant::now();
         let mut lexer = Lexer::new(&source);
         let tokens = lexer.tokenize();
 
@@ -75,6 +86,7 @@ impl Driver {
         for d in lexer.diagnostics() {
             diag_bag.report(d.clone());
         }
+        bp.add("lex", t.elapsed());
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
@@ -85,12 +97,15 @@ impl Driver {
         let provider_uses = prescan_provider_uses(&tokens);
 
         // 3. Load providers → get component_metas, extern_fns
+        let t = Instant::now();
         let loaded_providers = self.load_providers_by_uses(&provider_uses);
+        bp.add("providers", t.elapsed());
 
         // Build component registry from provider metas
         let component_registry = build_component_registry(&loaded_providers);
 
         // 4. Parse with component registry
+        let t = Instant::now();
         let mut parser = if component_registry.is_empty() {
             Parser::new(tokens)
         } else {
@@ -101,6 +116,7 @@ impl Driver {
         for d in parser.diagnostics() {
             diag_bag.report(d.clone());
         }
+        bp.add("parse", t.elapsed());
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
@@ -120,6 +136,7 @@ impl Driver {
         }
 
         // 6. Expand all ComponentBlock nodes → regular AST + lifecycle stmts
+        let t = Instant::now();
         let mut all_static_methods = Vec::new();
         let mut startup_stmts = Vec::new();
         let mut main_end_stmts = Vec::new();
@@ -171,8 +188,12 @@ impl Driver {
 
         // 7. Inject lifecycle stmts into main function
         inject_lifecycle_stmts(&mut program, &startup_stmts, &main_end_stmts);
+        bp.add("expand", t.elapsed());
+
+        bp.fn_count = count_functions(&program);
 
         // 8. Codegen
+        let t = Instant::now();
         let context = Context::create();
         let module_name = source_path
             .file_stem()
@@ -180,6 +201,7 @@ impl Driver {
             .unwrap_or("module");
 
         let mut codegen = Codegen::new(&context, module_name);
+        codegen.source_file = filename.to_string();
 
         // Populate static methods registry
         for (type_name, method_name, fn_name) in &all_static_methods {
@@ -205,6 +227,7 @@ impl Driver {
         }
 
         codegen.compile_program(&program);
+        bp.add("codegen", t.elapsed());
 
         if self.emit_ir {
             println!("{}", codegen.emit_ir());
@@ -221,11 +244,15 @@ impl Driver {
         });
 
         // Write object file
+        let t = Instant::now();
         let obj_path = output_path.with_extension("o");
         codegen.write_object_file(&obj_path)?;
+        bp.add("object", t.elapsed());
 
         // Compile runtime
+        let t = Instant::now();
         let runtime_obj = self.compile_runtime(source_path)?;
+        bp.add("runtime", t.elapsed());
 
         // Collect provider native lib paths
         let provider_lib_paths: Vec<PathBuf> = loaded_providers
@@ -235,10 +262,25 @@ impl Driver {
             .collect();
 
         // Link
+        let t = Instant::now();
         self.link_with_providers(&obj_path, &runtime_obj, &output_path, &provider_lib_paths)?;
+        bp.add("link", t.elapsed());
 
         // Cleanup
         std::fs::remove_file(&obj_path).ok();
+
+        // Get binary size
+        if let Ok(meta) = std::fs::metadata(&output_path) {
+            bp.binary_size = meta.len();
+        }
+
+        if self.profile {
+            if self.profile_format == "json" {
+                eprintln!("{}", bp.render_json());
+            } else {
+                eprintln!("{}", bp.render_human());
+            }
+        }
 
         Ok(output_path)
     }
@@ -399,6 +441,25 @@ impl Driver {
         }
 
         if diag_bag.has_errors() {
+            // If autofix is enabled, try to apply high-confidence fixes
+            if self.autofix {
+                let diagnostics: Vec<_> = diag_bag.diagnostics.clone();
+                let (fixed_source, applied, skipped) =
+                    crate::errors::autofix::apply_fixes(&source, &diagnostics, 0.9);
+
+                if applied > 0 {
+                    // Write the fixed source back
+                    std::fs::write(source_path, &fixed_source)
+                        .map_err(|e| format!("cannot write {}: {}", source_path.display(), e))?;
+                    eprintln!("autofix: applied {} fix(es), skipped {} low-confidence", applied, skipped);
+
+                    // Re-check to verify and show remaining errors
+                    return self.check(source_path);
+                } else {
+                    eprintln!("autofix: no high-confidence fixes available");
+                }
+            }
+
             self.emit_diagnostics(&diag_bag, &source, filename);
             return Err("type check errors".into());
         }
@@ -410,6 +471,127 @@ impl Driver {
 
         println!("No errors found.");
         Ok(())
+    }
+
+    pub fn explain_line(&self, source_path: &Path, target_line: u32) -> Result<(), String> {
+        let source = std::fs::read_to_string(source_path)
+            .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
+
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program();
+
+        // Type check to populate the environment
+        let mut checker = crate::typeck::TypeChecker::new();
+        checker.check_program(&program);
+
+        // Find statements on the target line
+        let mut found = false;
+        for stmt in &program.statements {
+            match stmt {
+                Statement::Let { name, type_ann, value, span, .. }
+                | Statement::Mut { name, type_ann, value, span, .. }
+                | Statement::Const { name, type_ann, value, span, .. } => {
+                    if span.line != target_line {
+                        continue;
+                    }
+                    found = true;
+                    let inferred = checker.infer_type(value);
+                    let declared = type_ann.as_ref().map(|t| checker.resolve_type_expr(t));
+                    println!("  {} : {}", name, declared.as_ref().unwrap_or(&inferred));
+                    println!("    inferred from value: {}", inferred);
+                    self.explain_expr_type(&mut checker, value, 2);
+                    println!();
+                }
+                Statement::FnDecl { name, params, return_type, span, .. } => {
+                    if span.line != target_line {
+                        continue;
+                    }
+                    found = true;
+                    let ret_ty = return_type.as_ref()
+                        .map(|t| checker.resolve_type_expr(t))
+                        .unwrap_or(crate::typeck::types::Type::Void);
+                    let param_strs: Vec<String> = params.iter().map(|p| {
+                        let ty = p.type_ann.as_ref()
+                            .map(|t| checker.resolve_type_expr(t))
+                            .unwrap_or(crate::typeck::types::Type::Unknown);
+                        format!("{}: {}", p.name, ty)
+                    }).collect();
+                    println!("  fn {}({}) -> {}", name, param_strs.join(", "), ret_ty);
+                    println!();
+                }
+                _ => {}
+            }
+        }
+
+        // Also check inside function bodies
+        for stmt in &program.statements {
+            if let Statement::FnDecl { body, .. } = stmt {
+                for inner in &body.statements {
+                    match inner {
+                        Statement::Let { name, type_ann, value, span, .. }
+                        | Statement::Mut { name, type_ann, value, span, .. }
+                        | Statement::Const { name, type_ann, value, span, .. } => {
+                            if span.line != target_line {
+                                continue;
+                            }
+                            found = true;
+                            let inferred = checker.infer_type(value);
+                            let declared = type_ann.as_ref().map(|t| checker.resolve_type_expr(t));
+                            println!("  {} : {}", name, declared.as_ref().unwrap_or(&inferred));
+                            println!("    inferred from value: {}", inferred);
+                            self.explain_expr_type(&mut checker, value, 2);
+                            println!();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        if !found {
+            println!("No bindings found on line {}", target_line);
+        }
+        Ok(())
+    }
+
+    fn explain_expr_type(&self, checker: &mut crate::typeck::TypeChecker, expr: &crate::parser::ast::Expr, depth: usize) {
+        let indent = "    ".repeat(depth);
+        match expr {
+            Expr::Ident(name, _) => {
+                if let Some(info) = checker.env.lookup(name) {
+                    println!("{}  {} is {} (variable)", indent, name, info.ty);
+                    if let Some(span) = &info.def_span {
+                        println!("{}  defined at line {}", indent, span.line);
+                    }
+                } else if let Some(fn_ty) = checker.env.lookup_function(name) {
+                    println!("{}  {} is {} (function)", indent, name, fn_ty);
+                }
+            }
+            Expr::Call { callee, .. } => {
+                if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                    if let Some(fn_ty) = checker.env.lookup_function(fn_name) {
+                        if let crate::typeck::types::Type::Function { return_type, .. } = fn_ty {
+                            println!("{}  {}() returns {}", indent, fn_name, return_type);
+                            if let Some(span) = checker.env.fn_spans.get(fn_name) {
+                                println!("{}  declared at line {}", indent, span.line);
+                            }
+                        }
+                    }
+                }
+            }
+            Expr::Binary { op, left, right, .. } => {
+                let left_ty = checker.infer_type(left);
+                let right_ty = checker.infer_type(right);
+                println!("{}  {:?}({}, {})", indent, op, left_ty, right_ty);
+            }
+            Expr::MemberAccess { object, field, .. } => {
+                let obj_ty = checker.infer_type(object);
+                println!("{}  {}.{} on type {}", indent, "expr", field, obj_ty);
+            }
+            _ => {}
+        }
     }
 
     fn emit_diagnostics(&self, diag_bag: &DiagnosticBag, source: &str, filename: &str) {

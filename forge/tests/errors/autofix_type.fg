@@ -1,0 +1,4 @@
+fn main() {
+    let port: string = 8080
+    println(port)
+}

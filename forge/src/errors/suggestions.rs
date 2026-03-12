@@ -44,6 +44,21 @@ pub fn did_you_mean<'a>(name: &str, candidates: &[&'a str], max_dist: usize) -> 
         .map(|(c, _)| c)
 }
 
+/// Generate a placeholder value for a given type (for error message examples)
+pub fn placeholder_for_type(ty: &crate::typeck::types::Type) -> String {
+    use crate::typeck::types::Type;
+    match ty {
+        Type::Int => "0".to_string(),
+        Type::Float => "0.0".to_string(),
+        Type::Bool => "false".to_string(),
+        Type::String => "\"...\"".to_string(),
+        Type::Void => "()".to_string(),
+        Type::List(inner) => format!("[{}]", placeholder_for_type(inner)),
+        Type::Nullable(inner) => placeholder_for_type(inner),
+        _ => "...".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -150,6 +150,34 @@ fn main() {
 ```
 """
 
+[F0014]
+title = "Wrong number of arguments"
+level = "error"
+message = "A function was called with the wrong number of arguments."
+help = "Check the function signature and provide the correct number of arguments."
+doc = """
+This error occurs when a function is called with more or fewer arguments
+than it expects.
+
+Example:
+```forge
+fn add(a: int, b: int) -> int {
+    a + b
+}
+
+fn main() {
+    let result = add(1)  // error: expects 2 arguments, got 1
+}
+```
+
+Fix:
+```forge
+fn main() {
+    let result = add(1, 2)  // correct: 2 arguments
+}
+```
+"""
+
 [F0801]
 title = "Unused variable"
 level = "warning"

@@ -75,6 +75,7 @@ fn let_stmt(name: &str, value: Expr) -> Statement {
     Statement::Let {
         name: name.to_string(),
         type_ann: None,
+        type_ann_span: None,
         value,
         exported: false,
         span: sp(),
@@ -85,6 +86,7 @@ fn let_typed(name: &str, ty: TypeExpr, value: Expr) -> Statement {
     Statement::Let {
         name: name.to_string(),
         type_ann: Some(ty),
+        type_ann_span: None,
         value,
         exported: false,
         span: sp(),
@@ -483,23 +485,26 @@ fn substitute_block(block: &Block, ctx: &SubstitutionContext) -> Block {
 
 fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
     match stmt {
-        Statement::Let { name, type_ann, value, exported, span } => Statement::Let {
+        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
             name: name.clone(),
             type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
+            type_ann_span: None,
             value: substitute_expr(value, ctx),
             exported: *exported,
             span: *span,
         },
-        Statement::Mut { name, type_ann, value, exported, span } => Statement::Mut {
+        Statement::Mut { name, type_ann, value, exported, span, .. } => Statement::Mut {
             name: name.clone(),
             type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
+            type_ann_span: None,
             value: substitute_expr(value, ctx),
             exported: *exported,
             span: *span,
         },
-        Statement::Const { name, type_ann, value, exported, span } => Statement::Const {
+        Statement::Const { name, type_ann, value, exported, span, .. } => Statement::Const {
             name: name.clone(),
             type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
+            type_ann_span: None,
             value: substitute_expr(value, ctx),
             exported: *exported,
             span: *span,
@@ -580,9 +585,10 @@ fn expand_syntax_call(
 fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Statement {
     match stmt {
         Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos)),
-        Statement::Let { name, type_ann, value, exported, span } => Statement::Let {
+        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
             name: name.clone(),
             type_ann: type_ann.clone(),
+            type_ann_span: None,
             value: substitute_syntax_args_expr(value, args, service_infos),
             exported: *exported,
             span: *span,
@@ -636,9 +642,10 @@ fn replace_tpl_generated(stmt: &Statement, generated_name: &str) -> Statement {
             }
         }
         Statement::Expr(expr) => Statement::Expr(replace_tpl_generated_expr(expr, generated_name)),
-        Statement::Let { name, type_ann, value, exported, span } => Statement::Let {
+        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
             name: name.clone(),
             type_ann: type_ann.clone(),
+            type_ann_span: None,
             value: replace_tpl_generated_expr(value, generated_name),
             exported: *exported,
             span: *span,

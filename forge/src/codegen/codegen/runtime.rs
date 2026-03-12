@@ -145,9 +145,13 @@ impl<'ctx> Codegen<'ctx> {
             self.module.add_function("atoll", ft, None);
         }
 
-        // Assert function
+        // Assert function: forge_assert(cond: i8, msg: ptr, msg_len: i64, file: ptr, file_len: i64, line: i64, col: i64)
         if self.module.get_function("forge_assert").is_none() {
-            let ft = void_type.fn_type(&[i8_type.into(), ptr_type.into(), i64_type.into()], false);
+            let ft = void_type.fn_type(&[
+                i8_type.into(), ptr_type.into(), i64_type.into(),
+                ptr_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(),
+            ], false);
             self.module.add_function("forge_assert", ft, None);
         }
     }

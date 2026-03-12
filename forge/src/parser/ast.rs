@@ -31,6 +31,7 @@ pub enum Statement {
     Let {
         name: String,
         type_ann: Option<TypeExpr>,
+        type_ann_span: Option<Span>,
         value: Expr,
         exported: bool,
         span: Span,
@@ -38,6 +39,7 @@ pub enum Statement {
     Mut {
         name: String,
         type_ann: Option<TypeExpr>,
+        type_ann_span: Option<Span>,
         value: Expr,
         exported: bool,
         span: Span,
@@ -45,6 +47,7 @@ pub enum Statement {
     Const {
         name: String,
         type_ann: Option<TypeExpr>,
+        type_ann_span: Option<Span>,
         value: Expr,
         exported: bool,
         span: Span,

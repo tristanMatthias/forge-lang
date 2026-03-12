@@ -1,4 +1,7 @@
 use crate::errors::Diagnostic;
+use crate::errors::diagnostic::{Edit, LabelKind};
+use crate::errors::suggestions::placeholder_for_type;
+use crate::lexer::Span;
 use crate::parser::ast::*;
 use crate::typeck::env::TypeEnv;
 use crate::typeck::types::{EnumVariantType, Type};
@@ -36,6 +39,7 @@ impl TypeChecker {
                 name,
                 params,
                 return_type,
+                span,
                 ..
             } => {
                 let param_types: Vec<Type> = params
@@ -51,6 +55,7 @@ impl TypeChecker {
                     .as_ref()
                     .map(|t| self.resolve_type_expr(t))
                     .unwrap_or(Type::Void);
+                self.env.fn_spans.insert(name.clone(), *span);
                 self.env.functions.insert(
                     name.clone(),
                     Type::Function {
@@ -88,7 +93,6 @@ impl TypeChecker {
             }
             Statement::TypeDecl { name, value, .. } => {
                 let ty = self.resolve_type_expr(value);
-                // For struct types, add the name so it can be used for trait dispatch
                 let ty = match ty {
                     Type::Struct { name: None, fields } => Type::Struct {
                         name: Some(name.clone()),
@@ -107,6 +111,7 @@ impl TypeChecker {
             Statement::Let {
                 name,
                 type_ann,
+                type_ann_span,
                 value,
                 span,
                 ..
@@ -114,7 +119,7 @@ impl TypeChecker {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
                     let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
                     ann_type
                 } else {
                     val_type
@@ -124,6 +129,7 @@ impl TypeChecker {
             Statement::Mut {
                 name,
                 type_ann,
+                type_ann_span,
                 value,
                 span,
                 ..
@@ -131,7 +137,7 @@ impl TypeChecker {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
                     let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
                     ann_type
                 } else {
                     val_type
@@ -141,6 +147,7 @@ impl TypeChecker {
             Statement::Const {
                 name,
                 type_ann,
+                type_ann_span,
                 value,
                 span,
                 ..
@@ -148,7 +155,7 @@ impl TypeChecker {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
                     let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
                     ann_type
                 } else {
                     val_type
@@ -252,12 +259,11 @@ impl TypeChecker {
             } => {
                 let iter_type = self.check_expr(iterable);
                 self.env.push_scope();
-                // Bind the pattern variable
                 if let Pattern::Ident(name, _) = pattern {
                     let elem_type = match &iter_type {
                         Type::Range(inner) => *inner.clone(),
                         Type::List(inner) => *inner.clone(),
-                        _ => Type::Int, // assume range produces ints
+                        _ => Type::Int,
                     };
                     self.env.define(name.clone(), elem_type, false);
                 }
@@ -328,7 +334,6 @@ impl TypeChecker {
                 } else if let Some(ty) = self.env.lookup_function(name).cloned() {
                     ty
                 } else if name.starts_with('.') {
-                    // Enum variant shorthand
                     Type::Unknown
                 } else if name.starts_with("__destructure") {
                     Type::Void
@@ -348,7 +353,7 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Binary { left, op, right, span } => {
+            Expr::Binary { left, op, right, .. } => {
                 let left_type = self.check_expr(left);
                 let right_type = self.check_expr(right);
 
@@ -386,9 +391,34 @@ impl TypeChecker {
                 }
 
                 match &callee_type {
-                    Type::Function { return_type, .. } => *return_type.clone(),
+                    Type::Function { params, return_type } => {
+                        // Check argument count
+                        if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                            if args.len() != params.len()
+                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel")
+                            {
+                                let sig = self.format_fn_signature(fn_name, params);
+                                let example = self.format_fn_example(fn_name, params);
+                                self.diagnostics.push(
+                                    Diagnostic::error(
+                                        "F0014",
+                                        format!(
+                                            "function '{}' expects {} argument{}, but {} {} provided",
+                                            fn_name,
+                                            params.len(),
+                                            if params.len() == 1 { "" } else { "s" },
+                                            args.len(),
+                                            if args.len() == 1 { "was" } else { "were" },
+                                        ),
+                                        *span,
+                                    )
+                                    .with_help(format!("expected: {}\n  example:  {}", sig, example)),
+                                );
+                            }
+                        }
+                        *return_type.clone()
+                    }
                     _ => {
-                        // Could be a built-in or unresolved
                         if let Expr::Ident(name, _) = callee.as_ref() {
                             match name.as_str() {
                                 "println" | "print" => Type::Void,
@@ -510,7 +540,6 @@ impl TypeChecker {
             Expr::NullCoalesce { left, right, .. } => {
                 let left_type = self.check_expr(left);
                 let right_type = self.check_expr(right);
-                // Result is the inner type of the nullable, or the right type
                 match &left_type {
                     Type::Nullable(inner) => *inner.clone(),
                     _ => right_type,
@@ -747,6 +776,11 @@ impl TypeChecker {
         }
     }
 
+    /// Public wrapper to infer the type of an expression (for forge why)
+    pub fn infer_type(&mut self, expr: &Expr) -> Type {
+        self.check_expr(expr)
+    }
+
     pub fn resolve_type_expr(&self, type_expr: &TypeExpr) -> Type {
         match type_expr {
             TypeExpr::Named(name) => self.env.resolve_type_name(name),
@@ -778,7 +812,7 @@ impl TypeChecker {
             TypeExpr::Nullable(inner) => {
                 Type::Nullable(Box::new(self.resolve_type_expr(inner)))
             }
-            TypeExpr::Union(_) => Type::Unknown, // simplified for Phase 1
+            TypeExpr::Union(_) => Type::Unknown,
             TypeExpr::Tuple(elems) => {
                 Type::Tuple(elems.iter().map(|e| self.resolve_type_expr(e)).collect())
             }
@@ -799,8 +833,18 @@ impl TypeChecker {
         }
     }
 
-    fn check_type_mismatch(&mut self, expected: &Type, actual: &Type, span: crate::lexer::Span) {
-        // Skip if either type is unknown/error (inference not available)
+    fn check_type_mismatch(&mut self, expected: &Type, actual: &Type, span: Span) {
+        self.check_type_mismatch_ctx(expected, actual, span, None, None);
+    }
+
+    fn check_type_mismatch_ctx(
+        &mut self,
+        expected: &Type,
+        actual: &Type,
+        span: Span,
+        type_ann_span: Option<Span>,
+        value_expr: Option<&Expr>,
+    ) {
         if matches!(expected, Type::Unknown | Type::Error) || matches!(actual, Type::Unknown | Type::Error) {
             return;
         }
@@ -822,9 +866,66 @@ impl TypeChecker {
             format!("type mismatch: expected {}, found {}", expected, actual),
             span,
         );
+
+        // Add structured suggestion with type annotation span for autofix
+        if let Some(ann_span) = type_ann_span {
+            diag = diag.with_suggestion(
+                format!("change type annotation to {}", actual),
+                vec![Edit {
+                    span: ann_span,
+                    replacement: format!(": {}", actual),
+                }],
+                0.95,
+            );
+        }
+
         if let Some(conv) = suggestion {
             diag = diag.with_help(format!("try wrapping with {}", conv));
         }
+
+        // Add "because" chain — show where the actual type came from
+        if let Some(val_expr) = value_expr {
+            match val_expr {
+                Expr::Call { callee, .. } => {
+                    if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                        if let Some(fn_span) = self.env.fn_spans.get(fn_name) {
+                            diag = diag.with_label(
+                                *fn_span,
+                                format!("'{}' returns {} (declared here)", fn_name, actual),
+                                LabelKind::Secondary,
+                            );
+                        }
+                    }
+                }
+                Expr::Ident(var_name, _) => {
+                    if let Some(info) = self.env.lookup(var_name) {
+                        if let Some(def_span) = info.def_span {
+                            diag = diag.with_label(
+                                def_span,
+                                format!("'{}' is {} (defined here)", var_name, actual),
+                                LabelKind::Secondary,
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
         self.diagnostics.push(diag);
+    }
+
+    /// Format function signature for error messages
+    fn format_fn_signature(&self, fn_name: &str, params: &[Type]) -> String {
+        let params_str: Vec<String> = params.iter().enumerate().map(|(i, t)| {
+            format!("arg{}: {}", i + 1, t)
+        }).collect();
+        format!("{}({})", fn_name, params_str.join(", "))
+    }
+
+    /// Generate example function call with placeholder values
+    fn format_fn_example(&self, fn_name: &str, params: &[Type]) -> String {
+        let args: Vec<String> = params.iter().map(|t| placeholder_for_type(t)).collect();
+        format!("{}({})", fn_name, args.join(", "))
     }
 }
