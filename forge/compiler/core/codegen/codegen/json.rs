@@ -473,7 +473,7 @@ impl<'ctx> Codegen<'ctx> {
                 .build_gep(i8_type, buf, &[offset], "off")
                 .unwrap()
         };
-        self.builder
+        let wrote = self.builder
             .build_call(
                 snprintf,
                 &[
@@ -484,33 +484,22 @@ impl<'ctx> Codegen<'ctx> {
                 ],
                 "",
             )
-            .unwrap();
-
-        // Convert the C buffer to a ForgeString
-        let string_new = self.module.get_function("forge_string_new").unwrap();
-        let str_len = self
-            .builder
-            .build_call(
-                self.module.get_function("forge_string_length").unwrap(),
-                &[self
-                    .builder
-                    .build_call(string_new, &[buf.into(), buf_size.into()], "tmp_str")
-                    .unwrap()
-                    .try_as_basic_value()
-                    .left()
-                    .unwrap()
-                    .into()],
-                "json_len",
-            )
             .unwrap()
             .try_as_basic_value()
-            .left();
+            .left()
+            .unwrap()
+            .into_int_value();
+        let w64 = self
+            .builder
+            .build_int_z_extend(wrote, i64_type, "w64")
+            .unwrap();
+        offset = self.builder.build_int_add(offset, w64, "off").unwrap();
 
-        // Actually, simpler: use forge_string_new with strlen-equivalent
-        // Just call forge_string_new(buf, strlen) where strlen is implicit via the runtime
+        // Convert the C buffer to a ForgeString using the actual content length
+        let string_new = self.module.get_function("forge_string_new").unwrap();
         let result = self
             .builder
-            .build_call(string_new, &[buf.into(), buf_size.into()], "json_str")
+            .build_call(string_new, &[buf.into(), offset.into()], "json_str")
             .unwrap();
         result.try_as_basic_value().left()
     }
