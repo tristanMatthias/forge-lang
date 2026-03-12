@@ -1,0 +1,19 @@
+/// # Wildcard Pattern
+///
+/// Use `_` as a catch-all in match expressions.
+///
+/// expect: one
+/// expect: other
+
+fn describe(n: int) -> string {
+  match n {
+    1 -> "one"
+    2 -> "two"
+    _ -> "other"
+  }
+}
+
+fn main() {
+  println(describe(1))
+  println(describe(99))
+}

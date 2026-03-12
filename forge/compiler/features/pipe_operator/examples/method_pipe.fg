@@ -1,0 +1,13 @@
+/// # Pipe to Method
+///
+/// Pipe into method calls and string operations.
+///
+/// expect: HELLO WORLD FORGE
+
+fn main() {
+  let result = "hello,world,forge"
+    |> split(",")
+    |> map(x -> x.upper())
+    |> join(" ")
+  println(result)
+}

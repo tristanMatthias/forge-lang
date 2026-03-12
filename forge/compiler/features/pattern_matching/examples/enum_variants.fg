@@ -1,0 +1,27 @@
+/// # Enum Pattern Matching
+///
+/// Match on enum variants with data extraction.
+///
+/// expect: circle with radius 5.0
+/// expect: 3.0x4.0 rectangle
+/// expect: a point
+
+enum Shape {
+  circle(radius: float)
+  rectangle(width: float, height: float)
+  point
+}
+
+fn describe(s: Shape) -> string {
+  match s {
+    .circle(r) -> `circle with radius ${r}`
+    .rectangle(w, h) -> `${w}x${h} rectangle`
+    .point -> "a point"
+  }
+}
+
+fn main() {
+  println(describe(Shape.circle(radius: 5.0)))
+  println(describe(Shape.rectangle(width: 3.0, height: 4.0)))
+  println(describe(Shape.point))
+}

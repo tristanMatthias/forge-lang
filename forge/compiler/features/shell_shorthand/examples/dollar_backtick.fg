@@ -1,0 +1,14 @@
+/// # Dollar Backtick Exec
+///
+/// Execute shell commands using backtick syntax with interpolation.
+///
+/// expect: forge has 3 features
+
+use @std.process
+
+fn main() {
+  let name = "forge"
+  let count = 3
+  let result = $`echo ${name} has ${count} features`
+  println(result.trim())
+}

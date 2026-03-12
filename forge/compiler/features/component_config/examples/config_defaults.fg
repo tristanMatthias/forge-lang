@@ -1,0 +1,22 @@
+/// # Component Config Defaults
+///
+/// Components define config schemas with defaults. When the user
+/// omits a config value, the default from the schema is used.
+/// The cron schedule component has `config { every: int = 1000 }`.
+///
+/// expect: tick
+/// expect: tick
+/// expect: done
+
+use @std.cron.{schedule}
+
+schedule ticker {
+  run { println("tick") }
+}
+
+fn main() {
+  ticker.start()
+  forge_sleep(2500)
+  ticker.stop()
+  println("done")
+}

@@ -1,0 +1,36 @@
+/// # Default Trait Methods
+///
+/// Traits with default method implementations.
+///
+/// expect: circle r=5.0
+/// expect: CIRCLE R=5.0
+/// expect: square s=3.0
+/// expect: SQUARE S=3.0
+
+trait Describable {
+  fn describe(self) -> string
+
+  fn describe_loud(self) -> string {
+    self.describe().upper()
+  }
+}
+
+type Circle = { radius: float }
+type Square = { side: float }
+
+impl Describable for Circle {
+  fn describe(self) -> string { `circle r=${self.radius}` }
+}
+
+impl Describable for Square {
+  fn describe(self) -> string { `square s=${self.side}` }
+}
+
+fn main() {
+  let c = Circle { radius: 5.0 }
+  let s = Square { side: 3.0 }
+  println(c.describe())
+  println(c.describe_loud())
+  println(s.describe())
+  println(s.describe_loud())
+}

@@ -1,0 +1,26 @@
+/// # Generics with Result
+///
+/// Generic function returning a Result type.
+///
+/// expect: 100
+/// expect: error: empty list
+/// expect: 0.0
+
+fn safe_first<T>(list: List<T>) -> Result<T, string> {
+  if list.length > 0 {
+    Ok(list[0])
+  } else {
+    Err("empty list")
+  }
+}
+
+fn main() {
+  let val = safe_first([100, 200, 300]) catch (e) { 0 }
+  println(string(val))
+
+  let empty_val = safe_first([]) catch (e) {
+    println(`error: ${e}`)
+    0.0
+  }
+  println(string(empty_val))
+}

@@ -1,0 +1,25 @@
+/// # Parallel Spawn
+///
+/// Spawn concurrent tasks that communicate via channels.
+///
+/// expect: a
+/// expect: b
+
+use @std.channel
+
+fn main() {
+  let ch = channel(10)
+
+  spawn {
+    ch <- "a"
+  }
+  spawn {
+    ch <- "b"
+  }
+
+  sleep(100)
+  let msg1 = <- ch
+  let msg2 = <- ch
+  println(msg1)
+  println(msg2)
+}

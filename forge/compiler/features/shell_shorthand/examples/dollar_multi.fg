@@ -1,0 +1,12 @@
+/// # Multi-Command Dollar Exec
+///
+/// Run multiple shell commands in backtick form.
+///
+/// expect: abc
+
+use @std.process
+
+fn main() {
+  let out = $`printf "a"; printf "b"; printf "c"`
+  println(out.trim())
+}

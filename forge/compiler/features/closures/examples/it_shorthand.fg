@@ -1,0 +1,19 @@
+/// # Closure with `it`
+///
+/// Use the implicit `it` parameter in closures.
+///
+/// expect: 5
+/// expect: 2
+/// expect: 4
+/// expect: 6
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  let evens = nums.filter(it % 2 == 0)
+  println(string(evens.length))
+
+  let doubled = [1, 2, 3].map(it * 2)
+  println(string(doubled[0]))
+  println(string(doubled[1]))
+  println(string(doubled[2]))
+}

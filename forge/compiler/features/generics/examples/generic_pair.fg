@@ -1,0 +1,16 @@
+/// # Generic Pair
+///
+/// Generic function returning a tuple pair.
+///
+/// expect: age
+/// expect: 30
+
+fn pair<A, B>(a: A, b: B) -> (A, B) {
+  (a, b)
+}
+
+fn main() {
+  let p = pair("age", 30)
+  println(p.0)
+  println(string(p.1))
+}

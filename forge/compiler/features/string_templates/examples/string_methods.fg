@@ -1,0 +1,26 @@
+/// # String Methods
+///
+/// Built-in string methods: upper, lower, contains, length, split, trim.
+///
+/// expect: HELLO
+/// expect: hello
+/// expect: true
+/// expect: false
+/// expect: 5
+/// expect: 3
+/// expect: trimmed
+
+fn main() {
+  let s = "Hello"
+  println(s.upper())
+  println(s.lower())
+  println(string(s.contains("ell")))
+  println(string(s.contains("xyz")))
+  println(string(s.length))
+
+  let parts = "a,b,c".split(",")
+  println(string(parts.length))
+
+  let padded = "  trimmed  "
+  println(padded.trim())
+}

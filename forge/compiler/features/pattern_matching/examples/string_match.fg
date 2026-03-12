@@ -1,0 +1,26 @@
+/// # String Match
+///
+/// Pattern match on string values.
+///
+/// expect: forge file
+/// expect: 111
+
+fn main() {
+  let ext = "fg"
+  match ext {
+    "fg" -> println("forge file")
+    "rs" -> println("rust file")
+    _ -> println("other")
+  }
+
+  mut count = 0
+  let items = ["a", "b", "c"]
+  for item in items {
+    match item {
+      "a" -> count = count + 1
+      "b" -> count = count + 10
+      _ -> count = count + 100
+    }
+  }
+  println(string(count))
+}

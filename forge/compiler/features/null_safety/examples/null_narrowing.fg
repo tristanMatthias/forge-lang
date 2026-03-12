@@ -1,0 +1,24 @@
+/// # Null Narrowing
+///
+/// Smart null narrowing allows safe access after a null check.
+///
+/// expect: ALICE
+/// expect: not found
+
+fn find_user(id: int) -> string? {
+  if id == 1 { "alice" } else { null }
+}
+
+fn main() {
+  let name = find_user(1)
+  if name != null {
+    println(name.upper())
+  }
+
+  let missing = find_user(99)
+  if missing != null {
+    println(missing.upper())
+  } else {
+    println("not found")
+  }
+}

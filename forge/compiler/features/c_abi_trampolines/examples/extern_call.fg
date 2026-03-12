@@ -1,0 +1,17 @@
+/// # C ABI Trampoline
+///
+/// Extern functions automatically convert between Forge strings and C pointers.
+/// The process provider demonstrates this — `process.run` calls C functions
+/// that accept raw pointers and return raw pointers, with auto-coercion.
+///
+/// expect: hello forge
+/// expect: 0
+
+use @std.process
+
+fn main() {
+  let result_json = process.run("echo", ["hello forge"])
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(result.stdout.trim())
+  println(string(result.code))
+}

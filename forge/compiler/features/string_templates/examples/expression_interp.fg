@@ -1,0 +1,13 @@
+/// # Expression Interpolation
+///
+/// Interpolate expressions inside template strings.
+///
+/// expect: 42 is hello
+/// expect: 2 + 3 = 5
+
+fn main() {
+  let x = 42
+  let s = "hello"
+  println(`${x} is ${s}`)
+  println(`2 + 3 = ${2 + 3}`)
+}

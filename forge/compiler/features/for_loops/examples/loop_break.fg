@@ -1,0 +1,16 @@
+/// # Loop with Break
+///
+/// Infinite loop with explicit break.
+///
+/// expect: 5
+
+fn main() {
+  mut counter = 0
+  loop {
+    counter = counter + 1
+    if counter == 5 {
+      break
+    }
+  }
+  println(string(counter))
+}

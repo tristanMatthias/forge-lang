@@ -1,0 +1,11 @@
+/// # It Parameter in Find
+///
+/// Use `it` in find expressions with null coalescing.
+///
+/// expect: 0
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  let found = nums.find(it > 100) ?? 0
+  println(string(found))
+}

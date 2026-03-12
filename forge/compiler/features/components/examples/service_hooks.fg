@@ -1,0 +1,30 @@
+/// # Service with Hooks
+///
+/// Services wrap models with before/after event hooks.
+///
+/// expect: creating: Widget
+/// expect: created id: 1
+/// expect: 1
+
+use @std.model.{model, service}
+
+model Item {
+  id: int @primary @auto_increment
+  name: string
+  active: bool @default(true)
+}
+
+service ItemService for Item {
+  before create(item) {
+    println(`creating: ${item.name}`)
+  }
+
+  after create(item) {
+    println(`created id: ${item.id}`)
+  }
+}
+
+fn main() {
+  let id = ItemService.create({ name: "Widget", active: true })
+  println(string(ItemService.count()))
+}

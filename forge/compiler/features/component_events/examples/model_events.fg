@@ -1,0 +1,21 @@
+/// # Component Events
+///
+/// Model components emit events like before_create and after_create.
+/// Unhandled events get no-op stubs automatically.
+///
+/// expect: Widget
+/// expect: 1
+
+use @std.model.{model}
+
+model Item {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  let id = Item.create({ name: "Widget" })
+  let item = Item.get(id)
+  println(item?.name ?? "not found")
+  println(string(Item.count()))
+}

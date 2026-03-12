@@ -1,0 +1,32 @@
+/// # Model Component CRUD
+///
+/// The model component provides create, get, list, update, delete, count.
+/// All component behavior is template-driven from provider.fg.
+///
+/// expect: Write tests
+/// expect: 3
+/// expect: 2
+
+use @std.model.{model}
+
+model Task {
+  id: int @primary @auto_increment
+  title: string
+  done: bool @default(false)
+}
+
+fn main() {
+  let id1 = Task.create({ title: "Write tests", done: false })
+  let id2 = Task.create({ title: "Review code", done: true })
+  let id3 = Task.create({ title: "Deploy", done: false })
+
+  let task = Task.get(id1)
+  if task != null {
+    println(task.title)
+  }
+
+  println(string(Task.count()))
+
+  Task.delete(id3)
+  println(string(Task.count()))
+}

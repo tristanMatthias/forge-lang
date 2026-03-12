@@ -1,0 +1,16 @@
+/// # Variable Reassignment
+///
+/// Mutable variables can be reassigned, let bindings cannot.
+///
+/// expect: 2
+/// expect: 100
+
+fn main() {
+  mut counter = 0
+  counter = counter + 1
+  counter = counter + 1
+  println(string(counter))
+
+  const MAX = 100
+  println(string(MAX))
+}

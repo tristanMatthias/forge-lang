@@ -1,0 +1,17 @@
+/// # Multiple Defers
+///
+/// Deferred statements run in reverse order at scope exit.
+///
+/// expect: first
+/// expect: deferred 2
+/// expect: deferred 1
+
+fn example() {
+  defer println("deferred 1")
+  defer println("deferred 2")
+  println("first")
+}
+
+fn main() {
+  example()
+}

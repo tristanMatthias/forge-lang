@@ -1,0 +1,32 @@
+/// # Buffered Channel
+///
+/// Create a buffered channel and check its properties.
+///
+/// expect: 3
+/// expect: 3
+/// expect: true
+/// expect: 1
+/// expect: 2
+/// expect: 1
+/// expect: false
+
+use @std.channel
+
+fn main() {
+  let ch = channel(3)
+
+  ch <- "1"
+  ch <- "2"
+  ch <- "3"
+
+  println(string(ch.length))
+  println(string(ch.capacity))
+  println(string(ch.is_full))
+
+  let a = <- ch
+  let b = <- ch
+  println(a)
+  println(b)
+  println(string(ch.length))
+  println(string(ch.is_full))
+}

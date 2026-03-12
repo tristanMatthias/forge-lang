@@ -1,0 +1,32 @@
+/// # Trait Bounds
+///
+/// Generic functions with trait constraints.
+///
+/// expect: hello, cat: whiskers
+/// expect: hello, dog: rex
+
+trait Describable {
+  fn describe(self) -> string
+}
+
+type Cat = { name: string }
+type Dog = { name: string }
+
+impl Describable for Cat {
+  fn describe(self) -> string { `cat: ${self.name}` }
+}
+
+impl Describable for Dog {
+  fn describe(self) -> string { `dog: ${self.name}` }
+}
+
+fn greet<T: Describable>(animal: T) -> string {
+  `hello, ${animal.describe()}`
+}
+
+fn main() {
+  let c = Cat { name: "whiskers" }
+  let d = Dog { name: "rex" }
+  println(greet(c))
+  println(greet(d))
+}

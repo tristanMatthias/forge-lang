@@ -1,0 +1,25 @@
+/// # Fan-Out Pattern
+///
+/// Multiple producers send to a single channel.
+///
+/// expect: 3
+
+use @std.channel
+
+fn main() {
+  let ch = channel(10)
+
+  spawn { ch <- "1" }
+  spawn { ch <- "2" }
+  spawn { ch <- "3" }
+
+  sleep(100)
+
+  mut count = 0
+  loop {
+    if ch.length == 0 { break }
+    let _ = <- ch
+    count = count + 1
+  }
+  println(string(count))
+}

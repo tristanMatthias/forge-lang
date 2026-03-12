@@ -1,0 +1,20 @@
+/// # Range in Loop
+///
+/// Use ranges to drive for loops with inclusive and exclusive bounds.
+///
+/// expect: 10
+/// expect: 15
+
+fn main() {
+  mut sum = 0
+  for i in 0..5 {
+    sum = sum + i
+  }
+  println(string(sum))
+
+  mut sum2 = 0
+  for i in 0..=5 {
+    sum2 = sum2 + i
+  }
+  println(string(sum2))
+}

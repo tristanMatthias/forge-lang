@@ -1,0 +1,13 @@
+/// # Enumerate
+///
+/// Iterate with index using enumerate.
+///
+/// expect: 0:a
+/// expect: 1:b
+/// expect: 2:c
+
+fn main() {
+  for (i, val) in ["a", "b", "c"].enumerate() {
+    println(`${i}:${val}`)
+  }
+}

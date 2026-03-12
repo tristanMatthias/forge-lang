@@ -1,0 +1,13 @@
+/// # JSON Roundtrip
+///
+/// Parse JSON string into a typed struct and access fields.
+///
+/// expect: alice
+/// expect: 30
+
+fn main() {
+  let json_str = "{\"name\":\"alice\",\"age\":30}"
+  let user: {name: string, age: int} = json.parse(json_str)
+  println(user.name)
+  println(string(user.age))
+}

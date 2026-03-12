@@ -1,0 +1,19 @@
+/// # Spawn with Sleep
+///
+/// Spawn concurrent work and wait for it.
+///
+/// expect: done
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    sleep(50)
+    ch <- "done"
+  }
+
+  let msg = <- ch
+  println(msg)
+}

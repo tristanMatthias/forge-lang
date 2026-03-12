@@ -1,0 +1,15 @@
+/// # With Expression
+///
+/// Create updated copies of structs using `with`.
+///
+/// expect: 10.0
+/// expect: 4.0
+
+type Point = { x: float, y: float }
+
+fn main() {
+  let p = Point { x: 3.0, y: 4.0 }
+  let moved = p with { x: 10.0 }
+  println(string(moved.x))
+  println(string(moved.y))
+}

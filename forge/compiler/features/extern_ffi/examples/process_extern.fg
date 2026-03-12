@@ -1,0 +1,14 @@
+/// # Extern FFI via Process
+///
+/// Extern functions declare C ABI bindings. The process provider uses
+/// extern fns to call C functions like forge_process_run and forge_process_pipe.
+///
+/// expect: HELLO WORLD
+
+use @std.process
+
+fn main() {
+  let result_json = process.pipe("hello world", "tr", ["a-z", "A-Z"])
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(result.stdout.trim())
+}

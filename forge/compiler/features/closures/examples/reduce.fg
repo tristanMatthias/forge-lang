@@ -1,0 +1,10 @@
+/// # Reduce with Closure
+///
+/// Use reduce with an explicit two-parameter closure.
+///
+/// expect: 24
+
+fn main() {
+  let product = [1, 2, 3, 4].reduce(1, (acc, n) -> acc * n)
+  println(string(product))
+}

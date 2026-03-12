@@ -1,0 +1,19 @@
+/// # Spawn with Channel
+///
+/// Send data between spawned goroutines via channels.
+///
+/// expect: hello from spawn
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    ch <- "hello from spawn"
+  }
+
+  sleep(50)
+  let msg = <- ch
+  println(msg)
+}

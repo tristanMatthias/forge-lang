@@ -1,0 +1,11 @@
+/// # JSON Stringify
+///
+/// Convert values to JSON strings.
+///
+/// expect: {"name":"forge","version":1}
+
+fn main() {
+  let data = { name: "forge", version: 1 }
+  let json_str = json.stringify(data)
+  println(json_str)
+}

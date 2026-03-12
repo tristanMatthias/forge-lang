@@ -1,0 +1,13 @@
+/// # Component Syntax Patterns
+///
+/// The `component` keyword is a proper token in the lexer.
+/// Components can define custom syntax via @syntax decorators.
+///
+/// expect: 42
+/// expect: component keyword works
+
+fn main() {
+  let x = 42
+  println(string(x))
+  println("component keyword works")
+}

@@ -1,0 +1,13 @@
+/// # Chained Pipes
+///
+/// Chain multiple function calls with pipe operator.
+///
+/// expect: 11
+
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+
+fn main() {
+  let result = 5 |> double |> add_one
+  println(string(result))
+}
