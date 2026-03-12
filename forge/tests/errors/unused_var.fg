@@ -1,0 +1,6 @@
+// Error test: unused variable should produce warning
+fn main() {
+  let unused_var = 42
+  let used_var = 10
+  println(string(used_var))
+}

@@ -1,0 +1,8 @@
+[F0020] Error: undefined variable 'x'
+   ╭─[tests/errors/undefined_var.fg:4:18]
+   │
+ 4 │   println(string(x))
+   │                  ┬
+   │                  ╰── undefined variable 'x'
+───╯
+error: type check errors

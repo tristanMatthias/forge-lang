@@ -1,0 +1,5 @@
+// Error test: using undefined variable
+fn main() {
+  let y = 10
+  println(string(x))
+}

@@ -1,0 +1,15 @@
+[F0001] Error: expected expression, got RBrace
+   ╭─[tests/errors/missing_paren.fg:4:1]
+   │
+ 4 │ }
+   │ ┬
+   │ ╰── expected expression, got RBrace
+───╯
+[F0001] Error: expected RBrace, found Eof
+   ╭─[tests/errors/missing_paren.fg:4:3]
+   │
+ 4 │ }
+   │   │
+   │   ╰─ expected RBrace, found Eof
+───╯
+error: type check errors

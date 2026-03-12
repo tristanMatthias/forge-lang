@@ -1,0 +1,5 @@
+// Error test: type mismatch with conversion suggestion
+fn main() {
+  let port: string = 8080
+  println(port)
+}

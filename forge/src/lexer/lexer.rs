@@ -229,7 +229,7 @@ impl<'a> Lexer<'a> {
             _ => {
                 self.advance();
                 self.diagnostics.push(Diagnostic::error(
-                    "E0001",
+                    "F0001",
                     format!("unexpected character: '{}'", ch),
                     Span::new(start, self.pos, line, col),
                 ));
@@ -247,7 +247,7 @@ impl<'a> Lexer<'a> {
             match self.peek() {
                 None => {
                     self.diagnostics.push(Diagnostic::error(
-                        "E0002",
+                        "F0002",
                         "unterminated string literal",
                         Span::new(start, self.pos, line, col),
                     ));
@@ -304,7 +304,7 @@ impl<'a> Lexer<'a> {
             match self.peek() {
                 None => {
                     self.diagnostics.push(Diagnostic::error(
-                        "E0003",
+                        "F0003",
                         "unterminated template literal",
                         Span::new(start, self.pos, line, col),
                     ));
@@ -407,7 +407,7 @@ impl<'a> Lexer<'a> {
                 ),
                 Err(_) => {
                     self.diagnostics.push(Diagnostic::error(
-                        "E0006",
+                        "F0006",
                         format!("invalid float literal: {}", text),
                         Span::new(start, self.pos, line, col),
                     ));
@@ -425,7 +425,7 @@ impl<'a> Lexer<'a> {
                 ),
                 Err(_) => {
                     self.diagnostics.push(Diagnostic::error(
-                        "E0006",
+                        "F0006",
                         format!("invalid integer literal: {}", text),
                         Span::new(start, self.pos, line, col),
                     ));
@@ -478,6 +478,7 @@ impl<'a> Lexer<'a> {
             "parallel" => TokenKind::Parallel,
             "with" => TokenKind::With,
             "catch" => TokenKind::Catch,
+            "component" => TokenKind::Component,
             "true" => TokenKind::BoolLiteral(true),
             "false" => TokenKind::BoolLiteral(false),
             "null" => TokenKind::NullLiteral,

@@ -1,0 +1,8 @@
+[F0001] Error: expected RBrace, found Eof
+   ╭─[tests/errors/missing_brace.fg:4:22]
+   │
+ 4 │   println(string(x))
+   │                      │
+   │                      ╰─ expected RBrace, found Eof
+───╯
+error: type check errors

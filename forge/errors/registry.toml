@@ -1,0 +1,181 @@
+# Forge Error Registry
+# Every error code the compiler can emit must be listed here.
+# Format: F{category}{number}
+#   00xx = Syntax/Lexer errors
+#   01xx = Type errors
+#   02xx = Name resolution errors
+#   03xx = Model/component errors
+#   08xx = Warnings
+#   99xx = Internal compiler errors
+
+[F0001]
+title = "Unexpected token"
+level = "error"
+message = "The parser encountered a token it did not expect at this position."
+help = "Check for missing punctuation, misspelled keywords, or extra characters."
+doc = """
+This error occurs when the Forge parser encounters a token that doesn't fit
+the expected grammar at the current position.
+
+Common causes:
+- Missing semicolons or closing delimiters
+- Misspelled keywords (e.g., `fucntion` instead of `fn`)
+- Extra characters or symbols in the wrong place
+
+Example:
+```forge
+fn main() {
+  println("hello"    // <- missing closing parenthesis
+}
+```
+"""
+
+[F0002]
+title = "Unterminated string literal"
+level = "error"
+message = "A string literal was opened but never closed."
+help = "Add a closing quote to terminate the string."
+doc = """
+String literals must be closed with a matching quote character.
+
+Example of the error:
+```forge
+let name = "hello
+```
+
+Fix:
+```forge
+let name = "hello"
+```
+"""
+
+[F0003]
+title = "Unterminated template literal"
+level = "error"
+message = "A template literal was opened but never closed."
+help = "Add a closing backtick to terminate the template literal."
+doc = """
+Template literals (backtick strings) must be closed with a matching backtick.
+
+Example of the error:
+```forge
+let msg = `hello ${name}
+```
+
+Fix:
+```forge
+let msg = `hello ${name}`
+```
+"""
+
+[F0006]
+title = "Invalid numeric literal"
+level = "error"
+message = "A numeric literal could not be parsed as a valid number."
+help = "Check that the number is well-formed (e.g., no double dots, valid digits)."
+doc = """
+This error occurs when the lexer encounters a sequence that looks like a number
+but cannot be parsed as a valid integer or float.
+
+Examples:
+```forge
+let x = 12.34.56   // two decimal points
+let y = 99999999999999999999  // overflow
+```
+"""
+
+[F0012]
+title = "Type mismatch"
+level = "error"
+message = "The type of an expression does not match what was expected."
+help = "Check the types in your expression. You may need a conversion function like `string()` or `int()`."
+doc = """
+This error occurs when the compiler expects one type but finds another.
+
+Example:
+```forge
+let port: string = 8080  // int assigned to string
+```
+
+Fix:
+```forge
+let port: string = string(8080)
+```
+"""
+
+[F0013]
+title = "Cannot assign to immutable variable"
+level = "error"
+message = "Attempted to assign a new value to an immutable variable."
+help = "Use `mut` instead of `let` if you need to reassign this variable."
+doc = """
+Variables declared with `let` are immutable by default. To make a variable
+reassignable, use `mut` instead.
+
+Example of the error:
+```forge
+let x = 42
+x = 100  // error: x is immutable
+```
+
+Fix:
+```forge
+mut x = 42
+x = 100  // ok: x is mutable
+```
+"""
+
+[F0020]
+title = "Undefined variable"
+level = "error"
+message = "A variable was referenced that has not been defined in the current scope."
+help = "Check for typos in the variable name, or define it before use."
+doc = """
+This error occurs when you use a variable name that hasn't been declared
+in any accessible scope.
+
+Example:
+```forge
+fn main() {
+  println(string(x))  // error: x is not defined
+}
+```
+
+Fix:
+```forge
+fn main() {
+  let x = 42
+  println(string(x))
+}
+```
+"""
+
+[F0801]
+title = "Unused variable"
+level = "warning"
+message = "A variable was declared but never used."
+help = "Prefix the variable name with `_` to suppress this warning, or remove the variable."
+doc = """
+This warning is emitted when a variable is declared but never referenced.
+Unused variables may indicate dead code or a logic error.
+
+To suppress this warning, prefix the variable name with an underscore:
+```forge
+let _unused = compute_something()
+```
+"""
+
+[F9999]
+title = "Internal compiler error"
+level = "error"
+message = "The compiler encountered an unexpected internal error."
+help = "This is a bug in the Forge compiler. Please report it at https://github.com/forge-lang/forge/issues"
+doc = """
+This error indicates a bug in the Forge compiler itself. The compiler
+encountered an unexpected state that it could not recover from.
+
+Please report this error with:
+1. The source file that triggered it
+2. The full error message
+3. Your Forge compiler version (`forge version`)
+"""

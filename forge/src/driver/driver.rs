@@ -1,9 +1,10 @@
 use crate::codegen::Codegen;
 use crate::driver::project::ForgeProject;
 use crate::errors::DiagnosticBag;
+use crate::component_expand::ComponentExpander;
 use crate::lexer::Lexer;
-use crate::parser::ast::{Program, Statement};
-use crate::parser::Parser;
+use crate::parser::ast::{ComponentTemplateDef, Program, Statement};
+use crate::parser::{ComponentMeta, Parser};
 use crate::provider::{self, ProviderInfo};
 
 use inkwell::context::Context;
@@ -17,6 +18,7 @@ pub struct Driver {
     pub optimization: OptLevel,
     pub output: Option<PathBuf>,
     pub error_format: ErrorFormat,
+    pub max_errors: usize,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -54,17 +56,18 @@ impl Driver {
             optimization: OptLevel::Release,
             output: None,
             error_format: ErrorFormat::Human,
+            max_errors: 20,
         }
     }
 
-    /// Compile a single .fg file (Phase 1 mode - unchanged)
+    /// Compile a single .fg file
     pub fn compile(&self, source_path: &Path) -> Result<PathBuf, String> {
         let source = std::fs::read_to_string(source_path)
             .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
 
         let filename = source_path.to_str().unwrap_or("<unknown>");
 
-        // Lex
+        // 1. Lex
         let mut lexer = Lexer::new(&source);
         let tokens = lexer.tokenize();
 
@@ -74,12 +77,25 @@ impl Driver {
         }
 
         if diag_bag.has_errors() {
-            diag_bag.print_all(&source, filename);
+            self.emit_diagnostics(&diag_bag, &source, filename);
             return Err("lexer errors".into());
         }
 
-        // Parse
-        let mut parser = Parser::new(tokens);
+        // 2. Pre-scan tokens for provider uses
+        let provider_uses = prescan_provider_uses(&tokens);
+
+        // 3. Load providers → get component_metas, extern_fns
+        let loaded_providers = self.load_providers_by_uses(&provider_uses);
+
+        // Build component registry from provider metas
+        let component_registry = build_component_registry(&loaded_providers);
+
+        // 4. Parse with component registry
+        let mut parser = if component_registry.is_empty() {
+            Parser::new(tokens)
+        } else {
+            Parser::new_with_components(tokens, component_registry)
+        };
         let mut program = parser.parse_program();
 
         for d in parser.diagnostics() {
@@ -87,7 +103,7 @@ impl Driver {
         }
 
         if diag_bag.has_errors() {
-            diag_bag.print_all(&source, filename);
+            self.emit_diagnostics(&diag_bag, &source, filename);
             return Err("parser errors".into());
         }
 
@@ -96,17 +112,67 @@ impl Driver {
             return Ok(PathBuf::new());
         }
 
-        // Load providers based on use @namespace.name statements
-        let loaded_providers = self.load_providers_for_program(&program);
-
-        // Inject extern fn declarations from providers into the program
+        // 5. Inject extern fns from providers
         for provider in &loaded_providers {
             for extern_fn in &provider.extern_fns {
                 program.statements.insert(0, extern_fn.clone());
             }
         }
 
-        // Codegen
+        // 6. Expand all ComponentBlock nodes → regular AST + lifecycle stmts
+        let mut all_static_methods = Vec::new();
+        let mut startup_stmts = Vec::new();
+        let mut main_end_stmts = Vec::new();
+        let mut extra_stmts = Vec::new();
+        let mut extra_extern_fns = Vec::new();
+        let mut service_infos = Vec::new();
+
+        let mut expanded_statements = Vec::new();
+        for stmt in program.statements.drain(..) {
+            if let Statement::ComponentBlock(ref decl) = stmt {
+                let result = if let Some(template) = find_template(&loaded_providers, &decl.component) {
+                    ComponentExpander::expand_from_template(template, decl)
+                } else {
+                    ComponentExpander::expand(&decl.component, decl, &service_infos)
+                };
+
+                if let Some(type_decl) = result.type_decl {
+                    expanded_statements.push(type_decl);
+                }
+                for s in result.statements {
+                    extra_stmts.push(s);
+                }
+                for s in result.startup_stmts {
+                    startup_stmts.push(s);
+                }
+                for s in result.main_end_stmts {
+                    main_end_stmts.push(s);
+                }
+                for sm in result.static_methods {
+                    all_static_methods.push(sm);
+                }
+                for ef in result.extern_fns {
+                    extra_extern_fns.push(ef);
+                }
+                if let Some(si) = result.service_info {
+                    service_infos.push(si);
+                }
+            } else {
+                expanded_statements.push(stmt);
+            }
+        }
+        // Add extra extern fns at the beginning
+        for ef in extra_extern_fns {
+            expanded_statements.insert(0, ef);
+        }
+        // Add extra statements (fn decls from services, etc.)
+        expanded_statements.extend(extra_stmts);
+        program.statements = expanded_statements;
+
+        // 7. Inject lifecycle stmts into main function
+        inject_lifecycle_stmts(&mut program, &startup_stmts, &main_end_stmts);
+
+        // 8. Codegen
         let context = Context::create();
         let module_name = source_path
             .file_stem()
@@ -114,6 +180,30 @@ impl Driver {
             .unwrap_or("module");
 
         let mut codegen = Codegen::new(&context, module_name);
+
+        // Populate static methods registry
+        for (type_name, method_name, fn_name) in &all_static_methods {
+            codegen.static_methods.insert(
+                (type_name.clone(), method_name.clone()),
+                fn_name.clone(),
+            );
+        }
+        // Register provider extern fns as static methods by stripping the forge_{name}_ prefix
+        // e.g. forge_fs_read → fs.read, forge_fs_write → fs.write
+        for provider in &loaded_providers {
+            let prefix = format!("forge_{}_", provider.name);
+            for extern_fn in &provider.extern_fns {
+                if let Statement::ExternFn { name, .. } = extern_fn {
+                    if let Some(method_name) = name.strip_prefix(&prefix) {
+                        codegen.static_methods.insert(
+                            (provider.name.clone(), method_name.to_string()),
+                            name.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
         codegen.compile_program(&program);
 
         if self.emit_ir {
@@ -132,8 +222,6 @@ impl Driver {
 
         // Write object file
         let obj_path = output_path.with_extension("o");
-        let uses_model = codegen.uses_model;
-        let uses_http = codegen.uses_http;
         codegen.write_object_file(&obj_path)?;
 
         // Compile runtime
@@ -147,7 +235,7 @@ impl Driver {
             .collect();
 
         // Link
-        self.link_with_providers(&obj_path, &runtime_obj, &output_path, uses_model, uses_http, &provider_lib_paths)?;
+        self.link_with_providers(&obj_path, &runtime_obj, &output_path, &provider_lib_paths)?;
 
         // Cleanup
         std::fs::remove_file(&obj_path).ok();
@@ -311,12 +399,26 @@ impl Driver {
         }
 
         if diag_bag.has_errors() {
-            diag_bag.print_all(&source, filename);
+            self.emit_diagnostics(&diag_bag, &source, filename);
             return Err("type check errors".into());
+        }
+
+        // Print warnings even when no errors
+        if diag_bag.warning_count() > 0 {
+            self.emit_diagnostics(&diag_bag, &source, filename);
         }
 
         println!("No errors found.");
         Ok(())
+    }
+
+    fn emit_diagnostics(&self, diag_bag: &DiagnosticBag, source: &str, filename: &str) {
+        if self.error_format == ErrorFormat::Json {
+            diag_bag.print_json();
+        } else {
+            diag_bag.print_all_limited(source, filename, self.max_errors);
+            diag_bag.print_summary();
+        }
     }
 
     fn compile_runtime(&self, source_path: &Path) -> Result<PathBuf, String> {
@@ -389,7 +491,7 @@ impl Driver {
     }
 
     fn link(&self, obj: &Path, runtime_obj: &Path, output: &Path) -> Result<(), String> {
-        self.link_with_providers(obj, runtime_obj, output, false, false, &[])
+        self.link_with_providers(obj, runtime_obj, output, &[])
     }
 
     fn link_with_providers(
@@ -397,8 +499,6 @@ impl Driver {
         obj: &Path,
         runtime_obj: &Path,
         output: &Path,
-        uses_model: bool,
-        uses_http: bool,
         provider_lib_paths: &[PathBuf],
     ) -> Result<(), String> {
         let mut args = vec![
@@ -408,55 +508,20 @@ impl Driver {
             output.to_str().unwrap().to_string(),
         ];
 
-        // Add provider native library paths (from provider system)
+        // Add provider native library paths
         let mut has_native_providers = false;
         for lib_path in provider_lib_paths {
             args.push(lib_path.to_str().unwrap().to_string());
             has_native_providers = true;
         }
 
-        // Fallback: if providers weren't loaded via the provider system but
-        // uses_model/uses_http are set, find them the old way
-        if !has_native_providers {
-            let provider_base = self.find_providers_dir();
-
-            if uses_model {
-                if let Some(ref base) = provider_base {
-                    let lib_path = base.join("std-model/target/release/libforge_model.a");
-                    if lib_path.exists() {
-                        args.push(lib_path.to_str().unwrap().to_string());
-                        has_native_providers = true;
-                    } else {
-                        return Err(format!("cannot find libforge_model.a at {}", lib_path.display()));
-                    }
-                } else {
-                    return Err("cannot find providers directory".into());
-                }
-            }
-
-            if uses_http {
-                if let Some(ref base) = provider_base {
-                    let lib_path = base.join("std-http/target/release/libforge_http.a");
-                    if lib_path.exists() {
-                        args.push(lib_path.to_str().unwrap().to_string());
-                        has_native_providers = true;
-                    } else {
-                        return Err(format!("cannot find libforge_http.a at {}", lib_path.display()));
-                    }
-                } else {
-                    return Err("cannot find providers directory".into());
-                }
-            }
-        }
-
         // On macOS, we need to link system frameworks for the Rust static libs
-        if has_native_providers || uses_model || uses_http {
+        if has_native_providers {
             args.push("-framework".to_string());
             args.push("CoreFoundation".to_string());
             args.push("-framework".to_string());
             args.push("Security".to_string());
             args.push("-liconv".to_string());
-            // Rust std needs these
             args.push("-lSystem".to_string());
             args.push("-lm".to_string());
         }
@@ -477,26 +542,19 @@ impl Driver {
         Ok(())
     }
 
-    /// Scan program for `use @namespace.name` statements and load matching providers
-    fn load_providers_for_program(&self, program: &Program) -> Vec<ProviderInfo> {
+    /// Load providers by pre-scanned (namespace, name) pairs
+    fn load_providers_by_uses(&self, uses: &[(String, String)]) -> Vec<ProviderInfo> {
         let mut providers = Vec::new();
         let providers_base = match self.find_providers_dir() {
             Some(base) => base,
             None => return providers,
         };
 
-        for stmt in &program.statements {
-            if let Statement::Use { path, .. } = stmt {
-                if path.len() >= 2 && path[0].starts_with('@') {
-                    let namespace = path[0].trim_start_matches('@');
-                    let name = &path[1];
-
-                    if let Some(provider_dir) = provider::find_provider(&providers_base, namespace, name) {
-                        match provider::load_provider(&provider_dir) {
-                            Ok(info) => providers.push(info),
-                            Err(e) => eprintln!("warning: failed to load provider {}.{}: {}", namespace, name, e),
-                        }
-                    }
+        for (namespace, name) in uses {
+            if let Some(provider_dir) = provider::find_provider(&providers_base, namespace, name) {
+                match provider::load_provider(&provider_dir) {
+                    Ok(info) => providers.push(info),
+                    Err(e) => eprintln!("warning: failed to load provider {}.{}: {}", namespace, name, e),
                 }
             }
         }
@@ -688,4 +746,150 @@ fn resolve_use_statements(
     }
 
     Ok(imports)
+}
+
+/// Pre-scan tokens for `use @namespace.name` patterns to determine which providers to load
+/// before full parsing. This allows the parser to use component registries from providers.
+fn prescan_provider_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)> {
+    use crate::lexer::token::TokenKind;
+    let mut uses = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        if matches!(tokens[i].kind, TokenKind::Use) {
+            // Look for @ namespace . name pattern
+            // The lexer tokenizes @ as At, then namespace as Ident
+            let mut j = i + 1;
+            // Skip whitespace/newlines
+            while j < tokens.len() && matches!(tokens[j].kind, TokenKind::Newline) {
+                j += 1;
+            }
+            // Check for @ token
+            if j < tokens.len() && matches!(tokens[j].kind, TokenKind::At) {
+                j += 1;
+                if j < tokens.len() {
+                    if let TokenKind::Ident(ref namespace) = tokens[j].kind {
+                        let namespace = namespace.clone();
+                        j += 1;
+                        // Look for . name
+                        if j < tokens.len() && matches!(tokens[j].kind, TokenKind::Dot) {
+                            j += 1;
+                            if j < tokens.len() {
+                                if let TokenKind::Ident(ref provider_name) = tokens[j].kind {
+                                    uses.push((namespace.clone(), provider_name.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Also handle the case where the parser might see Ident("@std")
+            // (shouldn't happen with standard lexer, but just in case)
+            else if j < tokens.len() {
+                if let TokenKind::Ident(ref name) = tokens[j].kind {
+                    if name.starts_with('@') {
+                        let namespace = name.trim_start_matches('@').to_string();
+                        j += 1;
+                        if j < tokens.len() && matches!(tokens[j].kind, TokenKind::Dot) {
+                            j += 1;
+                            if j < tokens.len() {
+                                if let TokenKind::Ident(ref provider_name) = tokens[j].kind {
+                                    uses.push((namespace, provider_name.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    uses
+}
+
+/// Build a component registry from loaded providers' component metas
+fn build_component_registry(providers: &[ProviderInfo]) -> HashMap<String, ComponentMeta> {
+    let mut registry = HashMap::new();
+    for provider in providers {
+        for meta in &provider.component_metas {
+            registry.insert(meta.name.clone(), meta.clone());
+        }
+    }
+    registry
+}
+
+/// Find a component template definition matching the given component name
+fn find_template<'a>(
+    providers: &'a [ProviderInfo],
+    component: &str,
+) -> Option<&'a ComponentTemplateDef> {
+    providers
+        .iter()
+        .flat_map(|p| p.component_templates.iter())
+        .find(|t| t.component_name == component)
+}
+
+/// Inject lifecycle statements (startup and main_end) into the main function
+fn inject_lifecycle_stmts(
+    program: &mut Program,
+    startup_stmts: &[Statement],
+    main_end_stmts: &[Statement],
+) {
+    if startup_stmts.is_empty() && main_end_stmts.is_empty() {
+        return;
+    }
+
+    // Find the main function and inject statements
+    for stmt in program.statements.iter_mut() {
+        if let Statement::FnDecl { name, body, .. } = stmt {
+            if name == "main" {
+                // Insert startup stmts at the beginning of main body
+                let mut new_body = startup_stmts.to_vec();
+                new_body.extend(body.statements.clone());
+                // Insert main_end stmts before the last statement if it's a return,
+                // otherwise at the end
+                if let Some(last) = new_body.last() {
+                    if matches!(last, Statement::Return { .. }) {
+                        let ret = new_body.pop().unwrap();
+                        new_body.extend(main_end_stmts.to_vec());
+                        new_body.push(ret);
+                    } else {
+                        new_body.extend(main_end_stmts.to_vec());
+                    }
+                } else {
+                    new_body.extend(main_end_stmts.to_vec());
+                }
+                body.statements = new_body;
+                return;
+            }
+        }
+    }
+
+    // No main function found — store lifecycle stmts so codegen can use them.
+    // This handles cases like server-only programs (full_stack.fg) where
+    // codegen generates main and must also run startup stmts (DB init).
+    // We create separate __forge_startup and __forge_main_end functions so
+    // codegen can insert route registration between them.
+    let sp = crate::lexer::Span::new(0, 0, 0, 0);
+    if !startup_stmts.is_empty() {
+        program.statements.push(Statement::FnDecl {
+            name: "__forge_startup".to_string(),
+            type_params: vec![],
+            params: vec![],
+            return_type: None,
+            body: crate::parser::ast::Block { statements: startup_stmts.to_vec(), span: sp },
+            exported: false,
+            span: sp,
+        });
+    }
+    if !main_end_stmts.is_empty() {
+        program.statements.push(Statement::FnDecl {
+            name: "__forge_main_end".to_string(),
+            type_params: vec![],
+            params: vec![],
+            return_type: None,
+            body: crate::parser::ast::Block { statements: main_end_stmts.to_vec(), span: sp },
+            exported: false,
+            span: sp,
+        });
+    }
 }

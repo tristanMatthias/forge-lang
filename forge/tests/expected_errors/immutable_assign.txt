@@ -1,0 +1,8 @@
+[F0013] Error: cannot assign to immutable variable 'x'
+   ╭─[tests/errors/immutable_assign.fg:5:5]
+   │
+ 5 │   x = 100
+   │     ┬
+   │     ╰── cannot assign to immutable variable 'x'
+───╯
+error: type check errors

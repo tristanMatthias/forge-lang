@@ -108,43 +108,52 @@ impl TypeChecker {
                 name,
                 type_ann,
                 value,
+                span,
                 ..
             } => {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
-                    self.resolve_type_expr(ann)
+                    let ann_type = self.resolve_type_expr(ann);
+                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    ann_type
                 } else {
                     val_type
                 };
-                self.env.define(name.clone(), ty, false);
+                self.env.define_with_span(name.clone(), ty, false, *span);
             }
             Statement::Mut {
                 name,
                 type_ann,
                 value,
+                span,
                 ..
             } => {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
-                    self.resolve_type_expr(ann)
+                    let ann_type = self.resolve_type_expr(ann);
+                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    ann_type
                 } else {
                     val_type
                 };
-                self.env.define(name.clone(), ty, true);
+                self.env.define_with_span(name.clone(), ty, true, *span);
             }
             Statement::Const {
                 name,
                 type_ann,
                 value,
+                span,
                 ..
             } => {
                 let val_type = self.check_expr(value);
                 let ty = if let Some(ann) = type_ann {
-                    self.resolve_type_expr(ann)
+                    let ann_type = self.resolve_type_expr(ann);
+                    self.check_type_mismatch(&ann_type, &val_type, *span);
+                    ann_type
                 } else {
                     val_type
                 };
-                self.env.define(name.clone(), ty, false);
+                self.env.define_with_span(name.clone(), ty, false, *span);
             }
             Statement::LetDestructure { pattern, value, .. } => {
                 let val_type = self.check_expr(value);
@@ -152,10 +161,10 @@ impl TypeChecker {
             }
             Statement::Assign { target, value, span } => {
                 if let Expr::Ident(name, _) = target {
-                    if let Some(info) = self.env.lookup(name) {
+                    if let Some(info) = self.env.lookup_and_mark_used(name) {
                         if !info.mutable {
                             self.diagnostics.push(Diagnostic::error(
-                                "E0013",
+                                "F0013",
                                 format!("cannot assign to immutable variable '{}'", name),
                                 *span,
                             ));
@@ -193,7 +202,20 @@ impl TypeChecker {
                 self.check_block(body);
 
                 self.current_fn_return_type = old_return;
-                self.env.pop_scope();
+                let unused = self.env.pop_scope();
+                for uv in unused {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            "F0801",
+                            format!("unused variable '{}'", uv.name),
+                            uv.span,
+                        )
+                        .with_tip(format!(
+                            "if this is intentional, prefix it with an underscore: `_{}`",
+                            uv.name
+                        )),
+                    );
+                }
 
                 // Also define the function in the current scope as a value
                 let param_types: Vec<Type> = params
@@ -240,18 +262,18 @@ impl TypeChecker {
                     self.env.define(name.clone(), elem_type, false);
                 }
                 self.check_block(body);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
             }
             Statement::While { condition, body, .. } => {
                 self.check_expr(condition);
                 self.env.push_scope();
                 self.check_block(body);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
             }
             Statement::Loop { body, .. } => {
                 self.env.push_scope();
                 self.check_block(body);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
             }
             Statement::Break { value, .. } => {
                 if let Some(val) = value {
@@ -268,10 +290,9 @@ impl TypeChecker {
             Statement::Use { .. }
             | Statement::TraitDecl { .. }
             | Statement::ImplBlock { .. }
-            | Statement::ModelDecl { .. }
-            | Statement::ServiceDecl { .. }
-            | Statement::ServerBlock { .. }
-            | Statement::ExternFn { .. } => {
+            | Statement::ExternFn { .. }
+            | Statement::ComponentBlock(_)
+            | Statement::ComponentTemplateDef(_) => {
                 // Phase 2/3 constructs; extern fns are declarations only
             }
         }
@@ -293,7 +314,7 @@ impl TypeChecker {
             Expr::TemplateLit { .. } => Type::String,
 
             Expr::Ident(name, span) => {
-                if let Some(info) = self.env.lookup(name) {
+                if let Some(info) = self.env.lookup_and_mark_used(name) {
                     info.ty.clone()
                 } else if let Some(ty) = self.env.lookup_function(name).cloned() {
                     ty
@@ -303,11 +324,17 @@ impl TypeChecker {
                 } else if name.starts_with("__destructure") {
                     Type::Void
                 } else {
-                    self.diagnostics.push(Diagnostic::error(
-                        "E0010",
+                    let scope_names = self.env.all_names_in_scope();
+                    let candidates: Vec<&str> = scope_names.iter().map(|s| s.as_str()).collect();
+                    let mut diag = Diagnostic::error(
+                        "F0020",
                         format!("undefined variable '{}'", name),
                         *span,
-                    ));
+                    );
+                    if let Some(suggestion) = crate::errors::did_you_mean(name, &candidates, 2) {
+                        diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                    }
+                    self.diagnostics.push(diag);
                     Type::Error
                 }
             }
@@ -419,7 +446,7 @@ impl TypeChecker {
                     })
                     .collect();
                 let ret_type = self.check_expr(body);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
                 Type::Function {
                     params: param_types,
                     return_type: Box::new(ret_type),
@@ -435,11 +462,11 @@ impl TypeChecker {
                 self.check_expr(condition);
                 self.env.push_scope();
                 let then_type = self.check_block_type(then_branch);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
                 if let Some(else_b) = else_branch {
                     self.env.push_scope();
                     let _else_type = self.check_block_type(else_b);
-                    self.env.pop_scope();
+                    self.env.pop_scope_silent();
                 }
                 then_type
             }
@@ -459,7 +486,7 @@ impl TypeChecker {
                     if result_type == Type::Unknown {
                         result_type = arm_type;
                     }
-                    self.env.pop_scope();
+                    self.env.pop_scope_silent();
                 }
                 result_type
             }
@@ -467,7 +494,7 @@ impl TypeChecker {
             Expr::Block(block) => {
                 self.env.push_scope();
                 let ty = self.check_block_type(block);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
                 ty
             }
 
@@ -542,7 +569,7 @@ impl TypeChecker {
                     self.env.define(name.clone(), Type::String, false);
                 }
                 let handler_type = self.check_block_type(handler);
-                self.env.pop_scope();
+                self.env.pop_scope_silent();
                 match &expr_type {
                     Type::Result(ok, _) => *ok.clone(),
                     _ => handler_type,
@@ -739,5 +766,34 @@ impl TypeChecker {
                     .collect(),
             },
         }
+    }
+
+    fn check_type_mismatch(&mut self, expected: &Type, actual: &Type, span: crate::lexer::Span) {
+        // Skip if either type is unknown/error (inference not available)
+        if matches!(expected, Type::Unknown | Type::Error) || matches!(actual, Type::Unknown | Type::Error) {
+            return;
+        }
+        if expected == actual {
+            return;
+        }
+
+        let suggestion = match (expected, actual) {
+            (Type::String, Type::Int) => Some("string(value)"),
+            (Type::String, Type::Float) => Some("string(value)"),
+            (Type::String, Type::Bool) => Some("string(value)"),
+            (Type::Int, Type::String) => Some("int(value)"),
+            (Type::Float, Type::String) => Some("float(value)"),
+            _ => None,
+        };
+
+        let mut diag = Diagnostic::error(
+            "F0012",
+            format!("type mismatch: expected {}, found {}", expected, actual),
+            span,
+        );
+        if let Some(conv) = suggestion {
+            diag = diag.with_help(format!("try wrapping with {}", conv));
+        }
+        self.diagnostics.push(diag);
     }
 }

@@ -41,6 +41,7 @@ pub enum TokenKind {
     Parallel,
     With,
     Catch,
+    Component,
     Null,
     Ok_,
     Err_,
@@ -99,7 +100,7 @@ pub enum TemplatePart {
     Expr(String), // raw expression text to be parsed later
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

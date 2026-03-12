@@ -1,0 +1,5 @@
+// Error test: misspelled variable should suggest correction
+fn main() {
+  let count = 42
+  println(string(cont))
+}

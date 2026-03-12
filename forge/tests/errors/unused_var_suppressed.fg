@@ -1,0 +1,6 @@
+// Test: underscore prefix suppresses unused variable warning
+fn main() {
+  let _unused = 42
+  let used = 10
+  println(string(used))
+}

@@ -1,0 +1,6 @@
+// Error test: multiple errors in one file
+fn main() {
+  let x = 42
+  y = 10
+  println(string(z))
+}

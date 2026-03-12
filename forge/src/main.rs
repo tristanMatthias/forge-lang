@@ -41,6 +41,10 @@ enum Commands {
         /// Output binary path
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Maximum number of errors to display
+        #[arg(long, default_value = "20")]
+        max_errors: usize,
     },
 
     /// Compile and run a Forge source file or project
@@ -61,10 +65,43 @@ enum Commands {
     Check {
         /// Input source file
         file: PathBuf,
+
+        /// Error format: "human" or "json"
+        #[arg(long, default_value = "human")]
+        error_format: String,
+
+        /// Maximum number of errors to display
+        #[arg(long, default_value = "20")]
+        max_errors: usize,
+    },
+
+    /// Explain an error code (e.g., `forge explain F0020`)
+    Explain {
+        /// Error code to explain (e.g., F0020)
+        code: String,
     },
 
     /// Print version info
     Version,
+
+    /// Provider management commands
+    Provider {
+        #[command(subcommand)]
+        command: ProviderCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProviderCommands {
+    /// Scaffold a new provider
+    New {
+        /// Provider name (e.g., "my-awesome-provider")
+        name: String,
+
+        /// Include component template example
+        #[arg(long)]
+        component: bool,
+    },
 }
 
 /// Determine if a path refers to a project directory (has forge.toml)
@@ -107,6 +144,28 @@ fn resolve_target(file: Option<PathBuf>) -> (bool, PathBuf) {
 }
 
 fn main() {
+    let result = std::panic::catch_unwind(|| {
+        run();
+    });
+
+    if let Err(panic_info) = result {
+        let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown cause".to_string()
+        };
+        eprintln!();
+        eprintln!("[F9999] Internal compiler error: {}", msg);
+        eprintln!();
+        eprintln!("This is a bug in the Forge compiler.");
+        eprintln!("Please report it at https://github.com/forge-lang/forge/issues");
+        process::exit(2);
+    }
+}
+
+fn run() {
     let cli = Cli::parse();
 
     match cli.command {
@@ -117,6 +176,7 @@ fn main() {
             emit_ast,
             error_format,
             output,
+            max_errors,
             ..
         } => {
             let mut driver = Driver::new();
@@ -129,6 +189,7 @@ fn main() {
                 ErrorFormat::Human
             };
             driver.output = output;
+            driver.max_errors = max_errors;
 
             let (is_project, path) = resolve_target(file);
 
@@ -189,16 +250,250 @@ fn main() {
             }
         }
 
-        Commands::Check { file } => {
-            let driver = Driver::new();
+        Commands::Check { file, error_format, max_errors } => {
+            let mut driver = Driver::new();
+            driver.error_format = if error_format == "json" {
+                ErrorFormat::Json
+            } else {
+                ErrorFormat::Human
+            };
+            driver.max_errors = max_errors;
             if let Err(e) = driver.check(&file) {
                 eprintln!("error: {}", e);
                 process::exit(1);
             }
         }
 
+        Commands::Explain { code } => {
+            let registry = forge::errors::ErrorRegistry::builtin();
+            match registry.lookup(&code) {
+                Some(entry) => {
+                    println!("[{}] {}", entry.code, entry.title);
+                    println!();
+                    println!("Level: {:?}", entry.level);
+                    println!();
+                    if !entry.message.is_empty() {
+                        println!("{}", entry.message);
+                        println!();
+                    }
+                    if !entry.help.is_empty() {
+                        println!("Help: {}", entry.help);
+                        println!();
+                    }
+                    if !entry.doc.is_empty() {
+                        println!("{}", entry.doc);
+                    }
+                }
+                None => {
+                    eprintln!("error: unknown error code '{}'", code);
+                    process::exit(1);
+                }
+            }
+        }
+
         Commands::Version => {
             println!("forge 0.1.0");
         }
+
+        Commands::Provider { command } => match command {
+            ProviderCommands::New { name, component } => {
+                if let Err(e) = scaffold_provider(&name, component) {
+                    eprintln!("error: {}", e);
+                    process::exit(1);
+                }
+            }
+        },
     }
+}
+
+fn scaffold_provider(name: &str, with_component: bool) -> Result<(), String> {
+    let lib_name = format!("forge_{}", name.replace('-', "_"));
+    let dir = PathBuf::from(name);
+
+    if dir.exists() {
+        return Err(format!("directory '{}' already exists", name));
+    }
+
+    std::fs::create_dir_all(dir.join("src"))
+        .map_err(|e| format!("failed to create directory: {}", e))?;
+    std::fs::create_dir_all(dir.join("native/src"))
+        .map_err(|e| format!("failed to create directory: {}", e))?;
+
+    // provider.toml
+    let mut toml = format!(
+        r#"[provider]
+name = "{name}"
+namespace = "community"
+version = "0.1.0"
+description = "TODO: describe your provider"
+
+[native]
+library = "{lib_name}"
+"#
+    );
+
+    if with_component {
+        let comp_name = name.replace('-', "_");
+        toml.push_str(&format!(
+            r#"
+[components.{comp_name}]
+kind = "block"
+context = "top_level"
+"#
+        ));
+    }
+
+    std::fs::write(dir.join("provider.toml"), toml)
+        .map_err(|e| format!("failed to write provider.toml: {}", e))?;
+
+    // src/provider.fg
+    let provider_fg = if with_component {
+        let comp_name = name.replace('-', "_");
+        format!(
+            r#"extern fn {lib_name}_init(name: string) -> int
+extern fn {lib_name}_exec(name: string, data: string) -> ptr
+extern fn strlen(s: ptr) -> int
+
+component {comp_name}(__tpl_name, schema) {{
+    on startup {{
+        {lib_name}_init(__tpl_name_str)
+    }}
+
+    fn __tpl_name.exec(data: string) -> string {{
+        let __ptr: ptr = {lib_name}_exec(__tpl_name_str, data)
+        let __len: int = strlen(__ptr)
+        forge_string_new(__ptr, __len)
+    }}
+}}
+"#
+        )
+    } else {
+        format!(
+            r#"extern fn {lib_name}_hello(name: string) -> ptr
+extern fn strlen(s: ptr) -> int
+"#
+        )
+    };
+
+    std::fs::write(dir.join("src/provider.fg"), provider_fg)
+        .map_err(|e| format!("failed to write provider.fg: {}", e))?;
+
+    // native/Cargo.toml
+    let cargo_toml = format!(
+        r#"[package]
+name = "{lib_name}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "{lib_name}"
+crate-type = ["staticlib"]
+"#
+    );
+
+    std::fs::write(dir.join("native/Cargo.toml"), cargo_toml)
+        .map_err(|e| format!("failed to write Cargo.toml: {}", e))?;
+
+    // native/src/lib.rs
+    let lib_rs = if with_component {
+        format!(
+            r#"use std::collections::HashMap;
+use std::ffi::{{CStr, CString}};
+use std::os::raw::c_char;
+use std::sync::{{LazyLock, Mutex}};
+
+static INSTANCES: LazyLock<Mutex<HashMap<String, i64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[no_mangle]
+pub extern "C" fn {lib_name}_init(name: *const c_char) -> i64 {{
+    let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap().to_string();
+    let mut instances = INSTANCES.lock().unwrap();
+    let id = instances.len() as i64 + 1;
+    instances.insert(name, id);
+    id
+}}
+
+#[no_mangle]
+pub extern "C" fn {lib_name}_exec(name: *const c_char, data: *const c_char) -> *const c_char {{
+    let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap();
+    let data = unsafe {{ CStr::from_ptr(data) }}.to_str().unwrap();
+    let result = format!("{{}}: {{}}", name, data);
+    CString::new(result).unwrap().into_raw()
+}}
+"#
+        )
+    } else {
+        format!(
+            r#"use std::ffi::{{CStr, CString}};
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn {lib_name}_hello(name: *const c_char) -> *const c_char {{
+    let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap();
+    let greeting = format!("hello from {name}, {{}}!", name);
+    CString::new(greeting).unwrap().into_raw()
+}}
+"#
+        )
+    };
+
+    std::fs::write(dir.join("native/src/lib.rs"), lib_rs)
+        .map_err(|e| format!("failed to write lib.rs: {}", e))?;
+
+    // example.fg
+    let example = if with_component {
+        let kw_name = name.replace('-', "_");
+        format!(
+            r#"use @community.{kw_name}.{{{kw_name}}}
+
+{kw_name} demo {{}}
+
+fn main() {{
+    let result = demo.exec("test data")
+    println(result)
+}}
+"#
+        )
+    } else {
+        format!(
+            r#"// TODO: Add use statement once provider is installed
+// use @community.{}.{{}}
+
+fn main() {{
+    println("{} works!")
+}}
+"#,
+            name.replace('-', "_"),
+            name
+        )
+    };
+
+    std::fs::write(dir.join("example.fg"), example)
+        .map_err(|e| format!("failed to write example.fg: {}", e))?;
+
+    // README.md
+    let readme = format!(
+        "# {name}\n\nForge provider.\n\n## Build\n\n```bash\ncd native && cargo build --release\n```\n"
+    );
+    std::fs::write(dir.join("README.md"), readme)
+        .map_err(|e| format!("failed to write README.md: {}", e))?;
+
+    println!("Created provider '{}'", name);
+    println!();
+    println!("  {}/", name);
+    println!("  ├── provider.toml");
+    println!("  ├── src/");
+    println!("  │   └── provider.fg");
+    println!("  ├── native/");
+    println!("  │   ├── Cargo.toml");
+    println!("  │   └── src/");
+    println!("  │       └── lib.rs");
+    println!("  ├── example.fg");
+    println!("  └── README.md");
+    println!();
+    println!("Next steps:");
+    println!("  cd {}/native && cargo build --release", name);
+
+    Ok(())
 }

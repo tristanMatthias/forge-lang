@@ -2,11 +2,34 @@ use crate::errors::Diagnostic;
 use crate::lexer::token::{TemplatePart as LexTemplatePart, TokenKind};
 use crate::lexer::{Lexer, Span, Token};
 use crate::parser::ast::*;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub enum ComponentKind {
+    Block,
+    Function,
+}
+
+#[derive(Debug, Clone)]
+pub struct SyntaxPatternDef {
+    pub pattern: String,
+    pub fn_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentMeta {
+    pub name: String,
+    pub kind: ComponentKind,
+    pub context: String,
+    pub syntax: Option<String>,
+    pub syntax_patterns: Vec<SyntaxPatternDef>,
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     diagnostics: Vec<Diagnostic>,
+    registered_components: HashMap<String, ComponentMeta>,
 }
 
 impl Parser {
@@ -15,6 +38,16 @@ impl Parser {
             tokens,
             pos: 0,
             diagnostics: Vec::new(),
+            registered_components: HashMap::new(),
+        }
+    }
+
+    pub fn new_with_components(tokens: Vec<Token>, components: HashMap<String, ComponentMeta>) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            diagnostics: Vec::new(),
+            registered_components: components,
         }
     }
 
@@ -55,12 +88,13 @@ impl Parser {
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Defer => self.parse_defer(),
+            TokenKind::Component => self.parse_component_template_def(),
             TokenKind::Ident(name) => {
+                if let Some(meta) = self.registered_components.get(name).cloned() {
+                    return self.parse_component_block(&meta);
+                }
                 match name.as_str() {
                     "extern" => self.parse_extern_fn(),
-                    "model" => self.parse_model_decl(),
-                    "service" => self.parse_service_decl(),
-                    "server" => self.parse_server_block(),
                     "assert" => self.parse_assert(),
                     _ => self.parse_expr_statement(),
                 }
@@ -2043,7 +2077,7 @@ impl Parser {
             let span = self.current_span();
             let found = self.peek().map(|t| format!("{:?}", t.kind)).unwrap_or("EOF".into());
             self.diagnostics.push(Diagnostic::error(
-                "E0001",
+                "F0001",
                 format!("expected {:?}, found {}", kind, found),
                 span,
             ));
@@ -2107,274 +2141,766 @@ impl Parser {
 
     fn error(&mut self, msg: &str) {
         let span = self.current_span();
-        self.diagnostics.push(Diagnostic::error("E0001", msg, span));
+        self.diagnostics.push(Diagnostic::error("F0001", msg, span));
     }
 
-    // ---- Provider keyword parsing (Phase 3) ----
+    // ---- Generic component block parsing ----
 
-    fn parse_model_decl(&mut self) -> Option<Statement> {
-        let start = self.advance()?.span; // consume 'model'
+    fn parse_component_block(&mut self, meta: &ComponentMeta) -> Option<Statement> {
+        let component = meta.name.clone();
+        let start = self.advance()?.span; // consume the component name
         self.skip_newlines();
 
-        let name = match &self.peek()?.kind {
-            TokenKind::Ident(n) => n.clone(),
-            _ => { self.error("expected model name"); return None; }
-        };
-        self.advance();
-        self.skip_newlines();
+        let mut args = Vec::new();
+
+        // Parse arguments before the opening brace
+        // Handle patterns like: model Task, server :3000, service TaskService for User
+        while !self.check(&TokenKind::LBrace) && !self.is_at_end() {
+            match &self.peek()?.kind {
+                TokenKind::Colon => {
+                    // :literal pattern (e.g., server :3000)
+                    self.advance();
+                    match &self.peek()?.kind {
+                        TokenKind::IntLiteral(n) => {
+                            let val = *n;
+                            let span = self.advance()?.span;
+                            args.push(ComponentArg::Named(
+                                "port".to_string(),
+                                Expr::IntLit(val, span),
+                                span,
+                            ));
+                        }
+                        _ => {
+                            self.error("expected value after ':'");
+                            break;
+                        }
+                    }
+                }
+                TokenKind::For => {
+                    // for Model pattern
+                    self.advance();
+                    self.skip_newlines();
+                    if let Some(tok) = self.peek() {
+                        if let TokenKind::Ident(ref_name) = &tok.kind {
+                            let ref_name = ref_name.clone();
+                            let span = self.advance()?.span;
+                            args.push(ComponentArg::ForRef(ref_name, span));
+                        }
+                    }
+                }
+                TokenKind::Ident(name) => {
+                    let name = name.clone();
+                    let span = self.advance()?.span;
+                    args.push(ComponentArg::Ident(name, span));
+                }
+                TokenKind::Newline => {
+                    self.advance();
+                }
+                _ => break,
+            }
+            self.skip_newlines();
+        }
 
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
 
-        let mut fields = Vec::new();
+        let mut config = Vec::new();
+        let mut schema = Vec::new();
+        let mut blocks = Vec::new();
+
         while !self.check(&TokenKind::RBrace) {
             self.skip_newlines();
-            if self.check(&TokenKind::RBrace) { break; }
-
-            let field_name = match &self.peek()?.kind {
-                TokenKind::Ident(n) => n.clone(),
-                _ => { self.error("expected field name"); self.advance(); continue; }
-            };
-            let field_start = self.advance()?.span;
-
-            self.expect(&TokenKind::Colon)?;
-            let type_ann = self.parse_type_expr()?;
-
-            // Parse annotations
-            let mut annotations = Vec::new();
-            while self.check(&TokenKind::At) {
-                let ann_start = self.advance()?.span; // consume '@'
-                let ann_name = match &self.peek()?.kind {
-                    TokenKind::Ident(n) => n.clone(),
-                    _ => { self.error("expected annotation name"); break; }
-                };
-                self.advance();
-
-                let mut args = Vec::new();
-                if self.check(&TokenKind::LParen) {
-                    self.advance();
-                    if !self.check(&TokenKind::RParen) {
-                        if let Some(arg) = self.parse_expr() {
-                            args.push(arg);
-                        }
-                    }
-                    self.expect(&TokenKind::RParen);
-                }
-
-                annotations.push(crate::parser::ast::Annotation {
-                    name: ann_name,
-                    args,
-                    span: ann_start,
-                });
+            if self.check(&TokenKind::RBrace) {
+                break;
             }
 
-            fields.push(crate::parser::ast::ModelField {
-                name: field_name,
-                type_ann,
-                annotations,
-                span: field_start,
-            });
+            // Try to classify each item in the body:
+            // 1. Known keywords (fn, on, run, before/after, route/mount)
+            // 2. @syntax pattern matches
+            // 3. Schema field (ident: type @annotations)
+            // 4. Config (ident value)
 
+            // First, try syntax patterns (data-driven) before any hardcoded matching
+            if !meta.syntax_patterns.is_empty() {
+                if let Some(stmt) = self.try_syntax_match(meta) {
+                    blocks.push(stmt);
+                    self.skip_newlines();
+                    continue;
+                }
+            }
+
+            match &self.peek()?.kind {
+                TokenKind::Fn => {
+                    if let Some(stmt) = self.parse_fn_decl(false) {
+                        blocks.push(stmt);
+                    }
+                }
+                TokenKind::On => {
+                    // on event(param) { body } → FnDecl("on_EVENT")
+                    let sp = self.advance()?.span; // consume 'on'
+                    self.skip_newlines();
+                    let event_name = match &self.peek()?.kind {
+                        TokenKind::Ident(n) => n.clone(),
+                        _ => { self.error("expected event name after 'on'"); continue; }
+                    };
+                    self.advance();
+                    let user_params = if self.check(&TokenKind::LParen) {
+                        self.advance(); // consume '('
+                        let p = self.parse_params().unwrap_or_default();
+                        self.expect(&TokenKind::RParen);
+                        p
+                    } else {
+                        vec![]
+                    };
+                    self.skip_newlines();
+                    let mut body = self.parse_block()?;
+
+                    // For each untyped param, treat as ptr from C callback
+                    // and inject conversion: let param: string = forge_string_new(__raw_param, strlen(__raw_param))
+                    let mut fn_params = Vec::new();
+                    let mut prologue = Vec::new();
+                    for p in &user_params {
+                        if p.type_ann.is_none() {
+                            let raw_name = format!("__raw_{}", p.name);
+                            fn_params.push(Param {
+                                name: raw_name.clone(),
+                                type_ann: Some(TypeExpr::Named("ptr".into())),
+                                default: None,
+                                span: p.span,
+                            });
+                            prologue.push(Statement::Let {
+                                name: p.name.clone(),
+                                type_ann: Some(TypeExpr::Named("string".into())),
+                                value: Expr::Call {
+                                    callee: Box::new(Expr::Ident("forge_string_new".into(), sp)),
+                                    args: vec![
+                                        CallArg { name: None, value: Expr::Ident(raw_name.clone(), sp) },
+                                        CallArg { name: None, value: Expr::Call {
+                                            callee: Box::new(Expr::Ident("strlen".into(), sp)),
+                                            args: vec![CallArg { name: None, value: Expr::Ident(raw_name, sp) }],
+                                            span: sp,
+                                        }},
+                                    ],
+                                    span: sp,
+                                },
+                                exported: false,
+                                span: sp,
+                            });
+                        } else {
+                            fn_params.push(p.clone());
+                        }
+                    }
+                    // Prepend prologue to body
+                    prologue.append(&mut body.statements);
+                    body.statements = prologue;
+
+                    blocks.push(Statement::FnDecl {
+                        name: format!("on_{}", event_name),
+                        type_params: vec![],
+                        params: fn_params,
+                        return_type: None,
+                        body,
+                        exported: false,
+                        span: sp,
+                    });
+                }
+                TokenKind::Ident(name) if name == "run" && self.peek_at(1).map_or(false, |t| matches!(t.kind, TokenKind::LBrace)) => {
+                    // run { body } → FnDecl("__run")
+                    let sp = self.advance()?.span; // consume 'run'
+                    self.skip_newlines();
+                    let mut body = self.parse_block()?;
+                    // Append return 0 so fn ptr signature is () -> int
+                    body.statements.push(Statement::Expr(Expr::IntLit(0, sp)));
+                    blocks.push(Statement::FnDecl {
+                        name: "__run".into(),
+                        type_params: vec![],
+                        params: vec![],
+                        return_type: Some(TypeExpr::Named("int".into())),
+                        body,
+                        exported: false,
+                        span: sp,
+                    });
+                }
+                TokenKind::Ident(name) if name == "before" || name == "after" => {
+                    // Hook: before/after operation(param) { body }
+                    if let Some(stmt) = self.parse_component_hook() {
+                        blocks.push(stmt);
+                    }
+                }
+                TokenKind::Ident(name) if name == "route" => {
+                    // Legacy hardcoded route parsing
+                    if let Some(stmt) = self.parse_component_route() {
+                        blocks.push(stmt);
+                    }
+                }
+                TokenKind::Ident(name) if name == "mount" => {
+                    // Legacy hardcoded mount parsing
+                    if let Some(stmt) = self.parse_component_mount() {
+                        blocks.push(stmt);
+                    }
+                }
+                TokenKind::Ident(_) => {
+                    // Could be schema field (ident: type) or config (ident value)
+                    // Look ahead to distinguish
+                    let field_name = match &self.peek()?.kind {
+                        TokenKind::Ident(n) => n.clone(),
+                        _ => { self.advance(); continue; }
+                    };
+                    let field_span = self.advance()?.span;
+
+                    if self.check(&TokenKind::Colon) {
+                        // Schema field: name: type @annotations
+                        self.advance();
+                        self.skip_newlines();
+                        let type_ann = self.parse_type_expr()?;
+
+                        let mut annotations = Vec::new();
+                        while self.check(&TokenKind::At) {
+                            let ann_start = self.advance()?.span;
+                            let ann_name = match &self.peek()?.kind {
+                                TokenKind::Ident(n) => n.clone(),
+                                _ => { self.error("expected annotation name"); break; }
+                            };
+                            self.advance();
+
+                            let mut ann_args = Vec::new();
+                            if self.check(&TokenKind::LParen) {
+                                self.advance();
+                                if !self.check(&TokenKind::RParen) {
+                                    if let Some(arg) = self.parse_expr() {
+                                        ann_args.push(arg);
+                                    }
+                                }
+                                self.expect(&TokenKind::RParen);
+                            }
+
+                            annotations.push(Annotation {
+                                name: ann_name,
+                                args: ann_args,
+                                span: ann_start,
+                            });
+                        }
+
+                        schema.push(ComponentSchemaField {
+                            name: field_name,
+                            type_ann,
+                            annotations,
+                            span: field_span,
+                        });
+                    } else {
+                        // Config: name value
+                        if let Some(value) = self.parse_expr() {
+                            config.push(ComponentConfig {
+                                key: field_name,
+                                value,
+                                span: field_span,
+                            });
+                        } else {
+                            // Just an identifier with no value — treat as config with bool true
+                            config.push(ComponentConfig {
+                                key: field_name.clone(),
+                                value: Expr::BoolLit(true, field_span),
+                                span: field_span,
+                            });
+                        }
+                    }
+                }
+                _ => {
+                    self.error("unexpected token in component block");
+                    self.advance();
+                }
+            }
             self.skip_newlines();
         }
 
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::ModelDecl {
-            name,
-            fields,
+        Some(Statement::ComponentBlock(ComponentBlockDecl {
+            component,
+            args,
+            body: ComponentBlockBody {
+                config,
+                schema,
+                blocks,
+            },
             span: start,
+        }))
+    }
+
+    fn parse_component_hook(&mut self) -> Option<Statement> {
+        // before/after operation(param) { body }
+        let timing_name = match &self.peek()?.kind {
+            TokenKind::Ident(n) => n.clone(),
+            _ => return None,
+        };
+        let timing = if timing_name == "before" {
+            HookTiming::Before
+        } else {
+            HookTiming::After
+        };
+        let hook_start = self.advance()?.span;
+        self.skip_newlines();
+
+        let operation = match &self.peek()?.kind {
+            TokenKind::Ident(n) => n.clone(),
+            _ => { self.error("expected operation name"); return None; }
+        };
+        self.advance();
+
+        self.expect(&TokenKind::LParen)?;
+        let param = match &self.peek()?.kind {
+            TokenKind::Ident(n) => n.clone(),
+            _ => { self.error("expected parameter name"); String::new() }
+        };
+        self.advance();
+        self.expect(&TokenKind::RParen)?;
+        self.skip_newlines();
+
+        let body = self.parse_block()?;
+
+        // Wrap as an ExternFn-style statement to carry the hook data
+        // We'll use a special naming convention: __hook_before_create
+        let hook_name = format!("__hook_{}_{}", timing_name, operation);
+        Some(Statement::FnDecl {
+            name: hook_name,
+            type_params: vec![],
+            params: vec![Param {
+                name: param,
+                type_ann: None,
+                default: None,
+                span: hook_start,
+            }],
+            return_type: None,
+            body,
+            exported: false,
+            span: hook_start,
         })
     }
 
-    fn parse_service_decl(&mut self) -> Option<Statement> {
-        let start = self.advance()?.span; // consume 'service'
+    /// Parse a component template definition from provider.fg:
+    /// `component model(__tpl_name, schema) { ... }`
+    fn parse_component_template_def(&mut self) -> Option<Statement> {
+        let start = self.expect(&TokenKind::Component)?.span; // consume 'component'
         self.skip_newlines();
 
-        let name = match &self.peek()?.kind {
+        let component_name = self.expect_ident()?;
+        self.skip_newlines();
+
+        // Parse params: (__tpl_name, for __tpl_model_ref, schema)
+        self.expect(&TokenKind::LParen)?;
+        let mut has_schema = false;
+        let mut has_model_ref = false;
+
+        loop {
+            self.skip_newlines();
+            if self.check(&TokenKind::RParen) {
+                break;
+            }
+            match &self.peek()?.kind {
+                TokenKind::For => {
+                    self.advance(); // consume 'for'
+                    self.skip_newlines();
+                    let _ref_name = self.expect_ident()?; // __tpl_model_ref
+                    has_model_ref = true;
+                }
+                TokenKind::Ident(name) => {
+                    if name == "schema" {
+                        has_schema = true;
+                    }
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(&TokenKind::RParen)?;
+        self.skip_newlines();
+
+        // Parse body
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut items = Vec::new();
+        let mut config_schema = Vec::new();
+        let mut syntax_fns = Vec::new();
+
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
+
+            match &self.peek()?.kind {
+                TokenKind::Ident(name) if name == "event" => {
+                    // event name(params)
+                    let ev_span = self.advance()?.span; // consume 'event'
+                    self.skip_newlines();
+                    let ev_name = self.expect_ident()?;
+                    let ev_params = if self.check(&TokenKind::LParen) {
+                        self.advance();
+                        let p = self.parse_params().unwrap_or_default();
+                        self.expect(&TokenKind::RParen);
+                        p
+                    } else {
+                        vec![]
+                    };
+                    items.push(ComponentTemplateItem::EventDecl {
+                        name: ev_name,
+                        params: ev_params,
+                        span: ev_span,
+                    });
+                }
+                TokenKind::Ident(name) if name == "config" => {
+                    // config { key: type = default, ... }
+                    self.advance(); // consume 'config'
+                    self.skip_newlines();
+                    self.expect(&TokenKind::LBrace)?;
+                    self.skip_newlines();
+                    while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                        self.skip_newlines();
+                        if self.check(&TokenKind::RBrace) { break; }
+                        let entry_span = self.peek()?.span;
+                        let key = self.expect_ident()?;
+                        self.expect(&TokenKind::Colon)?;
+                        self.skip_newlines();
+                        let type_ann = self.parse_type_expr()?;
+                        let default = if self.check(&TokenKind::Eq) {
+                            self.advance();
+                            self.skip_newlines();
+                            Some(self.parse_expr()?)
+                        } else {
+                            None
+                        };
+                        config_schema.push(ConfigSchemaEntry {
+                            key,
+                            type_ann,
+                            default,
+                            span: entry_span,
+                        });
+                        self.skip_newlines();
+                    }
+                    self.expect(&TokenKind::RBrace)?;
+                }
+                TokenKind::Type => {
+                    // `type __tpl_name = __tpl_schema` → TypeFromSchema
+                    self.advance(); // consume 'type'
+                    self.skip_newlines();
+                    let _type_name = self.expect_ident()?; // __tpl_name
+                    self.skip_newlines();
+                    self.expect(&TokenKind::Eq)?;
+                    self.skip_newlines();
+                    let _schema_name = self.expect_ident()?; // __tpl_schema
+                    items.push(ComponentTemplateItem::TypeFromSchema);
+                }
+                TokenKind::Fn => {
+                    // fn __tpl_name.method(...) or fn __tpl_model_ref.method(...)
+                    let fn_start = self.advance()?.span; // consume 'fn'
+                    self.skip_newlines();
+
+                    let first_name = self.expect_ident()?;
+                    self.skip_newlines();
+
+                    if (first_name.starts_with("__tpl_")) && self.check(&TokenKind::Dot) {
+                        // Dotted template fn: __tpl_name.method or __tpl_model_ref.method
+                        self.advance(); // consume '.'
+                        let method_name = self.expect_ident()?;
+                        self.skip_newlines();
+
+                        // Parse params, return type, body as normal fn
+                        self.expect(&TokenKind::LParen)?;
+                        let params = self.parse_params()?;
+                        self.expect(&TokenKind::RParen)?;
+                        self.skip_newlines();
+
+                        let return_type = if self.check(&TokenKind::Arrow) {
+                            self.advance();
+                            self.skip_newlines();
+                            Some(self.parse_type_expr()?)
+                        } else {
+                            None
+                        };
+                        self.skip_newlines();
+                        let body = self.parse_block()?;
+
+                        let fn_name = format!("__tpl_fn_{}", method_name);
+                        let decl = Statement::FnDecl {
+                            name: fn_name,
+                            type_params: Vec::new(),
+                            params,
+                            return_type,
+                            body,
+                            exported: false,
+                            span: fn_start,
+                        };
+                        items.push(ComponentTemplateItem::FnTemplate {
+                            method_name,
+                            decl,
+                        });
+                    } else {
+                        // Regular fn in template (unlikely but handle)
+                        self.expect(&TokenKind::LParen)?;
+                        let params = self.parse_params()?;
+                        self.expect(&TokenKind::RParen)?;
+                        self.skip_newlines();
+                        let return_type = if self.check(&TokenKind::Arrow) {
+                            self.advance();
+                            self.skip_newlines();
+                            Some(self.parse_type_expr()?)
+                        } else {
+                            None
+                        };
+                        self.skip_newlines();
+                        let body = self.parse_block()?;
+                        let decl = Statement::FnDecl {
+                            name: first_name,
+                            type_params: Vec::new(),
+                            params,
+                            return_type,
+                            body,
+                            exported: false,
+                            span: fn_start,
+                        };
+                        items.push(ComponentTemplateItem::FnTemplate {
+                            method_name: String::new(),
+                            decl,
+                        });
+                    }
+                }
+                TokenKind::Ident(name) if name == "extern" => {
+                    // extern fn declaration
+                    if let Some(stmt) = self.parse_extern_fn() {
+                        items.push(ComponentTemplateItem::ExternFn(stmt));
+                    }
+                }
+                TokenKind::On => {
+                    // on startup { ... } or on main_end { ... }
+                    self.advance(); // consume 'on'
+                    self.skip_newlines();
+                    let lifecycle = self.expect_ident()?;
+                    self.skip_newlines();
+                    let block = self.parse_block()?;
+
+                    match lifecycle.as_str() {
+                        "startup" => items.push(ComponentTemplateItem::OnStartup(block.statements)),
+                        "main_end" => items.push(ComponentTemplateItem::OnMainEnd(block.statements)),
+                        _ => {
+                            self.error(&format!("unknown lifecycle: {}", lifecycle));
+                        }
+                    }
+                }
+                TokenKind::At => {
+                    // @syntax("pattern") fn name(params) { body }
+                    let at_span = self.advance()?.span; // consume '@'
+                    self.skip_newlines();
+                    let decorator_name = self.expect_ident()?;
+                    if decorator_name != "syntax" {
+                        self.error(&format!("unknown decorator: @{}", decorator_name));
+                        continue;
+                    }
+                    self.expect(&TokenKind::LParen)?;
+                    let pattern = match &self.peek()?.kind {
+                        TokenKind::StringLiteral(s) => s.clone(),
+                        _ => { self.error("expected string pattern for @syntax"); continue; }
+                    };
+                    self.advance();
+                    self.expect(&TokenKind::RParen)?;
+                    self.skip_newlines();
+
+                    // Parse the fn declaration that follows
+                    self.expect(&TokenKind::Fn)?;
+                    self.skip_newlines();
+                    let fn_name = self.expect_ident()?;
+                    self.skip_newlines();
+                    self.expect(&TokenKind::LParen)?;
+                    let fn_params = self.parse_params().unwrap_or_default();
+                    self.expect(&TokenKind::RParen)?;
+                    self.skip_newlines();
+                    let _return_type = if self.check(&TokenKind::Arrow) {
+                        self.advance();
+                        self.skip_newlines();
+                        Some(self.parse_type_expr()?)
+                    } else {
+                        None
+                    };
+                    self.skip_newlines();
+                    let fn_body = self.parse_block()?;
+
+                    syntax_fns.push(SyntaxFnDef {
+                        pattern,
+                        fn_name: fn_name.clone(),
+                        params: fn_params.clone(),
+                        body: fn_body,
+                        span: at_span,
+                    });
+                }
+                _ => {
+                    self.error("unexpected token in component template body");
+                    self.advance();
+                }
+            }
+            self.skip_newlines();
+        }
+
+        self.expect(&TokenKind::RBrace)?;
+
+        Some(Statement::ComponentTemplateDef(ComponentTemplateDef {
+            component_name,
+            has_schema,
+            has_model_ref,
+            config_schema,
+            syntax_fns,
+            body: items,
+            span: start,
+        }))
+    }
+
+    fn parse_component_route(&mut self) -> Option<Statement> {
+        // route METHOD /path -> handler
+        let _start = self.advance()?.span; // consume 'route'
+        self.skip_newlines();
+
+        let method = match &self.peek()?.kind {
+            TokenKind::Ident(m) => m.to_uppercase(),
+            _ => { self.error("expected HTTP method"); return None; }
+        };
+        self.advance();
+        self.skip_newlines();
+
+        let path = self.parse_url_path();
+        self.skip_newlines();
+
+        self.expect(&TokenKind::Arrow)?;
+        self.skip_newlines();
+
+        let handler = self.parse_expr()?;
+
+        // Encode as a function call expression for the expansion engine
+        Some(Statement::Expr(Expr::Call {
+            callee: Box::new(Expr::Ident("__component_route".to_string(), _start)),
+            args: vec![
+                CallArg { name: Some("method".to_string()), value: Expr::StringLit(method, _start) },
+                CallArg { name: Some("path".to_string()), value: Expr::StringLit(path, _start) },
+                CallArg { name: Some("handler".to_string()), value: handler },
+            ],
+            span: _start,
+        }))
+    }
+
+    fn parse_component_mount(&mut self) -> Option<Statement> {
+        // mount ServiceName at /path
+        let start = self.advance()?.span; // consume 'mount'
+        self.skip_newlines();
+
+        let service = match &self.peek()?.kind {
             TokenKind::Ident(n) => n.clone(),
             _ => { self.error("expected service name"); return None; }
         };
         self.advance();
         self.skip_newlines();
 
-        // 'for' <ModelName>
         match &self.peek()?.kind {
-            TokenKind::For => { self.advance(); }
-            _ => { self.error("expected 'for' after service name"); return None; }
+            TokenKind::Ident(n) if n == "at" => { self.advance(); }
+            _ => { self.error("expected 'at' after service name"); return None; }
         };
         self.skip_newlines();
 
-        let for_model = match &self.peek()?.kind {
-            TokenKind::Ident(n) => n.clone(),
-            _ => { self.error("expected model name"); return None; }
-        };
-        self.advance();
-        self.skip_newlines();
+        let path = self.parse_url_path();
 
-        self.expect(&TokenKind::LBrace)?;
-        self.skip_newlines();
-
-        let mut hooks = Vec::new();
-        let mut methods = Vec::new();
-
-        while !self.check(&TokenKind::RBrace) {
-            self.skip_newlines();
-            if self.check(&TokenKind::RBrace) { break; }
-
-            match &self.peek()?.kind {
-                TokenKind::Fn => {
-                    if let Some(method) = self.parse_fn_decl(false) {
-                        methods.push(method);
-                    }
-                }
-                TokenKind::Ident(name) if name == "before" || name == "after" => {
-                    let timing = if name == "before" {
-                        crate::parser::ast::HookTiming::Before
-                    } else {
-                        crate::parser::ast::HookTiming::After
-                    };
-                    let hook_start = self.advance()?.span;
-                    self.skip_newlines();
-
-                    let operation = match &self.peek()?.kind {
-                        TokenKind::Ident(n) => n.clone(),
-                        _ => { self.error("expected operation name"); continue; }
-                    };
-                    self.advance();
-
-                    // parse (param)
-                    self.expect(&TokenKind::LParen)?;
-                    let param = match &self.peek()?.kind {
-                        TokenKind::Ident(n) => n.clone(),
-                        _ => { self.error("expected parameter name"); String::new() }
-                    };
-                    self.advance();
-                    self.expect(&TokenKind::RParen)?;
-                    self.skip_newlines();
-
-                    let body = self.parse_block()?;
-
-                    hooks.push(crate::parser::ast::ServiceHook {
-                        timing,
-                        operation,
-                        param,
-                        body,
-                        span: hook_start,
-                    });
-                }
-                _ => {
-                    self.error("expected 'fn', 'before', or 'after' in service block");
-                    self.advance();
-                }
-            }
-            self.skip_newlines();
-        }
-
-        self.expect(&TokenKind::RBrace)?;
-
-        Some(Statement::ServiceDecl {
-            name,
-            for_model,
-            hooks,
-            methods,
+        Some(Statement::Expr(Expr::Call {
+            callee: Box::new(Expr::Ident("__component_mount".to_string(), start)),
+            args: vec![
+                CallArg { name: Some("service".to_string()), value: Expr::StringLit(service, start) },
+                CallArg { name: Some("path".to_string()), value: Expr::StringLit(path, start) },
+            ],
             span: start,
-        })
+        }))
     }
 
-    fn parse_server_block(&mut self) -> Option<Statement> {
-        let start = self.advance()?.span; // consume 'server'
-        self.skip_newlines();
+    /// Try to match the current position against registered @syntax patterns.
+    /// If a pattern matches, consume the matched tokens and return a desugared
+    /// function call statement: `__component_<fn_name>(captured_args...)`.
+    fn try_syntax_match(&mut self, meta: &ComponentMeta) -> Option<Statement> {
+        use crate::component_expand::syntax::SyntaxPattern;
 
-        // Parse :port
-        self.expect(&TokenKind::Colon)?;
-        let port = match &self.peek()?.kind {
-            TokenKind::IntLiteral(n) => *n,
-            _ => { self.error("expected port number"); return None; }
-        };
-        self.advance();
-        self.skip_newlines();
+        let start_pos = self.pos;
+        let span = self.peek()?.span;
 
-        self.expect(&TokenKind::LBrace)?;
-        self.skip_newlines();
+        for pat_def in &meta.syntax_patterns {
+            let pattern = SyntaxPattern::parse(&pat_def.pattern, &pat_def.fn_name);
+            if let Some((captures, new_pos)) = pattern.try_match(&self.tokens, self.pos) {
+                // Consume the matched tokens
+                self.pos = new_pos;
 
-        let mut children = Vec::new();
+                // Build a __component_<fn_name>(...) call with captured values
+                let sentinel = format!("__component_{}", pat_def.fn_name);
+                let args: Vec<CallArg> = pattern.segments.iter()
+                    .filter_map(|seg| {
+                        if let crate::component_expand::syntax::PatternSegment::Placeholder(name) = seg {
+                            let captured_tokens = captures.get(name)?;
+                            // Convert captured tokens to a string value
+                            let text: String = captured_tokens.iter()
+                                .map(|t| crate::component_expand::syntax::token_to_string(t))
+                                .collect::<Vec<_>>()
+                                .join("");
+                            Some(CallArg {
+                                name: Some(name.clone()),
+                                value: Expr::StringLit(text, span),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
 
-        while !self.check(&TokenKind::RBrace) {
-            self.skip_newlines();
-            if self.check(&TokenKind::RBrace) { break; }
+                // Check if the last capture might be a closure/expression
+                // For "handler" params, try to re-parse the captured tokens as an expression
+                let final_args = self.refine_syntax_args(args, &captures, span);
 
-            match &self.peek()?.kind {
-                TokenKind::Ident(name) if name == "route" => {
-                    let route_start = self.advance()?.span;
-                    self.skip_newlines();
-
-                    // HTTP method (GET, POST, PUT, DELETE)
-                    let method = match &self.peek()?.kind {
-                        TokenKind::Ident(m) => m.to_uppercase(),
-                        _ => { self.error("expected HTTP method"); continue; }
-                    };
-                    self.advance();
-                    self.skip_newlines();
-
-                    // Path like /health or /hello/:name
-                    let path = self.parse_url_path();
-                    self.skip_newlines();
-
-                    // -> handler
-                    self.expect(&TokenKind::Arrow)?;
-                    self.skip_newlines();
-
-                    let handler = self.parse_expr()?;
-
-                    children.push(crate::parser::ast::ServerChild::Route {
-                        method,
-                        path,
-                        handler,
-                        span: route_start,
-                    });
-                }
-                TokenKind::Ident(name) if name == "mount" => {
-                    let mount_start = self.advance()?.span;
-                    self.skip_newlines();
-
-                    let service = match &self.peek()?.kind {
-                        TokenKind::Ident(n) => n.clone(),
-                        _ => { self.error("expected service name"); continue; }
-                    };
-                    self.advance();
-                    self.skip_newlines();
-
-                    // 'at'
-                    match &self.peek()?.kind {
-                        TokenKind::Ident(n) if n == "at" => { self.advance(); }
-                        _ => { self.error("expected 'at' after service name"); continue; }
-                    };
-                    self.skip_newlines();
-
-                    let path = self.parse_url_path();
-
-                    children.push(crate::parser::ast::ServerChild::Mount {
-                        service,
-                        path,
-                        span: mount_start,
-                    });
-                }
-                _ => {
-                    self.error("expected 'route' or 'mount' in server block");
-                    self.advance();
-                }
+                return Some(Statement::Expr(Expr::Call {
+                    callee: Box::new(Expr::Ident(sentinel, span)),
+                    args: final_args,
+                    span,
+                }));
             }
-            self.skip_newlines();
         }
 
-        self.expect(&TokenKind::RBrace)?;
+        // No pattern matched — restore position (should already be at start_pos)
+        self.pos = start_pos;
+        None
+    }
 
-        Some(Statement::ServerBlock {
-            port,
-            children,
-            span: start,
-        })
+    /// Refine syntax pattern capture args: if a captured param name is "handler"
+    /// and the tokens look like an expression (ident, closure, etc.), parse them.
+    fn refine_syntax_args(
+        &mut self,
+        args: Vec<CallArg>,
+        captures: &std::collections::HashMap<String, Vec<crate::lexer::Token>>,
+        span: Span,
+    ) -> Vec<CallArg> {
+        let mut result = Vec::new();
+        for arg in args {
+            let name = arg.name.clone().unwrap_or_default();
+            if name == "handler" {
+                // Try to parse the captured tokens as an expression
+                if let Some(tokens) = captures.get("handler") {
+                    let mut sub_parser = Parser::new(tokens.clone());
+                    if let Some(expr) = sub_parser.parse_expr() {
+                        result.push(CallArg {
+                            name: Some("handler".to_string()),
+                            value: expr,
+                        });
+                        continue;
+                    }
+                }
+            }
+            result.push(arg);
+        }
+        result
     }
 
     /// Parse assert statement: assert expr, "message"

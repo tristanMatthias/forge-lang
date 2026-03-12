@@ -1,0 +1,6 @@
+// Error test: assigning to immutable variable
+fn main() {
+  let x = 42
+  println(string(x))
+  x = 100
+}

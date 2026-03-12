@@ -1,3 +1,4 @@
+use crate::lexer::Span;
 use crate::typeck::types::Type;
 use std::collections::HashMap;
 
@@ -5,6 +6,15 @@ use std::collections::HashMap;
 pub struct VarInfo {
     pub ty: Type,
     pub mutable: bool,
+    pub used: bool,
+    pub def_span: Option<Span>,
+}
+
+/// Info about an unused variable found when popping a scope
+#[derive(Debug)]
+pub struct UnusedVar {
+    pub name: String,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -52,13 +62,36 @@ impl TypeEnv {
         self.scopes.push(HashMap::new());
     }
 
-    pub fn pop_scope(&mut self) {
+    /// Pop the current scope and return any unused variables
+    pub fn pop_scope(&mut self) -> Vec<UnusedVar> {
+        let mut unused = Vec::new();
+        if let Some(scope) = self.scopes.pop() {
+            for (name, info) in &scope {
+                if !info.used && !name.starts_with('_') && !name.starts_with("__") && info.def_span.is_some() {
+                    unused.push(UnusedVar {
+                        name: name.clone(),
+                        span: info.def_span.unwrap(),
+                    });
+                }
+            }
+        }
+        unused
+    }
+
+    /// Pop scope without tracking unused variables (for scopes where it doesn't apply)
+    pub fn pop_scope_silent(&mut self) {
         self.scopes.pop();
     }
 
     pub fn define(&mut self, name: String, ty: Type, mutable: bool) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, VarInfo { ty, mutable });
+            scope.insert(name, VarInfo { ty, mutable, used: false, def_span: None });
+        }
+    }
+
+    pub fn define_with_span(&mut self, name: String, ty: Type, mutable: bool, span: Span) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, VarInfo { ty, mutable, used: false, def_span: Some(span) });
         }
     }
 
@@ -71,8 +104,37 @@ impl TypeEnv {
         None
     }
 
+    /// Look up a variable and mark it as used
+    pub fn lookup_and_mark_used(&mut self, name: &str) -> Option<&VarInfo> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(info) = scope.get_mut(name) {
+                info.used = true;
+                return Some(info);
+            }
+        }
+        None
+    }
+
     pub fn lookup_function(&self, name: &str) -> Option<&Type> {
         self.functions.get(name)
+    }
+
+    /// Return all variable and function names visible in the current scope
+    pub fn all_names_in_scope(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for scope in &self.scopes {
+            for name in scope.keys() {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
+        for name in self.functions.keys() {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        names
     }
 
     pub fn resolve_type_name(&self, name: &str) -> Type {
@@ -82,6 +144,7 @@ impl TypeEnv {
             "bool" => Type::Bool,
             "string" => Type::String,
             "void" => Type::Void,
+            "ptr" => Type::Ptr,
             _ => {
                 if let Some(ty) = self.type_aliases.get(name) {
                     ty.clone()

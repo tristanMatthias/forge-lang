@@ -1,0 +1,4 @@
+// Error test: missing closing brace
+fn main() {
+  let x = 5
+  println(string(x))

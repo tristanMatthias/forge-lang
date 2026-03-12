@@ -1,0 +1,4 @@
+// Error test: missing closing parenthesis
+fn main() {
+  println("hello"
+}
