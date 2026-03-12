@@ -193,6 +193,7 @@ impl<'ctx> Codegen<'ctx> {
             Expr::FloatLit(_, _) => Type::Float,
             Expr::StringLit(_, _) => Type::String,
             Expr::TemplateLit { .. } => Type::String,
+            Expr::DollarExec { .. } => Type::String,
             Expr::BoolLit(_, _) => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
             Expr::Ident(name, _) => {
@@ -248,6 +249,7 @@ impl<'ctx> Codegen<'ctx> {
                     match name.as_str() {
                         "println" | "print" => Type::Void,
                         "string" => Type::String,
+                        "channel" => Type::Int,
                         _ => {
                             // Check for generic functions first
                             if let Some(generic_fn) = self.generic_fns.get(name.as_str()) {
@@ -288,6 +290,10 @@ impl<'ctx> Codegen<'ctx> {
                                 _ => {}
                             }
                         }
+                        // channel.tick() returns int (channel ID)
+                        if name == "channel" && field == "tick" {
+                            return Type::Int;
+                        }
                     }
                     // Check static_methods registry (for expanded component functions)
                     if let Expr::Ident(name, _) = object.as_ref() {
@@ -301,7 +307,7 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" => Type::String,
+                            "upper" | "lower" | "trim" => Type::String,
                             "contains" => Type::Bool,
                             "length" => Type::Int,
                             "split" => Type::List(Box::new(Type::String)),
@@ -558,7 +564,7 @@ impl<'ctx> Codegen<'ctx> {
                     }
                     Type::String => match field.as_str() {
                         "length" => Type::Nullable(Box::new(Type::Int)),
-                        "upper" | "lower" => Type::Nullable(Box::new(Type::String)),
+                        "upper" | "lower" | "trim" => Type::Nullable(Box::new(Type::String)),
                         _ => Type::Unknown,
                     },
                     _ => Type::Unknown,
@@ -572,7 +578,7 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" => Type::String,
+                "upper" | "lower" | "trim" => Type::String,
                 "contains" => Type::Bool,
                 "length" => Type::Int,
                 "split" => Type::List(Box::new(Type::String)),

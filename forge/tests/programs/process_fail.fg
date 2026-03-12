@@ -1,0 +1,8 @@
+use @std.process
+
+fn main() {
+  let result_json = process.run("ls", "[\"nonexistent_path_xyz_12345\"]", "{}")
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(string(result.code != 0))
+  println(string(result.stderr.length > 0))
+}

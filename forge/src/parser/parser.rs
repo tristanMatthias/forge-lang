@@ -88,6 +88,8 @@ impl Parser {
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Defer => self.parse_defer(),
+            TokenKind::Spawn => self.parse_spawn(),
+            TokenKind::Select => self.parse_select(),
             TokenKind::Component => self.parse_component_template_def(),
             TokenKind::Ident(name) => {
                 if let Some(meta) = self.registered_components.get(name).cloned() {
@@ -581,6 +583,102 @@ impl Parser {
         })
     }
 
+    fn parse_spawn(&mut self) -> Option<Statement> {
+        let start = self.advance()?.span; // consume 'spawn'
+        self.skip_newlines();
+        let body = self.parse_block()?;
+        Some(Statement::Expr(Expr::SpawnBlock {
+            body,
+            span: start,
+        }))
+    }
+
+    fn parse_select(&mut self) -> Option<Statement> {
+        let start = self.advance()?.span; // consume 'select'
+        self.skip_newlines();
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut arms = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
+            let arm_span = self.current_span();
+
+            // Parse binding pattern: identifier or _ (wildcard)
+            let binding = self.parse_simple_pattern()?;
+            self.skip_newlines();
+
+            // Expect <- (LeftArrow)
+            self.expect(&TokenKind::LeftArrow)?;
+            self.skip_newlines();
+
+            // Parse channel expression as a simple identifier or member access
+            // (NOT parse_postfix/parse_expr which would consume -> as closure syntax)
+            let channel = {
+                let ident = self.expect_ident()?;
+                let span = self.current_span();
+                let mut expr = Expr::Ident(ident, span);
+                // Allow member access: ch.field
+                while self.check(&TokenKind::Dot) {
+                    let dot_span = self.advance()?.span;
+                    let field = self.expect_field_name()?;
+                    expr = Expr::MemberAccess {
+                        object: Box::new(expr),
+                        field,
+                        span: dot_span,
+                    };
+                }
+                expr
+            };
+            self.skip_newlines();
+
+            // Optional guard: if condition
+            let guard = if self.check(&TokenKind::If) {
+                self.advance();
+                self.skip_newlines();
+                // Parse guard up to ->
+                Some(self.parse_comparison()?)
+            } else {
+                None
+            };
+            self.skip_newlines();
+
+            // Expect -> (Arrow)
+            self.expect(&TokenKind::Arrow)?;
+            self.skip_newlines();
+
+            // Parse body: either a block { ... } or wrap a single statement in a block
+            let body = if self.check(&TokenKind::LBrace) {
+                self.parse_block()?
+            } else {
+                let stmt_span = self.current_span();
+                let stmt = self.parse_statement()?;
+                Block {
+                    statements: vec![stmt],
+                    span: stmt_span,
+                }
+            };
+
+            arms.push(SelectArm {
+                binding,
+                channel,
+                guard,
+                body,
+                span: arm_span,
+            });
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RBrace)?;
+
+        Some(Statement::Select {
+            arms,
+            span: start,
+        })
+    }
+
     fn parse_use(&mut self) -> Option<Statement> {
         let start = self.advance()?.span; // consume 'use'
         self.skip_newlines();
@@ -836,6 +934,18 @@ impl Parser {
 
     fn parse_expr_statement(&mut self) -> Option<Statement> {
         let expr = self.parse_expr()?;
+
+        // Check for channel send: expr <- value
+        if self.check(&TokenKind::LeftArrow) {
+            let span = self.advance()?.span; // consume <-
+            self.skip_newlines();
+            let value = self.parse_expr()?;
+            return Some(Statement::Expr(Expr::ChannelSend {
+                channel: Box::new(expr),
+                value: Box::new(value),
+                span,
+            }));
+        }
 
         // Check for assignment
         if self.check(&TokenKind::Eq) {
@@ -1126,6 +1236,16 @@ impl Parser {
                 span,
             });
         }
+        // Channel receive: <- channel
+        if self.check(&TokenKind::LeftArrow) {
+            let span = self.advance()?.span; // consume <-
+            self.skip_newlines();
+            let channel = self.parse_unary()?;
+            return Some(Expr::ChannelReceive {
+                channel: Box::new(channel),
+                span,
+            });
+        }
         self.parse_postfix()
     }
 
@@ -1207,7 +1327,7 @@ impl Parser {
                         continue;
                     }
                 }
-                let field = self.expect_ident()?;
+                let field = self.expect_field_name()?;
                 expr = Expr::MemberAccess {
                     object: Box::new(expr),
                     field,
@@ -1215,7 +1335,7 @@ impl Parser {
                 };
             } else if self.check(&TokenKind::QuestionDot) {
                 let span = self.advance()?.span;
-                let field = self.expect_ident()?;
+                let field = self.expect_field_name()?;
                 expr = Expr::NullPropagate {
                     object: Box::new(expr),
                     field,
@@ -1370,6 +1490,12 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::DollarString(parts) => {
+                let parts = parts.clone();
+                let span = tok.span;
+                self.advance();
+                self.parse_dollar_exec(parts, span)
+            }
             TokenKind::Ident(_) => self.parse_ident_expr(),
             TokenKind::LParen => self.parse_paren_expr(),
             TokenKind::LBrace => self.parse_brace_expr(),
@@ -1433,6 +1559,27 @@ impl Parser {
             }
         }
         Some(Expr::TemplateLit { parts, span })
+    }
+
+    fn parse_dollar_exec(&mut self, lex_parts: Vec<LexTemplatePart>, span: Span) -> Option<Expr> {
+        let mut parts = Vec::new();
+        for part in lex_parts {
+            match part {
+                LexTemplatePart::Literal(s) => {
+                    parts.push(TemplatePart::Literal(s));
+                }
+                LexTemplatePart::Expr(expr_text) => {
+                    let mut lexer = Lexer::new(&expr_text);
+                    let tokens = lexer.tokenize();
+                    let mut parser = Parser::new(tokens);
+                    if let Some(expr) = parser.parse_expr() {
+                        parts.push(TemplatePart::Expr(Box::new(expr)));
+                    }
+                    self.diagnostics.extend(parser.diagnostics.into_iter());
+                }
+            }
+        }
+        Some(Expr::DollarExec { parts, span })
     }
 
     fn parse_ident_expr(&mut self) -> Option<Expr> {
@@ -2108,6 +2255,29 @@ impl Parser {
         let tok = self.peek()?.clone();
         if let TokenKind::Ident(name) = &tok.kind {
             let name = name.clone();
+            self.advance();
+            Some(name)
+        } else {
+            self.error(&format!("expected identifier, found {:?}", tok.kind));
+            None
+        }
+    }
+
+    /// Like expect_ident but also accepts keywords as field names (for member access).
+    /// This allows `process.spawn()`, `ch.select()`, `obj.on()` etc.
+    fn expect_field_name(&mut self) -> Option<String> {
+        let tok = self.peek()?.clone();
+        let name = match &tok.kind {
+            TokenKind::Ident(name) => Some(name.clone()),
+            TokenKind::Spawn => Some("spawn".to_string()),
+            TokenKind::Select => Some("select".to_string()),
+            TokenKind::On => Some("on".to_string()),
+            TokenKind::Component => Some("component".to_string()),
+            TokenKind::Match => Some("match".to_string()),
+            TokenKind::Use => Some("use".to_string()),
+            _ => None,
+        };
+        if let Some(name) = name {
             self.advance();
             Some(name)
         } else {

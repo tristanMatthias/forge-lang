@@ -1,0 +1,7 @@
+use @std.process
+
+fn main() {
+  let result_json = process.pipe("hello world", "tr", "[\"a-z\",\"A-Z\"]")
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(result.stdout)
+}

@@ -5,6 +5,7 @@ pub enum TokenKind {
     FloatLiteral(f64),
     StringLiteral(String),
     TemplateLiteral(Vec<TemplatePart>),
+    DollarString(Vec<TemplatePart>), // $"..." or $`...` — shell command
     BoolLiteral(bool),
     NullLiteral,
 
@@ -41,6 +42,7 @@ pub enum TokenKind {
     Parallel,
     With,
     Catch,
+    Select,
     Component,
     Null,
     Ok_,
@@ -64,6 +66,7 @@ pub enum TokenKind {
     Not,
     Pipe,
     Arrow,
+    LeftArrow,  // <-
     Question,
     QuestionDot,
     DoubleQuestion,

@@ -1,0 +1,31 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let results = channel(10)
+  let tick = channel.tick(50)
+
+  // Slow-ish process
+  spawn {
+    let r = $`sleep 0.2 && echo done`
+    results <- r.trim()
+  }
+
+  mut tick_count = 0
+  mut got_result = false
+
+  loop {
+    select {
+      msg <- results -> {
+        got_result = true
+        break
+      }
+      _ <- tick -> {
+        tick_count = tick_count + 1
+      }
+    }
+  }
+
+  println(string(got_result))
+  println(string(tick_count > 0))
+}

@@ -1,0 +1,24 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let commands = channel(10)
+
+  spawn {
+    commands <- "echo first"
+    commands <- "echo second"
+    commands <- "echo third"
+    channel.close(commands)
+  }
+
+  mut items = ""
+  for cmd in commands {
+    let result = $`${cmd}`
+    if items.length > 0 {
+      items = items + ", "
+    }
+    items = items + result.trim()
+  }
+
+  println(items)
+}

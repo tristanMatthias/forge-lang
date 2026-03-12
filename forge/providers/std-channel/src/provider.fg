@@ -1,0 +1,13 @@
+extern fn forge_channel_create(capacity: int) -> int
+extern fn forge_channel_send(id: int, data: string) -> bool
+extern fn forge_channel_receive(id: int) -> string
+extern fn forge_channel_try_receive(id: int, timeout_ms: int) -> string
+extern fn forge_channel_close(id: int)
+extern fn forge_channel_is_closed(id: int) -> bool
+extern fn forge_channel_length(id: int) -> int
+extern fn forge_channel_capacity(id: int) -> int
+extern fn forge_channel_is_empty(id: int) -> bool
+extern fn forge_channel_is_full(id: int) -> bool
+extern fn forge_channel_drain(id: int) -> string
+extern fn forge_channel_select(channel_ids_json: string, timeout_ms: int) -> string
+extern fn forge_channel_tick_create(interval_ms: int) -> int

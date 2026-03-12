@@ -333,6 +333,80 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             self.builder.position_at_end(end_bb);
+        } else if iter_type == Type::Int {
+            // Treat int as channel ID — iterate by calling forge_channel_receive
+            // until we get the "\0CLOSED" sentinel
+            let channel_id = self.compile_expr(iterable).unwrap();
+            let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+
+            let loop_bb = self.context.append_basic_block(function, "chan_loop");
+            let body_bb = self.context.append_basic_block(function, "chan_body");
+            let end_bb = self.context.append_basic_block(function, "chan_end");
+
+            // Store channel ID for break/continue
+            let ch_id_alloca = self.create_entry_block_alloca(&Type::Int, "__chan_id");
+            self.builder.build_store(ch_id_alloca, channel_id).unwrap();
+
+            self.builder.build_unconditional_branch(loop_bb).unwrap();
+            self.builder.position_at_end(loop_bb);
+
+            // Call forge_channel_receive(id) -> ptr
+            let ch_id = self.builder.build_load(self.context.i64_type(), ch_id_alloca, "ch_id").unwrap();
+            let recv_fn = self.module.get_function("forge_channel_receive").unwrap();
+            let raw_ptr = self.builder.build_call(recv_fn, &[ch_id.into()], "recv_ptr")
+                .unwrap().try_as_basic_value().left().unwrap().into_pointer_value();
+
+            // Check if result starts with \0 (sentinel for closed)
+            // Load first byte and check if it's 0 (the \0 in \0CLOSED)
+            let first_byte = self.builder.build_load(self.context.i8_type(), raw_ptr, "first_byte")
+                .unwrap().into_int_value();
+            let is_sentinel = self.builder.build_int_compare(
+                IntPredicate::EQ, first_byte, self.context.i8_type().const_zero(), "is_closed"
+            ).unwrap();
+            self.builder.build_conditional_branch(is_sentinel, end_bb, body_bb).unwrap();
+
+            self.builder.position_at_end(body_bb);
+            self.push_scope();
+
+            // Convert raw ptr to ForgeString for the loop variable
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+            let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+                let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+                self.module.add_function("strlen", ft, None)
+            });
+            let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
+                .unwrap().try_as_basic_value().left().unwrap();
+            let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+            let forge_str = self.builder.build_call(
+                str_new_fn, &[raw_ptr.into(), len.into()], "msg_str",
+            ).unwrap().try_as_basic_value().left().unwrap();
+
+            // Bind the pattern
+            match pattern {
+                Pattern::Ident(name, _) => {
+                    if name != "_" {
+                        let alloca = self.create_entry_block_alloca(&Type::String, name);
+                        self.builder.build_store(alloca, forge_str).unwrap();
+                        self.define_var(name.clone(), alloca, Type::String);
+                    }
+                }
+                _ => {}
+            }
+
+            self.loop_exit_blocks.push((end_bb, None));
+
+            for stmt in &body.statements {
+                self.compile_statement(stmt);
+            }
+            self.pop_scope();
+
+            self.loop_exit_blocks.pop();
+
+            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                self.builder.build_unconditional_branch(loop_bb).unwrap();
+            }
+
+            self.builder.position_at_end(end_bb);
         }
     }
 

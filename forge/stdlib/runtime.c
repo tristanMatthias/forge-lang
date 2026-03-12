@@ -143,6 +143,15 @@ int8_t forge_string_contains(ForgeString haystack, ForgeString needle) {
     return 0;
 }
 
+ForgeString forge_string_trim(ForgeString s) {
+    int64_t start = 0;
+    int64_t end = s.len;
+    while (start < end && (s.ptr[start] == ' ' || s.ptr[start] == '\t' || s.ptr[start] == '\n' || s.ptr[start] == '\r')) start++;
+    while (end > start && (s.ptr[end-1] == ' ' || s.ptr[end-1] == '\t' || s.ptr[end-1] == '\n' || s.ptr[end-1] == '\r')) end--;
+    int64_t new_len = end - start;
+    return forge_string_new(s.ptr + start, new_len);
+}
+
 // ---- String comparison ----
 
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
@@ -656,4 +665,36 @@ int8_t forge_json_is_null(const char* json) {
     const char* p = json;
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
     return (*p == 'n' || *p == '\0') ? 1 : 0;
+}
+
+// ── Concurrency ──
+
+#include <pthread.h>
+
+typedef void (*forge_fn_ptr)(void);
+
+struct spawn_arg {
+    forge_fn_ptr fn;
+};
+
+static void* spawn_thread_fn(void* arg) {
+    struct spawn_arg* sa = (struct spawn_arg*)arg;
+    sa->fn();
+    free(sa);
+    return NULL;
+}
+
+void forge_spawn(forge_fn_ptr fn) {
+    pthread_t thread;
+    struct spawn_arg* arg = (struct spawn_arg*)malloc(sizeof(struct spawn_arg));
+    arg->fn = fn;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&thread, &attr, spawn_thread_fn, arg);
+    pthread_attr_destroy(&attr);
+}
+
+void forge_sleep_ms(int64_t ms) {
+    usleep((useconds_t)(ms * 1000));
 }

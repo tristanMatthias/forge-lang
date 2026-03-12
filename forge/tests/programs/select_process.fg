@@ -1,0 +1,32 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let results = channel(10)
+  let done = channel(1)
+
+  // Spawn a process that feeds results
+  spawn {
+    let r = $"echo completed"
+    results <- r.trim()
+    done <- "yes"
+  }
+
+  // Wait for done signal via select
+  mut got_result = ""
+  mut finished = false
+  loop {
+    select {
+      msg <- results -> {
+        got_result = msg
+      }
+      _ <- done -> {
+        finished = true
+        break
+      }
+    }
+  }
+
+  println(got_result)
+  println(string(finished))
+}

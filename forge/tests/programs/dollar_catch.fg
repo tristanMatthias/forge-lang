@@ -1,0 +1,16 @@
+use @std.process
+
+fn main() {
+  // Basic dollar-exec
+  let out = $"echo works"
+  println(out.trim())
+
+  // Dollar exec with interpolation in double-quoted form
+  let x = "world"
+  let out2 = $"echo hello ${x}"
+  println(out2.trim())
+
+  // Multi-command in backtick form
+  let out3 = $`printf "a"; printf "b"; printf "c\n"`
+  println(out3.trim())
+}

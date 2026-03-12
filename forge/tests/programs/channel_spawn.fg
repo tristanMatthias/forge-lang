@@ -1,0 +1,13 @@
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    ch <- "hello from spawn"
+  }
+
+  sleep(50)
+  let msg = <- ch
+  println(msg)
+}

@@ -383,6 +383,33 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             handler: substitute_block(handler, ctx),
             span: *span,
         },
+        Expr::ChannelSend { channel, value, span } => Expr::ChannelSend {
+            channel: Box::new(substitute_expr(channel, ctx)),
+            value: Box::new(substitute_expr(value, ctx)),
+            span: *span,
+        },
+        Expr::ChannelReceive { channel, span } => Expr::ChannelReceive {
+            channel: Box::new(substitute_expr(channel, ctx)),
+            span: *span,
+        },
+        Expr::SpawnBlock { body, span } => Expr::SpawnBlock {
+            body: substitute_block(body, ctx),
+            span: *span,
+        },
+        Expr::DollarExec { parts, span } => Expr::DollarExec {
+            parts: parts
+                .iter()
+                .map(|p| match p {
+                    crate::parser::ast::TemplatePart::Literal(s) => {
+                        crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
+                    }
+                    crate::parser::ast::TemplatePart::Expr(e) => {
+                        crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
+                    }
+                })
+                .collect(),
+            span: *span,
+        },
     }
 }
 

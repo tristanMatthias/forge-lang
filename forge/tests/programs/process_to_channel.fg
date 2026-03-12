@@ -1,0 +1,31 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let lines_ch = channel(100)
+
+  // Spawn a process and feed stdout lines to channel
+  spawn {
+    let handle = process.spawn("sh", "[\"-c\",\"echo INFO:started && echo ERROR:disk && echo INFO:running && echo ERROR:timeout\"]", "{}")
+    sleep(200)
+    mut count = 0
+    loop {
+      let line = process.read_line(handle)
+      if line.length == 0 { break }
+      lines_ch <- line
+      count = count + 1
+      if count > 10 { break }
+    }
+    channel.close(lines_ch)
+  }
+
+  // Consume from channel, count errors
+  mut error_count = 0
+  for line in lines_ch {
+    if line.contains("ERROR") {
+      error_count = error_count + 1
+    }
+  }
+
+  println(string(error_count))
+}

@@ -1,0 +1,12 @@
+use @std.process
+
+fn main() {
+  let handle = process.spawn("sh", "[\"-c\",\"sleep 0.1 && echo ready && sleep 30\"]", "{}")
+
+  let found = process.wait_for_output(handle, "ready", 5000)
+  println(string(found))
+
+  process.kill(handle)
+  sleep(50)
+  println(string(process.is_alive(handle)))
+}

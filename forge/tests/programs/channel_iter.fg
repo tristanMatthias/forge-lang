@@ -1,0 +1,25 @@
+use @std.channel
+
+fn main() {
+  let ch = channel(10)
+
+  spawn {
+    ch <- "one"
+    ch <- "two"
+    ch <- "three"
+    ch.close()
+  }
+
+  sleep(50)
+
+  mut items = ""
+  for msg in ch {
+    if items.length > 0 {
+      items = items + ", "
+    }
+    items = items + msg
+  }
+
+  println(items)
+  println(string(ch.is_closed))
+}

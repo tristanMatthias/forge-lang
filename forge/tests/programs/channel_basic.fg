@@ -1,0 +1,10 @@
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  ch <- "hello"
+
+  let msg = <- ch
+  println(msg)
+}

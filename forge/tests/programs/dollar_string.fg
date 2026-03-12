@@ -1,0 +1,11 @@
+use @std.process
+
+fn main() {
+  let greeting = $"echo hello"
+  println(greeting.trim())
+
+  // With interpolation
+  let name = "forge"
+  let result = $"echo hello ${name}"
+  println(result.trim())
+}

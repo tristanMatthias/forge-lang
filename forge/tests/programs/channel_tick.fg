@@ -1,0 +1,13 @@
+use @std.channel
+
+fn main() {
+  let tick = channel.tick(50)
+
+  mut count = 0
+  for _ in tick {
+    count = count + 1
+    if count >= 3 { break }
+  }
+
+  println(string(count))
+}

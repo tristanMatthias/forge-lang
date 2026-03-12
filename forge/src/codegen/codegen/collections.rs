@@ -62,6 +62,13 @@ impl<'ctx> Codegen<'ctx> {
                             }
                         }
                     }
+                    // Pad missing args with default "{}" string (for opts params)
+                    while compiled_args.len() < param_count {
+                        let default_str = self.build_string_literal("{}");
+                        let param_type = func.get_nth_param(compiled_args.len() as u32).unwrap().get_type();
+                        let val = self.coerce_value(default_str.into(), param_type);
+                        compiled_args.push(val.into());
+                    }
                     let result = self
                         .builder
                         .build_call(func, &compiled_args, "static_call")
@@ -155,6 +162,11 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_call(lower_fn, &[obj_val.into()], "lower").unwrap();
                     result.try_as_basic_value().left()
                 }
+                "trim" => {
+                    let trim_fn = self.module.get_function("forge_string_trim").unwrap();
+                    let result = self.builder.build_call(trim_fn, &[obj_val.into()], "trim").unwrap();
+                    result.try_as_basic_value().left()
+                }
                 "contains" => {
                     if let Some(arg) = args.first() {
                         let arg_val = self.compile_expr(&arg.value)?;
@@ -229,6 +241,22 @@ impl<'ctx> Codegen<'ctx> {
                 _ => None,
             },
             _ => {
+                // Handle channel method calls (channel is represented as int)
+                // ch.close(), ch.drain()
+                if obj_type == Type::Int || obj_type == Type::Unknown {
+                    let channel_fn_name = match method {
+                        "close" => Some("forge_channel_close"),
+                        "drain" => Some("forge_channel_drain"),
+                        _ => None,
+                    };
+                    if let Some(fn_name) = channel_fn_name {
+                        if let Some(func) = self.module.get_function(fn_name) {
+                            let result = self.builder.build_call(func, &[obj_val.into()], method).unwrap();
+                            return result.try_as_basic_value().left();
+                        }
+                    }
+                }
+
                 // Check for trait method dispatch
                 if let Some(type_name) = self.get_type_name(&obj_type) {
                     // Handle built-in clone for primitive types

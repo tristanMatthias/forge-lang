@@ -73,6 +73,10 @@ impl<'ctx> Codegen<'ctx> {
         let fn_type = string_type.fn_type(&[string_type.into()], false);
         self.module.add_function("forge_string_lower", fn_type, None);
 
+        // forge_string_trim(ForgeString) -> ForgeString
+        let fn_type = string_type.fn_type(&[string_type.into()], false);
+        self.module.add_function("forge_string_trim", fn_type, None);
+
         // forge_string_contains(ForgeString, ForgeString) -> i8
         let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
         self.module.add_function("forge_string_contains", fn_type, None);
@@ -92,6 +96,20 @@ impl<'ctx> Codegen<'ctx> {
         // forge_alloc(i64) -> ptr
         let fn_type = ptr_type.fn_type(&[i64_type.into()], false);
         self.module.add_function("forge_alloc", fn_type, None);
+
+        // forge_spawn(fn_ptr)
+        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
+        self.module.add_function("forge_spawn", fn_type, None);
+
+        // forge_sleep_ms(i64)
+        let fn_type = void_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_sleep_ms", fn_type, None);
+
+        // strlen(ptr) -> i64 (for string conversion from extern ptr)
+        if self.module.get_function("strlen").is_none() {
+            let fn_type = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("strlen", fn_type, None);
+        }
     }
 
     /// Declare helper/utility functions needed by codegen.

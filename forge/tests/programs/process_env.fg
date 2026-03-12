@@ -1,0 +1,6 @@
+use @std.process
+
+fn main() {
+  let home = process.env_get("HOME")
+  println(string(home.length > 0))
+}

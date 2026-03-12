@@ -1,0 +1,26 @@
+use @std.channel
+
+fn main() {
+  let ch1 = channel(10)
+  let ch2 = channel(1)
+
+  spawn {
+    sleep(50)
+    ch1 <- "hello"
+  }
+  spawn {
+    sleep(100)
+    ch2 <- "done"
+  }
+
+  mut result = ""
+
+  loop {
+    select {
+      msg <- ch1 -> { result = result + msg }
+      _ <- ch2 -> break
+    }
+  }
+
+  println(result)
+}

@@ -39,6 +39,22 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         self.module.add_function(name, fn_type, None);
+
+        // Register the Forge-level return type so infer_type can resolve it
+        if let Some(ty) = return_type {
+            let ret_name = type_expr_name(ty);
+            let forge_type = match ret_name.as_str() {
+                "string" | "cstring" => Type::String,
+                "int" | "i64" | "i32" | "i16" => Type::Int,
+                "float" | "f64" => Type::Float,
+                "bool" | "i8" => Type::Bool,
+                "ptr" => Type::Ptr,
+                _ => Type::Unknown,
+            };
+            if forge_type != Type::Unknown {
+                self.fn_return_types.insert(name.to_string(), forge_type);
+            }
+        }
     }
 
     /// Map a Forge type expression to a C ABI LLVM type for extern fn parameters

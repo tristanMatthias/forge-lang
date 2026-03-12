@@ -214,6 +214,149 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_catch(expr, binding.as_deref(), handler)
             }
 
+            Expr::ChannelSend { channel, value, .. } => {
+                // Channel is an int (channel ID), value needs to be stringified
+                let ch_val = self.compile_expr(channel)?;
+                let ch_id = if ch_val.is_int_value() {
+                    ch_val.into_int_value()
+                } else {
+                    return None;
+                };
+
+                // Stringify the value - convert to ForgeString, then to C ptr for extern fn
+                let val_compiled = self.compile_expr(value)?;
+                let val_string = self.value_to_cstring_ptr(val_compiled, value);
+
+                // Call forge_channel_send(id, data_ptr)
+                let send_fn = self.module.get_function("forge_channel_send")
+                    .expect("forge_channel_send not declared - did you `use @std.channel`?");
+                let send_args = [ch_id.into(), val_string.into()];
+                self.builder.build_call(send_fn, &send_args, "send").unwrap();
+                None
+            }
+
+            Expr::ChannelReceive { channel, .. } => {
+                let ch_val = self.compile_expr(channel)?;
+                let ch_id = if ch_val.is_int_value() {
+                    ch_val.into_int_value()
+                } else {
+                    return None;
+                };
+
+                // Call forge_channel_receive(id) -> ptr (C string)
+                let recv_fn = self.module.get_function("forge_channel_receive")
+                    .expect("forge_channel_receive not declared - did you `use @std.channel`?");
+                let result = self.builder.build_call(recv_fn, &[ch_id.into()], "recv").unwrap();
+                let raw_ptr = result.try_as_basic_value().left()?;
+
+                // Convert ptr to ForgeString: strlen(ptr) + forge_string_new(ptr, len)
+                let strlen_fn = self.module.get_function("strlen").unwrap();
+                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "len").unwrap()
+                    .try_as_basic_value().left()?.into_int_value();
+                let string_new = self.module.get_function("forge_string_new").unwrap();
+                let forge_str = self.builder.build_call(string_new, &[raw_ptr.into(), len.into()], "str").unwrap()
+                    .try_as_basic_value().left()?;
+                Some(forge_str)
+            }
+
+            Expr::SpawnBlock { body, .. } => {
+                // Capture variables from outer scope into globals so the spawn
+                // function (a separate LLVM function) can access them.
+                let cap_prefix = format!("__spawn_cap_{}", self.functions.len());
+                let captured = self.capture_scope_vars_to_globals(&cap_prefix);
+
+                // Create an anonymous function for the spawn body
+                let spawn_fn_name = format!("__spawn_{}", self.functions.len());
+                let fn_type = self.context.void_type().fn_type(&[], false);
+                let spawn_function = self.module.add_function(&spawn_fn_name, fn_type, None);
+
+                // Save current state
+                let saved_block = self.builder.get_insert_block();
+                let saved_deferred = std::mem::take(&mut self.deferred_stmts);
+                let saved_vars = std::mem::take(&mut self.variables);
+                let saved_scope_vars = std::mem::take(&mut self.scope_vars);
+
+                // Start fresh scope for spawn function
+                self.variables = vec![HashMap::new()];
+                self.scope_vars = vec![Vec::new()];
+
+                let entry = self.context.append_basic_block(spawn_function, "entry");
+                self.builder.position_at_end(entry);
+
+                // Load captured variables from globals into local allocas
+                for (name, global_name, ty) in &captured {
+                    if let Some(global) = self.module.get_global(global_name) {
+                        let llvm_ty = self.type_to_llvm_basic(ty);
+                        let val = self.builder.build_load(llvm_ty, global.as_pointer_value(), name).unwrap();
+                        let alloca = self.create_entry_block_alloca(ty, name);
+                        self.builder.build_store(alloca, val).unwrap();
+                        self.define_var(name.clone(), alloca, ty.clone());
+                    }
+                }
+
+                for stmt in &body.statements {
+                    self.compile_statement(stmt);
+                }
+
+                // Add return if no terminator
+                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    self.builder.build_return(None).unwrap();
+                }
+
+                // Restore state
+                self.variables = saved_vars;
+                self.scope_vars = saved_scope_vars;
+                self.deferred_stmts = saved_deferred;
+
+                // Restore position
+                if let Some(block) = saved_block {
+                    self.builder.position_at_end(block);
+                }
+
+                // Call forge_spawn(fn_ptr)
+                let forge_spawn = self.module.get_function("forge_spawn").unwrap();
+                let fn_ptr = spawn_function.as_global_value().as_pointer_value();
+                self.builder.build_call(forge_spawn, &[fn_ptr.into()], "").unwrap();
+                None
+            }
+
+            Expr::DollarExec { parts, .. } => {
+                // Build the command string from template parts
+                let cmd_str = self.compile_template(parts)?;
+
+                // Extract ptr from ForgeString
+                let cmd_ptr = self.builder.build_extract_value(
+                    cmd_str.into_struct_value(), 0, "cmd_ptr"
+                ).unwrap();
+
+                // Declare forge_process_exec if not already declared
+                let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                let exec_fn = self.module.get_function("forge_process_exec").unwrap_or_else(|| {
+                    let ft = ptr_type.fn_type(&[ptr_type.into()], false);
+                    self.module.add_function("forge_process_exec", ft, None)
+                });
+
+                // Call forge_process_exec(cmd) — returns raw ptr to stdout string
+                let result = self.builder.build_call(
+                    exec_fn, &[cmd_ptr.into()], "exec_result"
+                ).unwrap();
+                let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
+
+                // Convert ptr to ForgeString
+                let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+                    let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+                    self.module.add_function("strlen", ft, None)
+                });
+                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
+                    .unwrap().try_as_basic_value().left().unwrap();
+                let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+                let stdout_str = self.builder.build_call(
+                    str_new_fn, &[raw_ptr.into(), len.into()], "stdout_str",
+                ).unwrap().try_as_basic_value().left()?;
+
+                Some(stdout_str)
+            }
+
             _ => None,
         }
     }
@@ -456,6 +599,19 @@ impl<'ctx> Codegen<'ctx> {
         callee: &Expr,
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
+        // Handle channel.tick(interval_ms) built-in
+        if let Expr::MemberAccess { object, field, .. } = callee {
+            if let Expr::Ident(obj_name, _) = object.as_ref() {
+                if obj_name == "channel" && field == "tick" {
+                    let interval_ms = self.compile_expr(&args[0].value)?;
+                    let tick_fn = self.module.get_function("forge_channel_tick_create")
+                        .expect("forge_channel_tick_create not declared");
+                    let result = self.builder.build_call(tick_fn, &[interval_ms.into()], "tick_ch").unwrap();
+                    return result.try_as_basic_value().left();
+                }
+            }
+        }
+
         // Handle special built-in functions
         if let Expr::Ident(name, _) = callee {
             match name.as_str() {
@@ -463,6 +619,22 @@ impl<'ctx> Codegen<'ctx> {
                 "print" => return self.compile_print(args),
                 "string" => return self.compile_string_conversion(args),
                 "assert" => return self.compile_assert(args),
+                "sleep" => return self.compile_sleep(args),
+                "channel" => {
+                    // channel(capacity) -> int (channel ID)
+                    let capacity = if args.is_empty() {
+                        self.context.i64_type().const_zero().into()
+                    } else {
+                        match self.compile_expr(&args[0].value) {
+                            Some(v) => v.into(),
+                            None => return None,
+                        }
+                    };
+                    let create_fn = self.module.get_function("forge_channel_create")
+                        .expect("forge_channel_create not declared - did you `use @std.channel`?");
+                    let result = self.builder.build_call(create_fn, &[capacity], "ch").unwrap();
+                    return result.try_as_basic_value().left();
+                }
                 _ => {}
             }
 
@@ -787,6 +959,26 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Handle channel property access (channel is represented as int)
+        // ch.is_closed, ch.length, ch.capacity, ch.is_empty, ch.is_full
+        if obj_type == Type::Int || obj_type == Type::Unknown {
+            let channel_fn_name = match field {
+                "is_closed" => Some("forge_channel_is_closed"),
+                "length" => Some("forge_channel_length"),
+                "capacity" => Some("forge_channel_capacity"),
+                "is_empty" => Some("forge_channel_is_empty"),
+                "is_full" => Some("forge_channel_is_full"),
+                _ => None,
+            };
+            if let Some(fn_name) = channel_fn_name {
+                if let Some(func) = self.module.get_function(fn_name) {
+                    let obj_val = self.compile_expr(object)?;
+                    let result = self.builder.build_call(func, &[obj_val.into()], field).unwrap();
+                    return result.try_as_basic_value().left();
+                }
+            }
+        }
+
         None
     }
 
@@ -849,5 +1041,57 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         Some(function.as_global_value().as_pointer_value().into())
+    }
+
+    pub(crate) fn value_to_cstring_ptr(&mut self, val: BasicValueEnum<'ctx>, expr: &Expr) -> BasicValueEnum<'ctx> {
+        let resolved = self.resolve_runtime_type(expr, &val);
+        match resolved {
+            Type::String => {
+                // Already a ForgeString, extract ptr for extern call
+                if val.is_struct_value() {
+                    self.builder.build_extract_value(val.into_struct_value(), 0, "str_ptr").unwrap().into()
+                } else {
+                    val
+                }
+            }
+            Type::Int => {
+                // Convert int to string first, then extract ptr
+                let to_str = self.module.get_function("forge_int_to_string").unwrap();
+                let str_val = self.builder.build_call(to_str, &[val.into()], "int_str").unwrap()
+                    .try_as_basic_value().left().unwrap();
+                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
+            }
+            Type::Float => {
+                let to_str = self.module.get_function("forge_float_to_string").unwrap();
+                let str_val = self.builder.build_call(to_str, &[val.into()], "float_str").unwrap()
+                    .try_as_basic_value().left().unwrap();
+                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
+            }
+            Type::Bool => {
+                let to_str = self.module.get_function("forge_bool_to_string").unwrap();
+                let str_val = self.builder.build_call(to_str, &[val.into()], "bool_str").unwrap()
+                    .try_as_basic_value().left().unwrap();
+                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
+            }
+            _ => {
+                // For structs (ForgeString), extract ptr
+                if val.is_struct_value() {
+                    self.builder.build_extract_value(val.into_struct_value(), 0, "str_ptr").unwrap().into()
+                } else {
+                    val
+                }
+            }
+        }
+    }
+
+    pub(crate) fn compile_sleep(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+        if args.is_empty() { return None; }
+        let val = self.compile_expr(&args[0].value)?;
+        let sleep_fn = self.module.get_function("forge_sleep_ms").unwrap();
+        // If the arg is an int, treat it as milliseconds
+        if val.is_int_value() {
+            self.builder.build_call(sleep_fn, &[val.into()], "").unwrap();
+        }
+        None
     }
 }

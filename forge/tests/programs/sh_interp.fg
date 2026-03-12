@@ -1,0 +1,9 @@
+use @std.process
+
+fn main() {
+  let name = "forge"
+  let count = 3
+
+  let result = $`echo ${name} has ${count} features`
+  println(result.trim())
+}

@@ -1,0 +1,6 @@
+use @std.process
+
+fn main() {
+  let result_json = process.run("echo", "[\"hello forge\"]", "{}")
+  println(result_json)
+}

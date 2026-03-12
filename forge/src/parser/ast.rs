@@ -147,6 +147,11 @@ pub enum Statement {
     ComponentBlock(ComponentBlockDecl),
     // Component template definition from provider.fg
     ComponentTemplateDef(ComponentTemplateDef),
+    // Select statement for channel multiplexing
+    Select {
+        arms: Vec<SelectArm>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -407,6 +412,27 @@ pub enum Expr {
         handler: Block,
         span: Span,
     },
+
+    // Channel operations
+    ChannelSend {
+        channel: Box<Expr>,
+        value: Box<Expr>,
+        span: Span,
+    },
+    ChannelReceive {
+        channel: Box<Expr>,
+        span: Span,
+    },
+    // Spawn block
+    SpawnBlock {
+        body: Block,
+        span: Span,
+    },
+    // Dollar-string: $"cmd" or $`cmd ${arg}` — shell execution
+    DollarExec {
+        parts: Vec<TemplatePart>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -439,7 +465,11 @@ impl Expr {
             | Expr::Range { span, .. }
             | Expr::OkExpr { span, .. }
             | Expr::ErrExpr { span, .. }
-            | Expr::Catch { span, .. } => *span,
+            | Expr::Catch { span, .. }
+            | Expr::ChannelSend { span, .. }
+            | Expr::ChannelReceive { span, .. }
+            | Expr::SpawnBlock { span, .. }
+            | Expr::DollarExec { span, .. } => *span,
             Expr::Block(block) => block.span,
         }
     }
@@ -456,6 +486,15 @@ pub struct MatchArm {
     pub pattern: Pattern,
     pub guard: Option<Expr>,
     pub body: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectArm {
+    pub binding: Pattern,
+    pub channel: Expr,
+    pub guard: Option<Expr>,
+    pub body: Block,
     pub span: Span,
 }
 

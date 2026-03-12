@@ -1,0 +1,26 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let combined = channel(100)
+
+  // Two process spawns feed one channel
+  spawn {
+    let out = $"echo from_A"
+    combined <- out.trim()
+  }
+  spawn {
+    let out = $"echo from_B"
+    combined <- out.trim()
+  }
+
+  // Wait for both
+  sleep(200)
+  channel.close(combined)
+
+  mut total = 0
+  for _ in combined {
+    total = total + 1
+  }
+  println(string(total))
+}

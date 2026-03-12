@@ -295,6 +295,15 @@ impl TypeChecker {
             | Statement::ComponentTemplateDef(_) => {
                 // Phase 2/3 constructs; extern fns are declarations only
             }
+            Statement::Select { arms, .. } => {
+                for arm in arms {
+                    self.check_expr(&arm.channel);
+                    if let Some(guard) = &arm.guard {
+                        self.check_expr(guard);
+                    }
+                    self.check_block(&arm.body);
+                }
+            }
         }
     }
 
@@ -611,6 +620,28 @@ impl TypeChecker {
             Expr::TupleLit { elements, .. } => {
                 let types: Vec<Type> = elements.iter().map(|e| self.check_expr(e)).collect();
                 Type::Tuple(types)
+            }
+
+            Expr::ChannelSend { channel, value, .. } => {
+                self.check_expr(channel);
+                self.check_expr(value);
+                Type::Void
+            }
+            Expr::ChannelReceive { channel, .. } => {
+                self.check_expr(channel);
+                Type::Unknown
+            }
+            Expr::SpawnBlock { body, .. } => {
+                self.check_block(body);
+                Type::Unknown
+            }
+            Expr::DollarExec { parts, .. } => {
+                for part in parts {
+                    if let crate::parser::ast::TemplatePart::Expr(e) = part {
+                        self.check_expr(e);
+                    }
+                }
+                Type::String
             }
         }
     }

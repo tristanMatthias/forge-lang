@@ -1,0 +1,19 @@
+use @std.process
+
+fn main() {
+  let handle = process.spawn("sh", "[\"-c\",\"echo one && echo two && echo three\"]", "{}")
+  sleep(500)
+
+  mut lines = ""
+  mut count = 0
+  loop {
+    let line = process.read_line(handle)
+    if line.length == 0 { break }
+    if lines.length > 0 { lines = lines + ", " }
+    lines = lines + line
+    count = count + 1
+    if count > 10 { break }
+  }
+
+  println(lines)
+}

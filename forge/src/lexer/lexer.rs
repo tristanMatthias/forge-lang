@@ -170,6 +170,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == Some('=') {
                     self.advance();
                     TokenKind::LtEq
+                } else if self.peek() == Some('-') {
+                    self.advance();
+                    TokenKind::LeftArrow
                 } else {
                     TokenKind::Lt
                 }
@@ -219,6 +222,21 @@ impl<'a> Lexer<'a> {
             '@' => {
                 self.advance();
                 TokenKind::At
+            }
+            '$' => {
+                self.advance();
+                if self.peek() == Some('"') {
+                    return Some(self.lex_dollar_string(start, line, col));
+                } else if self.peek() == Some('`') {
+                    return Some(self.lex_dollar_template(start, line, col));
+                }
+                // Standalone $ - not currently used, treat as error
+                self.diagnostics.push(Diagnostic::error(
+                    "F0001",
+                    "unexpected character: '$'",
+                    Span::new(start, self.pos, line, col),
+                ));
+                return None;
             }
             '"' => return Some(self.lex_string(start, line, col)),
             '`' => return Some(self.lex_template(start, line, col)),
@@ -380,6 +398,123 @@ impl<'a> Lexer<'a> {
         )
     }
 
+    /// Lex $"..." — shell command with no interpolation
+    fn lex_dollar_string(&mut self, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // skip opening "
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        loop {
+            match self.peek() {
+                None => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "F0002",
+                        "unterminated dollar-string literal",
+                        Span::new(start, self.pos, line, col),
+                    ));
+                    break;
+                }
+                Some('\\') => {
+                    self.advance();
+                    match self.peek() {
+                        Some('"') => { self.advance(); current.push('"'); }
+                        Some('\\') => { self.advance(); current.push('\\'); }
+                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        None => {}
+                    }
+                }
+                Some('$') if self.peek_at(1) == Some('{') => {
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current.clone()));
+                        current.clear();
+                    }
+                    self.advance(); // $
+                    self.advance(); // {
+                    let mut expr = String::new();
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match self.peek() {
+                            Some('{') => { depth += 1; expr.push('{'); self.advance(); }
+                            Some('}') => { depth -= 1; if depth > 0 { expr.push('}'); } self.advance(); }
+                            Some(c) => { expr.push(c); self.advance(); }
+                            None => break,
+                        }
+                    }
+                    parts.push(TemplatePart::Expr(expr));
+                }
+                Some('"') => {
+                    self.advance();
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current));
+                    }
+                    break;
+                }
+                Some(c) => {
+                    self.advance();
+                    current.push(c);
+                }
+            }
+        }
+        Token::new(
+            TokenKind::DollarString(parts),
+            Span::new(start, self.pos, line, col),
+        )
+    }
+
+    /// Lex $`...` — shell command with ${...} interpolation
+    fn lex_dollar_template(&mut self, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // skip opening `
+        let mut parts = Vec::new();
+        let mut current = String::new();
+
+        loop {
+            match self.peek() {
+                None => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "F0003",
+                        "unterminated dollar-template literal",
+                        Span::new(start, self.pos, line, col),
+                    ));
+                    break;
+                }
+                Some('`') => {
+                    self.advance();
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current));
+                    }
+                    break;
+                }
+                Some('$') if self.peek_at(1) == Some('{') => {
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current.clone()));
+                        current.clear();
+                    }
+                    self.advance(); // $
+                    self.advance(); // {
+                    let mut expr = String::new();
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match self.peek() {
+                            Some('{') => { depth += 1; expr.push('{'); self.advance(); }
+                            Some('}') => { depth -= 1; if depth > 0 { expr.push('}'); } self.advance(); }
+                            Some(c) => { expr.push(c); self.advance(); }
+                            None => break,
+                        }
+                    }
+                    parts.push(TemplatePart::Expr(expr));
+                }
+                Some(c) => {
+                    self.advance();
+                    current.push(c);
+                }
+            }
+        }
+
+        Token::new(
+            TokenKind::DollarString(parts),
+            Span::new(start, self.pos, line, col),
+        )
+    }
+
     fn lex_number(&mut self, start: usize, line: u32, col: u32) -> Token {
         let mut is_float = false;
 
@@ -478,6 +613,7 @@ impl<'a> Lexer<'a> {
             "parallel" => TokenKind::Parallel,
             "with" => TokenKind::With,
             "catch" => TokenKind::Catch,
+            "select" => TokenKind::Select,
             "component" => TokenKind::Component,
             "true" => TokenKind::BoolLiteral(true),
             "false" => TokenKind::BoolLiteral(false),

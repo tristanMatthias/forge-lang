@@ -1,0 +1,25 @@
+use @std.channel
+use @std.process
+
+fn main() {
+  let logs = channel(100)
+
+  spawn {
+    let handle = process.spawn("sh", "[\"-c\",\"echo alpha && echo beta && echo gamma\"]", "{}")
+    sleep(200)
+    loop {
+      let line = process.read_line(handle)
+      if line.length == 0 { break }
+      logs <- line
+    }
+    logs.close()
+  }
+
+  mut items = ""
+  for msg in logs {
+    if items.length > 0 { items = items + ", " }
+    items = items + msg
+  }
+
+  println(items)
+}

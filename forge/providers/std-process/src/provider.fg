@@ -1,0 +1,9 @@
+extern fn forge_process_run(cmd: string, args_json: string, opts_json: string) -> string
+extern fn forge_process_spawn(cmd: string, args_json: string, opts_json: string) -> int
+extern fn forge_process_kill(pid: int) -> bool
+extern fn forge_process_wait(pid: int) -> string
+extern fn forge_process_wait_for_output(pid: int, pattern: string, timeout_ms: int) -> bool
+extern fn forge_process_read_line(pid: int) -> string
+extern fn forge_process_is_alive(pid: int) -> bool
+extern fn forge_process_env_get(key: string) -> string
+extern fn forge_process_pipe(input: string, cmd: string, args_json: string) -> string

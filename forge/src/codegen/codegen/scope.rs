@@ -79,6 +79,35 @@ impl<'ctx> Codegen<'ctx> {
         None
     }
 
+    /// Capture all variables from current scope into LLVM globals.
+    /// Returns Vec of (local_name, global_name, type) for the spawn function to load.
+    pub(crate) fn capture_scope_vars_to_globals(&mut self, prefix: &str) -> Vec<(String, String, Type)> {
+        let mut captured = Vec::new();
+        // Collect all variables from all scopes
+        let all_vars: Vec<(String, PointerValue<'ctx>, Type)> = self.variables.iter()
+            .flat_map(|scope| scope.iter().map(|(name, (ptr, ty))| (name.clone(), *ptr, ty.clone())))
+            .collect();
+
+        for (name, ptr, ty) in all_vars {
+            let global_name = format!("{}_{}", prefix, name);
+            let llvm_ty = self.type_to_llvm_basic(&ty);
+
+            // Create global if it doesn't exist
+            if self.module.get_global(&global_name).is_none() {
+                let global = self.module.add_global(llvm_ty, None, &global_name);
+                global.set_initializer(&llvm_ty.const_zero());
+            }
+
+            // Store current value to global
+            let val = self.builder.build_load(llvm_ty, ptr, &format!("cap_{}", name)).unwrap();
+            let global = self.module.get_global(&global_name).unwrap();
+            self.builder.build_store(global.as_pointer_value(), val).unwrap();
+
+            captured.push((name, global_name, ty));
+        }
+        captured
+    }
+
     pub(crate) fn create_entry_block_alloca(
         &self,
         ty: &Type,

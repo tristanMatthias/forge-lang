@@ -1,0 +1,13 @@
+use @std.channel
+
+fn main() {
+  let ch = channel(10)
+  ch <- "a"
+  ch <- "b"
+  ch <- "c"
+
+  ch.close()
+
+  println(string(ch.is_closed))
+  println(string(ch.length))
+}

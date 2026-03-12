@@ -1,0 +1,26 @@
+use @std.channel
+
+fn countdown(from: int) -> int {
+  let ch = channel(from)
+
+  spawn {
+    mut i = from
+    while i > 0 {
+      ch <- string(i)
+      i = i - 1
+      sleep(10)
+    }
+    ch.close()
+  }
+
+  ch
+}
+
+fn main() {
+  mut items = ""
+  for n in countdown(5) {
+    if items.length > 0 { items = items + ", " }
+    items = items + n
+  }
+  println(items)
+}
