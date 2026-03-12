@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "beads_forge",
+  "project_id": "23d9f01c-7d49-4ca4-882e-81569cd18a62"
+}
