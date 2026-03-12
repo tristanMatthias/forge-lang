@@ -1,0 +1,22 @@
+/// # Basic Trait
+///
+/// Define a trait and implement it for a type.
+///
+/// expect: 5
+
+type Point = { x: int, y: int }
+
+trait HasLength {
+  fn length(self) -> int
+}
+
+impl HasLength for Point {
+  fn length(self) -> int {
+    self.x + self.y
+  }
+}
+
+fn main() {
+  let p = Point { x: 2, y: 3 }
+  println(p.length())
+}

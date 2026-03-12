@@ -1,0 +1,10 @@
+/// # String Interpolation
+///
+/// Use backticks with `${expr}` for template strings.
+///
+/// expect: hello world
+
+fn main() {
+  let name = "world"
+  println(`hello ${name}`)
+}

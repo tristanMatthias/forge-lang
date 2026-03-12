@@ -1,0 +1,10 @@
+/// # Null Coalesce
+///
+/// Use `??` to provide a default when a value is null.
+///
+/// expect: anonymous
+
+fn main() {
+  let name: string? = null
+  println(name ?? "anonymous")
+}

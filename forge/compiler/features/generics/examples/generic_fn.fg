@@ -1,0 +1,14 @@
+/// # Generic Function
+///
+/// Functions with type parameters.
+///
+/// expect: 5
+
+fn identity<T>(x: T) -> T {
+  x
+}
+
+fn main() {
+  let n = identity(5)
+  println(n)
+}

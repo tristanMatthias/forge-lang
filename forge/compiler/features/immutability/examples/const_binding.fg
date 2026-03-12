@@ -1,0 +1,10 @@
+/// # Const Binding
+///
+/// Compile-time constant with `const`.
+///
+/// expect: 100
+
+fn main() {
+  const MAX = 100
+  println(MAX)
+}

@@ -1,0 +1,11 @@
+/// # Mutable Binding
+///
+/// Mutable variable with `mut`. Can be reassigned.
+///
+/// expect: 10
+
+fn main() {
+  mut x = 5
+  x = 10
+  println(x)
+}

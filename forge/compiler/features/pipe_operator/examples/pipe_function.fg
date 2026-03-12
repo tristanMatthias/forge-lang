@@ -1,0 +1,14 @@
+/// # Pipe to Function
+///
+/// `a |> f` calls `f(a)`.
+///
+/// expect: 10
+
+fn double(n: int) -> int {
+  n * 2
+}
+
+fn main() {
+  let result = 5 |> double
+  println(result)
+}

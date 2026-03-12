@@ -1,0 +1,13 @@
+/// # Basic Pipe
+///
+/// Use `|>` to chain function calls left-to-right.
+///
+/// expect: 400
+
+fn main() {
+  let result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    .filter(it > 5)
+    .map(it * 10)
+    .sum()
+  println(result)
+}

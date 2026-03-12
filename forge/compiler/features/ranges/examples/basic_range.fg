@@ -1,0 +1,13 @@
+/// # Basic Range
+///
+/// Exclusive range `0..5` and inclusive range `0..=5`.
+///
+/// expect: 10
+
+fn main() {
+  mut sum = 0
+  for i in 0..5 {
+    sum = sum + i
+  }
+  println(sum)
+}

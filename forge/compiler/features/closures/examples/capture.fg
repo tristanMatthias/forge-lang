@@ -1,0 +1,10 @@
+/// # Closure with Reduce
+///
+/// Closures with multiple parameters in `reduce`.
+///
+/// expect: 120
+
+fn main() {
+  let product = [1, 2, 3, 4].map(it + 1).reduce(1, (acc, n) -> acc * n)
+  println(product)
+}

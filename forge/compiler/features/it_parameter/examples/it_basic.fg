@@ -1,0 +1,11 @@
+/// # It Parameter
+///
+/// Use `it` as an implicit closure parameter.
+///
+/// expect: 24
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  let result = nums.filter(it > 2).map(it * 2).sum()
+  println(result)
+}

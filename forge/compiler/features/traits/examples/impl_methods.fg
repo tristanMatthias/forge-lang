@@ -1,0 +1,20 @@
+/// # Impl Methods
+///
+/// Add methods to a type with `impl`.
+///
+/// expect: (3, 7)
+
+type Point = { x: int, y: int }
+
+impl Point {
+  fn add(self, other: Point) -> Point {
+    Point { x: self.x + other.x, y: self.y + other.y }
+  }
+}
+
+fn main() {
+  let a = Point { x: 1, y: 3 }
+  let b = Point { x: 2, y: 4 }
+  let c = a.add(b)
+  println(`(${c.x}, ${c.y})`)
+}

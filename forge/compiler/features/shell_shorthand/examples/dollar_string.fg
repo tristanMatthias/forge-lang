@@ -1,0 +1,12 @@
+/// # Dollar String
+///
+/// Execute shell commands with `$"..."`.
+///
+/// expect: hello
+
+use @std.process
+
+fn main() {
+  let result = $"echo hello"
+  println(result.trim())
+}

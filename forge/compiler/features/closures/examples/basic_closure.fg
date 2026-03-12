@@ -1,0 +1,11 @@
+/// # Basic Closure
+///
+/// Closures as arguments to list methods.
+///
+/// expect: 20
+
+fn main() {
+  let nums = [1, 2, 3, 4]
+  let result = nums.map((x) -> x * 2).sum()
+  println(result)
+}

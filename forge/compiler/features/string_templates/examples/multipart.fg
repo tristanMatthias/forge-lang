@@ -1,0 +1,11 @@
+/// # Multi-Part Template
+///
+/// Templates can contain multiple expressions.
+///
+/// expect: 2 + 3 = 5
+
+fn main() {
+  let a = 2
+  let b = 3
+  println(`${a} + ${b} = ${a + b}`)
+}

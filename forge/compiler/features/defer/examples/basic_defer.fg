@@ -1,0 +1,11 @@
+/// # Defer
+///
+/// `defer` runs an expression when the function returns.
+///
+/// expect: hello
+/// expect: cleanup
+
+fn main() {
+  defer println("cleanup")
+  println("hello")
+}

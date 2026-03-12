@@ -1,0 +1,13 @@
+/// # Range Loop
+///
+/// Iterate over a range with `for ... in start..end`.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+
+fn main() {
+  for i in 0..3 {
+    println(i)
+  }
+}

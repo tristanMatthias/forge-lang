@@ -1,0 +1,11 @@
+/// # Safe Access
+///
+/// Use `??` to provide defaults for nullable values.
+///
+/// expect: default
+
+fn main() {
+  let x: string? = null
+  let result = x ?? "default"
+  println(result)
+}

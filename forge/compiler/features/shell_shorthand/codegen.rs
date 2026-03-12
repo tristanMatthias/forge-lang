@@ -1,0 +1,51 @@
+use inkwell::values::BasicValueEnum;
+
+use crate::codegen::codegen::Codegen;
+use crate::parser::ast::*;
+
+impl<'ctx> Codegen<'ctx> {
+    /// Compile a dollar-exec expression: `$"echo hello ${name}"` or `$\`cmd\``
+    ///
+    /// Builds the command string from template parts, extracts the raw C pointer,
+    /// calls `forge_process_exec(cmd)` which returns a raw pointer to stdout,
+    /// then converts the result to a ForgeString.
+    pub(crate) fn compile_dollar_exec(
+        &mut self,
+        parts: &[TemplatePart],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        // Build the command string from template parts
+        let cmd_str = self.compile_template(parts)?;
+
+        // Extract ptr from ForgeString
+        let cmd_ptr = self.builder.build_extract_value(
+            cmd_str.into_struct_value(), 0, "cmd_ptr"
+        ).unwrap();
+
+        // Declare forge_process_exec if not already declared
+        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+        let exec_fn = self.module.get_function("forge_process_exec").unwrap_or_else(|| {
+            let ft = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("forge_process_exec", ft, None)
+        });
+
+        // Call forge_process_exec(cmd) — returns raw ptr to stdout string
+        let result = self.builder.build_call(
+            exec_fn, &[cmd_ptr.into()], "exec_result"
+        ).unwrap();
+        let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
+
+        // Convert ptr to ForgeString
+        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+            let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+            self.module.add_function("strlen", ft, None)
+        });
+        let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
+            .unwrap().try_as_basic_value().left().unwrap();
+        let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+        let stdout_str = self.builder.build_call(
+            str_new_fn, &[raw_ptr.into(), len.into()], "stdout_str",
+        ).unwrap().try_as_basic_value().left()?;
+
+        Some(stdout_str)
+    }
+}

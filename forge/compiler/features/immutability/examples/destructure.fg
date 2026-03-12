@@ -1,0 +1,12 @@
+/// # Let Destructuring
+///
+/// Destructure tuples and structs with let.
+///
+/// expect: hello
+/// expect: 42
+
+fn main() {
+  let (name, age) = ("hello", 42)
+  println(name)
+  println(age)
+}

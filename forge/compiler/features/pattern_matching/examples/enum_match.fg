@@ -1,0 +1,25 @@
+/// # Enum Match
+///
+/// Pattern match on enum variants.
+///
+/// expect: circle with radius 5
+/// expect: 3x4 rectangle
+
+enum Shape {
+  circle(radius: float)
+  rectangle(width: float, height: float)
+}
+
+fn describe(s: Shape) -> string {
+  match s {
+    .circle(r) -> `circle with radius ${r}`
+    .rectangle(w, h) -> `${w}x${h} rectangle`
+  }
+}
+
+fn main() {
+  let c = Shape.circle(radius: 5.0)
+  let r = Shape.rectangle(width: 3.0, height: 4.0)
+  println(describe(c))
+  println(describe(r))
+}

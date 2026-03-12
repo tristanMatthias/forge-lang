@@ -1,0 +1,14 @@
+/// # Basic Channel
+///
+/// Create a buffered channel, send a value, and receive it.
+///
+/// expect: hello
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+  ch <- "hello"
+  let msg = <- ch
+  println(msg)
+}

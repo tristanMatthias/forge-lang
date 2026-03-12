@@ -1,0 +1,15 @@
+/// # Struct Update
+///
+/// Create a modified copy of a struct with `with`.
+///
+/// expect: alice
+/// expect: 30
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let p = Person { name: "alice", age: 25 }
+  let p2 = p with { age: 30 }
+  println(p2.name)
+  println(p2.age)
+}

@@ -1,0 +1,11 @@
+/// # Higher-Order Functions
+///
+/// Pass closures to list methods like `map` and `filter`.
+///
+/// expect: 14
+
+fn main() {
+  let nums = [1, 2, 3, 4]
+  let result = nums.map(it * 2).filter(it > 4).sum()
+  println(result)
+}

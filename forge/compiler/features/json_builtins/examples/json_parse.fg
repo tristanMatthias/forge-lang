@@ -1,0 +1,10 @@
+/// # JSON Parse
+///
+/// Parse a JSON string into a value.
+///
+/// expect: hello
+
+fn main() {
+  let data: {name: string} = json.parse("{\"name\": \"hello\"}")
+  println(data.name)
+}

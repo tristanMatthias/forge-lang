@@ -1,0 +1,10 @@
+/// # Let Binding
+///
+/// Immutable variable binding with `let`.
+///
+/// expect: 42
+
+fn main() {
+  let x = 42
+  println(x)
+}

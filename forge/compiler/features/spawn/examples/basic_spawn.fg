@@ -1,0 +1,19 @@
+/// # Basic Spawn
+///
+/// Spawn a concurrent task that sends a value through a channel.
+///
+/// expect: hello from spawn
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    ch <- "hello from spawn"
+  }
+
+  sleep(50)
+  let msg = <- ch
+  println(msg)
+}
