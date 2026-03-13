@@ -16,9 +16,9 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         match right {
             // a |> f(args)  =>  a.f(args) (method call on piped value)
-            Expr::Call { callee, args, .. } => {
+            Expr::Call { callee, args, type_args, .. } => {
                 if let Expr::Ident(method_name, _) = callee.as_ref() {
-                    self.compile_method_call(left, method_name, args)
+                    self.compile_method_call(left, method_name, args, type_args)
                 } else {
                     None
                 }

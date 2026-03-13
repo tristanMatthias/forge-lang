@@ -1,0 +1,11 @@
+use @std.ai
+
+fn main() {
+  ai.configure("anthropic", "test-key", "claude-sonnet", "")
+
+  // Test basic provider call (no API call with fake key)
+  let agent_id = ai.agent_create("coder", "claude-sonnet", "You are helpful.", "[]", "", "")
+  println(string(agent_id))
+
+  println("ai typed test ok")
+}

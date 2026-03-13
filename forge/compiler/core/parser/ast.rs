@@ -382,6 +382,7 @@ pub enum Expr {
     Call {
         callee: Box<Expr>,
         args: Vec<CallArg>,
+        type_args: Vec<TypeExpr>,
         span: Span,
     },
     MemberAccess {

@@ -6,6 +6,7 @@ impl<'ctx> Codegen<'ctx> {
         object: &Expr,
         method: &str,
         args: &[CallArg],
+        type_args: &[TypeExpr],
     ) -> Option<BasicValueEnum<'ctx>> {
         // Handle json.parse() and json.stringify() intrinsics
         if let Expr::Ident(name, _) = object {
@@ -103,6 +104,16 @@ impl<'ctx> Codegen<'ctx> {
                     if let Some(val) = raw {
                         if val.is_pointer_value() {
                             let ptr_val = val.into_pointer_value();
+
+                            // If type_args present, parse JSON result into target struct
+                            if let Some(type_arg) = type_args.first() {
+                                if let TypeExpr::Named(type_name) = type_arg {
+                                    if let Some(named_type) = self.named_types.get(type_name).cloned() {
+                                        return self.parse_json_ptr_to_struct(ptr_val, &named_type);
+                                    }
+                                }
+                            }
+
                             let ptr_type = self.context.ptr_type(AddressSpace::default());
                             let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
                                 let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
@@ -1376,5 +1387,93 @@ impl<'ctx> Codegen<'ctx> {
 
         self.builder.position_at_end(end_bb);
         None // each returns void
+    }
+
+    /// Parse a raw JSON C-string pointer into a typed struct.
+    /// Wraps the JSON object in `[...]` so forge_json_get_* can parse it at index 0.
+    pub(crate) fn parse_json_ptr_to_struct(
+        &mut self,
+        raw_ptr: PointerValue<'ctx>,
+        target_type: &Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let fields = match target_type {
+            Type::Struct { fields, .. } => fields,
+            _ => return None,
+        };
+
+        let i64_type = self.context.i64_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        // Wrap raw JSON ptr in "[" ... "]" so forge_json_get_* works at index 0
+        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+            let ft = i64_type.fn_type(&[ptr_type.into()], false);
+            self.module.add_function("strlen", ft, None)
+        });
+        let json_len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "json_len").unwrap()
+            .try_as_basic_value().left().unwrap().into_int_value();
+
+        let three = i64_type.const_int(3, false);
+        let buf_len = self.builder.build_int_add(json_len, three, "buf_len").unwrap();
+        let alloc_fn = self.module.get_function("forge_alloc").unwrap_or_else(|| {
+            let ft = ptr_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("forge_alloc", ft, None)
+        });
+        let buf = self.builder.build_call(alloc_fn, &[buf_len.into()], "json_buf").unwrap()
+            .try_as_basic_value().left().unwrap().into_pointer_value();
+
+        // snprintf(buf, buf_len, "[%s]", raw_ptr)
+        let snprintf_fn = self.module.get_function("snprintf").unwrap_or_else(|| {
+            let ft = i64_type.fn_type(&[ptr_type.into(), i64_type.into(), ptr_type.into()], true);
+            self.module.add_function("snprintf", ft, None)
+        });
+        let fmt = self.builder.build_global_string_ptr("[%s]", "wrap_fmt").unwrap();
+        self.builder.build_call(
+            snprintf_fn,
+            &[buf.into(), buf_len.into(), fmt.as_pointer_value().into(), raw_ptr.into()],
+            "",
+        ).unwrap();
+
+        // Parse fields from buf at index 0
+        let llvm_type = self.type_to_llvm_basic(target_type);
+        let struct_type = llvm_type.into_struct_type();
+        let mut struct_val = struct_type.get_undef();
+
+        for (i, (field_name, field_type)) in fields.iter().enumerate() {
+            let field_name_str = self.builder.build_global_string_ptr(field_name, "fname").unwrap();
+            let field_val: BasicValueEnum = match field_type {
+                Type::Int => {
+                    let get_fn = self.module.get_function("forge_json_get_int").unwrap();
+                    self.builder.build_call(
+                        get_fn,
+                        &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
+                        field_name,
+                    ).unwrap().try_as_basic_value().left().unwrap()
+                }
+                Type::Bool => {
+                    let get_fn = self.module.get_function("forge_json_get_bool").unwrap();
+                    self.builder.build_call(
+                        get_fn,
+                        &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
+                        field_name,
+                    ).unwrap().try_as_basic_value().left().unwrap()
+                }
+                _ => {
+                    // Default: string (ForgeString)
+                    let get_fn = self.module.get_function("forge_json_get_string").unwrap();
+                    self.builder.build_call(
+                        get_fn,
+                        &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
+                        field_name,
+                    ).unwrap().try_as_basic_value().left().unwrap()
+                }
+            };
+
+            struct_val = self.builder
+                .build_insert_value(struct_val, field_val, i as u32, field_name)
+                .unwrap()
+                .into_struct_value();
+        }
+
+        Some(struct_val.into())
     }
 }

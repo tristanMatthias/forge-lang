@@ -52,6 +52,7 @@ fn call(name: &str, args: Vec<Expr>) -> Expr {
             .into_iter()
             .map(|v| CallArg { name: None, value: v })
             .collect(),
+        type_args: vec![],
         span: sp(),
     }
 }
@@ -67,6 +68,7 @@ fn method_call(obj: &str, method: &str, args: Vec<Expr>) -> Expr {
             .into_iter()
             .map(|v| CallArg { name: None, value: v })
             .collect(),
+        type_args: vec![],
         span: sp(),
     }
 }
@@ -259,7 +261,7 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                 span: *span,
             }
         }
-        Expr::Call { callee, args, span } => Expr::Call {
+        Expr::Call { callee, args, type_args, span } => Expr::Call {
             callee: Box::new(substitute_expr(callee, ctx)),
             args: args
                 .iter()
@@ -268,6 +270,7 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                     value: substitute_expr(&a.value, ctx),
                 })
                 .collect(),
+            type_args: type_args.clone(),
             span: *span,
         },
         Expr::MemberAccess { object, field, span } => Expr::MemberAccess {
@@ -688,12 +691,13 @@ fn replace_tpl_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
                 expr.clone()
             }
         }
-        Expr::Call { callee, args, span } => Expr::Call {
+        Expr::Call { callee, args, type_args, span } => Expr::Call {
             callee: Box::new(replace_tpl_generated_expr(callee, generated_name)),
             args: args.iter().map(|a| CallArg {
                 name: a.name.clone(),
                 value: replace_tpl_generated_expr(&a.value, generated_name),
             }).collect(),
+            type_args: type_args.clone(),
             span: *span,
         },
         _ => expr.clone(),
@@ -717,7 +721,7 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
             }
             expr.clone()
         }
-        Expr::Call { callee, args: call_args, span } => {
+        Expr::Call { callee, args: call_args, type_args, span } => {
             // Handle __tpl_resolve_service() intrinsic
             if let Expr::Ident(name, _) = callee.as_ref() {
                 if name == "__tpl_resolve_service" {
@@ -742,6 +746,7 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
                     name: a.name.clone(),
                     value: substitute_syntax_args_expr(&a.value, args, service_infos),
                 }).collect(),
+                type_args: type_args.clone(),
                 span: *span,
             }
         }

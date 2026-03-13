@@ -455,7 +455,7 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Call { callee, args, span } => {
+            Expr::Call { callee, args, span, .. } => {
                 let callee_type = self.check_expr(callee);
                 for arg in args {
                     self.check_expr(&arg.value);

@@ -178,9 +178,11 @@ impl Parser {
                                         CallArg { name: None, value: Expr::Call {
                                             callee: Box::new(Expr::Ident("strlen".into(), sp)),
                                             args: vec![CallArg { name: None, value: Expr::Ident(raw_name, sp) }],
+                                            type_args: vec![],
                                             span: sp,
                                         }},
                                     ],
+                                    type_args: vec![],
                                     span: sp,
                                 },
                                 exported: false,

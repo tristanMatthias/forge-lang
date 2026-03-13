@@ -87,8 +87,8 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
 
-            Expr::Call { callee, args, .. } => {
-                self.compile_call(callee, args)
+            Expr::Call { callee, args, type_args, .. } => {
+                self.compile_call(callee, args, type_args)
             }
 
             Expr::MemberAccess { object, field, .. } => {
@@ -601,6 +601,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         callee: &Expr,
         args: &[CallArg],
+        type_args: &[TypeExpr],
     ) -> Option<BasicValueEnum<'ctx>> {
         // Handle channel.tick(interval_ms) built-in
         if let Expr::MemberAccess { object, field, .. } = callee {
@@ -688,7 +689,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Handle method calls: object.method(args) becomes method(object, args)
         if let Expr::MemberAccess { object, field, .. } = callee {
-            return self.compile_method_call(object, field, args);
+            return self.compile_method_call(object, field, args, type_args);
         }
 
         None

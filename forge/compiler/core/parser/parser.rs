@@ -795,8 +795,34 @@ impl Parser {
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
+                    type_args: vec![],
                     span,
                 };
+            } else if self.check(&TokenKind::Lt) {
+                if let Some(type_args) = self.try_parse_call_type_args() {
+                    if self.check(&TokenKind::LParen) {
+                        let span = self.advance()?.span;
+                        self.skip_newlines();
+                        let mut args = Vec::new();
+                        while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                            self.skip_newlines();
+                            let arg = self.parse_call_arg()?;
+                            args.push(arg);
+                            self.skip_newlines();
+                            if self.check(&TokenKind::Comma) {
+                                self.advance();
+                            }
+                        }
+                        self.expect(&TokenKind::RParen)?;
+                        expr = Expr::Call {
+                            callee: Box::new(expr),
+                            args,
+                            type_args,
+                            span,
+                        };
+                        continue;
+                    }
+                }
             } else if self.check(&TokenKind::LBrace) {
                 // Named struct literal: TypeName { field: val, ... }
                 // Only if expr is a simple Ident (type name) and it looks like a struct literal
@@ -881,6 +907,53 @@ impl Parser {
         }
 
         Some(expr)
+    }
+
+    /// Try to parse `<TypeExpr, ...>` as call type arguments.
+    /// Uses backtracking: saves position, tries to parse, restores on failure.
+    /// Only succeeds if the closing `>` is immediately followed by `(`.
+    fn try_parse_call_type_args(&mut self) -> Option<Vec<TypeExpr>> {
+        let save = self.pos;
+        if !self.check(&TokenKind::Lt) {
+            return None;
+        }
+        self.advance();
+        self.skip_newlines();
+
+        let mut type_args = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.check(&TokenKind::Gt) {
+                break;
+            }
+            if let Some(ty) = self.parse_type_expr() {
+                type_args.push(ty);
+            } else {
+                self.pos = save;
+                return None;
+            }
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        if !self.check(&TokenKind::Gt) {
+            self.pos = save;
+            return None;
+        }
+        self.advance();
+
+        if !self.check(&TokenKind::LParen) {
+            self.pos = save;
+            return None;
+        }
+
+        if type_args.is_empty() {
+            self.pos = save;
+            return None;
+        }
+
+        Some(type_args)
     }
 
     pub(crate) fn parse_call_arg(&mut self) -> Option<CallArg> {
@@ -1701,6 +1774,7 @@ impl Parser {
                 CallArg { name: None, value: condition },
                 CallArg { name: None, value: message.unwrap_or(Expr::StringLit("assertion failed".to_string(), start)) },
             ],
+            type_args: vec![],
             span: start,
         };
 

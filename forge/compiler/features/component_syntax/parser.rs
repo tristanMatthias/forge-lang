@@ -45,6 +45,7 @@ impl Parser {
                 return Some(Statement::Expr(Expr::Call {
                     callee: Box::new(Expr::Ident(sentinel, span)),
                     args: final_args,
+                    type_args: vec![],
                     span,
                 }));
             }

@@ -1,0 +1,24 @@
+use @std.ai
+
+fn main() {
+  // Configure the AI provider (no API calls made yet)
+  ai.configure("anthropic", "test-key", "claude-sonnet", "")
+
+  // Create an agent (local state only, no API call)
+  let agent_id = ai.agent_create("coder", "claude-sonnet", "You are a helpful assistant.", "[]", "", "")
+  println(string(agent_id))
+
+  // Create a conversation (local state only)
+  let conv_id = ai.conversation_create(agent_id)
+  println(string(conv_id))
+
+  // Fork a conversation (local state only)
+  let fork_id = ai.conversation_fork(conv_id)
+  println(string(fork_id))
+
+  // Get empty history
+  let history = ai.conversation_history(conv_id)
+  println(history)
+
+  println("ai provider loaded")
+}
