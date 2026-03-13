@@ -1,0 +1,23 @@
+/// Test: before_update hook runs before update
+///
+/// expect: updating user 1
+/// expect: alice_updated
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+
+  on before_update(id: int) {
+    println("updating user " + string(id))
+  }
+}
+
+fn main() {
+  let id = User.create({ name: "alice", role: "admin" })
+  User.update(id, { name: "alice_updated" })
+  let user = User.get(id)
+  println(user.name)
+}

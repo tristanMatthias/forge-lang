@@ -1,0 +1,23 @@
+/// Test: after_update hook runs after update with record
+///
+/// expect: updated: alice_updated
+/// expect: alice_updated
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+
+  on after_update(user) {
+    println("updated: " + user.name)
+  }
+}
+
+fn main() {
+  let id = User.create({ name: "alice", role: "admin" })
+  User.update(id, { name: "alice_updated" })
+  let user = User.get(id)
+  println(user.name)
+}

@@ -998,15 +998,20 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        // Handle nullable field access (simplified)
+        // Handle nullable field access: Optional is {i8, inner_struct}
+        // Extract inner value at index 1, then field from inner struct
         if let Type::Nullable(inner) = &obj_type {
             if let Type::Struct { fields, .. } = inner.as_ref() {
                 if let Some(idx) = fields.iter().position(|(name, _)| name == field) {
-                    // For now, just try to access through the nullable
                     let obj_val = self.compile_expr(object)?;
                     if obj_val.is_struct_value() {
                         let struct_val = obj_val.into_struct_value();
-                        return self.builder.build_extract_value(struct_val, idx as u32, field).ok();
+                        // Unwrap optional: extract inner value at index 1
+                        if let Some(inner_val) = self.builder.build_extract_value(struct_val, 1, "opt_inner").ok() {
+                            if inner_val.is_struct_value() {
+                                return self.builder.build_extract_value(inner_val.into_struct_value(), idx as u32, field).ok();
+                            }
+                        }
                     }
                 }
             }

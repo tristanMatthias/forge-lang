@@ -836,58 +836,18 @@ fn stmt_clone_with_sub(stmt: &Statement, ctx: &SubstitutionContext) -> Statement
     substitute_stmt(stmt, ctx)
 }
 
-fn build_hooked_fn(
-    method: &str,
-    ctx: &SubstitutionContext,
-    before_hooks: &HashMap<String, HookInfo>,
-    after_hooks: &HashMap<String, HookInfo>,
-) -> Statement {
-    let model_ref = ctx.model_ref.as_ref().unwrap();
-    let fn_name = format!("{}_{}", ctx.name, method);
-    let mut body_stmts = Vec::new();
-
-    if method == "create" {
-        // Before hook: parse data_json to struct, run hook body
-        if let Some(hook) = before_hooks.get("create") {
-            body_stmts.push(let_typed(
-                &hook.param_name,
-                named_type(model_ref),
-                method_call("json", "parse", vec![ident("data_json")]),
-            ));
-            body_stmts.extend(hook.body.statements.clone());
-        }
-
-        // Call model create
-        let model_create = format!("{}_create", model_ref);
-        body_stmts.push(let_stmt("__id", call(&model_create, vec![ident("data_json")])));
-
-        // After hook: get full record, run hook body
-        if let Some(hook) = after_hooks.get("create") {
-            let get_internal = format!("{}_get_internal", model_ref);
-            body_stmts.push(let_stmt(
-                &hook.param_name,
-                call(&get_internal, vec![ident("__id")]),
-            ));
-            body_stmts.extend(hook.body.statements.clone());
-        }
-
-        body_stmts.push(expr_stmt(ident("__id")));
-
-        fn_decl(
-            &fn_name,
-            vec![param("data_json", named_type("string"))],
-            Some(named_type("int")),
-            body_stmts,
-        )
-    } else {
-        // For other hooked ops, generate a simple wrapper (can be extended later)
-        fn_decl(&fn_name, vec![], None, vec![])
-    }
-}
-
 /// Inject before/after hooks into a template-generated component function.
 /// Prepends before hook body and appends after hook body around the original function body.
 /// Works with any component template that declares events (model, service, etc.).
+///
+/// Hook param binding conventions (all generic, zero provider knowledge):
+/// - Before hooks with `__raw_` prefix: model `on` syntax, prologue skipped, side-effect only
+/// - Before hooks without prefix, param not in fn scope, model_ref set: service hook,
+///   bind param via `json.parse(first_string_param)` as the wrapped component's type
+/// - After hooks with `__raw_` prefix: fetch full record via `get_internal(id_var)`
+/// - After hooks without prefix, param not in fn scope, model_ref set: service hook,
+///   fetch full record via `{model_ref}_get_internal(id_var)`
+/// - After hooks where param matches a fn param: already in scope, no binding needed
 fn build_component_hooked_fn(
     method_name: &str,
     ctx: &SubstitutionContext,
@@ -900,6 +860,25 @@ fn build_component_hooked_fn(
 
         // Before hook: inject user's hook body before the template function body
         if let Some(hook) = before_hooks.get(method_name) {
+            let original_name = strip_raw_prefix(&hook.param_name);
+            let in_fn_scope = params.iter().any(|p| p.name == original_name);
+
+            if !hook.param_name.starts_with("__raw_") && !in_fn_scope {
+                if let Some(model_ref) = &ctx.model_ref {
+                    // Service hook: bind param to parsed struct from first string param
+                    let first_string_param = params.iter()
+                        .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == "string"))
+                        .map(|p| p.name.clone());
+                    if let Some(str_param) = first_string_param {
+                        new_stmts.push(let_typed(
+                            &hook.param_name,
+                            named_type(model_ref),
+                            method_call("json", "parse", vec![ident(&str_param)]),
+                        ));
+                    }
+                }
+            }
+
             inject_hook_body(&hook.body, &hook.param_name, &mut new_stmts);
         }
 
@@ -909,19 +888,57 @@ fn build_component_hooked_fn(
         // After hook: inject user's hook body after the template function body
         if let Some(hook) = after_hooks.get(method_name) {
             if !new_stmts.is_empty() {
-                // Preserve the return value: pop last expr, inject hook, push back
+                // Pop last statement to preserve return value
                 let last = new_stmts.pop();
-                // Try to bind hook param to result via get_internal if available
-                let get_internal = format!("{}_get_internal", ctx.name);
+
+                // Determine the ID variable and the return statement.
+                // If last is a bare call expr, capture its result in __hook_result
+                // so the hook can reference the returned ID.
+                let (id_var, return_stmt) = match &last {
+                    Some(Statement::Expr(Expr::Ident(name, _))) => {
+                        // Already a variable (e.g., __id) — use it directly
+                        (name.clone(), last.unwrap())
+                    }
+                    Some(Statement::Expr(expr)) => {
+                        // A call or other expression — capture its result
+                        new_stmts.push(let_stmt("__hook_result", expr.clone()));
+                        ("__hook_result".to_string(), expr_stmt(ident("__hook_result")))
+                    }
+                    _ => {
+                        // Not an expression — fall back
+                        let id = find_id_variable(&body.statements, params);
+                        let ret = last.unwrap_or_else(|| expr_stmt(ident(&id)));
+                        (id, ret)
+                    }
+                };
+
                 let original_name = strip_raw_prefix(&hook.param_name);
-                new_stmts.push(let_stmt(
-                    &original_name,
-                    call(&get_internal, vec![ident("__id")]),
-                ));
-                inject_hook_body(&hook.body, &hook.param_name, &mut new_stmts);
-                if let Some(l) = last {
-                    new_stmts.push(l);
+                let in_fn_scope = params.iter().any(|p| p.name == original_name);
+
+                if hook.param_name.starts_with("__raw_") {
+                    // Untyped model hook param → wants full record → call get_internal
+                    let get_internal = format!("{}_get_internal", ctx.name);
+                    new_stmts.push(let_stmt(
+                        &original_name,
+                        call(&get_internal, vec![ident(&id_var)]),
+                    ));
+                } else if !in_fn_scope {
+                    if let Some(model_ref) = &ctx.model_ref {
+                        // Service hook: fetch full record via model's get_internal
+                        let get_internal = format!("{}_get_internal", model_ref);
+                        new_stmts.push(let_stmt(
+                            &original_name,
+                            call(&get_internal, vec![ident(&id_var)]),
+                        ));
+                    } else {
+                        // Model hook with unmatched param: bind to id variable
+                        new_stmts.push(let_stmt(&original_name, ident(&id_var)));
+                    }
                 }
+                // else: param matches a fn param, already in scope
+
+                inject_hook_body(&hook.body, &hook.param_name, &mut new_stmts);
+                new_stmts.push(return_stmt);
             }
         }
 
@@ -937,6 +954,20 @@ fn build_component_hooked_fn(
     } else {
         original_fn.clone()
     }
+}
+
+/// Find the ID variable available in a template function body.
+/// Returns "__id" if it's defined in the body (e.g., create template),
+/// otherwise returns the first function parameter name.
+fn find_id_variable(body_stmts: &[Statement], params: &[Param]) -> String {
+    for stmt in body_stmts {
+        if let Statement::Let { name, .. } = stmt {
+            if name == "__id" {
+                return "__id".to_string();
+            }
+        }
+    }
+    params.first().map(|p| p.name.clone()).unwrap_or_else(|| "__id".to_string())
 }
 
 /// Strip __raw_ prefix added by the on-event parser for C ptr params
@@ -1232,14 +1263,13 @@ impl ComponentExpander {
                         let has_after = after_hooks.contains_key(method_name);
 
                         if has_before || has_after {
-                            // Generate hooked wrapper
-                            let wrapper = build_hooked_fn(
-                                method_name,
-                                &ctx,
-                                &before_hooks,
-                                &after_hooks,
+                            // Substitute the template function, then inject hooks
+                            let substituted =
+                                substitute_fn_template(fn_decl_stmt, method_name, &ctx);
+                            let hooked = build_component_hooked_fn(
+                                method_name, &ctx, &substituted, &before_hooks, &after_hooks,
                             );
-                            result.statements.push(wrapper);
+                            result.statements.push(hooked);
                             result.static_methods.push((
                                 ctx.name.clone(),
                                 method_name.clone(),

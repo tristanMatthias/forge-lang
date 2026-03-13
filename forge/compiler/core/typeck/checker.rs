@@ -505,7 +505,12 @@ impl TypeChecker {
 
             Expr::MemberAccess { object, field, .. } => {
                 let obj_type = self.check_expr(object);
-                match &obj_type {
+                // Unwrap optional/nullable for field access
+                let effective_type = match &obj_type {
+                    Type::Nullable(inner) => inner.as_ref(),
+                    _ => &obj_type,
+                };
+                match effective_type {
                     Type::Struct { fields, .. } => {
                         fields
                             .iter()

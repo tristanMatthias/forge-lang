@@ -1,0 +1,22 @@
+/// Test: after_delete hook runs after delete with id
+///
+/// expect: deleted id 1
+/// expect: 0
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+
+  on after_delete(id: int) {
+    println("deleted id " + string(id))
+  }
+}
+
+fn main() {
+  let id = User.create({ name: "alice", role: "admin" })
+  User.delete(id)
+  println(string(User.count()))
+}
