@@ -18,6 +18,7 @@ Everything for a feature lives in its directory. Don't grep — go to the direct
 - Never put feature-specific code in core/
 - Core is infrastructure only: lexer, AST types, type system, codegen context
 - **NEVER put provider-specific or @std-specific code in core/ or features/.** The compiler must have zero knowledge of any specific provider (cli, term, process, http, model, etc.). All provider behavior must be expressed through the generic template/expansion system. If the generic system can't express it, extend the generic system — don't add special cases.
+- **NEVER add brittle heuristics.** No string-matching source code to detect behavior (e.g., grepping for `model ` to decide isolation). If something needs special handling, use a proper mechanism: explicit annotations, type system checks, or structural analysis. This applies everywhere but ESPECIALLY in the compiler.
 - Every example file must have a `/// expect:` comment
 - Feature status must be accurate: draft (no tests), wip (some pass), testing (most pass), stable (all pass)
 - When adding a new feature, update `forge/tests/programs/comprehensive.fg` to include a test section for it
