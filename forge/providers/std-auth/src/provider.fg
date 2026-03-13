@@ -4,6 +4,10 @@ extern fn forge_auth_verify_token(token: string) -> string
 extern fn forge_auth_check_role(token: string, required_role: string) -> int
 extern fn forge_auth_hash_password(password: string) -> string
 extern fn forge_auth_verify_password(password: string, hash: string) -> int
+extern fn forge_auth_extract_claim(token: string, claim_name: string) -> string
+extern fn forge_auth_get_expiry(token: string) -> int
+extern fn forge_auth_refresh_token(token: string) -> string
+extern fn forge_auth_is_valid(token: string) -> int
 
 component auth(__tpl_name) {
     config {
@@ -33,5 +37,21 @@ component auth(__tpl_name) {
 
     fn __tpl_name.verify_password(password: string, hash: string) -> int {
         forge_auth_verify_password(password, hash)
+    }
+
+    fn __tpl_name.extract_claim(token: string, claim_name: string) -> string {
+        forge_auth_extract_claim(token, claim_name)
+    }
+
+    fn __tpl_name.get_expiry(token: string) -> int {
+        forge_auth_get_expiry(token)
+    }
+
+    fn __tpl_name.refresh_token(token: string) -> string {
+        forge_auth_refresh_token(token)
+    }
+
+    fn __tpl_name.is_valid(token: string) -> int {
+        forge_auth_is_valid(token)
     }
 }

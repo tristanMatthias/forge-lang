@@ -1,0 +1,27 @@
+/// Test: Auth component with JWT config — secret and expiry settings
+///
+/// expect: 1
+/// expect: 1
+
+use @std.auth.{auth}
+
+auth TokenAuth {
+  config {
+    secret: "my-jwt-secret-key"
+    expiry: 3600
+  }
+}
+
+fn main() {
+  // Create a token with the configured secret
+  let token = TokenAuth.create_token("{\"id\":42,\"role\":\"editor\"}")
+
+  // Token should be valid
+  let valid = TokenAuth.is_valid(token)
+  println(string(valid))
+
+  // Password hashing with configured auth
+  let hash = TokenAuth.hash_password("secret123")
+  let pw_ok = TokenAuth.verify_password("secret123", hash)
+  println(string(pw_ok))
+}

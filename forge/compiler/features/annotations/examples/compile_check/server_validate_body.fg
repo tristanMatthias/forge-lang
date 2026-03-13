@@ -1,0 +1,23 @@
+/// expect-check: pass
+/// Route handler that manually validates request body using validate()
+
+use @std.http.{server}
+
+type CreatePost = {
+  title: string @min(1) @max(200),
+  body: string @min(1),
+}
+
+server :8080 {
+  route POST "/posts" -> {
+    let parsed: CreatePost = json.parse(req_body)
+    match validate(parsed, CreatePost) {
+      Ok(post) -> {
+        json.stringify({ title: post.title, body: post.body })
+      }
+      Err(e) -> {
+        json.stringify({ error: "validation failed", fields: e.fields })
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+/// expect-check: pass
+/// Route handler with typed closure param — req is auto-bound from req_body via json.parse
+
+use @std.http.{server}
+
+type CreatePost = {
+  title: string,
+  body: string,
+}
+
+server :8080 {
+  route POST "/posts" -> (req: CreatePost) {
+    json.stringify({ title: req.title, body: req.body })
+  }
+}

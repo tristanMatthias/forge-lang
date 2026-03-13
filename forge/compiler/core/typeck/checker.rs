@@ -10,6 +10,9 @@ pub struct TypeChecker {
     pub env: TypeEnv,
     pub diagnostics: Vec<Diagnostic>,
     pub current_fn_return_type: Option<Type>,
+    /// Provider-declared annotations: (annotation_name, target, component_name)
+    /// Populated from component template `annotation <target> <name>(...)` declarations.
+    pub provider_annotations: Vec<(String, String, String)>,
 }
 
 impl TypeChecker {
@@ -18,6 +21,7 @@ impl TypeChecker {
             env: TypeEnv::new(),
             diagnostics: Vec::new(),
             current_fn_return_type: None,
+            provider_annotations: Vec::new(),
         }
     }
 
@@ -951,15 +955,31 @@ impl TypeChecker {
                             continue;
                         }
 
-                        // ── Provider annotation outside model context (F0074) ──
-                        const PROVIDER_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
-                        if PROVIDER_ANNOTATIONS.contains(&ann_name) {
+                        // ── Provider annotation outside its component context (F0074) ──
+                        // Check against dynamically registered provider annotations.
+                        // Falls back to a hardcoded list for backward compatibility when
+                        // no provider declarations are loaded (e.g., forge check without providers).
+                        let is_provider_ann = if !self.provider_annotations.is_empty() {
+                            self.provider_annotations.iter().any(|(name, target, _)| {
+                                name == ann_name && (target == "field" || target == "type")
+                            })
+                        } else {
+                            const FALLBACK_PROVIDER_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
+                            FALLBACK_PROVIDER_ANNOTATIONS.contains(&ann_name)
+                        };
+                        if is_provider_ann {
+                            // Find the component name for a better error message
+                            let component_name = self.provider_annotations.iter()
+                                .find(|(name, _, _)| name == ann_name)
+                                .map(|(_, _, comp)| comp.as_str())
+                                .unwrap_or("model");
                             self.diagnostics.push(Diagnostic::error(
                                 "F0074",
-                                format!("@{} is a model annotation and cannot be used on plain type field '{}'",
-                                    ann_name, field_name),
+                                format!("@{} is a {} annotation and cannot be used on plain type field '{}'",
+                                    ann_name, component_name, field_name),
                                 ann.span,
-                            ).with_help(format!("@{} is only valid inside a model block — use `model` instead of `type` if you need database features", ann_name)));
+                            ).with_help(format!("@{} is only valid inside a {} block — use `{}` instead of `type` if you need {} features",
+                                ann_name, component_name, component_name, component_name)));
                             continue;
                         }
 

@@ -16,6 +16,16 @@ pub struct SyntaxPatternDef {
     pub fn_name: String,
 }
 
+/// Declaration of an annotation that a component template supports.
+/// Parsed from `annotation <target> <name>(<params>)` in provider.fg.
+#[derive(Debug, Clone)]
+pub struct AnnotationDeclMeta {
+    /// Target: "field", "type", "route", "component", "function"
+    pub target: String,
+    /// Annotation name: "primary", "auth", etc.
+    pub name: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ComponentMeta {
     pub name: String,
@@ -23,6 +33,7 @@ pub struct ComponentMeta {
     pub context: String,
     pub syntax: Option<String>,
     pub syntax_patterns: Vec<SyntaxPatternDef>,
+    pub annotation_decls: Vec<AnnotationDeclMeta>,
 }
 
 pub struct Parser {

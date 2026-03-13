@@ -231,3 +231,154 @@ pub extern "C" fn forge_auth_verify_password(
         0
     }
 }
+
+/// Extract a specific claim from a JWT token. Returns the claim value as string,
+/// or empty string if token is invalid or claim doesn't exist.
+#[no_mangle]
+pub extern "C" fn forge_auth_extract_claim(
+    token: *const c_char,
+    claim_name: *const c_char,
+) -> *const c_char {
+    let token_str = c_str_to_string(token);
+    let claim = c_str_to_string(claim_name);
+
+    let cfg_guard = AUTH_CONFIG.lock().unwrap();
+    let cfg = match cfg_guard.as_ref() {
+        Some(c) => c,
+        None => return string_to_c(String::new()),
+    };
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+
+    let token_data = decode::<Claims>(
+        &token_str,
+        &DecodingKey::from_secret(cfg.secret.as_bytes()),
+        &validation,
+    );
+
+    match token_data {
+        Ok(data) => {
+            let value = match claim.as_str() {
+                "sub" => data.claims.sub,
+                "role" => data.claims.role,
+                "exp" => data.claims.exp.to_string(),
+                _ => {
+                    // Check extra fields
+                    match &data.claims.extra {
+                        serde_json::Value::Object(map) => {
+                            match map.get(&claim) {
+                                Some(v) => match v {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    other => other.to_string(),
+                                },
+                                None => String::new(),
+                            }
+                        }
+                        _ => String::new(),
+                    }
+                }
+            };
+            string_to_c(value)
+        }
+        Err(_) => string_to_c(String::new()),
+    }
+}
+
+/// Get the expiry timestamp from a token. Returns 0 if token is invalid.
+#[no_mangle]
+pub extern "C" fn forge_auth_get_expiry(token: *const c_char) -> i64 {
+    let token_str = c_str_to_string(token);
+
+    let cfg_guard = AUTH_CONFIG.lock().unwrap();
+    let cfg = match cfg_guard.as_ref() {
+        Some(c) => c,
+        None => return 0,
+    };
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+
+    let token_data = decode::<Claims>(
+        &token_str,
+        &DecodingKey::from_secret(cfg.secret.as_bytes()),
+        &validation,
+    );
+
+    match token_data {
+        Ok(data) => data.claims.exp as i64,
+        Err(_) => 0,
+    }
+}
+
+/// Refresh a token — decode it and re-encode with a new expiry.
+/// Returns the new token string, or empty string on failure.
+#[no_mangle]
+pub extern "C" fn forge_auth_refresh_token(token: *const c_char) -> *const c_char {
+    let token_str = c_str_to_string(token);
+
+    let cfg_guard = AUTH_CONFIG.lock().unwrap();
+    let cfg = match cfg_guard.as_ref() {
+        Some(c) => c,
+        None => return string_to_c(String::new()),
+    };
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+
+    let token_data = decode::<Claims>(
+        &token_str,
+        &DecodingKey::from_secret(cfg.secret.as_bytes()),
+        &validation,
+    );
+
+    match token_data {
+        Ok(data) => {
+            let new_exp = now_secs() + cfg.expiry_seconds as u64;
+            let new_claims = Claims {
+                sub: data.claims.sub,
+                role: data.claims.role,
+                exp: new_exp,
+                extra: data.claims.extra,
+            };
+
+            let new_token = encode(
+                &Header::default(),
+                &new_claims,
+                &EncodingKey::from_secret(cfg.secret.as_bytes()),
+            );
+
+            match new_token {
+                Ok(t) => string_to_c(t),
+                Err(_) => string_to_c(String::new()),
+            }
+        }
+        Err(_) => string_to_c(String::new()),
+    }
+}
+
+/// Check if a token is expired. Returns 1 if valid (not expired), 0 if expired or invalid.
+#[no_mangle]
+pub extern "C" fn forge_auth_is_valid(token: *const c_char) -> i64 {
+    let token_str = c_str_to_string(token);
+
+    let cfg_guard = AUTH_CONFIG.lock().unwrap();
+    let cfg = match cfg_guard.as_ref() {
+        Some(c) => c,
+        None => return 0,
+    };
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+
+    let token_data = decode::<Claims>(
+        &token_str,
+        &DecodingKey::from_secret(cfg.secret.as_bytes()),
+        &validation,
+    );
+
+    match token_data {
+        Ok(_) => 1,
+        Err(_) => 0,
+    }
+}

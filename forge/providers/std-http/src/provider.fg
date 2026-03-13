@@ -11,10 +11,12 @@ extern fn forge_http_add_middleware_after(port: int, name: string, handler: ptr)
 extern fn forge_http_ptr_to_str(ptr: ptr) -> string
 extern fn forge_http_serve_static(port: int, url_prefix: string, dir_path: string)
 extern fn forge_http_ws_upgrade(port: int, path: string)
+extern fn forge_http_ws_set_handler(port: int, path: string, handler: ptr)
 extern fn forge_http_ws_send(client_id: int, message: string)
 extern fn forge_http_ws_receive(client_id: int) -> string
 extern fn forge_http_ws_close(client_id: int)
 extern fn forge_http_sse_start(port: int, path: string) -> int
+extern fn forge_http_sse_set_handler(port: int, path: string, handler: ptr)
 extern fn forge_http_sse_send(stream_id: int, event_type: string, data: string)
 extern fn forge_http_sse_close(stream_id: int)
 extern fn forge_http_rate_limit(port: int, path_prefix: string, max_requests: int, window_seconds: int)
@@ -22,10 +24,19 @@ extern fn forge_http_set_not_found_handler(port: int, body_json: string)
 extern fn forge_http_set_error_response(port: int, status_code: int, body_json: string)
 extern fn forge_http_parse_multipart(body: string, content_type: string) -> string
 extern fn forge_http_save_upload(base64_data: string, dest_path: string) -> int
+extern fn forge_http_respond_file(response_buf: ptr, response_buf_len: int, file_path: string) -> int
 extern fn forge_http_crud_expose(port: int, base_path: string, fields_json: string)
 extern fn forge_http_crud_set_order(port: int, base_path: string, order_field: string, order_dir: string)
+extern fn forge_http_crud_set_auth(port: int, setting: string)
+extern fn forge_http_crud_set_paginate(port: int, page_size: int)
+extern fn forge_http_crud_nest(port: int, child: string, parent: string, path: string)
 
 component server(__tpl_name) {
+    annotation route public()
+    annotation route auth(roles: string)
+    annotation route deprecated(reason: string)
+    annotation route cache(ttl: int)
+
     config {
         port: int = 3000
     }
@@ -36,6 +47,7 @@ component server(__tpl_name) {
             let __req_params_json = __params_json
             let req_body = forge_http_ptr_to_str(__b)
             let req_params = forge_http_ptr_to_str(__params_json)
+            let __tpl_handler_param_0 = req_body
             let __result = handler
             let __json = json.stringify(__result)
             forge_http_write_response(__response_buf, __response_buf_len, __json)
@@ -81,12 +93,20 @@ component server(__tpl_name) {
 
     @syntax("ws {path} -> {handler}")
     fn ws(path: string, handler: ptr) {
+        fn __tpl_generated(client: int) {
+            handler
+        }
         forge_http_ws_upgrade(__tpl_config_port, path)
+        forge_http_ws_set_handler(__tpl_config_port, path, __tpl_generated)
     }
 
     @syntax("sse {path} -> {handler}")
     fn sse(path: string, handler: ptr) {
+        fn __tpl_generated(stream: int) {
+            handler
+        }
         forge_http_sse_start(__tpl_config_port, path)
+        forge_http_sse_set_handler(__tpl_config_port, path, __tpl_generated)
     }
 
     @syntax("rate_limit {path_prefix} {max_requests} per {window_seconds}")
@@ -102,6 +122,21 @@ component server(__tpl_name) {
     @syntax("order {path} by {field} {dir}")
     fn set_order(path: string, field: string, dir: string) {
         forge_http_crud_set_order(__tpl_config_port, path, field, dir)
+    }
+
+    @syntax("crud_auth {setting}")
+    fn crud_auth_setting(setting: string) {
+        forge_http_crud_set_auth(__tpl_config_port, setting)
+    }
+
+    @syntax("crud_paginate {count}")
+    fn crud_paginate_setting(count: int) {
+        forge_http_crud_set_paginate(__tpl_config_port, count)
+    }
+
+    @syntax("crud_nest {child} under {parent} at {path}")
+    fn crud_nest_route(child: string, parent: string, path: string) {
+        forge_http_crud_nest(__tpl_config_port, child, parent, path)
     }
 
     event on_error(status, message)

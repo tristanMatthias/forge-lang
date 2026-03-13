@@ -51,6 +51,13 @@ extern fn forge_model_query_offset(query: string, offset: int) -> string
 extern fn forge_model_query_exec(query: string) -> string
 
 component model(__tpl_name, schema) {
+    annotation field primary()
+    annotation field auto_increment()
+    annotation field unique()
+    annotation field hidden()
+    annotation field owner(through: string?)
+    annotation type table(name: string)
+
     config {
         table_name: string = __tpl_name_str
     }

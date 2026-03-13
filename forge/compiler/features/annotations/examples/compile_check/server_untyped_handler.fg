@@ -1,0 +1,10 @@
+/// expect-check: pass
+/// Route handler with untyped closure param — req is bound directly to req_body (no json.parse)
+
+use @std.http.{server}
+
+server :8080 {
+  route POST "/echo" -> (body) {
+    body
+  }
+}

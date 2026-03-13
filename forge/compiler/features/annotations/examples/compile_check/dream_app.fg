@@ -1,0 +1,379 @@
+/// expect-check: pass
+/// Dream app compilation test — exercises as many features as possible
+/// Based on Part 17 of feat_std_http.md
+
+use @std.http.{server}
+use @std.model.{model, service}
+use @std.queue.{queue, worker}
+use @std.cron.{schedule}
+use @std.auth.{auth}
+
+// ── Types ──
+
+enum Role { admin, editor, member }
+enum PostStatus { draft, published, archived }
+
+type Point = { x: float, y: float }
+
+// ── Traits ──
+
+trait Describable {
+    fn describe(self) -> string
+    fn shout(self) -> string {
+        self.describe().upper()
+    }
+}
+
+type Circle = { radius: float }
+
+impl Describable for Circle {
+    fn describe(self) -> string {
+        `circle r=${self.radius}`
+    }
+}
+
+// ── Models ──
+
+model User {
+    id: int @primary @auto_increment
+    name: string @min(1) @max(100)
+    email: string @unique
+    password: string @min(8)
+    created_at: string @default("now")
+}
+
+model Post {
+    id: int @primary @auto_increment
+    title: string @min(1) @max(200)
+    body: string
+    slug: string @unique
+    status: string @default("draft")
+    author_id: int
+    created_at: string @default("now")
+
+    on before_create(data) {
+        data with { slug: data.title.lower() }
+    }
+}
+
+model Comment {
+    id: int @primary @auto_increment
+    body: string @min(1)
+    post_id: int
+    author_id: int
+    created_at: string @default("now")
+}
+
+model Tag {
+    id: int @primary @auto_increment
+    name: string @unique
+}
+
+// ── Services ──
+
+service PostService for Post {
+    before create(post) {
+        println(`creating post: ${post.title}`)
+    }
+
+    after create(post) {
+        println(`created post id: ${post.id}`)
+    }
+}
+
+service UserService for User {
+    before create(user) {
+        println(`creating user: ${user.name}`)
+    }
+}
+
+// ── Auth ──
+
+auth my_auth {
+    secret "my-jwt-secret"
+    expiry 604800
+}
+
+// ── Queue & Workers ──
+
+queue email_queue {}
+queue job_queue {}
+
+worker email_processor for email_queue {
+    on message(msg) {
+        println(`sending email: ${msg}`)
+    }
+}
+
+// ── Scheduled Jobs ──
+
+mut tick_count = 0
+
+schedule daily_digest {
+    every 86400000
+    run {
+        tick_count = tick_count + 1
+    }
+}
+
+// ── Helper Functions ──
+
+fn add(a: int, b: int) -> int {
+    a + b
+}
+
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+
+fn factorial(n: int) -> int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+fn divide(a: float, b: float) -> Result<float, string> {
+    if b == 0.0 {
+        Err("division by zero")
+    } else {
+        Ok(a / b)
+    }
+}
+
+fn find_user_by_id(id: int) -> string? {
+    if id == 1 { "alice" } else { null }
+}
+
+fn first_item<T>(list: List<T>) -> T? {
+    if list.length > 0 { list[0] } else { null }
+}
+
+fn print_desc<T: Describable>(item: T) {
+    println(item.describe())
+}
+
+fn color_name(r: Role) -> string {
+    match r {
+        .admin -> "admin"
+        .editor -> "editor"
+        .member -> "member"
+    }
+}
+
+fn post_status_name(s: PostStatus) -> string {
+    match s {
+        .draft -> "draft"
+        .published -> "published"
+        .archived -> "archived"
+    }
+}
+
+// ── Server ──
+
+server :8080 {
+    // Middleware
+    use_middleware "logger" (req_ptr) -> {
+        0
+    }
+
+    // Static files
+    static "/assets" from "./public"
+
+    // Rate limiting
+    rate_limit "/api" 100 per 60
+
+    // Error pages
+    not_found "{\"error\":\"not found\"}"
+    error_page 500 "{\"error\":\"internal error\"}"
+
+    // Route grouping
+    under "/api"
+
+    // CRUD
+    crud Post
+    crud User
+    crud Comment
+    crud Tag
+
+    // Custom routes
+    route GET /health -> { "ok" }
+
+    route GET /posts/trending -> {
+        let posts = Post.list()
+        json.stringify(posts)
+    }
+
+    route POST /login -> {
+        let token = my_auth.create_token("{\"user\":\"test\"}")
+        token
+    }
+
+    route GET /users/me -> {
+        "current user"
+    }
+
+    end under
+
+    // WebSocket
+    ws "/echo" -> (client) {
+        "connected"
+    }
+
+    // SSE
+    sse "/events" -> (stream) {
+        "streaming"
+    }
+}
+
+// ── Main ──
+
+fn main() {
+    // ---- Primitives ----
+    let int_val = 42
+    let float_val = 3.14
+    let bool_val = true
+    let string_val = "hello"
+    println(int_val)
+    println(float_val)
+    println(bool_val)
+    println(string_val)
+
+    // ---- Arithmetic ----
+    println(10 + 3)
+    println(10 - 3)
+    println(10 * 3)
+    println(10 / 3)
+    println(10 % 3)
+
+    // ---- Strings ----
+    let name = "forge"
+    println(name.length)
+    println(name.upper())
+    println(name.lower())
+    println(name.contains("or"))
+    println(`hello ${name}!`)
+    println(string(42))
+
+    // ---- Control Flow ----
+    let label = if 10 > 5 { "big" } else { "small" }
+    println(label)
+
+    mut sum = 0
+    for i in 0..5 {
+        sum = sum + i
+    }
+    println(string(sum))
+
+    mut n = 1
+    while n < 100 {
+        n = n * 2
+    }
+    println(string(n))
+
+    // ---- Structs / With ----
+    let p = Point { x: 3.0, y: 4.0 }
+    println(p.x)
+    let p2 = p with { x: 10.0 }
+    println(p2.x)
+
+    // ---- Enums / Pattern Matching ----
+    println(color_name(Role.admin))
+    println(post_status_name(PostStatus.draft))
+
+    // ---- Lists ----
+    let nums = [10, 20, 30, 40, 50]
+    println(string(nums.length))
+    let evens = [1, 2, 3, 4, 5, 6].filter(it % 2 == 0)
+    println(string(evens.length))
+    let doubled = [1, 2, 3].map(it * 2)
+    println(string(doubled[0]))
+    let total = [10, 20, 30].sum()
+    println(string(total))
+
+    // ---- Maps ----
+    let scores = { "alice": 95, "bob": 87 }
+    println(scores.contains_key("alice"))
+    println(string(scores.get("bob") ?? 0))
+
+    // ---- Pipes ----
+    let piped = 5 |> double |> add_one
+    println(string(piped))
+
+    // ---- Destructuring ----
+    let point_d = { x: 5, y: 10, z: 15 }
+    let { x, z } = point_d
+    println(string(x))
+    println(string(z))
+
+    let [first, second, ...rest] = [10, 20, 30, 40, 50]
+    println(string(first))
+    println(string(rest.length))
+
+    // ---- Nullability ----
+    let user1 = find_user_by_id(1)
+    let user2 = find_user_by_id(99)
+    println(user1 ?? "unknown")
+    println(user2 ?? "unknown")
+
+    // ---- Error Handling ----
+    let result = divide(10.0, 2.0)
+    let val = result catch (e) { 0.0 }
+    println(val)
+
+    // ---- Generics ----
+    let fi = first_item([100, 200, 300])
+    println(string(fi ?? 0))
+
+    // ---- Traits ----
+    let c = Circle { radius: 5.0 }
+    println(c.describe())
+    println(c.shout())
+    print_desc(c)
+
+    // ---- Is Keyword ----
+    let ok_res: Result<int, string> = Ok(42)
+    println(ok_res is Ok)
+    let maybe: string? = "hello"
+    println(maybe is not null)
+
+    // ---- Closures ----
+    let add_fn = (a: int, b: int) -> int { a + b }
+    println(add_fn(3, 4))
+
+    // ---- Model CRUD ----
+    let id1 = User.create({ name: "Alice", email: "alice@example.com", password: "password123", created_at: "2024-01-01" })
+    let id2 = Post.create({ title: "Hello World", body: "First post", slug: "hello-world", status: "published", author_id: id1, created_at: "2024-01-01" })
+    println(`user id: ${id1}`)
+    println(`post id: ${id2}`)
+
+    let user = User.get(id1)
+    if user != null {
+        println(`user: ${user.name}`)
+    }
+
+    let all_posts = Post.list()
+    println(`total posts: ${all_posts.length}`)
+    println(`post count: ${Post.count()}`)
+
+    // ---- Service ----
+    let svc_post_id = PostService.create({ title: "Via Service", body: "content", slug: "via-service", status: "draft", author_id: 1, created_at: "2024-01-01" })
+    println(`service post: ${svc_post_id}`)
+
+    // ---- Queue ----
+    email_queue.send("welcome-email")
+    println(`queue depth: ${email_queue.depth()}`)
+    let msg = email_queue.receive()
+    println(`received: ${msg}`)
+
+    // ---- Auth ----
+    let token = my_auth.create_token("{\"id\":1,\"role\":\"admin\"}")
+    println(`token created`)
+    let is_valid = my_auth.is_valid(token)
+    println(`token valid: ${is_valid}`)
+    let hashed = my_auth.hash_password("secret123")
+    println(`password hashed`)
+
+    // ---- Assertions ----
+    assert 1 + 1 == 2, "basic math"
+    assert true, "true is true"
+    assert "hello".length == 5, "string length"
+
+    println("--- DREAM APP COMPILES ---")
+}

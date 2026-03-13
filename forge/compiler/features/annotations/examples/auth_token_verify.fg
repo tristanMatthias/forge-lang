@@ -1,0 +1,33 @@
+/// Test: Auth token create, verify, and extract claims
+///
+/// expect: 42
+/// expect: admin
+/// expect: 1
+/// expect: 0
+
+use @std.auth.{auth}
+
+auth Auth {
+  config {
+    secret: "verify-test-secret"
+    expiry: 7200
+  }
+}
+
+fn main() {
+  let token = Auth.create_token("{\"id\":42,\"role\":\"admin\"}")
+
+  // Extract individual claims
+  let sub = Auth.extract_claim(token, "sub")
+  println(sub)
+
+  let role = Auth.extract_claim(token, "role")
+  println(role)
+
+  // Role checks
+  let is_admin = Auth.check_role(token, "admin")
+  println(string(is_admin))
+
+  let is_viewer = Auth.check_role(token, "viewer")
+  println(string(is_viewer))
+}

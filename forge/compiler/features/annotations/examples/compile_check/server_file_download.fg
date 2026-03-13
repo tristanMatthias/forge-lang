@@ -1,0 +1,14 @@
+/// expect-check: pass
+/// Verifies file download via forge_http_respond_file compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  route GET /download -> {
+    let result = forge_http_respond_file(__response_buf, __response_buf_len, "./public/report.pdf")
+    match result {
+      1 -> "ok"
+      _ -> "not found"
+    }
+  }
+}

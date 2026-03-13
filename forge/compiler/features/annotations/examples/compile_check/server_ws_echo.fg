@@ -1,0 +1,12 @@
+/// expect-check: pass
+/// WebSocket echo handler using ws extern fns
+
+use @std.http.{server}
+
+server :8080 {
+  ws "/echo" -> (client) {
+    let msg = forge_http_ws_receive(client)
+    forge_http_ws_send(client, msg)
+    forge_http_ws_close(client)
+  }
+}

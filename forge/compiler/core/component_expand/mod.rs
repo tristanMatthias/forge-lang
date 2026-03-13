@@ -644,13 +644,53 @@ fn expand_syntax_call(
 fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Statement {
     match stmt {
         Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos)),
-        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
-            name: name.clone(),
-            type_ann: type_ann.clone(),
-            type_ann_span: None,
-            value: substitute_syntax_args_expr(value, args, service_infos),
-            exported: *exported,
-            span: *span,
+        Statement::Let { name, type_ann, value, exported, span, .. } => {
+            // Handle __tpl_handler_param_N: bind closure param names to template-provided values
+            if let Some(idx_str) = name.strip_prefix("__tpl_handler_param_") {
+                if let Ok(idx) = idx_str.parse::<usize>() {
+                    // Find the first closure in args and extract its Nth param
+                    if let Some(closure_param) = find_closure_param_in_args(args, idx) {
+                        let substituted_value = substitute_syntax_args_expr(value, args, service_infos);
+                        // If the closure param has a type annotation, wrap with json.parse()
+                        let (final_name, final_type_ann, final_value) = if closure_param.type_ann.is_some() {
+                            (
+                                closure_param.name.clone(),
+                                closure_param.type_ann.clone(),
+                                Expr::Call {
+                                    callee: Box::new(Expr::MemberAccess {
+                                        object: Box::new(ident("json")),
+                                        field: "parse".to_string(),
+                                        span: sp(),
+                                    }),
+                                    args: vec![CallArg { name: None, value: substituted_value }],
+                                    type_args: vec![],
+                                    span: sp(),
+                                },
+                            )
+                        } else {
+                            (closure_param.name.clone(), None, substituted_value)
+                        };
+                        return Statement::Let {
+                            name: final_name,
+                            type_ann: final_type_ann,
+                            type_ann_span: None,
+                            value: final_value,
+                            exported: *exported,
+                            span: *span,
+                        };
+                    }
+                    // No matching closure param — drop this placeholder binding
+                    return Statement::Expr(Expr::IntLit(0, sp()));
+                }
+            }
+            Statement::Let {
+                name: name.clone(),
+                type_ann: type_ann.clone(),
+                type_ann_span: None,
+                value: substitute_syntax_args_expr(value, args, service_infos),
+                exported: *exported,
+                span: *span,
+            }
         },
         Statement::Return { value, span } => Statement::Return {
             value: value.as_ref().map(|v| substitute_syntax_args_expr(v, args, service_infos)),
@@ -733,6 +773,18 @@ fn replace_tpl_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
         },
         _ => expr.clone(),
     }
+}
+
+/// Find the Nth param from the first closure found in the args map
+fn find_closure_param_in_args(args: &std::collections::HashMap<String, Expr>, idx: usize) -> Option<Param> {
+    for value in args.values() {
+        if let Expr::Closure { params, .. } = value {
+            if !params.is_empty() {
+                return params.get(idx).cloned();
+            }
+        }
+    }
+    None
 }
 
 /// Replace identifiers that match syntax fn param names with their captured values

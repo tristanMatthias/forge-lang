@@ -1,0 +1,22 @@
+/// expect-check: pass
+/// Verifies chaining multiple middleware (before and after) compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  use_middleware "logger" (req_ptr) -> {
+    0
+  }
+
+  use_middleware "auth" (req_ptr) -> {
+    0
+  }
+
+  use_middleware_after "timer" (req_ptr) -> {
+    0
+  }
+
+  route GET /health -> {
+    "ok"
+  }
+}

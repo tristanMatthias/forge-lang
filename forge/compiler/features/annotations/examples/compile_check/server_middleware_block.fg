@@ -1,0 +1,19 @@
+/// expect-check: pass
+/// Verifies middleware block syntax with on request/response handlers
+
+use @std.http.{server}
+
+server :8080 {
+  middleware logger {
+    on request(_method, _path, _body) {
+      0
+    }
+    on response(_method, _path, _body) {
+      0
+    }
+  }
+
+  route GET /health -> {
+    "ok"
+  }
+}

@@ -1,0 +1,15 @@
+/// expect-check: pass
+/// Verifies file upload with multipart parsing compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  route POST /upload -> {
+    let parts = forge_http_parse_multipart(req_body, "multipart/form-data")
+    let saved = forge_http_save_upload(parts, "./uploads/file.bin")
+    match saved {
+      1 -> "upload ok"
+      _ -> "upload failed"
+    }
+  }
+}

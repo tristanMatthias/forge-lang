@@ -179,9 +179,15 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
                 ws_pending_map()
                     .as_mut()
                     .unwrap()
-                    .entry(path)
+                    .entry(path.clone())
                     .or_default()
                     .push(client_id);
+                // If a handler is registered for this path, spawn a thread to call it
+                if let Some(handler) = get_ws_handler(port, &path) {
+                    std::thread::spawn(move || {
+                        handler(client_id);
+                    });
+                }
             }
             return;
         }
@@ -1242,6 +1248,17 @@ type DynStream = Box<dyn ReadWriteSend>;
 trait ReadWriteSend: Read + Write + Send {}
 impl<T: Read + Write + Send> ReadWriteSend for T {}
 
+/// WebSocket handler function type: called with client_id when a new connection is accepted
+type WsHandlerFn = extern "C" fn(client_id: i64);
+
+// Safety: WsHandlerFn is a plain function pointer (Send+Sync)
+unsafe impl Send for WsHandlerEntry {}
+unsafe impl Sync for WsHandlerEntry {}
+
+struct WsHandlerEntry {
+    handler: WsHandlerFn,
+}
+
 /// Registered WebSocket paths per port
 static WS_PATHS: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
 
@@ -1254,6 +1271,17 @@ static WS_CLIENT_COUNTER: AtomicI64 = AtomicI64::new(1);
 /// Channel for delivering new WS connections from the HTTP server thread to consumers.
 /// Maps path -> list of (client_id, WebSocket) pairs waiting to be picked up.
 static WS_PENDING: Mutex<Option<HashMap<String, Vec<i64>>>> = Mutex::new(None);
+
+/// Registered WebSocket handlers per (port, path)
+static WS_HANDLERS: Mutex<Option<HashMap<(u16, String), WsHandlerEntry>>> = Mutex::new(None);
+
+fn ws_handlers_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), WsHandlerEntry>>> {
+    let mut guard = WS_HANDLERS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
 
 fn ws_paths_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<String>>>> {
     let mut guard = WS_PATHS.lock().unwrap();
@@ -1289,6 +1317,23 @@ pub extern "C" fn forge_http_ws_upgrade(port: i64, path: *const c_char) {
         .entry(port as u16)
         .or_default()
         .push(path_s);
+}
+
+/// Register a handler function for a WebSocket endpoint.
+/// The handler is called in a new thread for each accepted connection, with the client_id.
+#[no_mangle]
+pub extern "C" fn forge_http_ws_set_handler(port: i64, path: *const c_char, handler: WsHandlerFn) {
+    let path_s = cstr(path).to_string();
+    ws_handlers_map()
+        .as_mut()
+        .unwrap()
+        .insert((port as u16, path_s), WsHandlerEntry { handler });
+}
+
+/// Look up the registered WS handler for a (port, path) pair.
+fn get_ws_handler(port: u16, path: &str) -> Option<WsHandlerFn> {
+    let guard = ws_handlers_map();
+    guard.as_ref().unwrap().get(&(port, path.to_string())).map(|e| e.handler)
 }
 
 /// Check if a request path is a registered WebSocket path for the given port.
@@ -1377,6 +1422,20 @@ pub extern "C" fn forge_http_ws_close(client_id: i64) {
 // ══════════════════════════════════════════════════════════════════════
 
 use std::sync::mpsc;
+
+/// SSE handler function type: called with stream_id when the endpoint is registered
+type SseHandlerFn = extern "C" fn(stream_id: i64);
+
+/// Registered SSE handlers per (port, path)
+static SSE_HANDLERS: Mutex<Option<HashMap<(u16, String), SseHandlerFn>>> = Mutex::new(None);
+
+fn sse_handlers_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), SseHandlerFn>>> {
+    let mut guard = SSE_HANDLERS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
 
 /// Registered SSE paths per port
 static SSE_PATHS: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
@@ -1565,6 +1624,31 @@ pub extern "C" fn forge_http_sse_close(stream_id: i64) {
         for sender in senders {
             let _ = sender.send(Vec::new());
         }
+    }
+}
+
+/// Register a handler function for an SSE endpoint.
+/// The handler is called in a new thread with the stream_id, allowing it to
+/// push events via forge_http_sse_send.
+#[no_mangle]
+pub extern "C" fn forge_http_sse_set_handler(port: i64, path: *const c_char, handler: SseHandlerFn) {
+    let path_s = cstr(path).to_string();
+    let port_u16 = port as u16;
+
+    // Store the handler for later invocation
+    sse_handlers_map()
+        .as_mut()
+        .unwrap()
+        .insert((port_u16, path_s.clone()), handler);
+
+    // Look up the stream_id for this (port, path) and spawn the handler
+    if let Some(stream_id) = {
+        let guard = sse_path_to_stream_map();
+        guard.as_ref().unwrap().get(&(port_u16, path_s)).copied()
+    } {
+        std::thread::spawn(move || {
+            handler(stream_id);
+        });
     }
 }
 
@@ -1916,6 +2000,73 @@ pub extern "C" fn forge_http_save_upload(
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// Feature 4b: File Download (respond with file contents)
+// ══════════════════════════════════════════════════════════════════════
+
+/// Read a file from disk and write its contents as the HTTP response.
+/// Writes a JSON object with base64-encoded file data and metadata into the response buffer.
+/// Returns 1 on success, 0 on failure (file not found, read error, etc.).
+#[no_mangle]
+pub extern "C" fn forge_http_respond_file(
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+    file_path: *const c_char,
+) -> i64 {
+    if response_buf.is_null() || response_buf_len <= 0 || file_path.is_null() {
+        return 0;
+    }
+    let path_s = cstr(file_path);
+    let path = std::path::Path::new(path_s);
+
+    // Check file exists
+    if !path.exists() {
+        let err_json = r#"{"error":"file not found"}"#;
+        forge_http_write_response(response_buf, response_buf_len, CString::new(err_json).unwrap().as_ptr());
+        return 0;
+    }
+
+    // Read file bytes
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            // Base64-encode file contents
+            let encoded = base64_encode(&bytes);
+            // Detect a simple content type from extension
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let content_type = match ext {
+                "html" | "htm" => "text/html",
+                "css" => "text/css",
+                "js" => "application/javascript",
+                "json" => "application/json",
+                "png" => "image/png",
+                "jpg" | "jpeg" => "image/jpeg",
+                "gif" => "image/gif",
+                "svg" => "image/svg+xml",
+                "pdf" => "application/pdf",
+                "txt" => "text/plain",
+                "xml" => "application/xml",
+                "zip" => "application/zip",
+                _ => "application/octet-stream",
+            };
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("download");
+            let resp = format!(
+                r#"{{"data":"{}","content_type":"{}","filename":"{}","size":{}}}"#,
+                encoded, content_type, filename, bytes.len()
+            );
+            let c_resp = CString::new(resp).unwrap();
+            forge_http_write_response(response_buf, response_buf_len, c_resp.as_ptr());
+            1
+        }
+        Err(e) => {
+            eprintln!("forge_http_respond_file: read error: {}", e);
+            let err_json = format!(r#"{{"error":"{}"}}"#, e);
+            let c_err = CString::new(err_json).unwrap();
+            forge_http_write_response(response_buf, response_buf_len, c_err.as_ptr());
+            0
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // Feature 5: CRUD Expose (Field Filtering) + Default Order
 // ══════════════════════════════════════════════════════════════════════
 
@@ -2210,4 +2361,110 @@ fn check_rate_limit(port: u16, path: &str, client_ip: &str) -> bool {
     }
 
     true // No matching rule
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Feature 7: CRUD Configuration — Auth, Pagination, Nested Routes
+// ══════════════════════════════════════════════════════════════════════
+
+/// Maps port -> auth setting string (e.g. "required", "optional", "none")
+static CRUD_AUTH_SETTING: Mutex<Option<HashMap<u16, String>>> = Mutex::new(None);
+
+fn crud_auth_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, String>>> {
+    let mut guard = CRUD_AUTH_SETTING.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Set the auth requirement for CRUD endpoints on this server.
+/// setting: "required", "optional", "none", or a custom auth provider name.
+#[no_mangle]
+pub extern "C" fn forge_http_crud_set_auth(
+    port: i64,
+    setting: *const c_char,
+) {
+    let s = cstr(setting).to_string();
+    crud_auth_map()
+        .as_mut()
+        .unwrap()
+        .insert(port as u16, s);
+}
+
+/// Maps port -> default page size for CRUD list endpoints
+static CRUD_PAGINATE_SIZE: Mutex<Option<HashMap<u16, i64>>> = Mutex::new(None);
+
+fn crud_paginate_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, i64>>> {
+    let mut guard = CRUD_PAGINATE_SIZE.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Set default pagination page size for all CRUD list endpoints on this server.
+#[no_mangle]
+pub extern "C" fn forge_http_crud_set_paginate(
+    port: i64,
+    page_size: i64,
+) {
+    crud_paginate_map()
+        .as_mut()
+        .unwrap()
+        .insert(port as u16, page_size);
+}
+
+/// Nested CRUD route entry
+struct CrudNestEntry {
+    child: String,
+    parent: String,
+    path: String,
+}
+
+/// Maps port -> list of nested route definitions
+static CRUD_NEST_ROUTES: Mutex<Option<HashMap<u16, Vec<CrudNestEntry>>>> = Mutex::new(None);
+
+fn crud_nest_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<CrudNestEntry>>>> {
+    let mut guard = CRUD_NEST_ROUTES.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Register a nested CRUD route: child model nested under parent at the given path.
+/// e.g. crud_nest(port, "Comment", "Post", "/posts/:id/comments")
+#[no_mangle]
+pub extern "C" fn forge_http_crud_nest(
+    port: i64,
+    child: *const c_char,
+    parent: *const c_char,
+    path: *const c_char,
+) {
+    let child_s = cstr(child).to_string();
+    let parent_s = cstr(parent).to_string();
+    let path_s = cstr(path).to_string();
+    crud_nest_map()
+        .as_mut()
+        .unwrap()
+        .entry(port as u16)
+        .or_default()
+        .push(CrudNestEntry {
+            child: child_s,
+            parent: parent_s,
+            path: path_s,
+        });
+}
+
+/// Get the auth setting for a given port, if configured.
+fn get_crud_auth(port: u16) -> Option<String> {
+    let guard = crud_auth_map();
+    guard.as_ref().unwrap().get(&port).cloned()
+}
+
+/// Get the pagination page size for a given port, if configured.
+fn get_crud_page_size(port: u16) -> Option<i64> {
+    let guard = crud_paginate_map();
+    guard.as_ref().unwrap().get(&port).copied()
 }

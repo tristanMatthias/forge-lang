@@ -98,6 +98,16 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
                         fn_name: sf.fn_name.clone(),
                     })
                     .collect();
+                // Find annotation declarations from corresponding template
+                let annotation_decls: Vec<crate::parser::AnnotationDeclMeta> = extern_fns.2
+                    .iter()
+                    .filter(|t| t.component_name == *name)
+                    .flat_map(|t| t.annotation_decls.iter())
+                    .map(|ad| crate::parser::AnnotationDeclMeta {
+                        target: ad.target.clone(),
+                        name: ad.name.clone(),
+                    })
+                    .collect();
                 ComponentMeta {
                     name: name.clone(),
                     kind: match kw.kind.as_str() {
@@ -107,6 +117,7 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
                     context: kw.context.clone(),
                     syntax: kw.syntax.clone(),
                     syntax_patterns,
+                    annotation_decls,
                 }
             })
             .collect()

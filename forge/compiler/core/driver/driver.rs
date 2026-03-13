@@ -229,6 +229,18 @@ impl Driver {
         for (type_name, _, _) in &all_static_methods {
             checker.env.namespaces.insert(type_name.clone());
         }
+        // Register provider-declared annotations so the type checker can validate them
+        for provider in &loaded_providers {
+            for meta in &provider.component_metas {
+                for ann_decl in &meta.annotation_decls {
+                    checker.provider_annotations.push((
+                        ann_decl.name.clone(),
+                        ann_decl.target.clone(),
+                        meta.name.clone(),
+                    ));
+                }
+            }
+        }
         checker.check_program(&program);
         for d in &checker.diagnostics {
             diag_bag.report(d.clone());
@@ -836,6 +848,18 @@ impl Driver {
         let mut checker = crate::typeck::TypeChecker::new();
         for (type_name, _, _) in &all_static_methods {
             checker.env.namespaces.insert(type_name.clone());
+        }
+        // Register provider-declared annotations for type checking
+        for provider in &loaded_providers {
+            for meta in &provider.component_metas {
+                for ann_decl in &meta.annotation_decls {
+                    checker.provider_annotations.push((
+                        ann_decl.name.clone(),
+                        ann_decl.target.clone(),
+                        meta.name.clone(),
+                    ));
+                }
+            }
         }
         checker.check_program(&program);
         for d in &checker.diagnostics {

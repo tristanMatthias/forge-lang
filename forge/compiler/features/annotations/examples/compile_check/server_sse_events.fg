@@ -1,0 +1,12 @@
+/// expect-check: pass
+/// SSE handler using sse extern fns
+
+use @std.http.{server}
+
+server :8080 {
+  sse "/events" -> (stream) {
+    forge_http_sse_send(stream, "greeting", "hello world")
+    forge_http_sse_send(stream, "update", "data payload")
+    forge_http_sse_close(stream)
+  }
+}

@@ -815,6 +815,7 @@ impl Parser {
         let mut items = Vec::new();
         let mut config_schema = Vec::new();
         let mut syntax_fns = Vec::new();
+        let mut annotation_decls = Vec::new();
 
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             self.skip_newlines();
@@ -823,6 +824,44 @@ impl Parser {
             }
 
             match &self.peek()?.kind {
+                TokenKind::Ident(name) if name == "annotation" => {
+                    // annotation <target> <name>(<params>)
+                    let ann_span = self.advance()?.span; // consume 'annotation'
+                    self.skip_newlines();
+                    // Target can be "field", "type", "route", "component", "function"
+                    // "type" is a keyword (TokenKind::Type), so handle it specially
+                    let target = match &self.peek()?.kind {
+                        TokenKind::Type => {
+                            self.advance();
+                            "type".to_string()
+                        }
+                        TokenKind::Fn => {
+                            self.advance();
+                            "function".to_string()
+                        }
+                        TokenKind::Component => {
+                            self.advance();
+                            "component".to_string()
+                        }
+                        _ => self.expect_ident()?,
+                    };
+                    self.skip_newlines();
+                    let ann_name = self.expect_ident()?;
+                    let ann_params = if self.check(&TokenKind::LParen) {
+                        self.advance();
+                        let p = self.parse_params().unwrap_or_default();
+                        self.expect(&TokenKind::RParen);
+                        p
+                    } else {
+                        vec![]
+                    };
+                    annotation_decls.push(AnnotationDeclItem {
+                        target,
+                        name: ann_name,
+                        params: ann_params,
+                        span: ann_span,
+                    });
+                }
                 TokenKind::Ident(name) if name == "event" => {
                     // event name(params)
                     let ev_span = self.advance()?.span; // consume 'event'
@@ -1042,6 +1081,7 @@ impl Parser {
             has_model_ref,
             config_schema,
             syntax_fns,
+            annotation_decls,
             body: items,
             span: start,
         }))

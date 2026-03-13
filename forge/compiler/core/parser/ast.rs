@@ -300,6 +300,19 @@ pub struct ConfigSchemaEntry {
     pub span: Span,
 }
 
+/// Annotation declaration in a component template.
+/// e.g., `annotation field primary()` or `annotation route auth(roles: List<Role>)`
+#[derive(Debug, Clone)]
+pub struct AnnotationDeclItem {
+    /// Target: "field", "type", "route", "component", "function"
+    pub target: String,
+    /// Annotation name: "primary", "auth", etc.
+    pub name: String,
+    /// Parameters the annotation accepts
+    pub params: Vec<Param>,
+    pub span: Span,
+}
+
 /// Component template definition from provider.fg
 /// e.g., `component model(__tpl_name, schema) { ... }`
 #[derive(Debug, Clone)]
@@ -309,6 +322,7 @@ pub struct ComponentTemplateDef {
     pub has_model_ref: bool,
     pub config_schema: Vec<ConfigSchemaEntry>,
     pub syntax_fns: Vec<SyntaxFnDef>,
+    pub annotation_decls: Vec<AnnotationDeclItem>,
     pub body: Vec<ComponentTemplateItem>,
     pub span: Span,
 }

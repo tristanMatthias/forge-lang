@@ -1,0 +1,26 @@
+/// expect-check: pass
+/// Verifies CRUD configuration syntax: crud_auth, crud_paginate, crud_nest
+
+use @std.http.{server}
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  body: string
+}
+
+model Comment {
+  id: int @primary @auto_increment
+  post_id: int
+  text: string
+}
+
+server :4000 {
+  crud Post
+  crud Comment
+
+  crud_auth required
+  crud_paginate 20
+  crud_nest Comment under Post at "/posts/:id/comments"
+}
