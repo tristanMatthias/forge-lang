@@ -1,0 +1,15 @@
+/// Test: json.parse with List<Struct> type parses JSON array
+///
+/// expect: 2
+/// expect: alice
+/// expect: bob
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let json_str = "[{\"name\":\"alice\",\"age\":30},{\"name\":\"bob\",\"age\":25}]"
+  let people: List<Person> = json.parse(json_str)
+  println(string(people.length))
+  println(people[0].name)
+  println(people[1].name)
+}

@@ -1,0 +1,15 @@
+/// Test: json.parse with type annotation parses JSON string to typed struct
+///
+/// expect: alice
+/// expect: alice@test.com
+/// expect: 30
+
+type Person = { name: string, email: string, age: int }
+
+fn main() {
+  let json_str = "{\"name\":\"alice\",\"email\":\"alice@test.com\",\"age\":30}"
+  let person: Person = json.parse(json_str)
+  println(person.name)
+  println(person.email)
+  println(string(person.age))
+}
