@@ -547,16 +547,20 @@ extern "C" fn mount_list_handler(
     let page = extract_param_int(params_s, "page");
     let per = extract_param_int(params_s, "per").or_else(|| extract_param_int(params_s, "per_page"));
 
+    // Build filter from non-reserved query params (e.g., ?role=admin&status=active)
+    let filter_json = build_filter_from_params(params_s);
+    let order = extract_param_str(params_s, "order").unwrap_or_else(|| "id".to_string());
+
     if let (Some(page), Some(per)) = (page, per) {
         // Paginated response
-        let filter_c = CString::new("{}").unwrap();
-        let order_c = CString::new("id").unwrap();
-        let json = unsafe { model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr()) };
+        let filter_c = CString::new(filter_json.as_str()).unwrap();
+        let order_c = CString::new(order.as_str()).unwrap();
+        let json = model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr());
         copy_cstr_to_buf(json, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
     } else {
-        let filter_c = CString::new("{}").unwrap();
-        let json = unsafe { model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
+        let filter_c = CString::new(filter_json.as_str()).unwrap();
+        let json = model_list_json(table_c.as_ptr(), filter_c.as_ptr());
         copy_cstr_to_buf(json, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
     }
@@ -583,6 +587,35 @@ fn extract_param_str(params_json: &str, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Build a filter JSON object from query params, excluding reserved keys (page, per, per_page, order, q)
+fn build_filter_from_params(params_json: &str) -> String {
+    const RESERVED: &[&str] = &["page", "per", "per_page", "order", "q"];
+    if params_json.is_empty() || params_json == "{}" {
+        return "{}".to_string();
+    }
+    // Simple JSON key-value extraction from {"key":"val","key2":"val2",...}
+    let trimmed = params_json.trim_start_matches('{').trim_end_matches('}');
+    if trimmed.is_empty() {
+        return "{}".to_string();
+    }
+    let mut filter_parts = Vec::new();
+    // Split on commas carefully (simple approach for non-nested JSON)
+    for pair in trimmed.split(',') {
+        let pair = pair.trim();
+        if let Some(colon) = pair.find(':') {
+            let key = pair[..colon].trim().trim_matches('"');
+            if !RESERVED.contains(&key) {
+                filter_parts.push(pair.to_string());
+            }
+        }
+    }
+    if filter_parts.is_empty() {
+        "{}".to_string()
+    } else {
+        format!("{{{}}}", filter_parts.join(","))
+    }
 }
 
 /// Find the table name for a given base path (exact match only, no /:id suffix).

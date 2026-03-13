@@ -1064,12 +1064,17 @@ pub extern "C" fn forge_model_create_table(
                         "default" => {
                             if let Some(args) = ann["args"].as_array() {
                                 if let Some(arg) = args.first() {
-                                    if let Some(b) = arg.as_bool() {
+                                    if let Some(s) = arg.as_str() {
+                                        match s {
+                                            "now" | "CURRENT_TIMESTAMP" => col.push_str(" DEFAULT CURRENT_TIMESTAMP"),
+                                            "true" => col.push_str(" DEFAULT 1"),
+                                            "false" => col.push_str(" DEFAULT 0"),
+                                            _ => col.push_str(&format!(" DEFAULT '{}'", s)),
+                                        }
+                                    } else if let Some(b) = arg.as_bool() {
                                         col.push_str(&format!(" DEFAULT {}", if b { 1 } else { 0 }));
                                     } else if let Some(n) = arg.as_i64() {
                                         col.push_str(&format!(" DEFAULT {}", n));
-                                    } else if let Some(s) = arg.as_str() {
-                                        col.push_str(&format!(" DEFAULT '{}'", s));
                                     }
                                 }
                             }
