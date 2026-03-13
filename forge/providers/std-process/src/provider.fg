@@ -7,3 +7,5 @@ extern fn forge_process_read_line(pid: int) -> string
 extern fn forge_process_is_alive(pid: int) -> bool
 extern fn forge_process_env_get(key: string) -> string
 extern fn forge_process_pipe(input: string, cmd: string, args_json: string) -> string
+extern fn forge_process_args() -> string
+extern fn forge_process_exit(code: int)

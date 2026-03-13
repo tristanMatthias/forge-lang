@@ -388,6 +388,20 @@ pub extern "C" fn forge_process_env_get(key: *const c_char) -> *mut c_char {
     }
 }
 
+/// Get command-line arguments as a JSON array of strings.
+#[no_mangle]
+pub extern "C" fn forge_process_args() -> *mut c_char {
+    let args: Vec<String> = std::env::args().collect();
+    let json = serde_json::to_string(&args).unwrap_or_else(|_| "[]".into());
+    to_c(&json)
+}
+
+/// Exit the process with the given code.
+#[no_mangle]
+pub extern "C" fn forge_process_exit(code: i64) {
+    std::process::exit(code as i32);
+}
+
 /// Run a process with stdin piped from the input string. Returns JSON result.
 #[no_mangle]
 pub extern "C" fn forge_process_pipe(
