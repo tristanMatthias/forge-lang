@@ -25,6 +25,10 @@ extern fn forge_model_avg_json(table: string, column: string, filter_json: strin
 extern fn forge_model_health() -> int
 extern fn forge_model_paginate_json(table: string, filter_json: string, page: int, per_page: int, order: string) -> string
 extern fn forge_model_search_json(table: string, search_json: string) -> string
+extern fn forge_model_delete_where(table: string, filter_json: string) -> int
+extern fn forge_model_upsert_json(table: string, data_json: string) -> string
+extern fn forge_model_exists(table: string, filter_json: string) -> int
+extern fn forge_model_update_where(table: string, filter_json: string, changes_json: string) -> int
 
 component model(__tpl_name, schema) {
     config {
@@ -140,6 +144,25 @@ component model(__tpl_name, schema) {
         let __list: List<__tpl_name> = json.parse(__result)
         forge_model_free_string(__result)
         __list
+    }
+
+    fn __tpl_name.delete_where(filter_json: string) -> int {
+        forge_model_delete_where(__tpl_config_table_name, filter_json)
+    }
+
+    fn __tpl_name.upsert(data_json: string) -> __tpl_name {
+        let __result: ptr = forge_model_upsert_json(__tpl_config_table_name, data_json)
+        let __obj: __tpl_name = json.parse(__result)
+        forge_model_free_string(__result)
+        __obj
+    }
+
+    fn __tpl_name.exists(filter_json: string) -> int {
+        forge_model_exists(__tpl_config_table_name, filter_json)
+    }
+
+    fn __tpl_name.update_where(filter_json: string, changes_json: string) -> int {
+        forge_model_update_where(__tpl_config_table_name, filter_json, changes_json)
     }
 
     fn __tpl_name.related(id: int, foreign_key: string, related_table: string) -> ptr {

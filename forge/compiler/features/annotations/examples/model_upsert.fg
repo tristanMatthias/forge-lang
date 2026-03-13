@@ -1,0 +1,29 @@
+/// Test: Model.upsert — insert or replace
+///
+/// expect: 1
+/// expect: alice
+/// expect: 1
+/// expect: bob
+
+use @std.model.{model}
+
+model Config {
+  id: int @primary
+  value: string
+}
+
+fn main() {
+  Config.upsert({ id: 1, value: "alice" })
+  println(string(Config.count()))
+  let c1 = Config.get(1)
+  if c1 != null {
+    println(c1.value)
+  }
+
+  Config.upsert({ id: 1, value: "bob" })
+  println(string(Config.count()))
+  let c2 = Config.get(1)
+  if c2 != null {
+    println(c2.value)
+  }
+}

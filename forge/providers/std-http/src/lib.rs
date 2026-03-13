@@ -124,6 +124,7 @@ pub extern "C" fn forge_http_serve(port: u16) {
 }
 
 fn handle_request(mut request: Request, routes: &[Route], middleware: &[MiddlewareEntry]) {
+    let start = std::time::Instant::now();
     let method = request.method().to_string().to_uppercase();
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or(&url).to_string();
@@ -139,6 +140,9 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
         for h in cors_headers {
             response = response.with_header(h);
         }
+        response = response.with_header(
+            Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap()
+        );
         request.respond(response).ok();
         return;
     }
@@ -197,9 +201,11 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
                 let mw_body = unsafe { CStr::from_ptr(mw_buf.as_ptr() as *const c_char) }
                     .to_str().unwrap_or("").to_string();
                 let header = Header::from_bytes("Content-Type", "application/json").unwrap();
+                let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
                 let response = Response::from_string(mw_body)
                     .with_status_code(status as i32)
-                    .with_header(header);
+                    .with_header(header)
+                    .with_header(timing);
                 request.respond(response).ok();
                 return;
             }
@@ -252,18 +258,21 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
                 let header =
                     Header::from_bytes("Content-Type", "application/json").unwrap();
                 let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
+                let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
 
                 if status == 204 {
                     let response = Response::from_string("")
                         .with_status_code(status as i32)
                         .with_header(header)
-                        .with_header(cors);
+                        .with_header(cors)
+                        .with_header(timing);
                     request.respond(response).ok();
                 } else {
                     let response = Response::from_string(response_body)
                         .with_status_code(status as i32)
                         .with_header(header)
-                        .with_header(cors);
+                        .with_header(cors)
+                        .with_header(timing);
                     request.respond(response).ok();
                 }
                 return;
@@ -271,13 +280,29 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
         }
     }
 
+    // Check static file mounts before returning 404
+    if let Some((content, content_type)) = try_serve_static(&path) {
+        let header = Header::from_bytes("Content-Type", content_type).unwrap();
+        let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
+        let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
+        let response = Response::from_data(content)
+            .with_status_code(200)
+            .with_header(header)
+            .with_header(cors)
+            .with_header(timing);
+        request.respond(response).ok();
+        return;
+    }
+
     // 404
     let header = Header::from_bytes("Content-Type", "application/json").unwrap();
     let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
+    let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
     let response = Response::from_string("{\"error\":\"not found\"}")
         .with_status_code(404)
         .with_header(header)
-        .with_header(cors);
+        .with_header(cors)
+        .with_header(timing);
     request.respond(response).ok();
 }
 
@@ -294,6 +319,7 @@ type UpdateJsonFn = unsafe extern "C" fn(*const c_char, i64, *const c_char) -> *
 type DeleteJsonFn = unsafe extern "C" fn(*const c_char, i64) -> i64;
 type FreeStringFn = unsafe extern "C" fn(*const c_char);
 type PaginateJsonFn = unsafe extern "C" fn(*const c_char, *const c_char, i64, i64, *const c_char) -> *const c_char;
+type SearchJsonFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *const c_char;
 
 struct ModelFns {
     list_json: Option<ListJsonFn>,
@@ -303,6 +329,7 @@ struct ModelFns {
     delete_json: Option<DeleteJsonFn>,
     free_string: Option<FreeStringFn>,
     paginate_json: Option<PaginateJsonFn>,
+    search_json: Option<SearchJsonFn>,
 }
 
 static mut MODEL_FNS: ModelFns = ModelFns {
@@ -313,6 +340,7 @@ static mut MODEL_FNS: ModelFns = ModelFns {
     delete_json: None,
     free_string: None,
     paginate_json: None,
+    search_json: None,
 };
 
 static MODEL_FNS_INIT: Once = Once::new();
@@ -344,6 +372,7 @@ fn init_model_fns() {
             lookup!(delete_json, b"forge_model_delete_json\0");
             lookup!(free_string, b"forge_model_free_string\0");
             lookup!(paginate_json, b"forge_model_paginate_json\0");
+            lookup!(search_json, b"forge_model_search_json\0");
         }
     });
 }
@@ -379,6 +408,10 @@ fn model_paginate_json(table: *const c_char, filter: *const c_char, page: i64, p
     init_model_fns();
     unsafe { MODEL_FNS.paginate_json.map_or(std::ptr::null(), |f| f(table, filter, page, per_page, order)) }
 }
+fn model_search_json(table: *const c_char, search: *const c_char) -> *const c_char {
+    init_model_fns();
+    unsafe { MODEL_FNS.search_json.map_or(std::ptr::null(), |f| f(table, search)) }
+}
 
 fn cstr(ptr: *const c_char) -> &'static str {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap_or("")
@@ -404,6 +437,14 @@ pub extern "C" fn forge_http_mount_crud(port: u16, table: *const c_char, base_pa
         let method_c = CString::new("POST").unwrap();
         let path_c = CString::new(base_s.as_str()).unwrap();
         forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_create_handler);
+    }
+
+    // GET /base/search — search (must be before :id route)
+    {
+        let search_path = format!("{}/search", base_s);
+        let method_c = CString::new("GET").unwrap();
+        let path_c = CString::new(search_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_search_handler);
     }
 
     // GET /base/:id — get by id
@@ -515,6 +556,55 @@ fn extract_param_int(params_json: &str, key: &str) -> Option<i64> {
         }
     }
     None
+}
+
+fn extract_param_str(params_json: &str, key: &str) -> Option<String> {
+    let pattern = format!("\"{}\":\"", key);
+    if let Some(start) = params_json.find(&pattern) {
+        let rest = &params_json[start + pattern.len()..];
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
+}
+
+/// Find the table name for a given base path (exact match only, no /:id suffix).
+fn find_mount_table_by_base(base_path: &str) -> Option<String> {
+    let mounts = MOUNTS.lock().unwrap();
+    let clean = base_path.trim_end_matches('/');
+    for m in mounts.iter() {
+        if m.base_path.trim_end_matches('/') == clean {
+            return Some(m.table.clone());
+        }
+    }
+    None
+}
+
+extern "C" fn mount_search_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    _body: *const c_char,
+    params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    // Strip /search suffix to find the mount base path
+    let path_s = cstr(path);
+    let base_path = path_s.trim_end_matches("/search");
+    let table = match find_mount_table_by_base(base_path) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let params_s = cstr(params);
+    let q = extract_param_str(params_s, "q").unwrap_or_default();
+    let search_json = format!(r#"{{"columns":["*"],"query":"{}"}}"#, q.replace('"', "\\\""));
+    let search_c = CString::new(search_json).unwrap();
+    let json = model_search_json(table_c.as_ptr(), search_c.as_ptr());
+    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    unsafe { model_free_string(json) };
+    200
 }
 
 extern "C" fn mount_create_handler(
@@ -809,6 +899,75 @@ pub extern "C" fn forge_http_add_middleware_after(port: u16, name: *const c_char
             after: Some(handler),
         });
     }
+}
+
+// ── Static file serving ──
+
+struct StaticMount {
+    url_prefix: String,
+    dir_path: String,
+}
+
+unsafe impl Send for StaticMount {}
+unsafe impl Sync for StaticMount {}
+
+static STATIC_MOUNTS: Mutex<Vec<StaticMount>> = Mutex::new(Vec::new());
+
+#[no_mangle]
+pub extern "C" fn forge_http_serve_static(port: u16, url_prefix: *const c_char, dir_path: *const c_char) {
+    let _ = port; // port recorded for future per-port filtering; currently global
+    let prefix_s = cstr(url_prefix).to_string();
+    let dir_s = cstr(dir_path).to_string();
+    STATIC_MOUNTS.lock().unwrap().push(StaticMount {
+        url_prefix: prefix_s,
+        dir_path: dir_s,
+    });
+}
+
+fn content_type_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css"          => "text/css; charset=utf-8",
+        "js" | "mjs"   => "application/javascript; charset=utf-8",
+        "json"         => "application/json",
+        "png"          => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg"          => "image/svg+xml",
+        "ico"          => "image/x-icon",
+        _              => "application/octet-stream",
+    }
+}
+
+/// Try to serve a static file for the given request path.
+/// Returns `Some((bytes, content_type))` if a matching static mount is found and the file exists.
+fn try_serve_static(path: &str) -> Option<(Vec<u8>, &'static str)> {
+    let mounts = STATIC_MOUNTS.lock().unwrap();
+    for mount in mounts.iter() {
+        let prefix = mount.url_prefix.trim_end_matches('/');
+        let url_path = path.trim_end_matches('/');
+        // Match exact prefix or prefix/... paths
+        let rel = if url_path == prefix {
+            "index.html"
+        } else if url_path.starts_with(prefix) && url_path[prefix.len()..].starts_with('/') {
+            url_path[prefix.len() + 1..].trim_start_matches('/')
+        } else {
+            continue;
+        };
+        // Prevent path traversal
+        if rel.contains("..") {
+            continue;
+        }
+        let file_path = std::path::Path::new(&mount.dir_path).join(rel);
+        if let Ok(bytes) = std::fs::read(&file_path) {
+            let ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let ct = content_type_for_ext(ext);
+            return Some((bytes, ct));
+        }
+    }
+    None
 }
 
 /// Merge two JSON objects (both are `{...}` strings). Path params take priority.

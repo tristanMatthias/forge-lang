@@ -1,22 +1,24 @@
-/// Test: Model.search() full-text search across columns
+/// Test: Model.search — full text search across columns
 ///
-/// expect: 1
-/// expect: alice
+/// expect: 2
+/// expect: Forge Guide
+/// expect: Forge Tips
 
 use @std.model.{model}
 
-model User {
+model Article {
   id: int @primary @auto_increment
-  name: string
-  email: string
+  title: string
+  body: string
 }
 
 fn main() {
-  User.create({ name: "alice", email: "alice@test.com" })
-  User.create({ name: "bob", email: "bob@test.com" })
-  User.create({ name: "charlie", email: "charlie@test.com" })
+  Article.create({ title: "Forge Guide", body: "Learn the basics" })
+  Article.create({ title: "Rust Tutorial", body: "Systems programming" })
+  Article.create({ title: "Forge Tips", body: "Advanced patterns" })
 
-  let results = User.search({ query: "alice", columns: ["name", "email"] })
+  let results = Article.search({ columns: ["title"], query: "Forge" })
   println(string(results.length))
-  println(results[0].name)
+  println(results[0].title)
+  println(results[1].title)
 }

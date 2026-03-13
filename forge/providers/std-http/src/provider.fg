@@ -9,6 +9,7 @@ extern fn forge_http_pop_prefix(port: int)
 extern fn forge_http_add_middleware(port: int, name: string, handler: ptr)
 extern fn forge_http_add_middleware_after(port: int, name: string, handler: ptr)
 extern fn forge_http_ptr_to_str(ptr: ptr) -> string
+extern fn forge_http_serve_static(port: int, url_prefix: string, dir_path: string)
 
 component server(__tpl_name) {
     config {
@@ -57,6 +58,11 @@ component server(__tpl_name) {
     @syntax("end under")
     fn under_end() {
         forge_http_pop_prefix(__tpl_config_port)
+    }
+
+    @syntax("static {prefix} from {dir}")
+    fn serve_static(prefix: string, dir: string) {
+        forge_http_serve_static(__tpl_config_port, prefix, dir)
     }
 
     on main_end {

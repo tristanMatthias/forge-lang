@@ -1165,6 +1165,145 @@ pub extern "C" fn forge_model_count(sql: *const c_char) -> i64 {
 }
 
 #[no_mangle]
+pub extern "C" fn forge_model_delete_where(
+    table: *const c_char,
+    filter_json: *const c_char,
+) -> i64 {
+    let table = cstr(table);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let (wc, vals) = build_where_clause(filter_str);
+    if wc.is_empty() {
+        return 0; // Don't allow deleting all records without filter
+    }
+    let sql = format!("DELETE FROM {}{}", table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    match conn.execute(&sql, pr.as_slice()) {
+        Ok(n) => n as i64,
+        Err(e) => {
+            eprintln!("SQL delete_where error: {}", e);
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_model_upsert_json(
+    table: *const c_char,
+    data_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let data_str = cstr(data_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let data: Value = match serde_json::from_str(data_str) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("JSON parse error: {}", e);
+            return json_result("null".to_string());
+        }
+    };
+
+    let obj = match data.as_object() {
+        Some(o) => o,
+        None => return json_result("null".to_string()),
+    };
+
+    // Validate
+    let validation_errors = validate_data(table, &data);
+    if !validation_errors.is_empty() {
+        return json_result(format_validation_errors(&validation_errors));
+    }
+
+    let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+    let placeholders: Vec<String> = (0..columns.len()).map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+        table, columns.join(", "), placeholders.join(", ")
+    );
+
+    let values: Vec<String> = obj.values().map(|v| jv(v)).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+
+    match conn.execute(&sql, param_refs.as_slice()) {
+        Ok(_) => {
+            let rowid = conn.last_insert_rowid();
+            let select_sql = format!("SELECT * FROM {} WHERE rowid = ?", table);
+            let result = query_to_json(conn, &select_sql, &[&rowid as &dyn rusqlite::types::ToSql]);
+            if result.starts_with('[') && result.ends_with(']') {
+                let inner = &result[1..result.len() - 1];
+                if !inner.is_empty() {
+                    let hidden = get_hidden_fields(table);
+                    return json_result(strip_hidden_from_json_obj(inner, &hidden));
+                }
+            }
+            json_result(result)
+        }
+        Err(e) => {
+            eprintln!("SQL upsert error: {}", e);
+            json_result("null".to_string())
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_model_exists(
+    table: *const c_char,
+    filter_json: *const c_char,
+) -> i64 {
+    let table = cstr(table);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {}{})", table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, i64>(0)).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn forge_model_update_where(
+    table: *const c_char,
+    filter_json: *const c_char,
+    changes_json: *const c_char,
+) -> i64 {
+    let table = cstr(table);
+    let filter_str = cstr(filter_json);
+    let changes_str = cstr(changes_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let changes: Value = match serde_json::from_str(changes_str) {
+        Ok(v) => v,
+        Err(_) => return -1,
+    };
+    let obj = match changes.as_object() {
+        Some(o) => o,
+        None => return -1,
+    };
+
+    let set_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
+    let mut values: Vec<String> = obj.values().map(|v| jv(v)).collect();
+
+    let (wc, wv) = build_where_clause(filter_str);
+    values.extend(wv);
+
+    let sql = format!("UPDATE {} SET {}{}", table, set_clauses.join(", "), wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    match conn.execute(&sql, pr.as_slice()) {
+        Ok(n) => n as i64,
+        Err(e) => {
+            eprintln!("SQL update_where error: {}", e);
+            -1
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_model_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {

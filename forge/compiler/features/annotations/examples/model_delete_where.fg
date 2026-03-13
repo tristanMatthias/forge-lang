@@ -1,0 +1,22 @@
+/// Test: Model.delete_where — bulk delete matching records
+///
+/// expect: 3
+/// expect: 1
+
+use @std.model.{model}
+
+model Item {
+  id: int @primary @auto_increment
+  category: string
+  name: string
+}
+
+fn main() {
+  Item.create({ category: "a", name: "one" })
+  Item.create({ category: "b", name: "two" })
+  Item.create({ category: "a", name: "three" })
+
+  println(string(Item.count()))
+  Item.delete_where({ category: "a" })
+  println(string(Item.count()))
+}

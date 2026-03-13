@@ -1,0 +1,31 @@
+/// Test: Model.update_where — bulk update matching records
+///
+/// expect: draft
+/// expect: draft
+/// expect: 2
+/// expect: published
+/// expect: published
+
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  status: string
+}
+
+fn main() {
+  Post.create({ title: "Post 1", status: "draft" })
+  Post.create({ title: "Post 2", status: "draft" })
+
+  let posts = Post.list()
+  println(posts[0].status)
+  println(posts[1].status)
+
+  let updated = Post.update_where({ status: "draft" }, { status: "published" })
+  println(string(updated))
+
+  let posts2 = Post.list()
+  println(posts2[0].status)
+  println(posts2[1].status)
+}
