@@ -36,6 +36,19 @@ extern fn forge_model_rollback() -> i32
 extern fn forge_model_distinct(table: string, column: string, filter_json: string) -> string
 extern fn forge_model_min_json(table: string, column: string, filter_json: string) -> float
 extern fn forge_model_max_json(table: string, column: string, filter_json: string) -> float
+extern fn forge_model_include_json(table: string, id: int, relations_json: string) -> string
+extern fn forge_model_insert_json_no_validate(table: string, data_json: string) -> string
+extern fn forge_model_update_json_no_validate(table: string, id: int, changes_json: string) -> string
+
+extern fn forge_model_check_owner(table: string, record_id: int, user_id: int) -> int
+extern fn forge_model_get_owner_field(table: string) -> string
+
+extern fn forge_model_query_build(table: string) -> string
+extern fn forge_model_query_where(query: string, filter: string) -> string
+extern fn forge_model_query_order(query: string, field: string, direction: string) -> string
+extern fn forge_model_query_limit(query: string, limit: int) -> string
+extern fn forge_model_query_offset(query: string, offset: int) -> string
+extern fn forge_model_query_exec(query: string) -> string
 
 component model(__tpl_name, schema) {
     config {
@@ -110,6 +123,53 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.query(query_json: string) -> List<__tpl_name> {
         let __result: ptr = forge_model_query_json(__tpl_config_table_name, query_json)
+        let __list: List<__tpl_name> = json.parse(__result)
+        forge_model_free_string(__result)
+        __list
+    }
+
+    fn __tpl_name.build_query() -> string {
+        let __result: ptr = forge_model_query_build(__tpl_config_table_name)
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
+    }
+
+    fn __tpl_name.add_where(query: string, filter_json: string) -> string {
+        let __result: ptr = forge_model_query_where(query, filter_json)
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
+    }
+
+    fn __tpl_name.add_order(query: string, field: string, direction: string) -> string {
+        let __result: ptr = forge_model_query_order(query, field, direction)
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
+    }
+
+    fn __tpl_name.add_limit(query: string, limit: int) -> string {
+        let __result: ptr = forge_model_query_limit(query, limit)
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
+    }
+
+    fn __tpl_name.add_offset(query: string, offset: int) -> string {
+        let __result: ptr = forge_model_query_offset(query, offset)
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
+    }
+
+    fn __tpl_name.exec_query(query: string) -> List<__tpl_name> {
+        let __result: ptr = forge_model_query_exec(query)
         let __list: List<__tpl_name> = json.parse(__result)
         forge_model_free_string(__result)
         __list
@@ -194,6 +254,32 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.related_many(id: int, foreign_key: string, related_table: string) -> ptr {
         forge_model_get_related_many(__tpl_config_table_name, id, foreign_key, related_table)
+    }
+
+    fn __tpl_name.include(id: int, relations_json: string) -> string {
+        forge_model_include_json(__tpl_config_table_name, id, relations_json)
+    }
+
+    fn __tpl_name.create_unvalidated(data_json: string) -> int {
+        let __result: ptr = forge_model_insert_json_no_validate(__tpl_config_table_name, data_json)
+        let __id = forge_json_get_int(__result, 0, "id")
+        forge_model_free_string(__result)
+        __id
+    }
+
+    fn __tpl_name.update_unvalidated(id: int, changes_json: string) -> __tpl_name {
+        let __result: ptr = forge_model_update_json_no_validate(__tpl_config_table_name, id, changes_json)
+        let __obj: __tpl_name = json.parse(__result)
+        forge_model_free_string(__result)
+        __obj
+    }
+
+    fn __tpl_name.check_owner(record_id: int, user_id: int) -> int {
+        forge_model_check_owner(__tpl_config_table_name, record_id, user_id)
+    }
+
+    fn __tpl_name.owner_field() -> string {
+        forge_model_get_owner_field(__tpl_config_table_name)
     }
 
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int

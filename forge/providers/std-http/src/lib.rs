@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::io::Read;
 use std::os::raw::c_char;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
+use std::time::Instant;
 use tiny_http::{Header, Request, Response, Server};
 
 type HandlerFn = extern "C" fn(
@@ -109,7 +111,7 @@ pub extern "C" fn forge_http_serve(port: u16) {
             let server = Server::http(&addr).expect("Failed to start server");
             eprintln!("Server running on http://localhost:{}", port);
             for request in server.incoming_requests() {
-                handle_request(request, &routes, &middleware);
+                handle_request(request, &routes, &middleware, port);
             }
         });
         SERVER_HANDLES.lock().unwrap().push(handle);
@@ -118,16 +120,72 @@ pub extern "C" fn forge_http_serve(port: u16) {
         let server = Server::http(&addr).expect("Failed to start server");
         eprintln!("Server running on http://localhost:{}", port);
         for request in server.incoming_requests() {
-            handle_request(request, &routes, &middleware);
+            handle_request(request, &routes, &middleware, port);
         }
     }
 }
 
-fn handle_request(mut request: Request, routes: &[Route], middleware: &[MiddlewareEntry]) {
+fn handle_request(mut request: Request, routes: &[Route], middleware: &[MiddlewareEntry], port: u16) {
     let start = std::time::Instant::now();
     let method = request.method().to_string().to_uppercase();
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or(&url).to_string();
+
+    // Get client IP for rate limiting
+    let client_ip = request
+        .remote_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Check rate limiting before any processing
+    if !check_rate_limit(port, &path, &client_ip) {
+        let header = Header::from_bytes("Content-Type", "application/json").unwrap();
+        let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
+        let response = Response::from_string(r#"{"error":"too many requests"}"#)
+            .with_status_code(429)
+            .with_header(header)
+            .with_header(timing);
+        request.respond(response).ok();
+        return;
+    }
+
+    // Check for SSE endpoint
+    if method == "GET" {
+        if let Some(stream_id) = find_sse_stream(port, &path) {
+            // Handle SSE request in a separate thread so the server loop continues
+            std::thread::spawn(move || {
+                handle_sse_request(request, stream_id);
+            });
+            return;
+        }
+    }
+
+    // Check for WebSocket upgrade
+    // WebSocket requests have "Upgrade: websocket" header
+    {
+        let is_upgrade = request.headers().iter().any(|h| {
+            h.field.as_str().to_string().to_lowercase() == "upgrade"
+                && h.value.as_str().to_lowercase() == "websocket"
+        });
+        if is_upgrade && is_ws_path(port, &path) {
+            // Extract the underlying stream via tiny_http's upgrade mechanism.
+            // tiny_http's upgrade() handles sending the 101 response internally.
+            let response = Response::from_string("");
+            let stream = request.upgrade("websocket", response);
+            let dyn_stream: DynStream = Box::new(stream);
+            let client_id = do_ws_upgrade(dyn_stream);
+            if client_id > 0 {
+                // Store the client_id in the pending map for the path
+                ws_pending_map()
+                    .as_mut()
+                    .unwrap()
+                    .entry(path)
+                    .or_default()
+                    .push(client_id);
+            }
+            return;
+        }
+    }
 
     // Handle CORS preflight
     if method == "OPTIONS" {
@@ -294,11 +352,13 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
         return;
     }
 
-    // 404
+    // 404 — use custom handler if set
+    let not_found_body = get_custom_error_body(port, 404)
+        .unwrap_or_else(|| r#"{"error":"not found"}"#.to_string());
     let header = Header::from_bytes("Content-Type", "application/json").unwrap();
     let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
     let timing = Header::from_bytes("X-Response-Time", format!("{}ms", start.elapsed().as_millis())).unwrap();
-    let response = Response::from_string("{\"error\":\"not found\"}")
+    let response = Response::from_string(not_found_body)
         .with_status_code(404)
         .with_header(header)
         .with_header(cors)
@@ -538,7 +598,10 @@ extern "C" fn mount_list_handler(
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
         Some(t) => t,
-        None => return 404,
+        None => {
+            copy_str_to_buf(r#"{"error":"not found","message":"no model mounted at this path"}"#, response_buf, response_buf_len);
+            return 404;
+        }
     };
     let table_c = CString::new(table.as_str()).unwrap();
 
@@ -551,17 +614,30 @@ extern "C" fn mount_list_handler(
     let filter_json = build_filter_from_params(params_s);
     let order = extract_param_str(params_s, "order").unwrap_or_else(|| "id".to_string());
 
+    // Apply default order if not explicitly specified in params
+    let order = if extract_param_str(params_s, "order").is_some() {
+        order
+    } else if let Some(default_order) = get_default_order(path_s) {
+        default_order
+    } else {
+        order
+    };
+
     if let (Some(page), Some(per)) = (page, per) {
         // Paginated response
         let filter_c = CString::new(filter_json.as_str()).unwrap();
         let order_c = CString::new(order.as_str()).unwrap();
         let json = model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr());
-        copy_cstr_to_buf(json, response_buf, response_buf_len);
+        let result_str = cstr(json).to_string();
+        let filtered = maybe_filter_expose(path_s, &result_str);
+        copy_str_to_buf(&filtered, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
     } else {
         let filter_c = CString::new(filter_json.as_str()).unwrap();
         let json = model_list_json(table_c.as_ptr(), filter_c.as_ptr());
-        copy_cstr_to_buf(json, response_buf, response_buf_len);
+        let result_str = cstr(json).to_string();
+        let filtered = maybe_filter_expose(path_s, &result_str);
+        copy_str_to_buf(&filtered, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
     }
     200
@@ -689,15 +765,33 @@ extern "C" fn mount_create_handler(
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
         Some(t) => t,
-        None => return 404,
+        None => {
+            copy_str_to_buf(r#"{"error":"not found","message":"no model mounted at this path"}"#, response_buf, response_buf_len);
+            return 404;
+        }
     };
     let table_c = CString::new(table.as_str()).unwrap();
+
+    // Validate that body is non-empty JSON
+    let body_s = cstr(body);
+    if body_s.trim().is_empty() || body_s.trim() == "{}" {
+        let error_json = format!(
+            r#"{{"error":"validation failed","message":"request body is empty","resource":"{}","action":"create"}}"#,
+            table
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
+        return 400;
+    }
+
     let json = unsafe { model_insert_json(table_c.as_ptr(), body) };
     let result_str = cstr(json);
     // Check for validation failure
     if result_str.trim() == "null" || result_str.is_empty() {
-        let error_json = r#"{"error":"validation failed"}"#;
-        copy_str_to_buf(error_json, response_buf, response_buf_len);
+        let error_json = format!(
+            r#"{{"error":"validation failed","message":"insert returned no result","resource":"{}","action":"create"}}"#,
+            table
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
         return 400;
     }
@@ -724,24 +818,35 @@ extern "C" fn mount_get_handler(
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
         Some(t) => t,
-        None => return 404,
+        None => {
+            copy_str_to_buf(r#"{"error":"not found","message":"no model mounted at this path"}"#, response_buf, response_buf_len);
+            return 404;
+        }
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
+    if id == 0 {
+        let error_json = format!(
+            r#"{{"error":"bad request","message":"invalid or missing id parameter","resource":"{}","action":"get"}}"#,
+            table
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
+        return 400;
+    }
     let json = unsafe { model_get_by_id(table_c.as_ptr(), id) };
     let result_str = cstr(json);
     if result_str.trim() == "null" || result_str.is_empty() {
-        let error_json = r#"{"error":"not found"}"#;
-        let bytes = error_json.as_bytes();
-        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
-            *response_buf.add(copy_len) = 0;
-        }
+        let error_json = format!(
+            r#"{{"error":"not found","message":"{} with id {} not found","resource":"{}","id":{}}}"#,
+            table, id, table, id
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
         return 404;
     }
-    copy_cstr_to_buf(json, response_buf, response_buf_len);
+    let result_owned = result_str.to_string();
+    let filtered = maybe_filter_expose(path_s, &result_owned);
+    copy_str_to_buf(&filtered, response_buf, response_buf_len);
     unsafe { model_free_string(json) };
     200
 }
@@ -757,17 +862,43 @@ extern "C" fn mount_update_handler(
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
         Some(t) => t,
-        None => return 404,
+        None => {
+            copy_str_to_buf(r#"{"error":"not found","message":"no model mounted at this path"}"#, response_buf, response_buf_len);
+            return 404;
+        }
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
+    if id == 0 {
+        let error_json = format!(
+            r#"{{"error":"bad request","message":"invalid or missing id parameter","resource":"{}","action":"update"}}"#,
+            table
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
+        return 400;
+    }
+
+    // Validate that body is non-empty
+    let body_s = cstr(body);
+    if body_s.trim().is_empty() || body_s.trim() == "{}" {
+        let error_json = format!(
+            r#"{{"error":"validation failed","message":"request body is empty","resource":"{}","action":"update","id":{}}}"#,
+            table, id
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
+        return 400;
+    }
+
     let json = unsafe { model_update_json(table_c.as_ptr(), id, body) };
     let result_str = cstr(json);
     if result_str.trim() == "null" || result_str.is_empty() {
-        let error_json = r#"{"error":"validation failed"}"#;
-        copy_str_to_buf(error_json, response_buf, response_buf_len);
+        let error_json = format!(
+            r#"{{"error":"not found","message":"{} with id {} not found","resource":"{}","action":"update","id":{}}}"#,
+            table, id, table, id
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
         unsafe { model_free_string(json) };
-        return 400;
+        return 404;
     }
     if result_str.contains("\"__validation_error\":true") {
         let cleaned = result_str.replace("\"__validation_error\":true,", "");
@@ -791,16 +922,31 @@ extern "C" fn mount_delete_handler(
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
         Some(t) => t,
-        None => return 404,
+        None => {
+            copy_str_to_buf(r#"{"error":"not found","message":"no model mounted at this path"}"#, response_buf, response_buf_len);
+            return 404;
+        }
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
+    if id == 0 {
+        let error_json = format!(
+            r#"{{"error":"bad request","message":"invalid or missing id parameter","resource":"{}","action":"delete"}}"#,
+            table
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
+        return 400;
+    }
     let rows = unsafe { model_delete_json(table_c.as_ptr(), id) };
     if rows > 0 {
         copy_str_to_buf(r#"{"deleted":true}"#, response_buf, response_buf_len);
         200
     } else {
-        copy_str_to_buf(r#"{"error":"not found"}"#, response_buf, response_buf_len);
+        let error_json = format!(
+            r#"{{"error":"not found","message":"{} with id {} not found","resource":"{}","id":{}}}"#,
+            table, id, table, id
+        );
+        copy_str_to_buf(&error_json, response_buf, response_buf_len);
         404
     }
 }
@@ -1080,4 +1226,988 @@ fn match_path(pattern: &str, actual: &str) -> Option<String> {
     }
 
     Some(format!("{{{}}}", params.join(",")))
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Feature 1: WebSocket Support
+// ══════════════════════════════════════════════════════════════════════
+
+use tungstenite::{accept, Message, WebSocket};
+use std::io::Write;
+
+/// A type alias for the type-erased stream returned by tiny_http's upgrade
+type DynStream = Box<dyn ReadWriteSend>;
+
+/// Trait combining Read + Write + Send for use as a trait object
+trait ReadWriteSend: Read + Write + Send {}
+impl<T: Read + Write + Send> ReadWriteSend for T {}
+
+/// Registered WebSocket paths per port
+static WS_PATHS: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
+
+/// Connected WebSocket clients, keyed by client_id
+static WS_CLIENTS: Mutex<Option<HashMap<i64, WebSocket<DynStream>>>> = Mutex::new(None);
+
+/// Atomic counter for generating unique client IDs
+static WS_CLIENT_COUNTER: AtomicI64 = AtomicI64::new(1);
+
+/// Channel for delivering new WS connections from the HTTP server thread to consumers.
+/// Maps path -> list of (client_id, WebSocket) pairs waiting to be picked up.
+static WS_PENDING: Mutex<Option<HashMap<String, Vec<i64>>>> = Mutex::new(None);
+
+fn ws_paths_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<String>>>> {
+    let mut guard = WS_PATHS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn ws_clients_map() -> std::sync::MutexGuard<'static, Option<HashMap<i64, WebSocket<DynStream>>>> {
+    let mut guard = WS_CLIENTS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn ws_pending_map() -> std::sync::MutexGuard<'static, Option<HashMap<String, Vec<i64>>>> {
+    let mut guard = WS_PENDING.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Register a WebSocket endpoint on a given port and path.
+#[no_mangle]
+pub extern "C" fn forge_http_ws_upgrade(port: i64, path: *const c_char) {
+    let path_s = cstr(path).to_string();
+    ws_paths_map()
+        .as_mut()
+        .unwrap()
+        .entry(port as u16)
+        .or_default()
+        .push(path_s);
+}
+
+/// Check if a request path is a registered WebSocket path for the given port.
+fn is_ws_path(port: u16, path: &str) -> bool {
+    let guard = ws_paths_map();
+    if let Some(paths) = guard.as_ref().unwrap().get(&port) {
+        return paths.iter().any(|p| p == path);
+    }
+    false
+}
+
+/// Perform WebSocket upgrade on a stream extracted from a tiny_http request.
+/// Returns the client_id assigned to this connection, or -1 on failure.
+fn do_ws_upgrade(stream: DynStream) -> i64 {
+    match accept(stream) {
+        Ok(ws) => {
+            let client_id = WS_CLIENT_COUNTER.fetch_add(1, Ordering::SeqCst);
+            ws_clients_map().as_mut().unwrap().insert(client_id, ws);
+            client_id
+        }
+        Err(e) => {
+            eprintln!("WebSocket handshake failed: {}", e);
+            -1
+        }
+    }
+}
+
+/// Send a text message to a connected WebSocket client.
+#[no_mangle]
+pub extern "C" fn forge_http_ws_send(client_id: i64, message: *const c_char) {
+    let msg = cstr(message).to_string();
+    let mut guard = ws_clients_map();
+    if let Some(ws) = guard.as_mut().unwrap().get_mut(&client_id) {
+        if let Err(e) = ws.send(Message::Text(msg)) {
+            eprintln!("WebSocket send error (client {}): {}", client_id, e);
+        }
+    } else {
+        eprintln!("WebSocket client {} not found", client_id);
+    }
+}
+
+/// Blocking receive from a WebSocket client. Returns the message text.
+/// Returns empty string on error or connection close.
+#[no_mangle]
+pub extern "C" fn forge_http_ws_receive(client_id: i64) -> *const c_char {
+    let msg = {
+        let mut guard = ws_clients_map();
+        if let Some(ws) = guard.as_mut().unwrap().get_mut(&client_id) {
+            match ws.read() {
+                Ok(Message::Text(text)) => text,
+                Ok(Message::Binary(bin)) => String::from_utf8_lossy(&bin).to_string(),
+                Ok(Message::Close(_)) => String::new(),
+                Ok(_) => {
+                    // Ping/Pong frames are handled automatically by tungstenite;
+                    // recurse by dropping the lock and trying again would be complex,
+                    // so just return empty for non-text frames.
+                    String::new()
+                }
+                Err(_) => String::new(),
+            }
+        } else {
+            String::new()
+        }
+    };
+    CString::new(msg).unwrap().into_raw()
+}
+
+/// Close a WebSocket connection.
+#[no_mangle]
+pub extern "C" fn forge_http_ws_close(client_id: i64) {
+    let mut guard = ws_clients_map();
+    if let Some(mut ws) = guard.as_mut().unwrap().remove(&client_id) {
+        let _ = ws.close(None);
+        // Flush the close frame
+        loop {
+            match ws.read() {
+                Ok(Message::Close(_)) | Err(_) => break,
+                _ => {}
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Feature 2: SSE (Server-Sent Events)
+// ══════════════════════════════════════════════════════════════════════
+
+use std::sync::mpsc;
+
+/// Registered SSE paths per port
+static SSE_PATHS: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
+
+/// SSE streams: stream_id -> list of senders (one per connected client).
+/// Each sender pushes formatted SSE data bytes to the client's response pipe.
+static SSE_STREAMS: Mutex<Option<HashMap<i64, Vec<mpsc::Sender<Vec<u8>>>>>> = Mutex::new(None);
+
+/// Atomic counter for generating unique SSE stream IDs
+static SSE_STREAM_COUNTER: AtomicI64 = AtomicI64::new(1);
+
+/// Maps (port, path) -> stream_id for looking up streams during request handling
+static SSE_PATH_TO_STREAM: Mutex<Option<HashMap<(u16, String), i64>>> = Mutex::new(None);
+
+fn sse_paths_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<String>>>> {
+    let mut guard = SSE_PATHS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn sse_streams_map() -> std::sync::MutexGuard<'static, Option<HashMap<i64, Vec<mpsc::Sender<Vec<u8>>>>>> {
+    let mut guard = SSE_STREAMS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn sse_path_to_stream_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), i64>>> {
+    let mut guard = SSE_PATH_TO_STREAM.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// A Read adapter backed by an mpsc::Receiver<Vec<u8>>.
+/// tiny_http uses Read to stream the response body.
+struct SseReader {
+    receiver: mpsc::Receiver<Vec<u8>>,
+    buffer: Vec<u8>,
+    pos: usize,
+}
+
+impl Read for SseReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // If we have leftover bytes from a previous chunk, serve those first
+        if self.pos < self.buffer.len() {
+            let n = std::cmp::min(buf.len(), self.buffer.len() - self.pos);
+            buf[..n].copy_from_slice(&self.buffer[self.pos..self.pos + n]);
+            self.pos += n;
+            return Ok(n);
+        }
+        // Block waiting for the next chunk
+        match self.receiver.recv() {
+            Ok(data) => {
+                if data.is_empty() {
+                    // Empty vec signals end of stream
+                    return Ok(0);
+                }
+                let n = std::cmp::min(buf.len(), data.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                if n < data.len() {
+                    self.buffer = data;
+                    self.pos = n;
+                } else {
+                    self.buffer.clear();
+                    self.pos = 0;
+                }
+                Ok(n)
+            }
+            Err(_) => Ok(0), // Sender dropped, end of stream
+        }
+    }
+}
+
+/// Register an SSE endpoint. Returns the stream_id.
+#[no_mangle]
+pub extern "C" fn forge_http_sse_start(port: i64, path: *const c_char) -> i64 {
+    let path_s = cstr(path).to_string();
+    let port_u16 = port as u16;
+    let stream_id = SSE_STREAM_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    sse_paths_map()
+        .as_mut()
+        .unwrap()
+        .entry(port_u16)
+        .or_default()
+        .push(path_s.clone());
+
+    sse_streams_map()
+        .as_mut()
+        .unwrap()
+        .insert(stream_id, Vec::new());
+
+    sse_path_to_stream_map()
+        .as_mut()
+        .unwrap()
+        .insert((port_u16, path_s), stream_id);
+
+    stream_id
+}
+
+/// Check if a request path is a registered SSE path for the given port.
+/// Returns the stream_id if found, or -1 if not an SSE path.
+fn find_sse_stream(port: u16, path: &str) -> Option<i64> {
+    let guard = sse_path_to_stream_map();
+    guard.as_ref().unwrap().get(&(port, path.to_string())).copied()
+}
+
+/// Handle an incoming SSE connection: send headers and register the client sender.
+fn handle_sse_request(request: Request, stream_id: i64) {
+    let (sender, receiver) = mpsc::channel::<Vec<u8>>();
+
+    // Register this client's sender in the stream
+    {
+        let mut guard = sse_streams_map();
+        if let Some(senders) = guard.as_mut().unwrap().get_mut(&stream_id) {
+            senders.push(sender);
+        } else {
+            // Stream was already closed
+            return;
+        }
+    }
+
+    // Send the initial SSE comment to keep the connection alive
+    let reader = SseReader {
+        receiver,
+        buffer: Vec::new(),
+        pos: 0,
+    };
+
+    // tiny_http streaming: use a large content-length (chunked isn't directly supported,
+    // but we can use a very large content-length and the connection will stay open).
+    let response = Response::new(
+        tiny_http::StatusCode(200),
+        vec![
+            Header::from_bytes("Content-Type", "text/event-stream").unwrap(),
+            Header::from_bytes("Cache-Control", "no-cache").unwrap(),
+            Header::from_bytes("Connection", "keep-alive").unwrap(),
+            Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
+        ],
+        reader,
+        // Use None for content length to allow streaming until connection closes
+        None,
+        None,
+    );
+    // respond() blocks until the reader returns 0 bytes, which happens
+    // when all senders are dropped or forge_http_sse_close is called
+    let _ = request.respond(response);
+}
+
+/// Send an SSE event to all connected clients on a stream.
+#[no_mangle]
+pub extern "C" fn forge_http_sse_send(stream_id: i64, event_type: *const c_char, data: *const c_char) {
+    let event = cstr(event_type);
+    let data_s = cstr(data);
+
+    // Format as SSE: "event: <type>\ndata: <data>\n\n"
+    let mut payload = String::new();
+    if !event.is_empty() {
+        payload.push_str(&format!("event: {}\n", event));
+    }
+    for line in data_s.lines() {
+        payload.push_str(&format!("data: {}\n", line));
+    }
+    payload.push('\n');
+
+    let bytes = payload.into_bytes();
+
+    let mut guard = sse_streams_map();
+    if let Some(senders) = guard.as_mut().unwrap().get_mut(&stream_id) {
+        // Send to all clients, remove any that have disconnected
+        senders.retain(|sender| sender.send(bytes.clone()).is_ok());
+    }
+}
+
+/// Close all SSE connections for a stream.
+#[no_mangle]
+pub extern "C" fn forge_http_sse_close(stream_id: i64) {
+    let mut guard = sse_streams_map();
+    if let Some(senders) = guard.as_mut().unwrap().remove(&stream_id) {
+        // Send empty vec to signal EOF, then drop all senders
+        for sender in senders {
+            let _ = sender.send(Vec::new());
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Custom Error Handlers
+// ══════════════════════════════════════════════════════════════════════
+
+/// Custom 404 response body per port
+static NOT_FOUND_HANDLERS: Mutex<Option<HashMap<u16, String>>> = Mutex::new(None);
+
+/// Custom error response bodies per (port, status_code)
+static ERROR_RESPONSES: Mutex<Option<HashMap<(u16, i32), String>>> = Mutex::new(None);
+
+fn not_found_handlers_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, String>>> {
+    let mut guard = NOT_FOUND_HANDLERS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn error_responses_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, i32), String>>> {
+    let mut guard = ERROR_RESPONSES.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Set a custom 404 response body for a port.
+#[no_mangle]
+pub extern "C" fn forge_http_set_not_found_handler(port: i64, body_json: *const c_char) {
+    let body = cstr(body_json).to_string();
+    not_found_handlers_map()
+        .as_mut()
+        .unwrap()
+        .insert(port as u16, body);
+}
+
+/// Set a custom error response body for a specific status code on a port.
+#[no_mangle]
+pub extern "C" fn forge_http_set_error_response(port: i64, status_code: i64, body_json: *const c_char) {
+    let body = cstr(body_json).to_string();
+    error_responses_map()
+        .as_mut()
+        .unwrap()
+        .insert((port as u16, status_code as i32), body);
+}
+
+/// Look up custom error body for a given port and status code.
+/// Returns the custom body if set, or None for default behavior.
+fn get_custom_error_body(port: u16, status_code: i32) -> Option<String> {
+    // Check for specific status code override first
+    {
+        let guard = error_responses_map();
+        if let Some(body) = guard.as_ref().unwrap().get(&(port, status_code)) {
+            return Some(body.clone());
+        }
+    }
+    // For 404, also check the not-found handler
+    if status_code == 404 {
+        let guard = not_found_handlers_map();
+        if let Some(body) = guard.as_ref().unwrap().get(&port) {
+            return Some(body.clone());
+        }
+    }
+    None
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Feature 3: Rate Limiter
+// ══════════════════════════════════════════════════════════════════════
+
+struct RateLimitRule {
+    path_prefix: String,
+    max_requests: i64,
+    window_seconds: i64,
+}
+
+/// Rate limit rules per port
+static RATE_LIMITS: Mutex<Option<HashMap<u16, Vec<RateLimitRule>>>> = Mutex::new(None);
+
+/// Request tracking: (port, path_prefix) -> (ip -> list of request timestamps)
+static RATE_LIMIT_TRACKER: Mutex<Option<HashMap<(u16, String), HashMap<String, Vec<Instant>>>>> = Mutex::new(None);
+
+fn rate_limits_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<RateLimitRule>>>> {
+    let mut guard = RATE_LIMITS.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+fn rate_tracker_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), HashMap<String, Vec<Instant>>>>> {
+    let mut guard = RATE_LIMIT_TRACKER.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Configure rate limiting for a path prefix on a port.
+#[no_mangle]
+pub extern "C" fn forge_http_rate_limit(
+    port: i64,
+    path_prefix: *const c_char,
+    max_requests: i64,
+    window_seconds: i64,
+) {
+    let prefix = cstr(path_prefix).to_string();
+    rate_limits_map()
+        .as_mut()
+        .unwrap()
+        .entry(port as u16)
+        .or_default()
+        .push(RateLimitRule {
+            path_prefix: prefix,
+            max_requests,
+            window_seconds,
+        });
+}
+
+/// Check if a request should be rate-limited.
+/// Returns true if the request is allowed, false if it should be rejected (429).
+// ══════════════════════════════════════════════════════════════════════
+// Feature 4: Multipart File Upload
+// ══════════════════════════════════════════════════════════════════════
+
+/// Parse a multipart/form-data body given the Content-Type header value.
+/// Returns a JSON array of parts:
+/// `[{"field":"file","filename":"doc.pdf","content_type":"application/pdf","data":"...base64..."}]`
+#[no_mangle]
+pub extern "C" fn forge_http_parse_multipart(
+    body: *const c_char,
+    content_type: *const c_char,
+) -> *const c_char {
+    let body_s = cstr(body);
+    let ct = cstr(content_type);
+
+    // Extract boundary from Content-Type: multipart/form-data; boundary=XXXX
+    let boundary = match extract_boundary(ct) {
+        Some(b) => b,
+        None => {
+            return CString::new(r#"[{"error":"no boundary found in content-type"}]"#)
+                .unwrap()
+                .into_raw();
+        }
+    };
+
+    let parts = parse_multipart_body(body_s, &boundary);
+    let mut json_parts = Vec::new();
+    for part in parts {
+        let data_b64 = base64_encode(part.data.as_bytes());
+        let field = part.field_name.replace('"', "\\\"");
+        let filename = part.filename.replace('"', "\\\"");
+        let ct = part.content_type.replace('"', "\\\"");
+        json_parts.push(format!(
+            r#"{{"field":"{}","filename":"{}","content_type":"{}","size":{},"data":"{}"}}"#,
+            field, filename, ct, part.data.len(), data_b64
+        ));
+    }
+    let result = format!("[{}]", json_parts.join(","));
+    CString::new(result).unwrap().into_raw()
+}
+
+fn extract_boundary(content_type: &str) -> Option<String> {
+    for part in content_type.split(';') {
+        let trimmed = part.trim();
+        if trimmed.starts_with("boundary=") {
+            let val = trimmed["boundary=".len()..].trim_matches('"').to_string();
+            return Some(val);
+        }
+    }
+    None
+}
+
+struct MultipartPart {
+    field_name: String,
+    filename: String,
+    content_type: String,
+    data: String,
+}
+
+fn parse_multipart_body(body: &str, boundary: &str) -> Vec<MultipartPart> {
+    let delimiter = format!("--{}", boundary);
+    let end_delimiter = format!("--{}--", boundary);
+    let mut parts = Vec::new();
+
+    // Split on the boundary delimiter
+    let sections: Vec<&str> = body.split(&delimiter).collect();
+
+    for section in sections.iter().skip(1) {
+        // Skip the final delimiter
+        let section = section.trim_start_matches("\r\n").trim_start_matches('\n');
+        if section.starts_with("--") || section.is_empty() {
+            continue;
+        }
+        // Remove trailing end delimiter if present
+        let section = if section.ends_with(&end_delimiter) {
+            &section[..section.len() - end_delimiter.len()]
+        } else {
+            section
+        };
+
+        // Split headers from body on double newline
+        let (headers_str, data) = if let Some(pos) = section.find("\r\n\r\n") {
+            (&section[..pos], &section[pos + 4..])
+        } else if let Some(pos) = section.find("\n\n") {
+            (&section[..pos], &section[pos + 2..])
+        } else {
+            continue;
+        };
+
+        // Trim trailing \r\n from data
+        let data = data.trim_end_matches("\r\n").trim_end_matches('\n');
+
+        let mut field_name = String::new();
+        let mut filename = String::new();
+        let mut content_type = String::from("application/octet-stream");
+
+        for header_line in headers_str.lines() {
+            let lower = header_line.to_lowercase();
+            if lower.starts_with("content-disposition:") {
+                // Parse: Content-Disposition: form-data; name="file"; filename="doc.pdf"
+                for attr in header_line.split(';') {
+                    let attr = attr.trim();
+                    if attr.starts_with("name=") || attr.starts_with("name =\"") {
+                        field_name = attr
+                            .splitn(2, '=')
+                            .nth(1)
+                            .unwrap_or("")
+                            .trim_matches('"')
+                            .to_string();
+                    } else if attr.starts_with("filename=") || attr.starts_with("filename =\"") {
+                        filename = attr
+                            .splitn(2, '=')
+                            .nth(1)
+                            .unwrap_or("")
+                            .trim_matches('"')
+                            .to_string();
+                    }
+                }
+            } else if lower.starts_with("content-type:") {
+                content_type = header_line
+                    .splitn(2, ':')
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+            }
+        }
+
+        parts.push(MultipartPart {
+            field_name,
+            filename,
+            content_type,
+            data: data.to_string(),
+        });
+    }
+
+    parts
+}
+
+/// Simple base64 encoder (no external dependency)
+fn base64_encode(input: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+/// Simple base64 decoder
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    fn decode_char(c: u8) -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            b'=' => Some(0),
+            _ => None,
+        }
+    }
+    let bytes: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    let mut result = Vec::with_capacity(bytes.len() / 4 * 3);
+    for chunk in bytes.chunks(4) {
+        let a = decode_char(chunk[0])?;
+        let b = decode_char(chunk[1])?;
+        let c = decode_char(chunk[2])?;
+        let d = decode_char(chunk[3])?;
+        let triple = ((a as u32) << 18) | ((b as u32) << 12) | ((c as u32) << 6) | (d as u32);
+        result.push((triple >> 16) as u8);
+        if chunk[2] != b'=' {
+            result.push((triple >> 8) as u8);
+        }
+        if chunk[3] != b'=' {
+            result.push(triple as u8);
+        }
+    }
+    Some(result)
+}
+
+/// Decode base64 data and save to a file path.
+/// Returns 1 on success, 0 on failure.
+#[no_mangle]
+pub extern "C" fn forge_http_save_upload(
+    base64_data: *const c_char,
+    dest_path: *const c_char,
+) -> i64 {
+    let data_s = cstr(base64_data);
+    let path_s = cstr(dest_path);
+
+    match base64_decode(data_s) {
+        Some(bytes) => {
+            match std::fs::write(path_s, &bytes) {
+                Ok(_) => 1,
+                Err(e) => {
+                    eprintln!("forge_http_save_upload: write error: {}", e);
+                    0
+                }
+            }
+        }
+        None => {
+            eprintln!("forge_http_save_upload: base64 decode error");
+            0
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Feature 5: CRUD Expose (Field Filtering) + Default Order
+// ══════════════════════════════════════════════════════════════════════
+
+/// Maps (port, base_path) -> list of exposed field names
+static CRUD_EXPOSE: Mutex<Option<HashMap<(u16, String), Vec<String>>>> = Mutex::new(None);
+
+fn crud_expose_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), Vec<String>>>> {
+    let mut guard = CRUD_EXPOSE.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Set which fields should be exposed (returned) in CRUD responses.
+/// fields_json: a JSON array of field names, e.g. `["id","name","email"]`
+#[no_mangle]
+pub extern "C" fn forge_http_crud_expose(
+    port: i64,
+    base_path: *const c_char,
+    fields_json: *const c_char,
+) {
+    let base = cstr(base_path).to_string();
+    let fields_s = cstr(fields_json);
+
+    // Simple JSON array parser: ["field1","field2",...]
+    let mut fields = Vec::new();
+    let trimmed = fields_s.trim().trim_start_matches('[').trim_end_matches(']');
+    for part in trimmed.split(',') {
+        let field = part.trim().trim_matches('"').trim();
+        if !field.is_empty() {
+            fields.push(field.to_string());
+        }
+    }
+
+    crud_expose_map()
+        .as_mut()
+        .unwrap()
+        .insert((port as u16, base.clone()), fields);
+}
+
+/// Maps (port, base_path) -> (order_field, order_direction)
+static CRUD_DEFAULT_ORDER: Mutex<Option<HashMap<(u16, String), (String, String)>>> = Mutex::new(None);
+
+fn crud_order_map() -> std::sync::MutexGuard<'static, Option<HashMap<(u16, String), (String, String)>>> {
+    let mut guard = CRUD_DEFAULT_ORDER.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+/// Set default ordering for a CRUD list endpoint.
+#[no_mangle]
+pub extern "C" fn forge_http_crud_set_order(
+    port: i64,
+    base_path: *const c_char,
+    order_field: *const c_char,
+    order_dir: *const c_char,
+) {
+    let base = cstr(base_path).to_string();
+    let field = cstr(order_field).to_string();
+    let dir = cstr(order_dir).to_string();
+    crud_order_map()
+        .as_mut()
+        .unwrap()
+        .insert((port as u16, base), (field, dir));
+}
+
+/// Get the expose fields for a given mount path. Returns None if no filter is set.
+fn get_expose_fields(path: &str) -> Option<Vec<String>> {
+    let guard = crud_expose_map();
+    let map = guard.as_ref().unwrap();
+    // Try matching against all registered expose rules
+    for ((_, base), fields) in map.iter() {
+        let base_clean = base.trim_end_matches('/');
+        let path_clean = path.trim_end_matches('/');
+        if path_clean == base_clean || path_clean.starts_with(&format!("{}/", base_clean)) {
+            return Some(fields.clone());
+        }
+    }
+    None
+}
+
+/// Get the default order for a given mount base path.
+fn get_default_order(path: &str) -> Option<String> {
+    let guard = crud_order_map();
+    let map = guard.as_ref().unwrap();
+    for ((_, base), (field, dir)) in map.iter() {
+        let base_clean = base.trim_end_matches('/');
+        let path_clean = path.trim_end_matches('/');
+        if path_clean == base_clean || path_clean.starts_with(&format!("{}/", base_clean)) {
+            return Some(format!("{} {}", field, dir));
+        }
+    }
+    None
+}
+
+/// Filter a JSON object string to only include the specified fields.
+/// Works on both single objects `{...}` and arrays `[{...},{...}]`.
+fn filter_json_fields(json: &str, fields: &[String]) -> String {
+    let trimmed = json.trim();
+    if trimmed.starts_with('[') {
+        // Array of objects
+        let inner = trimmed.trim_start_matches('[').trim_end_matches(']');
+        let objects = split_json_array(inner);
+        let filtered: Vec<String> = objects
+            .iter()
+            .map(|obj| filter_single_json_object(obj.trim(), fields))
+            .collect();
+        format!("[{}]", filtered.join(","))
+    } else if trimmed.starts_with('{') {
+        filter_single_json_object(trimmed, fields)
+    } else {
+        json.to_string()
+    }
+}
+
+/// Split a JSON array's inner content into individual elements, respecting nesting.
+fn split_json_array(s: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    let bytes = s.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+
+    for i in 0..bytes.len() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        match bytes[i] {
+            b'\\' if in_string => escape = true,
+            b'"' => in_string = !in_string,
+            b'{' | b'[' if !in_string => depth += 1,
+            b'}' | b']' if !in_string => depth -= 1,
+            b',' if !in_string && depth == 0 => {
+                let elem = s[start..i].trim();
+                if !elem.is_empty() {
+                    result.push(elem.to_string());
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let last = s[start..].trim();
+    if !last.is_empty() {
+        result.push(last.to_string());
+    }
+    result
+}
+
+/// Filter a single JSON object to only include specified fields.
+fn filter_single_json_object(json: &str, fields: &[String]) -> String {
+    // Parse key-value pairs from the JSON object
+    let trimmed = json.trim().trim_start_matches('{').trim_end_matches('}');
+    let mut result_parts = Vec::new();
+    let mut pos = 0;
+    let bytes = trimmed.as_bytes();
+
+    while pos < bytes.len() {
+        // Skip whitespace
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+
+        // Expect a quoted key
+        if bytes[pos] != b'"' {
+            pos += 1;
+            continue;
+        }
+        pos += 1; // skip opening quote
+        let key_start = pos;
+        while pos < bytes.len() && bytes[pos] != b'"' {
+            if bytes[pos] == b'\\' {
+                pos += 1;
+            }
+            pos += 1;
+        }
+        let key = &trimmed[key_start..pos];
+        pos += 1; // skip closing quote
+
+        // Skip colon and whitespace
+        while pos < bytes.len() && (bytes[pos] == b':' || bytes[pos].is_ascii_whitespace()) {
+            pos += 1;
+        }
+
+        // Read value (could be string, number, object, array, bool, null)
+        let value_start = pos;
+        let mut depth = 0;
+        let mut in_str = false;
+        let mut esc = false;
+        loop {
+            if pos >= bytes.len() {
+                break;
+            }
+            if esc {
+                esc = false;
+                pos += 1;
+                continue;
+            }
+            match bytes[pos] {
+                b'\\' if in_str => {
+                    esc = true;
+                    pos += 1;
+                }
+                b'"' => {
+                    in_str = !in_str;
+                    pos += 1;
+                }
+                b'{' | b'[' if !in_str => {
+                    depth += 1;
+                    pos += 1;
+                }
+                b'}' | b']' if !in_str => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                    pos += 1;
+                }
+                b',' if !in_str && depth == 0 => {
+                    break;
+                }
+                _ => {
+                    pos += 1;
+                }
+            }
+        }
+        let value = trimmed[value_start..pos].trim();
+
+        // Skip comma
+        if pos < bytes.len() && bytes[pos] == b',' {
+            pos += 1;
+        }
+
+        // Check if this key is in the allowed fields
+        if fields.iter().any(|f| f == key) {
+            result_parts.push(format!("\"{}\":{}", key, value));
+        }
+    }
+
+    format!("{{{}}}", result_parts.join(","))
+}
+
+/// If expose fields are configured for this path, filter the JSON response.
+fn maybe_filter_expose(path: &str, json: &str) -> String {
+    match get_expose_fields(path) {
+        Some(fields) => filter_json_fields(json, &fields),
+        None => json.to_string(),
+    }
+}
+
+fn check_rate_limit(port: u16, path: &str, client_ip: &str) -> bool {
+    let rules_guard = rate_limits_map();
+    let rules = match rules_guard.as_ref().unwrap().get(&port) {
+        Some(r) => r,
+        None => return true, // No rules for this port
+    };
+
+    let now = Instant::now();
+
+    for rule in rules {
+        if path.starts_with(&rule.path_prefix) {
+            let key = (port, rule.path_prefix.clone());
+            let window = std::time::Duration::from_secs(rule.window_seconds as u64);
+
+            let mut tracker = rate_tracker_map();
+            let ip_map = tracker
+                .as_mut()
+                .unwrap()
+                .entry(key)
+                .or_default();
+
+            let timestamps = ip_map.entry(client_ip.to_string()).or_default();
+
+            // Remove expired entries
+            timestamps.retain(|t| now.duration_since(*t) < window);
+
+            if timestamps.len() as i64 >= rule.max_requests {
+                return false; // Rate limited
+            }
+
+            timestamps.push(now);
+            return true;
+        }
+    }
+
+    true // No matching rule
 }

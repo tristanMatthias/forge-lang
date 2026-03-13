@@ -10,6 +10,20 @@ extern fn forge_http_add_middleware(port: int, name: string, handler: ptr)
 extern fn forge_http_add_middleware_after(port: int, name: string, handler: ptr)
 extern fn forge_http_ptr_to_str(ptr: ptr) -> string
 extern fn forge_http_serve_static(port: int, url_prefix: string, dir_path: string)
+extern fn forge_http_ws_upgrade(port: int, path: string)
+extern fn forge_http_ws_send(client_id: int, message: string)
+extern fn forge_http_ws_receive(client_id: int) -> string
+extern fn forge_http_ws_close(client_id: int)
+extern fn forge_http_sse_start(port: int, path: string) -> int
+extern fn forge_http_sse_send(stream_id: int, event_type: string, data: string)
+extern fn forge_http_sse_close(stream_id: int)
+extern fn forge_http_rate_limit(port: int, path_prefix: string, max_requests: int, window_seconds: int)
+extern fn forge_http_set_not_found_handler(port: int, body_json: string)
+extern fn forge_http_set_error_response(port: int, status_code: int, body_json: string)
+extern fn forge_http_parse_multipart(body: string, content_type: string) -> string
+extern fn forge_http_save_upload(base64_data: string, dest_path: string) -> int
+extern fn forge_http_crud_expose(port: int, base_path: string, fields_json: string)
+extern fn forge_http_crud_set_order(port: int, base_path: string, order_field: string, order_dir: string)
 
 component server(__tpl_name) {
     config {
@@ -63,6 +77,43 @@ component server(__tpl_name) {
     @syntax("static {prefix} from {dir}")
     fn serve_static(prefix: string, dir: string) {
         forge_http_serve_static(__tpl_config_port, prefix, dir)
+    }
+
+    @syntax("ws {path} -> {handler}")
+    fn ws(path: string, handler: fn) {
+        forge_http_ws_upgrade(__tpl_config_port, path)
+    }
+
+    @syntax("sse {path} -> {handler}")
+    fn sse(path: string, handler: fn) {
+        forge_http_sse_start(__tpl_config_port, path)
+    }
+
+    @syntax("rate_limit {path_prefix} {max_requests} per {window_seconds}")
+    fn rate_limit_rule(path_prefix: string, max_requests: int, window_seconds: int) {
+        forge_http_rate_limit(__tpl_config_port, path_prefix, max_requests, window_seconds)
+    }
+
+    @syntax("expose {path} only {fields_json}")
+    fn expose_fields(path: string, fields_json: string) {
+        forge_http_crud_expose(__tpl_config_port, path, fields_json)
+    }
+
+    @syntax("order {path} by {field} {dir}")
+    fn set_order(path: string, field: string, dir: string) {
+        forge_http_crud_set_order(__tpl_config_port, path, field, dir)
+    }
+
+    event on_error(status, message)
+
+    @syntax("not_found {body}")
+    fn set_not_found(body: string) {
+        forge_http_set_not_found_handler(__tpl_config_port, body)
+    }
+
+    @syntax("error_page {status_code} {body}")
+    fn set_error_page(status_code: int, body: string) {
+        forge_http_set_error_response(__tpl_config_port, status_code, body)
     }
 
     on main_end {

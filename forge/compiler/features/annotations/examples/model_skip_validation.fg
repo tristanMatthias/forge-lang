@@ -1,0 +1,26 @@
+/// Test: create_unvalidated bypasses @min validation
+/// Normal create with empty name returns 0, but create_unvalidated succeeds
+///
+/// expect: 0
+/// expect: 1
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1)
+}
+
+fn main() {
+  // Normal create fails validation
+  let bad_id = User.create({ name: "" })
+  println(string(bad_id))
+
+  // create_unvalidated bypasses @min check
+  let good_id = User.create_unvalidated({ name: "" })
+  println(string(good_id))
+
+  // Record was inserted
+  println(string(User.count()))
+}

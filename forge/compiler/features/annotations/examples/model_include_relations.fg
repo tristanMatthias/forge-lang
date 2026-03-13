@@ -1,0 +1,30 @@
+/// Test: Model .include() loads related records via @belongs_to
+/// The result JSON should contain the nested author with name "alice"
+///
+/// expect: true
+/// expect: true
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  author_id: int @belongs_to(User)
+}
+
+fn main() {
+  let uid = User.create({ name: "alice" })
+  Post.create({ title: "Post 1", author_id: uid })
+
+  // Use .include() to get related author embedded in the result
+  let result = Post.include(1, "[\"author\"]")
+
+  // The result should contain the nested author with name alice
+  println(string(result.contains("alice")))
+  println(string(result.contains("author")))
+}

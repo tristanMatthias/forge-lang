@@ -1,0 +1,21 @@
+/// Test: Model validation returns 0 on @min violation
+/// When creating a user with empty name and @min(1), create returns 0
+///
+/// expect: 0
+/// expect: 0
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1)
+}
+
+fn main() {
+  // Empty name violates @min(1), should return 0 (validation failed)
+  let id = User.create({ name: "" })
+  println(string(id))
+
+  // No record was inserted
+  println(string(User.count()))
+}

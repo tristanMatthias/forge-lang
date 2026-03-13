@@ -1,0 +1,18 @@
+/// Test: Basic auth token create and verify
+///
+/// expect: 1
+
+use @std.auth.{auth}
+
+auth MyAuth {
+  config {
+    secret: "test-secret-key"
+  }
+}
+
+fn main() {
+  let token = MyAuth.create_token("{\"id\":1,\"role\":\"admin\"}")
+  let claims = MyAuth.verify_token(token)
+  let valid = MyAuth.check_role(token, "admin")
+  println(string(valid))
+}

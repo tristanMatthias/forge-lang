@@ -1,0 +1,24 @@
+/// Test: Model ownership check via @owner annotation
+///
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  author_id: int @owner
+}
+
+fn main() {
+  Post.create({ title: "Hello", author_id: 42 })
+
+  // Check: user 42 owns post 1
+  let is_owner = Post.check_owner(1, 42)
+  println(string(is_owner))
+
+  // Check: user 99 does NOT own post 1
+  let not_owner = Post.check_owner(1, 99)
+  println(string(not_owner))
+}

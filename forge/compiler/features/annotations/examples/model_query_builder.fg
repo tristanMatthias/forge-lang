@@ -1,0 +1,27 @@
+/// Test: Chained query builder
+///
+/// expect: 2
+/// expect: carol
+/// expect: alice
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "viewer" })
+  User.create({ name: "carol", role: "admin" })
+
+  let q = User.build_query()
+  let q = User.add_where(q, "{\"role\":\"admin\"}")
+  let q = User.add_order(q, "name", "desc")
+  let results = User.exec_query(q)
+  println(string(results.length))
+  println(results[0].name)
+  println(results[1].name)
+}

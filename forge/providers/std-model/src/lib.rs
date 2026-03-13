@@ -15,6 +15,21 @@ static SCHEMAS: Mutex<Option<HashMap<String, Vec<FieldSchema>>>> = Mutex::new(No
 /// Maps table_name -> Vec<field_name>
 static HIDDEN_FIELDS: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
 
+/// Per-table relation metadata from @belongs_to annotations
+/// Maps table_name -> Vec<BelongsToRelation>
+static RELATIONS: Mutex<Option<HashMap<String, Vec<BelongsToRelation>>>> = Mutex::new(None);
+
+/// Per-table owner field names (fields with @owner annotation)
+/// Maps table_name -> owner_field_name
+static OWNER_FIELDS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+#[derive(Debug, Clone)]
+struct BelongsToRelation {
+    field: String,           // e.g. "author_id"
+    related_table: String,   // e.g. "users" (lowercased + pluralized)
+    related_model: String,   // e.g. "User" (original model name from annotation)
+}
+
 #[derive(Debug, Clone)]
 struct FieldSchema {
     name: String,
@@ -1073,6 +1088,43 @@ pub extern "C" fn forge_model_create_table(
             hf.as_mut().unwrap().insert(table.to_string(), hidden);
         }
 
+        // Register belongs_to relations
+        let mut rels = Vec::new();
+        for fs in &field_schemas {
+            for ann in &fs.annotations {
+                if ann.name == "belongs_to" {
+                    if let Some(model_name) = ann.args.first().and_then(|a| a.as_str()) {
+                        // The related table name matches the model name (default table_name = model name)
+                        let related_table = model_name.to_string();
+                        rels.push(BelongsToRelation {
+                            field: fs.name.clone(),
+                            related_table,
+                            related_model: model_name.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+        if !rels.is_empty() {
+            let mut rel_guard = RELATIONS.lock().unwrap();
+            if rel_guard.is_none() {
+                *rel_guard = Some(HashMap::new());
+            }
+            rel_guard.as_mut().unwrap().insert(table.to_string(), rels);
+        }
+
+        // Register @owner field
+        for fs in &field_schemas {
+            if fs.annotations.iter().any(|a| a.name == "owner") {
+                let mut of = OWNER_FIELDS.lock().unwrap();
+                if of.is_none() {
+                    *of = Some(HashMap::new());
+                }
+                of.as_mut().unwrap().insert(table.to_string(), fs.name.clone());
+                break; // Only one owner field per table
+            }
+        }
+
         schemas.insert(table.to_string(), field_schemas);
     }
 
@@ -1496,6 +1548,376 @@ pub extern "C" fn forge_model_max_json(table: *const c_char, column: *const c_ch
     let sql = format!("SELECT COALESCE(MAX({}), 0) FROM {}{}", column, table, wc);
     let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
     conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, f64>(0)).unwrap_or(0.0)
+}
+
+/// Include related records inline for a given record.
+/// relations_json: JSON array of relation names to include, e.g. ["author"]
+/// For each @belongs_to(Model) on a field like "author_id", if "author" is requested,
+/// fetches the related record and nests it as "author" in the returned JSON.
+#[no_mangle]
+pub extern "C" fn forge_model_include_json(
+    table: *const c_char,
+    id: i64,
+    relations_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let relations_str = cstr(relations_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    // Get the base record
+    let sql = format!("SELECT * FROM {} WHERE id = ?", table);
+    let result = query_to_json(conn, &sql, &[&id as &dyn rusqlite::types::ToSql]);
+    let base_json = if result.starts_with('[') && result.ends_with(']') {
+        let inner = &result[1..result.len() - 1];
+        if inner.is_empty() {
+            return json_result("null".to_string());
+        }
+        inner.to_string()
+    } else {
+        return json_result("null".to_string());
+    };
+
+    // Parse the base record
+    let mut base: serde_json::Map<String, Value> = match serde_json::from_str(&base_json) {
+        Ok(Value::Object(m)) => m,
+        _ => return json_result(base_json),
+    };
+
+    // Parse requested relations
+    let requested: Vec<String> = match serde_json::from_str::<Value>(relations_str) {
+        Ok(Value::Array(arr)) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
+        _ => return json_result(serde_json::to_string(&Value::Object(base)).unwrap_or(base_json)),
+    };
+
+    // Look up relation metadata for this table
+    let relations = RELATIONS.lock().unwrap();
+    if let Some(rels) = relations.as_ref().and_then(|r| r.get(table)) {
+        for rel in rels {
+            // Derive the relation name: strip "_id" suffix from field name
+            // e.g. "author_id" -> "author"
+            let relation_name = rel.field.trim_end_matches("_id");
+            if requested.iter().any(|r| r == relation_name) {
+                // Get foreign key value from base record
+                if let Some(fk_val) = base.get(&rel.field).and_then(|v| v.as_i64()) {
+                    // Fetch the related record
+                    let rel_sql = format!("SELECT * FROM {} WHERE id = ?", rel.related_table);
+                    let rel_result = query_to_json(conn, &rel_sql, &[&fk_val as &dyn rusqlite::types::ToSql]);
+                    if rel_result.starts_with('[') && rel_result.ends_with(']') {
+                        let inner = &rel_result[1..rel_result.len() - 1];
+                        if !inner.is_empty() {
+                            if let Ok(related_val) = serde_json::from_str::<Value>(inner) {
+                                base.insert(relation_name.to_string(), related_val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let hidden = get_hidden_fields(table);
+    let result_str = serde_json::to_string(&Value::Object(base)).unwrap_or_else(|_| base_json);
+    json_result(strip_hidden_from_json_obj(&result_str, &hidden))
+}
+
+/// Insert without validation — bypasses @min/@max/@validate checks
+#[no_mangle]
+pub extern "C" fn forge_model_insert_json_no_validate(
+    table: *const c_char,
+    data_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let data_str = cstr(data_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let data: Value = match serde_json::from_str(data_str) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("JSON parse error: {}", e);
+            return json_result("null".to_string());
+        }
+    };
+
+    let obj = match data.as_object() {
+        Some(o) => o,
+        None => {
+            eprintln!("Expected JSON object for insert");
+            return json_result("null".to_string());
+        }
+    };
+
+    // NO validation — go straight to insert
+    let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+    let placeholders: Vec<String> = (0..columns.len()).map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        table,
+        columns.join(", "),
+        placeholders.join(", ")
+    );
+
+    let values: Vec<String> = obj
+        .values()
+        .map(|v| match v {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+            Value::Null => "NULL".to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = values
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    match conn.execute(&sql, param_refs.as_slice()) {
+        Ok(_) => {
+            let rowid = conn.last_insert_rowid();
+            let select_sql = format!("SELECT * FROM {} WHERE rowid = ?", table);
+            let result = query_to_json(conn, &select_sql, &[&rowid as &dyn rusqlite::types::ToSql]);
+            if result.starts_with('[') && result.ends_with(']') {
+                let inner = &result[1..result.len() - 1];
+                if !inner.is_empty() {
+                    let hidden = get_hidden_fields(table);
+                    return json_result(strip_hidden_from_json_obj(inner, &hidden));
+                }
+            }
+            json_result(result)
+        }
+        Err(e) => {
+            eprintln!("SQL insert error (no validate): {}", e);
+            json_result("null".to_string())
+        }
+    }
+}
+
+/// Update without validation — bypasses @min/@max/@validate checks
+#[no_mangle]
+pub extern "C" fn forge_model_update_json_no_validate(
+    table: *const c_char,
+    id: i64,
+    changes_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let changes_str = cstr(changes_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let changes: Value = match serde_json::from_str(changes_str) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("JSON parse error: {}", e);
+            return json_result("null".to_string());
+        }
+    };
+
+    let obj = match changes.as_object() {
+        Some(o) => o,
+        None => {
+            eprintln!("Expected JSON object for update");
+            return json_result("null".to_string());
+        }
+    };
+
+    // NO validation — go straight to update
+    let set_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
+    let sql = format!("UPDATE {} SET {} WHERE id = ?", table, set_clauses.join(", "));
+
+    let mut values: Vec<String> = obj
+        .values()
+        .map(|v| match v {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+            Value::Null => "NULL".to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+    values.push(id.to_string());
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = values
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    match conn.execute(&sql, param_refs.as_slice()) {
+        Ok(_) => {
+            let select_sql = format!("SELECT * FROM {} WHERE id = ?", table);
+            let result = query_to_json(conn, &select_sql, &[&id as &dyn rusqlite::types::ToSql]);
+            if result.starts_with('[') && result.ends_with(']') {
+                let inner = &result[1..result.len() - 1];
+                if !inner.is_empty() {
+                    let hidden = get_hidden_fields(table);
+                    return json_result(strip_hidden_from_json_obj(inner, &hidden));
+                }
+            }
+            json_result(result)
+        }
+        Err(e) => {
+            eprintln!("SQL update error (no validate): {}", e);
+            json_result("null".to_string())
+        }
+    }
+}
+
+/// Query builder: create initial query JSON for a table
+#[no_mangle]
+pub extern "C" fn forge_model_query_build(table: *const c_char) -> *mut c_char {
+    let table = cstr(table);
+    let result = serde_json::json!({ "table": table });
+    json_result(result.to_string())
+}
+
+/// Query builder: merge a WHERE clause into the query
+#[no_mangle]
+pub extern "C" fn forge_model_query_where(
+    query_json: *const c_char,
+    filter_json: *const c_char,
+) -> *mut c_char {
+    let query_str = cstr(query_json);
+    let filter_str = cstr(filter_json);
+    let mut query: Value = serde_json::from_str(query_str).unwrap_or(Value::Object(Default::default()));
+    let filter: Value = serde_json::from_str(filter_str).unwrap_or(Value::Object(Default::default()));
+    query["where"] = filter;
+    json_result(query.to_string())
+}
+
+/// Query builder: add ORDER BY to the query
+#[no_mangle]
+pub extern "C" fn forge_model_query_order(
+    query_json: *const c_char,
+    field: *const c_char,
+    direction: *const c_char,
+) -> *mut c_char {
+    let query_str = cstr(query_json);
+    let field = cstr(field);
+    let direction = cstr(direction);
+    let mut query: Value = serde_json::from_str(query_str).unwrap_or(Value::Object(Default::default()));
+    query["order"] = Value::String(format!("{} {}", field, direction.to_uppercase()));
+    json_result(query.to_string())
+}
+
+/// Query builder: add LIMIT to the query
+#[no_mangle]
+pub extern "C" fn forge_model_query_limit(
+    query_json: *const c_char,
+    limit: i64,
+) -> *mut c_char {
+    let query_str = cstr(query_json);
+    let mut query: Value = serde_json::from_str(query_str).unwrap_or(Value::Object(Default::default()));
+    query["limit"] = Value::Number(limit.into());
+    json_result(query.to_string())
+}
+
+/// Query builder: add OFFSET to the query
+#[no_mangle]
+pub extern "C" fn forge_model_query_offset(
+    query_json: *const c_char,
+    offset: i64,
+) -> *mut c_char {
+    let query_str = cstr(query_json);
+    let mut query: Value = serde_json::from_str(query_str).unwrap_or(Value::Object(Default::default()));
+    query["offset"] = Value::Number(offset.into());
+    json_result(query.to_string())
+}
+
+/// Query builder: execute the built-up query and return results as JSON array
+#[no_mangle]
+pub extern "C" fn forge_model_query_exec(
+    query_json: *const c_char,
+) -> *mut c_char {
+    let query_str = cstr(query_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let query: Value = match serde_json::from_str(query_str) {
+        Ok(v) => v,
+        Err(_) => return json_result("[]".to_string()),
+    };
+
+    let table = match query.get("table").and_then(|t| t.as_str()) {
+        Some(t) => t,
+        None => return json_result("[]".to_string()),
+    };
+
+    let mut sql = format!("SELECT * FROM {}", table);
+    let mut values: Vec<String> = Vec::new();
+
+    if let Some(where_obj) = query.get("where") {
+        let where_str = serde_json::to_string(where_obj).unwrap_or_default();
+        let (wc, wv) = build_where_clause(&where_str);
+        sql.push_str(&wc);
+        values.extend(wv);
+    }
+
+    if let Some(order) = query.get("order").and_then(|o| o.as_str()) {
+        sql.push_str(&format!(" ORDER BY {}", order));
+    }
+
+    if let Some(limit) = query.get("limit").and_then(|l| l.as_i64()) {
+        sql.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    if let Some(offset) = query.get("offset").and_then(|o| o.as_i64()) {
+        sql.push_str(&format!(" OFFSET {}", offset));
+    }
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = values
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    let hidden = get_hidden_fields(table);
+    let result = query_to_json(conn, &sql, param_refs.as_slice());
+    json_result(strip_hidden_from_json_array(&result, &hidden))
+}
+
+#[no_mangle]
+pub extern "C" fn forge_model_check_owner(
+    table: *const c_char,
+    record_id: i64,
+    user_id: i64,
+) -> i64 {
+    let table = cstr(table);
+
+    // Look up the owner field for this table
+    let owner_field = {
+        let guard = OWNER_FIELDS.lock().unwrap();
+        match guard.as_ref().and_then(|m| m.get(table)) {
+            Some(f) => f.clone(),
+            None => return 0, // No owner field registered
+        }
+    };
+
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let sql = format!("SELECT {} FROM {} WHERE id = ?", owner_field, table);
+    let result: Result<i64, _> = conn.query_row(&sql, [record_id], |row| row.get(0));
+
+    match result {
+        Ok(owner_val) => if owner_val == user_id { 1 } else { 0 },
+        Err(_) => 0, // Record not found or error
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_model_get_owner_field(
+    table: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+
+    let guard = OWNER_FIELDS.lock().unwrap();
+    let field = guard.as_ref()
+        .and_then(|m| m.get(table))
+        .cloned()
+        .unwrap_or_default();
+
+    CString::new(field).unwrap().into_raw()
 }
 
 #[no_mangle]

@@ -1,0 +1,37 @@
+extern fn forge_auth_init(secret: string, expiry_seconds: int)
+extern fn forge_auth_create_token(user_json: string) -> string
+extern fn forge_auth_verify_token(token: string) -> string
+extern fn forge_auth_check_role(token: string, required_role: string) -> int
+extern fn forge_auth_hash_password(password: string) -> string
+extern fn forge_auth_verify_password(password: string, hash: string) -> int
+
+component auth(__tpl_name) {
+    config {
+        secret: string = "forge-default-secret"
+        expiry: int = 604800
+    }
+
+    on startup {
+        forge_auth_init(__tpl_config_secret, __tpl_config_expiry)
+    }
+
+    fn __tpl_name.create_token(user_json: string) -> string {
+        forge_auth_create_token(user_json)
+    }
+
+    fn __tpl_name.verify_token(token: string) -> string {
+        forge_auth_verify_token(token)
+    }
+
+    fn __tpl_name.check_role(token: string, role: string) -> int {
+        forge_auth_check_role(token, role)
+    }
+
+    fn __tpl_name.hash_password(password: string) -> string {
+        forge_auth_hash_password(password)
+    }
+
+    fn __tpl_name.verify_password(password: string, hash: string) -> int {
+        forge_auth_verify_password(password, hash)
+    }
+}
