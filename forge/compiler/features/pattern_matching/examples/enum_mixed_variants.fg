@@ -1,0 +1,33 @@
+/// # Enum Mixed Variants
+///
+/// Match enums with both data and data-less variants.
+/// Regression: bare expression body followed by `.variant` was
+/// incorrectly parsed as member access instead of a new arm.
+///
+/// expect: code: rs
+/// expect: config
+/// expect: docs
+/// expect: other
+
+enum FileKind {
+    code(ext: string)
+    config
+    docs
+    other
+}
+
+fn label(k: FileKind) -> string {
+    match k {
+        .code(ext) -> `code: ${ext}`
+        .config    -> "config"
+        .docs      -> "docs"
+        .other     -> "other"
+    }
+}
+
+fn main() {
+    println(label(FileKind.code(ext: "rs")))
+    println(label(FileKind.config))
+    println(label(FileKind.docs))
+    println(label(FileKind.other))
+}

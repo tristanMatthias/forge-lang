@@ -47,7 +47,12 @@ impl Parser {
         self.expect(&TokenKind::Arrow)?;
         self.skip_newlines();
         let body = {
+            // Disable cross-newline dot chaining so that `.variant` on the
+            // next line is parsed as a new match arm, not member access.
+            let prev = self.no_newline_dot_chain;
+            self.no_newline_dot_chain = true;
             let expr = self.parse_expr()?;
+            self.no_newline_dot_chain = prev;
             // Check for assignment: expr = value (e.g., count = count + 1)
             if self.check(&TokenKind::Eq) {
                 let eq_span = self.advance()?.span;

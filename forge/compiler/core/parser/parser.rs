@@ -30,6 +30,10 @@ pub struct Parser {
     pub(crate) pos: usize,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) registered_components: HashMap<String, ComponentMeta>,
+    /// When true, disables cross-newline dot chaining in parse_postfix.
+    /// Used inside match arm bodies so `.variant` on a new line isn't
+    /// consumed as a member access on the previous arm's expression.
+    pub(crate) no_newline_dot_chain: bool,
 }
 
 impl Parser {
@@ -39,6 +43,7 @@ impl Parser {
             pos: 0,
             diagnostics: Vec::new(),
             registered_components: HashMap::new(),
+            no_newline_dot_chain: false,
         }
     }
 
@@ -47,6 +52,7 @@ impl Parser {
             tokens,
             pos: 0,
             diagnostics: Vec::new(),
+            no_newline_dot_chain: false,
             registered_components: components,
         }
     }
@@ -813,7 +819,7 @@ impl Parser {
                 }
                 break;
             } else if self.check(&TokenKind::Dot)
-                || (Self::is_chainable_expr(&expr) && self.next_meaningful_is(&TokenKind::Dot))
+                || (!self.no_newline_dot_chain && Self::is_chainable_expr(&expr) && self.next_meaningful_is(&TokenKind::Dot))
             {
                 self.skip_newlines();
                 let span = self.advance()?.span; // consume '.'
