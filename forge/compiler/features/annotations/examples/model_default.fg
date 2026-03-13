@@ -1,0 +1,21 @@
+/// Test: @default annotation sets default values for fields
+///
+/// expect: draft
+/// expect: 1
+
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  status: string @default("draft")
+}
+
+fn main() {
+  let id = Post.create({ title: "Hello" })
+  let post = Post.get(id)
+  if post != null {
+    println(post.status)
+  }
+  println(string(Post.count()))
+}

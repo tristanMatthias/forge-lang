@@ -1,0 +1,20 @@
+/// Test: @unique annotation prevents duplicate values
+///
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string @unique
+}
+
+fn main() {
+  User.create({ name: "alice", email: "alice@test.com" })
+  // Duplicate email fails at SQL level, returns 0
+  let dup_id = User.create({ name: "bob", email: "alice@test.com" })
+  println(string(User.count()))
+  println(string(dup_id))
+}
