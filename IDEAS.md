@@ -26,3 +26,6 @@ Claude, DO NOT TOUCH THIS FILE under penalty of death
   - Break out at any point
   - Maybe integrate with @std/mobile so UI can be used across all architectures 
 
+
+- Example grid generator:
+  - Take 2/3 features of the Language and generate an inspiring example. expose this as a dropdown on the homepage 
