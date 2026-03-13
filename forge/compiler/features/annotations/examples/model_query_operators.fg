@@ -1,0 +1,33 @@
+/// Test: Model.query with comparison operators ($gt, $lt, $between)
+///
+/// expect: 3
+/// expect: 2
+/// expect: 3
+
+use @std.model.{model}
+
+model Product {
+  id: int @primary @auto_increment
+  name: string
+  price: int
+}
+
+fn main() {
+  Product.create({ name: "budget", price: 5 })
+  Product.create({ name: "cheap", price: 10 })
+  Product.create({ name: "medium", price: 50 })
+  Product.create({ name: "expensive", price: 100 })
+  Product.create({ name: "luxury", price: 200 })
+
+  // $gt: price > 20 => medium, expensive, luxury
+  let above = Product.query("{\"where\":{\"price\":{\"$gt\":20}}}")
+  println(string(above.length))
+
+  // $lt: price < 20 => budget, cheap
+  let below = Product.query("{\"where\":{\"price\":{\"$lt\":20}}}")
+  println(string(below.length))
+
+  // $between: 10 <= price <= 100 => cheap, medium, expensive
+  let mid = Product.query("{\"where\":{\"price\":{\"$between\":[10,100]}}}")
+  println(string(mid.length))
+}
