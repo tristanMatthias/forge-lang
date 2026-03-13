@@ -1,0 +1,12 @@
+/// Test: json.parse then json.stringify roundtrip preserves data
+///
+/// expect: {"name":"alice","age":30}
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let json_str = "{\"name\":\"alice\",\"age\":30}"
+  let person: Person = json.parse(json_str)
+  let result = json.stringify(person)
+  println(result)
+}
