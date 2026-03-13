@@ -1,0 +1,9 @@
+/// # Duration Hours
+///
+/// The `h` suffix converts hours to milliseconds.
+///
+/// expect: 3600000
+
+fn main() {
+  println(1h)
+}

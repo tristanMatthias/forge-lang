@@ -38,8 +38,9 @@ model User {
     id: int @primary @auto_increment
     name: string @min(1) @max(100)
     email: string @unique
-    password: string @min(8)
+    password: string @min(8) @hidden
     created_at: string @default("now")
+    posts: List<Post> @has_many(Post)
 }
 
 model Post {
@@ -48,7 +49,7 @@ model Post {
     body: string
     slug: string @unique
     status: string @default("draft")
-    author_id: int
+    author_id: int @belongs_to(User)
     created_at: string @default("now")
 
     on before_create(data) {
@@ -59,8 +60,8 @@ model Post {
 model Comment {
     id: int @primary @auto_increment
     body: string @min(1)
-    post_id: int
-    author_id: int
+    post_id: int @belongs_to(Post)
+    author_id: int @belongs_to(User)
     created_at: string @default("now")
 }
 
@@ -192,20 +193,20 @@ server :8080 {
     crud Comment
     crud Tag
 
-    // Custom routes
-    route GET /health -> { "ok" }
+    // Custom routes (inline syntax — no "route" keyword needed)
+    GET /health -> { "ok" }
 
-    route GET /posts/trending -> {
+    GET /posts/trending -> {
         let posts = Post.list()
         json.stringify(posts)
     }
 
-    route POST /login -> {
+    POST /login -> {
         let token = my_auth.create_token("{\"user\":\"test\"}")
         token
     }
 
-    route GET /users/me -> {
+    GET /users/me -> {
         "current user"
     }
 

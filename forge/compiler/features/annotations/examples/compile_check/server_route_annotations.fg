@@ -1,0 +1,18 @@
+/// expect-check: pass
+/// Verifies @public and @auth route annotations compile on server routes
+
+use @std.http.{server}
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+server :3000 {
+  @public
+  route GET /health -> { "ok" }
+
+  @auth("admin")
+  route GET /admin -> { "admin only" }
+}

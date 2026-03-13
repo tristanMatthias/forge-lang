@@ -1,0 +1,9 @@
+/// # Duration Minutes
+///
+/// The `m` suffix converts minutes to milliseconds.
+///
+/// expect: 300000
+
+fn main() {
+  println(5m)
+}

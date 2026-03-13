@@ -740,10 +740,38 @@ impl<'a> Lexer<'a> {
             }
         } else {
             match text.parse::<i64>() {
-                Ok(v) => Token::new(
-                    TokenKind::IntLiteral(v),
-                    Span::new(start, self.pos, line, col),
-                ),
+                Ok(v) => {
+                    // Duration suffix: d (days), h (hours), m (minutes), s (seconds)
+                    // Only match if the suffix char is NOT followed by an alphanumeric or underscore
+                    // (to avoid matching identifiers like `5min` or variable patterns)
+                    let multiplier = match self.peek() {
+                        Some('d') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                            self.advance();
+                            Some(86_400_000i64) // days -> ms
+                        }
+                        Some('h') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                            self.advance();
+                            Some(3_600_000i64) // hours -> ms
+                        }
+                        Some('m') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                            self.advance();
+                            Some(60_000i64) // minutes -> ms
+                        }
+                        Some('s') if !self.peek_at(1).map_or(false, |c| c.is_alphanumeric() || c == '_') => {
+                            self.advance();
+                            Some(1_000i64) // seconds -> ms
+                        }
+                        _ => None,
+                    };
+                    let value = match multiplier {
+                        Some(mul) => v * mul,
+                        None => v,
+                    };
+                    Token::new(
+                        TokenKind::IntLiteral(value),
+                        Span::new(start, self.pos, line, col),
+                    )
+                }
                 Err(_) => {
                     self.diagnostics.push(Diagnostic::error(
                         "F0006",

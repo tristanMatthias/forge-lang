@@ -1,0 +1,19 @@
+/// expect-check: pass
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string
+    email: string
+    password: string @hidden
+}
+
+type CreateUser = User without { id }
+type PublicUser = User without { password }
+type UserNameOnly = User only { name }
+type UpdateUser = User as partial
+type ExtendedUser = User with { age: int }
+
+fn main() {
+    println("type operators on models work")
+}

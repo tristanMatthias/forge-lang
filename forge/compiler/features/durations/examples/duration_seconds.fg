@@ -1,0 +1,9 @@
+/// # Duration Seconds
+///
+/// The `s` suffix converts seconds to milliseconds.
+///
+/// expect: 5000
+
+fn main() {
+  println(5s)
+}

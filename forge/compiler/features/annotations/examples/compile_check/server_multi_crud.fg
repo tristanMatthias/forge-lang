@@ -1,0 +1,34 @@
+/// expect-check: pass
+use @std.http.{server}
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string
+    email: string @unique
+}
+
+model Post {
+    id: int @primary @auto_increment
+    title: string
+    author_id: int @belongs_to(User)
+}
+
+model Comment {
+    id: int @primary @auto_increment
+    body: string
+    post_id: int @belongs_to(Post)
+}
+
+server :3000 {
+    under "/api"
+    crud User
+    crud Post
+    crud Comment
+    crud_nest Comment under Post at "/posts/:id/comments"
+    end under
+}
+
+fn main() {
+    println("multi-model crud compiles")
+}

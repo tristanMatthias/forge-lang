@@ -1,0 +1,19 @@
+/// expect-check: pass
+use @std.http.{server}
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string
+}
+
+server :3000 {
+    not_found "{\"error\":\"not found\"}"
+    error_page 500 "{\"error\":\"internal error\"}"
+
+    route GET /health -> { "ok" }
+}
+
+fn main() {
+    println("server error handler compiles")
+}

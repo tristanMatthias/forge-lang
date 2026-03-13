@@ -1,0 +1,12 @@
+/// expect-check: pass
+use @std.auth.{auth}
+
+auth my_auth {
+    secret "my-jwt-secret"
+    expiry 604800
+}
+
+fn main() {
+    let token = my_auth.create_token("{\"user\":\"test\"}")
+    println("auth declarative block works")
+}

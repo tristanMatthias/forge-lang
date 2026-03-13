@@ -56,6 +56,21 @@ component server(__tpl_name) {
         forge_http_add_route(__tpl_config_port, method, path, __tpl_generated)
     }
 
+    @syntax("{method} {path} -> {handler}")
+    fn inline_route(method: string, path: string, handler: ptr) {
+        fn __tpl_generated(__m: ptr, __p: ptr, __b: ptr, __params_json: ptr, __response_buf: ptr, __response_buf_len: int) -> int {
+            let __req_params_json = __params_json
+            let req_body = forge_http_ptr_to_str(__b)
+            let req_params = forge_http_ptr_to_str(__params_json)
+            let __tpl_handler_param_0 = req_body
+            let __result = handler
+            let __json = json.stringify(__result)
+            forge_http_write_response(__response_buf, __response_buf_len, __json)
+            200
+        }
+        forge_http_add_route(__tpl_config_port, method, path, __tpl_generated)
+    }
+
     @syntax("mount {service} at {path}")
     fn mount_service(service: string, path: string) {
         forge_http_mount_crud(__tpl_config_port, __tpl_resolve_service(service), path)

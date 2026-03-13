@@ -1,0 +1,9 @@
+/// # Duration Arithmetic
+///
+/// Duration literals are plain integers, so arithmetic works naturally.
+///
+/// expect: 5000
+
+fn main() {
+  println(4s + 1s)
+}

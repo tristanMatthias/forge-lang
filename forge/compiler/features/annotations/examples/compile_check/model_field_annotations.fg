@@ -1,0 +1,14 @@
+/// expect-check: pass
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string @min(1) @max(100)
+    email: string @pattern("^[^@]+@[^@]+$")
+    password: string @min(8) @hidden
+    role: string @default("member")
+}
+
+fn main() {
+    println("model field annotations compile")
+}

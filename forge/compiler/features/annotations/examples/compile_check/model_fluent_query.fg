@@ -1,0 +1,19 @@
+/// expect-check: pass
+/// Verifies model fluent query API: build_query, add_where, add_order, add_limit, exec_query
+
+use @std.model.{model}
+
+model Post {
+    id: int @primary @auto_increment
+    title: string
+    status: string @default("draft")
+}
+
+fn main() {
+    let q = Post.build_query()
+    let q2 = Post.add_where(q, "{\"status\":\"published\"}")
+    let q3 = Post.add_order(q2, "title", "asc")
+    let q4 = Post.add_limit(q3, 10)
+    let _results = Post.exec_query(q4)
+    println("fluent query works")
+}

@@ -1,0 +1,9 @@
+/// # Duration Days
+///
+/// The `d` suffix converts days to milliseconds.
+///
+/// expect: 86400000
+
+fn main() {
+  println(1d)
+}
