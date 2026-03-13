@@ -1,0 +1,14 @@
+/// Test: json.stringify for API-style paginated response with nested list
+///
+/// expect: {"data":[{"name":"alice","age":30},{"name":"bob","age":25}],"total":2,"has_next":false}
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let people: List<Person> = [
+    { name: "alice", age: 30 },
+    { name: "bob", age: 25 }
+  ]
+  let response = { data: people, total: 2, has_next: false }
+  println(json.stringify(response))
+}

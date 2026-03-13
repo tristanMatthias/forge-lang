@@ -453,11 +453,33 @@ impl<'ctx> Codegen<'ctx> {
                     offset = self.builder.build_int_add(offset, w64, "off").unwrap();
                 }
                 Type::Bool => {
-                    // Bools are i8, write as 0 or 1
-                    let fmt = format!("{}\"{}\":%d", comma, field_name);
-                    let fmt_str = self
+                    // Bools are i8, write as true/false (proper JSON)
+                    let true_str = self
                         .builder
-                        .build_global_string_ptr(&fmt, "kv_fmt")
+                        .build_global_string_ptr(&format!("{}\"{}\":true", comma, field_name), "bool_true")
+                        .unwrap();
+                    let false_str = self
+                        .builder
+                        .build_global_string_ptr(&format!("{}\"{}\":false", comma, field_name), "bool_false")
+                        .unwrap();
+                    let bool_val = field_val.into_int_value();
+                    let is_true = self
+                        .builder
+                        .build_int_compare(
+                            IntPredicate::NE,
+                            bool_val,
+                            i8_type.const_zero(),
+                            "is_true",
+                        )
+                        .unwrap();
+                    let selected = self
+                        .builder
+                        .build_select(
+                            is_true,
+                            true_str.as_pointer_value(),
+                            false_str.as_pointer_value(),
+                            "bool_str",
+                        )
                         .unwrap();
                     let remaining = self
                         .builder
@@ -468,10 +490,6 @@ impl<'ctx> Codegen<'ctx> {
                             .build_gep(i8_type, buf, &[offset], "off")
                             .unwrap()
                     };
-                    let int_val = self
-                        .builder
-                        .build_int_z_extend(field_val.into_int_value(), self.context.i32_type(), "bool_i32")
-                        .unwrap();
                     let wrote = self
                         .builder
                         .build_call(
@@ -479,8 +497,8 @@ impl<'ctx> Codegen<'ctx> {
                             &[
                                 buf_off.into(),
                                 remaining.into(),
-                                fmt_str.as_pointer_value().into(),
-                                int_val.into(),
+                                fmt_s.as_pointer_value().into(),
+                                selected.into(),
                             ],
                             "",
                         )
@@ -797,6 +815,81 @@ impl<'ctx> Codegen<'ctx> {
                             )
                             .unwrap();
                         offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                    }
+                }
+                Type::List(inner) if matches!(inner.as_ref(), Type::Struct { .. }) => {
+                    // List<Struct> field → call compile_json_stringify_list
+                    if let Type::Struct { fields: inner_fields, .. } = inner.as_ref() {
+                        // Write key
+                        let key_fmt = format!("{}\"{}\":", comma, field_name);
+                        let key_str = self
+                            .builder
+                            .build_global_string_ptr(&key_fmt, "kv_fmt")
+                            .unwrap();
+                        let remaining = self
+                            .builder
+                            .build_int_sub(buf_size, offset, "rem")
+                            .unwrap();
+                        let buf_off = unsafe {
+                            self.builder
+                                .build_gep(i8_type, buf, &[offset], "off")
+                                .unwrap()
+                        };
+                        let wrote = self
+                            .builder
+                            .build_call(
+                                snprintf,
+                                &[
+                                    buf_off.into(),
+                                    remaining.into(),
+                                    fmt_s.as_pointer_value().into(),
+                                    key_str.as_pointer_value().into(),
+                                ],
+                                "",
+                            )
+                            .unwrap()
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap()
+                            .into_int_value();
+                        let w64 = self
+                            .builder
+                            .build_int_z_extend(wrote, i64_type, "w64")
+                            .unwrap();
+                        offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+
+                        // Stringify the list
+                        let inner_fields_clone = inner_fields.clone();
+                        if let Some(list_json) = self.compile_json_stringify_list(field_val, &inner_fields_clone) {
+                            let list_struct = list_json.into_struct_value();
+                            let json_ptr = self
+                                .builder
+                                .build_extract_value(list_struct, 0, "list_json_ptr")
+                                .unwrap();
+                            let json_len = self
+                                .builder
+                                .build_extract_value(list_struct, 1, "list_json_len")
+                                .unwrap();
+
+                            let write_fn = self.module.get_function("forge_write_cstring").unwrap();
+                            let remaining = self
+                                .builder
+                                .build_int_sub(buf_size, offset, "rem")
+                                .unwrap();
+                            let buf_off = unsafe {
+                                self.builder
+                                    .build_gep(i8_type, buf, &[offset], "off")
+                                    .unwrap()
+                            };
+                            self.builder
+                                .build_call(
+                                    write_fn,
+                                    &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
+                                    "",
+                                )
+                                .unwrap();
+                            offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                        }
                     }
                 }
                 _ => {}
