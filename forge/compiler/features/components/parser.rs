@@ -267,24 +267,11 @@ impl Parser {
                         type_args: vec![],
                         span: sp,
                     }));
-                    // Parse inner block as component body items
+                    // Parse inner block as component body items (recursive)
                     if self.check(&TokenKind::LBrace) {
                         self.advance(); // consume '{'
                         self.skip_newlines();
-                        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-                            self.skip_newlines();
-                            if self.check(&TokenKind::RBrace) { break; }
-                            // Try syntax patterns first
-                            if !meta.syntax_patterns.is_empty() {
-                                if let Some(stmt) = self.try_syntax_match(meta) {
-                                    blocks.push(stmt);
-                                    self.skip_newlines();
-                                    continue;
-                                }
-                            }
-                            // Skip unknown tokens inside under block
-                            self.advance();
-                        }
+                        self.parse_under_body(meta, &mut blocks);
                         if self.check(&TokenKind::RBrace) {
                             self.advance(); // consume '}'
                         }
@@ -520,6 +507,222 @@ impl Parser {
             },
             span: start,
         }))
+    }
+
+    /// Parse the body of an `under /prefix { ... }` block recursively.
+    /// Handles syntax patterns, nested under blocks, middleware, on/fn declarations, and mount.
+    fn parse_under_body(&mut self, meta: &ComponentMeta, blocks: &mut Vec<Statement>) {
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) { break; }
+
+            // Check for block keywords first
+            let is_block_keyword = match &self.peek() {
+                Some(t) => match &t.kind {
+                    TokenKind::Ident(n) if n == "under" || n == "middleware" || n == "crud" => true,
+                    TokenKind::On | TokenKind::Fn => true,
+                    _ => false,
+                },
+                None => false,
+            };
+
+            // Try syntax patterns (routes, mount, etc.)
+            if !is_block_keyword && !meta.syntax_patterns.is_empty() {
+                if let Some(stmt) = self.try_syntax_match(meta) {
+                    blocks.push(stmt);
+                    self.skip_newlines();
+                    continue;
+                }
+            }
+
+            match &self.peek() {
+                Some(t) => match &t.kind {
+                    TokenKind::Ident(name) if name == "under" => {
+                        // Nested under block — recurse
+                        let sp = self.advance().unwrap().span;
+                        self.skip_newlines();
+                        let prefix = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::StringLiteral(_))) {
+                            match &self.peek().unwrap().kind {
+                                TokenKind::StringLiteral(s) => { let s = s.clone(); self.advance(); s }
+                                _ => String::new(),
+                            }
+                        } else {
+                            let mut path = String::new();
+                            while !self.check(&TokenKind::LBrace) && !self.check(&TokenKind::Newline) && !self.is_at_end() {
+                                let tok = self.advance().unwrap();
+                                match &tok.kind {
+                                    TokenKind::Slash => path.push('/'),
+                                    TokenKind::Ident(s) => path.push_str(s),
+                                    TokenKind::IntLiteral(n) => path.push_str(&n.to_string()),
+                                    _ => break,
+                                }
+                            }
+                            path
+                        };
+                        self.skip_newlines();
+                        blocks.push(Statement::Expr(Expr::Call {
+                            callee: Box::new(Expr::Ident("__component_under_start".into(), sp)),
+                            args: vec![CallArg { name: Some("prefix".into()), value: Expr::StringLit(prefix, sp) }],
+                            type_args: vec![],
+                            span: sp,
+                        }));
+                        if self.check(&TokenKind::LBrace) {
+                            self.advance();
+                            self.skip_newlines();
+                            self.parse_under_body(meta, blocks); // recurse
+                            if self.check(&TokenKind::RBrace) {
+                                self.advance();
+                            }
+                        }
+                        blocks.push(Statement::Expr(Expr::Call {
+                            callee: Box::new(Expr::Ident("__component_under_end".into(), sp)),
+                            args: vec![],
+                            type_args: vec![],
+                            span: sp,
+                        }));
+                    }
+                    TokenKind::Ident(name) if name == "middleware" => {
+                        // Middleware inside under block — same logic as outer
+                        let sp = self.advance().unwrap().span;
+                        self.skip_newlines();
+                        let mw_name = match self.peek().map(|t| t.kind.clone()) {
+                            Some(TokenKind::Ident(n)) => n,
+                            _ => { self.advance(); continue; }
+                        };
+                        self.advance(); // consume name
+                        self.skip_newlines();
+                        if self.check(&TokenKind::LBrace) {
+                            self.advance();
+                            self.skip_newlines();
+                            while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                                self.skip_newlines();
+                                if self.check(&TokenKind::RBrace) { break; }
+                                if matches!(self.peek().map(|t| &t.kind), Some(&TokenKind::On)) {
+                                    let on_sp = self.advance().unwrap().span;
+                                    self.skip_newlines();
+                                    let event = match self.peek().map(|t| t.kind.clone()) {
+                                        Some(TokenKind::Ident(n)) => n,
+                                        _ => { self.advance(); continue; }
+                                    };
+                                    self.advance();
+                                    let params = if self.check(&TokenKind::LParen) {
+                                        self.advance();
+                                        let p = self.parse_params().unwrap_or_default();
+                                        self.expect(&TokenKind::RParen);
+                                        p
+                                    } else {
+                                        vec![]
+                                    };
+                                    self.skip_newlines();
+                                    if let Some(mut body) = self.parse_block() {
+                                        let fn_name = format!("__mw_{}_{}", mw_name, event);
+                                        let internal_names = ["__m", "__p", "__b", "__h"];
+                                        let mut injected: Vec<Statement> = Vec::new();
+                                        for (i, param) in params.iter().enumerate() {
+                                            if i < internal_names.len() {
+                                                injected.push(Statement::Let {
+                                                    name: param.name.clone(),
+                                                    type_ann: None,
+                                                    type_ann_span: None,
+                                                    value: Expr::Call {
+                                                        callee: Box::new(Expr::Ident("forge_http_ptr_to_str".into(), on_sp)),
+                                                        args: vec![CallArg { name: None, value: Expr::Ident(internal_names[i].into(), on_sp) }],
+                                                        type_args: vec![],
+                                                        span: on_sp,
+                                                    },
+                                                    exported: false,
+                                                    span: on_sp,
+                                                });
+                                            }
+                                        }
+                                        injected.append(&mut body.statements);
+                                        body.statements = injected;
+                                        blocks.push(Statement::FnDecl {
+                                            name: fn_name.clone(),
+                                            type_params: vec![],
+                                            params: vec![
+                                                Param { name: "__m".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                                Param { name: "__p".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                                Param { name: "__b".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                                Param { name: "__h".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                                Param { name: "__response_buf".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                                Param { name: "__response_buf_len".into(), type_ann: Some(TypeExpr::Named("int".into())), default: None, span: on_sp },
+                                            ],
+                                            return_type: Some(TypeExpr::Named("int".into())),
+                                            body,
+                                            exported: false,
+                                            span: on_sp,
+                                        });
+                                        let register_fn = if event == "request" {
+                                            "__component_use_mw"
+                                        } else {
+                                            "__component_use_mw_after"
+                                        };
+                                        blocks.push(Statement::Expr(Expr::Call {
+                                            callee: Box::new(Expr::Ident(register_fn.into(), on_sp)),
+                                            args: vec![
+                                                CallArg { name: Some("name".into()), value: Expr::StringLit(mw_name.clone(), on_sp) },
+                                                CallArg { name: Some("handler".into()), value: Expr::Ident(fn_name, on_sp) },
+                                            ],
+                                            type_args: vec![],
+                                            span: on_sp,
+                                        }));
+                                    }
+                                } else {
+                                    self.advance();
+                                }
+                            }
+                            if self.check(&TokenKind::RBrace) { self.advance(); }
+                        }
+                    }
+                    TokenKind::Ident(name) if name == "crud" => {
+                        // crud Model1, Model2 inside under block
+                        let sp = self.advance().unwrap().span;
+                        self.skip_newlines();
+                        loop {
+                            let model_name = match self.peek().map(|t| t.kind.clone()) {
+                                Some(TokenKind::Ident(n)) => n,
+                                _ => break,
+                            };
+                            self.advance();
+                            blocks.push(Statement::Expr(Expr::Call {
+                                callee: Box::new(Expr::Ident("__component_crud_mount".into(), sp)),
+                                args: vec![CallArg { name: Some("model".into()), value: Expr::StringLit(model_name, sp) }],
+                                type_args: vec![],
+                                span: sp,
+                            }));
+                            self.skip_newlines();
+                            if self.check(&TokenKind::Comma) {
+                                self.advance();
+                                self.skip_newlines();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    TokenKind::On => {
+                        // on handler inside under block
+                        if let Some(stmt) = self.parse_fn_decl(false) {
+                            blocks.push(stmt);
+                        } else {
+                            self.advance();
+                        }
+                    }
+                    TokenKind::Fn => {
+                        if let Some(stmt) = self.parse_fn_decl(false) {
+                            blocks.push(stmt);
+                        } else {
+                            self.advance();
+                        }
+                    }
+                    _ => {
+                        // Skip unknown tokens
+                        self.advance();
+                    }
+                },
+                None => break,
+            }
+        }
     }
 
     /// Parse a single annotation: @name or @name(arg1, arg2)
