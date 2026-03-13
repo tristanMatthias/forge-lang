@@ -128,6 +128,21 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or(&url).to_string();
 
+    // Handle CORS preflight
+    if method == "OPTIONS" {
+        let cors_headers = vec![
+            Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
+            Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS").unwrap(),
+            Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, Authorization").unwrap(),
+        ];
+        let mut response = Response::from_string("").with_status_code(204);
+        for h in cors_headers {
+            response = response.with_header(h);
+        }
+        request.respond(response).ok();
+        return;
+    }
+
     // Collect headers as JSON for middleware
     let headers_json = {
         let mut parts = Vec::new();
@@ -137,6 +152,23 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
             parts.push(format!("\"{}\":\"{}\"", name, val));
         }
         format!("{{{}}}", parts.join(","))
+    };
+
+    // Parse query string
+    let query_json = {
+        if let Some(qs) = url.split('?').nth(1) {
+            let mut parts = Vec::new();
+            for pair in qs.split('&') {
+                let mut kv = pair.splitn(2, '=');
+                if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
+                    let decoded_v = v.replace('+', " ");
+                    parts.push(format!("\"{}\":\"{}\"", k, decoded_v.replace('"', "\\\"")));
+                }
+            }
+            format!("{{{}}}", parts.join(","))
+        } else {
+            "{}".to_string()
+        }
     };
 
     // Read body
@@ -176,7 +208,9 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
 
     for route in routes.iter() {
         if route.method == method {
-            if let Some(params) = match_path(&route.path_pattern, &path) {
+            if let Some(path_params) = match_path(&route.path_pattern, &path) {
+                // Merge path params and query params
+                let params = merge_params(&path_params, &query_json);
                 let method_c = CString::new(method.as_str()).unwrap();
                 let path_c = CString::new(path.as_str()).unwrap();
                 let body_c = CString::new(body.as_str()).unwrap();
@@ -201,17 +235,19 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
 
                 let header =
                     Header::from_bytes("Content-Type", "application/json").unwrap();
+                let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
 
                 if status == 204 {
-                    // No content
                     let response = Response::from_string("")
                         .with_status_code(status as i32)
-                        .with_header(header);
+                        .with_header(header)
+                        .with_header(cors);
                     request.respond(response).ok();
                 } else {
                     let response = Response::from_string(response_body)
                         .with_status_code(status as i32)
-                        .with_header(header);
+                        .with_header(header)
+                        .with_header(cors);
                     request.respond(response).ok();
                 }
                 return;
@@ -221,9 +257,11 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
 
     // 404
     let header = Header::from_bytes("Content-Type", "application/json").unwrap();
+    let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
     let response = Response::from_string("{\"error\":\"not found\"}")
         .with_status_code(404)
-        .with_header(header);
+        .with_header(header)
+        .with_header(cors);
     request.respond(response).ok();
 }
 
@@ -239,6 +277,13 @@ extern "C" {
     ) -> *const c_char;
     fn forge_model_delete_json(table: *const c_char, id: i64) -> i64;
     fn forge_model_free_string(ptr: *const c_char);
+    fn forge_model_paginate_json(
+        table: *const c_char,
+        filter: *const c_char,
+        page: i64,
+        per_page: i64,
+        order: *const c_char,
+    ) -> *const c_char;
 }
 
 fn cstr(ptr: *const c_char) -> &'static str {
@@ -327,7 +372,7 @@ extern "C" fn mount_list_handler(
     _method: *const c_char,
     path: *const c_char,
     _body: *const c_char,
-    _params: *const c_char,
+    params: *const c_char,
     response_buf: *mut c_char,
     response_buf_len: i64,
 ) -> i64 {
@@ -337,11 +382,37 @@ extern "C" fn mount_list_handler(
         None => return 404,
     };
     let table_c = CString::new(table.as_str()).unwrap();
-    let filter_c = CString::new("{}").unwrap();
-    let json = unsafe { forge_model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
-    copy_cstr_to_buf(json, response_buf, response_buf_len);
-    unsafe { forge_model_free_string(json) };
+
+    // Check for pagination query params in the params JSON
+    let params_s = cstr(params);
+    let page = extract_param_int(params_s, "page");
+    let per = extract_param_int(params_s, "per").or_else(|| extract_param_int(params_s, "per_page"));
+
+    if let (Some(page), Some(per)) = (page, per) {
+        // Paginated response
+        let filter_c = CString::new("{}").unwrap();
+        let order_c = CString::new("id").unwrap();
+        let json = unsafe { forge_model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr()) };
+        copy_cstr_to_buf(json, response_buf, response_buf_len);
+        unsafe { forge_model_free_string(json) };
+    } else {
+        let filter_c = CString::new("{}").unwrap();
+        let json = unsafe { forge_model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
+        copy_cstr_to_buf(json, response_buf, response_buf_len);
+        unsafe { forge_model_free_string(json) };
+    }
     200
+}
+
+fn extract_param_int(params_json: &str, key: &str) -> Option<i64> {
+    let pattern = format!("\"{}\":\"", key);
+    if let Some(start) = params_json.find(&pattern) {
+        let rest = &params_json[start + pattern.len()..];
+        if let Some(end) = rest.find('"') {
+            return rest[..end].parse::<i64>().ok();
+        }
+    }
+    None
 }
 
 extern "C" fn mount_create_handler(
@@ -574,6 +645,26 @@ pub extern "C" fn forge_http_pop_prefix(port: u16) {
             stack.pop();
         }
     }
+}
+
+/// Merge two JSON objects (both are `{...}` strings). Path params take priority.
+fn merge_params(path_params: &str, query_params: &str) -> String {
+    if query_params == "{}" || query_params.is_empty() {
+        return path_params.to_string();
+    }
+    if path_params == "{}" || path_params.is_empty() {
+        return query_params.to_string();
+    }
+    // Strip outer braces and combine
+    let p = path_params.trim_start_matches('{').trim_end_matches('}');
+    let q = query_params.trim_start_matches('{').trim_end_matches('}');
+    if p.is_empty() {
+        return format!("{{{}}}", q);
+    }
+    if q.is_empty() {
+        return format!("{{{}}}", p);
+    }
+    format!("{{{},{}}}", p, q)
 }
 
 fn match_path(pattern: &str, actual: &str) -> Option<String> {
