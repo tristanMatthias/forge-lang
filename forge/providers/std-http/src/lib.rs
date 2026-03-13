@@ -265,25 +265,103 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
     request.respond(response).ok();
 }
 
-// ── Model functions (resolved at link time from std-model .a) ──
-extern "C" {
-    fn forge_model_list_json(table: *const c_char, filter: *const c_char) -> *const c_char;
-    fn forge_model_insert_json(table: *const c_char, data: *const c_char) -> *const c_char;
-    fn forge_model_get_by_id(table: *const c_char, id: i64) -> *const c_char;
-    fn forge_model_update_json(
-        table: *const c_char,
-        id: i64,
-        changes: *const c_char,
-    ) -> *const c_char;
-    fn forge_model_delete_json(table: *const c_char, id: i64) -> i64;
-    fn forge_model_free_string(ptr: *const c_char);
-    fn forge_model_paginate_json(
-        table: *const c_char,
-        filter: *const c_char,
-        page: i64,
-        per_page: i64,
-        order: *const c_char,
-    ) -> *const c_char;
+// ── Model function lookup via dlsym ──
+// Uses runtime symbol lookup so @std.http doesn't have a hard link dependency
+// on @std.model. CRUD only works when both providers are loaded.
+
+use std::sync::Once;
+
+type ListJsonFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *const c_char;
+type InsertJsonFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *const c_char;
+type GetByIdFn = unsafe extern "C" fn(*const c_char, i64) -> *const c_char;
+type UpdateJsonFn = unsafe extern "C" fn(*const c_char, i64, *const c_char) -> *const c_char;
+type DeleteJsonFn = unsafe extern "C" fn(*const c_char, i64) -> i64;
+type FreeStringFn = unsafe extern "C" fn(*const c_char);
+type PaginateJsonFn = unsafe extern "C" fn(*const c_char, *const c_char, i64, i64, *const c_char) -> *const c_char;
+
+struct ModelFns {
+    list_json: Option<ListJsonFn>,
+    insert_json: Option<InsertJsonFn>,
+    get_by_id: Option<GetByIdFn>,
+    update_json: Option<UpdateJsonFn>,
+    delete_json: Option<DeleteJsonFn>,
+    free_string: Option<FreeStringFn>,
+    paginate_json: Option<PaginateJsonFn>,
+}
+
+static mut MODEL_FNS: ModelFns = ModelFns {
+    list_json: None,
+    insert_json: None,
+    get_by_id: None,
+    update_json: None,
+    delete_json: None,
+    free_string: None,
+    paginate_json: None,
+};
+
+static MODEL_FNS_INIT: Once = Once::new();
+
+fn lookup_sym(name: &[u8]) -> *mut std::ffi::c_void {
+    extern "C" { fn dlsym(handle: *mut std::ffi::c_void, symbol: *const c_char) -> *mut std::ffi::c_void; }
+    // RTLD_DEFAULT: macOS = (void*)-2, Linux = NULL
+    #[cfg(target_os = "macos")]
+    let handle = -2isize as *mut std::ffi::c_void;
+    #[cfg(not(target_os = "macos"))]
+    let handle = std::ptr::null_mut();
+    unsafe { dlsym(handle, name.as_ptr() as *const c_char) }
+}
+
+fn init_model_fns() {
+    MODEL_FNS_INIT.call_once(|| {
+        // SAFETY: Only called once via Once, and MODEL_FNS is only written here
+        unsafe {
+            macro_rules! lookup {
+                ($field:ident, $sym:literal) => {
+                    let p = lookup_sym($sym);
+                    if !p.is_null() { MODEL_FNS.$field = Some(std::mem::transmute(p)); }
+                };
+            }
+            lookup!(list_json, b"forge_model_list_json\0");
+            lookup!(insert_json, b"forge_model_insert_json\0");
+            lookup!(get_by_id, b"forge_model_get_by_id\0");
+            lookup!(update_json, b"forge_model_update_json\0");
+            lookup!(delete_json, b"forge_model_delete_json\0");
+            lookup!(free_string, b"forge_model_free_string\0");
+            lookup!(paginate_json, b"forge_model_paginate_json\0");
+        }
+    });
+}
+
+fn model_list_json(table: *const c_char, filter: *const c_char) -> *const c_char {
+    init_model_fns();
+    unsafe { match MODEL_FNS.list_json {
+        Some(f) => f(table, filter),
+        None => { eprintln!("error: CRUD requires @std.model"); std::ptr::null() }
+    }}
+}
+fn model_insert_json(table: *const c_char, data: *const c_char) -> *const c_char {
+    init_model_fns();
+    unsafe { MODEL_FNS.insert_json.map_or(std::ptr::null(), |f| f(table, data)) }
+}
+fn model_get_by_id(table: *const c_char, id: i64) -> *const c_char {
+    init_model_fns();
+    unsafe { MODEL_FNS.get_by_id.map_or(std::ptr::null(), |f| f(table, id)) }
+}
+fn model_update_json(table: *const c_char, id: i64, changes: *const c_char) -> *const c_char {
+    init_model_fns();
+    unsafe { MODEL_FNS.update_json.map_or(std::ptr::null(), |f| f(table, id, changes)) }
+}
+fn model_delete_json(table: *const c_char, id: i64) -> i64 {
+    init_model_fns();
+    unsafe { MODEL_FNS.delete_json.map_or(0, |f| f(table, id)) }
+}
+fn model_free_string(ptr: *const c_char) {
+    init_model_fns();
+    unsafe { if let Some(f) = MODEL_FNS.free_string { f(ptr); } }
+}
+fn model_paginate_json(table: *const c_char, filter: *const c_char, page: i64, per_page: i64, order: *const c_char) -> *const c_char {
+    init_model_fns();
+    unsafe { MODEL_FNS.paginate_json.map_or(std::ptr::null(), |f| f(table, filter, page, per_page, order)) }
 }
 
 fn cstr(ptr: *const c_char) -> &'static str {
@@ -392,14 +470,14 @@ extern "C" fn mount_list_handler(
         // Paginated response
         let filter_c = CString::new("{}").unwrap();
         let order_c = CString::new("id").unwrap();
-        let json = unsafe { forge_model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr()) };
+        let json = unsafe { model_paginate_json(table_c.as_ptr(), filter_c.as_ptr(), page, per, order_c.as_ptr()) };
         copy_cstr_to_buf(json, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
     } else {
         let filter_c = CString::new("{}").unwrap();
-        let json = unsafe { forge_model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
+        let json = unsafe { model_list_json(table_c.as_ptr(), filter_c.as_ptr()) };
         copy_cstr_to_buf(json, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
     }
     200
 }
@@ -429,24 +507,24 @@ extern "C" fn mount_create_handler(
         None => return 404,
     };
     let table_c = CString::new(table.as_str()).unwrap();
-    let json = unsafe { forge_model_insert_json(table_c.as_ptr(), body) };
+    let json = unsafe { model_insert_json(table_c.as_ptr(), body) };
     let result_str = cstr(json);
     // Check for validation failure
     if result_str.trim() == "null" || result_str.is_empty() {
         let error_json = r#"{"error":"validation failed"}"#;
         copy_str_to_buf(error_json, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
         return 400;
     }
     if result_str.contains("\"__validation_error\":true") {
         // Strip the internal flag and forward the structured error
         let cleaned = result_str.replace("\"__validation_error\":true,", "");
         copy_str_to_buf(&cleaned, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
         return 400;
     }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
-    unsafe { forge_model_free_string(json) };
+    unsafe { model_free_string(json) };
     201
 }
 
@@ -465,7 +543,7 @@ extern "C" fn mount_get_handler(
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
-    let json = unsafe { forge_model_get_by_id(table_c.as_ptr(), id) };
+    let json = unsafe { model_get_by_id(table_c.as_ptr(), id) };
     let result_str = cstr(json);
     if result_str.trim() == "null" || result_str.is_empty() {
         let error_json = r#"{"error":"not found"}"#;
@@ -475,11 +553,11 @@ extern "C" fn mount_get_handler(
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
             *response_buf.add(copy_len) = 0;
         }
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
         return 404;
     }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
-    unsafe { forge_model_free_string(json) };
+    unsafe { model_free_string(json) };
     200
 }
 
@@ -498,22 +576,22 @@ extern "C" fn mount_update_handler(
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
-    let json = unsafe { forge_model_update_json(table_c.as_ptr(), id, body) };
+    let json = unsafe { model_update_json(table_c.as_ptr(), id, body) };
     let result_str = cstr(json);
     if result_str.trim() == "null" || result_str.is_empty() {
         let error_json = r#"{"error":"validation failed"}"#;
         copy_str_to_buf(error_json, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
         return 400;
     }
     if result_str.contains("\"__validation_error\":true") {
         let cleaned = result_str.replace("\"__validation_error\":true,", "");
         copy_str_to_buf(&cleaned, response_buf, response_buf_len);
-        unsafe { forge_model_free_string(json) };
+        unsafe { model_free_string(json) };
         return 400;
     }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
-    unsafe { forge_model_free_string(json) };
+    unsafe { model_free_string(json) };
     200
 }
 
@@ -532,7 +610,7 @@ extern "C" fn mount_delete_handler(
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
-    unsafe { forge_model_delete_json(table_c.as_ptr(), id) };
+    unsafe { model_delete_json(table_c.as_ptr(), id) };
     204
 }
 
@@ -545,6 +623,18 @@ fn parse_id_from_params(params_json: *const c_char) -> i64 {
         }
     }
     0
+}
+
+/// Convert a raw C string pointer to a heap-allocated C string.
+/// Used by route handlers to convert body/params ptrs to strings.
+/// The extern fn ABI will auto-wrap the return value as a ForgeString.
+#[no_mangle]
+pub extern "C" fn forge_http_ptr_to_str(ptr: *const c_char) -> *mut c_char {
+    if ptr.is_null() {
+        return CString::new("").unwrap().into_raw();
+    }
+    let s = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap_or("");
+    CString::new(s).unwrap().into_raw()
 }
 
 /// Write a Forge string (passed as C string pointer by extern fn ABI) to a response buffer.

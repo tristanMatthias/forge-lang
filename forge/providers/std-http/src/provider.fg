@@ -8,6 +8,7 @@ extern fn forge_http_push_prefix(port: int, prefix: string)
 extern fn forge_http_pop_prefix(port: int)
 extern fn forge_http_add_middleware(port: int, name: string, handler: ptr)
 extern fn forge_http_add_middleware_after(port: int, name: string, handler: ptr)
+extern fn forge_http_ptr_to_str(ptr: ptr) -> string
 
 component server(__tpl_name) {
     config {
@@ -18,6 +19,8 @@ component server(__tpl_name) {
     fn route(method: string, path: string, handler: ptr) {
         fn __tpl_generated(__m: ptr, __p: ptr, __b: ptr, __params_json: ptr, __response_buf: ptr, __response_buf_len: int) -> int {
             let __req_params_json = __params_json
+            let req_body = forge_http_ptr_to_str(__b)
+            let req_params = forge_http_ptr_to_str(__params_json)
             let __result = handler
             let __json = json.stringify(__result)
             forge_http_write_response(__response_buf, __response_buf_len, __json)
