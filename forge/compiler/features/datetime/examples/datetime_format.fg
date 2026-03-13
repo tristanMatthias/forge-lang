@@ -1,0 +1,6 @@
+/// expect: true
+fn main() {
+    let ts = datetime_parse("2024-06-15 12:00:00")
+    let formatted = datetime_format(ts)
+    println(formatted.contains("2024"))
+}

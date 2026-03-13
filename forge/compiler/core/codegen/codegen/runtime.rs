@@ -155,6 +155,18 @@ impl<'ctx> Codegen<'ctx> {
         // forge_validate_pattern(ForgeString, ForgeString) -> i64
         let fn_type = i64_type.fn_type(&[string_type.into(), string_type.into()], false);
         self.module.add_function("forge_validate_pattern", fn_type, None);
+
+        // forge_datetime_now() -> i64
+        let fn_type = i64_type.fn_type(&[], false);
+        self.module.add_function("forge_datetime_now", fn_type, None);
+
+        // forge_datetime_format(i64) -> ForgeString
+        let fn_type = string_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_datetime_format", fn_type, None);
+
+        // forge_datetime_parse(ptr, i64) -> i64 (takes ForgeString fields)
+        let fn_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+        self.module.add_function("forge_datetime_parse", fn_type, None);
     }
 
     /// Declare helper/utility functions needed by codegen.

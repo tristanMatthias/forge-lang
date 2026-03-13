@@ -877,6 +877,41 @@ void forge_sleep_ms(int64_t ms) {
     usleep((useconds_t)(ms * 1000));
 }
 
+// ---- Datetime helpers ----
+
+#include <sys/time.h>
+#include <time.h>
+
+// Returns current time as epoch milliseconds
+long long forge_datetime_now() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (long long)tv.tv_sec * 1000LL + (long long)tv.tv_usec / 1000LL;
+}
+
+// Format epoch ms to ISO string (YYYY-MM-DD HH:MM:SS)
+ForgeString forge_datetime_format(long long epoch_ms) {
+    time_t secs = (time_t)(epoch_ms / 1000);
+    struct tm* tm_info = localtime(&secs);
+    char buf[20];
+    int len = (int)strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm_info);
+    return forge_string_new(buf, len);
+}
+
+// Parse ISO string to epoch ms
+long long forge_datetime_parse(const char* str, long long str_len) {
+    struct tm tm_info;
+    memset(&tm_info, 0, sizeof(tm_info));
+    // Copy to null-terminated buffer
+    char buf[64];
+    long long copy_len = str_len < 63 ? str_len : 63;
+    memcpy(buf, str, copy_len);
+    buf[copy_len] = '\0';
+    strptime(buf, "%Y-%m-%d %H:%M:%S", &tm_info);
+    tm_info.tm_isdst = -1; // let mktime figure it out
+    return (long long)mktime(&tm_info) * 1000LL;
+}
+
 // ---- Validation helpers ----
 
 // Check if string is a valid email (basic check: contains @ and .)

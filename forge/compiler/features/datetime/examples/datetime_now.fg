@@ -1,0 +1,5 @@
+/// expect: true
+fn main() {
+    let now = datetime_now()
+    println(now > 0)
+}

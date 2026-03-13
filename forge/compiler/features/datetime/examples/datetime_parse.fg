@@ -1,0 +1,5 @@
+/// expect: true
+fn main() {
+    let ts = datetime_parse("2024-01-01 00:00:00")
+    println(ts > 0)
+}
