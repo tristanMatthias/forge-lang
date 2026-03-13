@@ -1,0 +1,25 @@
+extern fn forge_term_is_tty() -> int
+extern fn forge_term_width() -> int
+extern fn forge_term_wrap(code: string, text: string) -> string
+extern fn forge_term_spinner_start(msg: string) -> int
+extern fn forge_term_spinner_done(id: int, msg: string)
+extern fn forge_term_progress_start(total: int, label: string) -> int
+extern fn forge_term_progress_update(id: int, current: int)
+extern fn forge_term_progress_done(id: int, msg: string)
+extern fn forge_term_eprint(msg: string)
+extern fn forge_term_clear_line()
+extern fn forge_term_cursor_up(n: int)
+
+export fn red(text: string) -> string { forge_term_wrap("31", text) }
+export fn green(text: string) -> string { forge_term_wrap("32", text) }
+export fn yellow(text: string) -> string { forge_term_wrap("33", text) }
+export fn blue(text: string) -> string { forge_term_wrap("34", text) }
+export fn magenta(text: string) -> string { forge_term_wrap("35", text) }
+export fn cyan(text: string) -> string { forge_term_wrap("36", text) }
+export fn bold(text: string) -> string { forge_term_wrap("1", text) }
+export fn dim(text: string) -> string { forge_term_wrap("2", text) }
+export fn italic(text: string) -> string { forge_term_wrap("3", text) }
+export fn underline(text: string) -> string { forge_term_wrap("4", text) }
+export fn strikethrough(text: string) -> string { forge_term_wrap("9", text) }
+
+export fn width() -> int { forge_term_width() }

@@ -1,0 +1,32 @@
+extern fn forge_cli_setup(name: string, version: string, description: string, schema_json: string)
+extern fn forge_cli_get_string(key: string) -> string
+extern fn forge_cli_get_int(key: string) -> int
+extern fn forge_cli_get_bool(key: string) -> int
+extern fn forge_cli_get_command() -> string
+
+component cli(__tpl_name, schema) {
+    config {
+        version: string = "0.0.0"
+        description: string = ""
+    }
+
+    on startup {
+        forge_cli_setup(__tpl_name_str, __tpl_config_version, __tpl_config_description, __tpl_schema_json)
+    }
+
+    fn __tpl_name.get(key: string) -> string {
+        forge_cli_get_string(key)
+    }
+
+    fn __tpl_name.get_int(key: string) -> int {
+        forge_cli_get_int(key)
+    }
+
+    fn __tpl_name.get_bool(key: string) -> int {
+        forge_cli_get_bool(key)
+    }
+
+    fn __tpl_name.command() -> string {
+        forge_cli_get_command()
+    }
+}
