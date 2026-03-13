@@ -337,6 +337,21 @@ impl<'ctx> Codegen<'ctx> {
                     if let Type::Nullable(_) = &ret_ty {
                         let wrapped = self.wrap_in_nullable(val, &ret_ty);
                         self.builder.build_return(Some(&wrapped)).unwrap();
+                    } else if ret_ty == Type::String && val.is_pointer_value() {
+                        // Auto-wrap ptr -> ForgeString (e.g. extern fn returning string)
+                        let ptr_val = val.into_pointer_value();
+                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
+                            let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+                            self.module.add_function("strlen", ft, None)
+                        });
+                        let len = self.builder.build_call(strlen_fn, &[ptr_val.into()], "slen")
+                            .unwrap().try_as_basic_value().left().unwrap();
+                        let str_new_fn = self.module.get_function("forge_string_new").unwrap();
+                        let forge_str = self.builder.build_call(
+                            str_new_fn, &[ptr_val.into(), len.into()], "fstr",
+                        ).unwrap().try_as_basic_value().left().unwrap();
+                        self.builder.build_return(Some(&forge_str)).unwrap();
                     } else {
                         let coerced = self.coerce_value(val, expected_llvm);
                         self.builder.build_return(Some(&coerced)).unwrap();

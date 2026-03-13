@@ -176,6 +176,56 @@ ForgeString forge_string_trim(ForgeString s) {
     return forge_string_new(s.ptr + start, new_len);
 }
 
+int8_t forge_string_starts_with(ForgeString s, ForgeString prefix) {
+    if (prefix.len > s.len) return 0;
+    if (prefix.len == 0) return 1;
+    return memcmp(s.ptr, prefix.ptr, prefix.len) == 0 ? 1 : 0;
+}
+
+ForgeString forge_string_replace(ForgeString s, ForgeString find, ForgeString replace) {
+    if (find.len == 0) return forge_string_new(s.ptr, s.len);
+
+    // Count occurrences
+    int64_t count = 0;
+    for (int64_t i = 0; i <= s.len - find.len; i++) {
+        if (memcmp(s.ptr + i, find.ptr, find.len) == 0) {
+            count++;
+            i += find.len - 1;
+        }
+    }
+    if (count == 0) return forge_string_new(s.ptr, s.len);
+
+    int64_t new_len = s.len + count * (replace.len - find.len);
+    char* buf = (char*)forge_alloc(new_len + 1);
+    int64_t j = 0;
+    for (int64_t i = 0; i < s.len; ) {
+        if (i <= s.len - find.len && memcmp(s.ptr + i, find.ptr, find.len) == 0) {
+            memcpy(buf + j, replace.ptr, replace.len);
+            j += replace.len;
+            i += find.len;
+        } else {
+            buf[j++] = s.ptr[i++];
+        }
+    }
+    buf[new_len] = '\0';
+    return (ForgeString){ .ptr = buf, .len = new_len };
+}
+
+int64_t forge_string_parse_int(ForgeString s) {
+    // Simple atoi - skip whitespace, handle sign, parse digits
+    int64_t i = 0;
+    while (i < s.len && (s.ptr[i] == ' ' || s.ptr[i] == '\t')) i++;
+    int64_t sign = 1;
+    if (i < s.len && s.ptr[i] == '-') { sign = -1; i++; }
+    else if (i < s.len && s.ptr[i] == '+') { i++; }
+    int64_t result = 0;
+    while (i < s.len && s.ptr[i] >= '0' && s.ptr[i] <= '9') {
+        result = result * 10 + (s.ptr[i] - '0');
+        i++;
+    }
+    return sign * result;
+}
+
 // ---- String comparison ----
 
 int8_t forge_string_eq(ForgeString a, ForgeString b) {

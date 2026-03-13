@@ -506,6 +506,28 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // String equality
+        if left_type == Type::String && right_type == Type::String {
+            if matches!(op, BinaryOp::Eq | BinaryOp::NotEq) {
+                let eq_fn = self.module.get_function("forge_string_eq").unwrap();
+                let result = self.builder.build_call(
+                    eq_fn,
+                    &[lhs.into(), rhs.into()],
+                    "string_eq",
+                ).unwrap();
+                let val = result.try_as_basic_value().left()?;
+                if matches!(op, BinaryOp::NotEq) {
+                    let int_v = val.into_int_value();
+                    let zero = int_v.get_type().const_zero();
+                    let negated = self.builder.build_int_compare(
+                        IntPredicate::EQ, int_v, zero, "string_neq"
+                    ).unwrap();
+                    return Some(self.builder.build_int_z_extend(negated, self.context.i8_type(), "neq_ext").unwrap().into());
+                }
+                return Some(val);
+            }
+        }
+
         // Operator overloading for user-defined types
         if let Some(type_name) = self.get_type_name(&left_type) {
             let (trait_name, method_name) = match op {

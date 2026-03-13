@@ -307,9 +307,10 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" | "trim" => Type::String,
-                            "contains" => Type::Bool,
+                            "upper" | "lower" | "trim" | "replace" => Type::String,
+                            "contains" | "starts_with" => Type::Bool,
                             "length" => Type::Int,
+                            "parse_int" => Type::Int,
                             "split" => Type::List(Box::new(Type::String)),
                             _ => Type::Unknown,
                         },
@@ -578,8 +579,9 @@ impl<'ctx> Codegen<'ctx> {
                             .unwrap_or(Type::Unknown)
                     }
                     Type::String => match field.as_str() {
-                        "length" => Type::Nullable(Box::new(Type::Int)),
-                        "upper" | "lower" | "trim" => Type::Nullable(Box::new(Type::String)),
+                        "length" | "parse_int" => Type::Nullable(Box::new(Type::Int)),
+                        "upper" | "lower" | "trim" | "replace" => Type::Nullable(Box::new(Type::String)),
+                        "contains" | "starts_with" => Type::Nullable(Box::new(Type::Bool)),
                         _ => Type::Unknown,
                     },
                     _ => Type::Unknown,
@@ -593,9 +595,9 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" | "trim" => Type::String,
-                "contains" => Type::Bool,
-                "length" => Type::Int,
+                "upper" | "lower" | "trim" | "replace" => Type::String,
+                "contains" | "starts_with" => Type::Bool,
+                "length" | "parse_int" => Type::Int,
                 "split" => Type::List(Box::new(Type::String)),
                 _ => Type::Unknown,
             },
