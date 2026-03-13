@@ -5,7 +5,7 @@ pub mod codegen;
 crate::forge_feature! {
     name: "Spec Test",
     id: "spec_test",
-    status: Wip,
+    status: Stable,
     depends: ["is_keyword", "table_literal"],
     enables: [],
     tokens: [],

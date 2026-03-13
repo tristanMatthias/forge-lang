@@ -1,7 +1,7 @@
 crate::forge_feature! {
     name: "Parallel",
     id: "parallel",
-    status: Draft,
+    status: Stable,
     depends: ["spawn"],
     enables: [],
     tokens: ["parallel"],

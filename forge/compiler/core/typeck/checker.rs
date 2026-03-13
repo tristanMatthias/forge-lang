@@ -785,7 +785,7 @@ impl TypeChecker {
             TypeExpr::Generic { name, args } => {
                 let resolved_args: Vec<Type> = args.iter().map(|a| self.resolve_type_expr(a)).collect();
                 match name.as_str() {
-                    "List" => {
+                    "List" | "list" => {
                         if let Some(inner) = resolved_args.into_iter().next() {
                             Type::List(Box::new(inner))
                         } else {

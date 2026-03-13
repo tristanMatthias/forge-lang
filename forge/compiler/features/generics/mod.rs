@@ -1,7 +1,7 @@
 crate::forge_feature! {
     name: "Generics",
     id: "generics",
-    status: Testing,
+    status: Stable,
     depends: ["traits"],
     enables: [],
     tokens: ["<", ">"],
