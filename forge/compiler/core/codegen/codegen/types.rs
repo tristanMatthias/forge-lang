@@ -250,6 +250,17 @@ impl<'ctx> Codegen<'ctx> {
                         "println" | "print" => Type::Void,
                         "string" => Type::String,
                         "channel" => Type::Int,
+                        "validate" => {
+                            // validate(value, TypeName) -> Result<TypeName, ValidationError>
+                            if args.len() >= 2 {
+                                if let CallArg { value: Expr::Ident(type_name, _), .. } = &args[1] {
+                                    let ok_type = self.type_checker.env.resolve_type_name(type_name);
+                                    let err_type = self.type_checker.env.resolve_type_name("ValidationError");
+                                    return Type::Result(Box::new(ok_type), Box::new(err_type));
+                                }
+                            }
+                            return Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown));
+                        }
                         _ => {
                             // Check for generic functions first
                             if let Some(generic_fn) = self.generic_fns.get(name.as_str()) {
@@ -313,7 +324,7 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" | "trim" | "replace" => Type::String,
+                            "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
                             "contains" | "starts_with" | "ends_with" => Type::Bool,
                             "length" => Type::Int,
                             "parse_int" => Type::Int,
@@ -603,7 +614,7 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" | "trim" | "replace" => Type::String,
+                "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
                 "contains" | "starts_with" | "ends_with" => Type::Bool,
                 "length" | "parse_int" => Type::Int,
                 "split" => Type::List(Box::new(Type::String)),

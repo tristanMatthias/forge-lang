@@ -167,8 +167,23 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Pattern::Enum { variant, .. } => {
-                // Check the tag of the enum
-                if let Type::Enum { variants, .. } = subject_type {
+                // Check the tag of the enum or Result
+                if let Type::Result(_, _) = subject_type {
+                    // Result matching: Ok tag=0, Err tag=1
+                    let tag_val = if variant == "Ok" { 0u64 } else if variant == "Err" { 1u64 } else { return None };
+                    if subject_val.is_struct_value() {
+                        let struct_val = subject_val.into_struct_value();
+                        let tag = self.builder.build_extract_value(struct_val, 0, "tag").ok()?;
+                        let expected = self.context.i8_type().const_int(tag_val, false);
+                        Some(
+                            self.builder
+                                .build_int_compare(IntPredicate::EQ, tag.into_int_value(), expected, "result_match")
+                                .unwrap(),
+                        )
+                    } else {
+                        None
+                    }
+                } else if let Type::Enum { variants, .. } = subject_type {
                     if let Some(idx) = variants.iter().position(|v| v.name == *variant) {
                         if subject_val.is_struct_value() {
                             let struct_val = subject_val.into_struct_value();
@@ -207,7 +222,35 @@ impl<'ctx> Codegen<'ctx> {
                 self.define_var(name.clone(), alloca, ty);
             }
             Pattern::Enum { variant, fields, .. } => {
-                if let Type::Enum { variants, .. } = subject_type {
+                if let Type::Result(ok_type, err_type) = subject_type {
+                    // Result payload extraction via memory bitcast
+                    if !fields.is_empty() {
+                        if let Pattern::Ident(name, _) = &fields[0] {
+                            let payload_type = if variant == "Ok" { ok_type.as_ref() } else { err_type.as_ref() };
+                            let result_llvm_ty = self.type_to_llvm_basic(subject_type).into_struct_type();
+                            let payload_llvm_ty = self.type_to_llvm_basic(payload_type);
+
+                            // Alloca the result, store it, then GEP to payload and bitcast
+                            let result_alloca = self.builder.build_alloca(result_llvm_ty, "result_tmp").unwrap();
+                            self.builder.build_store(result_alloca, *subject_val).unwrap();
+                            let payload_ptr = self.builder.build_struct_gep(
+                                result_llvm_ty, result_alloca, 1, "payload_ptr"
+                            ).unwrap();
+                            let typed_ptr = self.builder.build_bit_cast(
+                                payload_ptr,
+                                self.context.ptr_type(inkwell::AddressSpace::default()),
+                                "typed_ptr",
+                            ).unwrap();
+                            let payload_val = self.builder.build_load(
+                                payload_llvm_ty, typed_ptr.into_pointer_value(), name
+                            ).unwrap();
+
+                            let alloca = self.create_entry_block_alloca(payload_type, name);
+                            self.builder.build_store(alloca, payload_val).unwrap();
+                            self.define_var(name.clone(), alloca, payload_type.clone());
+                        }
+                    }
+                } else if let Type::Enum { variants, .. } = subject_type {
                     if let Some(v) = variants.iter().find(|v| v.name == *variant) {
                         // Extract fields from the enum struct
                         if subject_val.is_struct_value() {

@@ -1,0 +1,18 @@
+/// Catch with diverging handler (return exits the function).
+/// expect: invalid input
+/// expect: done
+
+type Input = { name: string @min(3) }
+
+fn try_validate() {
+  let input = validate({ name: "ab" }, Input) catch (e) {
+    println("invalid input")
+    return
+  }
+  println(input.name)
+}
+
+fn main() {
+  try_validate()
+  println("done")
+}

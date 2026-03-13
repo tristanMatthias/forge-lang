@@ -198,12 +198,20 @@ impl<'ctx> Codegen<'ctx> {
             }
             self.pop_scope();
             let err_end = self.builder.get_insert_block().unwrap();
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
+            // Check if handler diverges (e.g., contains `return`)
+            let handler_diverges = err_end.get_terminator().is_some();
+            if !handler_diverges {
+                self.builder.build_unconditional_branch(merge_bb).unwrap();
+            }
 
             // Now go back to ok block and coerce if needed, then branch
             self.builder.position_at_end(ok_bb_saved);
-            let ok_final = if let Some(hv) = handler_val {
-                self.coerce_value(ok_val, hv.get_type())
+            let ok_final = if !handler_diverges {
+                if let Some(hv) = handler_val {
+                    self.coerce_value(ok_val, hv.get_type())
+                } else {
+                    ok_val
+                }
             } else {
                 ok_val
             };
@@ -212,14 +220,16 @@ impl<'ctx> Codegen<'ctx> {
 
             self.builder.position_at_end(merge_bb);
 
-            // Phi result
-            if let Some(hv) = handler_val {
-                let phi = self.builder.build_phi(hv.get_type(), "catch_result").unwrap();
-                phi.add_incoming(&[(&ok_final, ok_end), (&hv, err_end)]);
-                return Some(phi.as_basic_value());
+            // Phi result — only include err path if it doesn't diverge
+            if !handler_diverges {
+                if let Some(hv) = handler_val {
+                    let phi = self.builder.build_phi(hv.get_type(), "catch_result").unwrap();
+                    phi.add_incoming(&[(&ok_final, ok_end), (&hv, err_end)]);
+                    return Some(phi.as_basic_value());
+                }
             }
 
-            return Some(ok_val);
+            return Some(ok_final);
         }
 
         Some(val)

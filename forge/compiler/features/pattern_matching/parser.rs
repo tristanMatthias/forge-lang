@@ -138,6 +138,31 @@ impl Parser {
                 self.advance();
                 Some(Pattern::Literal(Box::new(Expr::NullLit(tok.span))))
             }
+            TokenKind::Ok_ | TokenKind::Err_ => {
+                // Ok(binding) or Err(binding) patterns for Result matching
+                let variant = if matches!(tok.kind, TokenKind::Ok_) { "Ok" } else { "Err" };
+                self.advance();
+                let mut fields = Vec::new();
+                if self.check(&TokenKind::LParen) {
+                    self.advance();
+                    self.skip_newlines();
+                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                        self.skip_newlines();
+                        let p = self.parse_simple_pattern()?;
+                        fields.push(p);
+                        self.skip_newlines();
+                        if self.check(&TokenKind::Comma) {
+                            self.advance();
+                        }
+                    }
+                    self.expect(&TokenKind::RParen)?;
+                }
+                Some(Pattern::Enum {
+                    variant: variant.to_string(),
+                    fields,
+                    span: tok.span,
+                })
+            }
             TokenKind::Ident(name) => {
                 let name = name.clone();
                 self.advance();

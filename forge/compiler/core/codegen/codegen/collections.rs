@@ -268,6 +268,20 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_call(fn_ref, &[obj_val.into()], "parse_int").unwrap();
                     result.try_as_basic_value().left()
                 }
+                "repeat" => {
+                    if let Some(arg) = args.first() {
+                        let count_val = self.compile_expr(&arg.value)?;
+                        let fn_ref = self.module.get_function("forge_string_repeat").unwrap();
+                        let result = self.builder.build_call(
+                            fn_ref,
+                            &[obj_val.into(), count_val.into()],
+                            "repeat",
+                        ).unwrap();
+                        result.try_as_basic_value().left()
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             },
             Type::List(inner) => match method {
