@@ -17,6 +17,64 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fields: &[(String, Expr)],
     ) -> Option<BasicValueEnum<'ctx>> {
+        // If we have a target type with more fields (e.g., partial structs),
+        // build the struct according to the target type, filling missing nullable fields with null
+        if let Some(Type::Struct { fields: target_fields, .. }) = &self.struct_target_type.clone() {
+            if target_fields.len() > fields.len() {
+                let provided: std::collections::HashMap<&str, &Expr> =
+                    fields.iter().map(|(n, e)| (n.as_str(), e)).collect();
+
+                let mut all_field_types = Vec::new();
+                let mut all_field_vals = Vec::new();
+
+                for (fname, ftype) in target_fields {
+                    if let Some(expr) = provided.get(fname.as_str()) {
+                        let val = self.compile_expr(expr)?;
+                        let ty = self.infer_type(expr);
+                        // Wrap in nullable if target is nullable but value isn't
+                        if matches!(ftype, Type::Nullable(_)) && !matches!(&ty, Type::Nullable(_)) {
+                            let inner_llvm = self.type_to_llvm_basic(&ty);
+                            let nullable_type = self.context.struct_type(
+                                &[self.context.i8_type().into(), inner_llvm.into()],
+                                false,
+                            );
+                            let mut nullable_val = nullable_type.get_undef();
+                            nullable_val = self.builder
+                                .build_insert_value(nullable_val, self.context.i8_type().const_int(1, false), 0, "has")
+                                .unwrap().into_struct_value();
+                            nullable_val = self.builder
+                                .build_insert_value(nullable_val, val, 1, "val")
+                                .unwrap().into_struct_value();
+                            all_field_types.push(self.type_to_llvm_basic(ftype));
+                            all_field_vals.push(nullable_val.into());
+                        } else {
+                            all_field_types.push(self.type_to_llvm_basic(&ty));
+                            all_field_vals.push(val);
+                        }
+                    } else {
+                        // Missing field — must be nullable, fill with null (tag=0)
+                        let llvm_ty = self.type_to_llvm_basic(ftype);
+                        let null_val = llvm_ty.into_struct_type().const_zero();
+                        all_field_types.push(llvm_ty);
+                        all_field_vals.push(null_val.into());
+                    }
+                }
+
+                let struct_type = self.context.struct_type(
+                    &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                    false,
+                );
+                let mut struct_val = struct_type.get_undef();
+                for (i, val) in all_field_vals.iter().enumerate() {
+                    struct_val = self.builder
+                        .build_insert_value(struct_val, *val, i as u32, "field")
+                        .unwrap()
+                        .into_struct_value();
+                }
+                return Some(struct_val.into());
+            }
+        }
+
         let mut field_types = Vec::new();
         let mut field_vals = Vec::new();
         let mut type_fields = Vec::new();

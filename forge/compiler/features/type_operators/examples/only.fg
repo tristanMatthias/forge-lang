@@ -1,0 +1,10 @@
+/// Test: only — pick fields from a type
+/// expect: alice
+
+type User = { id: int, name: string, email: string, password: string }
+type UserPublic = User only {id, name, email}
+
+fn main() {
+  let u: UserPublic = { id: 1, name: "alice", email: "a@test.com" }
+  println(u.name)
+}

@@ -1,0 +1,11 @@
+/// Test: shorthand field syntax { name } -> { name: name }
+/// expect: alice
+/// expect: 30
+
+fn main() {
+  let name = "alice"
+  let email = "alice@test.com"
+  let user = { name, email, age: 30 }
+  println(user.name)
+  println(string(user.age))
+}

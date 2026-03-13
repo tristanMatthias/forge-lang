@@ -795,29 +795,13 @@ impl Parser {
                 // Named struct literal: TypeName { field: val, ... }
                 // Only if expr is a simple Ident (type name) and it looks like a struct literal
                 if let Expr::Ident(ref type_name, ident_span) = expr {
-                    // Peek inside the brace: if ident : then it's a named struct literal
+                    // Peek inside the brace: if ident : or ident , or ident } then struct literal
                     if self.peek_at(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false)
-                        && self.peek_at(2).map(|t| matches!(&t.kind, TokenKind::Colon)).unwrap_or(false)
+                        && self.peek_at(2).map(|t| matches!(&t.kind, TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace)).unwrap_or(false)
                     {
-                        let span = self.advance()?.span; // {
+                        self.advance(); // {
                         self.skip_newlines();
-                        let mut fields = Vec::new();
-                        loop {
-                            self.skip_newlines();
-                            if self.check(&TokenKind::RBrace) {
-                                break;
-                            }
-                            let fname = self.expect_ident()?;
-                            self.skip_newlines();
-                            self.expect(&TokenKind::Colon)?;
-                            self.skip_newlines();
-                            let fval = self.parse_expr()?;
-                            fields.push((fname, fval));
-                            self.skip_newlines();
-                            if self.check(&TokenKind::Comma) {
-                                self.advance();
-                            }
-                        }
+                        let fields = self.parse_struct_fields()?;
                         self.expect(&TokenKind::RBrace)?;
                         expr = Expr::StructLit {
                             name: Some(type_name.clone()),
@@ -1144,9 +1128,12 @@ impl Parser {
 
     pub(crate) fn is_struct_literal(&self) -> bool {
         // { ident : expr } is struct literal
+        // { ident , ... } or { ident } is shorthand struct literal
         if let Some(TokenKind::Ident(_)) = self.peek().map(|t| &t.kind) {
-            if let Some(TokenKind::Colon) = self.peek_at(1).map(|t| &t.kind) {
-                return true;
+            if let Some(next) = self.peek_at(1).map(|t| &t.kind) {
+                if matches!(next, TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace) {
+                    return true;
+                }
             }
         }
         false
@@ -1163,29 +1150,43 @@ impl Parser {
     }
 
     pub(crate) fn parse_struct_literal(&mut self, span: Span) -> Option<Expr> {
-        let mut fields = Vec::new();
-        loop {
-            self.skip_newlines();
-            if self.check(&TokenKind::RBrace) {
-                break;
-            }
-            let name = self.expect_ident()?;
-            self.skip_newlines();
-            self.expect(&TokenKind::Colon)?;
-            self.skip_newlines();
-            let value = self.parse_expr()?;
-            fields.push((name, value));
-            self.skip_newlines();
-            if self.check(&TokenKind::Comma) {
-                self.advance();
-            }
-        }
+        let fields = self.parse_struct_fields()?;
         self.expect(&TokenKind::RBrace)?;
         Some(Expr::StructLit {
             name: None,
             fields,
             span,
         })
+    }
+
+    /// Parse struct fields with shorthand support: `{ name, email, age: 30 }`
+    /// Shorthand `{ name }` desugars to `{ name: name }`
+    pub(crate) fn parse_struct_fields(&mut self) -> Option<Vec<(String, Expr)>> {
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
+            let field_span = self.peek()?.span;
+            let name = self.expect_ident()?;
+            self.skip_newlines();
+            if self.check(&TokenKind::Colon) {
+                // Full form: name: expr
+                self.advance();
+                self.skip_newlines();
+                let value = self.parse_expr()?;
+                fields.push((name, value));
+            } else {
+                // Shorthand: name → name: name
+                fields.push((name.clone(), Expr::Ident(name, field_span)));
+            }
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        Some(fields)
     }
 
     pub(crate) fn parse_map_literal(&mut self, span: Span) -> Option<Expr> {
@@ -1275,6 +1276,75 @@ impl Parser {
     pub(crate) fn parse_type_expr(&mut self) -> Option<TypeExpr> {
         let mut ty = self.parse_primary_type()?;
 
+        // Check for type operators (can be chained)
+        loop {
+            if self.check(&TokenKind::Without) {
+                self.advance();
+                self.skip_newlines();
+                let fields = self.parse_field_name_list()?;
+                ty = TypeExpr::Without {
+                    base: Box::new(ty),
+                    fields,
+                };
+            } else if self.check(&TokenKind::With) {
+                // Type-level with: `User with { age: int }`
+                // Disambiguate from expression-level with by checking for { name: Type }
+                let saved = self.pos;
+                self.advance();
+                self.skip_newlines();
+                if self.check(&TokenKind::LBrace) {
+                    // Try to parse as typed fields { name: type, ... }
+                    self.advance();
+                    self.skip_newlines();
+                    let mut fields = Vec::new();
+                    while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                        self.skip_newlines();
+                        let name = self.expect_ident()?;
+                        self.skip_newlines();
+                        self.expect(&TokenKind::Colon)?;
+                        self.skip_newlines();
+                        let field_ty = self.parse_type_expr()?;
+                        fields.push((name, field_ty));
+                        self.skip_newlines();
+                        if self.check(&TokenKind::Comma) {
+                            self.advance();
+                        }
+                    }
+                    self.expect(&TokenKind::RBrace)?;
+                    ty = TypeExpr::TypeWith {
+                        base: Box::new(ty),
+                        fields,
+                    };
+                } else {
+                    // Not a type-level with, backtrack
+                    self.pos = saved;
+                    break;
+                }
+            } else if self.check(&TokenKind::Only) {
+                self.advance();
+                self.skip_newlines();
+                let fields = self.parse_field_name_list()?;
+                ty = TypeExpr::Only {
+                    base: Box::new(ty),
+                    fields,
+                };
+            } else if self.check(&TokenKind::As) {
+                // Check for `as partial`
+                let saved = self.pos;
+                self.advance();
+                self.skip_newlines();
+                if self.check(&TokenKind::Partial) {
+                    self.advance();
+                    ty = TypeExpr::AsPartial(Box::new(ty));
+                } else {
+                    self.pos = saved;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
         // Check for nullable
         if self.check(&TokenKind::Question) {
             self.advance();
@@ -1282,6 +1352,24 @@ impl Parser {
         }
 
         Some(ty)
+    }
+
+    /// Parse `{name1, name2, ...}` — a list of field names in braces
+    fn parse_field_name_list(&mut self) -> Option<Vec<String>> {
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+        let mut names = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            let name = self.expect_ident()?;
+            names.push(name);
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Some(names)
     }
 
     pub(crate) fn parse_primary_type(&mut self) -> Option<TypeExpr> {
@@ -1348,8 +1436,11 @@ impl Parser {
                 self.advance();
                 self.skip_newlines();
                 let mut fields = Vec::new();
-                while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                loop {
                     self.skip_newlines();
+                    if self.check(&TokenKind::RBrace) || self.is_at_end() {
+                        break;
+                    }
                     let name = self.expect_ident()?;
                     self.skip_newlines();
                     self.expect(&TokenKind::Colon)?;
@@ -1506,6 +1597,9 @@ impl Parser {
             TokenKind::Use => Some("use".to_string()),
             TokenKind::Table => Some("table".to_string()),
             TokenKind::Is => Some("is".to_string()),
+            TokenKind::Without => Some("without".to_string()),
+            TokenKind::Only => Some("only".to_string()),
+            TokenKind::Partial => Some("partial".to_string()),
             _ => None,
         };
         if let Some(name) = name {

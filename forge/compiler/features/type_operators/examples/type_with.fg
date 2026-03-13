@@ -1,0 +1,10 @@
+/// Test: with — add fields to a type
+/// expect: 3.0
+
+type Point = { x: float, y: float }
+type Point3D = Point with { z: float }
+
+fn main() {
+  let p: Point3D = { x: 1.0, y: 2.0, z: 3.0 }
+  println(string(p.z))
+}

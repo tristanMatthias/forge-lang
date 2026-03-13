@@ -1,0 +1,12 @@
+/// Test: as partial — all fields optional
+/// expect: bob
+/// expect: none
+
+type User = { name: string, email: string, age: int }
+type UserUpdate = User only {name, email, age} as partial
+
+fn main() {
+  let update: UserUpdate = { name: "bob" }
+  println(update.name ?? "none")
+  println(update.email ?? "none")
+}

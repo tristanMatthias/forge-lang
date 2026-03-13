@@ -58,12 +58,17 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_fn(name, params, return_type.as_ref(), body);
             }
             Statement::Let { name, value, type_ann, .. } => {
-                // Set json_parse_hint from type annotation (for json.parse target type)
+                // Set type hints from type annotation
                 if let Some(ta) = type_ann {
-                    self.json_parse_hint = Some(self.type_checker.resolve_type_expr(ta));
+                    let resolved = self.type_checker.resolve_type_expr(ta);
+                    self.json_parse_hint = Some(resolved.clone());
+                    if matches!(&resolved, Type::Struct { .. }) {
+                        self.struct_target_type = Some(resolved);
+                    }
                 }
                 let val = self.compile_expr(value);
                 self.json_parse_hint = None;
+                self.struct_target_type = None;
                 if let Some(val) = val {
                     let ty = type_ann
                         .as_ref()

@@ -634,6 +634,23 @@ pub enum TypeExpr {
     Struct {
         fields: Vec<(String, TypeExpr)>,
     },
+    /// Type without fields: `User without {id, name}`
+    Without {
+        base: Box<TypeExpr>,
+        fields: Vec<String>,
+    },
+    /// Type with additional fields: `User with { age: int }`
+    TypeWith {
+        base: Box<TypeExpr>,
+        fields: Vec<(String, TypeExpr)>,
+    },
+    /// Type with only specified fields: `User only {id, name}`
+    Only {
+        base: Box<TypeExpr>,
+        fields: Vec<String>,
+    },
+    /// Make all fields optional: `User as partial`
+    AsPartial(Box<TypeExpr>),
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,14 @@
+/// Test: chaining type operators
+/// expect: new@test.com
+
+type User = { id: int, name: string, email: string, password: string, role: string }
+
+type UpdateUser = User without {id, password} as partial
+
+fn takes_update(u: UpdateUser) {
+  println(u.email ?? "none")
+}
+
+fn main() {
+  takes_update({ email: "new@test.com" })
+}

@@ -471,6 +471,19 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
                 .map(|(n, t)| (n.clone(), substitute_type_expr(t, ctx)))
                 .collect(),
         },
+        TypeExpr::Without { base, fields } => TypeExpr::Without {
+            base: Box::new(substitute_type_expr(base, ctx)),
+            fields: fields.clone(),
+        },
+        TypeExpr::TypeWith { base, fields } => TypeExpr::TypeWith {
+            base: Box::new(substitute_type_expr(base, ctx)),
+            fields: fields.iter().map(|(n, t)| (n.clone(), substitute_type_expr(t, ctx))).collect(),
+        },
+        TypeExpr::Only { base, fields } => TypeExpr::Only {
+            base: Box::new(substitute_type_expr(base, ctx)),
+            fields: fields.clone(),
+        },
+        TypeExpr::AsPartial(base) => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
     }
 }
 

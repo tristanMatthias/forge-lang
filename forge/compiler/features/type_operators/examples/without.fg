@@ -1,0 +1,19 @@
+/// Test: without — remove fields from a type
+/// expect: alice
+/// expect: a@test.com
+
+type User = {
+  id: int,
+  name: string,
+  email: string,
+  password: string,
+  created_at: int,
+}
+
+type CreateUser = User without {id, created_at}
+
+fn main() {
+  let input: CreateUser = { name: "alice", email: "a@test.com", password: "secret123" }
+  println(input.name)
+  println(input.email)
+}

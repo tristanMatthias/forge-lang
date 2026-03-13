@@ -94,7 +94,7 @@ impl TypeChecker {
             Statement::TypeDecl { name, value, .. } => {
                 let ty = self.resolve_type_expr(value);
                 let ty = match ty {
-                    Type::Struct { name: None, fields } => Type::Struct {
+                    Type::Struct { fields, .. } => Type::Struct {
                         name: Some(name.clone()),
                         fields,
                     },
@@ -828,6 +828,68 @@ impl TypeChecker {
                     .map(|(name, ty)| (name.clone(), self.resolve_type_expr(ty)))
                     .collect(),
             },
+            TypeExpr::Without { base, fields } => {
+                let base_ty = self.resolve_type_expr(base);
+                match base_ty {
+                    Type::Struct { name, fields: base_fields } => Type::Struct {
+                        name,
+                        fields: base_fields
+                            .into_iter()
+                            .filter(|(n, _)| !fields.contains(n))
+                            .collect(),
+                    },
+                    _ => Type::Error,
+                }
+            }
+            TypeExpr::TypeWith { base, fields: new_fields } => {
+                let base_ty = self.resolve_type_expr(base);
+                match base_ty {
+                    Type::Struct { name, fields: base_fields } => {
+                        let mut result_fields = base_fields;
+                        for (n, ty) in new_fields {
+                            let resolved = self.resolve_type_expr(ty);
+                            result_fields.push((n.clone(), resolved));
+                        }
+                        Type::Struct {
+                            name,
+                            fields: result_fields,
+                        }
+                    }
+                    _ => Type::Error,
+                }
+            }
+            TypeExpr::Only { base, fields } => {
+                let base_ty = self.resolve_type_expr(base);
+                match base_ty {
+                    Type::Struct { name, fields: base_fields } => Type::Struct {
+                        name,
+                        fields: base_fields
+                            .into_iter()
+                            .filter(|(n, _)| fields.contains(n))
+                            .collect(),
+                    },
+                    _ => Type::Error,
+                }
+            }
+            TypeExpr::AsPartial(base) => {
+                let base_ty = self.resolve_type_expr(base);
+                match base_ty {
+                    Type::Struct { name, fields } => Type::Struct {
+                        name,
+                        fields: fields
+                            .into_iter()
+                            .map(|(n, ty)| {
+                                let nullable = match &ty {
+                                    Type::Nullable(_) => ty,
+                                    _ => Type::Nullable(Box::new(ty)),
+                                };
+                                (n, nullable)
+                            })
+                            .collect(),
+                    },
+                    _ => Type::Error,
+                }
+            }
         }
     }
 
@@ -921,6 +983,8 @@ impl TypeChecker {
             return true;
         }
         match (expected, actual) {
+            // Nullable expected accepts non-nullable actual (e.g., string? accepts string)
+            (Type::Nullable(e), a) if !matches!(a, Type::Nullable(_)) => self.types_compatible(e, a),
             (Type::Nullable(e), Type::Nullable(a)) => self.types_compatible(e, a),
             (Type::List(e), Type::List(a)) => self.types_compatible(e, a),
             (Type::Map(ek, ev), Type::Map(ak, av)) => {
@@ -931,6 +995,21 @@ impl TypeChecker {
             }
             (Type::Tuple(es), Type::Tuple(as_)) if es.len() == as_.len() => {
                 es.iter().zip(as_.iter()).all(|(e, a)| self.types_compatible(e, a))
+            }
+            // Struct compatibility: named struct matches anonymous struct with compatible fields
+            (Type::Struct { fields: ef, .. }, Type::Struct { fields: af, .. }) => {
+                // Every field in actual must exist in expected with compatible type
+                let all_actual_match = af.iter().all(|(an, at)| {
+                    ef.iter().any(|(en, et)| {
+                        en == an && self.types_compatible(et, at)
+                    })
+                });
+                // Every non-nullable field in expected must be present in actual
+                let all_required_present = ef.iter().all(|(en, et)| {
+                    matches!(et, Type::Nullable(_))
+                        || af.iter().any(|(an, _)| an == en)
+                });
+                all_actual_match && all_required_present
             }
             // ptr and string are interchangeable at FFI boundary
             (Type::Ptr, Type::String) | (Type::String, Type::Ptr) => true,

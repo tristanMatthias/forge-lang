@@ -646,7 +646,13 @@ impl<'ctx> Codegen<'ctx> {
             if let Some(func) = self.functions.get(name).copied()
                 .or_else(|| self.module.get_function(name))
             {
-                let compiled_args = self.compile_call_args(args, func)?;
+                // Get parameter types from type checker for struct target hints
+                let param_types: Vec<Type> = if let Some(Type::Function { params, .. }) = self.type_checker.env.functions.get(name).cloned() {
+                    params
+                } else {
+                    Vec::new()
+                };
+                let compiled_args = self.compile_call_args_with_types(args, func, &param_types)?;
                 let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
                 return result.try_as_basic_value().left();
             }
@@ -693,10 +699,27 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
         function: FunctionValue<'ctx>,
     ) -> Option<Vec<BasicMetadataValueEnum<'ctx>>> {
+        self.compile_call_args_with_types(args, function, &[])
+    }
+
+    pub(crate) fn compile_call_args_with_types(
+        &mut self,
+        args: &[CallArg],
+        function: FunctionValue<'ctx>,
+        param_types: &[Type],
+    ) -> Option<Vec<BasicMetadataValueEnum<'ctx>>> {
         let param_count = function.count_params() as usize;
         let mut compiled = Vec::new();
 
         for (i, arg) in args.iter().enumerate() {
+            // Set struct target type hint if the parameter is a struct type
+            let old_hint = self.struct_target_type.take();
+            if let Some(pt) = param_types.get(i) {
+                if matches!(pt, Type::Struct { .. }) {
+                    self.struct_target_type = Some(pt.clone());
+                }
+            }
+
             if let Some(val) = self.compile_expr(&arg.value) {
                 // Type-match: if param expects different type, convert
                 if i < param_count {
@@ -707,8 +730,10 @@ impl<'ctx> Codegen<'ctx> {
                     compiled.push(val.into());
                 }
             } else {
+                self.struct_target_type = old_hint;
                 return None;
             }
+            self.struct_target_type = old_hint;
         }
 
         Some(compiled)
