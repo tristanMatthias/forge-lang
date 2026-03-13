@@ -142,17 +142,95 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         let arg = args.first()?;
         let val = self.compile_expr(&arg.value)?;
-        let val_type = self.infer_type(&arg.value);
+        let mut val_type = self.infer_type(&arg.value);
+
+        // If infer_type couldn't resolve the struct (e.g., variable from a popped block scope),
+        // try looking up the variable's stored type directly.
+        if !matches!(&val_type, Type::Struct { .. }) {
+            if let Expr::Ident(name, _) = &arg.value {
+                if let Some((_, ty)) = self.lookup_var(name) {
+                    if matches!(&ty, Type::Struct { .. }) {
+                        val_type = ty;
+                    }
+                }
+            }
+        }
+
+        // If we still don't have struct info but the LLVM value is a struct,
+        // try to reconstruct field types from the LLVM type.
+        if !matches!(&val_type, Type::Struct { .. } | Type::List(_) | Type::Nullable(_)) && val.is_struct_value() {
+            if let Some(fields) = self.infer_struct_fields_from_llvm(val) {
+                val_type = Type::Struct { name: None, fields };
+            }
+        }
+
+        // Also check for List/Nullable type with same fallback logic
+        if !matches!(&val_type, Type::Struct { .. } | Type::List(_) | Type::Nullable(_)) {
+            if let Expr::Ident(name, _) = &arg.value {
+                if let Some((_, ty)) = self.lookup_var(name) {
+                    if matches!(&ty, Type::List(_) | Type::Nullable(_)) {
+                        val_type = ty;
+                    }
+                }
+            }
+        }
 
         match &val_type {
             Type::Struct { fields, .. } => {
                 self.compile_json_stringify_struct(val, fields)
+            }
+            Type::List(inner) => {
+                if let Type::Struct { fields, .. } = inner.as_ref() {
+                    self.compile_json_stringify_list(val, fields)
+                } else {
+                    Some(val)
+                }
+            }
+            Type::Nullable(inner) => {
+                if let Type::Struct { fields, .. } = inner.as_ref() {
+                    self.compile_json_stringify_nullable_struct(val, fields)
+                } else {
+                    Some(val)
+                }
             }
             _ => {
                 // For non-struct types, convert to string
                 Some(val)
             }
         }
+    }
+
+    /// Attempt to reconstruct field types from an LLVM struct value.
+    /// This is a fallback for when type inference fails (e.g., block scope issues).
+    fn infer_struct_fields_from_llvm(&self, val: BasicValueEnum<'ctx>) -> Option<Vec<(String, Type)>> {
+        if !val.is_struct_value() {
+            return None;
+        }
+        let struct_val = val.into_struct_value();
+        let struct_type = struct_val.get_type();
+        let count = struct_type.count_fields();
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let f64_type = self.context.f64_type();
+        let string_type = self.string_type();
+
+        let mut fields = Vec::new();
+        for i in 0..count {
+            let field_type = struct_type.get_field_type_at_index(i)?;
+            let ty = if field_type == i64_type.into() {
+                Type::Int
+            } else if field_type == f64_type.into() {
+                Type::Float
+            } else if field_type == i8_type.into() {
+                Type::Bool
+            } else if field_type == string_type.into() {
+                Type::String
+            } else {
+                Type::Unknown
+            };
+            fields.push((format!("field_{}", i), ty));
+        }
+        Some(fields)
     }
 
     /// Serialize a struct value to a JSON string (returned as ForgeString).
@@ -502,6 +580,445 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(string_new, &[buf.into(), offset.into()], "json_str")
             .unwrap();
         result.try_as_basic_value().left()
+    }
+
+    /// Serialize a List<Struct> to a JSON array string (returned as ForgeString).
+    /// Iterates elements, stringifying each struct inline into a shared buffer.
+    pub(crate) fn compile_json_stringify_list(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        fields: &[(String, Type)],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        self.ensure_snprintf_declared();
+
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+        // Extract list data ptr and count
+        let list_struct = val.into_struct_value();
+        let data_ptr = self
+            .builder
+            .build_extract_value(list_struct, 0, "data_ptr")
+            .unwrap()
+            .into_pointer_value();
+        let count = self
+            .builder
+            .build_extract_value(list_struct, 1, "count")
+            .unwrap()
+            .into_int_value();
+
+        // Build element struct type
+        let field_types: Vec<BasicTypeEnum<'ctx>> = fields
+            .iter()
+            .map(|(_, ty)| self.type_to_llvm_basic(ty))
+            .collect();
+        let struct_type = self.context.struct_type(&field_types, false);
+
+        // Allocate output buffer (64KB) and offset alloca
+        let buf_size = i64_type.const_int(65536, false);
+        let buf = self
+            .builder
+            .build_array_alloca(i8_type, buf_size, "json_buf")
+            .unwrap();
+        let offset_alloca = self.builder.build_alloca(i64_type, "off_ptr").unwrap();
+        self.builder
+            .build_store(offset_alloca, i64_type.const_zero())
+            .unwrap();
+
+        // Write '['
+        self.buf_write_literal(buf, buf_size, offset_alloca, "[");
+
+        // Loop setup
+        let function = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+        let loop_bb = self.context.append_basic_block(function, "list_loop");
+        let body_bb = self.context.append_basic_block(function, "list_body");
+        let done_bb = self.context.append_basic_block(function, "list_done");
+
+        let i_alloca = self.builder.build_alloca(i64_type, "i").unwrap();
+        self.builder
+            .build_store(i_alloca, i64_type.const_zero())
+            .unwrap();
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+
+        // Loop condition: i < count
+        self.builder.position_at_end(loop_bb);
+        let i_val = self
+            .builder
+            .build_load(i64_type, i_alloca, "i")
+            .unwrap()
+            .into_int_value();
+        let cond = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "cmp")
+            .unwrap();
+        self.builder
+            .build_conditional_branch(cond, body_bb, done_bb)
+            .unwrap();
+
+        // Loop body
+        self.builder.position_at_end(body_bb);
+        let i_val = self
+            .builder
+            .build_load(i64_type, i_alloca, "i")
+            .unwrap()
+            .into_int_value();
+
+        // If i > 0, write ','
+        let comma_bb = self.context.append_basic_block(function, "comma");
+        let no_comma_bb = self.context.append_basic_block(function, "no_comma");
+        let after_comma_bb = self.context.append_basic_block(function, "after_comma");
+        let is_first = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, i_val, i64_type.const_zero(), "first")
+            .unwrap();
+        self.builder
+            .build_conditional_branch(is_first, no_comma_bb, comma_bb)
+            .unwrap();
+
+        self.builder.position_at_end(comma_bb);
+        self.buf_write_literal(buf, buf_size, offset_alloca, ",");
+        self.builder
+            .build_unconditional_branch(after_comma_bb)
+            .unwrap();
+
+        self.builder.position_at_end(no_comma_bb);
+        self.builder
+            .build_unconditional_branch(after_comma_bb)
+            .unwrap();
+
+        self.builder.position_at_end(after_comma_bb);
+
+        // Load struct element at data[i]
+        let elem_ptr = unsafe {
+            self.builder
+                .build_gep(struct_type, data_ptr, &[i_val], "elem_ptr")
+                .unwrap()
+        };
+        let elem_basic_type: BasicTypeEnum = struct_type.into();
+        let elem = self
+            .builder
+            .build_load(elem_basic_type, elem_ptr, "elem")
+            .unwrap();
+
+        // Write '{' and each field
+        self.buf_write_literal(buf, buf_size, offset_alloca, "{");
+
+        for (fi, (field_name, field_type)) in fields.iter().enumerate() {
+            let comma_str = if fi > 0 { "," } else { "" };
+            let field_val = self
+                .builder
+                .build_extract_value(elem.into_struct_value(), fi as u32, field_name)
+                .unwrap();
+
+            match field_type {
+                Type::String => {
+                    let prefix = format!("{}\"{}\":\"", comma_str, field_name);
+                    self.buf_write_literal(buf, buf_size, offset_alloca, &prefix);
+
+                    // Write string value via forge_write_cstring
+                    let str_struct = field_val.into_struct_value();
+                    let str_ptr = self
+                        .builder
+                        .build_extract_value(str_struct, 0, "str_ptr")
+                        .unwrap();
+                    let str_len = self
+                        .builder
+                        .build_extract_value(str_struct, 1, "str_len")
+                        .unwrap();
+
+                    let offset = self
+                        .builder
+                        .build_load(i64_type, offset_alloca, "off")
+                        .unwrap()
+                        .into_int_value();
+                    let remaining = self
+                        .builder
+                        .build_int_sub(buf_size, offset, "rem")
+                        .unwrap();
+                    let buf_off = unsafe {
+                        self.builder
+                            .build_gep(i8_type, buf, &[offset], "off")
+                            .unwrap()
+                    };
+                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
+                    self.builder
+                        .build_call(
+                            write_fn,
+                            &[buf_off.into(), remaining.into(), str_ptr.into(), str_len.into()],
+                            "",
+                        )
+                        .unwrap();
+                    let new_off = self
+                        .builder
+                        .build_int_add(offset, str_len.into_int_value(), "off")
+                        .unwrap();
+                    self.builder.build_store(offset_alloca, new_off).unwrap();
+
+                    self.buf_write_literal(buf, buf_size, offset_alloca, "\"");
+                }
+                Type::Int => {
+                    let fmt = format!("{}\"{}\":%lld", comma_str, field_name);
+                    self.buf_write_formatted(buf, buf_size, offset_alloca, &fmt, &[field_val.into()]);
+                }
+                Type::Float => {
+                    let fmt = format!("{}\"{}\":%f", comma_str, field_name);
+                    self.buf_write_formatted(buf, buf_size, offset_alloca, &fmt, &[field_val.into()]);
+                }
+                Type::Bool => {
+                    let fmt = format!("{}\"{}\":%d", comma_str, field_name);
+                    let int_val = self
+                        .builder
+                        .build_int_z_extend(
+                            field_val.into_int_value(),
+                            self.context.i32_type(),
+                            "bool_i32",
+                        )
+                        .unwrap();
+                    self.buf_write_formatted(buf, buf_size, offset_alloca, &fmt, &[int_val.into()]);
+                }
+                _ => {}
+            }
+        }
+
+        // Write '}'
+        self.buf_write_literal(buf, buf_size, offset_alloca, "}");
+
+        // i++
+        let next_i = self
+            .builder
+            .build_int_add(i_val, i64_type.const_int(1, false), "next_i")
+            .unwrap();
+        self.builder.build_store(i_alloca, next_i).unwrap();
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+
+        // Done — write ']'
+        self.builder.position_at_end(done_bb);
+        self.buf_write_literal(buf, buf_size, offset_alloca, "]");
+
+        // Build ForgeString from buffer
+        let final_offset = self
+            .builder
+            .build_load(i64_type, offset_alloca, "final_off")
+            .unwrap();
+        let string_new = self.module.get_function("forge_string_new").unwrap();
+        let result = self
+            .builder
+            .build_call(string_new, &[buf.into(), final_offset.into()], "json_str")
+            .unwrap();
+        result.try_as_basic_value().left()
+    }
+
+    /// Serialize a nullable struct to JSON. Returns "null" if null, or the struct JSON if present.
+    /// Nullable layout: {i8 flag, field1, field2, ...} where flag 0 = null, 1 = some.
+    pub(crate) fn compile_json_stringify_nullable_struct(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        fields: &[(String, Type)],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let nullable_struct = val.into_struct_value();
+
+        // Extract null flag (field 0)
+        let flag = self
+            .builder
+            .build_extract_value(nullable_struct, 0, "null_flag")
+            .unwrap()
+            .into_int_value();
+        let is_null = self
+            .builder
+            .build_int_compare(
+                IntPredicate::EQ,
+                flag,
+                self.context.i8_type().const_zero(),
+                "is_null",
+            )
+            .unwrap();
+
+        let function = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+        let null_bb = self.context.append_basic_block(function, "null_case");
+        let some_bb = self.context.append_basic_block(function, "some_case");
+        let merge_bb = self.context.append_basic_block(function, "merge");
+
+        self.builder
+            .build_conditional_branch(is_null, null_bb, some_bb)
+            .unwrap();
+
+        // Null case: return "null" string
+        self.builder.position_at_end(null_bb);
+        let null_str = self
+            .builder
+            .build_global_string_ptr("null", "null_str")
+            .unwrap();
+        let string_new = self.module.get_function("forge_string_new").unwrap();
+        let null_result = self
+            .builder
+            .build_call(
+                string_new,
+                &[
+                    null_str.as_pointer_value().into(),
+                    self.context.i64_type().const_int(4, false).into(),
+                ],
+                "null_json",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let null_bb_end = self.builder.get_insert_block().unwrap();
+
+        // Some case: extract inner struct (field 1 of nullable) and stringify
+        self.builder.position_at_end(some_bb);
+        // Nullable layout is {i8, inner_type} — field 1 is the whole inner struct
+        let inner_val = self
+            .builder
+            .build_extract_value(nullable_struct, 1, "inner")
+            .unwrap();
+        let some_result = self
+            .compile_json_stringify_struct(inner_val, fields)
+            .unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let some_bb_end = self.builder.get_insert_block().unwrap();
+
+        // Merge: phi between null and some results
+        self.builder.position_at_end(merge_bb);
+        let phi = self
+            .builder
+            .build_phi(null_result.get_type(), "json_result")
+            .unwrap();
+        phi.add_incoming(&[(&null_result, null_bb_end), (&some_result, some_bb_end)]);
+
+        Some(phi.as_basic_value())
+    }
+
+    /// Write a literal string into a buffer at the current offset (stored via alloca).
+    fn buf_write_literal(
+        &mut self,
+        buf: PointerValue<'ctx>,
+        buf_size: IntValue<'ctx>,
+        offset_alloca: PointerValue<'ctx>,
+        literal: &str,
+    ) {
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let snprintf = self.module.get_function("snprintf").unwrap();
+        let fmt_s = self
+            .builder
+            .build_global_string_ptr("%s", "fmt_s")
+            .unwrap();
+        let str_val = self
+            .builder
+            .build_global_string_ptr(literal, "lit")
+            .unwrap();
+
+        let offset = self
+            .builder
+            .build_load(i64_type, offset_alloca, "off")
+            .unwrap()
+            .into_int_value();
+        let remaining = self
+            .builder
+            .build_int_sub(buf_size, offset, "rem")
+            .unwrap();
+        let buf_off = unsafe {
+            self.builder
+                .build_gep(i8_type, buf, &[offset], "off")
+                .unwrap()
+        };
+        let wrote = self
+            .builder
+            .build_call(
+                snprintf,
+                &[
+                    buf_off.into(),
+                    remaining.into(),
+                    fmt_s.as_pointer_value().into(),
+                    str_val.as_pointer_value().into(),
+                ],
+                "wrote",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        let w64 = self
+            .builder
+            .build_int_z_extend(wrote, i64_type, "w64")
+            .unwrap();
+        let new_off = self
+            .builder
+            .build_int_add(offset, w64, "off")
+            .unwrap();
+        self.builder.build_store(offset_alloca, new_off).unwrap();
+    }
+
+    /// Write a formatted value into a buffer at the current offset (stored via alloca).
+    fn buf_write_formatted(
+        &mut self,
+        buf: PointerValue<'ctx>,
+        buf_size: IntValue<'ctx>,
+        offset_alloca: PointerValue<'ctx>,
+        fmt: &str,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) {
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let snprintf = self.module.get_function("snprintf").unwrap();
+        let fmt_str = self
+            .builder
+            .build_global_string_ptr(fmt, "fmt")
+            .unwrap();
+
+        let offset = self
+            .builder
+            .build_load(i64_type, offset_alloca, "off")
+            .unwrap()
+            .into_int_value();
+        let remaining = self
+            .builder
+            .build_int_sub(buf_size, offset, "rem")
+            .unwrap();
+        let buf_off = unsafe {
+            self.builder
+                .build_gep(i8_type, buf, &[offset], "off")
+                .unwrap()
+        };
+
+        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![
+            buf_off.into(),
+            remaining.into(),
+            fmt_str.as_pointer_value().into(),
+        ];
+        call_args.extend_from_slice(args);
+
+        let wrote = self
+            .builder
+            .build_call(snprintf, &call_args, "wrote")
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        let w64 = self
+            .builder
+            .build_int_z_extend(wrote, i64_type, "w64")
+            .unwrap();
+        let new_off = self
+            .builder
+            .build_int_add(offset, w64, "off")
+            .unwrap();
+        self.builder.build_store(offset_alloca, new_off).unwrap();
     }
 
     /// Parse a JSON array string into a List<Struct>.

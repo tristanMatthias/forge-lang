@@ -73,7 +73,15 @@ impl<'ctx> Codegen<'ctx> {
                     let ty = type_ann
                         .as_ref()
                         .map(|t| self.type_checker.resolve_type_expr(t))
-                        .unwrap_or_else(|| self.infer_type(value));
+                        .unwrap_or_else(|| {
+                            // For block expressions, prefer the type captured before scope pop
+                            if matches!(value, Expr::Block(_)) {
+                                if let Some(ref bt) = self.last_block_result_type {
+                                    return bt.clone();
+                                }
+                            }
+                            self.infer_type(value)
+                        });
                     // If the inferred type doesn't match the actual value (e.g. extern fn
                     // returning ForgeString struct but type inferred as Unknown/Int), derive
                     // the type from the actual LLVM value type.

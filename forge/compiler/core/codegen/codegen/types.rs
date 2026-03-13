@@ -302,6 +302,12 @@ impl<'ctx> Codegen<'ctx> {
                             if let Some(ret_ty) = self.fn_return_types.get(fn_name) {
                                 return ret_ty.clone();
                             }
+                            // Also check type checker for template-expanded Forge functions
+                            if let Some(Type::Function { return_type, .. }) =
+                                self.type_checker.env.lookup_function(fn_name)
+                            {
+                                return *return_type.clone();
+                            }
                         }
                     }
                     let obj_type = self.infer_type(object);

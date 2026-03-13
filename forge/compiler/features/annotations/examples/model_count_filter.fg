@@ -1,0 +1,23 @@
+/// Test: Model.count() with filter and aggregate methods
+///
+/// expect: 3
+/// expect: 2
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "member" })
+  User.create({ name: "charlie", role: "admin" })
+
+  println(string(User.count()))
+  println(string(User.count_where({ role: "admin" })))
+  println(string(User.count_where({ role: "member" })))
+}

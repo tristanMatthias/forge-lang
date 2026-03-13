@@ -1,0 +1,27 @@
+/// Test: @hidden fields excluded from list results too
+///
+/// expect: 2
+/// expect: false
+/// expect: false
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  secret: string @hidden
+}
+
+fn main() {
+  User.create({ name: "alice", secret: "s1" })
+  User.create({ name: "bob", secret: "s2" })
+
+  let users = User.list()
+  println(string(users.length))
+
+  // Verify neither user's JSON contains the hidden field
+  let j1 = json.stringify(users[0])
+  let j2 = json.stringify(users[1])
+  println(string(j1.contains("secret")))
+  println(string(j2.contains("secret")))
+}

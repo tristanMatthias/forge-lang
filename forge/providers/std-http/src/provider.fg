@@ -44,6 +44,11 @@ component server(__tpl_name) {
         forge_http_add_middleware(__tpl_config_port, name, handler)
     }
 
+    @syntax("use_middleware_after {name} {handler}")
+    fn use_mw_after(name: string, handler: ptr) {
+        forge_http_add_middleware_after(__tpl_config_port, name, handler)
+    }
+
     @syntax("under {prefix}")
     fn under_start(prefix: string) {
         forge_http_push_prefix(__tpl_config_port, prefix)

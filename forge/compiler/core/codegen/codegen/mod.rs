@@ -101,6 +101,9 @@ pub struct Codegen<'ctx> {
     pub(crate) struct_target_type: Option<Type>,
     pub(crate) deferred_stmts: Vec<Expr>,
     pub source_file: String,
+    /// Type of the last value returned from a block expression, captured before scope pop.
+    /// Used by `let` statements to correctly type variables assigned from blocks.
+    pub(crate) last_block_result_type: Option<Type>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -132,6 +135,7 @@ impl<'ctx> Codegen<'ctx> {
             struct_target_type: None,
             deferred_stmts: Vec::new(),
             source_file: String::new(),
+            last_block_result_type: None,
         }
     }
 

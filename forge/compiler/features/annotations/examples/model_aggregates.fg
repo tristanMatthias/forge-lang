@@ -1,0 +1,24 @@
+/// Test: Model aggregate methods sum() and avg()
+///
+/// expect: 60.0
+/// expect: 20.0
+
+use @std.model.{model}
+
+model Product {
+  id: int @primary @auto_increment
+  name: string
+  price: int
+}
+
+fn main() {
+  Product.create({ name: "A", price: 10 })
+  Product.create({ name: "B", price: 20 })
+  Product.create({ name: "C", price: 30 })
+
+  let total = Product.sum("price")
+  println(string(total))
+
+  let average = Product.avg("price")
+  println(string(average))
+}

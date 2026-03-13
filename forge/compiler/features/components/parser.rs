@@ -107,8 +107,14 @@ impl Parser {
             // 3. Schema field (ident: type @annotations)
             // 4. Config (ident value)
 
-            // First, try syntax patterns (data-driven) before any hardcoded matching
-            if !meta.syntax_patterns.is_empty() {
+            // Check for block keywords that should take precedence over syntax patterns
+            // (under, middleware, crud)
+            let is_block_keyword = match &self.peek()?.kind {
+                TokenKind::Ident(n) if n == "under" || n == "middleware" || n == "crud" => true,
+                _ => false,
+            };
+
+            if !is_block_keyword && !meta.syntax_patterns.is_empty() {
                 if let Some(stmt) = self.try_syntax_match(meta) {
                     // Attach pending annotations as a preceding annotation statement
                     if !pending_annotations.is_empty() {
@@ -227,6 +233,197 @@ impl Parser {
                     // Hook: before/after operation(param) { body }
                     if let Some(stmt) = self.parse_component_hook() {
                         blocks.push(stmt);
+                    }
+                }
+                TokenKind::Ident(name) if name == "under" => {
+                    // `under /prefix { ... }` → push_prefix, inner stmts, pop_prefix
+                    let sp = self.advance()?.span; // consume 'under'
+                    self.skip_newlines();
+                    // Parse prefix: string literal or /path tokens
+                    let prefix = if matches!(&self.peek()?.kind, TokenKind::StringLiteral(_)) {
+                        match &self.peek()?.kind {
+                            TokenKind::StringLiteral(s) => { let s = s.clone(); self.advance(); s }
+                            _ => String::new(),
+                        }
+                    } else {
+                        // Collect path tokens until '{' (e.g., /api/v1)
+                        let mut path = String::new();
+                        while !self.check(&TokenKind::LBrace) && !self.check(&TokenKind::Newline) && !self.is_at_end() {
+                            let tok = self.advance()?;
+                            match &tok.kind {
+                                TokenKind::Slash => path.push('/'),
+                                TokenKind::Ident(s) => path.push_str(s),
+                                TokenKind::IntLiteral(n) => path.push_str(&n.to_string()),
+                                _ => break,
+                            }
+                        }
+                        path
+                    };
+                    self.skip_newlines();
+                    // Generate push_prefix call
+                    blocks.push(Statement::Expr(Expr::Call {
+                        callee: Box::new(Expr::Ident("__component_under_start".into(), sp)),
+                        args: vec![CallArg { name: Some("prefix".into()), value: Expr::StringLit(prefix, sp) }],
+                        type_args: vec![],
+                        span: sp,
+                    }));
+                    // Parse inner block as component body items
+                    if self.check(&TokenKind::LBrace) {
+                        self.advance(); // consume '{'
+                        self.skip_newlines();
+                        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                            self.skip_newlines();
+                            if self.check(&TokenKind::RBrace) { break; }
+                            // Try syntax patterns first
+                            if !meta.syntax_patterns.is_empty() {
+                                if let Some(stmt) = self.try_syntax_match(meta) {
+                                    blocks.push(stmt);
+                                    self.skip_newlines();
+                                    continue;
+                                }
+                            }
+                            // Skip unknown tokens inside under block
+                            self.advance();
+                        }
+                        if self.check(&TokenKind::RBrace) {
+                            self.advance(); // consume '}'
+                        }
+                    }
+                    // Generate pop_prefix call
+                    blocks.push(Statement::Expr(Expr::Call {
+                        callee: Box::new(Expr::Ident("__component_under_end".into(), sp)),
+                        args: vec![],
+                        type_args: vec![],
+                        span: sp,
+                    }));
+                }
+                TokenKind::Ident(name) if name == "middleware" => {
+                    // `middleware name { on request(req) {...} on response(req, res, elapsed) {...} }`
+                    let sp = self.advance()?.span; // consume 'middleware'
+                    self.skip_newlines();
+                    let mw_name = match &self.peek()?.kind {
+                        TokenKind::Ident(n) => n.clone(),
+                        _ => { self.error("expected middleware name"); continue; }
+                    };
+                    self.advance(); // consume name
+                    self.skip_newlines();
+                    // Parse block with on request/response handlers
+                    if self.check(&TokenKind::LBrace) {
+                        self.advance(); // consume '{'
+                        self.skip_newlines();
+                        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+                            self.skip_newlines();
+                            if self.check(&TokenKind::RBrace) { break; }
+                            if matches!(&self.peek()?.kind, TokenKind::On) {
+                                let on_sp = self.advance()?.span; // consume 'on'
+                                self.skip_newlines();
+                                let event = match &self.peek()?.kind {
+                                    TokenKind::Ident(n) => n.clone(),
+                                    _ => { self.advance(); continue; }
+                                };
+                                self.advance(); // consume event name
+                                // Parse params
+                                let params = if self.check(&TokenKind::LParen) {
+                                    self.advance();
+                                    let p = self.parse_params().unwrap_or_default();
+                                    self.expect(&TokenKind::RParen);
+                                    p
+                                } else {
+                                    vec![]
+                                };
+                                self.skip_newlines();
+                                let mut body = self.parse_block()?;
+                                // Generate middleware handler fn
+                                let fn_name = format!("__mw_{}_{}", mw_name, event);
+                                // Inject let bindings to map internal ptr params to user-named params
+                                // User params: (method, path, body, headers) -> __m, __p, __b, __h via forge_http_ptr_to_str
+                                let internal_names = ["__m", "__p", "__b", "__h"];
+                                let mut injected: Vec<Statement> = Vec::new();
+                                for (i, param) in params.iter().enumerate() {
+                                    if i < internal_names.len() {
+                                        injected.push(Statement::Let {
+                                            name: param.name.clone(),
+                                            type_ann: None,
+                                            type_ann_span: None,
+                                            value: Expr::Call {
+                                                callee: Box::new(Expr::Ident("forge_http_ptr_to_str".into(), on_sp)),
+                                                args: vec![CallArg { name: None, value: Expr::Ident(internal_names[i].into(), on_sp) }],
+                                                type_args: vec![],
+                                                span: on_sp,
+                                            },
+                                            exported: false,
+                                            span: on_sp,
+                                        });
+                                    }
+                                }
+                                injected.append(&mut body.statements);
+                                body.statements = injected;
+                                // Create fn with handler signature matching MiddlewareFn
+                                let handler_fn = Statement::FnDecl {
+                                    name: fn_name.clone(),
+                                    type_params: vec![],
+                                    params: vec![
+                                        Param { name: "__m".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                        Param { name: "__p".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                        Param { name: "__b".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                        Param { name: "__h".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                        Param { name: "__response_buf".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp },
+                                        Param { name: "__response_buf_len".into(), type_ann: Some(TypeExpr::Named("int".into())), default: None, span: on_sp },
+                                    ],
+                                    return_type: Some(TypeExpr::Named("int".into())),
+                                    body,
+                                    exported: false,
+                                    span: on_sp,
+                                };
+                                blocks.push(handler_fn);
+                                // Register middleware
+                                let register_fn = if event == "request" {
+                                    "__component_use_mw"
+                                } else {
+                                    "__component_use_mw_after"
+                                };
+                                blocks.push(Statement::Expr(Expr::Call {
+                                    callee: Box::new(Expr::Ident(register_fn.into(), on_sp)),
+                                    args: vec![
+                                        CallArg { name: Some("name".into()), value: Expr::StringLit(mw_name.clone(), on_sp) },
+                                        CallArg { name: Some("handler".into()), value: Expr::Ident(fn_name, on_sp) },
+                                    ],
+                                    type_args: vec![],
+                                    span: on_sp,
+                                }));
+                            } else {
+                                self.advance(); // skip unknown tokens
+                            }
+                            self.skip_newlines();
+                        }
+                        if self.check(&TokenKind::RBrace) {
+                            self.advance(); // consume '}'
+                        }
+                    }
+                }
+                TokenKind::Ident(name) if name == "crud" => {
+                    // `crud Model1, Model2` → mount_crud_auto for each model
+                    let sp = self.advance()?.span; // consume 'crud'
+                    self.skip_newlines();
+                    loop {
+                        let model_name = match &self.peek()?.kind {
+                            TokenKind::Ident(n) => n.clone(),
+                            _ => break,
+                        };
+                        self.advance(); // consume model name
+                        blocks.push(Statement::Expr(Expr::Call {
+                            callee: Box::new(Expr::Ident("__component_crud_mount".into(), sp)),
+                            args: vec![CallArg { name: Some("model".into()), value: Expr::StringLit(model_name, sp) }],
+                            type_args: vec![],
+                            span: sp,
+                        }));
+                        self.skip_newlines();
+                        if self.check(&TokenKind::Comma) {
+                            self.advance(); // consume ','
+                            self.skip_newlines();
+                        } else {
+                            break;
+                        }
                     }
                 }
                 TokenKind::Ident(_) => {
@@ -481,8 +678,9 @@ impl Parser {
                     self.skip_newlines();
                     self.expect(&TokenKind::Eq)?;
                     self.skip_newlines();
-                    let _schema_name = self.expect_ident()?; // __tpl_schema
-                    items.push(ComponentTemplateItem::TypeFromSchema);
+                    let schema_name = self.expect_ident()?; // __tpl_schema or __tpl_schema_visible
+                    let visible_only = schema_name == "__tpl_schema_visible";
+                    items.push(ComponentTemplateItem::TypeFromSchema { visible_only });
                 }
                 TokenKind::Fn => {
                     // fn __tpl_name.method(...) or fn __tpl_model_ref.method(...)

@@ -82,6 +82,21 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
+        // Runtime helper functions used by component template expansion
+        env.functions.insert(
+            "forge_string_new".to_string(),
+            Type::Function {
+                params: vec![Type::Ptr, Type::Int],
+                return_type: Box::new(Type::String),
+            },
+        );
+        env.functions.insert(
+            "strlen".to_string(),
+            Type::Function {
+                params: vec![Type::Ptr],
+                return_type: Box::new(Type::Int),
+            },
+        );
         // Register built-in namespaces (static method targets handled by codegen)
         env.namespaces.insert("json".to_string());
         env.namespaces.insert("string".to_string());

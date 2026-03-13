@@ -1,0 +1,24 @@
+/// Test: Model.query with order, limit, and offset
+///
+/// expect: charlie
+/// expect: bob
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  score: int
+}
+
+fn main() {
+  User.create({ name: "alice", score: 10 })
+  User.create({ name: "bob", score: 30 })
+  User.create({ name: "charlie", score: 50 })
+  User.create({ name: "dave", score: 20 })
+
+  // Query with order by score descending, limit 2
+  let top = User.query({ order: "score DESC", limit: 2 })
+  println(top[0].name)
+  println(top[1].name)
+}

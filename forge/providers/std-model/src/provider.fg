@@ -38,7 +38,7 @@ component model(__tpl_name, schema) {
     event before_delete(id: int)
     event after_delete(id: int)
 
-    type __tpl_name = __tpl_schema
+    type __tpl_name = __tpl_schema_visible
 
     on startup {
         forge_model_init(":memory:")

@@ -1,0 +1,29 @@
+/// Test: @hidden annotation excludes field from JSON responses
+/// The password field should not appear in get/list results.
+///
+/// expect: 1
+/// expect: false
+/// expect: true
+/// expect: false
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  password: string @hidden
+}
+
+fn main() {
+  User.create({ name: "alice", password: "secret123" })
+  println(string(User.count()))
+
+  let user = User.get(1)
+  if user != null {
+    // User should have name but not password in JSON output
+    let json = json.stringify(user)
+    println(string(json.contains("secret123")))
+    println(string(json.contains("alice")))
+    println(string(json.contains("password")))
+  }
+}

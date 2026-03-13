@@ -411,10 +411,11 @@ pub extern "C" fn forge_http_mount_crud(port: u16, table: *const c_char, base_pa
         forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_delete_handler);
     }
 
-    // Register this mount in the static registry
+    // Register this mount with the prefixed path (same as routes use)
+    let prefixed_base = format!("{}{}", current_prefix(port), base_s);
     MOUNTS.lock().unwrap().push(MountInfo {
         table: table_s,
-        base_path: base_s,
+        base_path: prefixed_base,
     });
 }
 
@@ -734,6 +735,50 @@ pub extern "C" fn forge_http_pop_prefix(port: u16) {
         if let Some(stack) = map.get_mut(&port) {
             stack.pop();
         }
+    }
+}
+
+// ── Middleware registration ──
+
+fn middleware_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<MiddlewareEntry>>>> {
+    let mut guard = MIDDLEWARE.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard
+}
+
+#[no_mangle]
+pub extern "C" fn forge_http_add_middleware(port: u16, name: *const c_char, handler: MiddlewareFn) {
+    let name_s = cstr(name).to_string();
+    let mut guard = middleware_map();
+    let entries = guard.as_mut().unwrap().entry(port).or_default();
+    // Check if middleware with this name exists, update its before handler
+    if let Some(entry) = entries.iter_mut().find(|e| e.name == name_s) {
+        entry.before = Some(handler);
+    } else {
+        entries.push(MiddlewareEntry {
+            name: name_s,
+            before: Some(handler),
+            after: None,
+        });
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_http_add_middleware_after(port: u16, name: *const c_char, handler: MiddlewareFn) {
+    let name_s = cstr(name).to_string();
+    let mut guard = middleware_map();
+    let entries = guard.as_mut().unwrap().entry(port).or_default();
+    // Check if middleware with this name exists, update its after handler
+    if let Some(entry) = entries.iter_mut().find(|e| e.name == name_s) {
+        entry.after = Some(handler);
+    } else {
+        entries.push(MiddlewareEntry {
+            name: name_s,
+            before: None,
+            after: Some(handler),
+        });
     }
 }
 

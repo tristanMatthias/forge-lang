@@ -113,16 +113,25 @@ impl<'ctx> Codegen<'ctx> {
             Expr::Block(block) => {
                 self.push_scope();
                 let mut last = None;
+                let mut last_expr = None;
                 for stmt in &block.statements {
                     match stmt {
                         Statement::Expr(expr) => {
                             last = self.compile_expr(expr);
+                            last_expr = Some(expr);
                         }
                         _ => {
                             self.compile_statement(stmt);
                             last = None;
+                            last_expr = None;
                         }
                     }
+                }
+                // Capture type before popping scope (variables inside block are still visible)
+                if last_expr.is_some() {
+                    self.last_block_result_type = Some(self.infer_type(last_expr.unwrap()));
+                } else {
+                    self.last_block_result_type = None;
                 }
                 self.pop_scope_with_drops();
                 last

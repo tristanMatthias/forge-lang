@@ -445,6 +445,17 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
                         .collect(),
                 };
             }
+            // Schema excluding @hidden fields — used for response types
+            if name == "__tpl_schema_visible" {
+                return TypeExpr::Struct {
+                    fields: ctx
+                        .schema
+                        .iter()
+                        .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
+                        .map(|f| (f.name.clone(), f.type_ann.clone()))
+                        .collect(),
+                };
+            }
             if name == "__tpl_model_ref" {
                 if let Some(ref mr) = ctx.model_ref {
                     return TypeExpr::Named(mr.clone());
@@ -1234,17 +1245,21 @@ impl ComponentExpander {
 
         for item in &template.body {
             match item {
-                ComponentTemplateItem::TypeFromSchema => {
+                ComponentTemplateItem::TypeFromSchema { visible_only } => {
+                    let fields: Vec<_> = if *visible_only {
+                        ctx.schema.iter()
+                            .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
+                            .map(|f| (f.name.clone(), f.type_ann.clone()))
+                            .collect()
+                    } else {
+                        ctx.schema.iter()
+                            .map(|f| (f.name.clone(), f.type_ann.clone()))
+                            .collect()
+                    };
                     result.type_decl = Some(Statement::TypeDecl {
                         name: ctx.name.clone(),
                         type_params: Vec::new(),
-                        value: TypeExpr::Struct {
-                            fields: ctx
-                                .schema
-                                .iter()
-                                .map(|f| (f.name.clone(), f.type_ann.clone()))
-                                .collect(),
-                        },
+                        value: TypeExpr::Struct { fields },
                         exported: false,
                         span: sp(),
                     });
@@ -1343,22 +1358,28 @@ impl ComponentExpander {
         // Handle @syntax-desugared calls from user body (__component_* calls)
         // FnDecl results go to top-level statements, everything else to startup_stmts
         for stmt in &decl.body.blocks {
-            if let Statement::Expr(Expr::Call { callee, args, .. }) = stmt {
-                if let Expr::Ident(name, _) = callee.as_ref() {
-                    if name.starts_with("__component_") {
-                        let fn_name = name.trim_start_matches("__component_");
-                        if let Some(syntax_fn) = template.syntax_fns.iter().find(|sf| sf.fn_name == fn_name) {
-                            // Substitute captured args into the syntax fn body
-                            let expanded = expand_syntax_call(syntax_fn, args, &ctx, service_infos);
-                            for s in expanded {
-                                match s {
-                                    Statement::FnDecl { .. } => result.statements.push(s),
-                                    _ => result.startup_stmts.push(s),
+            match stmt {
+                Statement::Expr(Expr::Call { callee, args, .. }) => {
+                    if let Expr::Ident(name, _) = callee.as_ref() {
+                        if name.starts_with("__component_") {
+                            let fn_name = name.trim_start_matches("__component_");
+                            if let Some(syntax_fn) = template.syntax_fns.iter().find(|sf| sf.fn_name == fn_name) {
+                                let expanded = expand_syntax_call(syntax_fn, args, &ctx, service_infos);
+                                for s in expanded {
+                                    match s {
+                                        Statement::FnDecl { .. } => result.statements.push(s),
+                                        _ => result.startup_stmts.push(s),
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                // Pass through FnDecl statements (e.g., middleware handler functions)
+                Statement::FnDecl { .. } => {
+                    result.statements.push(stmt.clone());
+                }
+                _ => {}
             }
         }
 

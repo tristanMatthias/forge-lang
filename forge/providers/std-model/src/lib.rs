@@ -11,6 +11,10 @@ static DB: Mutex<Option<Connection>> = Mutex::new(None);
 /// Maps table_name -> Vec<FieldSchema>
 static SCHEMAS: Mutex<Option<HashMap<String, Vec<FieldSchema>>>> = Mutex::new(None);
 
+/// Per-table hidden field names (fields with @hidden annotation)
+/// Maps table_name -> Vec<field_name>
+static HIDDEN_FIELDS: Mutex<Option<HashMap<String, Vec<String>>>> = Mutex::new(None);
+
 #[derive(Debug, Clone)]
 struct FieldSchema {
     name: String,
@@ -158,6 +162,53 @@ fn format_validation_errors(errors: &[ValidationError]) -> String {
 
 fn cstr(ptr: *const c_char) -> &'static str {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap()
+}
+
+/// Get hidden field names for a table
+fn get_hidden_fields(table: &str) -> Vec<String> {
+    let guard = HIDDEN_FIELDS.lock().unwrap();
+    guard.as_ref()
+        .and_then(|m| m.get(table))
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Strip hidden fields from a JSON object string like {"id":1,"password":"secret","name":"alice"}
+fn strip_hidden_from_json_obj(json: &str, hidden: &[String]) -> String {
+    if hidden.is_empty() || json.is_empty() || json == "null" {
+        return json.to_string();
+    }
+    // Parse and re-serialize without hidden fields
+    if let Ok(Value::Object(mut map)) = serde_json::from_str::<Value>(json) {
+        for field in hidden {
+            map.remove(field);
+        }
+        serde_json::to_string(&Value::Object(map)).unwrap_or_else(|_| json.to_string())
+    } else {
+        json.to_string()
+    }
+}
+
+/// Strip hidden fields from a JSON array string
+fn strip_hidden_from_json_array(json: &str, hidden: &[String]) -> String {
+    if hidden.is_empty() || json.is_empty() || json == "[]" {
+        return json.to_string();
+    }
+    if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(json) {
+        let filtered: Vec<Value> = arr.into_iter().map(|v| {
+            if let Value::Object(mut map) = v {
+                for field in hidden {
+                    map.remove(field);
+                }
+                Value::Object(map)
+            } else {
+                v
+            }
+        }).collect();
+        serde_json::to_string(&filtered).unwrap_or_else(|_| json.to_string())
+    } else {
+        json.to_string()
+    }
 }
 
 fn json_result(s: String) -> *mut c_char {
@@ -310,7 +361,8 @@ pub extern "C" fn forge_model_insert_json(
             if result.starts_with('[') && result.ends_with(']') {
                 let inner = &result[1..result.len() - 1];
                 if !inner.is_empty() {
-                    return json_result(inner.to_string());
+                    let hidden = get_hidden_fields(table);
+                    return json_result(strip_hidden_from_json_obj(inner, &hidden));
                 }
             }
             json_result(result)
@@ -318,7 +370,6 @@ pub extern "C" fn forge_model_insert_json(
         Err(e) => {
             let err_msg = e.to_string();
             if err_msg.contains("UNIQUE constraint failed") {
-                // Extract field name from "UNIQUE constraint failed: Table.field"
                 let field = err_msg.split('.').last().unwrap_or("unknown").to_string();
                 let ve = vec![ValidationError {
                     field: field.clone(),
@@ -327,7 +378,6 @@ pub extern "C" fn forge_model_insert_json(
                 }];
                 json_result(format_validation_errors(&ve))
             } else {
-                eprintln!("SQL insert error: {} | SQL: {}", e, sql);
                 json_result("null".to_string())
             }
         }
@@ -351,7 +401,8 @@ pub extern "C" fn forge_model_get_by_id(
         if inner.is_empty() {
             return json_result("null".to_string());
         }
-        return json_result(inner.to_string());
+        let hidden = get_hidden_fields(table);
+        return json_result(strip_hidden_from_json_obj(inner, &hidden));
     }
     json_result(result)
 }
@@ -417,7 +468,8 @@ pub extern "C" fn forge_model_update_json(
             if result.starts_with('[') && result.ends_with(']') {
                 let inner = &result[1..result.len() - 1];
                 if !inner.is_empty() {
-                    return json_result(inner.to_string());
+                    let hidden = get_hidden_fields(table);
+                    return json_result(strip_hidden_from_json_obj(inner, &hidden));
                 }
             }
             json_result(result)
@@ -439,23 +491,28 @@ pub extern "C" fn forge_model_list_json(
     let db = DB.lock().unwrap();
     let conn = db.as_ref().expect("Database not initialized");
 
+    let hidden = get_hidden_fields(table);
+
     if filter_str.is_empty() || filter_str == "{}" || filter_str == "null" {
         let sql = format!("SELECT * FROM {}", table);
-        return json_result(query_to_json(conn, &sql, &[]));
+        let result = query_to_json(conn, &sql, &[]);
+        return json_result(strip_hidden_from_json_array(&result, &hidden));
     }
 
     let filter: Value = match serde_json::from_str(filter_str) {
         Ok(v) => v,
         Err(_) => {
             let sql = format!("SELECT * FROM {}", table);
-            return json_result(query_to_json(conn, &sql, &[]));
+            let result = query_to_json(conn, &sql, &[]);
+            return json_result(strip_hidden_from_json_array(&result, &hidden));
         }
     };
 
     if let Some(obj) = filter.as_object() {
         if obj.is_empty() {
             let sql = format!("SELECT * FROM {}", table);
-            return json_result(query_to_json(conn, &sql, &[]));
+            let result = query_to_json(conn, &sql, &[]);
+            return json_result(strip_hidden_from_json_array(&result, &hidden));
         }
 
         let where_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
@@ -476,10 +533,12 @@ pub extern "C" fn forge_model_list_json(
             .map(|s| s as &dyn rusqlite::types::ToSql)
             .collect();
 
-        json_result(query_to_json(conn, &sql, param_refs.as_slice()))
+        let result = query_to_json(conn, &sql, param_refs.as_slice());
+        json_result(strip_hidden_from_json_array(&result, &hidden))
     } else {
         let sql = format!("SELECT * FROM {}", table);
-        json_result(query_to_json(conn, &sql, &[]))
+        let result = query_to_json(conn, &sql, &[]);
+        json_result(strip_hidden_from_json_array(&result, &hidden))
     }
 }
 
@@ -668,7 +727,9 @@ pub extern "C" fn forge_model_query_json(
         .map(|s| s as &dyn rusqlite::types::ToSql)
         .collect();
 
-    json_result(query_to_json(conn, &sql, param_refs.as_slice()))
+    let hidden = get_hidden_fields(table);
+    let result = query_to_json(conn, &sql, param_refs.as_slice());
+    json_result(strip_hidden_from_json_array(&result, &hidden))
 }
 
 /// Find the first record matching a filter, return as single JSON object or "null"
@@ -717,7 +778,8 @@ pub extern "C" fn forge_model_find_by_json(
             if inner.is_empty() {
                 return json_result("null".to_string());
             }
-            return json_result(inner.to_string());
+            let hidden = get_hidden_fields(table);
+            return json_result(strip_hidden_from_json_obj(inner, &hidden));
         }
         json_result(result)
     } else {
@@ -931,6 +993,19 @@ pub extern "C" fn forge_model_create_table(
             }
             field_schemas.push(FieldSchema { name, field_type, annotations });
         }
+        // Register hidden fields
+        let hidden: Vec<String> = field_schemas.iter()
+            .filter(|fs| fs.annotations.iter().any(|a| a.name == "hidden"))
+            .map(|fs| fs.name.clone())
+            .collect();
+        if !hidden.is_empty() {
+            let mut hf = HIDDEN_FIELDS.lock().unwrap();
+            if hf.is_none() {
+                *hf = Some(HashMap::new());
+            }
+            hf.as_mut().unwrap().insert(table.to_string(), hidden);
+        }
+
         schemas.insert(table.to_string(), field_schemas);
     }
 

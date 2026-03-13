@@ -316,7 +316,8 @@ pub struct ComponentTemplateDef {
 #[derive(Debug, Clone)]
 pub enum ComponentTemplateItem {
     /// `type __tpl_name = __tpl_schema` — generate TypeDecl from user's schema
-    TypeFromSchema,
+    /// If `visible_only` is true, fields with @hidden annotation are excluded
+    TypeFromSchema { visible_only: bool },
     /// `on startup { ... }` — lifecycle statements (contain __tpl_* placeholders)
     OnStartup(Vec<Statement>),
     /// `on main_end { ... }` — lifecycle statements
