@@ -908,7 +908,37 @@ pub extern "C" fn forge_model_search_json(
     };
 
     let query_term = search.get("query").and_then(|q| q.as_str()).unwrap_or("");
-    let columns = search.get("columns").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+    let raw_columns = search.get("columns").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+
+    // Handle "*" wildcard: resolve to all TEXT columns from schema
+    let columns: Vec<Value> = if raw_columns.iter().any(|c| c.as_str() == Some("*")) {
+        let schemas = SCHEMAS.lock().unwrap();
+        if let Some(field_schemas) = schemas.as_ref().and_then(|s| s.get(table)) {
+            field_schemas.iter()
+                .filter(|fs| fs.field_type == "string")
+                .map(|fs| Value::String(fs.name.clone()))
+                .collect()
+        } else {
+            // Fallback: query PRAGMA to get column names
+            let mut text_cols = Vec::new();
+            if let Ok(mut stmt) = conn.prepare(&format!("PRAGMA table_info({})", table)) {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    let col_type: String = row.get(2)?;
+                    Ok((name, col_type))
+                }) {
+                    for row in rows.flatten() {
+                        if row.1 == "TEXT" {
+                            text_cols.push(Value::String(row.0));
+                        }
+                    }
+                }
+            }
+            text_cols
+        }
+    } else {
+        raw_columns
+    };
 
     let mut sql = format!("SELECT * FROM {}", table);
     let mut values: Vec<String> = Vec::new();
