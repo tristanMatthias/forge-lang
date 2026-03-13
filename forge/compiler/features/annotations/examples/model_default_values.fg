@@ -1,0 +1,24 @@
+/// Test: @default annotation provides default values
+///
+/// expect: 1
+/// expect: draft
+/// expect: 0
+
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  status: string @default("draft")
+  views: int @default(0)
+}
+
+fn main() {
+  Post.create({ title: "Hello" })
+  let post = Post.get(1)
+  if post != null {
+    println(string(post.id))
+    println(post.status)
+    println(string(post.views))
+  }
+}

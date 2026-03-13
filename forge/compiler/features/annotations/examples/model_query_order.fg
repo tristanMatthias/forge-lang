@@ -1,0 +1,24 @@
+/// Test: Model.query with ORDER BY
+///
+/// expect: cherry
+/// expect: banana
+/// expect: apple
+
+use @std.model.{model}
+
+model Fruit {
+  id: int @primary @auto_increment
+  name: string
+  rank: int
+}
+
+fn main() {
+  Fruit.create({ name: "banana", rank: 2 })
+  Fruit.create({ name: "apple", rank: 3 })
+  Fruit.create({ name: "cherry", rank: 1 })
+
+  let sorted = Fruit.query("{\"order\":\"rank\"}")
+  println(sorted[0].name)
+  println(sorted[1].name)
+  println(sorted[2].name)
+}

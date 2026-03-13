@@ -1,0 +1,28 @@
+/// Test: Model.where — server-side filtering
+///
+/// expect: 3
+/// expect: 2
+/// expect: alice
+/// expect: carol
+
+use @std.model.{model}
+
+model Person {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  Person.create({ name: "alice", role: "admin" })
+  Person.create({ name: "bob", role: "member" })
+  Person.create({ name: "carol", role: "admin" })
+
+  let all = Person.list()
+  println(string(all.length))
+
+  let admins = Person.where({ role: "admin" })
+  println(string(admins.length))
+  println(admins[0].name)
+  println(admins[1].name)
+}
