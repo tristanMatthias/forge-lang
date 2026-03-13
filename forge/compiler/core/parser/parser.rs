@@ -800,29 +800,30 @@ impl Parser {
                 };
             } else if self.check(&TokenKind::Lt) {
                 if let Some(type_args) = self.try_parse_call_type_args() {
-                    if self.check(&TokenKind::LParen) {
-                        let span = self.advance()?.span;
+                    // try_parse_call_type_args guarantees LParen follows on success
+                    let span = self.advance()?.span;
+                    self.skip_newlines();
+                    let mut args = Vec::new();
+                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
                         self.skip_newlines();
-                        let mut args = Vec::new();
-                        while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                            self.skip_newlines();
-                            let arg = self.parse_call_arg()?;
-                            args.push(arg);
-                            self.skip_newlines();
-                            if self.check(&TokenKind::Comma) {
-                                self.advance();
-                            }
+                        let arg = self.parse_call_arg()?;
+                        args.push(arg);
+                        self.skip_newlines();
+                        if self.check(&TokenKind::Comma) {
+                            self.advance();
                         }
-                        self.expect(&TokenKind::RParen)?;
-                        expr = Expr::Call {
-                            callee: Box::new(expr),
-                            args,
-                            type_args,
-                            span,
-                        };
-                        continue;
                     }
+                    self.expect(&TokenKind::RParen)?;
+                    expr = Expr::Call {
+                        callee: Box::new(expr),
+                        args,
+                        type_args,
+                        span,
+                    };
+                    continue;
                 }
+                // Not a type arg list — it's a comparison operator, break out
+                break;
             } else if self.check(&TokenKind::LBrace) {
                 // Named struct literal: TypeName { field: val, ... }
                 // Only if expr is a simple Ident (type name) and it looks like a struct literal
@@ -914,6 +915,7 @@ impl Parser {
     /// Only succeeds if the closing `>` is immediately followed by `(`.
     fn try_parse_call_type_args(&mut self) -> Option<Vec<TypeExpr>> {
         let save = self.pos;
+        let save_diags = self.diagnostics.len();
         if !self.check(&TokenKind::Lt) {
             return None;
         }
@@ -930,6 +932,7 @@ impl Parser {
                 type_args.push(ty);
             } else {
                 self.pos = save;
+                self.diagnostics.truncate(save_diags);
                 return None;
             }
             self.skip_newlines();
@@ -939,17 +942,20 @@ impl Parser {
         }
         if !self.check(&TokenKind::Gt) {
             self.pos = save;
+            self.diagnostics.truncate(save_diags);
             return None;
         }
         self.advance();
 
         if !self.check(&TokenKind::LParen) {
             self.pos = save;
+            self.diagnostics.truncate(save_diags);
             return None;
         }
 
         if type_args.is_empty() {
             self.pos = save;
+            self.diagnostics.truncate(save_diags);
             return None;
         }
 
