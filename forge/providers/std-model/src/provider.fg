@@ -18,6 +18,7 @@ extern fn forge_model_create_table(table: string, schema_json: string) -> i32
 extern fn forge_model_find_by_json(table: string, filter_json: string) -> string
 extern fn forge_model_get_related(table: string, id: int, foreign_key: string, related_table: string) -> string
 extern fn forge_model_get_related_many(table: string, id: int, foreign_key: string, related_table: string) -> string
+extern fn forge_model_query_json(table: string, query_json: string) -> string
 extern fn forge_json_is_null(ptr: string) -> i8
 
 component model(__tpl_name, schema) {
@@ -86,6 +87,13 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.where(filter_json: string) -> List<__tpl_name> {
         let __result: ptr = forge_model_list_json(__tpl_config_table_name, filter_json)
+        let __list: List<__tpl_name> = json.parse(__result)
+        forge_model_free_string(__result)
+        __list
+    }
+
+    fn __tpl_name.query(query_json: string) -> List<__tpl_name> {
+        let __result: ptr = forge_model_query_json(__tpl_config_table_name, query_json)
         let __list: List<__tpl_name> = json.parse(__result)
         forge_model_free_string(__result)
         __list

@@ -600,6 +600,72 @@ pub extern "C" fn forge_model_get_related_many(
     json_result(query_to_json(conn, &sql, &[&id as &dyn rusqlite::types::ToSql]))
 }
 
+/// Query with filter, order, limit, and offset — returns JSON array.
+/// query_json is a JSON object with optional keys:
+///   "where": { field: value, ... }
+///   "order": "field" or "field DESC"
+///   "limit": N
+///   "offset": N
+#[no_mangle]
+pub extern "C" fn forge_model_query_json(
+    table: *const c_char,
+    query_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let query_str = cstr(query_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let query: Value = match serde_json::from_str(query_str) {
+        Ok(v) => v,
+        Err(_) => {
+            let sql = format!("SELECT * FROM {}", table);
+            return json_result(query_to_json(conn, &sql, &[]));
+        }
+    };
+
+    let mut sql = format!("SELECT * FROM {}", table);
+    let mut values: Vec<String> = Vec::new();
+
+    // WHERE clause
+    if let Some(where_obj) = query.get("where").and_then(|w| w.as_object()) {
+        if !where_obj.is_empty() {
+            let clauses: Vec<String> = where_obj.keys().map(|k| format!("{} = ?", k)).collect();
+            sql.push_str(&format!(" WHERE {}", clauses.join(" AND ")));
+            for v in where_obj.values() {
+                match v {
+                    Value::String(s) => values.push(s.clone()),
+                    Value::Number(n) => values.push(n.to_string()),
+                    Value::Bool(b) => values.push(if *b { "1".to_string() } else { "0".to_string() }),
+                    other => values.push(other.to_string()),
+                }
+            }
+        }
+    }
+
+    // ORDER BY
+    if let Some(order) = query.get("order").and_then(|o| o.as_str()) {
+        sql.push_str(&format!(" ORDER BY {}", order));
+    }
+
+    // LIMIT
+    if let Some(limit) = query.get("limit").and_then(|l| l.as_i64()) {
+        sql.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    // OFFSET
+    if let Some(offset) = query.get("offset").and_then(|o| o.as_i64()) {
+        sql.push_str(&format!(" OFFSET {}", offset));
+    }
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = values
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    json_result(query_to_json(conn, &sql, param_refs.as_slice()))
+}
+
 /// Find the first record matching a filter, return as single JSON object or "null"
 #[no_mangle]
 pub extern "C" fn forge_model_find_by_json(
