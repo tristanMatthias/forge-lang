@@ -293,6 +293,19 @@ extern "C" fn mount_create_handler(
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let json = unsafe { forge_model_insert_json(table_c.as_ptr(), body) };
+    let result_str = cstr(json);
+    // Check for validation failure (null response means validation or insert error)
+    if result_str.trim() == "null" || result_str.is_empty() {
+        let error_json = r#"{"error":"validation failed"}"#;
+        let bytes = error_json.as_bytes();
+        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
+            *response_buf.add(copy_len) = 0;
+        }
+        unsafe { forge_model_free_string(json) };
+        return 400;
+    }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
     unsafe { forge_model_free_string(json) };
     201
@@ -314,6 +327,18 @@ extern "C" fn mount_get_handler(
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
     let json = unsafe { forge_model_get_by_id(table_c.as_ptr(), id) };
+    let result_str = cstr(json);
+    if result_str.trim() == "null" || result_str.is_empty() {
+        let error_json = r#"{"error":"not found"}"#;
+        let bytes = error_json.as_bytes();
+        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
+            *response_buf.add(copy_len) = 0;
+        }
+        unsafe { forge_model_free_string(json) };
+        return 404;
+    }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
     unsafe { forge_model_free_string(json) };
     200
@@ -335,6 +360,18 @@ extern "C" fn mount_update_handler(
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
     let json = unsafe { forge_model_update_json(table_c.as_ptr(), id, body) };
+    let result_str = cstr(json);
+    if result_str.trim() == "null" || result_str.is_empty() {
+        let error_json = r#"{"error":"validation failed"}"#;
+        let bytes = error_json.as_bytes();
+        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
+            *response_buf.add(copy_len) = 0;
+        }
+        unsafe { forge_model_free_string(json) };
+        return 400;
+    }
     copy_cstr_to_buf(json, response_buf, response_buf_len);
     unsafe { forge_model_free_string(json) };
     200
