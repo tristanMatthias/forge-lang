@@ -168,6 +168,7 @@ fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[
                                 }
                                 Expr::IntLit(n, _) => n.to_string(),
                                 Expr::StringLit(s, _) => format!("\"{}\"", s),
+                                Expr::Ident(name, _) => format!("\"{}\"", name),
                                 _ => "null".to_string(),
                             })
                             .collect();

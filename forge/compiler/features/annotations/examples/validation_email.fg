@@ -1,0 +1,24 @@
+/// Test: @validate(email) annotation checks email format
+///
+/// expect: 0
+/// expect: 0
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string @validate(email)
+}
+
+fn main() {
+  // Invalid email (no @ or .)
+  let bad_id = User.create({ name: "alice", email: "not-an-email" })
+  println(string(bad_id))
+  println(string(User.count()))
+
+  // Valid email
+  User.create({ name: "bob", email: "bob@test.com" })
+  println(string(User.count()))
+}

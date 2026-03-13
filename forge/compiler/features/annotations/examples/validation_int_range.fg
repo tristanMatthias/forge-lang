@@ -1,0 +1,22 @@
+/// Test: @min and @max work on integer fields (value range)
+///
+/// expect: 0
+/// expect: 1
+
+use @std.model.{model}
+
+model Product {
+  id: int @primary @auto_increment
+  name: string
+  price: int @min(0) @max(10000)
+}
+
+fn main() {
+  // Negative price violates @min(0)
+  let bad_id = Product.create({ name: "widget", price: -5 })
+  println(string(bad_id))
+
+  // Valid price
+  Product.create({ name: "gadget", price: 99 })
+  println(string(Product.count()))
+}
