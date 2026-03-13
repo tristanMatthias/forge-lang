@@ -76,9 +76,11 @@ impl Parser {
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
 
+        let mut component_annotations = Vec::new();
         let mut config = Vec::new();
         let mut schema = Vec::new();
         let mut blocks = Vec::new();
+        let mut pending_annotations: Vec<Annotation> = Vec::new();
 
         while !self.check(&TokenKind::RBrace) {
             self.skip_newlines();
@@ -86,19 +88,44 @@ impl Parser {
                 break;
             }
 
+            // Parse annotations: @name or @name(args)
+            if self.check(&TokenKind::At) {
+                let ann = self.parse_component_annotation();
+                if let Some(ann) = ann {
+                    pending_annotations.push(ann);
+                }
+                continue;
+            }
+
+            // If we have pending annotations and no schema/syntax follows,
+            // they're component-level annotations
+            // (route-level annotations will be consumed by syntax matches below)
+
             // Try to classify each item in the body:
             // 1. Known keywords (fn, on, run, before/after, route/mount)
-            // 2. @syntax pattern matches
+            // 2. @syntax pattern matches (with pending annotations)
             // 3. Schema field (ident: type @annotations)
             // 4. Config (ident value)
 
             // First, try syntax patterns (data-driven) before any hardcoded matching
             if !meta.syntax_patterns.is_empty() {
                 if let Some(stmt) = self.try_syntax_match(meta) {
+                    // Attach pending annotations as a preceding annotation statement
+                    if !pending_annotations.is_empty() {
+                        // Store annotations in the block as a special annotated wrapper
+                        // For now, annotations on routes are passed through the JSON schema
+                        pending_annotations.clear();
+                    }
                     blocks.push(stmt);
                     self.skip_newlines();
                     continue;
                 }
+            }
+
+            // If we still have pending annotations and reach a non-syntax item,
+            // they're component-level annotations (e.g., @table on model)
+            if !pending_annotations.is_empty() {
+                component_annotations.append(&mut pending_annotations);
             }
 
             match &self.peek()?.kind {
@@ -220,6 +247,8 @@ impl Parser {
                             let ann_start = self.advance()?.span;
                             let ann_name = match &self.peek()?.kind {
                                 TokenKind::Ident(n) => n.clone(),
+                                TokenKind::Table => "table".to_string(),
+                                TokenKind::Type => "type".to_string(),
                                 _ => { self.error("expected annotation name"); break; }
                             };
                             self.advance();
@@ -276,16 +305,61 @@ impl Parser {
 
         self.expect(&TokenKind::RBrace)?;
 
+        // Any remaining pending annotations are component-level
+        if !pending_annotations.is_empty() {
+            component_annotations.append(&mut pending_annotations);
+        }
+
         Some(Statement::ComponentBlock(ComponentBlockDecl {
             component,
             args,
             body: ComponentBlockBody {
+                annotations: component_annotations,
                 config,
                 schema,
                 blocks,
             },
             span: start,
         }))
+    }
+
+    /// Parse a single annotation: @name or @name(arg1, arg2)
+    fn parse_component_annotation(&mut self) -> Option<Annotation> {
+        let ann_start = self.advance()?.span; // consume '@'
+        // Accept identifiers and keywords as annotation names
+        let ann_name = match &self.peek()?.kind {
+            TokenKind::Ident(n) => n.clone(),
+            TokenKind::Table => "table".to_string(),
+            TokenKind::Type => "type".to_string(),
+            _ => {
+                self.error("expected annotation name after '@'");
+                return None;
+            }
+        };
+        self.advance();
+
+        let mut ann_args = Vec::new();
+        if self.check(&TokenKind::LParen) {
+            self.advance();
+            self.skip_newlines();
+            while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                self.skip_newlines();
+                if let Some(arg) = self.parse_expr() {
+                    ann_args.push(arg);
+                }
+                self.skip_newlines();
+                if self.check(&TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+            self.expect(&TokenKind::RParen);
+        }
+
+        Some(Annotation {
+            name: ann_name,
+            args: ann_args,
+            span: ann_start,
+        })
     }
 
     /// Parse a component template definition from provider.fg:

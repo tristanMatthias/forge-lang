@@ -1,0 +1,22 @@
+/// Test: Field annotations on model
+/// Annotations are metadata parsed with @name or @name(value) syntax.
+///
+/// expect: alice
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1) @max(100)
+  email: string @unique
+}
+
+fn main() {
+  let id = User.create({ name: "alice", email: "alice@test.com" })
+  let user = User.get(id)
+  if user != null {
+    println(user.name)
+  }
+  println(string(User.count()))
+}

@@ -259,6 +259,7 @@ pub struct ComponentSchemaField {
 
 #[derive(Debug, Clone)]
 pub struct ComponentBlockBody {
+    pub annotations: Vec<Annotation>,
     pub config: Vec<ComponentConfig>,
     pub schema: Vec<ComponentSchemaField>,
     pub blocks: Vec<Statement>,

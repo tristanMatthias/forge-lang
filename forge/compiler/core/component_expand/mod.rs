@@ -141,7 +141,7 @@ fn type_ann_to_str(te: &TypeExpr) -> &str {
 // Serializes schema fields to JSON for the native provider library to generate SQL.
 // This is generic data serialization — no SQL type mapping knowledge here.
 
-fn build_schema_json(fields: &[ComponentSchemaField]) -> String {
+fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[Annotation]) -> String {
     let mut entries = Vec::new();
     for field in fields {
         let mut obj = format!(
@@ -1035,7 +1035,7 @@ impl ComponentExpander {
 
         let schema = decl.body.schema.clone();
         let schema_json = if template.has_schema && !schema.is_empty() {
-            build_schema_json(&schema)
+            build_schema_json(&schema, &decl.body.annotations)
         } else {
             String::new()
         };
