@@ -1,0 +1,80 @@
+/// Update feature status in forge_feature! macros based on test results.
+///
+/// Rules (from CLAUDE.md):
+///   Draft   — no examples
+///   Wip     — some pass
+///   Testing — most pass (>50%)
+///   Stable  — all pass
+///
+/// Usage: forge run scripts/update-feature-status.fg
+
+use @std.process
+use @std.fs
+
+fn derive_status(passed: int, total: int) -> string {
+  if total == 0             { "Draft"   }
+  else if passed == total   { "Stable"  }
+  else if passed * 2 > total { "Testing" }
+  else                      { "Wip"     }
+}
+
+fn current_status(content: string) -> string {
+  mut found = ""
+  ["Draft", "Wip", "Testing", "Stable"].each((s) -> {
+    if content.contains(`status: ${s},`) { found = s }
+  })
+  found
+}
+
+fn set_status(mod_path: string, new_status: string, feature: string) -> int {
+  let content = fs.read(mod_path)
+  let old = current_status(content)
+
+  if old == new_status { 0 } else {
+    let new_content = content.replace(`status: ${old},`, `status: ${new_status},`)
+    fs.write(mod_path, new_content)
+    println(`  ${feature}: ${old} -> ${new_status}`)
+    1
+  }
+}
+
+fn main() {
+  let features_dir = fs.join(fs.cwd(), "compiler/features")
+
+  println("Running tests...")
+  let test_json = $"./target/release/forge test --json 2>/dev/null"
+  let results: list<{feature: string, passed: int, total: int}> = json.parse(test_json)
+
+  mut updated = 0
+
+  // Update from test results
+  for r in results {
+    let feature = r.feature
+    let mod_path = fs.join(features_dir, fs.join(feature, "mod.rs"))
+    if fs.is_file(mod_path) {
+      let status = derive_status(r.passed, r.total)
+      updated = updated + set_status(mod_path, status, feature)
+    }
+  }
+
+  // Features with no examples -> Draft
+  fs.list(features_dir).split("\n")
+    .filter(it.length > 0)
+    .each((feature) -> {
+      let examples = fs.join(features_dir, fs.join(feature, "examples"))
+      if fs.is_dir(examples) == false {
+        let mod_path = fs.join(features_dir, fs.join(feature, "mod.rs"))
+        if fs.is_file(mod_path) {
+          updated = updated + set_status(mod_path, "Draft", feature)
+        }
+      } else if fs.glob(fs.join(examples, "*.fg")).length == 0 {
+        let mod_path = fs.join(features_dir, fs.join(feature, "mod.rs"))
+        if fs.is_file(mod_path) {
+          updated = updated + set_status(mod_path, "Draft", feature)
+        }
+      }
+    })
+
+  let total = results.length
+  println(`\n${updated} updated, ${total - updated} unchanged.`)
+}
