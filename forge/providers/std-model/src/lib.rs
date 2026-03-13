@@ -544,6 +544,62 @@ pub extern "C" fn forge_model_count_json(
     }
 }
 
+/// Get a related record: looks up foreign_table where foreign_table.id = record.foreign_key_value
+/// E.g., forge_model_get_related("posts", 1, "author_id", "users") → the user who authored post 1
+#[no_mangle]
+pub extern "C" fn forge_model_get_related(
+    table: *const c_char,
+    id: i64,
+    foreign_key: *const c_char,
+    related_table: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let foreign_key = cstr(foreign_key);
+    let related_table = cstr(related_table);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    // First get the foreign key value from the source record
+    let fk_sql = format!("SELECT {} FROM {} WHERE id = ?", foreign_key, table);
+    let fk_value: Option<i64> = conn
+        .query_row(&fk_sql, [&id as &dyn rusqlite::types::ToSql], |row| row.get(0))
+        .ok();
+
+    match fk_value {
+        Some(fk_id) => {
+            let sql = format!("SELECT * FROM {} WHERE id = ?", related_table);
+            let result = query_to_json(conn, &sql, &[&fk_id as &dyn rusqlite::types::ToSql]);
+            if result.starts_with('[') && result.ends_with(']') {
+                let inner = &result[1..result.len() - 1];
+                if inner.is_empty() {
+                    return json_result("null".to_string());
+                }
+                return json_result(inner.to_string());
+            }
+            json_result(result)
+        }
+        None => json_result("null".to_string()),
+    }
+}
+
+/// Get related records (has_many): looks up related_table where related_table.foreign_key = id
+/// E.g., forge_model_get_related_many("users", 1, "author_id", "posts") → all posts by user 1
+#[no_mangle]
+pub extern "C" fn forge_model_get_related_many(
+    _table: *const c_char,
+    id: i64,
+    foreign_key: *const c_char,
+    related_table: *const c_char,
+) -> *mut c_char {
+    let foreign_key = cstr(foreign_key);
+    let related_table = cstr(related_table);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let sql = format!("SELECT * FROM {} WHERE {} = ?", related_table, foreign_key);
+    json_result(query_to_json(conn, &sql, &[&id as &dyn rusqlite::types::ToSql]))
+}
+
 /// Find the first record matching a filter, return as single JSON object or "null"
 #[no_mangle]
 pub extern "C" fn forge_model_find_by_json(

@@ -1,0 +1,42 @@
+/// Test: Model relations via foreign key fields
+/// belongs_to: Post.author_id -> User.id
+/// has_many: User has many Posts via author_id
+///
+/// expect: alice
+/// expect: 2
+/// expect: Post 1
+/// expect: Post 2
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  author_id: int
+}
+
+fn main() {
+  let user_id = User.create({ name: "alice" })
+  Post.create({ title: "Post 1", author_id: user_id })
+  Post.create({ title: "Post 2", author_id: user_id })
+
+  // belongs_to: get the author of a post
+  let post = Post.get(1)
+  if post != null {
+    let author = User.get(post.author_id)
+    if author != null {
+      println(author.name)
+    }
+  }
+
+  // has_many: get all posts by a user
+  let posts = Post.where({ author_id: user_id })
+  println(string(posts.length))
+  println(posts[0].title)
+  println(posts[1].title)
+}
