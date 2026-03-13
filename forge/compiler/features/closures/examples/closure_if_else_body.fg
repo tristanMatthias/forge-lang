@@ -1,0 +1,12 @@
+/// # Closure with If/Else Body
+///
+/// Closure body containing if/else expression.
+/// Regression: `b { a }` in `if a > b { a } else { b }` was
+/// incorrectly parsed as a struct literal instead of a condition + block.
+///
+/// expect: 5
+
+fn main() {
+  let max = [3, 1, 4, 1, 5].reduce(0, (a, b) -> if a > b { a } else { b })
+  println(string(max))
+}

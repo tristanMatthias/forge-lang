@@ -801,10 +801,17 @@ impl Parser {
                 // Named struct literal: TypeName { field: val, ... }
                 // Only if expr is a simple Ident (type name) and it looks like a struct literal
                 if let Expr::Ident(ref type_name, ident_span) = expr {
-                    // Peek inside the brace: if ident : or ident , or ident } then struct literal
-                    if self.peek_at(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false)
-                        && self.peek_at(2).map(|t| matches!(&t.kind, TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace)).unwrap_or(false)
-                    {
+                    // Peek inside the brace: if ident : or ident , or ident } then struct literal.
+                    // For `ident }` (shorthand single field), require uppercase type name to avoid
+                    // ambiguity with `condition { block }` patterns like `if a > b { x }`.
+                    let next_is_ident = self.peek_at(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false);
+                    let after_ident = self.peek_at(2).map(|t| &t.kind);
+                    let is_struct = next_is_ident && match after_ident {
+                        Some(TokenKind::Colon) | Some(TokenKind::Comma) => true,
+                        Some(TokenKind::RBrace) => type_name.starts_with(char::is_uppercase),
+                        _ => false,
+                    };
+                    if is_struct {
                         self.advance(); // {
                         self.skip_newlines();
                         let fields = self.parse_struct_fields()?;
