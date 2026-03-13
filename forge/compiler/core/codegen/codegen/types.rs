@@ -35,7 +35,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Returns the number of i64 slots needed to store a value of the given type.
     pub(crate) fn type_i64_slots(&self, ty: &Type) -> usize {
         match ty {
-            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error => 1,
+            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error | Type::Channel(_) => 1,
             Type::String => 2, // {ptr, i64} = 16 bytes
             Type::Nullable(inner) => 1 + self.type_i64_slots(inner), // {i8, inner}
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
@@ -59,7 +59,7 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn type_to_llvm_basic(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
         match ty {
-            Type::Int => self.context.i64_type().into(),
+            Type::Int | Type::Channel(_) => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),
             Type::Bool => self.context.i8_type().into(),
             Type::String => self.string_type().into(),
@@ -256,7 +256,16 @@ impl<'ctx> Codegen<'ctx> {
                     match name.as_str() {
                         "println" | "print" => Type::Void,
                         "string" => Type::String,
-                        "channel" => Type::Int,
+                        "channel" => {
+                            // channel<T>(N) -> channel<T>, channel(N) -> channel<unknown>
+                            if let Expr::Call { type_args, .. } = expr {
+                                if let Some(first_ta) = type_args.first() {
+                                    let inner = self.type_checker.resolve_type_expr(first_ta);
+                                    return Type::Channel(Box::new(inner));
+                                }
+                            }
+                            Type::Channel(Box::new(Type::Unknown))
+                        }
                         "validate" => {
                             // validate(value, TypeName) -> Result<TypeName, ValidationError>
                             if args.len() >= 2 {
@@ -308,9 +317,13 @@ impl<'ctx> Codegen<'ctx> {
                                 _ => {}
                             }
                         }
-                        // channel.tick() returns int (channel ID)
+                        // channel.tick() returns channel<int> (tick channel)
                         if name == "channel" && field == "tick" {
-                            return Type::Int;
+                            return Type::Channel(Box::new(Type::Int));
+                        }
+                        // channel.new() returns channel<T>
+                        if name == "channel" && field == "new" {
+                            return Type::Channel(Box::new(Type::Unknown));
                         }
                     }
                     // Check static_methods registry (for expanded component functions)

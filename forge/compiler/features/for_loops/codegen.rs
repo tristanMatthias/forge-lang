@@ -159,8 +159,8 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             self.builder.position_at_end(end_bb);
-        } else if iter_type == Type::Int {
-            // Treat int as channel ID — iterate by calling forge_channel_receive
+        } else if iter_type == Type::Int || matches!(iter_type, Type::Channel(_)) {
+            // Treat int/channel as channel ID — iterate by calling forge_channel_receive
             // until we get the "\0CLOSED" sentinel
             let channel_id = self.compile_expr(iterable).unwrap();
             let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();

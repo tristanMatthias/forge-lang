@@ -481,7 +481,7 @@ impl TypeChecker {
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
                             if args.len() != params.len()
-                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel")
+                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse")
                             {
                                 let sig = self.format_fn_signature(fn_name, params);
                                 let example = self.format_fn_example(fn_name, params);
@@ -535,6 +535,18 @@ impl TypeChecker {
                                 }
                             }
                         }
+                        // Override return type for channel() calls to Channel<T>
+                        if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                            if fn_name == "channel" {
+                                if let Expr::Call { type_args, .. } = expr {
+                                    if let Some(first_ta) = type_args.first() {
+                                        let inner = self.resolve_type_expr(first_ta);
+                                        return Type::Channel(Box::new(inner));
+                                    }
+                                }
+                                return Type::Channel(Box::new(Type::Unknown));
+                            }
+                        }
                         *return_type.clone()
                     }
                     _ => {
@@ -542,6 +554,8 @@ impl TypeChecker {
                             match name.as_str() {
                                 "println" | "print" => Type::Void,
                                 "string" => Type::String,
+                                "datetime_now" | "datetime_parse" => Type::Int,
+                                "datetime_format" => Type::String,
                                 _ => Type::Unknown,
                             }
                         } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
@@ -831,13 +845,10 @@ impl TypeChecker {
             }
 
             Expr::ChannelSend { channel, value, .. } => {
-                self.check_expr(channel);
-                self.check_expr(value);
-                Type::Void
+                self.check_channel_send(channel, value)
             }
             Expr::ChannelReceive { channel, .. } => {
-                self.check_expr(channel);
-                Type::Unknown
+                self.check_channel_receive(channel)
             }
             Expr::SpawnBlock { body, .. } => {
                 self.check_block(body);

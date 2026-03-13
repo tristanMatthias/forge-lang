@@ -1,0 +1,15 @@
+/// # Typed Channel
+///
+/// Create a typed channel with `channel<string>(N)` syntax.
+/// The type parameter enables compile-time type checking of send/receive.
+///
+/// expect: hello typed
+
+use @std.channel
+
+fn main() {
+  let ch = channel<string>(1)
+  ch <- "hello typed"
+  let msg = <- ch
+  println(msg)
+}

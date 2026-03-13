@@ -637,6 +637,9 @@ impl<'ctx> Codegen<'ctx> {
                 "string" => return self.compile_string_conversion(args),
                 "assert" => return self.compile_assert(args),
                 "sleep" => return self.compile_sleep(args),
+                "datetime_now" => return self.compile_datetime_now(),
+                "datetime_format" => return self.compile_datetime_format(args),
+                "datetime_parse" => return self.compile_datetime_parse(args),
                 "validate" => return self.compile_validate(args),
                 "channel" => {
                     // channel(capacity) -> int (channel ID)
@@ -1060,7 +1063,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Handle channel property access (channel is represented as int)
         // ch.is_closed, ch.length, ch.capacity, ch.is_empty, ch.is_full
-        if obj_type == Type::Int || obj_type == Type::Unknown {
+        if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {
             let channel_fn_name = match field {
                 "is_closed" => Some("forge_channel_is_closed"),
                 "length" => Some("forge_channel_length"),

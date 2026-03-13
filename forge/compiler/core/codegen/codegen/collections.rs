@@ -341,7 +341,7 @@ impl<'ctx> Codegen<'ctx> {
             _ => {
                 // Handle channel method calls (channel is represented as int)
                 // ch.close(), ch.drain()
-                if obj_type == Type::Int || obj_type == Type::Unknown {
+                if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {
                     let channel_fn_name = match method {
                         "close" => Some("forge_channel_close"),
                         "drain" => Some("forge_channel_drain"),

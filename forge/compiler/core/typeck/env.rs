@@ -91,6 +91,27 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
+        env.functions.insert(
+            "datetime_now".to_string(),
+            Type::Function {
+                params: vec![],
+                return_type: Box::new(Type::Int),
+            },
+        );
+        env.functions.insert(
+            "datetime_format".to_string(),
+            Type::Function {
+                params: vec![Type::Int],
+                return_type: Box::new(Type::String),
+            },
+        );
+        env.functions.insert(
+            "datetime_parse".to_string(),
+            Type::Function {
+                params: vec![Type::String],
+                return_type: Box::new(Type::Int),
+            },
+        );
         // Runtime helper functions used by component template expansion
         env.functions.insert(
             "forge_string_new".to_string(),

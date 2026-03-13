@@ -10,6 +10,7 @@ impl TypeChecker {
             let elem_type = match &iter_type {
                 Type::Range(inner) => *inner.clone(),
                 Type::List(inner) => *inner.clone(),
+                Type::Channel(inner) => *inner.clone(),
                 _ => Type::Int,
             };
             self.env.define(name.clone(), elem_type, false);
