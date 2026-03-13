@@ -1,0 +1,23 @@
+/// Test: Validation also runs on update
+///
+/// expect: 1
+/// expect: alice
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1) @max(100)
+}
+
+fn main() {
+  let id = User.create({ name: "alice" })
+  // Try to update with invalid empty name
+  User.update(id, { name: "" })
+  // Name should still be alice (update was rejected)
+  let user = User.get(id)
+  println(string(id))
+  if user != null {
+    println(user.name)
+  }
+}

@@ -1,0 +1,25 @@
+/// Test: Model.find_by returns first matching record or null
+///
+/// expect: alice
+/// expect: true
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string
+}
+
+fn main() {
+  User.create({ name: "alice", email: "alice@test.com" })
+  User.create({ name: "bob", email: "bob@test.com" })
+
+  let found = User.find_by({ email: "alice@test.com" })
+  if found != null {
+    println(found.name)
+  }
+
+  let missing = User.find_by({ email: "nobody@test.com" })
+  println(string(missing == null))
+}

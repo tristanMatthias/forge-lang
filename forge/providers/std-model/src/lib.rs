@@ -1,10 +1,153 @@
 use rusqlite::Connection;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::Mutex;
 
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
+
+/// Per-table schema storage for validation
+/// Maps table_name -> Vec<FieldSchema>
+static SCHEMAS: Mutex<Option<HashMap<String, Vec<FieldSchema>>>> = Mutex::new(None);
+
+#[derive(Debug, Clone)]
+struct FieldSchema {
+    name: String,
+    field_type: String,
+    annotations: Vec<FieldAnnotation>,
+}
+
+#[derive(Debug, Clone)]
+struct FieldAnnotation {
+    name: String,
+    args: Vec<Value>,
+}
+
+struct ValidationError {
+    field: String,
+    rule: String,
+    message: String,
+}
+
+fn validate_field(schema: &FieldSchema, value: &Value) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+    for ann in &schema.annotations {
+        match ann.name.as_str() {
+            "min" => {
+                if let Some(min_val) = ann.args.first().and_then(|a| a.as_i64()) {
+                    match &schema.field_type[..] {
+                        "string" => {
+                            let len = value.as_str().map(|s| s.len() as i64).unwrap_or(0);
+                            if len < min_val {
+                                errors.push(ValidationError {
+                                    field: schema.name.clone(),
+                                    rule: "min".to_string(),
+                                    message: format!(
+                                        "{} must be at least {} characters, got {}",
+                                        schema.name, min_val, len
+                                    ),
+                                });
+                            }
+                        }
+                        "int" | "float" => {
+                            let num = value.as_i64().or_else(|| value.as_f64().map(|f| f as i64)).unwrap_or(0);
+                            if num < min_val {
+                                errors.push(ValidationError {
+                                    field: schema.name.clone(),
+                                    rule: "min".to_string(),
+                                    message: format!(
+                                        "{} must be at least {}, got {}",
+                                        schema.name, min_val, num
+                                    ),
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "max" => {
+                if let Some(max_val) = ann.args.first().and_then(|a| a.as_i64()) {
+                    match &schema.field_type[..] {
+                        "string" => {
+                            let len = value.as_str().map(|s| s.len() as i64).unwrap_or(0);
+                            if len > max_val {
+                                errors.push(ValidationError {
+                                    field: schema.name.clone(),
+                                    rule: "max".to_string(),
+                                    message: format!(
+                                        "{} must be at most {} characters, got {}",
+                                        schema.name, max_val, len
+                                    ),
+                                });
+                            }
+                        }
+                        "int" | "float" => {
+                            let num = value.as_i64().or_else(|| value.as_f64().map(|f| f as i64)).unwrap_or(0);
+                            if num > max_val {
+                                errors.push(ValidationError {
+                                    field: schema.name.clone(),
+                                    rule: "max".to_string(),
+                                    message: format!(
+                                        "{} must be at most {}, got {}",
+                                        schema.name, max_val, num
+                                    ),
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "validate" => {
+                if let Some(validator_name) = ann.args.first().and_then(|a| a.as_str()) {
+                    match validator_name {
+                        "email" => {
+                            if let Some(s) = value.as_str() {
+                                if !s.contains('@') || !s.contains('.') {
+                                    errors.push(ValidationError {
+                                        field: schema.name.clone(),
+                                        rule: "email".to_string(),
+                                        message: format!("{} must be a valid email address", schema.name),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    errors
+}
+
+fn validate_data(table: &str, data: &Value) -> Vec<ValidationError> {
+    let schemas = SCHEMAS.lock().unwrap();
+    let schemas = match schemas.as_ref() {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+    let field_schemas = match schemas.get(table) {
+        Some(fs) => fs,
+        None => return Vec::new(),
+    };
+
+    let obj = match data.as_object() {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+
+    let mut errors = Vec::new();
+    for fs in field_schemas {
+        if let Some(value) = obj.get(&fs.name) {
+            errors.extend(validate_field(fs, value));
+        }
+    }
+    errors
+}
 
 fn cstr(ptr: *const c_char) -> &'static str {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap()
@@ -120,6 +263,15 @@ pub extern "C" fn forge_model_insert_json(
         }
     };
 
+    // Validate data against schema annotations
+    let validation_errors = validate_data(table, &data);
+    if !validation_errors.is_empty() {
+        for err in &validation_errors {
+            eprintln!("validation error: {} ({}): {}", err.field, err.rule, err.message);
+        }
+        return json_result("null".to_string());
+    }
+
     let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
     let placeholders: Vec<String> = (0..columns.len()).map(|_| "?".to_string()).collect();
     let sql = format!(
@@ -214,6 +366,15 @@ pub extern "C" fn forge_model_update_json(
             return json_result("null".to_string());
         }
     };
+
+    // Validate changes against schema annotations
+    let validation_errors = validate_data(table, &changes);
+    if !validation_errors.is_empty() {
+        for err in &validation_errors {
+            eprintln!("validation error: {} ({}): {}", err.field, err.rule, err.message);
+        }
+        return json_result("null".to_string());
+    }
 
     let set_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
     let sql = format!("UPDATE {} SET {} WHERE id = ?", table, set_clauses.join(", "));
@@ -383,6 +544,60 @@ pub extern "C" fn forge_model_count_json(
     }
 }
 
+/// Find the first record matching a filter, return as single JSON object or "null"
+#[no_mangle]
+pub extern "C" fn forge_model_find_by_json(
+    table: *const c_char,
+    filter_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let filter: Value = match serde_json::from_str(filter_str) {
+        Ok(v) => v,
+        Err(_) => return json_result("null".to_string()),
+    };
+
+    if let Some(obj) = filter.as_object() {
+        if obj.is_empty() {
+            return json_result("null".to_string());
+        }
+
+        let where_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
+        let sql = format!("SELECT * FROM {} WHERE {} LIMIT 1", table, where_clauses.join(" AND "));
+
+        let values: Vec<String> = obj
+            .values()
+            .map(|v| match v {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+                other => other.to_string(),
+            })
+            .collect();
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = values
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let result = query_to_json(conn, &sql, param_refs.as_slice());
+        // Unwrap to single object or null
+        if result.starts_with('[') && result.ends_with(']') {
+            let inner = &result[1..result.len() - 1];
+            if inner.is_empty() {
+                return json_result("null".to_string());
+            }
+            return json_result(inner.to_string());
+        }
+        json_result(result)
+    } else {
+        json_result("null".to_string())
+    }
+}
+
 /// Create a table from a JSON schema definition.
 /// schema_json format: [{"name":"id","type":"int","annotations":[{"name":"primary"},{"name":"auto_increment"}]}, ...]
 /// This keeps all SQL type mapping knowledge inside the provider, not the compiler.
@@ -403,6 +618,30 @@ pub extern "C" fn forge_model_create_table(
             return -1;
         }
     };
+
+    // Store schema for validation
+    {
+        let mut schemas = SCHEMAS.lock().unwrap();
+        if schemas.is_none() {
+            *schemas = Some(HashMap::new());
+        }
+        let schemas = schemas.as_mut().unwrap();
+        let mut field_schemas = Vec::new();
+        for field in &schema {
+            let name = field["name"].as_str().unwrap_or("unknown").to_string();
+            let field_type = field["type"].as_str().unwrap_or("string").to_string();
+            let mut annotations = Vec::new();
+            if let Some(anns) = field["annotations"].as_array() {
+                for ann in anns {
+                    let ann_name = ann["name"].as_str().unwrap_or("").to_string();
+                    let args = ann["args"].as_array().cloned().unwrap_or_default();
+                    annotations.push(FieldAnnotation { name: ann_name, args });
+                }
+            }
+            field_schemas.push(FieldSchema { name, field_type, annotations });
+        }
+        schemas.insert(table.to_string(), field_schemas);
+    }
 
     let mut cols = Vec::new();
     for field in &schema {

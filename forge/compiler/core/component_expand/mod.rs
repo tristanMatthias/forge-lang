@@ -884,6 +884,88 @@ fn build_hooked_fn(
     }
 }
 
+/// Inject before/after hooks into a template-generated component function.
+/// Prepends before hook body and appends after hook body around the original function body.
+/// Works with any component template that declares events (model, service, etc.).
+fn build_component_hooked_fn(
+    method_name: &str,
+    ctx: &SubstitutionContext,
+    original_fn: &Statement,
+    before_hooks: &HashMap<String, HookInfo>,
+    after_hooks: &HashMap<String, HookInfo>,
+) -> Statement {
+    if let Statement::FnDecl { name, type_params, params, return_type, body, exported, span } = original_fn {
+        let mut new_stmts = Vec::new();
+
+        // Before hook: inject user's hook body before the template function body
+        if let Some(hook) = before_hooks.get(method_name) {
+            inject_hook_body(&hook.body, &hook.param_name, &mut new_stmts);
+        }
+
+        // Original template function body
+        new_stmts.extend(body.statements.clone());
+
+        // After hook: inject user's hook body after the template function body
+        if let Some(hook) = after_hooks.get(method_name) {
+            if !new_stmts.is_empty() {
+                // Preserve the return value: pop last expr, inject hook, push back
+                let last = new_stmts.pop();
+                // Try to bind hook param to result via get_internal if available
+                let get_internal = format!("{}_get_internal", ctx.name);
+                let original_name = strip_raw_prefix(&hook.param_name);
+                new_stmts.push(let_stmt(
+                    &original_name,
+                    call(&get_internal, vec![ident("__id")]),
+                ));
+                inject_hook_body(&hook.body, &hook.param_name, &mut new_stmts);
+                if let Some(l) = last {
+                    new_stmts.push(l);
+                }
+            }
+        }
+
+        Statement::FnDecl {
+            name: name.clone(),
+            type_params: type_params.clone(),
+            params: params.clone(),
+            return_type: return_type.clone(),
+            body: Block { statements: new_stmts, span: *span },
+            exported: *exported,
+            span: *span,
+        }
+    } else {
+        original_fn.clone()
+    }
+}
+
+/// Strip __raw_ prefix added by the on-event parser for C ptr params
+fn strip_raw_prefix(name: &str) -> String {
+    if name.starts_with("__raw_") {
+        name.trim_start_matches("__raw_").to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Inject hook body statements, skipping the C ptr conversion prologue
+/// that the on-event parser adds for untyped params.
+fn inject_hook_body(body: &Block, param_name: &str, stmts: &mut Vec<Statement>) {
+    let original_name = strip_raw_prefix(param_name);
+    for s in &body.statements {
+        // Skip forge_string_new prologue injected by on-event parser
+        if let Statement::Let { name: var_name, value: Expr::Call { callee, .. }, .. } = s {
+            if *var_name == original_name {
+                if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                    if fn_name == "forge_string_new" {
+                        continue;
+                    }
+                }
+            }
+        }
+        stmts.push(s.clone());
+    }
+}
+
 fn extract_hooks_and_methods(
     blocks: &[Statement],
 ) -> (
@@ -909,6 +991,28 @@ fn extract_hooks_and_methods(
                 );
             } else if name.starts_with("__hook_after_") {
                 let operation = name.trim_start_matches("__hook_after_").to_string();
+                let param_name = params
+                    .first()
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                after_hooks.insert(
+                    operation,
+                    HookInfo { param_name, body: body.clone() },
+                );
+            } else if name.starts_with("on_before_") {
+                // on before_create(data) { ... } syntax
+                let operation = name.trim_start_matches("on_before_").to_string();
+                let param_name = params
+                    .first()
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                before_hooks.insert(
+                    operation,
+                    HookInfo { param_name, body: body.clone() },
+                );
+            } else if name.starts_with("on_after_") {
+                // on after_create(record) { ... } syntax
+                let operation = name.trim_start_matches("on_after_").to_string();
                 let param_name = params
                     .first()
                     .map(|p| p.name.clone())
@@ -1061,14 +1165,8 @@ impl ComponentExpander {
         let ctx = SubstitutionContext { name, model_ref, schema, schema_json, config: resolved_config };
 
         // Extract hooks and custom methods from user body
-        let (before_hooks, after_hooks, custom_methods) = if template.has_model_ref {
-            extract_hooks_and_methods(&decl.body.blocks)
-        } else {
-            let methods: Vec<Statement> = decl.body.blocks.iter()
-                .filter(|s| matches!(s, Statement::FnDecl { .. }))
-                .cloned().collect();
-            (HashMap::new(), HashMap::new(), methods)
-        };
+        let (before_hooks, after_hooks, custom_methods) =
+            extract_hooks_and_methods(&decl.body.blocks);
 
         let mut result = ExpansionResult::new();
 
@@ -1135,7 +1233,19 @@ impl ComponentExpander {
                         // Model template: substitute and emit
                         let substituted =
                             substitute_fn_template(fn_decl_stmt, method_name, &ctx);
-                        result.statements.push(substituted);
+
+                        // Inject hooks into model template functions if present
+                        let has_before = before_hooks.contains_key(method_name);
+                        let has_after = after_hooks.contains_key(method_name);
+
+                        if has_before || has_after {
+                            let hooked = build_component_hooked_fn(
+                                method_name, &ctx, &substituted, &before_hooks, &after_hooks,
+                            );
+                            result.statements.push(hooked);
+                        } else {
+                            result.statements.push(substituted);
+                        }
                         result.static_methods.push((
                             ctx.name.clone(),
                             method_name.clone(),

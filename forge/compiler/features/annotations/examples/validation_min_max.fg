@@ -1,0 +1,21 @@
+/// Test: @min and @max annotations enforce validation on insert
+/// When validation fails, create returns 0 and no record is inserted.
+///
+/// expect: 0
+/// expect: 0
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1) @max(100)
+}
+
+fn main() {
+  // Empty name violates @min(1)
+  let bad_id = User.create({ name: "" })
+  println(string(bad_id))
+
+  // No record was inserted
+  println(string(User.count()))
+}

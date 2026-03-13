@@ -1,0 +1,20 @@
+/// Test: Valid data passes validation and inserts successfully
+///
+/// expect: alice
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1) @max(100)
+}
+
+fn main() {
+  let id = User.create({ name: "alice" })
+  let user = User.get(id)
+  if user != null {
+    println(user.name)
+  }
+  println(string(User.count()))
+}

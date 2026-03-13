@@ -1,0 +1,25 @@
+/// Test: Model before_create hook runs before record is inserted
+///
+/// expect: before create
+/// expect: alice
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+
+  on before_create(data) {
+    println("before create")
+  }
+}
+
+fn main() {
+  let id = User.create({ name: "alice" })
+  let user = User.get(id)
+  if user != null {
+    println(user.name)
+  }
+  println(string(id))
+}
