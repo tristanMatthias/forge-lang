@@ -887,6 +887,9 @@ fn build_where_clause(filter_str: &str) -> (String, Vec<String>) {
                 else if let Some(val) = op.get("$lte") { clauses.push(format!("{} <= ?", k)); values.push(jv(val)); }
                 else if let Some(val) = op.get("$like") { clauses.push(format!("{} LIKE ?", k)); values.push(jv(val)); }
                 else if let Some(val) = op.get("$ne") { clauses.push(format!("{} != ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$not_like") { clauses.push(format!("{} NOT LIKE ?", k)); values.push(jv(val)); }
+                else if op.get("$is_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NULL", k)); }
+                else if op.get("$is_not_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NOT NULL", k)); }
                 else if let Some(arr) = op.get("$between").and_then(|b| b.as_array()) {
                     if arr.len() == 2 { clauses.push(format!("{} BETWEEN ? AND ?", k)); values.push(jv(&arr[0])); values.push(jv(&arr[1])); }
                 }
@@ -1429,6 +1432,70 @@ pub extern "C" fn forge_model_rollback() -> i32 {
     let db = DB.lock().unwrap();
     let conn = db.as_ref().expect("Database not initialized");
     match conn.execute_batch("ROLLBACK") { Ok(_) => 0, Err(_) => -1 }
+}
+
+/// Get distinct values of a column as JSON array of strings
+#[no_mangle]
+pub extern "C" fn forge_model_distinct(
+    table: *const c_char,
+    column: *const c_char,
+    filter_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let column = cstr(column);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT DISTINCT {} FROM {}{} ORDER BY {}", column, table, wc, column);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return json_result("[]".to_string()),
+    };
+    let mut results = Vec::new();
+    let mut rows = match stmt.query(pr.as_slice()) {
+        Ok(r) => r,
+        Err(_) => return json_result("[]".to_string()),
+    };
+    while let Ok(Some(row)) = rows.next() {
+        if let Ok(val) = row.get::<_, String>(0) {
+            results.push(format!("\"{}\"", val.replace('"', "\\\"")));
+        } else if let Ok(val) = row.get::<_, i64>(0) {
+            results.push(val.to_string());
+        } else if let Ok(val) = row.get::<_, f64>(0) {
+            results.push(val.to_string());
+        }
+    }
+    json_result(format!("[{}]", results.join(",")))
+}
+
+/// Get min value of a column
+#[no_mangle]
+pub extern "C" fn forge_model_min_json(table: *const c_char, column: *const c_char, filter_json: *const c_char) -> f64 {
+    let table = cstr(table);
+    let column = cstr(column);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT COALESCE(MIN({}), 0) FROM {}{}", column, table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, f64>(0)).unwrap_or(0.0)
+}
+
+/// Get max value of a column
+#[no_mangle]
+pub extern "C" fn forge_model_max_json(table: *const c_char, column: *const c_char, filter_json: *const c_char) -> f64 {
+    let table = cstr(table);
+    let column = cstr(column);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT COALESCE(MAX({}), 0) FROM {}{}", column, table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, f64>(0)).unwrap_or(0.0)
 }
 
 #[no_mangle]

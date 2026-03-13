@@ -33,6 +33,9 @@ extern fn forge_model_insert_batch(table: string, data_json: string) -> int
 extern fn forge_model_begin() -> i32
 extern fn forge_model_commit() -> i32
 extern fn forge_model_rollback() -> i32
+extern fn forge_model_distinct(table: string, column: string, filter_json: string) -> string
+extern fn forge_model_min_json(table: string, column: string, filter_json: string) -> float
+extern fn forge_model_max_json(table: string, column: string, filter_json: string) -> float
 
 component model(__tpl_name, schema) {
     config {
@@ -171,6 +174,18 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.insert_batch(data_json: string) -> int {
         forge_model_insert_batch(__tpl_config_table_name, data_json)
+    }
+
+    fn __tpl_name.distinct(column: string) -> string {
+        forge_model_distinct(__tpl_config_table_name, column, "{}")
+    }
+
+    fn __tpl_name.min(column: string) -> float {
+        forge_model_min_json(__tpl_config_table_name, column, "{}")
+    }
+
+    fn __tpl_name.max(column: string) -> float {
+        forge_model_max_json(__tpl_config_table_name, column, "{}")
     }
 
     fn __tpl_name.related(id: int, foreign_key: string, related_table: string) -> ptr {
