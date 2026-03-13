@@ -141,6 +141,14 @@ component model(__tpl_name, schema) {
         __list
     }
 
+    fn __tpl_name.related(id: int, foreign_key: string, related_table: string) -> ptr {
+        forge_model_get_related(__tpl_config_table_name, id, foreign_key, related_table)
+    }
+
+    fn __tpl_name.related_many(id: int, foreign_key: string, related_table: string) -> ptr {
+        forge_model_get_related_many(__tpl_config_table_name, id, foreign_key, related_table)
+    }
+
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int
     extern fn forge_json_array_count(json: string) -> int
 }
