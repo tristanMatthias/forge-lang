@@ -34,18 +34,18 @@ component model(__tpl_name, schema) {
 
     on startup {
         forge_model_init(":memory:")
-        forge_model_create_table(__tpl_name_str, __tpl_schema_json)
+        forge_model_create_table(__tpl_config_table_name, __tpl_schema_json)
     }
 
     fn __tpl_name.create(data_json: string) -> int {
-        let __result: ptr = forge_model_insert_json(__tpl_name_str, data_json)
+        let __result: ptr = forge_model_insert_json(__tpl_config_table_name, data_json)
         let __id = forge_json_get_int(__result, 0, "id")
         forge_model_free_string(__result)
         __id
     }
 
     fn __tpl_name.get(id: int) -> __tpl_name? {
-        let __result: ptr = forge_model_get_by_id(__tpl_name_str, id)
+        let __result: ptr = forge_model_get_by_id(__tpl_config_table_name, id)
         if forge_json_is_null(__result) == 0 {
             let __obj: __tpl_name = json.parse(__result)
             forge_model_free_string(__result)
@@ -57,21 +57,21 @@ component model(__tpl_name, schema) {
     }
 
     fn __tpl_name.get_internal(id: int) -> __tpl_name {
-        let __result: ptr = forge_model_get_by_id(__tpl_name_str, id)
+        let __result: ptr = forge_model_get_by_id(__tpl_config_table_name, id)
         let __obj: __tpl_name = json.parse(__result)
         forge_model_free_string(__result)
         __obj
     }
 
     fn __tpl_name.list() -> List<__tpl_name> {
-        let __result: ptr = forge_model_list_json(__tpl_name_str, "{}")
+        let __result: ptr = forge_model_list_json(__tpl_config_table_name, "{}")
         let __list: List<__tpl_name> = json.parse(__result)
         forge_model_free_string(__result)
         __list
     }
 
     fn __tpl_name.find_by(filter_json: string) -> __tpl_name? {
-        let __result: ptr = forge_model_find_by_json(__tpl_name_str, filter_json)
+        let __result: ptr = forge_model_find_by_json(__tpl_config_table_name, filter_json)
         if forge_json_is_null(__result) == 0 {
             let __obj: __tpl_name = json.parse(__result)
             forge_model_free_string(__result)
@@ -83,24 +83,24 @@ component model(__tpl_name, schema) {
     }
 
     fn __tpl_name.where(filter_json: string) -> List<__tpl_name> {
-        let __result: ptr = forge_model_list_json(__tpl_name_str, filter_json)
+        let __result: ptr = forge_model_list_json(__tpl_config_table_name, filter_json)
         let __list: List<__tpl_name> = json.parse(__result)
         forge_model_free_string(__result)
         __list
     }
 
     fn __tpl_name.count() -> int {
-        forge_model_count_json(__tpl_name_str, "{}")
+        forge_model_count_json(__tpl_config_table_name, "{}")
     }
 
     fn __tpl_name.update(id: int, changes_json: string) -> int {
-        let __result: ptr = forge_model_update_json(__tpl_name_str, id, changes_json)
+        let __result: ptr = forge_model_update_json(__tpl_config_table_name, id, changes_json)
         forge_model_free_string(__result)
         id
     }
 
     fn __tpl_name.delete(id: int) -> int {
-        forge_model_delete_json(__tpl_name_str, id)
+        forge_model_delete_json(__tpl_config_table_name, id)
     }
 
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int

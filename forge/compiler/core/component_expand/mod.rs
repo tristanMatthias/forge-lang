@@ -1160,6 +1160,31 @@ impl ComponentExpander {
             }
         }
 
+        // Promote component-level annotations to config overrides.
+        // E.g., @table("blog_posts") on a component that has `config { table_name: ... }`
+        // maps annotation name "table" to config key "table_name" (ann_name + "_name").
+        for ann in &decl.body.annotations {
+            // Try exact match first, then annotation_name convention
+            let config_key_candidates = vec![
+                ann.name.clone(),
+                format!("{}_name", ann.name),
+            ];
+            for candidate in config_key_candidates {
+                let schema_has_key = template.config_schema.iter().any(|e| e.key == candidate);
+                let already_set = merged_config.iter().any(|c| c.key == candidate);
+                if schema_has_key && !already_set {
+                    if let Some(first_arg) = ann.args.first() {
+                        merged_config.push(ComponentConfig {
+                            key: candidate,
+                            value: first_arg.clone(),
+                            span: ann.span,
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+
         // Resolve config: merge user config with schema defaults
         let resolved_config = resolve_config(&merged_config, &template.config_schema);
 
