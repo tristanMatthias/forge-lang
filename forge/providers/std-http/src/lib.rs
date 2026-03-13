@@ -233,6 +233,22 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
                 .unwrap_or("")
                 .to_string();
 
+                // Run after-middleware in reverse order (onion model)
+                for mw in middleware.iter().rev() {
+                    if let Some(after) = mw.after {
+                        let mut mw_buf = vec![0u8; 65536];
+                        after(
+                            method_c.as_ptr(),
+                            path_c.as_ptr(),
+                            body_c.as_ptr(),
+                            headers_c.as_ptr(),
+                            mw_buf.as_mut_ptr() as *mut c_char,
+                            mw_buf.len() as i64,
+                        );
+                        // After-middleware is fire-and-forget (logging, metrics, etc.)
+                    }
+                }
+
                 let header =
                     Header::from_bytes("Content-Type", "application/json").unwrap();
                 let cors = Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
