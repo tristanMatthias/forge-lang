@@ -149,6 +149,13 @@ fn validate_data(table: &str, data: &Value) -> Vec<ValidationError> {
     errors
 }
 
+fn format_validation_errors(errors: &[ValidationError]) -> String {
+    let fields: Vec<String> = errors.iter().map(|e| {
+        format!(r#"{{"field":"{}","rule":"{}","message":"{}"}}"#, e.field, e.rule, e.message)
+    }).collect();
+    format!(r#"{{"__validation_error":true,"error":"validation failed","fields":[{}]}}"#, fields.join(","))
+}
+
 fn cstr(ptr: *const c_char) -> &'static str {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap()
 }
@@ -266,10 +273,7 @@ pub extern "C" fn forge_model_insert_json(
     // Validate data against schema annotations
     let validation_errors = validate_data(table, &data);
     if !validation_errors.is_empty() {
-        for err in &validation_errors {
-            eprintln!("validation error: {} ({}): {}", err.field, err.rule, err.message);
-        }
-        return json_result("null".to_string());
+        return json_result(format_validation_errors(&validation_errors));
     }
 
     let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
@@ -312,8 +316,20 @@ pub extern "C" fn forge_model_insert_json(
             json_result(result)
         }
         Err(e) => {
-            eprintln!("SQL insert error: {} | SQL: {}", e, sql);
-            json_result("null".to_string())
+            let err_msg = e.to_string();
+            if err_msg.contains("UNIQUE constraint failed") {
+                // Extract field name from "UNIQUE constraint failed: Table.field"
+                let field = err_msg.split('.').last().unwrap_or("unknown").to_string();
+                let ve = vec![ValidationError {
+                    field: field.clone(),
+                    rule: "unique".to_string(),
+                    message: format!("{} already exists", field),
+                }];
+                json_result(format_validation_errors(&ve))
+            } else {
+                eprintln!("SQL insert error: {} | SQL: {}", e, sql);
+                json_result("null".to_string())
+            }
         }
     }
 }
@@ -370,10 +386,7 @@ pub extern "C" fn forge_model_update_json(
     // Validate changes against schema annotations
     let validation_errors = validate_data(table, &changes);
     if !validation_errors.is_empty() {
-        for err in &validation_errors {
-            eprintln!("validation error: {} ({}): {}", err.field, err.rule, err.message);
-        }
-        return json_result("null".to_string());
+        return json_result(format_validation_errors(&validation_errors));
     }
 
     let set_clauses: Vec<String> = obj.keys().map(|k| format!("{} = ?", k)).collect();
