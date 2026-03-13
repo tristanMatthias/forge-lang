@@ -872,6 +872,20 @@ fn build_where_clause(filter_str: &str) -> (String, Vec<String>) {
                 else if let Some(arr) = op.get("$between").and_then(|b| b.as_array()) {
                     if arr.len() == 2 { clauses.push(format!("{} BETWEEN ? AND ?", k)); values.push(jv(&arr[0])); values.push(jv(&arr[1])); }
                 }
+                else if let Some(arr) = op.get("$in").and_then(|b| b.as_array()) {
+                    if !arr.is_empty() {
+                        let placeholders: Vec<&str> = arr.iter().map(|_| "?").collect();
+                        clauses.push(format!("{} IN ({})", k, placeholders.join(",")));
+                        for item in arr { values.push(jv(item)); }
+                    }
+                }
+                else if let Some(arr) = op.get("$not_in").and_then(|b| b.as_array()) {
+                    if !arr.is_empty() {
+                        let placeholders: Vec<&str> = arr.iter().map(|_| "?").collect();
+                        clauses.push(format!("{} NOT IN ({})", k, placeholders.join(",")));
+                        for item in arr { values.push(jv(item)); }
+                    }
+                }
             } else {
                 clauses.push(format!("{} = ?", k)); values.push(jv(v));
             }

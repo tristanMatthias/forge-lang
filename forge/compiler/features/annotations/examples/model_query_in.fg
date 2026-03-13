@@ -1,0 +1,27 @@
+/// Test: Model.query with $in operator
+///
+/// expect: 3
+/// expect: alice
+/// expect: carol
+/// expect: dave
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "guest" })
+  User.create({ name: "carol", role: "editor" })
+  User.create({ name: "dave", role: "admin" })
+
+  let results = User.query("{\"where\":{\"role\":{\"$in\":[\"admin\",\"editor\"]}}}")
+  println(string(results.length))
+  println(results[0].name)
+  println(results[1].name)
+  println(results[2].name)
+}
