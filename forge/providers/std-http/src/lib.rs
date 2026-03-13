@@ -295,15 +295,17 @@ extern "C" fn mount_create_handler(
     let table_c = CString::new(table.as_str()).unwrap();
     let json = unsafe { forge_model_insert_json(table_c.as_ptr(), body) };
     let result_str = cstr(json);
-    // Check for validation failure (null response means validation or insert error)
+    // Check for validation failure
     if result_str.trim() == "null" || result_str.is_empty() {
         let error_json = r#"{"error":"validation failed"}"#;
-        let bytes = error_json.as_bytes();
-        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
-            *response_buf.add(copy_len) = 0;
-        }
+        copy_str_to_buf(error_json, response_buf, response_buf_len);
+        unsafe { forge_model_free_string(json) };
+        return 400;
+    }
+    if result_str.contains("\"__validation_error\":true") {
+        // Strip the internal flag and forward the structured error
+        let cleaned = result_str.replace("\"__validation_error\":true,", "");
+        copy_str_to_buf(&cleaned, response_buf, response_buf_len);
         unsafe { forge_model_free_string(json) };
         return 400;
     }
@@ -364,12 +366,13 @@ extern "C" fn mount_update_handler(
     let result_str = cstr(json);
     if result_str.trim() == "null" || result_str.is_empty() {
         let error_json = r#"{"error":"validation failed"}"#;
-        let bytes = error_json.as_bytes();
-        let copy_len = std::cmp::min(bytes.len(), (response_buf_len - 1) as usize);
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), response_buf as *mut u8, copy_len);
-            *response_buf.add(copy_len) = 0;
-        }
+        copy_str_to_buf(error_json, response_buf, response_buf_len);
+        unsafe { forge_model_free_string(json) };
+        return 400;
+    }
+    if result_str.contains("\"__validation_error\":true") {
+        let cleaned = result_str.replace("\"__validation_error\":true,", "");
+        copy_str_to_buf(&cleaned, response_buf, response_buf_len);
         unsafe { forge_model_free_string(json) };
         return 400;
     }
@@ -424,6 +427,18 @@ pub extern "C" fn forge_http_write_response(buf: *mut c_char, buf_len: i64, json
     unsafe {
         std::ptr::copy_nonoverlapping(s.as_ptr(), buf as *mut u8, copy_len);
         *buf.add(copy_len) = 0;
+    }
+}
+
+fn copy_str_to_buf(s: &str, dst: *mut c_char, dst_len: i64) {
+    if dst.is_null() || dst_len <= 0 {
+        return;
+    }
+    let bytes = s.as_bytes();
+    let copy_len = std::cmp::min(bytes.len(), (dst_len - 1) as usize);
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst as *mut u8, copy_len);
+        *dst.add(copy_len) = 0;
     }
 }
 
