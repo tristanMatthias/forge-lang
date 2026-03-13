@@ -21,8 +21,10 @@ pub struct ProviderInfo {
     pub exported_fns: Vec<Statement>,
     /// Component template definitions from provider.fg
     pub component_templates: Vec<ComponentTemplateDef>,
-    /// Path to the native library (.a file)
+    /// Path to the native static library (.a file)
     pub lib_path: PathBuf,
+    /// Path to the native shared library (.dylib/.so file) for JIT loading
+    pub dylib_path: PathBuf,
     /// Component metadata from provider.toml
     pub component_metas: Vec<ComponentMeta>,
 }
@@ -112,10 +114,14 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
         Vec::new()
     };
 
-    // Determine native library path
-    let lib_path = provider_dir
-        .join("target/release")
-        .join(format!("lib{}.a", native_lib));
+    // Determine native library paths
+    let release_dir = provider_dir.join("target/release");
+    let lib_path = release_dir.join(format!("lib{}.a", native_lib));
+    let dylib_path = if cfg!(target_os = "macos") {
+        release_dir.join(format!("lib{}.dylib", native_lib))
+    } else {
+        release_dir.join(format!("lib{}.so", native_lib))
+    };
 
     Ok(ProviderInfo {
         name: config.provider.name,
@@ -125,6 +131,7 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
         exported_fns: extern_fns.1,
         component_templates: extern_fns.2,
         lib_path,
+        dylib_path,
         component_metas,
     })
 }

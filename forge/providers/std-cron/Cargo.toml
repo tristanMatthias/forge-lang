@@ -5,4 +5,4 @@ edition = "2021"
 
 [lib]
 name = "forge_cron"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]

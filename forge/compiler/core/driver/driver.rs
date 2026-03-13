@@ -13,7 +13,11 @@ use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::Instant;
+
+/// Global mutex for stdout capture — only one thread can redirect fd 1 at a time.
+static STDOUT_CAPTURE_LOCK: Mutex<()> = Mutex::new(());
 
 pub struct Driver {
     pub emit_ir: bool,
@@ -362,20 +366,27 @@ impl Driver {
     }
 
     /// JIT-compile and execute a Forge program in-process (no linking, no binary on disk).
-    /// Falls back to AOT compile+link if providers with native libs are present.
+    /// Loads provider .dylib files with RTLD_GLOBAL so JIT can resolve their symbols.
+    /// Falls back to AOT only if a provider has no .dylib (only .a).
     pub fn run_jit(&self, source_path: &Path) -> Result<i32, CompileError> {
         self.with_compiled_module(source_path, |codegen, loaded_providers, bp| {
-            // If providers with native libs are present, fall back to AOT
-            let has_native_providers = loaded_providers.iter().any(|p| p.lib_path.exists());
-            if has_native_providers {
+            // Check if any provider has a native lib but no dylib — must fall back to AOT
+            let needs_aot = loaded_providers.iter().any(|p| {
+                p.lib_path.exists() && !p.dylib_path.exists()
+            });
+            if needs_aot {
+                // Avoid double compilation: go directly to AOT
                 return self.run_aot(source_path);
             }
 
             // Load runtime as shared library with RTLD_GLOBAL so JIT can resolve symbols
             let t = Instant::now();
             let runtime_dylib = self.compile_runtime_dylib(source_path)?;
-            let _runtime_lib = unsafe {
-                // Must use RTLD_GLOBAL (not default RTLD_LOCAL) so MCJIT symbol resolver can find them
+
+            // Keep all loaded libraries alive until after JIT execution
+            let mut _loaded_libs: Vec<libloading::os::unix::Library> = Vec::new();
+
+            let runtime_lib = unsafe {
                 libloading::os::unix::Library::open(
                     Some(&runtime_dylib),
                     libloading::os::unix::RTLD_LAZY | libloading::os::unix::RTLD_GLOBAL,
@@ -383,7 +394,25 @@ impl Driver {
             }.map_err(|e| CompileError::JitFailed {
                 detail: format!("failed to load runtime library: {}", e),
             })?;
+            _loaded_libs.push(runtime_lib);
             bp.add("runtime", t.elapsed());
+
+            // Load provider dylibs with RTLD_GLOBAL
+            let t = Instant::now();
+            for provider in loaded_providers {
+                if provider.dylib_path.exists() {
+                    let lib = unsafe {
+                        libloading::os::unix::Library::open(
+                            Some(&provider.dylib_path),
+                            libloading::os::unix::RTLD_LAZY | libloading::os::unix::RTLD_GLOBAL,
+                        )
+                    }.map_err(|e| CompileError::JitFailed {
+                        detail: format!("failed to load provider '{}' dylib: {}", provider.name, e),
+                    })?;
+                    _loaded_libs.push(lib);
+                }
+            }
+            bp.add("providers_load", t.elapsed());
 
             // Verify module
             if let Err(msg) = codegen.module.verify() {
@@ -448,6 +477,102 @@ impl Driver {
 
         std::fs::remove_file(&binary).ok();
         Ok(status.code().unwrap_or(1))
+    }
+
+    /// JIT-compile and execute, capturing stdout. Returns (exit_code, captured_stdout).
+    /// Uses pipe/dup2 to redirect fd 1, protected by a global mutex.
+    pub fn run_jit_captured(&self, source_path: &Path) -> Result<(i32, String), CompileError> {
+        use std::io::Read as _;
+        use std::os::unix::io::FromRawFd;
+
+        extern "C" {
+            fn pipe(pipefd: *mut i32) -> i32;
+            fn dup(fd: i32) -> i32;
+            fn dup2(oldfd: i32, newfd: i32) -> i32;
+            fn close(fd: i32) -> i32;
+            fn fflush(stream: *mut std::ffi::c_void) -> i32;
+        }
+        // NULL pointer = fflush all streams
+        const STDOUT_FD: i32 = 1;
+
+        let _lock = STDOUT_CAPTURE_LOCK.lock().unwrap();
+
+        // Create pipe
+        let mut pipefd: [i32; 2] = [0; 2];
+        if unsafe { pipe(pipefd.as_mut_ptr()) } != 0 {
+            return Err(CompileError::JitFailed {
+                detail: "failed to create pipe for stdout capture".to_string(),
+            });
+        }
+        let (read_fd, write_fd) = (pipefd[0], pipefd[1]);
+
+        // Flush existing stdout buffers (both Rust and C)
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        unsafe { fflush(std::ptr::null_mut()); }
+
+        // Save original stdout, redirect to pipe
+        let saved_stdout = unsafe { dup(STDOUT_FD) };
+        unsafe { dup2(write_fd, STDOUT_FD); }
+        unsafe { close(write_fd); }
+
+        // Run JIT
+        let result = self.run_jit(source_path);
+
+        // Flush and restore stdout
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        unsafe { fflush(std::ptr::null_mut()); }
+        unsafe { dup2(saved_stdout, STDOUT_FD); }
+        unsafe { close(saved_stdout); }
+
+        // Read captured output from pipe (non-blocking: close write end already done)
+        let mut captured = String::new();
+        let mut file = unsafe { std::fs::File::from_raw_fd(read_fd) };
+        let _ = file.read_to_string(&mut captured);
+
+        match result {
+            Ok(exit_code) => Ok((exit_code, captured)),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Type-check only, capturing diagnostics. Returns Err with rendered error text on failure.
+    pub fn check_captured(&self, source_path: &Path) -> Result<(), String> {
+        let source = match std::fs::read_to_string(source_path) {
+            Ok(s) => s,
+            Err(e) => return Err(format!("cannot read file: {}", e)),
+        };
+
+        let filename = source_path.to_str().unwrap_or("<unknown>");
+
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize();
+
+        let mut diag_bag = DiagnosticBag::new();
+        for d in lexer.diagnostics() {
+            diag_bag.report(d.clone());
+        }
+
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program();
+
+        for d in parser.diagnostics() {
+            diag_bag.report(d.clone());
+        }
+
+        let mut checker = crate::typeck::TypeChecker::new();
+        checker.check_program(&program);
+        for d in &checker.diagnostics {
+            diag_bag.report(d.clone());
+        }
+
+        if diag_bag.has_errors() {
+            let mut buf = Vec::new();
+            diag_bag.print_to_limited(&mut buf, &source, filename, self.max_errors);
+            let rendered = String::from_utf8_lossy(&buf).to_string();
+            return Err(rendered);
+        }
+
+        Ok(())
     }
 
     /// Compile a project directory containing forge.toml
