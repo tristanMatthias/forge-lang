@@ -1,0 +1,15 @@
+/// Test: With expression updating multiple fields at once
+///
+/// expect: bob
+/// expect: bob@new.com
+/// expect: 30
+
+type User = { name: string, email: string, age: int }
+
+fn main() {
+  let user = User { name: "alice", email: "alice@old.com", age: 25 }
+  let updated = user with { name: "bob", email: "bob@new.com", age: 30 }
+  println(updated.name)
+  println(updated.email)
+  println(string(updated.age))
+}

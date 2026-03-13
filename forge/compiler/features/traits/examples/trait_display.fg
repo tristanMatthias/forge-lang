@@ -1,0 +1,22 @@
+/// Test: Trait with default method using self
+///
+/// expect: Hello from Alice
+
+trait Greetable {
+  fn name(self) -> string
+
+  fn greet(self) -> string {
+    "Hello from " + self.name()
+  }
+}
+
+type Person = { first_name: string }
+
+impl Greetable for Person {
+  fn name(self) -> string { self.first_name }
+}
+
+fn main() {
+  let p = Person { first_name: "Alice" }
+  println(p.greet())
+}
