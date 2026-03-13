@@ -3,6 +3,8 @@ extern fn forge_http_serve(port: int)
 extern fn forge_http_mount_crud(port: int, table: string, path: string)
 extern fn forge_http_write_response(buf: ptr, buf_len: int, json: string)
 extern fn forge_params_get(params_json: ptr, key: string) -> string
+extern fn forge_http_push_prefix(port: int, prefix: string)
+extern fn forge_http_pop_prefix(port: int)
 
 component server(__tpl_name) {
     config {
@@ -24,6 +26,16 @@ component server(__tpl_name) {
     @syntax("mount {service} at {path}")
     fn mount_service(service: string, path: string) {
         forge_http_mount_crud(__tpl_config_port, __tpl_resolve_service(service), path)
+    }
+
+    @syntax("under {prefix}")
+    fn under_start(prefix: string) {
+        forge_http_push_prefix(__tpl_config_port, prefix)
+    }
+
+    @syntax("end under")
+    fn under_end() {
+        forge_http_pop_prefix(__tpl_config_port)
     }
 
     on main_end {

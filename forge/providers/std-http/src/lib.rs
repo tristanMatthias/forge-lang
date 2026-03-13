@@ -50,10 +50,11 @@ pub extern "C" fn forge_http_add_route(
         .to_str()
         .unwrap()
         .to_string();
-    let path = unsafe { CStr::from_ptr(path) }
+    let raw_path = unsafe { CStr::from_ptr(path) }
         .to_str()
         .unwrap()
         .to_string();
+    let path = format!("{}{}", current_prefix(port), raw_path);
     routes_map()
         .as_mut()
         .unwrap()
@@ -436,6 +437,40 @@ fn copy_cstr_to_buf(src: *const c_char, dst: *mut c_char, dst_len: i64) {
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst as *mut u8, copy_len);
         *dst.add(copy_len) = 0; // null terminate
+    }
+}
+
+// ── Route prefix stack for `under` blocks ──
+
+static PREFIX_STACK: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
+
+fn current_prefix(port: u16) -> String {
+    let guard = PREFIX_STACK.lock().unwrap();
+    if let Some(map) = guard.as_ref() {
+        if let Some(stack) = map.get(&port) {
+            return stack.join("");
+        }
+    }
+    String::new()
+}
+
+#[no_mangle]
+pub extern "C" fn forge_http_push_prefix(port: u16, prefix: *const c_char) {
+    let prefix_s = cstr(prefix).to_string();
+    let mut guard = PREFIX_STACK.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    guard.as_mut().unwrap().entry(port).or_default().push(prefix_s);
+}
+
+#[no_mangle]
+pub extern "C" fn forge_http_pop_prefix(port: u16) {
+    let mut guard = PREFIX_STACK.lock().unwrap();
+    if let Some(map) = guard.as_mut() {
+        if let Some(stack) = map.get_mut(&port) {
+            stack.pop();
+        }
     }
 }
 
