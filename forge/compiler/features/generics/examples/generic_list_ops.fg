@@ -1,0 +1,23 @@
+/// Test: Generic functions with list operations
+///
+/// expect: 3
+/// expect: 15
+/// expect: alice, bob, charlie
+
+fn count<T>(items: List<T>) -> int {
+  items.length
+}
+
+fn sum_list(items: List<int>) -> int {
+  items.reduce(0, (acc, n) -> acc + n)
+}
+
+fn main() {
+  let names = ["alice", "bob", "charlie"]
+  println(string(count(names)))
+
+  let nums = [1, 2, 3, 4, 5]
+  println(string(sum_list(nums)))
+
+  println(names.join(", "))
+}

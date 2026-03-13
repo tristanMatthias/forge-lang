@@ -1,0 +1,10 @@
+/// Test: json.stringify outputs true/false for booleans
+///
+/// expect: {"active":true,"deleted":false}
+
+type Flags = { active: bool, deleted: bool }
+
+fn main() {
+  let f: Flags = { active: true, deleted: false }
+  println(json.stringify(f))
+}

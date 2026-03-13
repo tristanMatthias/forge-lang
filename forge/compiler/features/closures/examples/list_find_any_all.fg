@@ -1,0 +1,20 @@
+/// Test: list.find(), list.any(), list.all() with closures
+///
+/// expect: 2
+/// expect: true
+/// expect: false
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+
+  let first_even = nums.find((n) -> n % 2 == 0)
+  if first_even != null {
+    println(string(first_even))
+  }
+
+  let has_big = nums.any((n) -> n > 3)
+  println(string(has_big))
+
+  let all_positive = nums.all((n) -> n > 10)
+  println(string(all_positive))
+}

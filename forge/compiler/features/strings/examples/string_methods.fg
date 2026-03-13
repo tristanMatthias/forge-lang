@@ -1,0 +1,27 @@
+/// Test: String methods — trim, upper, lower, contains, starts_with, replace
+///
+/// expect: hello
+/// expect: HELLO WORLD
+/// expect: hello world
+/// expect: true
+/// expect: false
+/// expect: true
+/// expect: false
+/// expect: hello-world
+
+fn main() {
+  let s = "  hello  "
+  println(s.trim())
+
+  let greeting = "hello world"
+  println(greeting.upper())
+  println("HELLO WORLD".lower())
+
+  println(string(greeting.contains("world")))
+  println(string(greeting.contains("xyz")))
+
+  println(string(greeting.starts_with("hello")))
+  println(string(greeting.starts_with("world")))
+
+  println(greeting.replace(" ", "-"))
+}

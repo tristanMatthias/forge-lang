@@ -1,0 +1,11 @@
+/// Test: defer for cleanup pattern (resource management)
+///
+/// expect: working
+/// expect: cleanup b
+/// expect: cleanup a
+
+fn main() {
+  defer println("cleanup a")
+  defer println("cleanup b")
+  println("working")
+}

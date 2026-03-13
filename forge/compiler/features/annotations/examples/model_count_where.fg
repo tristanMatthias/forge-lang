@@ -1,0 +1,23 @@
+/// Test: Model.count_where returns filtered count
+///
+/// expect: 2
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "member" })
+  User.create({ name: "charlie", role: "admin" })
+
+  let admin_count = User.count_where({ role: "admin" })
+  let member_count = User.count_where({ role: "member" })
+  println(string(admin_count))
+  println(string(member_count))
+}

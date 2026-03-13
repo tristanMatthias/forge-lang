@@ -1,0 +1,11 @@
+/// Test: string.length returns character count
+///
+/// expect: 5
+/// expect: 0
+/// expect: 11
+
+fn main() {
+  println(string("hello".length))
+  println(string("".length))
+  println(string("hello world".length))
+}

@@ -1,0 +1,19 @@
+/// Test: Match with string comparison
+///
+/// expect: admin access
+/// expect: read only
+/// expect: unknown
+
+fn access_level(role: string) -> string {
+  match role {
+    "admin" -> "admin access"
+    "member" -> "read only"
+    _ -> "unknown"
+  }
+}
+
+fn main() {
+  println(access_level("admin"))
+  println(access_level("member"))
+  println(access_level("guest"))
+}

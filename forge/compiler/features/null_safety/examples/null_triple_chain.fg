@@ -1,0 +1,20 @@
+/// Test: Triple ?? chain with nullable fallbacks
+///
+/// expect: hello
+/// expect: second
+/// expect: fallback
+
+fn first() -> string? { "hello" }
+fn empty() -> string? { null }
+fn second() -> string? { "second" }
+
+fn main() {
+  let a = first() ?? empty() ?? "fallback"
+  println(a)
+
+  let b = empty() ?? second() ?? "fallback"
+  println(b)
+
+  let c = empty() ?? empty() ?? "fallback"
+  println(c)
+}

@@ -1,0 +1,20 @@
+/// Test: ?? with function return values as defaults
+///
+/// expect: hello
+/// expect: default
+
+fn get_name() -> string? {
+  "hello"
+}
+
+fn get_empty() -> string? {
+  null
+}
+
+fn main() {
+  let a = get_name() ?? "default"
+  println(a)
+
+  let b = get_empty() ?? "default"
+  println(b)
+}

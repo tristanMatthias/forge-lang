@@ -1,0 +1,24 @@
+/// Test: is keyword with Result types
+///
+/// expect: got value
+/// expect: got error
+
+fn might_fail(ok: bool) -> Result<int, string> {
+  if ok {
+    Ok(42)
+  } else {
+    Err("failed")
+  }
+}
+
+fn main() {
+  let r1 = might_fail(true)
+  if r1 is Ok {
+    println("got value")
+  }
+
+  let r2 = might_fail(false)
+  if r2 is Err {
+    println("got error")
+  }
+}

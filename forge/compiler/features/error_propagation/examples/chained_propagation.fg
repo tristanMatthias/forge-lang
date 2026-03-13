@@ -1,0 +1,27 @@
+/// Test: Chained ? propagation through multiple function calls
+///
+/// expect: ok: 5
+/// expect: caught: not found
+
+fn lookup(id: int) -> Result<string, string> {
+  if id == 1 {
+    Ok("alice")
+  } else {
+    Err("not found")
+  }
+}
+
+fn greet(id: int) -> Result<int, string> {
+  let name = lookup(id)?
+  Ok(name.length)
+}
+
+fn main() {
+  let r1 = greet(1) catch (e) { -1 }
+  println(`ok: ${string(r1)}`)
+
+  let r2 = greet(99) catch (e) {
+    println(`caught: ${e}`)
+    -1
+  }
+}

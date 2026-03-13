@@ -1,0 +1,19 @@
+/// Test: Chained string methods for slug generation
+///
+/// expect: hello-world
+/// expect: HELLO WORLD
+/// expect: true
+/// expect: false
+
+fn main() {
+  let title = "Hello World"
+  let slug = title.lower().replace(" ", "-")
+  println(slug)
+
+  let upper = "hello world".upper()
+  println(upper)
+
+  let email = "alice@test.com"
+  println(string(email.contains("@")))
+  println(string(email.starts_with("bob")))
+}

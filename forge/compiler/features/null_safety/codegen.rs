@@ -37,8 +37,13 @@ impl<'ctx> Codegen<'ctx> {
 
                 self.builder.position_at_end(then_bb);
                 let present_val = self.builder.build_extract_value(struct_val, 1, "present_val").ok()?;
-                // Need to coerce present_val to match right_val type
-                let present_val = self.coerce_value(present_val, right_val.get_type());
+                // If right side is nullable, wrap present_val in nullable to match
+                let right_type = self.infer_type(right);
+                let present_val = if right_type.is_nullable() && present_val.get_type() != right_val.get_type() {
+                    self.wrap_in_nullable(present_val, &right_type)
+                } else {
+                    self.coerce_value(present_val, right_val.get_type())
+                };
                 let then_end = self.builder.get_insert_block().unwrap();
                 self.builder.build_unconditional_branch(merge_bb).unwrap();
 

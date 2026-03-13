@@ -1,0 +1,11 @@
+/// Test: Pipe operator for data transformation pipelines
+///
+/// expect: ALICE, BOB, CHARLIE
+
+fn main() {
+  let names = ["alice", "bob", "charlie"]
+  let result = names
+    |> map((n) -> n.upper())
+    |> join(", ")
+  println(result)
+}

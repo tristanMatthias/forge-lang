@@ -1,0 +1,22 @@
+/// Test: Combined validation — min, max, unique, email on same model
+///
+/// expect: alice
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1) @max(50)
+  email: string @unique
+  age: int @min(0) @max(150)
+}
+
+fn main() {
+  User.create({ name: "alice", email: "alice@test.com", age: 30 })
+  let user = User.get(1)
+  if user != null {
+    println(user.name)
+  }
+  println(string(User.count()))
+}

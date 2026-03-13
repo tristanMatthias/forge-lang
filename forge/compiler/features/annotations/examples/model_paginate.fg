@@ -1,0 +1,28 @@
+/// Test: Model.paginate returns paginated results with metadata
+///
+/// expect: 5
+/// expect: 1
+/// expect: 3
+
+use @std.model.{model}
+
+type PageMeta = { total: int, current_page: int, total_pages: int }
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  User.create({ name: "alice" })
+  User.create({ name: "bob" })
+  User.create({ name: "charlie" })
+  User.create({ name: "dave" })
+  User.create({ name: "eve" })
+
+  let result_json = User.paginate("{}", 1, 2, "id ASC")
+  let page: PageMeta = json.parse(result_json)
+  println(string(page.total))
+  println(string(page.current_page))
+  println(string(page.total_pages))
+}

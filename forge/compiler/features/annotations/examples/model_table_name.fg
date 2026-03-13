@@ -1,0 +1,20 @@
+/// Test: @table annotation overrides default table name
+///
+/// expect: Hello World
+
+use @std.model.{model}
+
+model Post {
+  @table("blog_posts")
+
+  id: int @primary @auto_increment
+  title: string
+}
+
+fn main() {
+  Post.create({ title: "Hello World" })
+  let post = Post.get(1)
+  if post != null {
+    println(post.title)
+  }
+}

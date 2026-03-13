@@ -1,0 +1,13 @@
+/// Test: with expression using computed field values (slug pattern)
+///
+/// expect: hello-world
+/// expect: Hello World
+
+type Post = { title: string, slug: string }
+
+fn main() {
+  let data = Post { title: "Hello World", slug: "" }
+  let updated = data with { slug: data.title.lower().replace(" ", "-") }
+  println(updated.slug)
+  println(updated.title)
+}

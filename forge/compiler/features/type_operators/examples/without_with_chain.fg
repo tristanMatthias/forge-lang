@@ -1,0 +1,22 @@
+/// Test: without + with chaining — remove id, add password_confirm
+///
+/// expect: alice
+/// expect: secret
+
+type User = { id: int, name: string, email: string, password: string, role: string }
+type CreateUser = User without {id} with {password_confirm: string}
+
+fn takes_create(c: CreateUser) {
+  println(c.name)
+  println(c.password_confirm)
+}
+
+fn main() {
+  takes_create({
+    name: "alice",
+    email: "a@test.com",
+    password: "secret",
+    role: "member",
+    password_confirm: "secret",
+  })
+}
