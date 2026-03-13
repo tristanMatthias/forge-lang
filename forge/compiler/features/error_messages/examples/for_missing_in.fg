@@ -1,0 +1,11 @@
+/// # For loop missing `in` keyword
+///
+/// For loops require the `in` keyword between variable and iterable.
+///
+/// expect-error: F0001
+
+fn main() {
+    for i [1, 2, 3] {
+        print(i)
+    }
+}

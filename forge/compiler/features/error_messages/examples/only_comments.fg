@@ -1,0 +1,11 @@
+/// # Undefined similar to multiple candidates
+///
+/// When multiple variables exist, the suggestion picks the closest.
+///
+/// expect-error: F0020
+
+fn main() {
+    let counter = 0
+    let country = "US"
+    print(counte)
+}

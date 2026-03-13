@@ -39,3 +39,4 @@ pub mod parallel;
 pub mod is_keyword;
 pub mod table_literal;
 pub mod spec_test;
+pub mod error_messages;

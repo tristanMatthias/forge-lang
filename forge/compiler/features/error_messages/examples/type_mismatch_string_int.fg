@@ -1,0 +1,10 @@
+/// # Type mismatch: string annotated, int provided
+///
+/// When a variable is annotated as string, an int value is rejected.
+/// The compiler suggests `string(value)` as a conversion.
+///
+/// expect-error: F0012
+
+fn main() {
+    let x: string = 42
+}

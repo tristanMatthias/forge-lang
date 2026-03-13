@@ -1,0 +1,11 @@
+/// # If statement missing condition
+///
+/// If statements require a boolean condition.
+///
+/// expect-error: F0001
+
+fn main() {
+    if {
+        print("hello")
+    }
+}

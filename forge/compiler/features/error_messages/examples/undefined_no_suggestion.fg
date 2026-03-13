@@ -1,0 +1,9 @@
+/// # Undefined variable with no close match
+///
+/// When no similar variable name exists, no suggestion is given.
+///
+/// expect-error: F0020
+
+fn main() {
+    print(xyzzy)
+}

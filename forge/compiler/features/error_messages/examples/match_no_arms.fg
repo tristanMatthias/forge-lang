@@ -1,0 +1,12 @@
+/// # Match with bad arm syntax
+///
+/// Match arms need `->` between pattern and body.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x = 5
+    match x {
+        5 : print("five")
+    }
+}

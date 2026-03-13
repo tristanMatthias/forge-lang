@@ -1,0 +1,13 @@
+/// # Using `:` instead of `->` for return type (Python/TS habit)
+///
+/// Forge uses `->` for return types, not `:`.
+///
+/// expect-error: F0001
+
+fn add(a: int, b: int): int {
+    return a + b
+}
+
+fn main() {
+    print(add(1, 2))
+}

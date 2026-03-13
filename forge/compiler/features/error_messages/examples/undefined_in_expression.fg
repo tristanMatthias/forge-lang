@@ -1,0 +1,9 @@
+/// # Undefined variable in an expression
+///
+/// Variables used in arithmetic must be defined.
+///
+/// expect-error: F0020
+
+fn main() {
+    let result = x + 10
+}

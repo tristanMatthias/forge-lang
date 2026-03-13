@@ -1,0 +1,10 @@
+/// # Multiple type errors in one file
+///
+/// The compiler should report all type errors, not just the first.
+///
+/// expect-error: F0012
+
+fn main() {
+    let x: int = "hello"
+    let y: string = 42
+}

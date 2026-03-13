@@ -1,0 +1,9 @@
+/// # Unexpected token in expression
+///
+/// Expressions must follow valid syntax rules.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x = + +
+}

@@ -1,0 +1,14 @@
+/// # Immutable reassignment in function scope
+///
+/// Immutability applies within all scopes, not just main.
+///
+/// expect-error: F0013
+
+fn update() {
+    let name = "alice"
+    name = "bob"
+}
+
+fn main() {
+    update()
+}

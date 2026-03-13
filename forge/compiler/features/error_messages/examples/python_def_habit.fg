@@ -1,0 +1,9 @@
+/// # Using `def` instead of `fn` (Python habit)
+///
+/// Forge uses `fn`, not `def`. Catches Python users.
+///
+/// expect-error: F0020
+
+def add(a, b) {
+    return a + b
+}

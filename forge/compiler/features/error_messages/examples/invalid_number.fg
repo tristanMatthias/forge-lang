@@ -1,0 +1,9 @@
+/// # Invalid numeric literal
+///
+/// Numeric literals must be well-formed integers or floats.
+///
+/// expect-error: F0006
+
+fn main() {
+    let x = 3.14.15
+}

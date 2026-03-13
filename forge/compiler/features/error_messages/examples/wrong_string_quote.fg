@@ -1,0 +1,9 @@
+/// # Using single quotes for strings
+///
+/// Forge uses double quotes for strings, not single quotes.
+///
+/// expect-error: F0001
+
+fn main() {
+    let name = 'hello'
+}

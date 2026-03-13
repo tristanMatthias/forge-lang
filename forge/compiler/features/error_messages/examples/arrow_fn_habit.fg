@@ -1,0 +1,9 @@
+/// # Using `=>` instead of `->` (JS/TS habit)
+///
+/// Forge closures use `->`, not `=>`. Catches JavaScript/TypeScript users.
+///
+/// expect-error: F0001
+
+fn main() {
+    let double = (x) => x * 2
+}

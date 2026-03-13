@@ -1,0 +1,10 @@
+/// # Type mismatch: int annotated, string provided
+///
+/// When a variable is annotated with a type, the value must match.
+/// The compiler suggests `int(value)` as a conversion.
+///
+/// expect-error: F0012
+
+fn main() {
+    let x: int = "hello"
+}

@@ -1,7 +1,7 @@
 use crate::codegen::Codegen;
 use crate::driver::profile::{BuildProfile, count_functions};
 use crate::driver::project::ForgeProject;
-use crate::errors::DiagnosticBag;
+use crate::errors::{CompileError, DiagnosticBag};
 use crate::component_expand::{ComponentExpander, ExpansionResult};
 use crate::lexer::Lexer;
 use crate::parser::ast::{ComponentTemplateDef, Expr, Program, Statement};
@@ -69,11 +69,14 @@ impl Driver {
     }
 
     /// Compile a single .fg file
-    pub fn compile(&self, source_path: &Path) -> Result<PathBuf, String> {
+    pub fn compile(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
         let mut bp = BuildProfile::new();
 
         let source = std::fs::read_to_string(source_path)
-            .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
+            .map_err(|e| CompileError::FileNotFound {
+                path: source_path.display().to_string(),
+                detail: e.to_string(),
+            })?;
 
         let filename = source_path.to_str().unwrap_or("<unknown>");
 
@@ -90,7 +93,7 @@ impl Driver {
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err("lexer errors".into());
+            return Err(CompileError::DiagnosticErrors { stage: "lexer" });
         }
 
         // 2. Pre-scan tokens for provider uses
@@ -98,7 +101,7 @@ impl Driver {
 
         // 3. Load providers → get component_metas, extern_fns
         let t = Instant::now();
-        let loaded_providers = self.load_providers_by_uses(&provider_uses);
+        let loaded_providers = self.load_providers_by_uses(&provider_uses)?;
         bp.add("providers", t.elapsed());
 
         // Build component registry from provider metas
@@ -120,7 +123,7 @@ impl Driver {
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err("parser errors".into());
+            return Err(CompileError::DiagnosticErrors { stage: "parser" });
         }
 
         if self.emit_ast {
@@ -132,6 +135,24 @@ impl Driver {
         for provider in &loaded_providers {
             for extern_fn in &provider.extern_fns {
                 program.statements.insert(0, extern_fn.clone());
+            }
+        }
+
+        // 5b. Inject exported fns from providers (renamed with provider name prefix)
+        for provider in &loaded_providers {
+            for fn_stmt in &provider.exported_fns {
+                if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
+                    let renamed = Statement::FnDecl {
+                        name: format!("{}_{}", provider.name, name),
+                        type_params: type_params.clone(),
+                        params: params.clone(),
+                        return_type: return_type.clone(),
+                        body: body.clone(),
+                        exported: false,
+                        span: *span,
+                    };
+                    program.statements.insert(0, renamed);
+                }
             }
         }
 
@@ -207,7 +228,7 @@ impl Driver {
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err("type check errors".into());
+            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
         }
 
         // 8. Codegen
@@ -240,6 +261,20 @@ impl Driver {
                             name.clone(),
                         );
                     }
+                }
+            }
+        }
+
+        // Register provider exported fns as static methods
+        // e.g. export fn red(text) in std-term → term.red(text)
+        for provider in &loaded_providers {
+            for fn_stmt in &provider.exported_fns {
+                if let Statement::FnDecl { name, .. } = fn_stmt {
+                    let full_name = format!("{}_{}", provider.name, name);
+                    codegen.static_methods.insert(
+                        (provider.name.clone(), name.clone()),
+                        full_name,
+                    );
                 }
             }
         }
@@ -304,7 +339,7 @@ impl Driver {
     }
 
     /// Compile a project directory containing forge.toml
-    pub fn compile_project(&self, project_dir: &Path) -> Result<PathBuf, String> {
+    pub fn compile_project(&self, project_dir: &Path) -> Result<PathBuf, CompileError> {
         let project = ForgeProject::load(project_dir)?;
 
         // Phase 1: Parse all files
@@ -313,14 +348,17 @@ impl Driver {
         // Parse non-entry modules
         for module_info in &project.modules {
             let source = std::fs::read_to_string(&module_info.file_path)
-                .map_err(|e| format!("cannot read {}: {}", module_info.file_path.display(), e))?;
+                .map_err(|e| CompileError::FileNotFound {
+                    path: module_info.file_path.display().to_string(),
+                    detail: e.to_string(),
+                })?;
 
             let filename = module_info.file_path.to_str().unwrap_or("<unknown>");
             let (program, diag_bag) = self.parse_source(&source)?;
 
             if diag_bag.has_errors() {
                 diag_bag.print_all(&source, filename);
-                return Err(format!("errors in {}", module_info.file_path.display()));
+                return Err(CompileError::DiagnosticErrors { stage: "parser" });
             }
 
             parsed_modules.push((
@@ -333,7 +371,10 @@ impl Driver {
 
         // Parse entry file
         let entry_source = std::fs::read_to_string(&project.entry_file)
-            .map_err(|e| format!("cannot read {}: {}", project.entry_file.display(), e))?;
+            .map_err(|e| CompileError::FileNotFound {
+                path: project.entry_file.display().to_string(),
+                detail: e.to_string(),
+            })?;
 
         let (entry_program, entry_diag) = self.parse_source(&entry_source)?;
         if entry_diag.has_errors() {
@@ -341,7 +382,7 @@ impl Driver {
                 &entry_source,
                 project.entry_file.to_str().unwrap_or("<unknown>"),
             );
-            return Err("errors in entry file".into());
+            return Err(CompileError::DiagnosticErrors { stage: "parser" });
         }
 
         // Phase 2: Collect exported symbols from each module
@@ -411,7 +452,7 @@ impl Driver {
     }
 
     /// Parse source into AST, returning diagnostics
-    fn parse_source(&self, source: &str) -> Result<(Program, DiagnosticBag), String> {
+    fn parse_source(&self, source: &str) -> Result<(Program, DiagnosticBag), CompileError> {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize();
 
@@ -430,9 +471,12 @@ impl Driver {
         Ok((program, diag_bag))
     }
 
-    pub fn check(&self, source_path: &Path) -> Result<(), String> {
+    pub fn check(&self, source_path: &Path) -> Result<(), CompileError> {
         let source = std::fs::read_to_string(source_path)
-            .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
+            .map_err(|e| CompileError::FileNotFound {
+                path: source_path.display().to_string(),
+                detail: e.to_string(),
+            })?;
 
         let filename = source_path.to_str().unwrap_or("<unknown>");
 
@@ -468,18 +512,22 @@ impl Driver {
                 if applied > 0 {
                     // Write the fixed source back
                     std::fs::write(source_path, &fixed_source)
-                        .map_err(|e| format!("cannot write {}: {}", source_path.display(), e))?;
-                    eprintln!("autofix: applied {} fix(es), skipped {} low-confidence", applied, skipped);
+                        .map_err(|e| CompileError::FileNotFound {
+                            path: source_path.display().to_string(),
+                            detail: e.to_string(),
+                        })?;
+                    // Info message — not an error, but still uses consistent formatting
+                    eprint!("\x1b[1;32mautofix\x1b[0m: applied {} fix(es), skipped {} low-confidence\n", applied, skipped);
 
                     // Re-check to verify and show remaining errors
                     return self.check(source_path);
                 } else {
-                    eprintln!("autofix: no high-confidence fixes available");
+                    eprint!("\x1b[1;33mautofix\x1b[0m: no high-confidence fixes available\n");
                 }
             }
 
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err("type check errors".into());
+            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
         }
 
         // Print warnings even when no errors
@@ -491,9 +539,12 @@ impl Driver {
         Ok(())
     }
 
-    pub fn explain_line(&self, source_path: &Path, target_line: u32) -> Result<(), String> {
+    pub fn explain_line(&self, source_path: &Path, target_line: u32) -> Result<(), CompileError> {
         let source = std::fs::read_to_string(source_path)
-            .map_err(|e| format!("cannot read {}: {}", source_path.display(), e))?;
+            .map_err(|e| CompileError::FileNotFound {
+                path: source_path.display().to_string(),
+                detail: e.to_string(),
+            })?;
 
         let mut lexer = Lexer::new(&source);
         let tokens = lexer.tokenize();
@@ -621,7 +672,7 @@ impl Driver {
         }
     }
 
-    fn compile_runtime(&self, source_path: &Path) -> Result<PathBuf, String> {
+    fn compile_runtime(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
         // Find runtime.c relative to the binary or in known locations
         let runtime_paths = vec![
             source_path.parent().unwrap_or(Path::new(".")).join("../stdlib/runtime.c"),
@@ -637,12 +688,12 @@ impl Driver {
         let runtime_src = runtime_paths
             .iter()
             .find(|p| p.exists())
-            .ok_or("cannot find stdlib/runtime.c")?;
+            .ok_or(CompileError::RuntimeNotFound)?;
 
         self.compile_runtime_file(runtime_src)
     }
 
-    fn compile_runtime_for_project(&self, project_dir: &Path) -> Result<PathBuf, String> {
+    fn compile_runtime_for_project(&self, project_dir: &Path) -> Result<PathBuf, CompileError> {
         let mut runtime_paths = vec![
             project_dir.join("stdlib/runtime.c"),
             project_dir.join("../stdlib/runtime.c"),
@@ -661,36 +712,91 @@ impl Driver {
         let runtime_src = runtime_paths
             .iter()
             .find(|p| p.exists())
-            .ok_or("cannot find stdlib/runtime.c")?;
+            .ok_or(CompileError::RuntimeNotFound)?;
 
         self.compile_runtime_file(runtime_src)
     }
 
-    fn compile_runtime_file(&self, runtime_src: &Path) -> Result<PathBuf, String> {
-        let runtime_obj = std::env::temp_dir().join("forge_runtime.o");
+    fn compile_runtime_file(&self, runtime_src: &Path) -> Result<PathBuf, CompileError> {
+        let opt_flag = match self.optimization {
+            OptLevel::Release => "-O2",
+            OptLevel::Dev => "-O0",
+        };
+
+        // Cache key: hash of runtime.c content + opt level
+        if let Ok(cached) = self.cached_runtime(runtime_src, opt_flag) {
+            return Ok(cached);
+        }
+
+        let runtime_obj = self.runtime_cache_path(runtime_src, opt_flag);
+
+        let src_str = runtime_src.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
+            stderr: format!("runtime path contains invalid UTF-8: {}", runtime_src.display()),
+        })?;
+        let obj_str = runtime_obj.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
+            stderr: format!("runtime object path contains invalid UTF-8: {}", runtime_obj.display()),
+        })?;
 
         let output = Command::new("cc")
-            .args([
-                "-c",
-                runtime_src.to_str().unwrap(),
-                "-o",
-                runtime_obj.to_str().unwrap(),
-                "-O2",
-            ])
+            .args(["-c", src_str, "-o", obj_str, opt_flag])
             .output()
-            .map_err(|e| format!("failed to compile runtime: {}", e))?;
+            .map_err(|e| CompileError::RuntimeCompileFailed { stderr: e.to_string() })?;
 
         if !output.status.success() {
-            return Err(format!(
-                "failed to compile runtime: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            return Err(CompileError::RuntimeCompileFailed { stderr });
         }
+
+        // Write hash marker so we can validate the cache next time
+        let _ = std::fs::write(self.runtime_hash_path(runtime_src, opt_flag), self.runtime_hash(runtime_src));
 
         Ok(runtime_obj)
     }
 
-    fn link(&self, obj: &Path, runtime_obj: &Path, output: &Path) -> Result<(), String> {
+    fn runtime_hash(&self, runtime_src: &Path) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let content = std::fs::read(runtime_src).unwrap_or_default();
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
+
+    fn runtime_cache_dir(&self) -> PathBuf {
+        let dir = std::env::temp_dir().join("forge_cache");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    fn runtime_cache_path(&self, _runtime_src: &Path, opt_flag: &str) -> PathBuf {
+        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
+        self.runtime_cache_dir().join(format!("forge_runtime_{}.o", opt_tag))
+    }
+
+    fn runtime_hash_path(&self, runtime_src: &Path, opt_flag: &str) -> PathBuf {
+        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
+        self.runtime_cache_dir().join(format!("forge_runtime_{}.hash", opt_tag))
+    }
+
+    fn cached_runtime(&self, runtime_src: &Path, opt_flag: &str) -> Result<PathBuf, ()> {
+        let obj_path = self.runtime_cache_path(runtime_src, opt_flag);
+        let hash_path = self.runtime_hash_path(runtime_src, opt_flag);
+
+        if !obj_path.exists() || !hash_path.exists() {
+            return Err(());
+        }
+
+        let stored_hash = std::fs::read_to_string(&hash_path).map_err(|_| ())?;
+        let current_hash = self.runtime_hash(runtime_src);
+
+        if stored_hash.trim() == current_hash {
+            Ok(obj_path)
+        } else {
+            Err(())
+        }
+    }
+
+    fn link(&self, obj: &Path, runtime_obj: &Path, output: &Path) -> Result<(), CompileError> {
         self.link_with_providers(obj, runtime_obj, output, &[])
     }
 
@@ -700,18 +806,24 @@ impl Driver {
         runtime_obj: &Path,
         output: &Path,
         provider_lib_paths: &[PathBuf],
-    ) -> Result<(), String> {
+    ) -> Result<(), CompileError> {
+        let path_str = |p: &Path| -> Result<String, CompileError> {
+            p.to_str().map(|s| s.to_string()).ok_or_else(|| CompileError::LinkerFailed {
+                stderr: format!("path contains invalid UTF-8: {}", p.display()),
+            })
+        };
+
         let mut args = vec![
-            obj.to_str().unwrap().to_string(),
-            runtime_obj.to_str().unwrap().to_string(),
+            path_str(obj)?,
+            path_str(runtime_obj)?,
             "-o".to_string(),
-            output.to_str().unwrap().to_string(),
+            path_str(output)?,
         ];
 
         // Add provider native library paths
         let mut has_native_providers = false;
         for lib_path in provider_lib_paths {
-            args.push(lib_path.to_str().unwrap().to_string());
+            args.push(path_str(lib_path)?);
             has_native_providers = true;
         }
 
@@ -730,36 +842,46 @@ impl Driver {
         let output_cmd = Command::new("cc")
             .args(&args_str)
             .output()
-            .map_err(|e| format!("linker failed: {}", e))?;
+            .map_err(|e| CompileError::LinkerFailed { stderr: e.to_string() })?;
 
         if !output_cmd.status.success() {
-            return Err(format!(
-                "linker failed: {}",
-                String::from_utf8_lossy(&output_cmd.stderr)
-            ));
+            let stderr = String::from_utf8_lossy(&output_cmd.stderr).to_string();
+            return Err(CompileError::from_linker_stderr(&stderr));
         }
 
         Ok(())
     }
 
-    /// Load providers by pre-scanned (namespace, name) pairs
-    fn load_providers_by_uses(&self, uses: &[(String, String)]) -> Vec<ProviderInfo> {
+    /// Load providers by pre-scanned (namespace, name) pairs.
+    /// Returns an error if any provider fails to load — never silently ignores failures.
+    fn load_providers_by_uses(&self, uses: &[(String, String)]) -> Result<Vec<ProviderInfo>, CompileError> {
         let mut providers = Vec::new();
         let providers_base = match self.find_providers_dir() {
             Some(base) => base,
-            None => return providers,
+            None => return Ok(providers),
         };
 
         for (namespace, name) in uses {
-            if let Some(provider_dir) = provider::find_provider(&providers_base, namespace, name) {
-                match provider::load_provider(&provider_dir) {
-                    Ok(info) => providers.push(info),
-                    Err(e) => eprintln!("warning: failed to load provider {}.{}: {}", namespace, name, e),
+            match provider::find_provider(&providers_base, namespace, name) {
+                Some(provider_dir) => {
+                    let info = provider::load_provider(&provider_dir)
+                        .map_err(|e| CompileError::ProviderLoadFailed {
+                            provider: format!("@{}.{}", namespace, name),
+                            detail: e,
+                        })?;
+                    providers.push(info);
+                }
+                None => {
+                    // Provider directory doesn't exist — this is an error, not a warning
+                    return Err(CompileError::ProviderNotFound {
+                        namespace: namespace.clone(),
+                        name: name.clone(),
+                    });
                 }
             }
         }
 
-        providers
+        Ok(providers)
     }
 
     /// Find the providers directory relative to the forge binary or source tree

@@ -1,0 +1,9 @@
+/// # Keyword used as variable name
+///
+/// Reserved keywords cannot be used as identifiers.
+///
+/// expect-error: F0001
+
+fn main() {
+    let fn = 42
+}

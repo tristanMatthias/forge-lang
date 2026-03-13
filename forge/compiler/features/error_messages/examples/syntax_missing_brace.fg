@@ -1,0 +1,10 @@
+/// # Missing closing brace
+///
+/// Block bodies must have matching braces.
+///
+/// expect-error: F0001
+
+fn main() {
+    if true {
+        print("hello")
+

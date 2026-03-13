@@ -1,0 +1,10 @@
+/// # Type mismatch: string annotated, bool provided
+///
+/// A boolean value can't be assigned to a string variable.
+/// The compiler suggests `string(value)`.
+///
+/// expect-error: F0012
+
+fn main() {
+    let msg: string = true
+}

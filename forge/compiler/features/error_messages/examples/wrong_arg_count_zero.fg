@@ -1,0 +1,13 @@
+/// # Too few arguments (zero given)
+///
+/// Calling a function with no arguments when it expects some.
+///
+/// expect-error: F0014
+
+fn greet(name: string) -> string {
+    return "hello " + name
+}
+
+fn main() {
+    let msg = greet()
+}

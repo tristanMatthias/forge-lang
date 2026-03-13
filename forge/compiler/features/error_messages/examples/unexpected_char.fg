@@ -1,0 +1,9 @@
+/// # Unexpected character in source
+///
+/// The lexer rejects characters that aren't valid in Forge syntax.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x = 42 @
+}

@@ -1,0 +1,10 @@
+/// # Using `var` instead of `let` or `mut` (JS/Swift habit)
+///
+/// Forge uses `let` and `mut`, not `var`.
+///
+/// expect-error: F0020
+
+fn main() {
+    var x = 42
+    print(x)
+}

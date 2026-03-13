@@ -92,10 +92,10 @@ impl FeatureRegistry {
     /// Print the feature table (used by `forge features`)
     pub fn print_table() {
         let features = Self::all_sorted();
-        let test_counts = crate::test_runner::get_all_feature_test_counts();
-        let test_map: std::collections::HashMap<&str, (usize, usize)> = test_counts
+        let example_counts = crate::test_runner::get_all_feature_example_counts();
+        let example_map: std::collections::HashMap<&str, usize> = example_counts
             .iter()
-            .map(|(f, p, t)| (f.as_str(), (*p, *t)))
+            .map(|(f, count)| (f.as_str(), *count))
             .collect();
 
         let mut stable = 0u32;
@@ -103,25 +103,21 @@ impl FeatureRegistry {
         let mut wip = 0u32;
         let mut draft = 0u32;
 
-        println!("  {:<28} {:<10} {:<10} {}", "Feature", "Status", "Tests", "Deps");
+        println!("  {:<28} {:<10} {:<10} {}", "Feature", "Status", "Examples", "Deps");
         println!("  {}", "─".repeat(70));
 
         for f in &features {
-            let (passed, total) = test_map.get(f.id).copied().unwrap_or((0, 0));
+            let count = example_map.get(f.id).copied().unwrap_or(0);
 
-            let status_icon = if total > 0 && passed == total {
-                "\x1b[32m✓\x1b[0m"
-            } else if total > 0 {
-                "\x1b[33m●\x1b[0m"
-            } else {
-                match f.status {
-                    FeatureStatus::Draft => "\x1b[90m○\x1b[0m",
-                    _ => "\x1b[90m-\x1b[0m",
-                }
+            let status_icon = match f.status {
+                FeatureStatus::Stable => "\x1b[32m✓\x1b[0m",
+                FeatureStatus::Testing => "\x1b[33m●\x1b[0m",
+                FeatureStatus::Wip => "\x1b[33m●\x1b[0m",
+                FeatureStatus::Draft => "\x1b[90m○\x1b[0m",
             };
 
-            let tests_str = if total > 0 {
-                format!("{}/{}", passed, total)
+            let examples_str = if count > 0 {
+                format!("{}", count)
             } else {
                 "-".to_string()
             };
@@ -136,7 +132,7 @@ impl FeatureRegistry {
                 "  {:<28} {:<10} {:>5} {}  {}",
                 f.id,
                 f.status,
-                tests_str,
+                examples_str,
                 status_icon,
                 deps
             );
@@ -253,7 +249,11 @@ impl FeatureRegistry {
         let f = match Self::get(id) {
             Some(f) => f,
             None => {
-                eprintln!("error: unknown feature '{}'", id);
+                let err = crate::errors::CompileError::CliError {
+                    message: format!("unknown feature '{}'", id),
+                    help: Some("run `forge features` to see all available features".to_string()),
+                };
+                eprint!("{}", err.render());
                 return;
             }
         };
@@ -276,10 +276,11 @@ impl FeatureRegistry {
             println!("  Enables: {}", f.enables.join(", "));
         }
 
-        // Show test counts and examples
-        let test_counts = crate::test_runner::get_all_feature_test_counts();
-        if let Some((_, passed, total)) = test_counts.iter().find(|(fid, _, _)| fid == id) {
-            if *total > 0 {
+        // Show test counts for this feature only
+        let forge_bin = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge"));
+        if let Some(features_dir) = crate::test_runner::find_features_dir() {
+            let (passed, total) = crate::test_runner::count_feature_tests(&forge_bin, &features_dir, id);
+            if total > 0 {
                 println!();
                 let color = if passed == total { "\x1b[32m" } else { "\x1b[33m" };
                 println!("  Tests: {}{}/{} passing\x1b[0m", color, passed, total);

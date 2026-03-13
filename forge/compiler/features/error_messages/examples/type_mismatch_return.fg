@@ -1,0 +1,10 @@
+/// # Type mismatch: float annotated, string provided
+///
+/// When a variable is annotated as float, a string value is rejected.
+/// The compiler suggests `float(value)` as a conversion.
+///
+/// expect-error: F0012
+
+fn main() {
+    let x: float = "3.14"
+}

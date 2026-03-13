@@ -1,0 +1,13 @@
+/// # Wrong args: too many on a one-param function
+///
+/// Passing more arguments than a function accepts.
+///
+/// expect-error: F0014
+
+fn square(x: int) -> int {
+    return x * x
+}
+
+fn main() {
+    let r = square(2, 3)
+}

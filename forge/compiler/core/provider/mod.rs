@@ -1,3 +1,4 @@
+use crate::errors::Severity;
 use crate::lexer::Lexer;
 use crate::parser::ast::{ComponentTemplateDef, Statement};
 use crate::parser::{ComponentKind, ComponentMeta, Parser};
@@ -75,7 +76,7 @@ pub fn load_provider(provider_dir: &Path) -> Result<ProviderInfo, String> {
     let extern_fns = if fg_path.exists() {
         let source = std::fs::read_to_string(&fg_path)
             .map_err(|e| format!("cannot read {}: {}", fg_path.display(), e))?;
-        parse_provider_fg(&source)
+        parse_provider_fg(&source)?
     } else {
         (Vec::new(), Vec::new(), Vec::new())
     };
@@ -141,15 +142,35 @@ pub fn find_provider(providers_base: &Path, namespace: &str, name: &str) -> Opti
     }
 }
 
-/// Parse a provider.fg file and extract ExternFn statements, exported FnDecls, and ComponentTemplateDefs
-fn parse_provider_fg(source: &str) -> (Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>) {
+/// Parse a provider.fg file and extract ExternFn statements, exported FnDecls, and ComponentTemplateDefs.
+/// Returns an error if the provider.fg has syntax errors — never silently ignores them.
+fn parse_provider_fg(source: &str) -> Result<(Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>), String> {
     let mut lexer = Lexer::new(source);
     let tokens = lexer.tokenize();
+
+    // Check for lexer errors — never silently ignore syntax problems in provider.fg
+    let lex_errors: Vec<_> = lexer.diagnostics().iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+    if !lex_errors.is_empty() {
+        let msgs: Vec<String> = lex_errors.iter().map(|d| d.message.clone()).collect();
+        return Err(format!("syntax errors in provider.fg: {}", msgs.join("; ")));
+    }
+
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program();
 
+    // Check for parser errors — never silently ignore parse problems in provider.fg
+    let parse_errors: Vec<_> = parser.diagnostics().iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+    if !parse_errors.is_empty() {
+        let msgs: Vec<String> = parse_errors.iter().map(|d| d.message.clone()).collect();
+        return Err(format!("parse errors in provider.fg: {}", msgs.join("; ")));
+    }
+
     let mut extern_fns = Vec::new();
-    let templates_placeholder: Vec<Statement> = Vec::new();
+    let mut exported_fns = Vec::new();
     let mut templates = Vec::new();
     for stmt in program.statements {
         match &stmt {
@@ -159,8 +180,9 @@ fn parse_provider_fg(source: &str) -> (Vec<Statement>, Vec<Statement>, Vec<Compo
                     templates.push(def);
                 }
             }
+            Statement::FnDecl { exported: true, .. } => exported_fns.push(stmt),
             _ => {}
         }
     }
-    (extern_fns, templates_placeholder, templates)
+    Ok((extern_fns, exported_fns, templates))
 }

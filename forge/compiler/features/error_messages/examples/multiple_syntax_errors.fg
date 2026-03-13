@@ -1,0 +1,10 @@
+/// # Multiple syntax errors in one file
+///
+/// The compiler should report all errors, not just stop at the first.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x =
+    let y =
+}

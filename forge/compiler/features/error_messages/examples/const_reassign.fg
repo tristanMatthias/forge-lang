@@ -1,0 +1,10 @@
+/// # Reassigning a const binding
+///
+/// Constants cannot be reassigned after declaration.
+///
+/// expect-error: F0013
+
+fn main() {
+    const MAX = 100
+    MAX = 200
+}

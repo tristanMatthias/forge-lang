@@ -1,0 +1,9 @@
+/// # Unterminated dollar-string (shell shorthand)
+///
+/// Dollar-quoted strings must have a closing quote.
+///
+/// expect-error: F0002
+
+fn main() {
+    let output = $"echo hello
+}

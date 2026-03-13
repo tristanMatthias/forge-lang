@@ -1,0 +1,9 @@
+/// # Assignment with wrong operator in let
+///
+/// Using == instead of = in a let binding.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x == 42
+}

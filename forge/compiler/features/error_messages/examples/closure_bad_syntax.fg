@@ -1,0 +1,10 @@
+/// # Invalid closure syntax
+///
+/// Closures use `->` not `=>` for the body.
+///
+/// expect-error: F0001
+
+fn main() {
+    let nums = [1, 2, 3]
+    let doubled = nums.map((x) => x * 2)
+}

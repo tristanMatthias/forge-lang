@@ -1,0 +1,13 @@
+/// # Invalid function parameter syntax
+///
+/// Function parameters must have names and types.
+///
+/// expect-error: F0001
+
+fn broken(,) {
+    print("hello")
+}
+
+fn main() {
+    broken()
+}

@@ -1,0 +1,9 @@
+/// # Empty main function body
+///
+/// A function call on something that doesn't exist.
+///
+/// expect-error: F0020
+
+fn main() {
+    let x = nonexistent_function()
+}

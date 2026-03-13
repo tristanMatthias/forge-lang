@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process;
 
 use forge::driver::{Driver, ErrorFormat, OptLevel};
+use forge::errors::CompileError;
 
 #[derive(Parser)]
 #[command(name = "forge", version = "0.1.0", about = "The Forge programming language compiler")]
@@ -128,6 +129,30 @@ enum Commands {
     Test {
         /// Feature name or path to test (e.g., "pipe_operator" or "features/pipe_operator/examples/")
         target: Option<String>,
+
+        /// Output format: human, json, stream
+        #[arg(long, default_value = "human")]
+        format: String,
+
+        /// Only run tests matching this string
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Stop on first failure
+        #[arg(long)]
+        fail_fast: bool,
+
+        /// Disable colored output
+        #[arg(long)]
+        no_color: bool,
+
+        /// Show passing test expressions too
+        #[arg(long)]
+        verbose: bool,
+
+        /// Only show failures and summary
+        #[arg(long)]
+        quiet: bool,
     },
 }
 
@@ -155,13 +180,19 @@ enum ProviderCommands {
     },
 }
 
-/// Determine if a path refers to a project directory (has forge.toml)
-fn is_project_dir(path: &PathBuf) -> bool {
-    if path.is_dir() {
-        path.join("forge.toml").exists()
-    } else {
-        false
-    }
+// ══════════════════════════════════════════════════════════════════════
+//  ERROR RENDERING CONTRACT
+//
+//  Every error path in this file MUST go through CompileError::render().
+//  DO NOT use eprintln!("error: ...") — it bypasses ANSI formatting,
+//  error codes, and actionable help text. If you need a new error kind,
+//  add a variant to CompileError in core/errors/compile_error.rs.
+// ══════════════════════════════════════════════════════════════════════
+
+/// Render a CompileError to stderr and exit.
+fn fail(e: CompileError) -> ! {
+    eprint!("{}", e.render());
+    process::exit(1);
 }
 
 /// Resolve the target: returns (is_project, resolved_path)
@@ -187,8 +218,10 @@ fn resolve_target(file: Option<PathBuf>) -> (bool, PathBuf) {
             if cwd.join("forge.toml").exists() {
                 (true, cwd)
             } else {
-                eprintln!("error: no source file or project directory specified");
-                process::exit(1);
+                fail(CompileError::CliError {
+                    message: "no source file or project directory specified".to_string(),
+                    help: Some("usage: forge build <file.fg> or forge run <file.fg>".to_string()),
+                });
             }
         }
     }
@@ -274,10 +307,7 @@ fn run() {
                         eprintln!("compiled to {}", path.display());
                     }
                 }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => fail(e),
             }
         }
 
@@ -285,8 +315,8 @@ fn run() {
             let mut driver = Driver::new();
             driver.optimization = if dev { OptLevel::Dev } else { OptLevel::Release };
 
-            // Compile to temp path
-            let output = std::env::temp_dir().join("forge_run_output");
+            // Compile to temp path (unique per process for parallel test runs)
+            let output = std::env::temp_dir().join(format!("forge_run_{}", std::process::id()));
             driver.output = Some(output.clone());
 
             let (is_project, path) = resolve_target(file);
@@ -303,8 +333,10 @@ fn run() {
                         .args(&args)
                         .status()
                         .unwrap_or_else(|e| {
-                            eprintln!("failed to run {}: {}", binary.display(), e);
-                            process::exit(1);
+                            fail(CompileError::BinaryRunFailed {
+                                path: binary.display().to_string(),
+                                detail: e.to_string(),
+                            });
                         });
 
                     // Cleanup
@@ -312,10 +344,7 @@ fn run() {
 
                     process::exit(status.code().unwrap_or(1));
                 }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    process::exit(1);
-                }
+                Err(e) => fail(e),
             }
         }
 
@@ -329,8 +358,7 @@ fn run() {
             driver.max_errors = max_errors;
             driver.autofix = autofix;
             if let Err(e) = driver.check(&file) {
-                eprintln!("error: {}", e);
-                process::exit(1);
+                fail(e);
             }
         }
 
@@ -355,8 +383,10 @@ fn run() {
                     }
                 }
                 None => {
-                    eprintln!("error: unknown error code '{}'", code);
-                    process::exit(1);
+                    fail(CompileError::CliError {
+                        message: format!("unknown error code '{}'", code),
+                        help: Some("run `forge explain F0001` to see valid codes, or `forge errors list` to see all".to_string()),
+                    });
                 }
             }
         }
@@ -365,18 +395,24 @@ fn run() {
             // Parse file:line
             let parts: Vec<&str> = file_line.rsplitn(2, ':').collect();
             if parts.len() != 2 {
-                eprintln!("error: expected format file.fg:LINE (e.g., main.fg:5)");
-                process::exit(1);
+                fail(CompileError::CliError {
+                    message: format!("invalid format '{}' — expected file.fg:LINE", file_line),
+                    help: Some("example: forge why main.fg:5".to_string()),
+                });
             }
-            let line: u32 = parts[0].parse().unwrap_or_else(|_| {
-                eprintln!("error: invalid line number '{}'", parts[0]);
-                process::exit(1);
-            });
+            let line: u32 = match parts[0].parse() {
+                Ok(n) => n,
+                Err(_) => {
+                    fail(CompileError::CliError {
+                        message: format!("invalid line number '{}'", parts[0]),
+                        help: Some("line number must be a positive integer, e.g., forge why main.fg:5".to_string()),
+                    });
+                }
+            };
             let file = PathBuf::from(parts[1]);
             let driver = Driver::new();
             if let Err(e) = driver.explain_line(&file, line) {
-                eprintln!("error: {}", e);
-                process::exit(1);
+                fail(e);
             }
         }
 
@@ -387,8 +423,10 @@ fn run() {
         Commands::Provider { command } => match command {
             ProviderCommands::New { name, component } => {
                 if let Err(e) = scaffold_provider(&name, component) {
-                    eprintln!("error: {}", e);
-                    process::exit(1);
+                    fail(CompileError::CliError {
+                        message: e.clone(),
+                        help: Some("check write permissions and that the directory doesn't already exist".to_string()),
+                    });
                 }
             }
         },
@@ -403,8 +441,21 @@ fn run() {
             }
         }
 
-        Commands::Test { target } => {
-            let passed = forge::test_runner::run_tests(target.as_deref());
+        Commands::Test { target, format, filter, fail_fast, no_color, verbose, quiet } => {
+            let fmt = match format.as_str() {
+                "json" => forge::test_runner::OutputFormat::Json,
+                "stream" => forge::test_runner::OutputFormat::Stream,
+                _ => forge::test_runner::OutputFormat::Human,
+            };
+            let config = forge::test_runner::TestRunConfig {
+                format: fmt,
+                filter,
+                fail_fast,
+                no_color,
+                verbose,
+                quiet,
+            };
+            let passed = forge::test_runner::run_tests(target.as_deref(), &config);
             if !passed {
                 process::exit(1);
             }
@@ -412,23 +463,29 @@ fn run() {
 
         Commands::Errors { command } => match command {
             ErrorCommands::Diff { before, after } => {
-                let before_json = std::fs::read_to_string(&before)
-                    .unwrap_or_else(|e| {
-                        eprintln!("error: cannot read {}: {}", before.display(), e);
-                        process::exit(1);
-                    });
-                let after_json = std::fs::read_to_string(&after)
-                    .unwrap_or_else(|e| {
-                        eprintln!("error: cannot read {}: {}", after.display(), e);
-                        process::exit(1);
-                    });
+                let before_json = match std::fs::read_to_string(&before) {
+                    Ok(s) => s,
+                    Err(e) => fail(CompileError::FileNotFound {
+                        path: before.display().to_string(),
+                        detail: e.to_string(),
+                    }),
+                };
+                let after_json = match std::fs::read_to_string(&after) {
+                    Ok(s) => s,
+                    Err(e) => fail(CompileError::FileNotFound {
+                        path: after.display().to_string(),
+                        detail: e.to_string(),
+                    }),
+                };
                 match forge::errors::diff::diff_json(&before_json, &after_json) {
                     Ok(result) => {
                         println!("{}", result.render());
                     }
                     Err(e) => {
-                        eprintln!("error: {}", e);
-                        process::exit(1);
+                        fail(CompileError::CliError {
+                            message: format!("failed to diff diagnostics: {}", e),
+                            help: Some("ensure both files contain valid JSON diagnostic output from `forge check --error-format json`".to_string()),
+                        });
                     }
                 }
             }

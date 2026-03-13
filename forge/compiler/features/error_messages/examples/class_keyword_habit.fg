@@ -1,0 +1,13 @@
+/// # Using `class` (OOP habit)
+///
+/// Forge doesn't have classes. Use traits and structs instead.
+///
+/// expect-error: F0001
+
+class Animal {
+    let name: string
+}
+
+fn main() {
+    print("hello")
+}

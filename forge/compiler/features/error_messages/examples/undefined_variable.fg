@@ -1,0 +1,11 @@
+/// # Undefined variable
+///
+/// Using a variable that hasn't been declared produces an error.
+/// The compiler suggests similar names if one is close.
+///
+/// expect-error: F0020
+
+fn main() {
+    let count = 10
+    print(coutn)
+}

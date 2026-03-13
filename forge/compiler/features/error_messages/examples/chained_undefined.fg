@@ -1,0 +1,9 @@
+/// # Method call on undefined variable
+///
+/// Calling methods on variables that don't exist.
+///
+/// expect-error: F0020
+
+fn main() {
+    let result = items.length()
+}

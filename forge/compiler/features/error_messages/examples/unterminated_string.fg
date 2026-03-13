@@ -1,0 +1,9 @@
+/// # Unterminated string literal
+///
+/// String literals must be closed with a matching quote.
+///
+/// expect-error: F0002
+
+fn main() {
+    let x = "hello
+}

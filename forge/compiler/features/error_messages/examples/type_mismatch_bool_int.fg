@@ -1,0 +1,9 @@
+/// # Type mismatch: annotated bool, given int
+///
+/// When a variable has a type annotation, the initializer must match.
+///
+/// expect-error: F0012
+
+fn main() {
+    let x: bool = 42
+}

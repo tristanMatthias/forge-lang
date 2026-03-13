@@ -1,0 +1,11 @@
+/// # Cannot assign to immutable variable
+///
+/// Variables declared with `let` are immutable by default.
+/// Use `mut` if you need to reassign.
+///
+/// expect-error: F0013
+
+fn main() {
+    let x = 10
+    x = 20
+}

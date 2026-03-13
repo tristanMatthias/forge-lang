@@ -1,0 +1,15 @@
+/// # Table column type mismatch (multiple rows)
+///
+/// All values in a table column must have the same type.
+/// Mixing strings and integers in the same column is an error.
+///
+/// expect-error: F0030
+
+fn main() {
+    let data = table {
+        name    | score
+        "alice" | 95
+        "bob"   | "high"
+        "carol" | 88
+    }
+}

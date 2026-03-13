@@ -1,0 +1,9 @@
+/// # Let binding without value
+///
+/// Let bindings must have a value.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x =
+}

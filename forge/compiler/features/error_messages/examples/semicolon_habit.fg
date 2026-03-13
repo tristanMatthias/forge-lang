@@ -1,0 +1,11 @@
+/// # Using semicolons (C/JS/Rust habit)
+///
+/// Forge does not use semicolons. This catches users coming
+/// from C, JavaScript, Rust, or Java who add them out of habit.
+///
+/// expect-error: F0001
+
+fn main() {
+    let x = 42;
+    print(x);
+}

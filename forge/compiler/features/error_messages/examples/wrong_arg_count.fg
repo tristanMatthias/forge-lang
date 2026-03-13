@@ -1,0 +1,14 @@
+/// # Wrong number of arguments
+///
+/// Functions must be called with the correct number of arguments.
+/// The compiler shows the expected signature.
+///
+/// expect-error: F0014
+
+fn add(a: int, b: int) -> int {
+    return a + b
+}
+
+fn main() {
+    let result = add(1, 2, 3)
+}

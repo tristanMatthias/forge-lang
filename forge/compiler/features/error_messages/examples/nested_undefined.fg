@@ -1,0 +1,12 @@
+/// # Undefined variable in nested scope
+///
+/// Variables from inner scopes aren't accessible outside.
+///
+/// expect-error: F0020
+
+fn main() {
+    if true {
+        let inner = 42
+    }
+    print(inner)
+}

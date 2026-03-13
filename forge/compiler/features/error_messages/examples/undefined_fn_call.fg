@@ -1,0 +1,14 @@
+/// # Calling a function that doesn't exist
+///
+/// Functions must be defined before calling them.
+/// The compiler suggests similar function names if available.
+///
+/// expect-error: F0020
+
+fn calculate(x: int) -> int {
+    return x * 2
+}
+
+fn main() {
+    let result = calulate(5)
+}

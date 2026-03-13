@@ -1,0 +1,10 @@
+/// # Unterminated template literal
+///
+/// Template strings with `${}` must be closed with a matching backtick.
+///
+/// expect-error: F0003
+
+fn main() {
+    let name = "world"
+    let x = `hello ${name}
+}

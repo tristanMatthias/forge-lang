@@ -1,0 +1,11 @@
+/// # Function declaration missing body
+///
+/// Functions must have a block body after the signature.
+///
+/// expect-error: F0001
+
+fn add(a: int, b: int) -> int
+
+fn main() {
+    print("hello")
+}

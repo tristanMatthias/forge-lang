@@ -1,0 +1,9 @@
+/// # Trait not found
+///
+/// Using a trait that hasn't been defined.
+///
+/// expect-error: F0020
+
+fn main() {
+    let x = unknown_fn(42)
+}
