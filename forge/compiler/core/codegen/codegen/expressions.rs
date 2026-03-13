@@ -339,6 +339,10 @@ impl<'ctx> Codegen<'ctx> {
                 Some(stdout_str)
             }
 
+            Expr::TaggedTemplate { tag, parts, .. } => {
+                self.compile_tagged_template(tag, parts)
+            }
+
             Expr::Is { value, pattern, negated, .. } => {
                 self.compile_is(value, pattern, *negated)
             }
@@ -685,12 +689,38 @@ impl<'ctx> Codegen<'ctx> {
 
             // Maybe it's a variable holding a function pointer
             if let Some((ptr, ty)) = self.lookup_var(name) {
-                if let Type::Function { params: _, return_type: _ } = &ty {
-                    // Load the function pointer and call it indirectly
-                    let llvm_ty = self.type_to_llvm_basic(&ty);
-                    let fn_ptr = self.builder.build_load(llvm_ty, ptr, "fn_ptr").unwrap();
-                    // Indirect call is complex; skip for now
-                    let _ = fn_ptr;
+                if let Type::Function { ref params, ref return_type } = &ty {
+                    let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                    let fn_ptr = self.builder.build_load(ptr_type, ptr, "fn_ptr")
+                        .unwrap().into_pointer_value();
+
+                    // Build the LLVM function type from the Forge type
+                    let llvm_params: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = params
+                        .iter()
+                        .map(|t| self.type_to_llvm_metadata(t))
+                        .collect();
+
+                    let ret_llvm = self.type_to_llvm_basic(return_type);
+                    let fn_type = match ret_llvm {
+                        inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_params, false),
+                    };
+
+                    // Compile arguments
+                    let mut compiled_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = Vec::new();
+                    for arg in args {
+                        let val = self.compile_expr(&arg.value)?;
+                        compiled_args.push(val.into());
+                    }
+
+                    let result = self.builder.build_indirect_call(
+                        fn_type, fn_ptr, &compiled_args, "closure_call"
+                    ).unwrap();
+                    return result.try_as_basic_value().left();
                 }
             }
 

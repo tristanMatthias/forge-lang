@@ -42,3 +42,4 @@ pub mod spec_test;
 pub mod error_messages;
 pub mod type_operators;
 pub mod annotations;
+pub mod tagged_templates;

@@ -1,0 +1,10 @@
+/// # Non-function used as template tag
+///
+/// A variable that is not a function cannot be used as a template tag.
+///
+/// expect-error: F0012
+
+fn main() {
+  let x = 42
+  let result = x`hello`
+}

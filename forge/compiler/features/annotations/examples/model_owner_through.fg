@@ -1,0 +1,30 @@
+/// Test: Ownership check via @belongs_to + @owner on foreign key field
+///
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+
+model Team {
+  id: int @primary @auto_increment
+  name: string
+}
+
+model Document {
+  id: int @primary @auto_increment
+  title: string
+  team_id: int @belongs_to(Team) @owner
+}
+
+fn main() {
+  Team.create({ name: "Engineering" })
+  Document.create({ title: "Spec", team_id: 1 })
+
+  // team_id 1 owns document 1
+  let owns = Document.check_owner(1, 1)
+  println(string(owns))
+
+  // team_id 99 does not
+  let not_owns = Document.check_owner(1, 99)
+  println(string(not_owns))
+}

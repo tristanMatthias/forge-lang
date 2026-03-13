@@ -1,0 +1,47 @@
+/// Test: All six model lifecycle hooks fire during CRUD operations
+///
+/// expect: before create
+/// expect: after create: alice
+/// expect: before update 1
+/// expect: after update: alice_updated
+/// expect: before delete 1
+/// expect: after delete 1
+/// expect: 0
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+
+  on before_create(_data) {
+    println("before create")
+  }
+
+  on after_create(user) {
+    println("after create: " + user.name)
+  }
+
+  on before_update(id: int) {
+    println("before update " + string(id))
+  }
+
+  on after_update(user) {
+    println("after update: " + user.name)
+  }
+
+  on before_delete(id: int) {
+    println("before delete " + string(id))
+  }
+
+  on after_delete(id: int) {
+    println("after delete " + string(id))
+  }
+}
+
+fn main() {
+  let id = User.create({ name: "alice" })
+  User.update(id, { name: "alice_updated" })
+  User.delete(id)
+  println(string(User.count()))
+}

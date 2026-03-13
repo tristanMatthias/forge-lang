@@ -1,0 +1,10 @@
+/// Test: Type-level annotation @table used on a field — compile error
+/// expect-error: F0073
+
+type Bad = {
+  name: string @table("custom"),
+}
+
+fn main() {
+  println("unreachable")
+}

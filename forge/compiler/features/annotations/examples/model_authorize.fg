@@ -1,0 +1,40 @@
+/// Test: Authorization pattern — before_create hook + @owner for access control
+///
+/// expect: authorize check
+/// expect: authorize check
+/// expect: 2
+/// expect: login
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+
+model AuditLog {
+  id: int @primary @auto_increment
+  action: string
+  created_by: int @owner
+
+  on before_create(data) {
+    println("authorize check")
+  }
+}
+
+fn main() {
+  AuditLog.create({ action: "login", created_by: 1 })
+  AuditLog.create({ action: "delete", created_by: 2 })
+
+  // count all logs
+  println(string(AuditLog.count()))
+
+  // get first log
+  let log = AuditLog.get(1)
+  println(log?.action ?? "not found")
+
+  // ownership check: user 1 owns log 1
+  let owns = AuditLog.check_owner(1, 1)
+  println(string(owns))
+
+  // ownership check: user 2 does NOT own log 1
+  let not_owns = AuditLog.check_owner(1, 2)
+  println(string(not_owns))
+}

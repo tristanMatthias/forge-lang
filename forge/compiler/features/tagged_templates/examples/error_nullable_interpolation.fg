@@ -1,0 +1,12 @@
+/// # Nullable interpolation in tagged template
+///
+/// Nullable values must be unwrapped before interpolation.
+///
+/// expect-error: F0012
+
+fn identity(input: string) -> string { input }
+
+fn main() {
+  let x: string? = null
+  println(identity`val: ${x}`)
+}

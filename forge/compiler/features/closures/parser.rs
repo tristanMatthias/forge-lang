@@ -44,20 +44,67 @@ impl Parser {
         if self.check(&TokenKind::Arrow) {
             self.advance();
             self.skip_newlines();
-            let body = self.parse_expr()?;
+            // Check for return type annotation: (params) -> Type { body }
+            // If we see an identifier followed by '{', it's a return type + block body
+            if self.looks_like_return_type_then_block() {
+                let _return_type = self.parse_type_expr(); // consume but don't use yet
+                self.skip_newlines();
+            }
+            if self.check(&TokenKind::LBrace) {
+                // Block body: parse as block (NOT as struct literal)
+                let block = self.parse_block()?;
+                Some(Expr::Closure {
+                    params,
+                    body: Box::new(Expr::Block(block)),
+                    span,
+                })
+            } else {
+                let body = self.parse_expr()?;
+                Some(Expr::Closure {
+                    params,
+                    body: Box::new(body),
+                    span,
+                })
+            }
+        } else if self.check(&TokenKind::LBrace) {
+            // (params) { body } form — also parse as block
+            let block = self.parse_block()?;
             Some(Expr::Closure {
                 params,
-                body: Box::new(body),
+                body: Box::new(Expr::Block(block)),
                 span,
             })
         } else {
-            // (params) { body } form
             let body = self.parse_expr()?;
             Some(Expr::Closure {
                 params,
                 body: Box::new(body),
                 span,
             })
+        }
+    }
+
+    /// Check if the current position looks like `Type {` (return type followed by block body).
+    /// Handles simple types (int, string, bool, float, void) and named types.
+    fn looks_like_return_type_then_block(&self) -> bool {
+        let mut i = self.pos;
+        if i >= self.tokens.len() {
+            return false;
+        }
+        match &self.tokens[i].kind {
+            TokenKind::Ident(_) => {
+                i += 1;
+                // Handle nullable: Type?
+                if i < self.tokens.len() && self.tokens[i].kind == TokenKind::Question {
+                    i += 1;
+                }
+                // Skip newlines
+                while i < self.tokens.len() && self.tokens[i].kind == TokenKind::Newline {
+                    i += 1;
+                }
+                i < self.tokens.len() && self.tokens[i].kind == TokenKind::LBrace
+            }
+            _ => false,
         }
     }
 }

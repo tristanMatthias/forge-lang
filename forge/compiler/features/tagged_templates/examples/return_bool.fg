@@ -1,0 +1,15 @@
+/// # Tag function returning bool
+///
+/// Tag functions can return any type — here a bool used in a condition.
+///
+/// expect: yes
+
+fn always_true(input: string) -> bool { true }
+
+fn main() {
+  if always_true`test ${42}` {
+    println("yes")
+  } else {
+    println("no")
+  }
+}

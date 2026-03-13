@@ -1,0 +1,12 @@
+/// Test: named struct literal with unknown field emits typo error
+/// expect-error: F0020
+
+type Point = {
+  x: int,
+  y: int,
+}
+
+fn main() {
+  let p = Point { xx: 1, y: 2 }
+  println(string(p.x))
+}

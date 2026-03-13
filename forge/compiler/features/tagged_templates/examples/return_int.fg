@@ -1,0 +1,14 @@
+/// # Tag function returning non-string type
+///
+/// Tag functions can return any type, not just strings.
+///
+/// expect: 42
+
+fn count_parts(input: string) -> int {
+  42
+}
+
+fn main() {
+  let result = count_parts`hello ${1} world`
+  println(result)
+}

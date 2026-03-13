@@ -1,0 +1,10 @@
+/// # Closure as tagged template tag
+///
+/// Closures stored in variables can be used as template tags.
+///
+/// expect: {"parts":["hello ",""],"values":["42"]}
+
+fn main() {
+  let tag = (input: string) -> string { input }
+  println(tag`hello ${42}`)
+}

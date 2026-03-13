@@ -1,0 +1,27 @@
+/// Test: custom closure validator with Ok/Err return
+/// expect: true
+/// expect: we don't serve competitors
+/// expect: true
+
+type UserInput = {
+  email: string @validate((val) -> {
+    if val == "bad@competitor.com" {
+      Err("we don't serve competitors")
+    } else {
+      Ok(val)
+    }
+  }),
+}
+
+fn main() {
+  let bad = validate({ email: "bad@competitor.com" }, UserInput)
+  println(string(bad is Err))
+
+  match bad {
+    Err(e) -> println(e.fields[0].message)
+    Ok(_) -> println("should not reach")
+  }
+
+  let good = validate({ email: "hello@example.com" }, UserInput)
+  println(string(good is Ok))
+}

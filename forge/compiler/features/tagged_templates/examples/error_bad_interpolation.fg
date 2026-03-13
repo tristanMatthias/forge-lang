@@ -1,0 +1,11 @@
+/// # Invalid expression in interpolation
+///
+/// Syntax errors inside `${}` produce clear errors with correct source positions.
+///
+/// expect-error: F0001
+
+fn tag(input: string) -> string { input }
+
+fn main() {
+  println(tag`value: ${1 +}`)
+}

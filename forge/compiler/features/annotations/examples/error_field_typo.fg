@@ -1,0 +1,15 @@
+/// Test: unknown field in model query triggers error with suggestion
+/// expect-error: F0020
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string
+}
+
+fn main() {
+  let admins = User.where({ naem: "alice" })
+  println(string(admins.length))
+}

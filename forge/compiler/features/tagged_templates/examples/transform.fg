@@ -1,0 +1,11 @@
+/// Test: tagged template where tag function wraps output
+/// expect: [TAGGED] {"parts":["hi ",""],"values":["world"]}
+
+fn wrap(input: string) -> string {
+  "[TAGGED] " + input
+}
+
+fn main() {
+  let name = "world"
+  println(wrap`hi ${name}`)
+}

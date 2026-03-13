@@ -1,0 +1,12 @@
+/// expect-check: pass
+/// Verifies rate limiting syntax compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  rate_limit "/api" 100 per 60
+
+  route GET /api/data -> {
+    "ok"
+  }
+}

@@ -1,0 +1,12 @@
+/// expect-check: pass
+/// Verifies static file serving syntax compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  static "/assets" from "./public"
+
+  route GET /download -> {
+    "file"
+  }
+}

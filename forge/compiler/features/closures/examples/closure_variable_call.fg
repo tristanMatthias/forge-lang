@@ -1,0 +1,10 @@
+/// # Closure stored in variable and called
+///
+/// Closures with block bodies and return type annotations work when called via variables.
+///
+/// expect: hello world
+
+fn main() {
+  let greet = (name: string) -> string { "hello " + name }
+  println(greet("world"))
+}

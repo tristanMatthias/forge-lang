@@ -1,0 +1,11 @@
+/// # Tag function with wrong parameter type
+///
+/// Tag functions must take a string parameter (the JSON input).
+///
+/// expect-error: F0012
+
+fn bad_tag(input: int) -> string { "nope" }
+
+fn main() {
+  println(bad_tag`hello`)
+}

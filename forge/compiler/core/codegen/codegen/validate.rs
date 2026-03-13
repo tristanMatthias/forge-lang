@@ -499,6 +499,17 @@ impl<'ctx> Codegen<'ctx> {
         field_error_type: StructType<'ctx>,
         current_fn: FunctionValue<'ctx>,
     ) {
+        // Check for closure validator: @validate((val) -> { Ok(val) / Err("msg") })
+        if ann.name == "validate" {
+            if let Some(AnnotationArg::Expr(Expr::Closure { params, body, .. })) = ann.args.first() {
+                self.compile_closure_validator_check(
+                    params, body, field_val, field_type, field_name,
+                    errors_ptr, error_count_ptr, field_error_type, current_fn,
+                );
+                return;
+            }
+        }
+
         let check_result = match ann.name.as_str() {
             "min" => self.compile_min_check(ann, field_val, field_type),
             "max" => self.compile_max_check(ann, field_val, field_type),
@@ -535,6 +546,132 @@ impl<'ctx> Codegen<'ctx> {
         error_val = self.builder.build_insert_value(error_val, rule_str, 1, "fe_rule")
             .unwrap().into_struct_value();
         error_val = self.builder.build_insert_value(error_val, msg_str, 2, "fe_msg")
+            .unwrap().into_struct_value();
+
+        // Store at errors_ptr[error_count]
+        let count = self.builder.build_load(
+            self.context.i64_type(), error_count_ptr, "cur_count"
+        ).unwrap().into_int_value();
+        let elem_ptr = unsafe {
+            self.builder.build_gep(
+                field_error_type, errors_ptr, &[count], "error_slot"
+            ).unwrap()
+        };
+        self.builder.build_store(elem_ptr, error_val).unwrap();
+
+        // Increment count
+        let new_count = self.builder.build_int_add(
+            count, self.context.i64_type().const_int(1, false), "inc_count"
+        ).unwrap();
+        self.builder.build_store(error_count_ptr, new_count).unwrap();
+
+        self.builder.build_unconditional_branch(cont_block).unwrap();
+        self.builder.position_at_end(cont_block);
+    }
+
+    /// Compile a closure-based validator: @validate((val) -> { Ok(val) / Err("msg") })
+    /// The closure receives the field value and returns Result<T, string>.
+    /// On Ok, validation passes. On Err, the error string becomes the validation message.
+    fn compile_closure_validator_check(
+        &mut self,
+        params: &[Param],
+        body: &Expr,
+        field_val: BasicValueEnum<'ctx>,
+        field_type: &Type,
+        field_name: &str,
+        errors_ptr: PointerValue<'ctx>,
+        error_count_ptr: PointerValue<'ctx>,
+        field_error_type: StructType<'ctx>,
+        current_fn: FunctionValue<'ctx>,
+    ) {
+        let check_type = match field_type {
+            Type::Nullable(inner) => inner.as_ref().clone(),
+            other => other.clone(),
+        };
+
+        // Build the Result type that the closure will return: Result<check_type, String>
+        let result_type = Type::Result(Box::new(check_type.clone()), Box::new(Type::String));
+
+        // Save and set current_fn_return_type so Ok()/Err() compile with the right layout
+        let saved_return_type = self.current_fn_return_type.take();
+        self.current_fn_return_type = Some(result_type.clone());
+
+        // Bind the closure parameter(s) to the field value
+        self.push_scope();
+        let param_name = if !params.is_empty() {
+            params[0].name.clone()
+        } else {
+            "it".to_string()
+        };
+        let alloca = self.create_entry_block_alloca(&check_type, &param_name);
+        self.builder.build_store(alloca, field_val).unwrap();
+        self.define_var(param_name.clone(), alloca, check_type.clone());
+        // Also bind `it` as alias if the param has a different name
+        if param_name != "it" {
+            self.define_var("it".to_string(), alloca, check_type.clone());
+        }
+
+        // Compile the closure body — should produce a Result value
+        let result_val = self.compile_expr(body);
+        self.pop_scope();
+
+        // Restore the saved return type
+        self.current_fn_return_type = saved_return_type;
+
+        let result_val = match result_val {
+            Some(v) => v,
+            None => return,
+        };
+
+        // The result is a struct {i8 tag, payload...}. Tag 0 = Ok, Tag 1 = Err.
+        if !result_val.is_struct_value() {
+            return;
+        }
+
+        let struct_val = result_val.into_struct_value();
+        let tag = self.builder.build_extract_value(struct_val, 0, "closure_tag")
+            .unwrap();
+        let is_err = self.builder.build_int_compare(
+            IntPredicate::NE,
+            tag.into_int_value(),
+            self.context.i8_type().const_zero(),
+            "closure_is_err",
+        ).unwrap();
+
+        let fail_block = self.context.append_basic_block(
+            current_fn, &format!("fail_{}_closure", field_name)
+        );
+        let cont_block = self.context.append_basic_block(
+            current_fn, &format!("cont_{}_closure", field_name)
+        );
+
+        self.builder.build_conditional_branch(is_err, fail_block, cont_block).unwrap();
+
+        // Fail block: extract error message from Result Err payload and store FieldError
+        self.builder.position_at_end(fail_block);
+
+        // Extract the error string from the Result payload via memory reinterpret
+        let result_llvm_ty = self.type_to_llvm_basic(&result_type).into_struct_type();
+        let result_alloca = self.builder.build_alloca(result_llvm_ty, "closure_result_tmp").unwrap();
+        self.builder.build_store(result_alloca, struct_val).unwrap();
+        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, result_alloca, 1, "err_payload_ptr").unwrap();
+        let val_ptr = self.builder.build_bit_cast(
+            payload_ptr, self.context.ptr_type(AddressSpace::default()), "err_val_ptr"
+        ).unwrap();
+        let err_string_type = self.type_to_llvm_basic(&Type::String);
+        let err_msg = self.builder.build_load(
+            err_string_type, val_ptr.into_pointer_value(), "err_msg"
+        ).unwrap();
+
+        let field_str = self.make_forge_string(field_name);
+        let rule_str = self.make_forge_string("validate");
+
+        let mut error_val = field_error_type.get_undef();
+        error_val = self.builder.build_insert_value(error_val, field_str, 0, "fe_field")
+            .unwrap().into_struct_value();
+        error_val = self.builder.build_insert_value(error_val, rule_str, 1, "fe_rule")
+            .unwrap().into_struct_value();
+        error_val = self.builder.build_insert_value(error_val, err_msg, 2, "fe_msg")
             .unwrap().into_struct_value();
 
         // Store at errors_ptr[error_count]

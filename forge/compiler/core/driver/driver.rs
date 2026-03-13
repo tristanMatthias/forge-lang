@@ -725,15 +725,118 @@ impl Driver {
             diag_bag.report(d.clone());
         }
 
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse_program();
+        if diag_bag.has_errors() {
+            self.emit_diagnostics(&diag_bag, &source, filename);
+            return Err(CompileError::DiagnosticErrors { stage: "lexer" });
+        }
+
+        // Pre-scan tokens for provider uses
+        let provider_uses = prescan_provider_uses(&tokens);
+
+        // Load providers
+        let loaded_providers = self.load_providers_by_uses(&provider_uses)?;
+
+        // Build component registry from provider metas
+        let component_registry = build_component_registry(&loaded_providers);
+
+        // Parse with component registry
+        let mut parser = if component_registry.is_empty() {
+            Parser::new(tokens)
+        } else {
+            Parser::new_with_components(tokens, component_registry)
+        };
+        let mut program = parser.parse_program();
 
         for d in parser.diagnostics() {
             diag_bag.report(d.clone());
         }
 
+        if diag_bag.has_errors() {
+            self.emit_diagnostics(&diag_bag, &source, filename);
+            return Err(CompileError::DiagnosticErrors { stage: "parser" });
+        }
+
+        // Inject extern fns from providers
+        for provider in &loaded_providers {
+            for extern_fn in &provider.extern_fns {
+                program.statements.insert(0, extern_fn.clone());
+            }
+        }
+
+        // Inject exported fns from providers (renamed with provider name prefix)
+        for provider in &loaded_providers {
+            for fn_stmt in &provider.exported_fns {
+                if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
+                    let renamed = Statement::FnDecl {
+                        name: format!("{}_{}", provider.name, name),
+                        type_params: type_params.clone(),
+                        params: params.clone(),
+                        return_type: return_type.clone(),
+                        body: body.clone(),
+                        exported: false,
+                        span: *span,
+                    };
+                    program.statements.insert(0, renamed);
+                }
+            }
+        }
+
+        // Expand all ComponentBlock nodes → regular AST + lifecycle stmts
+        let mut all_static_methods = Vec::new();
+        let mut startup_stmts = Vec::new();
+        let mut main_end_stmts = Vec::new();
+        let mut extra_stmts = Vec::new();
+        let mut extra_extern_fns = Vec::new();
+        let mut service_infos = Vec::new();
+
+        let mut expanded_statements = Vec::new();
+        for stmt in program.statements.drain(..) {
+            if let Statement::ComponentBlock(ref decl) = stmt {
+                let result = if let Some(template) = find_template(&loaded_providers, &decl.component) {
+                    ComponentExpander::expand_from_template(template, decl, &service_infos)
+                } else {
+                    ExpansionResult::new()
+                };
+
+                if let Some(type_decl) = result.type_decl {
+                    expanded_statements.push(type_decl);
+                }
+                for s in result.statements {
+                    extra_stmts.push(s);
+                }
+                for s in result.startup_stmts {
+                    startup_stmts.push(s);
+                }
+                for s in result.main_end_stmts {
+                    main_end_stmts.push(s);
+                }
+                for sm in result.static_methods {
+                    all_static_methods.push(sm);
+                }
+                for ef in result.extern_fns {
+                    extra_extern_fns.push(ef);
+                }
+                if let Some(si) = result.service_info {
+                    service_infos.push(si);
+                }
+            } else {
+                expanded_statements.push(stmt);
+            }
+        }
+        for ef in extra_extern_fns {
+            expanded_statements.insert(0, ef);
+        }
+        expanded_statements.extend(extra_stmts);
+        program.statements = expanded_statements;
+
+        // Inject lifecycle stmts into main function
+        inject_lifecycle_stmts(&mut program, &startup_stmts, &main_end_stmts);
+
         // Type check
         let mut checker = crate::typeck::TypeChecker::new();
+        for (type_name, _, _) in &all_static_methods {
+            checker.env.namespaces.insert(type_name.clone());
+        }
         checker.check_program(&program);
         for d in &checker.diagnostics {
             diag_bag.report(d.clone());

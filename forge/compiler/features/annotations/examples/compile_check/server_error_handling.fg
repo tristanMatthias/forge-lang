@@ -1,0 +1,13 @@
+/// expect-check: pass
+/// Verifies error page syntax compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  not_found "{\"error\":\"not found\"}"
+  error_page 500 "{\"error\":\"internal error\"}"
+
+  route GET /health -> {
+    "ok"
+  }
+}

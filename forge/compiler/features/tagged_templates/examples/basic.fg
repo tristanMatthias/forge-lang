@@ -1,0 +1,13 @@
+/// Test: basic tagged template literal — tag function receives JSON with parts and values
+/// expect: {"parts":["hello "," and ",""],"values":["world","forge"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let name = "world"
+  let lang = "forge"
+  let result = identity`hello ${name} and ${lang}`
+  println(result)
+}

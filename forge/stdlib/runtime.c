@@ -588,6 +588,32 @@ void forge_json_write_bool_field(char* buf, int64_t* pos, int64_t buf_len, const
     *pos += snprintf(buf + *pos, buf_len - *pos, "\"%s\":%s", key, val ? "true" : "false");
 }
 
+// Escape a string for JSON embedding (returns malloc'd C string)
+char* forge_json_escape(const char* str, int64_t len) {
+    // Worst case: every char needs escaping (6 chars for \uXXXX)
+    char* buf = (char*)malloc(len * 6 + 1);
+    int64_t pos = 0;
+    for (int64_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)str[i];
+        switch (c) {
+            case '"':  buf[pos++] = '\\'; buf[pos++] = '"'; break;
+            case '\\': buf[pos++] = '\\'; buf[pos++] = '\\'; break;
+            case '\n': buf[pos++] = '\\'; buf[pos++] = 'n'; break;
+            case '\t': buf[pos++] = '\\'; buf[pos++] = 't'; break;
+            case '\r': buf[pos++] = '\\'; buf[pos++] = 'r'; break;
+            default:
+                if (c < 0x20) {
+                    pos += snprintf(buf + pos, 7, "\\u%04x", c);
+                } else {
+                    buf[pos++] = c;
+                }
+                break;
+        }
+    }
+    buf[pos] = '\0';
+    return buf;
+}
+
 // Map get from JSON params - used by HTTP handlers
 ForgeString forge_params_get(const char* params_json, const char* key) {
     // params_json is like {"name":"value",...}

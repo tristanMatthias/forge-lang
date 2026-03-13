@@ -16,8 +16,8 @@ impl Parser {
                 LexTemplatePart::Literal(s) => {
                     parts.push(TemplatePart::Literal(s));
                 }
-                LexTemplatePart::Expr(expr_text) => {
-                    let mut lexer = Lexer::new(&expr_text);
+                LexTemplatePart::Expr(expr_text, expr_span) => {
+                    let mut lexer = Lexer::new_with_offset(&expr_text, expr_span.start, expr_span.line, expr_span.col);
                     let tokens = lexer.tokenize();
                     let mut parser = Parser::new(tokens);
                     if let Some(expr) = parser.parse_expr() {

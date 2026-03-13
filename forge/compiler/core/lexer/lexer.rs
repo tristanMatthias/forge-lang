@@ -7,6 +7,9 @@ pub struct Lexer<'a> {
     pos: usize,
     line: u32,
     col: u32,
+    /// Byte offset added to all generated span positions.
+    /// Used for sub-parsing template expressions so spans map back to the original source.
+    pos_offset: usize,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -18,6 +21,22 @@ impl<'a> Lexer<'a> {
             pos: 0,
             line: 1,
             col: 1,
+            pos_offset: 0,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    /// Create a lexer that starts counting positions from a given offset.
+    /// Used for sub-parsing template interpolation expressions so their
+    /// spans map back to the original source file.
+    pub fn new_with_offset(source: &'a str, pos_offset: usize, line: u32, col: u32) -> Self {
+        Self {
+            source,
+            chars: source.chars().collect(),
+            pos: 0,
+            line,
+            col,
+            pos_offset,
             diagnostics: Vec::new(),
         }
     }
@@ -39,6 +58,16 @@ impl<'a> Lexer<'a> {
 
             if let Some(tok) = self.next_token() {
                 tokens.push(tok);
+            }
+        }
+
+        // Apply position offset for sub-parsed expressions (template interpolations).
+        // The lexer works with local positions internally; this shifts all span byte
+        // offsets so they map back to the original source file.
+        if self.pos_offset > 0 {
+            for tok in &mut tokens {
+                tok.span.start += self.pos_offset;
+                tok.span.end += self.pos_offset;
             }
         }
 
@@ -342,6 +371,9 @@ impl<'a> Lexer<'a> {
                     }
                     self.advance(); // $
                     self.advance(); // {
+                    let expr_start = self.pos;
+                    let expr_line = self.line;
+                    let expr_col = self.col;
                     let mut expr = String::new();
                     let mut depth = 1;
                     while depth > 0 {
@@ -365,7 +397,7 @@ impl<'a> Lexer<'a> {
                             None => break,
                         }
                     }
-                    parts.push(TemplatePart::Expr(expr));
+                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
                 }
                 Some('\\') => {
                     self.advance();
@@ -429,6 +461,9 @@ impl<'a> Lexer<'a> {
                     }
                     self.advance(); // $
                     self.advance(); // {
+                    let expr_start = self.pos;
+                    let expr_line = self.line;
+                    let expr_col = self.col;
                     let mut expr = String::new();
                     let mut depth = 1;
                     while depth > 0 {
@@ -439,7 +474,7 @@ impl<'a> Lexer<'a> {
                             None => break,
                         }
                     }
-                    parts.push(TemplatePart::Expr(expr));
+                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
                 }
                 Some('"') => {
                     self.advance();
@@ -490,6 +525,9 @@ impl<'a> Lexer<'a> {
                     }
                     self.advance(); // $
                     self.advance(); // {
+                    let expr_start = self.pos;
+                    let expr_line = self.line;
+                    let expr_col = self.col;
                     let mut expr = String::new();
                     let mut depth = 1;
                     while depth > 0 {
@@ -500,7 +538,7 @@ impl<'a> Lexer<'a> {
                             None => break,
                         }
                     }
-                    parts.push(TemplatePart::Expr(expr));
+                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
                 }
                 Some(c) => {
                     self.advance();
@@ -511,6 +549,76 @@ impl<'a> Lexer<'a> {
 
         Token::new(
             TokenKind::DollarString(parts),
+            Span::new(start, self.pos, line, col),
+        )
+    }
+
+    /// Lex tag`...` — tagged template literal with ${...} interpolation
+    fn lex_tagged_template(&mut self, tag: String, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // skip opening `
+        let mut parts = Vec::new();
+        let mut current = String::new();
+
+        loop {
+            match self.peek() {
+                None => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "F0003",
+                        "unterminated tagged template literal",
+                        Span::new(start, self.pos, line, col),
+                    ));
+                    break;
+                }
+                Some('`') => {
+                    self.advance();
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current));
+                    }
+                    break;
+                }
+                Some('\\') => {
+                    self.advance();
+                    match self.peek() {
+                        Some('`') => { self.advance(); current.push('`'); }
+                        Some('\\') => { self.advance(); current.push('\\'); }
+                        Some('$') => { self.advance(); current.push('$'); }
+                        Some('n') => { self.advance(); current.push('\n'); }
+                        Some('t') => { self.advance(); current.push('\t'); }
+                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        None => {}
+                    }
+                }
+                Some('$') if self.peek_at(1) == Some('{') => {
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current.clone()));
+                        current.clear();
+                    }
+                    self.advance(); // $
+                    self.advance(); // {
+                    let expr_start = self.pos;
+                    let expr_line = self.line;
+                    let expr_col = self.col;
+                    let mut expr = String::new();
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match self.peek() {
+                            Some('{') => { depth += 1; expr.push('{'); self.advance(); }
+                            Some('}') => { depth -= 1; if depth > 0 { expr.push('}'); } self.advance(); }
+                            Some(c) => { expr.push(c); self.advance(); }
+                            None => break,
+                        }
+                    }
+                    parts.push(TemplatePart::Expr(expr, Span::new(expr_start, self.pos, expr_line, expr_col)));
+                }
+                Some(c) => {
+                    self.advance();
+                    current.push(c);
+                }
+            }
+        }
+
+        Token::new(
+            TokenKind::TaggedTemplate(tag, parts),
             Span::new(start, self.pos, line, col),
         )
     }
@@ -583,6 +691,24 @@ impl<'a> Lexer<'a> {
         }
 
         let text: String = self.chars[start..self.pos].iter().collect();
+
+        // Check for tagged template literal: ident`...`
+        // If identifier is immediately followed by backtick (no whitespace), lex as tagged template
+        if self.peek() == Some('`') {
+            // Only treat as tagged template if it's an identifier (not a keyword)
+            let is_keyword = matches!(text.as_str(),
+                "let" | "mut" | "const" | "fn" | "return" | "if" | "else" | "match" |
+                "for" | "in" | "while" | "loop" | "break" | "continue" | "enum" |
+                "type" | "use" | "as" | "export" | "emit" | "on" | "trait" | "impl" |
+                "defer" | "errdefer" | "spawn" | "parallel" | "with" | "without" |
+                "only" | "partial" | "catch" | "select" | "component" | "is" |
+                "table" | "true" | "false" | "null" | "Ok" | "Err" | "_"
+            );
+            if !is_keyword {
+                return self.lex_tagged_template(text, start, line, col);
+            }
+        }
+
         let kind = match text.as_str() {
             "let" => TokenKind::Let,
             "mut" => TokenKind::Mut,

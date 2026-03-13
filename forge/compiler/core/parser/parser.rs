@@ -1063,6 +1063,13 @@ impl Parser {
                 self.advance();
                 self.parse_dollar_exec(parts, span)
             }
+            TokenKind::TaggedTemplate(tag, parts) => {
+                let tag = tag.clone();
+                let parts = parts.clone();
+                let span = tok.span;
+                self.advance();
+                self.parse_tagged_template(tag, parts, span)
+            }
             TokenKind::Ident(_) => self.parse_ident_expr(),
             TokenKind::LParen => self.parse_paren_expr(),
             TokenKind::LBrace => self.parse_brace_expr(),
@@ -1465,6 +1472,8 @@ impl Parser {
             self.advance(); // consume '@'
             let ann_name = match self.peek().map(|t| &t.kind) {
                 Some(TokenKind::Ident(n)) => n.clone(),
+                // Accept keywords as annotation names (e.g. @table)
+                Some(TokenKind::Table) => "table".to_string(),
                 _ => break,
             };
             self.advance(); // consume name

@@ -487,6 +487,12 @@ pub enum Expr {
         parts: Vec<TemplatePart>,
         span: Span,
     },
+    // Tagged template literal: tag`template ${expr}` → tag(json)
+    TaggedTemplate {
+        tag: String,
+        parts: Vec<TemplatePart>,
+        span: Span,
+    },
     // Is expression: value is Pattern → bool
     Is {
         value: Box<Expr>,
@@ -537,6 +543,7 @@ impl Expr {
             | Expr::ChannelReceive { span, .. }
             | Expr::SpawnBlock { span, .. }
             | Expr::DollarExec { span, .. }
+            | Expr::TaggedTemplate { span, .. }
             | Expr::Is { span, .. }
             | Expr::TableLit { span, .. } => *span,
             Expr::Block(block) => block.span,

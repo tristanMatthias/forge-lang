@@ -1,0 +1,13 @@
+/// Test: tagged template with complex expressions (math, function calls)
+/// expect: {"parts":["result: "," len: ",""],"values":["42","5"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let x = 40
+  let s = "hello"
+  let result = identity`result: ${x + 2} len: ${s.length}`
+  println(result)
+}

@@ -178,6 +178,59 @@ fn main() {
 ```
 """
 
+[F0073]
+title = "Annotation target mismatch"
+level = "error"
+message = "A type-level annotation was used on a field, or vice versa."
+help = "Move the annotation to the correct position — type-level annotations go before fields, not on them."
+doc = """
+This error occurs when an annotation is used on the wrong target. For example,
+@table is a type-level annotation that belongs at the top of a model block,
+not on individual fields.
+
+Example of the error:
+```forge
+model User {
+  name: string @table("custom")  // error: @table is type-level
+}
+```
+
+Fix:
+```forge
+model User {
+  @table("custom")
+  name: string
+}
+```
+"""
+
+[F0074]
+title = "Provider annotation outside its context"
+level = "error"
+message = "A provider-scoped annotation was used outside its provider context."
+help = "This annotation is only valid inside a model block. Use `model` instead of `type` for database features."
+doc = """
+This error occurs when a model/provider annotation like @primary, @unique,
+@auto_increment, @hidden, or @owner is used on a plain type declaration
+instead of inside a model block.
+
+Example of the error:
+```forge
+type UserInput = {
+  name: string @primary,  // error: @primary needs a model
+}
+```
+
+Fix:
+```forge
+use @std.model.{model}
+
+model UserInput {
+  name: string @primary
+}
+```
+"""
+
 [F0801]
 title = "Unused variable"
 level = "warning"

@@ -1,0 +1,15 @@
+/// # Pipe with parentheses
+///
+/// `a |> f()` is equivalent to `a |> f` — the piped value
+/// becomes the first argument. Extra args can also be passed.
+///
+/// expect: 10
+/// expect: 8
+
+fn double(x: int) -> int { x * 2 }
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() {
+  println(5 |> double())
+  println(5 |> add(3))
+}

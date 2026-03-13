@@ -1,0 +1,10 @@
+/// expect-check: pass
+/// Verifies WebSocket syntax compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  ws "/echo" -> (client) {
+    "connected"
+  }
+}

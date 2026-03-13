@@ -3,6 +3,17 @@ use super::*;
 impl<'ctx> Codegen<'ctx> {
     // compile_template: extracted to features/
 
+    /// Check if an LLVM struct type matches the ForgeString layout: {ptr, i64}
+    fn is_forge_string_struct(&self, st: inkwell::types::StructType<'ctx>) -> bool {
+        if st.count_fields() != 2 {
+            return false;
+        }
+        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_type = self.context.i64_type();
+        st.get_field_type_at_index(0) == Some(ptr_type.into())
+            && st.get_field_type_at_index(1) == Some(i64_type.into())
+    }
+
     pub(crate) fn value_to_string(
         &mut self,
         val: BasicValueEnum<'ctx>,
@@ -43,7 +54,12 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_call(conv, &[val.into()], "to_str").unwrap();
                     result.try_as_basic_value().left()
                 } else if val.is_struct_value() {
-                    Some(val) // Assume it's already a ForgeString
+                    let st = val.into_struct_value().get_type();
+                    if self.is_forge_string_struct(st) {
+                        Some(val)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -97,8 +113,12 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_call(conv_fn, &[val.into()], "to_str").unwrap();
                     result.try_as_basic_value().left()
                 } else if val.is_struct_value() {
-                    // Already a string?
-                    Some(val)
+                    let st = val.into_struct_value().get_type();
+                    if self.is_forge_string_struct(st) {
+                        Some(val)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

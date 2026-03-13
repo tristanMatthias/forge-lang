@@ -1,0 +1,31 @@
+/// Test: closure validator on int field with range check
+/// expect: true
+/// expect: port must be 1024-65535
+/// expect: true
+
+type Config = {
+  port: int @validate((val) -> {
+    if val < 1024 {
+      Err("port must be 1024-65535")
+    } else {
+      if val > 65535 {
+        Err("port must be 1024-65535")
+      } else {
+        Ok(val)
+      }
+    }
+  }),
+}
+
+fn main() {
+  let bad = validate({ port: 80 }, Config)
+  println(string(bad is Err))
+
+  match bad {
+    Err(e) -> println(e.fields[0].message)
+    Ok(_) -> println("should not reach")
+  }
+
+  let good = validate({ port: 8080 }, Config)
+  println(string(good is Ok))
+}

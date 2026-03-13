@@ -1,0 +1,40 @@
+/// Test: Nested model .include() across multiple models with @belongs_to
+/// Each model's include resolves its own relations independently
+///
+/// expect: true
+/// expect: true
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  author_id: int @belongs_to(User)
+}
+
+model Comment {
+  id: int @primary @auto_increment
+  body: string
+  post_id: int @belongs_to(Post)
+  author_id: int @belongs_to(User)
+}
+
+fn main() {
+  let u1 = User.create({ name: "alice" })
+  let u2 = User.create({ name: "bob" })
+  let p1 = Post.create({ title: "Hello", author_id: u1 })
+  Comment.create({ body: "Great post!", post_id: p1, author_id: u2 })
+
+  // Include author relation on post
+  let result = Post.include(p1, "[\"author\"]")
+  println(string(result.contains("alice")))
+
+  // Include author relation on comment
+  let cresult = Comment.include(1, "[\"author\"]")
+  println(string(cresult.contains("bob")))
+}

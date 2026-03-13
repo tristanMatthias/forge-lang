@@ -1,0 +1,39 @@
+/// Test: CRUD expose — @hidden fields excluded from model JSON, visible fields accessible
+/// Tests the field exposure pattern that server `expose` syntax builds on.
+///
+/// expect: true
+/// expect: false
+/// expect: true
+/// expect: 2
+
+use @std.model.{model}
+
+model Account {
+  id: int @primary @auto_increment
+  username: string
+  email: string
+  password: string @hidden
+  api_key: string @hidden
+}
+
+fn main() {
+  Account.create({ username: "alice", email: "alice@test.com", password: "pass123", api_key: "key-abc" })
+  Account.create({ username: "bob", email: "bob@test.com", password: "pass456", api_key: "key-xyz" })
+
+  // List returns records without hidden fields
+  let accounts = Account.list()
+  let first_json = json.stringify(accounts)
+
+  // Visible fields present
+  println(string(first_json.contains("alice")))
+  // Hidden fields absent
+  println(string(first_json.contains("pass123")))
+
+  // Individual get also hides fields
+  let acc = Account.get_internal(1)
+  let acc_json = json.stringify(acc)
+  println(string(acc_json.contains("alice@test.com")))
+
+  // Count confirms both records exist
+  println(string(Account.count()))
+}

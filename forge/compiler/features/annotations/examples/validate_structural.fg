@@ -1,0 +1,12 @@
+/// Test 6.3: Structural typing with annotated inline struct params
+/// expect: alice
+/// expect: a@test.com
+
+fn create_user(input: { name: string @min(1), email: string @validate(email) }) {
+  println(input.name)
+  println(input.email)
+}
+
+fn main() {
+  create_user({ name: "alice", email: "a@test.com" })
+}

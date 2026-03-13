@@ -1,0 +1,37 @@
+/// Test: CRUD pagination — Model.paginate returns paginated results with metadata
+///
+/// expect: 25
+/// expect: 1
+/// expect: 3
+/// expect: 2
+/// expect: 3
+
+use @std.model.{model}
+
+type PageMeta = { total: int, current_page: int, total_pages: int }
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+}
+
+fn main() {
+  mut i = 0
+  while i < 25 {
+    Post.create({ title: `Post ${string(i)}` })
+    i = i + 1
+  }
+
+  // Page 1 of 10-per-page
+  let page1_json = Post.paginate("{}", 1, 10, "id ASC")
+  let page1: PageMeta = json.parse(page1_json)
+  println(string(page1.total))
+  println(string(page1.current_page))
+  println(string(page1.total_pages))
+
+  // Page 2
+  let page2_json = Post.paginate("{}", 2, 10, "id ASC")
+  let page2: PageMeta = json.parse(page2_json)
+  println(string(page2.current_page))
+  println(string(page2.total_pages))
+}

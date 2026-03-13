@@ -91,7 +91,9 @@ impl TypeChecker {
                 };
                 self.env.enum_types.insert(name.clone(), enum_type);
             }
-            Statement::TypeDecl { name, value, .. } => {
+            Statement::TypeDecl { name, value, span, .. } => {
+                // Check for conflicting annotations in intersection types
+                self.check_intersection_annotation_conflicts(value, *span);
                 // Extract annotations from the type expression before resolving
                 let field_annotations = self.extract_type_annotations(value);
                 if !field_annotations.is_empty() {
@@ -538,6 +540,28 @@ impl TypeChecker {
                                 "string" => Type::String,
                                 _ => Type::Unknown,
                             }
+                        } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
+                            // Method call: object.method(args)
+                            let obj_type = self.check_expr(object);
+                            let effective_type = match &obj_type {
+                                Type::Nullable(inner) => inner.as_ref().clone(),
+                                other => other.clone(),
+                            };
+                            // Validate struct literal fields against the type's known fields.
+                            // When the object is an identifier that is also a type alias (e.g.,
+                            // model names like `User`), resolve the struct type for field checking.
+                            let resolved_type = if let Type::Unknown = &effective_type {
+                                if let Expr::Ident(name, _) = object.as_ref() {
+                                    self.env.type_aliases.get(name).cloned()
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+                            let check_type = resolved_type.as_ref().unwrap_or(&effective_type);
+                            self.check_struct_literal_fields_in_args(check_type, args);
+                            self.check_method_call(&effective_type, field, args.len(), *span)
                         } else {
                             Type::Unknown
                         }
@@ -567,6 +591,14 @@ impl TypeChecker {
                     Type::List(_) => match field.as_str() {
                         "length" => Type::Int,
                         _ => Type::Unknown,
+                    },
+                    Type::Enum { name, variants } => {
+                        // EnumName.variant → returns the enum type itself
+                        if variants.iter().any(|v| v.name == *field) {
+                            Type::Enum { name: name.clone(), variants: variants.clone() }
+                        } else {
+                            Type::Unknown
+                        }
                     },
                     _ => Type::Unknown,
                 }
@@ -750,13 +782,41 @@ impl TypeChecker {
                 Type::Map(Box::new(key_type), Box::new(val_type))
             }
 
-            Expr::StructLit { fields, .. } => {
+            Expr::StructLit { name: struct_name, fields, span: lit_span } => {
                 let field_types: Vec<(String, Type)> = fields
                     .iter()
                     .map(|(name, val)| (name.clone(), self.check_expr(val)))
                     .collect();
+
+                // For named struct literals (e.g., `User { naem: "alice" }`),
+                // validate field names against the known type fields.
+                if let Some(type_name) = struct_name {
+                    let resolved = self.env.resolve_type_name(type_name);
+                    if let Type::Struct { fields: type_fields, .. } = &resolved {
+                        let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
+                        for (field_name, field_val) in fields {
+                            if !type_fields.iter().any(|(n, _)| n == field_name) {
+                                let field_span = field_val.span();
+                                let mut diag = Diagnostic::error(
+                                    "F0020",
+                                    format!("'{}' is not a field on {}", field_name, type_name),
+                                    *lit_span,
+                                )
+                                .with_label(field_span, format!("'{}' is not a field on {}", field_name, type_name), LabelKind::Primary);
+
+                                if let Some(suggestion) = crate::errors::did_you_mean(field_name, &known_names, 2) {
+                                    diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                                } else {
+                                    diag = diag.with_help(format!("available fields on {}: {}", type_name, known_names.join(", ")));
+                                }
+                                self.diagnostics.push(diag);
+                            }
+                        }
+                    }
+                }
+
                 Type::Struct {
-                    name: None,
+                    name: struct_name.clone(),
                     fields: field_types,
                 }
             }
@@ -786,6 +846,9 @@ impl TypeChecker {
                     }
                 }
                 Type::String
+            }
+            Expr::TaggedTemplate { tag, parts, span } => {
+                self.check_tagged_template(tag, parts, span)
             }
             Expr::Is { value, .. } => {
                 self.check_expr(value);
@@ -870,6 +933,30 @@ impl TypeChecker {
 
                     for ann in anns {
                         let ann_name = ann.name.as_str();
+
+                        // ── Type-level annotation on a field (F0073) ──
+                        const TYPE_LEVEL_ANNOTATIONS: &[&str] = &["table"];
+                        if TYPE_LEVEL_ANNOTATIONS.contains(&ann_name) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0073",
+                                format!("@{} is a type-level annotation and cannot be used on field '{}'",
+                                    ann_name, field_name),
+                                ann.span,
+                            ).with_help(format!("move @{} to the top of the type or model block, before any fields", ann_name)));
+                            continue;
+                        }
+
+                        // ── Provider annotation outside model context (F0074) ──
+                        const PROVIDER_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
+                        if PROVIDER_ANNOTATIONS.contains(&ann_name) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0074",
+                                format!("@{} is a model annotation and cannot be used on plain type field '{}'",
+                                    ann_name, field_name),
+                                ann.span,
+                            ).with_help(format!("@{} is only valid inside a model block — use `model` instead of `type` if you need database features", ann_name)));
+                            continue;
+                        }
 
                         // ── Unknown annotation ──
                         let entry = CORE_ANNOTATIONS.iter().find(|(name, _)| *name == ann_name);
@@ -1109,6 +1196,52 @@ impl TypeChecker {
             Expr::BoolLit(b, _) => b.to_string(),
             _ => "...".to_string(),
         }).collect::<Vec<_>>().join(", ")
+    }
+
+    fn format_field_annotation_args(args: &[crate::typeck::types::AnnotationArg]) -> String {
+        use crate::typeck::types::AnnotationArg;
+        args.iter().map(|a| match a {
+            AnnotationArg::Int(n) => n.to_string(),
+            AnnotationArg::Float(f) => f.to_string(),
+            AnnotationArg::String(s) => format!("\"{}\"", s),
+            AnnotationArg::Bool(b) => b.to_string(),
+            AnnotationArg::Ident(s) => s.clone(),
+            AnnotationArg::Expr(_) => "...".to_string(),
+        }).collect::<Vec<_>>().join(", ")
+    }
+
+    fn check_intersection_annotation_conflicts(&mut self, type_expr: &TypeExpr, span: Span) {
+        if let TypeExpr::Intersection(left, right) = type_expr {
+            // Recursively check nested intersections
+            self.check_intersection_annotation_conflicts(left, span);
+            self.check_intersection_annotation_conflicts(right, span);
+
+            let left_anns = self.extract_type_annotations(left);
+            let right_anns = self.extract_type_annotations(right);
+
+            for (field_name, right_field_anns) in &right_anns {
+                if let Some((_, left_field_anns)) = left_anns.iter().find(|(n, _)| n == field_name) {
+                    // Both sides have annotations for this field — check for conflicts
+                    for right_ann in right_field_anns {
+                        if let Some(left_ann) = left_field_anns.iter().find(|a| a.name == right_ann.name) {
+                            // Same annotation name on same field — check if values differ
+                            if left_ann.args != right_ann.args {
+                                let left_args = Self::format_field_annotation_args(&left_ann.args);
+                                let right_args = Self::format_field_annotation_args(&right_ann.args);
+                                self.diagnostics.push(Diagnostic::error(
+                                    "F0081",
+                                    format!(
+                                        "conflicting annotations in intersection: field '{}' has conflicting @{}: {} (from left) vs {} (from right)",
+                                        field_name, right_ann.name, left_args, right_args
+                                    ),
+                                    span,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn resolve_type_expr(&self, type_expr: &TypeExpr) -> Type {
@@ -1383,5 +1516,148 @@ impl TypeChecker {
     pub(crate) fn format_fn_example(&self, fn_name: &str, params: &[Type]) -> String {
         let args: Vec<String> = params.iter().map(|t| placeholder_for_type(t)).collect();
         format!("{}({})", fn_name, args.join(", "))
+    }
+
+    /// Check method calls on known types and return the result type.
+    /// Emits an error diagnostic for undefined methods.
+    fn check_method_call(&mut self, obj_type: &Type, method: &str, _arg_count: usize, span: Span) -> Type {
+        match obj_type {
+            Type::String => {
+                match method {
+                    "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
+                    "contains" | "starts_with" | "ends_with" => Type::Bool,
+                    "parse_int" => Type::Int,
+                    "split" => Type::List(Box::new(Type::String)),
+                    "length" => Type::Int,
+                    _ => {
+                        let known = ["upper", "lower", "trim", "contains", "split",
+                            "starts_with", "ends_with", "replace", "parse_int", "repeat", "length"];
+                        let mut diag = Diagnostic::error(
+                            "F0020",
+                            format!("string has no method '{}'", method),
+                            span,
+                        );
+                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
+                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                        } else {
+                            diag = diag.with_help(format!("available string methods: {}", known.join(", ")));
+                        }
+                        self.diagnostics.push(diag);
+                        Type::Error
+                    }
+                }
+            }
+            Type::List(inner) => {
+                match method {
+                    "push" | "each" | "sorted" | "reverse" | "flat" | "dedup"
+                    | "take" | "skip" | "chunks" | "windows" => {
+                        match method {
+                            "push" | "each" => Type::Void,
+                            "sorted" | "reverse" | "flat" | "dedup"
+                            | "take" | "skip" => Type::List(inner.clone()),
+                            "chunks" | "windows" => Type::List(Box::new(Type::List(inner.clone()))),
+                            _ => Type::Unknown,
+                        }
+                    }
+                    "filter" | "map" => Type::List(inner.clone()),
+                    "find" | "find_map" => Type::Nullable(inner.clone()),
+                    "reduce" => *inner.clone(),
+                    "sum" => Type::Int,
+                    "join" => Type::String,
+                    "contains" | "any" | "all" => Type::Bool,
+                    "enumerate" => Type::List(Box::new(Type::Tuple(vec![Type::Int, *inner.clone()]))),
+                    "length" | "clone" => {
+                        match method {
+                            "length" => Type::Int,
+                            "clone" => Type::List(inner.clone()),
+                            _ => Type::Unknown,
+                        }
+                    }
+                    _ => {
+                        let known = ["push", "filter", "map", "find", "reduce", "sum",
+                            "join", "each", "sorted", "contains", "any", "all",
+                            "enumerate", "length", "clone", "reverse", "flat",
+                            "dedup", "take", "skip", "chunks", "windows", "find_map"];
+                        let mut diag = Diagnostic::error(
+                            "F0020",
+                            format!("list has no method '{}'", method),
+                            span,
+                        );
+                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
+                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                        } else {
+                            diag = diag.with_help(format!("available list methods: {}", known.join(", ")));
+                        }
+                        self.diagnostics.push(diag);
+                        Type::Error
+                    }
+                }
+            }
+            Type::Map(key_type, val_type) => {
+                match method {
+                    "get" => Type::Nullable(val_type.clone()),
+                    "keys" => Type::List(key_type.clone()),
+                    "values" => Type::List(val_type.clone()),
+                    "contains_key" => Type::Bool,
+                    "entries" => Type::List(Box::new(Type::Tuple(vec![*key_type.clone(), *val_type.clone()]))),
+                    _ => {
+                        let known = ["get", "keys", "values", "contains_key", "entries"];
+                        let mut diag = Diagnostic::error(
+                            "F0020",
+                            format!("map has no method '{}'", method),
+                            span,
+                        );
+                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
+                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                        } else {
+                            diag = diag.with_help(format!("available map methods: {}", known.join(", ")));
+                        }
+                        self.diagnostics.push(diag);
+                        Type::Error
+                    }
+                }
+            }
+            // For other types (structs, unknown), don't error — may be trait methods etc.
+            _ => Type::Unknown,
+        }
+    }
+
+    /// When a static method is called on a named struct type (e.g., `User.where({...})`),
+    /// check struct literal arguments for field names that look like typos of known fields.
+    /// Only emits an error when a field is close (edit distance <= 2) to a known field,
+    /// since unrecognized fields may be legitimate query parameters or metadata.
+    fn check_struct_literal_fields_in_args(&mut self, obj_type: &Type, args: &[CallArg]) {
+        // Only check for named struct types (models, type aliases)
+        let (type_name, type_fields) = match obj_type {
+            Type::Struct { name: Some(name), fields } => (name.clone(), fields.clone()),
+            _ => return,
+        };
+
+        let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
+
+        for arg in args {
+            if let Expr::StructLit { fields: lit_fields, span: lit_span, .. } = &arg.value {
+                for (field_name, field_val) in lit_fields {
+                    // Skip exact matches — field is valid
+                    if type_fields.iter().any(|(n, _)| n == field_name) {
+                        continue;
+                    }
+                    // Only report if there's a close match (likely typo).
+                    // Completely unrecognized fields are silently accepted
+                    // since they may be query parameters, metadata, etc.
+                    if let Some(suggestion) = crate::errors::did_you_mean(field_name, &known_names, 2) {
+                        let field_span = field_val.span();
+                        let diag = Diagnostic::error(
+                            "F0020",
+                            format!("'{}' is not a field on {}", field_name, type_name),
+                            *lit_span,
+                        )
+                        .with_label(field_span, format!("'{}' is not a field on {}", field_name, type_name), LabelKind::Primary)
+                        .with_help(format!("did you mean '{}'?", suggestion));
+                        self.diagnostics.push(diag);
+                    }
+                }
+            }
+        }
     }
 }

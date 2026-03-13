@@ -1,0 +1,11 @@
+/// # Unterminated tagged template
+///
+/// A tagged template missing its closing backtick.
+///
+/// expect-error: F0003
+
+fn tag(input: string) -> string { input }
+
+fn main() {
+  let result = tag`hello
+}

@@ -1,0 +1,48 @@
+/// Test: Nested CRUD — create parent and children, update parent, cascade query
+///
+/// expect: 2
+/// expect: First Post
+/// expect: Second Post
+/// expect: Updated Author
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+
+model Author {
+  id: int @primary @auto_increment
+  name: string
+}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  author_id: int
+}
+
+fn main() {
+  let author_id = Author.create({ name: "alice" })
+  Post.create({ title: "First Post", author_id: author_id })
+  Post.create({ title: "Second Post", author_id: author_id })
+
+  // Query children by parent
+  let posts = Post.where({ author_id: author_id })
+  println(string(posts.length))
+  println(posts[0].title)
+  println(posts[1].title)
+
+  // Update parent, children unaffected
+  Author.update(author_id, { name: "Updated Author" })
+  let author = Author.get(author_id)
+  if author != null {
+    println(author.name)
+  }
+
+  // Delete one child, verify count
+  Post.delete(1)
+  println(string(Post.count_where({ author_id: author_id })))
+
+  // Delete parent, children still exist (no cascade)
+  Author.delete(author_id)
+  println(string(Author.count()))
+}

@@ -80,12 +80,12 @@ component server(__tpl_name) {
     }
 
     @syntax("ws {path} -> {handler}")
-    fn ws(path: string, handler: fn) {
+    fn ws(path: string, handler: ptr) {
         forge_http_ws_upgrade(__tpl_config_port, path)
     }
 
     @syntax("sse {path} -> {handler}")
-    fn sse(path: string, handler: fn) {
+    fn sse(path: string, handler: ptr) {
         forge_http_sse_start(__tpl_config_port, path)
     }
 

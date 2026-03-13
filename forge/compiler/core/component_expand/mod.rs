@@ -416,6 +416,21 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                 .collect(),
             span: *span,
         },
+        Expr::TaggedTemplate { tag, parts, span } => Expr::TaggedTemplate {
+            tag: substitute_ident_string(tag, ctx),
+            parts: parts
+                .iter()
+                .map(|p| match p {
+                    crate::parser::ast::TemplatePart::Literal(s) => {
+                        crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
+                    }
+                    crate::parser::ast::TemplatePart::Expr(e) => {
+                        crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
+                    }
+                })
+                .collect(),
+            span: *span,
+        },
         Expr::Is { value, pattern, negated, span } => Expr::Is {
             value: Box::new(substitute_expr(value, ctx)),
             pattern: pattern.clone(),
@@ -861,7 +876,7 @@ fn stmt_clone_with_sub(stmt: &Statement, ctx: &SubstitutionContext) -> Statement
 /// Works with any component template that declares events (model, service, etc.).
 ///
 /// Hook param binding conventions (all generic, zero provider knowledge):
-/// - Before hooks with `__raw_` prefix: model `on` syntax, prologue skipped, side-effect only
+/// - Before hooks with `__raw_` prefix: model `on` syntax, bind param via `json.parse(first_string_param)` as component type
 /// - Before hooks without prefix, param not in fn scope, model_ref set: service hook,
 ///   bind param via `json.parse(first_string_param)` as the wrapped component's type
 /// - After hooks with `__raw_` prefix: fetch full record via `get_internal(id_var)`
@@ -896,6 +911,19 @@ fn build_component_hooked_fn(
                             method_call("json", "parse", vec![ident(&str_param)]),
                         ));
                     }
+                }
+            } else if hook.param_name.starts_with("__raw_") {
+                // Model hook: bind original param name to json.parse(first_string_param)
+                // typed as the component's type so the user can access fields like data.title
+                let first_string_param = params.iter()
+                    .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == "string"))
+                    .map(|p| p.name.clone());
+                if let Some(str_param) = first_string_param {
+                    new_stmts.push(let_typed(
+                        &original_name,
+                        named_type(&ctx.name),
+                        method_call("json", "parse", vec![ident(&str_param)]),
+                    ));
                 }
             }
 

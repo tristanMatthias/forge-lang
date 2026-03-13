@@ -1,0 +1,13 @@
+/// # Struct interpolation in tagged template
+///
+/// Structs can't be directly interpolated — use json.stringify() first.
+///
+/// expect-error: F0012
+
+type Point = { x: int, y: int }
+fn identity(input: string) -> string { input }
+
+fn main() {
+  let p: Point = { x: 1, y: 2 }
+  println(identity`point: ${p}`)
+}

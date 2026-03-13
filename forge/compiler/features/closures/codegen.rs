@@ -1,5 +1,6 @@
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::values::BasicValueEnum;
+use std::collections::HashMap;
 use crate::codegen::codegen::Codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
@@ -29,10 +30,27 @@ impl<'ctx> Codegen<'ctx> {
             .map(|t| self.type_to_llvm_metadata(t))
             .collect();
 
-        // We need to figure out the return type
-        let ret_type = self.context.i64_type(); // default to i64
-
-        let fn_type = ret_type.fn_type(&llvm_param_types, false);
+        // Infer the return type by analyzing the body with closure params in context.
+        // Build a map of param names → types so we can resolve idents in the body.
+        let param_name_types: std::collections::HashMap<String, Type> = params
+            .iter()
+            .zip(param_types.iter())
+            .map(|(p, t)| (p.name.clone(), t.clone()))
+            .collect();
+        let ret_type_resolved = self.infer_closure_body_type(body, &param_name_types);
+        let fn_type = if ret_type_resolved == Type::Void {
+            self.context.void_type().fn_type(&llvm_param_types, false)
+        } else {
+            let ret_llvm = self.type_to_llvm_basic(&ret_type_resolved);
+            match ret_llvm {
+                inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_param_types, false),
+            }
+        };
         let function = self.module.add_function(&closure_name, fn_type, None);
         self.functions.insert(closure_name.clone(), function);
 
@@ -65,5 +83,68 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         Some(function.as_global_value().as_pointer_value().into())
+    }
+
+    /// Infer the return type of a closure body, given a map of param names → types.
+    /// This resolves idents that refer to closure params without needing them in codegen scope.
+    pub(crate) fn infer_closure_body_type(
+        &self,
+        body: &Expr,
+        params: &HashMap<String, Type>,
+    ) -> Type {
+        match body {
+            Expr::Ident(name, _) => {
+                if let Some(ty) = params.get(name) {
+                    ty.clone()
+                } else {
+                    self.infer_type(body)
+                }
+            }
+            Expr::Block(block) => {
+                if let Some(Statement::Expr(last)) = block.statements.last() {
+                    self.infer_closure_body_type(last, params)
+                } else {
+                    Type::Void
+                }
+            }
+            Expr::If { then_branch, .. } => {
+                if let Some(Statement::Expr(last)) = then_branch.statements.last() {
+                    self.infer_closure_body_type(last, params)
+                } else {
+                    Type::Void
+                }
+            }
+            Expr::Binary { op, left, .. } => {
+                match op {
+                    BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::LtEq |
+                    BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => Type::Bool,
+                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                        let lt = self.infer_closure_body_type(left, params);
+                        if lt == Type::Float { Type::Float }
+                        else if lt == Type::String { Type::String }
+                        else { Type::Int }
+                    }
+                    _ => self.infer_closure_body_type(left, params),
+                }
+            }
+            Expr::Call { callee, .. } => {
+                if let Expr::Ident(name, _) = callee.as_ref() {
+                    match name.as_str() {
+                        "string" => Type::String,
+                        "int" => Type::Int,
+                        "float" => Type::Float,
+                        "println" | "print" => Type::Void,
+                        _ => self.infer_type(body),
+                    }
+                } else {
+                    self.infer_type(body)
+                }
+            }
+            // For anything else, fall back to infer_type (which may return Unknown → Int)
+            _ => {
+                let ty = self.infer_type(body);
+                if ty == Type::Unknown { Type::Int } else { ty }
+            }
+        }
     }
 }

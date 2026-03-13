@@ -1,0 +1,13 @@
+/// # Enum interpolation in tagged template
+///
+/// Enum values must be converted to strings before interpolation.
+///
+/// expect-error: F0012
+
+enum Color { Red, Blue, Green }
+fn identity(input: string) -> string { input }
+
+fn main() {
+  let c = Color.Red
+  println(identity`color: ${c}`)
+}

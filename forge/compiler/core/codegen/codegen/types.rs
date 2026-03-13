@@ -194,6 +194,7 @@ impl<'ctx> Codegen<'ctx> {
             Expr::StringLit(_, _) => Type::String,
             Expr::TemplateLit { .. } => Type::String,
             Expr::DollarExec { .. } => Type::String,
+            Expr::TaggedTemplate { tag, .. } => self.infer_tagged_template_type(tag),
             Expr::BoolLit(_, _) | Expr::Is { .. } => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
             Expr::Ident(name, _) => {
@@ -554,10 +555,28 @@ impl<'ctx> Codegen<'ctx> {
                     _ => et,
                 }
             }
-            Expr::Closure { .. } => Type::Function {
-                params: vec![],
-                return_type: Box::new(Type::Unknown),
-            },
+            Expr::Closure { params, body, .. } => {
+                let param_types: Vec<Type> = params
+                    .iter()
+                    .map(|p| {
+                        p.type_ann
+                            .as_ref()
+                            .map(|t| self.type_checker.resolve_type_expr(t))
+                            .unwrap_or(Type::Unknown)
+                    })
+                    .collect();
+                // Build param name→type map for body inference
+                let param_map: std::collections::HashMap<String, Type> = params
+                    .iter()
+                    .zip(param_types.iter())
+                    .map(|(p, t)| (p.name.clone(), t.clone()))
+                    .collect();
+                let ret_type = self.infer_closure_body_type(body, &param_map);
+                Type::Function {
+                    params: param_types,
+                    return_type: Box::new(ret_type),
+                }
+            }
             Expr::Pipe { left, right, .. } => self.infer_pipe_type(left, right),
             Expr::ErrorPropagate { operand, .. } => {
                 let ot = self.infer_type(operand);

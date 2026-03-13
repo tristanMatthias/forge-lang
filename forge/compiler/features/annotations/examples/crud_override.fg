@@ -1,0 +1,30 @@
+/// Test: Model CRUD with custom find_by to override default list behavior
+///
+/// expect: 2
+/// expect: alice
+/// expect: bob
+/// expect: 1
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string @default("user")
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "admin" })
+  User.create({ name: "charlie", role: "user" })
+
+  // Use where filter to get only admins
+  let admins = User.where({ role: "admin" })
+  println(string(admins.length))
+  println(admins[0].name)
+  println(admins[1].name)
+
+  // Count with filter
+  let user_count = User.count_where({ role: "user" })
+  println(string(user_count))
+}

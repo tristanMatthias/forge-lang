@@ -1,0 +1,21 @@
+/// # Before Create Hook Parameter
+///
+/// The `data` parameter in `on before_create(data)` should be bound
+/// to the parsed record, allowing field access like `data.title`.
+///
+/// expect: Hello World [modified]
+
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+
+  on before_create(data) {
+    println(data.title + " [modified]")
+  }
+}
+
+fn main() {
+  Post.create({ title: "Hello World" })
+}

@@ -15,10 +15,27 @@ impl<'ctx> Codegen<'ctx> {
         right: &Expr,
     ) -> Option<BasicValueEnum<'ctx>> {
         match right {
-            // a |> f(args)  =>  a.f(args) (method call on piped value)
+            // a |> f(args)  =>  f(a, args) if f is a known function, else a.f(args)
             Expr::Call { callee, args, type_args, .. } => {
-                if let Expr::Ident(method_name, _) = callee.as_ref() {
-                    self.compile_method_call(left, method_name, args, type_args)
+                if let Expr::Ident(name, _) = callee.as_ref() {
+                    // If it's a known function, pipe as first argument: f(a, extra_args...)
+                    if let Some(func) = self.functions.get(name).copied() {
+                        let piped = self.compile_expr(left)?;
+                        let mut compiled_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
+                            vec![piped.into()];
+                        for arg in args {
+                            let val = self.compile_expr(&arg.value)?;
+                            compiled_args.push(val.into());
+                        }
+                        let result = self
+                            .builder
+                            .build_call(func, &compiled_args, "pipe_result")
+                            .unwrap();
+                        result.try_as_basic_value().left()
+                    } else {
+                        // Not a known function — try as method call on the piped value
+                        self.compile_method_call(left, name, args, type_args)
+                    }
                 } else {
                     None
                 }

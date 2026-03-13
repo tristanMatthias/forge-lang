@@ -1,0 +1,11 @@
+/// Test: tagged template with no interpolation — just static text
+/// expect: {"parts":["SELECT * FROM users"],"values":[]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let result = identity`SELECT * FROM users`
+  println(result)
+}

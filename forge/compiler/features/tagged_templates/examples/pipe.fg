@@ -1,0 +1,12 @@
+/// Test: tagged template result can be used in expressions
+/// expect: 33
+
+fn get_json(input: string) -> string {
+  input
+}
+
+fn main() {
+  let x = 42
+  let json = get_json`${x}`
+  println(json.length)
+}

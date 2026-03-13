@@ -8,6 +8,16 @@ use @std.cron
 
 type Point = { x: float, y: float }
 
+type PortConfig = {
+  port: int @validate((val) -> {
+    if val < 1024 {
+      Err("port too low")
+    } else {
+      Ok(val)
+    }
+  }),
+}
+
 enum Color {
     red
     green
@@ -209,6 +219,9 @@ schedule ticker {
 // ============================================================
 // MAIN: all runtime tests
 // ============================================================
+
+fn tag(input: string) -> string { input }
+fn parse_tag(input: string) -> int { 42 }
 
 fn main() {
     // ---- 1. Primitives ----
@@ -590,6 +603,30 @@ fn main() {
     }
     println(string(single.length))
     println(string(single[2].value))
+
+    // ---- 29. Tagged Templates ----
+    println("--- 29. Tagged Templates ---")
+    let tagged_result = tag`hello ${42} world`
+    println(tagged_result)
+    let tagged_int = parse_tag`data: ${100}`
+    println(tagged_int)
+    let a = "foo"
+    let b = "bar"
+    println(tag`${a} and ${b}`)
+
+    // ---- 30. Closures (Variable Calls) ----
+    println("--- 30. Closures ---")
+    let add_fn = (a: int, b: int) -> int { a + b }
+    println(add_fn(3, 4))
+    let greet_fn = (name: string) -> string { "hi " + name }
+    println(greet_fn("world"))
+
+    // ---- 31. Closure Validators ----
+    println("--- 31. Closure Validators ---")
+    let port_bad = validate({ port: 80 }, PortConfig)
+    println(string(port_bad is Err))
+    let port_good = validate({ port: 8080 }, PortConfig)
+    println(string(port_good is Ok))
 
     println("--- ALL TESTS PASSED ---")
 }

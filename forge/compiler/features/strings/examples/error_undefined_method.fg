@@ -1,0 +1,9 @@
+/// # Undefined string method
+///
+/// Calling a method that doesn't exist on a string produces a clear error.
+///
+/// expect-error: F0020
+
+fn main() {
+  println("hello".len())
+}

@@ -1,0 +1,10 @@
+/// expect-check: pass
+/// Verifies SSE syntax compiles correctly
+
+use @std.http.{server}
+
+server :8080 {
+  sse "/events" -> (stream) {
+    "streaming"
+  }
+}

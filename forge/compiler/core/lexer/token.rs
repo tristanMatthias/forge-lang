@@ -6,6 +6,7 @@ pub enum TokenKind {
     StringLiteral(String),
     TemplateLiteral(Vec<TemplatePart>),
     DollarString(Vec<TemplatePart>), // $"..." or $`...` — shell command
+    TaggedTemplate(String, Vec<TemplatePart>), // tag`...${expr}...` — tagged template
     BoolLiteral(bool),
     NullLiteral,
 
@@ -105,7 +106,10 @@ pub enum TokenKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TemplatePart {
     Literal(String),
-    Expr(String), // raw expression text to be parsed later
+    /// Raw expression text to be parsed later.
+    /// The Span records the source position of the `${` so sub-parsed
+    /// expression spans can be relocated to their original file position.
+    Expr(String, Span),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]

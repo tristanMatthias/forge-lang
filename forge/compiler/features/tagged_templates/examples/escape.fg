@@ -1,0 +1,11 @@
+/// Test: tagged template correctly escapes special characters in values
+/// expect: {"parts":["value: ",""],"values":["hello \"world\""]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let val = "hello \"world\""
+  println(identity`value: ${val}`)
+}

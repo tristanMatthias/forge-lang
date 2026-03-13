@@ -1,0 +1,11 @@
+/// # Tag function with wrong number of arguments
+///
+/// Tagged template functions must take exactly 1 argument (the JSON string).
+///
+/// expect-error: F0014
+
+fn bad_tag(a: string, b: string) -> string { a + b }
+
+fn main() {
+  let result = bad_tag`hello`
+}

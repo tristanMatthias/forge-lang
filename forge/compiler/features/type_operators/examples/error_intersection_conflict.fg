@@ -1,0 +1,4 @@
+/// expect-error: F0081
+type A = { name: string @min(1) }
+type B = { name: string @min(5) }
+type C = A & B

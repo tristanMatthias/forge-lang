@@ -1,0 +1,22 @@
+/// expect-check: pass
+/// Verifies multiple server features together compile correctly
+
+use @std.http.{server}
+use @std.model.{model}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string @min(1)
+  body: string
+}
+
+server :8080 {
+  under "/api"
+  crud Post
+  route GET /health -> { "ok" }
+  end under
+
+  static "/assets" from "./public"
+  rate_limit "/api" 100 per 60
+  not_found "{\"error\":\"not found\"}"
+}

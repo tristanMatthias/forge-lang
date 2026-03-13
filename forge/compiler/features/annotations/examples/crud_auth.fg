@@ -1,0 +1,37 @@
+/// Test: CRUD with auth annotations — model + auth provider integration
+///
+/// expect: 1
+/// expect: admin
+/// expect: 1
+/// expect: 0
+
+use @std.model.{model}
+use @std.auth.{auth}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  email: string
+  role: string @default("user")
+}
+
+auth AppAuth {
+  config {
+    secret: "test-secret-key"
+  }
+}
+
+fn main() {
+  let admin_id = User.create({ name: "alice", email: "alice@test.com", role: "admin" })
+  println(string(admin_id))
+
+  let user = User.get_internal(admin_id)
+  println(user.role)
+
+  let token = AppAuth.create_token("{\"id\":1,\"role\":\"admin\"}")
+  let is_admin = AppAuth.check_role(token, "admin")
+  println(string(is_admin))
+
+  let is_editor = AppAuth.check_role(token, "editor")
+  println(string(is_editor))
+}

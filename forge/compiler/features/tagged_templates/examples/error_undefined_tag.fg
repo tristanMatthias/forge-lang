@@ -1,0 +1,9 @@
+/// # Undefined tag function
+///
+/// Using a tagged template with a function that doesn't exist.
+///
+/// expect-error: F0020
+
+fn main() {
+  let result = nonexistent`hello ${42}`
+}
