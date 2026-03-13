@@ -31,6 +31,27 @@ static ROUTES: Mutex<Option<HashMap<u16, Vec<Route>>>> = Mutex::new(None);
 /// Handles for spawned server threads
 static SERVER_HANDLES: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
 
+/// Middleware function type: same signature as HandlerFn but used for pre/post processing
+type MiddlewareFn = extern "C" fn(
+    method: *const c_char,
+    path: *const c_char,
+    body: *const c_char,
+    headers_json: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64;
+
+unsafe impl Send for MiddlewareEntry {}
+unsafe impl Sync for MiddlewareEntry {}
+
+struct MiddlewareEntry {
+    name: String,
+    before: Option<MiddlewareFn>,
+    after: Option<MiddlewareFn>,
+}
+
+static MIDDLEWARE: Mutex<Option<HashMap<u16, Vec<MiddlewareEntry>>>> = Mutex::new(None);
+
 fn routes_map() -> std::sync::MutexGuard<'static, Option<HashMap<u16, Vec<Route>>>> {
     let mut guard = ROUTES.lock().unwrap();
     if guard.is_none() {
@@ -69,7 +90,7 @@ pub extern "C" fn forge_http_add_route(
 
 #[no_mangle]
 pub extern "C" fn forge_http_serve(port: u16) {
-    // Take this port's routes and check if more ports remain
+    // Take this port's routes and middleware
     let (routes, has_more_ports) = {
         let mut map = routes_map();
         let m = map.as_mut().unwrap();
@@ -77,37 +98,81 @@ pub extern "C" fn forge_http_serve(port: u16) {
         let has_more = !m.is_empty();
         (routes, has_more)
     };
+    let middleware = {
+        let mut guard = MIDDLEWARE.lock().unwrap();
+        guard.as_mut().and_then(|m| m.remove(&port)).unwrap_or_default()
+    };
 
     if has_more_ports {
-        // More servers to come — spawn a thread and return
         let handle = std::thread::spawn(move || {
             let addr = format!("0.0.0.0:{}", port);
             let server = Server::http(&addr).expect("Failed to start server");
             eprintln!("Server running on http://localhost:{}", port);
             for request in server.incoming_requests() {
-                handle_request(request, &routes);
+                handle_request(request, &routes, &middleware);
             }
         });
         SERVER_HANDLES.lock().unwrap().push(handle);
     } else {
-        // Last server — block on main thread
         let addr = format!("0.0.0.0:{}", port);
         let server = Server::http(&addr).expect("Failed to start server");
         eprintln!("Server running on http://localhost:{}", port);
         for request in server.incoming_requests() {
-            handle_request(request, &routes);
+            handle_request(request, &routes, &middleware);
         }
     }
 }
 
-fn handle_request(mut request: Request, routes: &[Route]) {
+fn handle_request(mut request: Request, routes: &[Route], middleware: &[MiddlewareEntry]) {
     let method = request.method().to_string().to_uppercase();
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or(&url).to_string();
 
+    // Collect headers as JSON for middleware
+    let headers_json = {
+        let mut parts = Vec::new();
+        for h in request.headers() {
+            let name = h.field.as_str().to_string().to_lowercase();
+            let val = h.value.as_str().replace('"', "\\\"");
+            parts.push(format!("\"{}\":\"{}\"", name, val));
+        }
+        format!("{{{}}}", parts.join(","))
+    };
+
     // Read body
     let mut body = String::new();
     request.as_reader().read_to_string(&mut body).ok();
+
+    // Run before-middleware (onion model: first registered = outermost)
+    let method_c = CString::new(method.as_str()).unwrap();
+    let path_c = CString::new(path.as_str()).unwrap();
+    let body_c = CString::new(body.as_str()).unwrap();
+    let headers_c = CString::new(headers_json.as_str()).unwrap();
+
+    for mw in middleware.iter() {
+        if let Some(before) = mw.before {
+            let mut mw_buf = vec![0u8; 65536];
+            let status = before(
+                method_c.as_ptr(),
+                path_c.as_ptr(),
+                body_c.as_ptr(),
+                headers_c.as_ptr(),
+                mw_buf.as_mut_ptr() as *mut c_char,
+                mw_buf.len() as i64,
+            );
+            if status != 0 {
+                // Middleware short-circuited — return its response
+                let mw_body = unsafe { CStr::from_ptr(mw_buf.as_ptr() as *const c_char) }
+                    .to_str().unwrap_or("").to_string();
+                let header = Header::from_bytes("Content-Type", "application/json").unwrap();
+                let response = Response::from_string(mw_body)
+                    .with_status_code(status as i32)
+                    .with_header(header);
+                request.respond(response).ok();
+                return;
+            }
+        }
+    }
 
     for route in routes.iter() {
         if route.method == method {

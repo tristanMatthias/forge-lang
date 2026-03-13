@@ -6,6 +6,8 @@ extern fn forge_params_get(params_json: ptr, key: string) -> string
 extern fn forge_http_mount_crud_auto(port: int, model: string)
 extern fn forge_http_push_prefix(port: int, prefix: string)
 extern fn forge_http_pop_prefix(port: int)
+extern fn forge_http_add_middleware(port: int, name: string, handler: ptr)
+extern fn forge_http_add_middleware_after(port: int, name: string, handler: ptr)
 
 component server(__tpl_name) {
     config {
@@ -32,6 +34,11 @@ component server(__tpl_name) {
     @syntax("crud {model}")
     fn crud_mount(model: string) {
         forge_http_mount_crud_auto(__tpl_config_port, model)
+    }
+
+    @syntax("use_middleware {name} {handler}")
+    fn use_mw(name: string, handler: ptr) {
+        forge_http_add_middleware(__tpl_config_port, name, handler)
     }
 
     @syntax("under {prefix}")
