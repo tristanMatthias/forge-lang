@@ -1,0 +1,14 @@
+/// Test: intersection merges annotations from both types
+/// expect: 2
+
+type HasName = { name: string @min(1) @max(100) }
+type HasEmail = { email: string @validate(email) }
+type ContactInfo = HasName & HasEmail
+
+fn main() {
+  let result = validate({ name: "", email: "bad" }, ContactInfo)
+  match result {
+    Err(e) -> println(string(e.fields.length))
+    Ok(_) -> println("should not reach")
+  }
+}

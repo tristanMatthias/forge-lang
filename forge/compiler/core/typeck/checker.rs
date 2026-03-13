@@ -836,7 +836,7 @@ impl TypeChecker {
         const CORE_ANNOTATIONS: &[(&str, &[&str])] = &[
             ("min", &["string", "int", "float"]),
             ("max", &["string", "int", "float"]),
-            ("validate", &["string"]),
+            ("validate", &["string", "int", "float", "bool"]),
             ("pattern", &["string"]),
             ("transform", &["string"]),
             ("default", &["string", "int", "float", "bool"]),
@@ -940,19 +940,28 @@ impl TypeChecker {
                                 if ann.args.is_empty() {
                                     self.diagnostics.push(Diagnostic::error(
                                         "F0080",
-                                        format!("@validate requires an argument — e.g. @validate(email)"),
+                                        format!("@validate requires an argument — e.g. @validate(email) or @validate((val) -> {{ ... }})"),
                                         ann.span,
                                     ));
                                 } else if let Some(Expr::Ident(name, _)) = ann.args.first() {
+                                    // Named validators only work on strings
                                     let valid = ["email", "url", "uuid"];
                                     if !valid.contains(&name.as_str()) {
                                         self.diagnostics.push(Diagnostic::error(
                                             "F0080",
-                                            format!("unknown validator '{}'. available: email, url, uuid", name),
+                                            format!("unknown validator '{}'. available: email, url, uuid, or use a custom closure", name),
+                                            ann.span,
+                                        ));
+                                    } else if type_str != "string" {
+                                        self.diagnostics.push(Diagnostic::error(
+                                            "F0080",
+                                            format!("@validate({}) requires string, got {} on field '{}'",
+                                                name, type_str, field_name),
                                             ann.span,
                                         ));
                                     }
                                 }
+                                // Closure/expression validators are accepted on any type — no further check needed
                             }
                             "pattern" => {
                                 if ann.args.is_empty() {
@@ -1067,6 +1076,19 @@ impl TypeChecker {
             TypeExpr::AsPartial(base) => {
                 // Partial types inherit all annotations
                 self.extract_type_annotations(base)
+            }
+            TypeExpr::Intersection(left, right) => {
+                let mut result = self.extract_type_annotations(left);
+                let right_anns = self.extract_type_annotations(right);
+                for (name, anns) in right_anns {
+                    if let Some(pos) = result.iter().position(|(n, _)| n == &name) {
+                        // Right side overrides left for same field
+                        result[pos] = (name, anns);
+                    } else {
+                        result.push((name, anns));
+                    }
+                }
+                result
             }
             _ => Vec::new(),
         }
@@ -1202,6 +1224,23 @@ impl TypeChecker {
                             })
                             .collect(),
                     },
+                    _ => Type::Error,
+                }
+            }
+            TypeExpr::Intersection(left, right) => {
+                let left_ty = self.resolve_type_expr(left);
+                let right_ty = self.resolve_type_expr(right);
+                match (left_ty, right_ty) {
+                    (Type::Struct { name: name_l, fields: mut fields_l },
+                     Type::Struct { fields: fields_r, .. }) => {
+                        // Merge: add right fields that aren't in left
+                        for (name, ty) in fields_r {
+                            if !fields_l.iter().any(|(n, _)| n == &name) {
+                                fields_l.push((name, ty));
+                            }
+                        }
+                        Type::Struct { name: name_l, fields: fields_l }
+                    }
                     _ => Type::Error,
                 }
             }

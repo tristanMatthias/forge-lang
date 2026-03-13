@@ -1438,6 +1438,14 @@ impl Parser {
             }
         }
 
+        // Check for intersection: `A & B`
+        while self.check(&TokenKind::Ampersand) {
+            self.advance();
+            self.skip_newlines();
+            let right = self.parse_primary_type()?;
+            ty = TypeExpr::Intersection(Box::new(ty), Box::new(right));
+        }
+
         // Check for nullable
         if self.check(&TokenKind::Question) {
             self.advance();

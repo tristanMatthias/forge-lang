@@ -1,0 +1,15 @@
+/// Test: custom expression validator
+/// expect: true
+/// expect: true
+
+type Config = {
+  port: int @validate(it >= 1024),
+}
+
+fn main() {
+  let result = validate({ port: 80 }, Config)
+  println(string(result is Err))
+
+  let result2 = validate({ port: 8080 }, Config)
+  println(string(result2 is Ok))
+}

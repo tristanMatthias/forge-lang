@@ -499,6 +499,10 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
             fields: fields.clone(),
         },
         TypeExpr::AsPartial(base) => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
+        TypeExpr::Intersection(left, right) => TypeExpr::Intersection(
+            Box::new(substitute_type_expr(left, ctx)),
+            Box::new(substitute_type_expr(right, ctx)),
+        ),
     }
 }
 

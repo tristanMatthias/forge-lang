@@ -654,6 +654,8 @@ pub enum TypeExpr {
     },
     /// Make all fields optional: `User as partial`
     AsPartial(Box<TypeExpr>),
+    /// Type intersection: `A & B` merges fields from both types
+    Intersection(Box<TypeExpr>, Box<TypeExpr>),
 }
 
 #[derive(Debug, Clone)]

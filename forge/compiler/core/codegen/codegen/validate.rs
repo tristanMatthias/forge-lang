@@ -654,38 +654,80 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    /// Check @validate(email), @validate(url), @validate(uuid)
+    /// Check @validate(email), @validate(url), @validate(uuid), or @validate(expr)
     fn compile_named_validator_check(
         &mut self,
         ann: &FieldAnnotation,
         field_val: BasicValueEnum<'ctx>,
-        _field_type: &Type,
+        field_type: &Type,
     ) -> Option<(IntValue<'ctx>, String, String)> {
-        let validator = match ann.args.first() {
-            Some(AnnotationArg::Ident(name)) => name.clone(),
-            _ => return None,
-        };
+        match ann.args.first() {
+            Some(AnnotationArg::Ident(name)) => {
+                // Named validators: email, url, uuid
+                let (fn_name, rule, msg) = match name.as_str() {
+                    "email" => ("forge_validate_email", "email", "must be a valid email address"),
+                    "url" => ("forge_validate_url", "url", "must be a valid URL"),
+                    "uuid" => ("forge_validate_uuid", "uuid", "must be a valid UUID"),
+                    _ => return None,
+                };
 
-        let (fn_name, rule, msg) = match validator.as_str() {
-            "email" => ("forge_validate_email", "email", "must be a valid email address"),
-            "url" => ("forge_validate_url", "url", "must be a valid URL"),
-            "uuid" => ("forge_validate_uuid", "uuid", "must be a valid UUID"),
-            _ => return None,
-        };
+                let validate_fn = self.module.get_function(fn_name)?;
+                let result = self.builder.build_call(
+                    validate_fn, &[field_val.into()], "validate_result"
+                ).unwrap().try_as_basic_value().left()?.into_int_value();
 
-        let validate_fn = self.module.get_function(fn_name)?;
-        let result = self.builder.build_call(
-            validate_fn, &[field_val.into()], "validate_result"
-        ).unwrap().try_as_basic_value().left()?.into_int_value();
+                let ok = self.builder.build_int_compare(
+                    IntPredicate::NE,
+                    result,
+                    self.context.i64_type().const_zero(),
+                    "validate_ok",
+                ).unwrap();
 
-        let ok = self.builder.build_int_compare(
-            IntPredicate::NE,
-            result,
-            self.context.i64_type().const_zero(),
-            "validate_ok",
-        ).unwrap();
+                Some((ok, rule.to_string(), msg.to_string()))
+            }
+            Some(AnnotationArg::Expr(expr)) => {
+                // Custom expression validator: @validate(it > 0 && it < 100)
+                // Bind `it` to the field value and compile the expression
+                let check_type = match field_type {
+                    Type::Nullable(inner) => inner.as_ref().clone(),
+                    other => other.clone(),
+                };
+                self.push_scope();
+                let alloca = self.create_entry_block_alloca(&check_type, "it");
+                self.builder.build_store(alloca, field_val).unwrap();
+                self.define_var("it".to_string(), alloca, check_type);
+                // Also bind `val` as alias for `it`
+                self.define_var("val".to_string(), alloca, match field_type {
+                    Type::Nullable(inner) => inner.as_ref().clone(),
+                    other => other.clone(),
+                });
+                let result = self.compile_expr(&expr.clone())?;
+                self.pop_scope();
 
-        Some((ok, rule.to_string(), msg.to_string()))
+                // The expression should return a bool (i1) or int (i64)
+                let ok = if result.is_int_value() {
+                    let int_val = result.into_int_value();
+                    if int_val.get_type().get_bit_width() == 1 {
+                        // Already a bool
+                        int_val
+                    } else {
+                        // Treat non-zero as pass
+                        self.builder.build_int_compare(
+                            IntPredicate::NE,
+                            int_val,
+                            int_val.get_type().const_zero(),
+                            "custom_validate_ok",
+                        ).unwrap()
+                    }
+                } else {
+                    // Non-int result — can't use as validator
+                    return None;
+                };
+
+                Some((ok, "validate".to_string(), "custom validation failed".to_string()))
+            }
+            _ => None,
+        }
     }
 
     /// Check @pattern("regex")

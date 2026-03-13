@@ -1,0 +1,13 @@
+/// Test: type intersection A & B merges fields
+/// expect: alice
+/// expect: a@test.com
+
+type HasName = { name: string }
+type HasEmail = { email: string }
+type ContactInfo = HasName & HasEmail
+
+fn main() {
+  let c: ContactInfo = { name: "alice", email: "a@test.com" }
+  println(c.name)
+  println(c.email)
+}
