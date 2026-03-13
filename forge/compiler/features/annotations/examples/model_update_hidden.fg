@@ -1,0 +1,20 @@
+/// Test: Model.update() with @hidden fields returns record without hidden fields
+///
+/// expect: alice_updated
+/// expect: admin
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+  password: string @hidden
+}
+
+fn main() {
+  let id = User.create({ name: "alice", role: "admin", password: "secret" })
+  let updated = User.update(id, { name: "alice_updated" })
+  println(updated.name)
+  println(updated.role)
+}

@@ -1,0 +1,25 @@
+/// Test: Model.list() results can be filtered with list.filter()
+///
+/// expect: 2
+/// expect: alice
+/// expect: charlie
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  User.create({ name: "alice", role: "admin" })
+  User.create({ name: "bob", role: "member" })
+  User.create({ name: "charlie", role: "admin" })
+
+  let all = User.list()
+  let admins = all.filter((u) -> u.role == "admin")
+  println(string(admins.length))
+  println(admins[0].name)
+  println(admins[1].name)
+}

@@ -1,0 +1,19 @@
+/// Test: Model.list() results can be mapped with list.map()
+///
+/// expect: alice, bob, charlie
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  User.create({ name: "alice" })
+  User.create({ name: "bob" })
+  User.create({ name: "charlie" })
+
+  let names = User.list().map((u) -> u.name)
+  println(names.join(", "))
+}
