@@ -978,7 +978,9 @@ pub extern "C" fn forge_model_search_json(
     }
 
     let pr: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-    json_result(query_to_json(conn, &sql, pr.as_slice()))
+    let hidden = get_hidden_fields(table);
+    let result = query_to_json(conn, &sql, pr.as_slice());
+    json_result(strip_hidden_from_json_array(&result, &hidden))
 }
 
 /// Create a table from a JSON schema definition.

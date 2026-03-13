@@ -320,6 +320,7 @@ type DeleteJsonFn = unsafe extern "C" fn(*const c_char, i64) -> i64;
 type FreeStringFn = unsafe extern "C" fn(*const c_char);
 type PaginateJsonFn = unsafe extern "C" fn(*const c_char, *const c_char, i64, i64, *const c_char) -> *const c_char;
 type SearchJsonFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *const c_char;
+type CountJsonFn = unsafe extern "C" fn(*const c_char, *const c_char) -> i64;
 
 struct ModelFns {
     list_json: Option<ListJsonFn>,
@@ -330,6 +331,7 @@ struct ModelFns {
     free_string: Option<FreeStringFn>,
     paginate_json: Option<PaginateJsonFn>,
     search_json: Option<SearchJsonFn>,
+    count_json: Option<CountJsonFn>,
 }
 
 static mut MODEL_FNS: ModelFns = ModelFns {
@@ -341,6 +343,7 @@ static mut MODEL_FNS: ModelFns = ModelFns {
     free_string: None,
     paginate_json: None,
     search_json: None,
+    count_json: None,
 };
 
 static MODEL_FNS_INIT: Once = Once::new();
@@ -373,6 +376,7 @@ fn init_model_fns() {
             lookup!(free_string, b"forge_model_free_string\0");
             lookup!(paginate_json, b"forge_model_paginate_json\0");
             lookup!(search_json, b"forge_model_search_json\0");
+            lookup!(count_json, b"forge_model_count_json\0");
         }
     });
 }
@@ -412,6 +416,10 @@ fn model_search_json(table: *const c_char, search: *const c_char) -> *const c_ch
     init_model_fns();
     unsafe { MODEL_FNS.search_json.map_or(std::ptr::null(), |f| f(table, search)) }
 }
+fn model_count_json(table: *const c_char, filter: *const c_char) -> i64 {
+    init_model_fns();
+    unsafe { MODEL_FNS.count_json.map_or(0, |f| f(table, filter)) }
+}
 
 fn cstr(ptr: *const c_char) -> &'static str {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap_or("")
@@ -445,6 +453,14 @@ pub extern "C" fn forge_http_mount_crud(port: u16, table: *const c_char, base_pa
         let method_c = CString::new("GET").unwrap();
         let path_c = CString::new(search_path.as_str()).unwrap();
         forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_search_handler);
+    }
+
+    // GET /base/count — count records
+    {
+        let count_path = format!("{}/count", base_s);
+        let method_c = CString::new("GET").unwrap();
+        let path_c = CString::new(count_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_count_handler);
     }
 
     // GET /base/:id — get by id
@@ -604,6 +620,28 @@ extern "C" fn mount_search_handler(
     let json = model_search_json(table_c.as_ptr(), search_c.as_ptr());
     copy_cstr_to_buf(json, response_buf, response_buf_len);
     unsafe { model_free_string(json) };
+    200
+}
+
+extern "C" fn mount_count_handler(
+    _method: *const c_char,
+    path: *const c_char,
+    _body: *const c_char,
+    _params: *const c_char,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
+) -> i64 {
+    let path_s = cstr(path);
+    let base_path = path_s.trim_end_matches("/count");
+    let table = match find_mount_table_by_base(base_path) {
+        Some(t) => t,
+        None => return 404,
+    };
+    let table_c = CString::new(table.as_str()).unwrap();
+    let filter_c = CString::new("{}").unwrap();
+    let count = model_count_json(table_c.as_ptr(), filter_c.as_ptr());
+    let result = format!(r#"{{"count":{}}}"#, count);
+    copy_str_to_buf(&result, response_buf, response_buf_len);
     200
 }
 
