@@ -1,0 +1,15 @@
+/// Test: Model.health() returns 1 when database is healthy
+///
+/// expect: 1
+
+use @std.model.{model}
+
+model Ping {
+  id: int @primary @auto_increment
+}
+
+fn main() {
+  println(string(forge_model_health()))
+}
+
+extern fn forge_model_health() -> int

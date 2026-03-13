@@ -1,0 +1,22 @@
+/// Test: @default(now) sets current timestamp automatically
+///
+/// expect: 1
+/// expect: true
+
+use @std.model.{model}
+
+model Event {
+  id: int @primary @auto_increment
+  name: string
+  created_at: string @default(now)
+}
+
+fn main() {
+  Event.create({ name: "test" })
+  let event = Event.get(1)
+  if event != null {
+    println(string(event.id))
+    // created_at should be non-empty (CURRENT_TIMESTAMP fills it)
+    println(string(event.created_at.length > 0))
+  }
+}

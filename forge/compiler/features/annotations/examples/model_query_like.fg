@@ -1,0 +1,24 @@
+/// Test: Model.query with $like operator
+///
+/// expect: 2
+/// expect: alice
+/// expect: alex
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  User.create({ name: "alice" })
+  User.create({ name: "bob" })
+  User.create({ name: "alex" })
+  User.create({ name: "charlie" })
+
+  let results = User.query("{\"where\":{\"name\":{\"$like\":\"al%\"}}}")
+  println(string(results.length))
+  println(results[0].name)
+  println(results[1].name)
+}
