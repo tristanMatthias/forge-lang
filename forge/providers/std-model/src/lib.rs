@@ -862,6 +862,24 @@ fn build_where_clause(filter_str: &str) -> (String, Vec<String>) {
         let mut clauses = Vec::new();
         let mut values = Vec::new();
         for (k, v) in obj {
+            // Handle $or at top level: {"$or": [{...}, {...}]}
+            if k == "$or" {
+                if let Some(arr) = v.as_array() {
+                    let mut or_parts = Vec::new();
+                    for sub in arr {
+                        let sub_str = serde_json::to_string(sub).unwrap_or_default();
+                        let (sub_wc, sub_vals) = build_where_clause(&sub_str);
+                        if !sub_wc.is_empty() {
+                            or_parts.push(sub_wc.trim_start_matches(" WHERE ").to_string());
+                            values.extend(sub_vals);
+                        }
+                    }
+                    if !or_parts.is_empty() {
+                        clauses.push(format!("({})", or_parts.join(" OR ")));
+                    }
+                }
+                continue;
+            }
             if let Some(op) = v.as_object() {
                 if let Some(val) = op.get("$gt") { clauses.push(format!("{} > ?", k)); values.push(jv(val)); }
                 else if let Some(val) = op.get("$gte") { clauses.push(format!("{} >= ?", k)); values.push(jv(val)); }
@@ -1352,6 +1370,65 @@ pub extern "C" fn forge_model_update_where(
             -1
         }
     }
+}
+
+/// Batch insert: takes a JSON array of objects, inserts all in a transaction.
+/// Returns the number of successfully inserted rows.
+#[no_mangle]
+pub extern "C" fn forge_model_insert_batch(
+    table: *const c_char,
+    data_json: *const c_char,
+) -> i64 {
+    let table = cstr(table);
+    let data_str = cstr(data_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+
+    let items: Vec<Value> = match serde_json::from_str(data_str) {
+        Ok(v) => v,
+        Err(_) => return -1,
+    };
+
+    let mut count = 0i64;
+    conn.execute_batch("BEGIN TRANSACTION").ok();
+    for item in &items {
+        if let Some(obj) = item.as_object() {
+            let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+            let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
+            let sql = format!("INSERT INTO {} ({}) VALUES ({})", table, columns.join(", "), placeholders.join(", "));
+            let values: Vec<String> = obj.values().map(|v| jv(v)).collect();
+            let pr: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            if conn.execute(&sql, pr.as_slice()).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    conn.execute_batch("COMMIT").ok();
+    count
+}
+
+/// Begin a transaction
+#[no_mangle]
+pub extern "C" fn forge_model_begin() -> i32 {
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+    match conn.execute_batch("BEGIN TRANSACTION") { Ok(_) => 0, Err(_) => -1 }
+}
+
+/// Commit a transaction
+#[no_mangle]
+pub extern "C" fn forge_model_commit() -> i32 {
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+    match conn.execute_batch("COMMIT") { Ok(_) => 0, Err(_) => -1 }
+}
+
+/// Rollback a transaction
+#[no_mangle]
+pub extern "C" fn forge_model_rollback() -> i32 {
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("Database not initialized");
+    match conn.execute_batch("ROLLBACK") { Ok(_) => 0, Err(_) => -1 }
 }
 
 #[no_mangle]

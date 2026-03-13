@@ -29,6 +29,10 @@ extern fn forge_model_delete_where(table: string, filter_json: string) -> int
 extern fn forge_model_upsert_json(table: string, data_json: string) -> string
 extern fn forge_model_exists(table: string, filter_json: string) -> int
 extern fn forge_model_update_where(table: string, filter_json: string, changes_json: string) -> int
+extern fn forge_model_insert_batch(table: string, data_json: string) -> int
+extern fn forge_model_begin() -> i32
+extern fn forge_model_commit() -> i32
+extern fn forge_model_rollback() -> i32
 
 component model(__tpl_name, schema) {
     config {
@@ -163,6 +167,10 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.update_where(filter_json: string, changes_json: string) -> int {
         forge_model_update_where(__tpl_config_table_name, filter_json, changes_json)
+    }
+
+    fn __tpl_name.insert_batch(data_json: string) -> int {
+        forge_model_insert_batch(__tpl_config_table_name, data_json)
     }
 
     fn __tpl_name.related(id: int, foreign_key: string, related_table: string) -> ptr {
