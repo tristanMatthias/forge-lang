@@ -108,10 +108,11 @@ component model(__tpl_name, schema) {
         forge_model_count_json(__tpl_config_table_name, "{}")
     }
 
-    fn __tpl_name.update(id: int, changes_json: string) -> int {
+    fn __tpl_name.update(id: int, changes_json: string) -> __tpl_name {
         let __result: ptr = forge_model_update_json(__tpl_config_table_name, id, changes_json)
+        let __obj: __tpl_name = json.parse(__result)
         forge_model_free_string(__result)
-        id
+        __obj
     }
 
     fn __tpl_name.delete(id: int) -> int {
@@ -170,7 +171,7 @@ component service(__tpl_name, for __tpl_model_ref, schema) {
         __tpl_model_ref_count()
     }
 
-    fn __tpl_name.update(id: int, changes_json: string) -> int {
+    fn __tpl_name.update(id: int, changes_json: string) -> __tpl_model_ref {
         __tpl_model_ref_update(id, changes_json)
     }
 

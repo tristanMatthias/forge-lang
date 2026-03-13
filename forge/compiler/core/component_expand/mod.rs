@@ -932,20 +932,34 @@ fn build_component_hooked_fn(
                 let in_fn_scope = params.iter().any(|p| p.name == original_name);
 
                 if hook.param_name.starts_with("__raw_") {
-                    // Untyped model hook param → wants full record → call get_internal
-                    let get_internal = format!("{}_get_internal", ctx.name);
-                    new_stmts.push(let_stmt(
-                        &original_name,
-                        call(&get_internal, vec![ident(&id_var)]),
-                    ));
-                } else if !in_fn_scope {
-                    if let Some(model_ref) = &ctx.model_ref {
-                        // Service hook: fetch full record via model's get_internal
-                        let get_internal = format!("{}_get_internal", model_ref);
+                    // Untyped model hook param → wants full record.
+                    // If the fn already returns a struct (e.g. update returns __tpl_name),
+                    // bind directly to the return value. Otherwise call get_internal(id).
+                    let returns_struct = matches!(return_type, Some(TypeExpr::Named(n)) if n == &ctx.name);
+                    if returns_struct {
+                        new_stmts.push(let_stmt(&original_name, ident(&id_var)));
+                    } else {
+                        let get_internal = format!("{}_get_internal", ctx.name);
                         new_stmts.push(let_stmt(
                             &original_name,
                             call(&get_internal, vec![ident(&id_var)]),
                         ));
+                    }
+                } else if !in_fn_scope {
+                    if let Some(model_ref) = &ctx.model_ref {
+                        // Service hook: fetch full record via model's get_internal
+                        // If fn returns model struct, bind directly; else call get_internal
+                        let ref_name = model_ref.to_string();
+                        let returns_struct = matches!(return_type, Some(TypeExpr::Named(n)) if *n == ref_name);
+                        if returns_struct {
+                            new_stmts.push(let_stmt(&original_name, ident(&id_var)));
+                        } else {
+                            let get_internal = format!("{}_get_internal", model_ref);
+                            new_stmts.push(let_stmt(
+                                &original_name,
+                                call(&get_internal, vec![ident(&id_var)]),
+                            ));
+                        }
                     } else {
                         // Model hook with unmatched param: bind to id variable
                         new_stmts.push(let_stmt(&original_name, ident(&id_var)));

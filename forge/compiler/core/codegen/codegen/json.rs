@@ -533,6 +533,103 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap();
                     offset = self.builder.build_int_add(offset, w64, "off").unwrap();
                 }
+                Type::List(inner) if matches!(inner.as_ref(), Type::String) => {
+                    // List<String> field → call forge_list_to_json(data, count) → write result
+                    let list_to_json = self.module.get_function("forge_list_to_json").unwrap();
+
+                    // Write key: ,"field_name":
+                    let key_fmt = format!("{}\"{}\":", comma, field_name);
+                    let key_str = self
+                        .builder
+                        .build_global_string_ptr(&key_fmt, "kv_fmt")
+                        .unwrap();
+                    let remaining = self
+                        .builder
+                        .build_int_sub(buf_size, offset, "rem")
+                        .unwrap();
+                    let buf_off = unsafe {
+                        self.builder
+                            .build_gep(i8_type, buf, &[offset], "off")
+                            .unwrap()
+                    };
+                    let wrote = self
+                        .builder
+                        .build_call(
+                            snprintf,
+                            &[
+                                buf_off.into(),
+                                remaining.into(),
+                                fmt_s.as_pointer_value().into(),
+                                key_str.as_pointer_value().into(),
+                            ],
+                            "",
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                        .into_int_value();
+                    let w64 = self
+                        .builder
+                        .build_int_z_extend(wrote, i64_type, "w64")
+                        .unwrap();
+                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+
+                    // Extract list data_ptr and count from the struct field
+                    let list_struct = field_val.into_struct_value();
+                    let data_ptr_val = self
+                        .builder
+                        .build_extract_value(list_struct, 0, "list_data")
+                        .unwrap();
+                    let count_val = self
+                        .builder
+                        .build_extract_value(list_struct, 1, "list_count")
+                        .unwrap();
+
+                    // Call forge_list_to_json(data, count) → ForgeString
+                    let json_str_val = self
+                        .builder
+                        .build_call(
+                            list_to_json,
+                            &[data_ptr_val.into(), count_val.into()],
+                            "list_json",
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                        .into_struct_value();
+
+                    // Extract ptr and len from the result ForgeString
+                    let json_ptr = self
+                        .builder
+                        .build_extract_value(json_str_val, 0, "json_ptr")
+                        .unwrap();
+                    let json_len = self
+                        .builder
+                        .build_extract_value(json_str_val, 1, "json_len")
+                        .unwrap();
+
+                    // Write the JSON array string into the buffer
+                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
+                    let remaining = self
+                        .builder
+                        .build_int_sub(buf_size, offset, "rem")
+                        .unwrap();
+                    let buf_off = unsafe {
+                        self.builder
+                            .build_gep(i8_type, buf, &[offset], "off")
+                            .unwrap()
+                    };
+                    self.builder
+                        .build_call(
+                            write_fn,
+                            &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
+                            "",
+                        )
+                        .unwrap();
+                    offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                }
                 _ => {}
             }
         }

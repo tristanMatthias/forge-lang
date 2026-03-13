@@ -1,0 +1,19 @@
+/// Test: Model.update() returns the updated record
+///
+/// expect: alice_updated
+/// expect: admin
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+  role: string
+}
+
+fn main() {
+  let id = User.create({ name: "alice", role: "admin" })
+  let updated = User.update(id, { name: "alice_updated" })
+  println(updated.name)
+  println(updated.role)
+}
