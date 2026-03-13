@@ -4,7 +4,7 @@ use crate::errors::suggestions::placeholder_for_type;
 use crate::lexer::Span;
 use crate::parser::ast::*;
 use crate::typeck::env::TypeEnv;
-use crate::typeck::types::{EnumVariantType, Type};
+use crate::typeck::types::{EnumVariantType, FieldAnnotation, Type};
 
 pub struct TypeChecker {
     pub env: TypeEnv,
@@ -92,6 +92,15 @@ impl TypeChecker {
                 self.env.enum_types.insert(name.clone(), enum_type);
             }
             Statement::TypeDecl { name, value, .. } => {
+                // Extract annotations from the type expression before resolving
+                let field_annotations = self.extract_type_annotations(value);
+                if !field_annotations.is_empty() {
+                    self.env.type_annotations.insert(name.clone(), field_annotations);
+                }
+                // Track partial types
+                if self.is_partial_type_expr(value) {
+                    self.env.partial_types.insert(name.clone());
+                }
                 let ty = self.resolve_type_expr(value);
                 let ty = match ty {
                     Type::Struct { fields, .. } => Type::Struct {
@@ -486,6 +495,39 @@ impl TypeChecker {
                                     .with_help(format!("expected: {}\n  example:  {}", sig, example)),
                                 );
                             }
+
+                            // ── validate()-specific checks ──
+                            if fn_name == "validate" && args.len() >= 2 {
+                                match &args[1].value {
+                                    Expr::Ident(type_name, _) => {
+                                        // Check that the type exists and is a struct
+                                        let ty = self.env.resolve_type_name(type_name);
+                                        if matches!(ty, Type::Error) {
+                                            self.diagnostics.push(Diagnostic::error(
+                                                "F0012",
+                                                format!("unknown type '{}' in validate()", type_name),
+                                                *span,
+                                            ));
+                                        } else if !matches!(ty, Type::Struct { .. }) {
+                                            self.diagnostics.push(Diagnostic::error(
+                                                "F0012",
+                                                format!("validate() expects a struct type, got {}", type_name),
+                                                *span,
+                                            ));
+                                        }
+                                    }
+                                    _ => {
+                                        self.diagnostics.push(
+                                            Diagnostic::error(
+                                                "F0012",
+                                                "validate() requires a type name as the second argument".to_string(),
+                                                *span,
+                                            )
+                                            .with_help("example: validate(data, MyType)".to_string()),
+                                        );
+                                    }
+                                }
+                            }
                         }
                         *return_type.clone()
                     }
@@ -784,6 +826,269 @@ impl TypeChecker {
         self.check_expr(expr)
     }
 
+    /// Extract field annotations from a type expression, following type operators.
+    /// Returns vec of (field_name, annotations) for fields that have annotations.
+    fn extract_type_annotations(&mut self, type_expr: &TypeExpr) -> Vec<(String, Vec<FieldAnnotation>)> {
+        use crate::typeck::types::FieldAnnotation;
+        use crate::typeck::env::TypeEnv;
+
+        /// Known core field annotations and what types they accept
+        const CORE_ANNOTATIONS: &[(&str, &[&str])] = &[
+            ("min", &["string", "int", "float"]),
+            ("max", &["string", "int", "float"]),
+            ("validate", &["string"]),
+            ("pattern", &["string"]),
+            ("transform", &["string"]),
+            ("default", &["string", "int", "float", "bool"]),
+        ];
+
+        match type_expr {
+            TypeExpr::Struct { fields } => {
+                let mut result = Vec::new();
+                for (field_name, field_type, anns) in fields {
+                    if anns.is_empty() { continue; }
+
+                    let resolved_type = self.resolve_type_expr(field_type);
+                    let base_type = match &resolved_type {
+                        Type::Nullable(inner) => inner.as_ref(),
+                        other => other,
+                    };
+                    let type_str = match base_type {
+                        Type::String => "string",
+                        Type::Int => "int",
+                        Type::Float => "float",
+                        Type::Bool => "bool",
+                        _ => "unknown",
+                    };
+                    let is_nullable = matches!(&resolved_type, Type::Nullable(_));
+
+                    // Track seen annotations for duplicate detection
+                    let mut seen_anns: Vec<&str> = Vec::new();
+                    // Track min/max values for contradiction detection
+                    let mut min_val: Option<(i64, Span)> = None;
+                    let mut max_val: Option<(i64, Span)> = None;
+
+                    for ann in anns {
+                        let ann_name = ann.name.as_str();
+
+                        // ── Unknown annotation ──
+                        let entry = CORE_ANNOTATIONS.iter().find(|(name, _)| *name == ann_name);
+                        if entry.is_none() {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0072",
+                                format!("unknown annotation @{} on field '{}'. available: @min, @max, @validate, @default, @transform, @pattern",
+                                    ann_name, field_name),
+                                ann.span,
+                            ));
+                            continue;
+                        }
+                        let (_, allowed_types) = entry.unwrap();
+
+                        // ── Type compatibility ──
+                        if !allowed_types.contains(&type_str) {
+                            let args_str = Self::format_annotation_args(&ann.args);
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0080",
+                                format!("@{}({}) requires {}, got {} on field '{}'",
+                                    ann_name, args_str,
+                                    allowed_types.join(" or "), type_str, field_name),
+                                ann.span,
+                            ));
+                            continue;
+                        }
+
+                        // ── Duplicate detection ──
+                        if seen_anns.contains(&ann_name) && ann_name != "validate" {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0080",
+                                format!("duplicate @{} on field '{}'. each annotation should appear at most once",
+                                    ann_name, field_name),
+                                ann.span,
+                            ));
+                            continue;
+                        }
+                        seen_anns.push(ann_name);
+
+                        // ── Per-annotation arg validation ──
+                        match ann_name {
+                            "min" | "max" => {
+                                if ann.args.is_empty() {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@{} requires an argument — e.g. @{}({})",
+                                            ann_name, ann_name,
+                                            if type_str == "string" { "1" } else { "0" }),
+                                        ann.span,
+                                    ));
+                                } else if !matches!(ann.args.first(), Some(Expr::IntLit(..))) {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@{} expects an integer argument — e.g. @{}(1)",
+                                            ann_name, ann_name),
+                                        ann.span,
+                                    ));
+                                } else if let Some(Expr::IntLit(n, _)) = ann.args.first() {
+                                    // Track for contradiction check
+                                    if ann_name == "min" {
+                                        min_val = Some((*n, ann.span));
+                                    } else {
+                                        max_val = Some((*n, ann.span));
+                                    }
+                                }
+                            }
+                            "validate" => {
+                                if ann.args.is_empty() {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@validate requires an argument — e.g. @validate(email)"),
+                                        ann.span,
+                                    ));
+                                } else if let Some(Expr::Ident(name, _)) = ann.args.first() {
+                                    let valid = ["email", "url", "uuid"];
+                                    if !valid.contains(&name.as_str()) {
+                                        self.diagnostics.push(Diagnostic::error(
+                                            "F0080",
+                                            format!("unknown validator '{}'. available: email, url, uuid", name),
+                                            ann.span,
+                                        ));
+                                    }
+                                }
+                            }
+                            "pattern" => {
+                                if ann.args.is_empty() {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@pattern requires a regex string — e.g. @pattern(\"^[a-z]+$\")"),
+                                        ann.span,
+                                    ));
+                                } else if !matches!(ann.args.first(), Some(Expr::StringLit(..))) {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@pattern expects a string argument — e.g. @pattern(\"^[a-z]+$\")"),
+                                        ann.span,
+                                    ));
+                                }
+                            }
+                            "default" => {
+                                if !is_nullable {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@default on field '{}' has no effect — the field is not optional. make it nullable with '{}?'",
+                                            field_name, type_str),
+                                        ann.span,
+                                    ));
+                                } else if ann.args.is_empty() {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@default requires a value — e.g. @default(\"{}\")",
+                                            match type_str { "string" => "value", "int" => "0", "float" => "0.0", "bool" => "true", _ => "..." }),
+                                        ann.span,
+                                    ));
+                                } else {
+                                    // Check default value type matches field type
+                                    let arg_ok = match (ann.args.first(), type_str) {
+                                        (Some(Expr::StringLit(..)), "string") => true,
+                                        (Some(Expr::Ident(..)), "string") => true, // bare ident as string
+                                        (Some(Expr::IntLit(..)), "int") => true,
+                                        (Some(Expr::FloatLit(..)), "float") => true,
+                                        (Some(Expr::BoolLit(..)), "bool") => true,
+                                        _ => false,
+                                    };
+                                    if !arg_ok {
+                                        self.diagnostics.push(Diagnostic::error(
+                                            "F0080",
+                                            format!("@default value type mismatch — field '{}' is {}, but the default is not",
+                                                field_name, type_str),
+                                            ann.span,
+                                        ));
+                                    }
+                                }
+                            }
+                            "transform" => {
+                                if ann.args.is_empty() {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0080",
+                                        format!("@transform requires an expression — e.g. @transform(it.lower().trim())"),
+                                        ann.span,
+                                    ));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // ── @min > @max contradiction ──
+                    if let (Some((min, _)), Some((max, max_span))) = (min_val, max_val) {
+                        if min > max {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0080",
+                                format!("impossible constraint on field '{}': @min({}) > @max({}) — no value can satisfy both",
+                                    field_name, min, max),
+                                max_span,
+                            ));
+                        }
+                    }
+
+                    result.push((field_name.clone(), TypeEnv::resolve_annotations(anns)));
+                }
+                result
+            }
+            TypeExpr::Named(name) => {
+                // Look up annotations from a referenced type
+                self.env.type_annotations.get(name).cloned().unwrap_or_default()
+            }
+            TypeExpr::Without { base, fields: removed } => {
+                let base_anns = self.extract_type_annotations(base);
+                base_anns.into_iter()
+                    .filter(|(name, _)| !removed.contains(name))
+                    .collect()
+            }
+            TypeExpr::Only { base, fields: kept } => {
+                let base_anns = self.extract_type_annotations(base);
+                base_anns.into_iter()
+                    .filter(|(name, _)| kept.contains(name))
+                    .collect()
+            }
+            TypeExpr::TypeWith { base, fields: new_fields } => {
+                let mut result = self.extract_type_annotations(base);
+                // Add/override annotations from new fields
+                for (name, _, anns) in new_fields {
+                    if !anns.is_empty() {
+                        let resolved = TypeEnv::resolve_annotations(anns);
+                        if let Some(pos) = result.iter().position(|(n, _)| n == name) {
+                            result[pos] = (name.clone(), resolved);
+                        } else {
+                            result.push((name.clone(), resolved));
+                        }
+                    }
+                }
+                result
+            }
+            TypeExpr::AsPartial(base) => {
+                // Partial types inherit all annotations
+                self.extract_type_annotations(base)
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Check if a type expression ends with `as partial`
+    fn is_partial_type_expr(&self, type_expr: &TypeExpr) -> bool {
+        matches!(type_expr, TypeExpr::AsPartial(_))
+    }
+
+    /// Format annotation args for error messages
+    fn format_annotation_args(args: &[Expr]) -> String {
+        args.iter().map(|a| match a {
+            Expr::Ident(name, _) => name.clone(),
+            Expr::StringLit(s, _) => format!("\"{}\"", s),
+            Expr::IntLit(n, _) => n.to_string(),
+            Expr::FloatLit(f, _) => f.to_string(),
+            Expr::BoolLit(b, _) => b.to_string(),
+            _ => "...".to_string(),
+        }).collect::<Vec<_>>().join(", ")
+    }
+
     pub fn resolve_type_expr(&self, type_expr: &TypeExpr) -> Type {
         match type_expr {
             TypeExpr::Named(name) => self.env.resolve_type_name(name),
@@ -830,7 +1135,7 @@ impl TypeChecker {
                 name: None,
                 fields: fields
                     .iter()
-                    .map(|(name, ty)| (name.clone(), self.resolve_type_expr(ty)))
+                    .map(|(name, ty, _annotations)| (name.clone(), self.resolve_type_expr(ty)))
                     .collect(),
             },
             TypeExpr::Without { base, fields } => {
@@ -851,9 +1156,14 @@ impl TypeChecker {
                 match base_ty {
                     Type::Struct { name, fields: base_fields } => {
                         let mut result_fields = base_fields;
-                        for (n, ty) in new_fields {
+                        for (n, ty, _annotations) in new_fields {
                             let resolved = self.resolve_type_expr(ty);
-                            result_fields.push((n.clone(), resolved));
+                            // Check if this field already exists — if so, replace it
+                            if let Some(pos) = result_fields.iter().position(|(fname, _)| fname == n) {
+                                result_fields[pos] = (n.clone(), resolved);
+                            } else {
+                                result_fields.push((n.clone(), resolved));
+                            }
                         }
                         Type::Struct {
                             name,

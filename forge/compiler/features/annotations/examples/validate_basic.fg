@@ -1,0 +1,17 @@
+/// Test 1.1: Basic validate on type fields
+/// expect: alice
+/// expect: true
+
+type ContactForm = {
+  name: string @min(1) @max(100),
+  email: string @validate(email),
+  age: int @min(0) @max(150),
+}
+
+fn main() {
+  let valid: ContactForm = { name: "alice", email: "a@test.com", age: 30 }
+  println(valid.name)
+
+  let result = validate({ name: "", email: "bad", age: -1 }, ContactForm)
+  println(string(result is Err))
+}

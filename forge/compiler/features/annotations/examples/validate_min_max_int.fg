@@ -1,0 +1,12 @@
+/// Test 2.2: @min / @max on numbers (value)
+/// expect: true
+/// expect: true
+/// expect: true
+
+type Input = { age: int @min(0) @max(150) }
+
+fn main() {
+  println(string(validate({ age: -1 }, Input) is Err))
+  println(string(validate({ age: 25 }, Input) is Ok))
+  println(string(validate({ age: 200 }, Input) is Err))
+}

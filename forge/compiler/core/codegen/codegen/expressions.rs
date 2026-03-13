@@ -633,6 +633,7 @@ impl<'ctx> Codegen<'ctx> {
                 "string" => return self.compile_string_conversion(args),
                 "assert" => return self.compile_assert(args),
                 "sleep" => return self.compile_sleep(args),
+                "validate" => return self.compile_validate(args),
                 "channel" => {
                     // channel(capacity) -> int (channel ID)
                     let capacity = if args.is_empty() {

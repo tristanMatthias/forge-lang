@@ -1,0 +1,25 @@
+/// Test 3.6: Chained operators preserve annotations
+/// expect: true
+/// expect: true
+/// expect: true
+
+type User = {
+  id: int,
+  name: string @min(1) @max(100),
+  email: string @validate(email),
+  password: string @min(8),
+  created_at: string,
+}
+
+type UpdateUser = User without {id, password, created_at} as partial
+
+fn main() {
+  let result = validate({ name: "" }, UpdateUser)
+  println(string(result is Err))
+
+  let result2 = validate({ email: "bad" }, UpdateUser)
+  println(string(result2 is Err))
+
+  let result3 = validate({ name: "alice" }, UpdateUser)
+  println(string(result3 is Ok))
+}

@@ -1,0 +1,25 @@
+/// Test 3.2: `only` inherits annotations
+/// expect: 2
+/// expect: name
+/// expect: email
+
+type User = {
+  id: int,
+  name: string @min(1) @max(100),
+  email: string @validate(email),
+  password: string @min(8),
+}
+
+type UserPublic = User only {name, email}
+
+fn main() {
+  let result = validate({ name: "", email: "bad" }, UserPublic)
+  match result {
+    Err(e) -> {
+      println(string(e.fields.length))
+      println(e.fields[0].field)
+      println(e.fields[1].field)
+    }
+    Ok(_) -> {}
+  }
+}

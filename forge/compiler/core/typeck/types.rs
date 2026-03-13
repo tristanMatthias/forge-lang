@@ -57,6 +57,39 @@ impl Type {
     }
 }
 
+/// Simplified annotation representation for the type system side table.
+/// Unlike AST Annotation (which uses Expr for args), this uses resolved values.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldAnnotation {
+    pub name: String,
+    pub args: Vec<AnnotationArg>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AnnotationArg {
+    Int(i64),
+    Float(f64),
+    String(String),
+    Bool(bool),
+    Ident(String),
+    /// Preserved expression tree for @transform closures
+    Expr(crate::parser::ast::Expr),
+}
+
+impl PartialEq for AnnotationArg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a == b,
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Ident(a), Self::Ident(b)) => a == b,
+            (Self::Expr(_), Self::Expr(_)) => false, // Exprs are structurally unique
+            _ => false,
+        }
+    }
+}
+
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

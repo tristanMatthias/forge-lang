@@ -1,0 +1,10 @@
+/// Test 1.5: Annotation on wrong type — compile error
+/// expect-error: F0080
+
+type Bad = {
+  name: int @validate(email),
+}
+
+fn main() {
+  println("unreachable")
+}

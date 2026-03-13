@@ -1,0 +1,13 @@
+/// Test 3.4: `with` can override annotations on existing fields
+/// expect: true
+
+type User = {
+  name: string @min(1) @max(100),
+}
+
+type StricterUser = User with { name: string @min(3) @max(50) }
+
+fn main() {
+  let result = validate({ name: "ab" }, StricterUser)
+  println(string(result is Err))
+}

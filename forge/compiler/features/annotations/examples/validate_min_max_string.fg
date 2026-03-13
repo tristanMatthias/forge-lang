@@ -1,0 +1,12 @@
+/// Test 2.1: @min / @max on strings (length)
+/// expect: true
+/// expect: true
+/// expect: true
+
+type Input = { name: string @min(2) @max(50) }
+
+fn main() {
+  println(string(validate({ name: "a" }, Input) is Err))
+  println(string(validate({ name: "al" }, Input) is Ok))
+  println(string(validate({ name: "a".repeat(51) }, Input) is Err))
+}

@@ -1,0 +1,17 @@
+/// Test 2.4: @validate with named validators
+/// expect: 3
+
+type Input = {
+  email: string @validate(email),
+  url: string @validate(url),
+  uuid: string @validate(uuid),
+}
+
+fn main() {
+  let bad = { email: "nope", url: "nope", uuid: "nope" }
+  let result = validate(bad, Input)
+  match result {
+    Err(e) -> println(string(e.fields.length))
+    Ok(_) -> println("should not reach")
+  }
+}

@@ -1,0 +1,5 @@
+/// @min with non-integer argument is a compile error
+/// expect-error: F0080
+
+type T = { name: string @min("five") }
+fn main() { println("unreachable") }

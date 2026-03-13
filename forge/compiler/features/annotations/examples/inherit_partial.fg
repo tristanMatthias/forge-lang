@@ -1,0 +1,23 @@
+/// Test 3.5: `as partial` — validation only on present fields
+/// expect: true
+/// expect: true
+/// expect: true
+
+type User = {
+  name: string @min(1) @max(100),
+  email: string @validate(email),
+  age: int @min(0),
+}
+
+type UserUpdate = User only {name, email, age} as partial
+
+fn main() {
+  let result = validate({ name: "alice" }, UserUpdate)
+  println(string(result is Ok))
+
+  let result2 = validate({ email: "bad" }, UserUpdate)
+  println(string(result2 is Err))
+
+  let result3 = validate({ name: null, email: null, age: null }, UserUpdate)
+  println(string(result3 is Ok))
+}

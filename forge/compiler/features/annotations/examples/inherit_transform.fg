@@ -1,0 +1,16 @@
+/// Test 3.7: @transform inherits through operators
+/// expect: alice@test.com
+
+type User = {
+  email: string @transform(it.lower().trim()) @validate(email),
+}
+
+type CreateUser = User with { name: string @min(1) }
+
+fn main() {
+  let result = validate({ email: "  ALICE@TEST.COM  ", name: "alice" }, CreateUser)
+  match result {
+    Ok(input) -> println(input.email)
+    Err(_) -> println("should not reach")
+  }
+}

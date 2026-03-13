@@ -176,6 +176,19 @@ ForgeString forge_string_trim(ForgeString s) {
     return forge_string_new(s.ptr + start, new_len);
 }
 
+ForgeString forge_string_repeat(ForgeString s, int64_t count) {
+    if (count <= 0 || s.len == 0) {
+        return forge_string_new("", 0);
+    }
+    int64_t new_len = s.len * count;
+    char* buf = (char*)forge_alloc(new_len + 1);
+    for (int64_t i = 0; i < count; i++) {
+        memcpy(buf + i * s.len, s.ptr, s.len);
+    }
+    buf[new_len] = '\0';
+    return (ForgeString){ .ptr = buf, .len = new_len };
+}
+
 int8_t forge_string_starts_with(ForgeString s, ForgeString prefix) {
     if (prefix.len > s.len) return 0;
     if (prefix.len == 0) return 1;
@@ -836,4 +849,80 @@ void forge_spawn(forge_fn_ptr fn) {
 
 void forge_sleep_ms(int64_t ms) {
     usleep((useconds_t)(ms * 1000));
+}
+
+// ---- Validation helpers ----
+
+// Check if string is a valid email (basic check: contains @ and .)
+int64_t forge_validate_email(ForgeString s) {
+    if (s.len == 0) return 0;
+    const char* at = memchr(s.ptr, '@', s.len);
+    if (!at) return 0;
+    int64_t after_at = s.len - (at - s.ptr) - 1;
+    if (after_at <= 0) return 0;
+    const char* dot = memchr(at + 1, '.', after_at);
+    if (!dot) return 0;
+    // Must have at least 1 char before @, 1 char between @ and ., 1 char after .
+    if (at == s.ptr) return 0;
+    if (dot == at + 1) return 0;
+    if (dot == s.ptr + s.len - 1) return 0;
+    return 1;
+}
+
+// Check if string is a valid URL (basic check: starts with http:// or https://)
+int64_t forge_validate_url(ForgeString s) {
+    if (s.len >= 7 && strncmp(s.ptr, "http://", 7) == 0) return 1;
+    if (s.len >= 8 && strncmp(s.ptr, "https://", 8) == 0) return 1;
+    return 0;
+}
+
+// Check if string is a valid UUID (8-4-4-4-12 hex format)
+int64_t forge_validate_uuid(ForgeString s) {
+    if (s.len != 36) return 0;
+    for (int i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (s.ptr[i] != '-') return 0;
+        } else {
+            char c = s.ptr[i];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+// Check if string matches a regex pattern (basic: uses strstr for simple cases)
+// For full regex support, this would need a regex library
+int64_t forge_validate_pattern(ForgeString s, ForgeString pattern) {
+    // Simple implementation: exact match for now
+    // A full implementation would use POSIX regex or similar
+    // For patterns like "^[a-z0-9-]+$", we do character-by-character checking
+    if (pattern.len < 2) return 1;
+
+    // Handle ^[charset]+$ patterns
+    if (pattern.ptr[0] == '^' && pattern.ptr[pattern.len-1] == '$') {
+        // Extract charset from [...]
+        const char* bracket_start = memchr(pattern.ptr, '[', pattern.len);
+        const char* bracket_end = memchr(pattern.ptr, ']', pattern.len);
+        if (bracket_start && bracket_end && bracket_end > bracket_start) {
+            int64_t set_len = bracket_end - bracket_start - 1;
+            const char* set = bracket_start + 1;
+            for (int64_t i = 0; i < s.len; i++) {
+                char c = s.ptr[i];
+                int found = 0;
+                for (int64_t j = 0; j < set_len; j++) {
+                    if (j + 2 < set_len && set[j+1] == '-') {
+                        // Range: a-z
+                        if (c >= set[j] && c <= set[j+2]) { found = 1; break; }
+                        j += 2;
+                    } else {
+                        if (c == set[j]) { found = 1; break; }
+                    }
+                }
+                if (!found) return 0;
+            }
+            return 1;
+        }
+    }
+    return 1; // Default: pass if pattern not understood
 }

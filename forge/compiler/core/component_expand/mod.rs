@@ -441,7 +441,7 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
                     fields: ctx
                         .schema
                         .iter()
-                        .map(|f| (f.name.clone(), f.type_ann.clone()))
+                        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
                         .collect(),
                 };
             }
@@ -452,7 +452,7 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
                         .schema
                         .iter()
                         .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
-                        .map(|f| (f.name.clone(), f.type_ann.clone()))
+                        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
                         .collect(),
                 };
             }
@@ -483,7 +483,7 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
         TypeExpr::Struct { fields } => TypeExpr::Struct {
             fields: fields
                 .iter()
-                .map(|(n, t)| (n.clone(), substitute_type_expr(t, ctx)))
+                .map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone()))
                 .collect(),
         },
         TypeExpr::Without { base, fields } => TypeExpr::Without {
@@ -492,7 +492,7 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
         },
         TypeExpr::TypeWith { base, fields } => TypeExpr::TypeWith {
             base: Box::new(substitute_type_expr(base, ctx)),
-            fields: fields.iter().map(|(n, t)| (n.clone(), substitute_type_expr(t, ctx))).collect(),
+            fields: fields.iter().map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone())).collect(),
         },
         TypeExpr::Only { base, fields } => TypeExpr::Only {
             base: Box::new(substitute_type_expr(base, ctx)),
@@ -1263,11 +1263,11 @@ impl ComponentExpander {
                     let fields: Vec<_> = if *visible_only {
                         ctx.schema.iter()
                             .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
-                            .map(|f| (f.name.clone(), f.type_ann.clone()))
+                            .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
                             .collect()
                     } else {
                         ctx.schema.iter()
-                            .map(|f| (f.name.clone(), f.type_ann.clone()))
+                            .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
                             .collect()
                     };
                     result.type_decl = Some(Statement::TypeDecl {

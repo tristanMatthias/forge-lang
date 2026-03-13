@@ -97,6 +97,10 @@ impl<'ctx> Codegen<'ctx> {
         let fn_type = i64_type.fn_type(&[string_type.into()], false);
         self.module.add_function("forge_string_parse_int", fn_type, None);
 
+        // forge_string_repeat(ForgeString, i64) -> ForgeString
+        let fn_type = string_type.fn_type(&[string_type.into(), i64_type.into()], false);
+        self.module.add_function("forge_string_repeat", fn_type, None);
+
         // forge_string_eq(ForgeString, ForgeString) -> i8
         let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
         self.module.add_function("forge_string_eq", fn_type, None);
@@ -134,6 +138,23 @@ impl<'ctx> Codegen<'ctx> {
             let fn_type = i64_type.fn_type(&[ptr_type.into()], false);
             self.module.add_function("strlen", fn_type, None);
         }
+
+        // Validation helpers
+        // forge_validate_email(ForgeString) -> i64
+        let fn_type = i64_type.fn_type(&[string_type.into()], false);
+        self.module.add_function("forge_validate_email", fn_type, None);
+
+        // forge_validate_url(ForgeString) -> i64
+        let fn_type = i64_type.fn_type(&[string_type.into()], false);
+        self.module.add_function("forge_validate_url", fn_type, None);
+
+        // forge_validate_uuid(ForgeString) -> i64
+        let fn_type = i64_type.fn_type(&[string_type.into()], false);
+        self.module.add_function("forge_validate_uuid", fn_type, None);
+
+        // forge_validate_pattern(ForgeString, ForgeString) -> i64
+        let fn_type = i64_type.fn_type(&[string_type.into(), string_type.into()], false);
+        self.module.add_function("forge_validate_pattern", fn_type, None);
     }
 
     /// Declare helper/utility functions needed by codegen.

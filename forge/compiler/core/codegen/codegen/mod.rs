@@ -35,6 +35,7 @@ mod statements;
 mod strings;
 mod traits;
 mod types;
+mod validate;
 
 /// Information about a service declaration (used by component_expand for mount resolution)
 #[derive(Debug, Clone)]

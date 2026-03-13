@@ -1,0 +1,5 @@
+/// @default value type must match field type
+/// expect-error: F0080
+
+type T = { name: string? @default(true) }
+fn main() { println("unreachable") }

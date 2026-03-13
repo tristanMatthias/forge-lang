@@ -1396,7 +1396,8 @@ impl Parser {
                         self.expect(&TokenKind::Colon)?;
                         self.skip_newlines();
                         let field_ty = self.parse_type_expr()?;
-                        fields.push((name, field_ty));
+                        let annotations = self.parse_type_field_annotations();
+                        fields.push((name, field_ty, annotations));
                         self.skip_newlines();
                         if self.check(&TokenKind::Comma) {
                             self.advance();
@@ -1447,6 +1448,44 @@ impl Parser {
     }
 
     /// Parse `{name1, name2, ...}` — a list of field names in braces
+    /// Parse annotations on a type field: `name: string @min(1) @max(100)`
+    /// Returns empty vec if no annotations present.
+    pub(crate) fn parse_type_field_annotations(&mut self) -> Vec<Annotation> {
+        let mut annotations = Vec::new();
+        while self.check(&TokenKind::At) {
+            let ann_start = self.current_span();
+            self.advance(); // consume '@'
+            let ann_name = match self.peek().map(|t| &t.kind) {
+                Some(TokenKind::Ident(n)) => n.clone(),
+                _ => break,
+            };
+            self.advance(); // consume name
+
+            let mut ann_args = Vec::new();
+            if self.check(&TokenKind::LParen) {
+                self.advance(); // consume '('
+                self.skip_newlines();
+                while !self.check(&TokenKind::RParen) && !self.is_at_end() {
+                    self.skip_newlines();
+                    if let Some(expr) = self.parse_expr() {
+                        ann_args.push(expr);
+                    }
+                    self.skip_newlines();
+                    if self.check(&TokenKind::Comma) {
+                        self.advance();
+                    }
+                }
+                self.expect(&TokenKind::RParen);
+            }
+            annotations.push(Annotation {
+                name: ann_name,
+                args: ann_args,
+                span: ann_start,
+            });
+        }
+        annotations
+    }
+
     fn parse_field_name_list(&mut self) -> Option<Vec<String>> {
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
@@ -1524,7 +1563,7 @@ impl Parser {
                 }
             }
             TokenKind::LBrace => {
-                // Struct type: { name: string, age: int }
+                // Struct type: { name: string @min(1), age: int }
                 self.advance();
                 self.skip_newlines();
                 let mut fields = Vec::new();
@@ -1538,7 +1577,9 @@ impl Parser {
                     self.expect(&TokenKind::Colon)?;
                     self.skip_newlines();
                     let ty = self.parse_type_expr()?;
-                    fields.push((name, ty));
+                    // Parse field annotations: @min(1) @max(100) @validate(email)
+                    let annotations = self.parse_type_field_annotations();
+                    fields.push((name, ty, annotations));
                     self.skip_newlines();
                     if self.check(&TokenKind::Comma) {
                         self.advance();

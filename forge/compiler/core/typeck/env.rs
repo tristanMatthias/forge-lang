@@ -1,5 +1,6 @@
 use crate::lexer::Span;
-use crate::typeck::types::Type;
+use crate::parser::ast::{Annotation, Expr};
+use crate::typeck::types::{AnnotationArg, FieldAnnotation, Type};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,12 @@ pub struct TypeEnv {
     /// Known namespace identifiers (e.g., "json", "fs", "process", "channel")
     /// used as static method targets: `json.stringify()`, `fs.read()`, etc.
     pub namespaces: HashSet<String>,
+    /// Annotations on type fields, keyed by type name.
+    /// Maps type_name -> vec of (field_name, annotations).
+    /// Used by validate() and type operator inheritance.
+    pub type_annotations: HashMap<String, Vec<(String, Vec<FieldAnnotation>)>>,
+    /// Tracks which types are partial (all fields optional, only present fields validated)
+    pub partial_types: HashSet<String>,
 }
 
 impl TypeEnv {
@@ -38,6 +45,8 @@ impl TypeEnv {
             functions: HashMap::new(),
             fn_spans: HashMap::new(),
             namespaces: HashSet::new(),
+            type_annotations: HashMap::new(),
+            partial_types: HashSet::new(),
         };
         // Register built-in functions
         env.functions.insert(
@@ -97,6 +106,48 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
+        // validate() is handled as a special intrinsic in codegen
+        // It takes (value, Type) and returns Result<T, ValidationError>
+        // The type checker treats it specially — see check_validate_call()
+        env.functions.insert(
+            "validate".to_string(),
+            Type::Function {
+                params: vec![Type::Unknown, Type::Unknown],
+                return_type: Box::new(Type::Result(
+                    Box::new(Type::Unknown),
+                    Box::new(Type::Struct {
+                        name: Some("ValidationError".to_string()),
+                        fields: vec![
+                            ("fields".to_string(), Type::List(Box::new(Type::Struct {
+                                name: Some("FieldError".to_string()),
+                                fields: vec![
+                                    ("field".to_string(), Type::String),
+                                    ("rule".to_string(), Type::String),
+                                    ("message".to_string(), Type::String),
+                                ],
+                            }))),
+                        ],
+                    }),
+                )),
+            },
+        );
+        // Register ValidationError and FieldError types
+        let field_error_ty = Type::Struct {
+            name: Some("FieldError".to_string()),
+            fields: vec![
+                ("field".to_string(), Type::String),
+                ("rule".to_string(), Type::String),
+                ("message".to_string(), Type::String),
+            ],
+        };
+        let validation_error_ty = Type::Struct {
+            name: Some("ValidationError".to_string()),
+            fields: vec![
+                ("fields".to_string(), Type::List(Box::new(field_error_ty.clone()))),
+            ],
+        };
+        env.type_aliases.insert("FieldError".to_string(), field_error_ty);
+        env.type_aliases.insert("ValidationError".to_string(), validation_error_ty);
         // Register built-in namespaces (static method targets handled by codegen)
         env.namespaces.insert("json".to_string());
         env.namespaces.insert("string".to_string());
@@ -180,6 +231,28 @@ impl TypeEnv {
             }
         }
         names
+    }
+
+    /// Convert AST Annotation to resolved FieldAnnotation
+    pub fn resolve_annotation(ann: &Annotation) -> FieldAnnotation {
+        FieldAnnotation {
+            name: ann.name.clone(),
+            args: ann.args.iter().map(|expr| {
+                match expr {
+                    Expr::IntLit(v, _) => AnnotationArg::Int(*v),
+                    Expr::FloatLit(v, _) => AnnotationArg::Float(*v),
+                    Expr::StringLit(v, _) => AnnotationArg::String(v.clone()),
+                    Expr::BoolLit(v, _) => AnnotationArg::Bool(*v),
+                    Expr::Ident(v, _) => AnnotationArg::Ident(v.clone()),
+                    _ => AnnotationArg::Expr(expr.clone()),
+                }
+            }).collect(),
+        }
+    }
+
+    /// Convert a list of AST annotations to resolved FieldAnnotations
+    pub fn resolve_annotations(anns: &[Annotation]) -> Vec<FieldAnnotation> {
+        anns.iter().map(|a| Self::resolve_annotation(a)).collect()
     }
 
     pub fn resolve_type_name(&self, name: &str) -> Type {

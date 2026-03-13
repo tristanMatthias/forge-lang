@@ -1,0 +1,26 @@
+/// Test 3.1: `without` inherits annotations
+/// expect: true
+/// expect: name
+/// expect: min
+
+type User = {
+  id: int,
+  name: string @min(1) @max(100),
+  email: string @validate(email),
+  created_at: string,
+}
+
+type CreateUser = User without {id, created_at}
+
+fn main() {
+  let result = validate({ name: "", email: "a@test.com" }, CreateUser)
+  println(string(result is Err))
+
+  match result {
+    Err(e) -> {
+      println(e.fields[0].field)
+      println(e.fields[0].rule)
+    }
+    Ok(_) -> {}
+  }
+}

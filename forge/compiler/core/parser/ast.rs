@@ -635,17 +635,17 @@ pub enum TypeExpr {
         return_type: Box<TypeExpr>,
     },
     Struct {
-        fields: Vec<(String, TypeExpr)>,
+        fields: Vec<(String, TypeExpr, Vec<Annotation>)>,
     },
     /// Type without fields: `User without {id, name}`
     Without {
         base: Box<TypeExpr>,
         fields: Vec<String>,
     },
-    /// Type with additional fields: `User with { age: int }`
+    /// Type with additional fields: `User with { age: int @min(1) }`
     TypeWith {
         base: Box<TypeExpr>,
-        fields: Vec<(String, TypeExpr)>,
+        fields: Vec<(String, TypeExpr, Vec<Annotation>)>,
     },
     /// Type with only specified fields: `User only {id, name}`
     Only {

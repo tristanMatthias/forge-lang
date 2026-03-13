@@ -1,0 +1,5 @@
+/// @pattern with no argument is a compile error
+/// expect-error: F0080
+
+type T = { name: string @pattern }
+fn main() { println("unreachable") }

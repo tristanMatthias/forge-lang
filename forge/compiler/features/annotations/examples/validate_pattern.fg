@@ -1,0 +1,12 @@
+/// Test 2.3: @pattern for regex
+/// expect: true
+/// expect: true
+
+type Input = {
+  slug: string @pattern("^[a-z0-9-]+$"),
+}
+
+fn main() {
+  println(string(validate({ slug: "hello-world" }, Input) is Ok))
+  println(string(validate({ slug: "Hello World!" }, Input) is Err))
+}

@@ -1,0 +1,5 @@
+/// @default on non-nullable field is a compile error
+/// expect-error: F0080
+
+type T = { name: string @default("x") }
+fn main() { println("unreachable") }

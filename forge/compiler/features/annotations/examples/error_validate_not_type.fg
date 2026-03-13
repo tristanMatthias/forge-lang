@@ -1,0 +1,7 @@
+/// validate() second argument must be a type name
+/// expect-error: F0012
+
+fn main() {
+  let x = validate({ name: "a" }, "NotAType")
+  println(string(x))
+}

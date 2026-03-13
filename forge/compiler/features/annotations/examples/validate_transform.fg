@@ -1,0 +1,14 @@
+/// Test 2.5: @transform runs before validation
+/// expect: alice@test.com
+
+type Input = {
+  email: string @transform(it.lower().trim()) @validate(email),
+}
+
+fn main() {
+  let result = validate({ email: "  ALICE@Test.Com  " }, Input)
+  match result {
+    Ok(input) -> println(input.email)
+    Err(_) -> println("should not reach")
+  }
+}

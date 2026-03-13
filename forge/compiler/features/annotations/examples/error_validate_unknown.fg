@@ -1,0 +1,5 @@
+/// @validate with unknown validator is a compile error
+/// expect-error: F0080
+
+type T = { name: string @validate(phone) }
+fn main() { println("unreachable") }

@@ -1,0 +1,19 @@
+/// Test 2.6: @default provides fallback for optional fields
+/// expect: member
+/// expect: true
+
+type Input = {
+  role: string? @default("member"),
+  active: bool? @default(true),
+}
+
+fn main() {
+  let result = validate({ role: null, active: null }, Input)
+  match result {
+    Ok(input) -> {
+      println(input.role ?? "none")
+      println(string(input.active ?? false))
+    }
+    Err(_) -> println("should not reach")
+  }
+}

@@ -20,7 +20,7 @@ impl<'ctx> Codegen<'ctx> {
         // If we have a target type with more fields (e.g., partial structs),
         // build the struct according to the target type, filling missing nullable fields with null
         if let Some(Type::Struct { fields: target_fields, .. }) = &self.struct_target_type.clone() {
-            if target_fields.len() > fields.len() {
+            if target_fields.len() >= fields.len() && !target_fields.is_empty() {
                 let provided: std::collections::HashMap<&str, &Expr> =
                     fields.iter().map(|(n, e)| (n.as_str(), e)).collect();
 
@@ -29,31 +29,36 @@ impl<'ctx> Codegen<'ctx> {
 
                 for (fname, ftype) in target_fields {
                     if let Some(expr) = provided.get(fname.as_str()) {
-                        let val = self.compile_expr(expr)?;
-                        let ty = self.infer_type(expr);
-                        // Wrap in nullable if target is nullable but value isn't
-                        if matches!(ftype, Type::Nullable(_)) && !matches!(&ty, Type::Nullable(_)) {
-                            // Use the actual LLVM type from the compiled value for
-                            // nullable wrapping, since infer_type may return Unknown.
-                            let inner_llvm = val.get_type();
-                            let nullable_type = self.context.struct_type(
-                                &[self.context.i8_type().into(), inner_llvm.into()],
-                                false,
-                            );
-                            let mut nullable_val = nullable_type.get_undef();
-                            nullable_val = self.builder
-                                .build_insert_value(nullable_val, self.context.i8_type().const_int(1, false), 0, "has")
-                                .unwrap().into_struct_value();
-                            nullable_val = self.builder
-                                .build_insert_value(nullable_val, val, 1, "val")
-                                .unwrap().into_struct_value();
-                            all_field_types.push(self.type_to_llvm_basic(ftype));
-                            all_field_vals.push(nullable_val.into());
+                        // For null literals targeting nullable fields, build a properly-typed
+                        // null value using the target field type (not the generic i64 fallback)
+                        if matches!(expr, Expr::NullLit(_)) && matches!(ftype, Type::Nullable(_)) {
+                            let llvm_ty = self.type_to_llvm_basic(ftype);
+                            let null_val = llvm_ty.into_struct_type().const_zero();
+                            all_field_types.push(llvm_ty);
+                            all_field_vals.push(null_val.into());
                         } else {
-                            // Use the actual LLVM type from the compiled value
-                            // rather than infer_type to avoid Unknown -> i64 mismatch.
-                            all_field_types.push(val.get_type());
-                            all_field_vals.push(val);
+                            let val = self.compile_expr(expr)?;
+                            let ty = self.infer_type(expr);
+                            // Wrap in nullable if target is nullable but value isn't
+                            if matches!(ftype, Type::Nullable(_)) && !matches!(&ty, Type::Nullable(_)) {
+                                let inner_llvm = val.get_type();
+                                let nullable_type = self.context.struct_type(
+                                    &[self.context.i8_type().into(), inner_llvm.into()],
+                                    false,
+                                );
+                                let mut nullable_val = nullable_type.get_undef();
+                                nullable_val = self.builder
+                                    .build_insert_value(nullable_val, self.context.i8_type().const_int(1, false), 0, "has")
+                                    .unwrap().into_struct_value();
+                                nullable_val = self.builder
+                                    .build_insert_value(nullable_val, val, 1, "val")
+                                    .unwrap().into_struct_value();
+                                all_field_types.push(self.type_to_llvm_basic(ftype));
+                                all_field_vals.push(nullable_val.into());
+                            } else {
+                                all_field_types.push(val.get_type());
+                                all_field_vals.push(val);
+                            }
                         }
                     } else {
                         // Missing field — must be nullable, fill with null (tag=0)

@@ -1,0 +1,19 @@
+/// Test 1.3: validate() returns typed Ok
+/// expect: alice
+
+type SignupInput = {
+  name: string @min(1),
+  email: string @validate(email),
+}
+
+fn process(input: SignupInput) {
+  println(input.name)
+}
+
+fn main() {
+  let raw = { name: "alice", email: "a@test.com" }
+  match validate(raw, SignupInput) {
+    Ok(input) -> process(input)
+    Err(e) -> println("invalid")
+  }
+}

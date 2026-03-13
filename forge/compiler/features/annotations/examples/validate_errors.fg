@@ -1,0 +1,33 @@
+/// Test 1.2: validate() returns structured errors
+/// expect: 3
+/// expect: name
+/// expect: min
+/// expect: must be at least 1 character
+/// expect: email
+/// expect: email
+/// expect: age
+/// expect: min
+
+type ContactForm = {
+  name: string @min(1),
+  email: string @validate(email),
+  age: int @min(0) @max(150),
+}
+
+fn main() {
+  let result = validate({ name: "", email: "not-email", age: -5 }, ContactForm)
+
+  match result {
+    Ok(_) -> println("should not reach")
+    Err(e) -> {
+      println(string(e.fields.length))
+      println(e.fields[0].field)
+      println(e.fields[0].rule)
+      println(e.fields[0].message)
+      println(e.fields[1].field)
+      println(e.fields[1].rule)
+      println(e.fields[2].field)
+      println(e.fields[2].rule)
+    }
+  }
+}

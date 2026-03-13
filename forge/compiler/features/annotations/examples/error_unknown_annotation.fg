@@ -1,0 +1,10 @@
+/// Test 1.6: Unknown annotation — compile error
+/// expect-error: F0072
+
+type Bad = {
+  name: string @required,
+}
+
+fn main() {
+  println("unreachable")
+}
