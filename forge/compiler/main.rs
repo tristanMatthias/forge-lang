@@ -161,6 +161,10 @@ enum Commands {
         /// Only show failures and summary
         #[arg(long)]
         quiet: bool,
+
+        /// Number of parallel test jobs (default: sequential)
+        #[arg(short, long, default_value = "0")]
+        jobs: usize,
     },
 }
 
@@ -471,7 +475,7 @@ fn run() {
             }
         }
 
-        Commands::Test { target, format, filter, fail_fast, no_color, verbose, quiet } => {
+        Commands::Test { target, format, filter, fail_fast, no_color, verbose, quiet, jobs } => {
             let fmt = match format.as_str() {
                 "json" => forge::test_runner::OutputFormat::Json,
                 "stream" => forge::test_runner::OutputFormat::Stream,
@@ -484,6 +488,7 @@ fn run() {
                 no_color,
                 verbose,
                 quiet,
+                jobs,
             };
             let passed = forge::test_runner::run_tests(target.as_deref(), &config);
             if !passed {

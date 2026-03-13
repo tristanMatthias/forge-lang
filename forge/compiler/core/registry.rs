@@ -277,9 +277,8 @@ impl FeatureRegistry {
         }
 
         // Show test counts for this feature only
-        let forge_bin = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forge"));
         if let Some(features_dir) = crate::test_runner::find_features_dir() {
-            let (passed, total) = crate::test_runner::count_feature_tests(&forge_bin, &features_dir, id);
+            let (passed, total) = crate::test_runner::count_feature_tests(&features_dir, id);
             if total > 0 {
                 println!();
                 let color = if passed == total { "\x1b[32m" } else { "\x1b[33m" };
