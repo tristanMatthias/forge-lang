@@ -440,6 +440,28 @@ fn copy_cstr_to_buf(src: *const c_char, dst: *mut c_char, dst_len: i64) {
     }
 }
 
+// ── Auto CRUD mount (derives path from model name) ──
+
+#[no_mangle]
+pub extern "C" fn forge_http_mount_crud_auto(port: u16, model: *const c_char) {
+    let model_s = cstr(model).to_string();
+    // Derive path: "User" -> "/users", "Post" -> "/posts"
+    let path = format!("/{}", pluralize(&model_s.to_lowercase()));
+    let table_c = CString::new(model_s.as_str()).unwrap();
+    let path_c = CString::new(path.as_str()).unwrap();
+    forge_http_mount_crud(port, table_c.as_ptr(), path_c.as_ptr());
+}
+
+fn pluralize(s: &str) -> String {
+    if s.ends_with('s') || s.ends_with("sh") || s.ends_with("ch") || s.ends_with('x') || s.ends_with('z') {
+        format!("{}es", s)
+    } else if s.ends_with('y') && !s.ends_with("ay") && !s.ends_with("ey") && !s.ends_with("oy") && !s.ends_with("uy") {
+        format!("{}ies", &s[..s.len() - 1])
+    } else {
+        format!("{}s", s)
+    }
+}
+
 // ── Route prefix stack for `under` blocks ──
 
 static PREFIX_STACK: Mutex<Option<HashMap<u16, Vec<String>>>> = Mutex::new(None);
