@@ -1,0 +1,8 @@
+/// Test: json.stringify outputs proper true/false for boolean fields
+///
+/// expect: {"name":"alice","active":true,"admin":false}
+
+fn main() {
+  let data = { name: "alice", active: true, admin: false }
+  println(json.stringify(data))
+}
