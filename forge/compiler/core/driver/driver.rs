@@ -9,6 +9,7 @@ use crate::parser::{ComponentMeta, Parser};
 use crate::provider::{self, ProviderInfo};
 
 use inkwell::context::Context;
+use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -68,8 +69,18 @@ impl Driver {
         }
     }
 
-    /// Compile a single .fg file
-    pub fn compile(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
+    /// Shared frontend pipeline: source → lex → parse → expand → typecheck → codegen.
+    /// Calls `action` with the Codegen result, loaded providers, and build profile.
+    /// This is the single source of truth for the compilation pipeline — used by both
+    /// `compile()` (AOT) and `run_jit()` (JIT).
+    fn with_compiled_module<T, F>(
+        &self,
+        source_path: &Path,
+        action: F,
+    ) -> Result<T, CompileError>
+    where
+        F: FnOnce(&Codegen<'_>, &[ProviderInfo], &mut BuildProfile) -> Result<T, CompileError>,
+    {
         let mut bp = BuildProfile::new();
 
         let source = std::fs::read_to_string(source_path)
@@ -126,10 +137,7 @@ impl Driver {
             return Err(CompileError::DiagnosticErrors { stage: "parser" });
         }
 
-        if self.emit_ast {
-            println!("{:#?}", program);
-            return Ok(PathBuf::new());
-        }
+        // emit_ast is handled in compile() before calling this method
 
         // 5. Inject extern fns from providers
         for provider in &loaded_providers {
@@ -199,11 +207,9 @@ impl Driver {
                 expanded_statements.push(stmt);
             }
         }
-        // Add extra extern fns at the beginning
         for ef in extra_extern_fns {
             expanded_statements.insert(0, ef);
         }
-        // Add extra statements (fn decls from services, etc.)
         expanded_statements.extend(extra_stmts);
         program.statements = expanded_statements;
 
@@ -216,7 +222,6 @@ impl Driver {
         // 7b. Type check
         let t = Instant::now();
         let mut checker = crate::typeck::TypeChecker::new();
-        // Register component instance names as namespaces (e.g., ticker, Task)
         for (type_name, _, _) in &all_static_methods {
             checker.env.namespaces.insert(type_name.clone());
         }
@@ -242,15 +247,13 @@ impl Driver {
         let mut codegen = Codegen::new(&context, module_name);
         codegen.source_file = filename.to_string();
 
-        // Populate static methods registry
+        // Populate static methods registry from providers
         for (type_name, method_name, fn_name) in &all_static_methods {
             codegen.static_methods.insert(
                 (type_name.clone(), method_name.clone()),
                 fn_name.clone(),
             );
         }
-        // Register provider extern fns as static methods by stripping the forge_{name}_ prefix
-        // e.g. forge_fs_read → fs.read, forge_fs_write → fs.write
         for provider in &loaded_providers {
             let prefix = format!("forge_{}_", provider.name);
             for extern_fn in &provider.extern_fns {
@@ -264,9 +267,6 @@ impl Driver {
                 }
             }
         }
-
-        // Register provider exported fns as static methods
-        // e.g. export fn red(text) in std-term → term.red(text)
         for provider in &loaded_providers {
             for fn_stmt in &provider.exported_fns {
                 if let Statement::FnDecl { name, .. } = fn_stmt {
@@ -282,60 +282,172 @@ impl Driver {
         codegen.compile_program(&program);
         bp.add("codegen", t.elapsed());
 
-        if self.emit_ir {
-            println!("{}", codegen.emit_ir());
+        // Hand off to the action (AOT write+link or JIT execute)
+        action(&codegen, &loaded_providers, &mut bp)
+    }
+
+    /// Compile a single .fg file to a binary (AOT path).
+    pub fn compile(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
+        // Handle emit_ast early — it needs special treatment
+        if self.emit_ast {
+            let source = std::fs::read_to_string(source_path)
+                .map_err(|e| CompileError::FileNotFound {
+                    path: source_path.display().to_string(),
+                    detail: e.to_string(),
+                })?;
+            let mut lexer = Lexer::new(&source);
+            let tokens = lexer.tokenize();
+            let mut parser = Parser::new(tokens);
+            let program = parser.parse_program();
+            println!("{:#?}", program);
             return Ok(PathBuf::new());
         }
 
-        // Determine output path
-        let output_path = self.output.clone().unwrap_or_else(|| {
-            let stem = source_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("output");
-            PathBuf::from(stem)
-        });
-
-        // Write object file
-        let t = Instant::now();
-        let obj_path = output_path.with_extension("o");
-        codegen.write_object_file(&obj_path)?;
-        bp.add("object", t.elapsed());
-
-        // Compile runtime
-        let t = Instant::now();
-        let runtime_obj = self.compile_runtime(source_path)?;
-        bp.add("runtime", t.elapsed());
-
-        // Collect provider native lib paths
-        let provider_lib_paths: Vec<PathBuf> = loaded_providers
-            .iter()
-            .filter(|p| p.lib_path.exists())
-            .map(|p| p.lib_path.clone())
-            .collect();
-
-        // Link
-        let t = Instant::now();
-        self.link_with_providers(&obj_path, &runtime_obj, &output_path, &provider_lib_paths)?;
-        bp.add("link", t.elapsed());
-
-        // Cleanup
-        std::fs::remove_file(&obj_path).ok();
-
-        // Get binary size
-        if let Ok(meta) = std::fs::metadata(&output_path) {
-            bp.binary_size = meta.len();
-        }
-
-        if self.profile {
-            if self.profile_format == "json" {
-                eprintln!("{}", bp.render_json());
-            } else {
-                eprintln!("{}", bp.render_human());
+        self.with_compiled_module(source_path, |codegen, loaded_providers, bp| {
+            if self.emit_ir {
+                println!("{}", codegen.emit_ir());
+                return Ok(PathBuf::new());
             }
-        }
 
-        Ok(output_path)
+            // Determine output path
+            let output_path = self.output.clone().unwrap_or_else(|| {
+                let stem = source_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("output");
+                PathBuf::from(stem)
+            });
+
+            // Write object file
+            let t = Instant::now();
+            let obj_path = output_path.with_extension("o");
+            codegen.write_object_file(&obj_path)?;
+            bp.add("object", t.elapsed());
+
+            // Compile runtime
+            let t = Instant::now();
+            let runtime_obj = self.compile_runtime(source_path)?;
+            bp.add("runtime", t.elapsed());
+
+            // Collect provider native lib paths
+            let provider_lib_paths: Vec<PathBuf> = loaded_providers
+                .iter()
+                .filter(|p| p.lib_path.exists())
+                .map(|p| p.lib_path.clone())
+                .collect();
+
+            // Link
+            let t = Instant::now();
+            self.link_with_providers(&obj_path, &runtime_obj, &output_path, &provider_lib_paths)?;
+            bp.add("link", t.elapsed());
+
+            // Cleanup
+            std::fs::remove_file(&obj_path).ok();
+
+            // Get binary size
+            if let Ok(meta) = std::fs::metadata(&output_path) {
+                bp.binary_size = meta.len();
+            }
+
+            if self.profile {
+                if self.profile_format == "json" {
+                    eprintln!("{}", bp.render_json());
+                } else {
+                    eprintln!("{}", bp.render_human());
+                }
+            }
+
+            Ok(output_path)
+        })
+    }
+
+    /// JIT-compile and execute a Forge program in-process (no linking, no binary on disk).
+    /// Falls back to AOT compile+link if providers with native libs are present.
+    pub fn run_jit(&self, source_path: &Path) -> Result<i32, CompileError> {
+        self.with_compiled_module(source_path, |codegen, loaded_providers, bp| {
+            // If providers with native libs are present, fall back to AOT
+            let has_native_providers = loaded_providers.iter().any(|p| p.lib_path.exists());
+            if has_native_providers {
+                return self.run_aot(source_path);
+            }
+
+            // Load runtime as shared library with RTLD_GLOBAL so JIT can resolve symbols
+            let t = Instant::now();
+            let runtime_dylib = self.compile_runtime_dylib(source_path)?;
+            let _runtime_lib = unsafe {
+                // Must use RTLD_GLOBAL (not default RTLD_LOCAL) so MCJIT symbol resolver can find them
+                libloading::os::unix::Library::open(
+                    Some(&runtime_dylib),
+                    libloading::os::unix::RTLD_LAZY | libloading::os::unix::RTLD_GLOBAL,
+                )
+            }.map_err(|e| CompileError::JitFailed {
+                detail: format!("failed to load runtime library: {}", e),
+            })?;
+            bp.add("runtime", t.elapsed());
+
+            // Verify module
+            if let Err(msg) = codegen.module.verify() {
+                return Err(CompileError::CodegenFailed {
+                    stage: "LLVM module verification",
+                    detail: msg.to_string(),
+                });
+            }
+
+            // Create JIT execution engine
+            let t = Instant::now();
+            let opt = match self.optimization {
+                OptLevel::Dev => OptimizationLevel::None,
+                OptLevel::Release => OptimizationLevel::Default,
+            };
+            let ee = codegen.module
+                .create_jit_execution_engine(opt)
+                .map_err(|e| CompileError::JitFailed {
+                    detail: format!("failed to create JIT engine: {}", e.to_string()),
+                })?;
+            bp.add("jit_init", t.elapsed());
+
+            // Find main()
+            let main_fn = ee.get_function_value("main")
+                .map_err(|_| CompileError::JitFailed {
+                    detail: "no main function found — add `fn main() { ... }` or use top-level statements".to_string(),
+                })?;
+
+            if self.profile {
+                if self.profile_format == "json" {
+                    eprintln!("{}", bp.render_json());
+                } else {
+                    eprintln!("{}", bp.render_human());
+                }
+            }
+
+            // Execute main() in-process
+            let exit_code = unsafe { ee.run_function_as_main(main_fn, &[]) };
+
+            Ok(exit_code)
+        })
+    }
+
+    /// AOT fallback for run: compile to binary, execute, cleanup.
+    fn run_aot(&self, source_path: &Path) -> Result<i32, CompileError> {
+        let output = std::env::temp_dir().join(format!("forge_run_{}", std::process::id()));
+        // Create a temporary driver with output set
+        let mut aot_driver = Driver::new();
+        aot_driver.optimization = self.optimization;
+        aot_driver.output = Some(output.clone());
+        aot_driver.profile = self.profile;
+        aot_driver.profile_format = self.profile_format.clone();
+
+        let binary = aot_driver.compile(source_path)?;
+
+        let status = std::process::Command::new(&binary)
+            .status()
+            .map_err(|e| CompileError::BinaryRunFailed {
+                path: binary.display().to_string(),
+                detail: e.to_string(),
+            })?;
+
+        std::fs::remove_file(&binary).ok();
+        Ok(status.code().unwrap_or(1))
     }
 
     /// Compile a project directory containing forge.toml
@@ -672,49 +784,79 @@ impl Driver {
         }
     }
 
-    fn compile_runtime(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
-        // Find runtime.c relative to the binary or in known locations
-        let runtime_paths = vec![
-            source_path.parent().unwrap_or(Path::new(".")).join("../stdlib/runtime.c"),
+    /// Find runtime.c in known locations relative to source file, project dir, or forge binary.
+    fn find_runtime_src(&self, hint_path: &Path) -> Result<PathBuf, CompileError> {
+        let mut paths = vec![
+            hint_path.parent().unwrap_or(Path::new(".")).join("../stdlib/runtime.c"),
+            hint_path.join("stdlib/runtime.c"),
+            hint_path.join("../stdlib/runtime.c"),
             PathBuf::from("stdlib/runtime.c"),
             PathBuf::from("../stdlib/runtime.c"),
-            // Look relative to the forge binary
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join("../stdlib/runtime.c")))
-                .unwrap_or_default(),
         ];
-
-        let runtime_src = runtime_paths
-            .iter()
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                paths.push(exe_dir.join("../stdlib/runtime.c"));
+                paths.push(exe_dir.join("../../stdlib/runtime.c"));
+            }
+        }
+        paths.iter()
             .find(|p| p.exists())
-            .ok_or(CompileError::RuntimeNotFound)?;
+            .cloned()
+            .ok_or(CompileError::RuntimeNotFound)
+    }
 
-        self.compile_runtime_file(runtime_src)
+    fn compile_runtime(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
+        let runtime_src = self.find_runtime_src(source_path)?;
+        self.compile_runtime_file(&runtime_src)
     }
 
     fn compile_runtime_for_project(&self, project_dir: &Path) -> Result<PathBuf, CompileError> {
-        let mut runtime_paths = vec![
-            project_dir.join("stdlib/runtime.c"),
-            project_dir.join("../stdlib/runtime.c"),
-            PathBuf::from("stdlib/runtime.c"),
-            PathBuf::from("../stdlib/runtime.c"),
-        ];
-        // Search relative to the forge binary
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                runtime_paths.push(exe_dir.join("../stdlib/runtime.c"));
-                // For cargo builds, binary is in target/debug/
-                runtime_paths.push(exe_dir.join("../../stdlib/runtime.c"));
+        let runtime_src = self.find_runtime_src(project_dir)?;
+        self.compile_runtime_file(&runtime_src)
+    }
+
+    /// Compile runtime.c to a shared library (.dylib) for JIT execution.
+    /// Cached by content hash, same as the .o path.
+    fn compile_runtime_dylib(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
+        let runtime_src = self.find_runtime_src(source_path)?;
+        let opt_flag = match self.optimization {
+            OptLevel::Release => "-O2",
+            OptLevel::Dev => "-O0",
+        };
+
+        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
+        let dylib_path = self.runtime_cache_dir().join(format!("forge_runtime_{}.dylib", opt_tag));
+        let hash_path = self.runtime_cache_dir().join(format!("forge_runtime_{}_dylib.hash", opt_tag));
+
+        // Check cache
+        let current_hash = self.runtime_hash(&runtime_src);
+        if dylib_path.exists() && hash_path.exists() {
+            if let Ok(stored) = std::fs::read_to_string(&hash_path) {
+                if stored.trim() == current_hash {
+                    return Ok(dylib_path);
+                }
             }
         }
 
-        let runtime_src = runtime_paths
-            .iter()
-            .find(|p| p.exists())
-            .ok_or(CompileError::RuntimeNotFound)?;
+        let src_str = runtime_src.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
+            stderr: format!("runtime path contains invalid UTF-8: {}", runtime_src.display()),
+        })?;
+        let dylib_str = dylib_path.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
+            stderr: "dylib cache path contains invalid UTF-8".to_string(),
+        })?;
 
-        self.compile_runtime_file(runtime_src)
+        let output = Command::new("cc")
+            .args(["-dynamiclib", "-o", dylib_str, src_str, opt_flag])
+            .output()
+            .map_err(|e| CompileError::RuntimeCompileFailed { stderr: e.to_string() })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            return Err(CompileError::RuntimeCompileFailed { stderr });
+        }
+
+        let _ = std::fs::write(&hash_path, &current_hash);
+        Ok(dylib_path)
     }
 
     fn compile_runtime_file(&self, runtime_src: &Path) -> Result<PathBuf, CompileError> {

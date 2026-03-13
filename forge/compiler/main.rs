@@ -65,6 +65,14 @@ enum Commands {
         #[arg(long)]
         dev: bool,
 
+        /// Disable JIT execution, use compile+link instead
+        #[arg(long)]
+        no_jit: bool,
+
+        /// Show build profiling with per-stage timings
+        #[arg(long)]
+        profile: bool,
+
         /// Arguments passed to the compiled program
         #[arg(last = true)]
         args: Vec<String>,
@@ -252,6 +260,21 @@ fn main() {
         };
 
         forge::errors::print_ice(&detail);
+
+        // Always capture and display the backtrace, filtered to forge frames
+        let bt = std::backtrace::Backtrace::force_capture();
+        let bt_str = bt.to_string();
+        let frames: Vec<&str> = bt_str
+            .lines()
+            .filter(|l| l.contains("forge::") || l.contains("forge/compiler"))
+            .collect();
+        if !frames.is_empty() {
+            eprintln!("\n  \x1b[38;5;246mBacktrace (forge frames):\x1b[0m");
+            for frame in &frames {
+                eprintln!("    \x1b[38;5;246m{}\x1b[0m", frame.trim());
+            }
+            eprintln!();
+        }
     }));
 
     let result = std::panic::catch_unwind(|| {
@@ -311,15 +334,24 @@ fn run() {
             }
         }
 
-        Commands::Run { file, dev, args } => {
+        Commands::Run { file, dev, no_jit, profile, args } => {
             let mut driver = Driver::new();
             driver.optimization = if dev { OptLevel::Dev } else { OptLevel::Release };
-
-            // Compile to temp path (unique per process for parallel test runs)
-            let output = std::env::temp_dir().join(format!("forge_run_{}", std::process::id()));
-            driver.output = Some(output.clone());
+            driver.profile = profile;
 
             let (is_project, path) = resolve_target(file);
+
+            // JIT path: single files without --no-jit
+            if !is_project && !no_jit && args.is_empty() {
+                match driver.run_jit(&path) {
+                    Ok(exit_code) => process::exit(exit_code),
+                    Err(e) => fail(e),
+                }
+            }
+
+            // AOT fallback: projects, --no-jit, or programs that need args
+            let output = std::env::temp_dir().join(format!("forge_run_{}", std::process::id()));
+            driver.output = Some(output.clone());
 
             let result = if is_project {
                 driver.compile_project(&path)
@@ -339,9 +371,7 @@ fn run() {
                             });
                         });
 
-                    // Cleanup
                     std::fs::remove_file(&binary).ok();
-
                     process::exit(status.code().unwrap_or(1));
                 }
                 Err(e) => fail(e),

@@ -58,6 +58,9 @@ pub enum CompileError {
     /// Compiled binary failed to execute
     BinaryRunFailed { path: String, detail: String },
 
+    /// JIT execution failed (engine creation, symbol lookup, runtime load)
+    JitFailed { detail: String },
+
     /// CLI usage error (bad arguments, missing files, invalid format)
     CliError { message: String, help: Option<String> },
 }
@@ -242,6 +245,9 @@ impl fmt::Display for CompileError {
             CompileError::BinaryRunFailed { path, detail } => {
                 write!(f, "failed to run {}: {}", path, detail)
             }
+            CompileError::JitFailed { detail } => {
+                write!(f, "JIT execution failed: {}", first_line(detail))
+            }
             CompileError::CliError { message, .. } => {
                 write!(f, "{}", message)
             }
@@ -411,6 +417,17 @@ impl CompileError {
                 out.push_str(&err_line(is_tty, &format!("failed to run `{}`", path)));
                 out.push_str(&dim_line(is_tty, detail));
                 out.push_str(&help_line(is_tty, "check that the compiled binary exists and has execute permissions"));
+            }
+
+            CompileError::JitFailed { detail } => {
+                out.push_str(&err_line(is_tty, "JIT execution failed"));
+                for line in detail.lines().take(5) {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        out.push_str(&dim_line(is_tty, trimmed));
+                    }
+                }
+                out.push_str(&help_line(is_tty, "try `forge build` + run the binary directly, or use `--no-jit` to bypass JIT"));
             }
 
             CompileError::CliError { message, help } => {

@@ -203,6 +203,22 @@ impl<'ctx> Codegen<'ctx> {
         // Declare helper functions (snprintf, route helpers, etc.)
         self.declare_provider_functions();
 
+        // Check if we need to auto-wrap top-level statements in main()
+        let has_explicit_main = program.statements.iter().any(|s| {
+            matches!(s, Statement::FnDecl { name, .. } if name == "main")
+        });
+        let has_top_level_stmts = program.statements.iter().any(|s| {
+            !matches!(s,
+                Statement::FnDecl { .. }
+                | Statement::TypeDecl { .. }
+                | Statement::TraitDecl { .. }
+                | Statement::ImplBlock { .. }
+                | Statement::ExternFn { .. }
+                | Statement::Mut { .. }
+            )
+        });
+
+        // Declare all named functions first (before any compilation)
         for stmt in &program.statements {
             if let Statement::FnDecl { name, type_params, params, return_type, .. } = stmt {
                 if type_params.is_empty() {
@@ -211,27 +227,75 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        for stmt in &program.statements {
-            self.compile_statement(stmt);
-        }
+        if !has_explicit_main && has_top_level_stmts {
+            // Auto-main: compile declarations first, then wrap top-level stmts in main()
+            let mut top_level_stmts = Vec::new();
+            for stmt in &program.statements {
+                match stmt {
+                    Statement::FnDecl { .. }
+                    | Statement::TypeDecl { .. }
+                    | Statement::TraitDecl { .. }
+                    | Statement::ImplBlock { .. }
+                    | Statement::ExternFn { .. }
+                    | Statement::Mut { .. } => {
+                        self.compile_statement(stmt);
+                    }
+                    _ => {
+                        top_level_stmts.push(stmt.clone());
+                    }
+                }
+            }
 
-        if self.module.get_function("main").is_none() {
-            let has_startup = self.module.get_function("__forge_startup").is_some();
-            let has_main_end = self.module.get_function("__forge_main_end").is_some();
-            if has_startup || has_main_end {
-                let i32_type = self.context.i32_type();
-                let fn_type = i32_type.fn_type(&[], false);
-                let function = self.module.add_function("main", fn_type, None);
-                self.functions.insert("main".to_string(), function);
-                let entry = self.context.append_basic_block(function, "entry");
-                self.builder.position_at_end(entry);
-                if let Some(startup_fn) = self.module.get_function("__forge_startup") {
-                    self.builder.build_call(startup_fn, &[], "").unwrap();
-                }
-                if let Some(main_end_fn) = self.module.get_function("__forge_main_end") {
-                    self.builder.build_call(main_end_fn, &[], "").unwrap();
-                }
+            // Create main() wrapping top-level statements
+            let i32_type = self.context.i32_type();
+            let fn_type = i32_type.fn_type(&[], false);
+            let function = self.module.add_function("main", fn_type, None);
+            self.functions.insert("main".to_string(), function);
+            let entry = self.context.append_basic_block(function, "entry");
+            self.builder.position_at_end(entry);
+
+            // Call __forge_startup if it exists
+            if let Some(startup_fn) = self.module.get_function("__forge_startup") {
+                self.builder.build_call(startup_fn, &[], "").unwrap();
+            }
+
+            for stmt in &top_level_stmts {
+                self.compile_statement(stmt);
+            }
+
+            // Call __forge_main_end if it exists
+            if let Some(main_end_fn) = self.module.get_function("__forge_main_end") {
+                self.builder.build_call(main_end_fn, &[], "").unwrap();
+            }
+
+            // Return 0
+            if self.builder.get_insert_block().map_or(true, |b| b.get_terminator().is_none()) {
                 self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+            }
+        } else {
+            // Normal path: compile all statements, then auto-create main if needed for startup/shutdown
+            for stmt in &program.statements {
+                self.compile_statement(stmt);
+            }
+
+            if self.module.get_function("main").is_none() {
+                let has_startup = self.module.get_function("__forge_startup").is_some();
+                let has_main_end = self.module.get_function("__forge_main_end").is_some();
+                if has_startup || has_main_end {
+                    let i32_type = self.context.i32_type();
+                    let fn_type = i32_type.fn_type(&[], false);
+                    let function = self.module.add_function("main", fn_type, None);
+                    self.functions.insert("main".to_string(), function);
+                    let entry = self.context.append_basic_block(function, "entry");
+                    self.builder.position_at_end(entry);
+                    if let Some(startup_fn) = self.module.get_function("__forge_startup") {
+                        self.builder.build_call(startup_fn, &[], "").unwrap();
+                    }
+                    if let Some(main_end_fn) = self.module.get_function("__forge_main_end") {
+                        self.builder.build_call(main_end_fn, &[], "").unwrap();
+                    }
+                    self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+                }
             }
         }
     }
