@@ -24,6 +24,7 @@ extern fn forge_model_sum_json(table: string, column: string, filter_json: strin
 extern fn forge_model_avg_json(table: string, column: string, filter_json: string) -> float
 extern fn forge_model_health() -> int
 extern fn forge_model_paginate_json(table: string, filter_json: string, page: int, per_page: int, order: string) -> string
+extern fn forge_model_search_json(table: string, search_json: string) -> string
 
 component model(__tpl_name, schema) {
     config {
@@ -131,6 +132,13 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.paginate(filter_json: string, page: int, per_page: int, order: string) -> string {
         forge_model_paginate_json(__tpl_config_table_name, filter_json, page, per_page, order)
+    }
+
+    fn __tpl_name.search(search_json: string) -> List<__tpl_name> {
+        let __result: ptr = forge_model_search_json(__tpl_config_table_name, search_json)
+        let __list: List<__tpl_name> = json.parse(__result)
+        forge_model_free_string(__result)
+        __list
     }
 
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int

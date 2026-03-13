@@ -640,20 +640,12 @@ pub extern "C" fn forge_model_query_json(
     let mut sql = format!("SELECT * FROM {}", table);
     let mut values: Vec<String> = Vec::new();
 
-    // WHERE clause
-    if let Some(where_obj) = query.get("where").and_then(|w| w.as_object()) {
-        if !where_obj.is_empty() {
-            let clauses: Vec<String> = where_obj.keys().map(|k| format!("{} = ?", k)).collect();
-            sql.push_str(&format!(" WHERE {}", clauses.join(" AND ")));
-            for v in where_obj.values() {
-                match v {
-                    Value::String(s) => values.push(s.clone()),
-                    Value::Number(n) => values.push(n.to_string()),
-                    Value::Bool(b) => values.push(if *b { "1".to_string() } else { "0".to_string() }),
-                    other => values.push(other.to_string()),
-                }
-            }
-        }
+    // WHERE clause (supports query operators: $gt, $gte, $lt, $lte, $like, $ne, $between)
+    if let Some(where_obj) = query.get("where") {
+        let where_str = serde_json::to_string(where_obj).unwrap_or_default();
+        let (wc, wv) = build_where_clause(&where_str);
+        sql.push_str(&wc);
+        values.extend(wv);
     }
 
     // ORDER BY
@@ -834,6 +826,67 @@ fn jv(v: &Value) -> String {
         Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
         other => other.to_string(),
     }
+}
+
+/// Full-text search across specified columns using LIKE
+/// search_json format: {"columns": ["title", "body"], "query": "search term", "where": {...}, "order": "...", "limit": N}
+#[no_mangle]
+pub extern "C" fn forge_model_search_json(
+    table: *const c_char,
+    search_json: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let search_str = cstr(search_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+
+    let search: Value = match serde_json::from_str(search_str) {
+        Ok(v) => v,
+        Err(_) => return json_result("[]".to_string()),
+    };
+
+    let query_term = search.get("query").and_then(|q| q.as_str()).unwrap_or("");
+    let columns = search.get("columns").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+
+    let mut sql = format!("SELECT * FROM {}", table);
+    let mut values: Vec<String> = Vec::new();
+    let mut conditions: Vec<String> = Vec::new();
+
+    // WHERE from filter
+    if let Some(where_obj) = search.get("where") {
+        let where_str = serde_json::to_string(where_obj).unwrap_or_default();
+        let (wc, wv) = build_where_clause(&where_str);
+        if !wc.is_empty() {
+            // Strip leading " WHERE " to use in combined clause
+            conditions.push(wc.trim_start_matches(" WHERE ").to_string());
+            values.extend(wv);
+        }
+    }
+
+    // Search LIKE conditions (OR across columns)
+    if !query_term.is_empty() && !columns.is_empty() {
+        let like_clauses: Vec<String> = columns.iter()
+            .filter_map(|c| c.as_str())
+            .map(|c| { values.push(format!("%{}%", query_term)); format!("{} LIKE ?", c) })
+            .collect();
+        if !like_clauses.is_empty() {
+            conditions.push(format!("({})", like_clauses.join(" OR ")));
+        }
+    }
+
+    if !conditions.is_empty() {
+        sql.push_str(&format!(" WHERE {}", conditions.join(" AND ")));
+    }
+
+    if let Some(order) = search.get("order").and_then(|o| o.as_str()) {
+        sql.push_str(&format!(" ORDER BY {}", order));
+    }
+    if let Some(limit) = search.get("limit").and_then(|l| l.as_i64()) {
+        sql.push_str(&format!(" LIMIT {}", limit));
+    }
+
+    let pr: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    json_result(query_to_json(conn, &sql, pr.as_slice()))
 }
 
 /// Create a table from a JSON schema definition.
