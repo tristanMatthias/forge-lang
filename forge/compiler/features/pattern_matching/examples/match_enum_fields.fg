@@ -1,0 +1,23 @@
+/// Test: Match on enum with field extraction
+///
+/// expect: circle with radius 5
+/// expect: rect 3x4
+
+enum Shape {
+  Circle(radius: int)
+  Rect(w: int, h: int)
+}
+
+fn describe(s: Shape) -> string {
+  match s {
+    .Circle(r) -> "circle with radius " + string(r)
+    .Rect(w, h) -> "rect " + string(w) + "x" + string(h)
+  }
+}
+
+fn main() {
+  let c = Shape.Circle(radius: 5)
+  let r = Shape.Rect(w: 3, h: 4)
+  println(describe(c))
+  println(describe(r))
+}

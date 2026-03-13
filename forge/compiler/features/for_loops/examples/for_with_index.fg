@@ -1,0 +1,13 @@
+/// Test: For loop with range index
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 4
+
+fn main() {
+  for i in 0..5 {
+    println(string(i))
+  }
+}

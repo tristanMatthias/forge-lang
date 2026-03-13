@@ -1,0 +1,32 @@
+/// Test: Result propagation with ? operator
+///
+/// expect: 42
+/// expect: caught: division by zero
+
+fn divide(a: int, b: int) -> Result<int, string> {
+  if b == 0 {
+    Err("division by zero")
+  } else {
+    Ok(a / b)
+  }
+}
+
+fn compute() -> Result<int, string> {
+  let x = divide(84, 2)?
+  Ok(x)
+}
+
+fn bad_compute() -> Result<int, string> {
+  let x = divide(1, 0)?
+  Ok(x)
+}
+
+fn main() {
+  let result = compute() catch (e) { -1 }
+  println(string(result))
+
+  let result2 = bad_compute() catch (e) {
+    println(`caught: ${e}`)
+    -1
+  }
+}

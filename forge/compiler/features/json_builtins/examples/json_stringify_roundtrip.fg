@@ -1,0 +1,11 @@
+/// Test: JSON stringify then parse roundtrip
+///
+/// expect: alice
+/// expect: 30
+
+fn main() {
+  let json_str = "{\"name\":\"alice\",\"age\":30}"
+  let parsed: {name: string, age: int} = json.parse(json_str)
+  println(parsed.name)
+  println(string(parsed.age))
+}

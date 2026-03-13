@@ -1,0 +1,11 @@
+/// Test: String concatenation with + operator
+///
+/// expect: hello world
+/// expect: abc123
+
+fn main() {
+  let a = "hello"
+  let b = " world"
+  println(a + b)
+  println("abc" + string(123))
+}
