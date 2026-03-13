@@ -416,7 +416,7 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                 .collect(),
             span: *span,
         },
-        Expr::TaggedTemplate { tag, parts, span } => Expr::TaggedTemplate {
+        Expr::TaggedTemplate { tag, parts, type_param, span } => Expr::TaggedTemplate {
             tag: substitute_ident_string(tag, ctx),
             parts: parts
                 .iter()
@@ -429,6 +429,7 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                     }
                 })
                 .collect(),
+            type_param: type_param.clone(),
             span: *span,
         },
         Expr::Is { value, pattern, negated, span } => Expr::Is {

@@ -6,7 +6,7 @@ pub enum TokenKind {
     StringLiteral(String),
     TemplateLiteral(Vec<TemplatePart>),
     DollarString(Vec<TemplatePart>), // $"..." or $`...` — shell command
-    TaggedTemplate(String, Vec<TemplatePart>), // tag`...${expr}...` — tagged template
+    TaggedTemplate(String, Vec<TemplatePart>, Option<String>), // tag`...${expr}...` or tag<Type>`...` — tagged template with optional type param
     BoolLiteral(bool),
     NullLiteral,
 

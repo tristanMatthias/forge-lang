@@ -1,0 +1,12 @@
+/// Test: typed tagged template — tag<Type>`template` overrides return type
+/// expect: {"parts":["SELECT * FROM posts WHERE id = ",""],"values":["42"]}
+
+fn sql(input: string) -> string {
+  input
+}
+
+fn main() {
+  let id = 42
+  let result = sql<string>`SELECT * FROM posts WHERE id = ${id}`
+  println(result)
+}

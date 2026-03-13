@@ -194,7 +194,13 @@ impl<'ctx> Codegen<'ctx> {
             Expr::StringLit(_, _) => Type::String,
             Expr::TemplateLit { .. } => Type::String,
             Expr::DollarExec { .. } => Type::String,
-            Expr::TaggedTemplate { tag, .. } => self.infer_tagged_template_type(tag),
+            Expr::TaggedTemplate { tag, type_param, .. } => {
+                if let Some(tp) = type_param {
+                    self.type_checker.resolve_type_expr(tp)
+                } else {
+                    self.infer_tagged_template_type(tag)
+                }
+            }
             Expr::BoolLit(_, _) | Expr::Is { .. } => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
             Expr::Ident(name, _) => {

@@ -1,0 +1,11 @@
+/// Test: typed tagged template with generic type param — sql<list<string>>`...`
+/// expect: {"parts":["SELECT name FROM users"],"values":[]}
+
+fn sql(input: string) -> string {
+  input
+}
+
+fn main() {
+  let result = sql<list<string>>`SELECT name FROM users`
+  println(result)
+}

@@ -15,6 +15,17 @@ impl Parser {
         lex_parts: Vec<LexTemplatePart>,
         span: Span,
     ) -> Option<Expr> {
+        self.parse_typed_tagged_template(tag, lex_parts, None, span)
+    }
+
+    /// Parse a tagged template with an optional type parameter: `tag<Type>\`template\``
+    pub(crate) fn parse_typed_tagged_template(
+        &mut self,
+        tag: String,
+        lex_parts: Vec<LexTemplatePart>,
+        type_param: Option<TypeExpr>,
+        span: Span,
+    ) -> Option<Expr> {
         let mut parts = Vec::new();
         for part in lex_parts {
             match part {
@@ -32,6 +43,6 @@ impl Parser {
                 }
             }
         }
-        Some(Expr::TaggedTemplate { tag, parts, span })
+        Some(Expr::TaggedTemplate { tag, parts, type_param, span })
     }
 }

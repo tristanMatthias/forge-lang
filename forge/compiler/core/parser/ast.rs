@@ -487,10 +487,11 @@ pub enum Expr {
         parts: Vec<TemplatePart>,
         span: Span,
     },
-    // Tagged template literal: tag`template ${expr}` → tag(json)
+    // Tagged template literal: tag`template ${expr}` or tag<Type>`template`
     TaggedTemplate {
         tag: String,
         parts: Vec<TemplatePart>,
+        type_param: Option<TypeExpr>,
         span: Span,
     },
     // Is expression: value is Pattern → bool

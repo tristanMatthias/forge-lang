@@ -618,7 +618,85 @@ impl<'a> Lexer<'a> {
         }
 
         Token::new(
-            TokenKind::TaggedTemplate(tag, parts),
+            TokenKind::TaggedTemplate(tag, parts, None),
+            Span::new(start, self.pos, line, col),
+        )
+    }
+
+    /// Lex tag<Type>`...` — tagged template literal with type parameter
+    fn lex_typed_tagged_template(&mut self, tag: String, type_param: String, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // skip opening `
+        let mut parts = Vec::new();
+        let mut current = String::new();
+
+        loop {
+            match self.peek() {
+                None => {
+                    self.diagnostics.push(Diagnostic::error(
+                        "F0003",
+                        "unterminated tagged template literal",
+                        Span::new(start, self.pos, line, col),
+                    ));
+                    break;
+                }
+                Some('`') => {
+                    self.advance();
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current));
+                    }
+                    break;
+                }
+                Some('\\') => {
+                    self.advance();
+                    match self.peek() {
+                        Some('`') => { self.advance(); current.push('`'); }
+                        Some('\\') => { self.advance(); current.push('\\'); }
+                        Some('$') => { self.advance(); current.push('$'); }
+                        Some('n') => { self.advance(); current.push('\n'); }
+                        Some('t') => { self.advance(); current.push('\t'); }
+                        Some(c) => { self.advance(); current.push('\\'); current.push(c); }
+                        None => {}
+                    }
+                }
+                Some('$') if self.peek_at(1) == Some('{') => {
+                    if !current.is_empty() {
+                        parts.push(TemplatePart::Literal(current.clone()));
+                        current.clear();
+                    }
+                    self.advance(); // $
+                    self.advance(); // {
+                    let expr_start = self.pos;
+                    let expr_line = self.line;
+                    let expr_col = self.col;
+                    let mut expr = String::new();
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match self.peek() {
+                            Some('{') => { depth += 1; expr.push('{'); self.advance(); }
+                            Some('}') => { depth -= 1; if depth > 0 { expr.push('}'); } self.advance(); }
+                            Some(c) => { expr.push(c); self.advance(); }
+                            None => {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "F0003",
+                                    "unterminated interpolation in tagged template",
+                                    Span::new(expr_start, self.pos, expr_line, expr_col),
+                                ));
+                                break;
+                            }
+                        }
+                    }
+                    let span = Span::new(expr_start, self.pos, expr_line, expr_col);
+                    parts.push(TemplatePart::Expr(expr, span));
+                }
+                Some(c) => {
+                    current.push(c);
+                    self.advance();
+                }
+            }
+        }
+
+        Token::new(
+            TokenKind::TaggedTemplate(tag, parts, Some(type_param)),
             Span::new(start, self.pos, line, col),
         )
     }
@@ -706,6 +784,63 @@ impl<'a> Lexer<'a> {
             );
             if !is_keyword {
                 return self.lex_tagged_template(text, start, line, col);
+            }
+        }
+
+        // Check for typed tagged template: ident<Type>`...`
+        // Look for < followed by matching > then backtick
+        if self.peek() == Some('<') {
+            let is_keyword = matches!(text.as_str(),
+                "let" | "mut" | "const" | "fn" | "return" | "if" | "else" | "match" |
+                "for" | "in" | "while" | "loop" | "break" | "continue" | "enum" |
+                "type" | "use" | "as" | "export" | "emit" | "on" | "trait" | "impl" |
+                "defer" | "errdefer" | "spawn" | "parallel" | "with" | "without" |
+                "only" | "partial" | "catch" | "select" | "component" | "is" |
+                "table" | "true" | "false" | "null" | "Ok" | "Err" | "_"
+            );
+            if !is_keyword {
+                // Look ahead: find matching > then backtick
+                let mut lookahead = 1; // skip the <
+                let mut depth = 1;
+                let mut found_type_param = false;
+                while let Some(c) = self.peek_at(lookahead) {
+                    match c {
+                        '<' => { depth += 1; lookahead += 1; }
+                        '>' => {
+                            depth -= 1;
+                            lookahead += 1;
+                            if depth == 0 {
+                                // Check if immediately followed by backtick
+                                if self.peek_at(lookahead) == Some('`') {
+                                    found_type_param = true;
+                                }
+                                break;
+                            }
+                        }
+                        '\n' | '\r' => break, // type params don't span lines
+                        _ => { lookahead += 1; }
+                    }
+                }
+                if found_type_param {
+                    self.advance(); // skip <
+                    let mut type_str = String::new();
+                    let mut depth = 1;
+                    loop {
+                        match self.peek() {
+                            Some('<') => { depth += 1; type_str.push('<'); self.advance(); }
+                            Some('>') => {
+                                depth -= 1;
+                                if depth == 0 { self.advance(); break; }
+                                type_str.push('>');
+                                self.advance();
+                            }
+                            Some(c) => { type_str.push(c); self.advance(); }
+                            None => break,
+                        }
+                    }
+                    // Now at backtick
+                    return self.lex_typed_tagged_template(text, type_str, start, line, col);
+                }
             }
         }
 

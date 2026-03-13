@@ -1063,12 +1063,21 @@ impl Parser {
                 self.advance();
                 self.parse_dollar_exec(parts, span)
             }
-            TokenKind::TaggedTemplate(tag, parts) => {
+            TokenKind::TaggedTemplate(tag, parts, type_param_str) => {
                 let tag = tag.clone();
                 let parts = parts.clone();
+                let type_param_str = type_param_str.clone();
                 let span = tok.span;
                 self.advance();
-                self.parse_tagged_template(tag, parts, span)
+                // Parse optional type parameter string into TypeExpr
+                let type_param = type_param_str.map(|s| {
+                    use crate::lexer::Lexer;
+                    let mut lexer = Lexer::new(&s);
+                    let tokens = lexer.tokenize();
+                    let mut parser = Parser::new(tokens);
+                    parser.parse_type_expr().unwrap_or(TypeExpr::Named("unknown".to_string()))
+                });
+                self.parse_typed_tagged_template(tag, parts, type_param, span)
             }
             TokenKind::Ident(_) => self.parse_ident_expr(),
             TokenKind::LParen => self.parse_paren_expr(),

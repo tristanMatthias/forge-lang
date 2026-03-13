@@ -847,8 +847,13 @@ impl TypeChecker {
                 }
                 Type::String
             }
-            Expr::TaggedTemplate { tag, parts, span } => {
-                self.check_tagged_template(tag, parts, span)
+            Expr::TaggedTemplate { tag, parts, type_param, span } => {
+                let base_type = self.check_tagged_template(tag, parts, span);
+                if let Some(tp) = type_param {
+                    self.resolve_type_expr(tp)
+                } else {
+                    base_type
+                }
             }
             Expr::Is { value, .. } => {
                 self.check_expr(value);
