@@ -132,7 +132,7 @@ fn handle_request(mut request: Request, routes: &[Route], middleware: &[Middlewa
     if method == "OPTIONS" {
         let cors_headers = vec![
             Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-            Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS").unwrap(),
+            Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS").unwrap(),
             Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, Authorization").unwrap(),
         ];
         let mut response = Response::from_string("").with_status_code(204);
@@ -420,6 +420,13 @@ pub extern "C" fn forge_http_mount_crud(port: u16, table: *const c_char, base_pa
         forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_update_handler);
     }
 
+    // PATCH /base/:id — partial update (same handler as PUT)
+    {
+        let method_c = CString::new("PATCH").unwrap();
+        let path_c = CString::new(id_path.as_str()).unwrap();
+        forge_http_add_route(port, method_c.as_ptr(), path_c.as_ptr(), mount_update_handler);
+    }
+
     // DELETE /base/:id — delete
     {
         let method_c = CString::new("DELETE").unwrap();
@@ -617,8 +624,8 @@ extern "C" fn mount_delete_handler(
     path: *const c_char,
     _body: *const c_char,
     params: *const c_char,
-    _response_buf: *mut c_char,
-    _response_buf_len: i64,
+    response_buf: *mut c_char,
+    response_buf_len: i64,
 ) -> i64 {
     let path_s = cstr(path);
     let table = match find_mount_table(path_s) {
@@ -627,8 +634,14 @@ extern "C" fn mount_delete_handler(
     };
     let table_c = CString::new(table.as_str()).unwrap();
     let id = parse_id_from_params(params);
-    unsafe { model_delete_json(table_c.as_ptr(), id) };
-    204
+    let rows = unsafe { model_delete_json(table_c.as_ptr(), id) };
+    if rows > 0 {
+        copy_str_to_buf(r#"{"deleted":true}"#, response_buf, response_buf_len);
+        200
+    } else {
+        copy_str_to_buf(r#"{"error":"not found"}"#, response_buf, response_buf_len);
+        404
+    }
 }
 
 fn parse_id_from_params(params_json: *const c_char) -> i64 {
