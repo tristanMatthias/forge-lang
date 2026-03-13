@@ -733,6 +733,109 @@ pub extern "C" fn forge_model_find_by_json(
     }
 }
 
+/// Aggregate: SUM of a column
+#[no_mangle]
+pub extern "C" fn forge_model_sum_json(table: *const c_char, column: *const c_char, filter_json: *const c_char) -> f64 {
+    let table = cstr(table);
+    let column = cstr(column);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT COALESCE(SUM({}), 0) FROM {}{}", column, table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, f64>(0)).unwrap_or(0.0)
+}
+
+/// Aggregate: AVG of a column
+#[no_mangle]
+pub extern "C" fn forge_model_avg_json(table: *const c_char, column: *const c_char, filter_json: *const c_char) -> f64 {
+    let table = cstr(table);
+    let column = cstr(column);
+    let filter_str = cstr(filter_json);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+    let (wc, vals) = build_where_clause(filter_str);
+    let sql = format!("SELECT COALESCE(AVG({}), 0) FROM {}{}", column, table, wc);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    conn.query_row(&sql, pr.as_slice(), |r| r.get::<_, f64>(0)).unwrap_or(0.0)
+}
+
+/// Health check
+#[no_mangle]
+pub extern "C" fn forge_model_health() -> i64 {
+    let db = DB.lock().unwrap();
+    match db.as_ref() {
+        Some(conn) => conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0)).unwrap_or(0),
+        None => 0,
+    }
+}
+
+/// Paginated query
+#[no_mangle]
+pub extern "C" fn forge_model_paginate_json(
+    table: *const c_char, filter_json: *const c_char,
+    page: i64, per_page: i64, order: *const c_char,
+) -> *mut c_char {
+    let table = cstr(table);
+    let filter_str = cstr(filter_json);
+    let order_str = cstr(order);
+    let db = DB.lock().unwrap();
+    let conn = db.as_ref().expect("DB not init");
+    let (wc, vals) = build_where_clause(filter_str);
+    let pr: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    let total = conn.query_row(&format!("SELECT COUNT(*) FROM {}{}", table, wc), pr.as_slice(), |r| r.get::<_, i64>(0)).unwrap_or(0);
+    let total_pages = if per_page > 0 { (total + per_page - 1) / per_page } else { 1 };
+    let offset = (page - 1) * per_page;
+    let mut dsql = format!("SELECT * FROM {}{}", table, wc);
+    if !order_str.is_empty() { dsql.push_str(&format!(" ORDER BY {}", order_str)); }
+    dsql.push_str(&format!(" LIMIT {} OFFSET {}", per_page, offset));
+    let pr2: Vec<&dyn rusqlite::types::ToSql> = vals.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+    let data = query_to_json(conn, &dsql, pr2.as_slice());
+    json_result(format!(r#"{{"data":{},"total":{},"current_page":{},"per_page":{},"total_pages":{},"has_next":{},"has_prev":{}}}"#,
+        data, total, page, per_page, total_pages, page < total_pages, page > 1))
+}
+
+fn build_where_clause(filter_str: &str) -> (String, Vec<String>) {
+    if filter_str.is_empty() || filter_str == "{}" || filter_str == "null" {
+        return (String::new(), Vec::new());
+    }
+    let filter: Value = match serde_json::from_str(filter_str) {
+        Ok(v) => v, Err(_) => return (String::new(), Vec::new()),
+    };
+    if let Some(obj) = filter.as_object() {
+        if obj.is_empty() { return (String::new(), Vec::new()); }
+        let mut clauses = Vec::new();
+        let mut values = Vec::new();
+        for (k, v) in obj {
+            if let Some(op) = v.as_object() {
+                if let Some(val) = op.get("$gt") { clauses.push(format!("{} > ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$gte") { clauses.push(format!("{} >= ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$lt") { clauses.push(format!("{} < ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$lte") { clauses.push(format!("{} <= ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$like") { clauses.push(format!("{} LIKE ?", k)); values.push(jv(val)); }
+                else if let Some(val) = op.get("$ne") { clauses.push(format!("{} != ?", k)); values.push(jv(val)); }
+                else if let Some(arr) = op.get("$between").and_then(|b| b.as_array()) {
+                    if arr.len() == 2 { clauses.push(format!("{} BETWEEN ? AND ?", k)); values.push(jv(&arr[0])); values.push(jv(&arr[1])); }
+                }
+            } else {
+                clauses.push(format!("{} = ?", k)); values.push(jv(v));
+            }
+        }
+        if clauses.is_empty() { return (String::new(), Vec::new()); }
+        (format!(" WHERE {}", clauses.join(" AND ")), values)
+    } else { (String::new(), Vec::new()) }
+}
+
+fn jv(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
+        other => other.to_string(),
+    }
+}
+
 /// Create a table from a JSON schema definition.
 /// schema_json format: [{"name":"id","type":"int","annotations":[{"name":"primary"},{"name":"auto_increment"}]}, ...]
 /// This keeps all SQL type mapping knowledge inside the provider, not the compiler.

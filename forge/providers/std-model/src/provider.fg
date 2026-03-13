@@ -20,6 +20,10 @@ extern fn forge_model_get_related(table: string, id: int, foreign_key: string, r
 extern fn forge_model_get_related_many(table: string, id: int, foreign_key: string, related_table: string) -> string
 extern fn forge_model_query_json(table: string, query_json: string) -> string
 extern fn forge_json_is_null(ptr: string) -> i8
+extern fn forge_model_sum_json(table: string, column: string, filter_json: string) -> float
+extern fn forge_model_avg_json(table: string, column: string, filter_json: string) -> float
+extern fn forge_model_health() -> int
+extern fn forge_model_paginate_json(table: string, filter_json: string, page: int, per_page: int, order: string) -> string
 
 component model(__tpl_name, schema) {
     config {
@@ -111,6 +115,22 @@ component model(__tpl_name, schema) {
 
     fn __tpl_name.delete(id: int) -> int {
         forge_model_delete_json(__tpl_config_table_name, id)
+    }
+
+    fn __tpl_name.count_where(filter_json: string) -> int {
+        forge_model_count_json(__tpl_config_table_name, filter_json)
+    }
+
+    fn __tpl_name.sum(column: string) -> float {
+        forge_model_sum_json(__tpl_config_table_name, column, "{}")
+    }
+
+    fn __tpl_name.avg(column: string) -> float {
+        forge_model_avg_json(__tpl_config_table_name, column, "{}")
+    }
+
+    fn __tpl_name.paginate(filter_json: string, page: int, per_page: int, order: string) -> string {
+        forge_model_paginate_json(__tpl_config_table_name, filter_json, page, per_page, order)
     }
 
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int
