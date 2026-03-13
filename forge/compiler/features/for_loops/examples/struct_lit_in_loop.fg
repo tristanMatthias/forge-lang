@@ -1,0 +1,30 @@
+/// # Struct Literal with Calls in Loop
+///
+/// Regression test: function calls used inline as struct literal field
+/// values inside a for loop must compile with correct LLVM types.
+/// Previously, infer_type could return Unknown for complex expressions,
+/// causing the struct field to use i64 instead of the actual value type.
+///
+/// expect: Alice:30
+/// expect: Bob:25
+
+type Person = { name: string, age: int }
+
+fn make_name(s: string) -> string {
+    s
+}
+
+fn make_age(n: int) -> int {
+    n
+}
+
+fn main() {
+    let names = ["Alice", "Bob"]
+    let ages = [30, 25]
+    mut i = 0
+    for name in names {
+        let p = Person { name: make_name(name), age: make_age(ages[i]) }
+        println(`${p.name}:${p.age}`)
+        i = i + 1
+    }
+}

@@ -1,0 +1,17 @@
+/// # Map Struct Field
+///
+/// Mapping over a list of structs to extract a field, then summing.
+///
+/// expect: 600
+
+type FileInfo = { name: string, size: int }
+
+fn main() {
+  let files = [
+    FileInfo { name: "a.txt", size: 100 },
+    FileInfo { name: "b.txt", size: 200 },
+    FileInfo { name: "c.txt", size: 300 }
+  ]
+  let total = files.map((f) -> f.size).sum()
+  println(total)
+}

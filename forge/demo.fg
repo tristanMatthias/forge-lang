@@ -1,0 +1,303 @@
+// ─────────────────────────────────────────────────────────
+//  fgfind — a file search & analysis CLI built in Forge
+// ─────────────────────────────────────────────────────────
+
+use @std.cli
+use @std.term
+use @std.fs
+use @std.process
+
+// ═══════════════════════════════════════════════════════════
+//  CLI schema — declarative argument parsing
+// ═══════════════════════════════════════════════════════════
+
+cli app {
+    version "1.0.0"
+    description "A fast file search & analysis tool — built with Forge"
+
+    path:      string @arg @description("Directory to search") @optional
+    pattern:   string @option @short("p") @description("Filter by glob pattern") @default("*")
+    query:     string @option @short("q") @description("Search file contents") @default("")
+    stats:     bool   @flag   @short("s") @description("Show file statistics")
+    tree:      bool   @flag   @short("t") @description("Display directory tree")
+    top:       int    @option @short("n") @description("Show top N largest files") @default(10)
+    verbose:   bool   @flag   @short("v") @description("Show verbose output")
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Types — clean data modeling
+// ═══════════════════════════════════════════════════════════
+
+type FileInfo = { name: string, path: string, size: int, ext: string }
+
+enum FileKind {
+    code(ext: string)
+    cfg
+    docs
+    data
+    media
+    other
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Pure functions
+// ═══════════════════════════════════════════════════════════
+
+fn classify(ext: string) -> FileKind {
+    match ext {
+        "rs"   -> FileKind.code(ext: "rs")
+        "fg"   -> FileKind.code(ext: "fg")
+        "ts"   -> FileKind.code(ext: "ts")
+        "js"   -> FileKind.code(ext: "js")
+        "py"   -> FileKind.code(ext: "py")
+        "go"   -> FileKind.code(ext: "go")
+        "c"    -> FileKind.code(ext: "c")
+        "h"    -> FileKind.code(ext: "h")
+        "toml" -> FileKind.cfg
+        "json" -> FileKind.cfg
+        "yaml" -> FileKind.cfg
+        "yml"  -> FileKind.cfg
+        "lock" -> FileKind.cfg
+        "md"   -> FileKind.docs
+        "txt"  -> FileKind.docs
+        "csv"  -> FileKind.data
+        "sql"  -> FileKind.data
+        "png"  -> FileKind.media
+        "jpg"  -> FileKind.media
+        "svg"  -> FileKind.media
+        _      -> FileKind.other
+    }
+}
+
+fn kind_label(kind: FileKind) -> string {
+    match kind {
+        .code(ext) -> `code (${ext})`
+        .cfg       -> "config"
+        .docs      -> "docs"
+        .data      -> "data"
+        .media     -> "media"
+        .other     -> "other"
+    }
+}
+
+fn format_size(bytes: int) -> string {
+    if bytes >= 1048576 {
+        `${bytes / 1048576}MB`
+    } else {
+        if bytes >= 1024 {
+            `${bytes / 1024}KB`
+        } else {
+            `${bytes}B`
+        }
+    }
+}
+
+fn repeat_str(s: string, n: int) -> string {
+    mut result = ""
+    for _i in 0..n {
+        result = result + s
+    }
+    result
+}
+
+fn pad_right(s: string, width: int) -> string {
+    let pad = width - s.length
+    if pad > 0 {
+        s + repeat_str(" ", pad)
+    } else {
+        s
+    }
+}
+
+fn bar_chart(label: string, count: int, max: int, width: int) -> string {
+    let filled = if max > 0 { count * width / max } else { 0 }
+    let bar = repeat_str("#", filled) + repeat_str(".", width - filled)
+    `  ${label}  [${bar}] ${count}`
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Main
+// ═══════════════════════════════════════════════════════════
+
+fn main() {
+    let dir = app.get("path")
+    let target = if dir == "" { fs.cwd() } else { dir }
+
+    let pattern = app.get("pattern")
+    let query = app.get("query")
+    let show_stats = app.get_bool("stats")
+    let show_tree = app.get_bool("tree")
+    let top_n = app.get_int("top")
+    let verbose = app.get_bool("verbose")
+
+    // ── Scan files ──────────────────────────────────────
+    let glob_pattern = fs.join(target, pattern)
+    let raw = fs.glob(glob_pattern)
+    let paths = if raw == "" { [] } else { raw.split("\n").filter(it != "") }
+
+    if fs.is_dir(target) == false {
+        println(term.red(`error: '${target}' is not a directory`))
+        return
+    }
+
+    mut files: List<FileInfo> = []
+    for p in paths {
+        files.push(FileInfo { name: fs.filename(p), path: p, size: fs.size(p), ext: fs.extension(p) })
+    }
+
+    // ── Header ──────────────────────────────────────────
+    println("")
+    println(term.bold(`  fgfind · ${target}`))
+    let matched_msg = if pattern != "*" { `pattern '${pattern}'` } else { "" }
+    println(term.dim(`  ${files.length} files matched ${matched_msg}`))
+    println("")
+
+    // ── Content search ──────────────────────────────────
+    if query != "" {
+        println(term.bold(`  Searching for: ${term.cyan(query)}`))
+        println(term.dim("  ─────────────────────────────────────"))
+        mut match_count = 0
+        for file in files {
+            let content = fs.read(file.path)
+            if content.contains(query) {
+                let lines = content.split("\n")
+                mut line_num = 0
+                for line in lines {
+                    line_num = line_num + 1
+                    if line.contains(query) {
+                        if match_count == 0 {
+                            println("")
+                        }
+                        println(`  ${term.green(file.name)}${term.dim(`:${line_num}`)}  ${line.trim()}`)
+                        match_count = match_count + 1
+                    }
+                }
+            }
+        }
+        if match_count == 0 {
+            println(term.dim("  no matches found"))
+        } else {
+            println("")
+            println(term.dim(`  ${match_count} matches across files`))
+        }
+        println("")
+    }
+
+    // ── Stats mode ──────────────────────────────────────
+    if show_stats == 1 {
+        println(term.bold("  File Statistics"))
+        println(term.dim("  ─────────────────────────────────────"))
+
+        let total_size = files.map((f) -> f.size).sum()
+        println(`  Total size: ${term.bold(format_size(total_size))}`)
+        println(`  File count: ${term.bold(string(files.length))}`)
+
+        mut code_count = 0
+        mut cfg_count = 0
+        mut docs_count = 0
+        mut data_count = 0
+        mut media_count = 0
+        mut other_count = 0
+
+        for file in files {
+            let kind = classify(file.ext)
+            match kind {
+                .code(_ext) -> { code_count = code_count + 1 }
+                .cfg        -> { cfg_count = cfg_count + 1 }
+                .docs       -> { docs_count = docs_count + 1 }
+                .data       -> { data_count = data_count + 1 }
+                .media      -> { media_count = media_count + 1 }
+                .other      -> { other_count = other_count + 1 }
+            }
+        }
+
+        let max = [code_count, cfg_count, docs_count, data_count, media_count, other_count]
+            .reduce(0, (a, b) -> if a > b { a } else { b })
+
+        println("")
+        println(bar_chart(pad_right("code",   8), code_count,  max, 25))
+        println(bar_chart(pad_right("config", 8), cfg_count,   max, 25))
+        println(bar_chart(pad_right("docs",   8), docs_count,  max, 25))
+        println(bar_chart(pad_right("data",   8), data_count,  max, 25))
+        println(bar_chart(pad_right("media",  8), media_count, max, 25))
+        println(bar_chart(pad_right("other",  8), other_count, max, 25))
+        println("")
+    }
+
+    // ── Tree mode ───────────────────────────────────────
+    if show_tree == 1 {
+        println(term.bold(`  ${fs.filename(target)}/`))
+        mut prev_dir = ""
+        for file in files {
+            let dir_part = fs.parent(file.path)
+            let rel = if dir_part.length > target.length {
+                fs.filename(dir_part)
+            } else {
+                "."
+            }
+            if rel != prev_dir {
+                if rel != "." {
+                    println(term.dim(`  +-- ${rel}/`))
+                }
+                prev_dir = rel
+            }
+            let size_str = term.dim(`(${format_size(file.size)})`)
+            let prefix = if rel != "." { "  |   " } else { "  +-- " }
+            println(`${prefix}${file.name} ${size_str}`)
+        }
+        println("")
+    }
+
+    // ── Top N largest ───────────────────────────────────
+    if show_tree == 0 && show_stats == 0 && query == "" {
+        println(term.bold(`  Top ${top_n} largest files`))
+        println(term.dim("  ─────────────────────────────────────"))
+
+        mut shown: List<string> = []
+        mut rank = 0
+        while rank < top_n && rank < files.length {
+            mut best_idx = -1
+            mut best_size = -1
+            mut fi = 0
+            for file in files {
+                if file.size > best_size {
+                    let already = shown.any(it == file.path)
+                    if already == false {
+                        best_size = file.size
+                        best_idx = fi
+                    }
+                }
+                fi = fi + 1
+            }
+            if best_idx >= 0 {
+                let best = files[best_idx]
+                shown.push(best.path)
+                let kind = classify(best.ext)
+                let lbl = kind_label(kind)
+                let num = term.dim(`${rank + 1}.`)
+                let size_str = term.bold(pad_right(format_size(best.size), 8))
+                println(`  ${num} ${size_str} ${best.name}  ${term.dim(lbl)}`)
+            }
+            rank = rank + 1
+        }
+        println("")
+
+        let total = files.map((f) -> f.size).sum()
+        println(term.dim(`  ${files.length} files, ${format_size(total)} total`))
+        println("")
+    }
+
+    // ── Verbose: shell integration ──────────────────────
+    if verbose == 1 {
+        println(term.bold("  System Info"))
+        println(term.dim("  ─────────────────────────────────────"))
+        let hostname = $"hostname".trim()
+        let uname = $"uname -sr".trim()
+        let shell = $"echo $SHELL".trim()
+        println(`  host:  ${term.cyan(hostname)}`)
+        println(`  os:    ${uname}`)
+        println(`  shell: ${shell}`)
+        println(`  cwd:   ${fs.cwd()}`)
+        println("")
+    }
+}

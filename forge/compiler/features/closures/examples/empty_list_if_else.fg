@@ -1,0 +1,40 @@
+/// # Empty List in If/Else Branch
+///
+/// When an empty list `[]` appears in one branch and a typed list
+/// in the other, the result should adopt the element type from
+/// the non-empty branch.
+///
+/// expect: hello
+/// expect: world
+/// expect: ---
+/// expect: a
+/// expect: b
+/// expect: ---
+/// expect: x
+/// expect: y
+
+fn main() {
+  let raw = "hello\nworld"
+  let items = if raw == "" { [] } else { raw.split("\n") }
+  for item in items {
+    println(item)
+  }
+
+  println("---")
+
+  // Also test with filter in the else branch
+  let raw2 = "a\n\nb\n"
+  let filtered = if raw2 == "" { [] } else { raw2.split("\n").filter(it != "") }
+  for f in filtered {
+    println(f)
+  }
+
+  println("---")
+
+  // Reversed: empty list in else branch
+  let raw3 = "x\ny"
+  let reversed = if raw3 != "" { raw3.split("\n") } else { [] }
+  for r in reversed {
+    println(r)
+  }
+}

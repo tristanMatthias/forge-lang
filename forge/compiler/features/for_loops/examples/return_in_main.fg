@@ -1,0 +1,21 @@
+/// # Return in Main
+///
+/// Using bare `return` inside fn main() should work without
+/// causing an LLVM verification error (main returns i32, not void).
+///
+/// expect: before return
+/// expect: after condition
+
+fn main() {
+  let x = 1
+  if x == 99 {
+    println("should not print")
+    return
+  }
+  println("before return")
+
+  if x == 2 {
+    return
+  }
+  println("after condition")
+}
