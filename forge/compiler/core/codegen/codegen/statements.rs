@@ -173,6 +173,11 @@ impl<'ctx> Codegen<'ctx> {
                     } else {
                         self.builder.build_return(None).unwrap();
                     }
+                } else if self.current_fn_name.as_deref() == Some("main") {
+                    // main() returns i32 for C ABI, so bare return must emit `ret i32 0`
+                    self.builder
+                        .build_return(Some(&self.context.i32_type().const_zero()))
+                        .unwrap();
                 } else {
                     self.builder.build_return(None).unwrap();
                 }
@@ -287,6 +292,8 @@ impl<'ctx> Codegen<'ctx> {
 
         let prev_return_type = self.current_fn_return_type.take();
         self.current_fn_return_type = Some(ret_ty.clone());
+        let prev_fn_name = self.current_fn_name.take();
+        self.current_fn_name = Some(name.to_string());
         let prev_deferred = std::mem::take(&mut self.deferred_stmts);
 
         let mut last_val = None;
@@ -306,10 +313,16 @@ impl<'ctx> Codegen<'ctx> {
                         if let Some(v) = compiled {
                             self.builder.build_return(Some(&v)).unwrap();
                         }
+                    } else if name == "main" {
+                        // main() returns i32 for C ABI, so bare return must emit `ret i32 0`
+                        self.builder
+                            .build_return(Some(&self.context.i32_type().const_zero()))
+                            .unwrap();
                     } else {
                         self.builder.build_return(None).unwrap();
                     }
                     self.pop_scope();
+                    self.current_fn_name = prev_fn_name;
                     self.deferred_stmts = prev_deferred;
                     return;
                 }
@@ -373,6 +386,7 @@ impl<'ctx> Codegen<'ctx> {
 
         self.pop_scope();
         self.current_fn_return_type = prev_return_type;
+        self.current_fn_name = prev_fn_name;
         self.deferred_stmts = prev_deferred;
     }
 

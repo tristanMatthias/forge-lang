@@ -33,7 +33,9 @@ impl<'ctx> Codegen<'ctx> {
                         let ty = self.infer_type(expr);
                         // Wrap in nullable if target is nullable but value isn't
                         if matches!(ftype, Type::Nullable(_)) && !matches!(&ty, Type::Nullable(_)) {
-                            let inner_llvm = self.type_to_llvm_basic(&ty);
+                            // Use the actual LLVM type from the compiled value for
+                            // nullable wrapping, since infer_type may return Unknown.
+                            let inner_llvm = val.get_type();
                             let nullable_type = self.context.struct_type(
                                 &[self.context.i8_type().into(), inner_llvm.into()],
                                 false,
@@ -48,7 +50,9 @@ impl<'ctx> Codegen<'ctx> {
                             all_field_types.push(self.type_to_llvm_basic(ftype));
                             all_field_vals.push(nullable_val.into());
                         } else {
-                            all_field_types.push(self.type_to_llvm_basic(&ty));
+                            // Use the actual LLVM type from the compiled value
+                            // rather than infer_type to avoid Unknown -> i64 mismatch.
+                            all_field_types.push(val.get_type());
                             all_field_vals.push(val);
                         }
                     } else {
@@ -82,7 +86,11 @@ impl<'ctx> Codegen<'ctx> {
         for (name, expr) in fields {
             let val = self.compile_expr(expr)?;
             let ty = self.infer_type(expr);
-            field_types.push(self.type_to_llvm_basic(&ty));
+            // Use the actual LLVM type from the compiled value rather than the
+            // inferred type. infer_type can return Type::Unknown for complex
+            // expressions (e.g. static method calls like fs.filename(p) inside
+            // struct literals), which maps to i64 and causes type mismatches.
+            field_types.push(val.get_type());
             field_vals.push(val);
             type_fields.push((name.clone(), ty));
         }

@@ -62,6 +62,11 @@ impl<'ctx> Codegen<'ctx> {
                             "length" => return Type::Int,
                             _ => {}
                         },
+                        Type::Struct { fields, .. } => {
+                            if let Some((_, ty)) = fields.iter().find(|(n, _)| n == field) {
+                                return ty.clone();
+                            }
+                        },
                         _ => {}
                     }
                 }

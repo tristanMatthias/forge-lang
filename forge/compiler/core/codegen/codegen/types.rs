@@ -445,7 +445,9 @@ impl<'ctx> Codegen<'ctx> {
                 } else if else_is_null && !then_is_null && then_type != Type::Void {
                     Type::Nullable(Box::new(then_type))
                 } else {
-                    then_type
+                    // Pick the more specific type when one branch is underspecified
+                    // e.g. if cond { [] } else { list_of_strings } should be list<string>
+                    self.unify_branch_types(&then_type, &else_type)
                 }
             }
             Expr::Match { arms, .. } => {
@@ -629,6 +631,33 @@ impl<'ctx> Codegen<'ctx> {
                 _ => Type::Unknown,
             },
             _ => Type::Unknown,
+        }
+    }
+
+    /// Unify two branch types, preferring the more specific one.
+    /// For example, List(Unknown) unified with List(String) yields List(String).
+    /// Unknown unified with any concrete type yields the concrete type.
+    pub(crate) fn unify_branch_types(&self, a: &Type, b: &Type) -> Type {
+        match (a, b) {
+            // If one side is Unknown, prefer the other
+            (Type::Unknown, other) | (other, Type::Unknown) => other.clone(),
+            // Unify inner types for List
+            (Type::List(inner_a), Type::List(inner_b)) => {
+                Type::List(Box::new(self.unify_branch_types(inner_a, inner_b)))
+            }
+            // Unify inner types for Nullable
+            (Type::Nullable(inner_a), Type::Nullable(inner_b)) => {
+                Type::Nullable(Box::new(self.unify_branch_types(inner_a, inner_b)))
+            }
+            // Unify inner types for Map
+            (Type::Map(ka, va), Type::Map(kb, vb)) => {
+                Type::Map(
+                    Box::new(self.unify_branch_types(ka, kb)),
+                    Box::new(self.unify_branch_types(va, vb)),
+                )
+            }
+            // Default: prefer the first (then) branch
+            _ => a.clone(),
         }
     }
 }
