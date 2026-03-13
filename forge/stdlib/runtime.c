@@ -301,6 +301,21 @@ ForgeString forge_list_to_json(ForgeString* data, int64_t len) {
     return (ForgeString){ .ptr = buf, .len = pos };
 }
 
+ForgeString forge_list_int_to_json(int64_t* data, int64_t len) {
+    // Each int64 can be up to 20 digits + sign + comma
+    int64_t buf_cap = 2 + len * 22;
+    char* buf = (char*)forge_alloc(buf_cap);
+    int64_t pos = 0;
+    buf[pos++] = '[';
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) buf[pos++] = ',';
+        pos += snprintf(buf + pos, buf_cap - pos, "%lld", (long long)data[i]);
+    }
+    buf[pos++] = ']';
+    buf[pos] = '\0';
+    return (ForgeString){ .ptr = buf, .len = pos };
+}
+
 // ---- List sort ----
 
 void forge_list_sort_int(int64_t* data, int64_t len) {

@@ -101,6 +101,10 @@ impl<'ctx> Codegen<'ctx> {
         let fn_type = string_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
         self.module.add_function("forge_list_to_json", fn_type, None);
 
+        // forge_list_int_to_json(ptr, i64) -> ForgeString
+        let fn_type = string_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+        self.module.add_function("forge_list_int_to_json", fn_type, None);
+
         // forge_rc_retain(ptr)
         let fn_type = void_type.fn_type(&[ptr_type.into()], false);
         self.module.add_function("forge_rc_retain", fn_type, None);

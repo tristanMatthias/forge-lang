@@ -1,0 +1,13 @@
+/// Test: json.stringify with nested structs, lists, and mixed types
+///
+/// expect: {"name":"alice","scores":[10,20,30],"tags":["a","b"],"meta":{"role":"admin","level":5}}
+
+fn main() {
+  let data = {
+    name: "alice",
+    scores: [10, 20, 30],
+    tags: ["a", "b"],
+    meta: { role: "admin", level: 5 }
+  }
+  println(json.stringify(data))
+}
