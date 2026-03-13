@@ -1,0 +1,17 @@
+/// Test: json.stringify for List<Model> includes all visible fields
+///
+/// expect: [{"id":1,"name":"alice"},{"id":2,"name":"bob"}]
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string
+}
+
+fn main() {
+  User.create({ name: "alice" })
+  User.create({ name: "bob" })
+  let users = User.list()
+  println(json.stringify(users))
+}

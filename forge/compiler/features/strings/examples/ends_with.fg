@@ -1,0 +1,12 @@
+/// Test: string.ends_with() checks suffix
+///
+/// expect: true
+/// expect: false
+/// expect: true
+
+fn main() {
+  let s = "hello.fg"
+  println(string(s.ends_with(".fg")))
+  println(string(s.ends_with(".rs")))
+  println(string(s.ends_with("")))
+}

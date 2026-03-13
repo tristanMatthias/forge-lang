@@ -314,7 +314,7 @@ impl<'ctx> Codegen<'ctx> {
                     match &obj_type {
                         Type::String => match field.as_str() {
                             "upper" | "lower" | "trim" | "replace" => Type::String,
-                            "contains" | "starts_with" => Type::Bool,
+                            "contains" | "starts_with" | "ends_with" => Type::Bool,
                             "length" => Type::Int,
                             "parse_int" => Type::Int,
                             "split" => Type::List(Box::new(Type::String)),
@@ -589,7 +589,7 @@ impl<'ctx> Codegen<'ctx> {
                     Type::String => match field.as_str() {
                         "length" | "parse_int" => Type::Nullable(Box::new(Type::Int)),
                         "upper" | "lower" | "trim" | "replace" => Type::Nullable(Box::new(Type::String)),
-                        "contains" | "starts_with" => Type::Nullable(Box::new(Type::Bool)),
+                        "contains" | "starts_with" | "ends_with" => Type::Nullable(Box::new(Type::Bool)),
                         _ => Type::Unknown,
                     },
                     _ => Type::Unknown,
@@ -604,7 +604,7 @@ impl<'ctx> Codegen<'ctx> {
         match obj_type {
             Type::String => match method {
                 "upper" | "lower" | "trim" | "replace" => Type::String,
-                "contains" | "starts_with" => Type::Bool,
+                "contains" | "starts_with" | "ends_with" => Type::Bool,
                 "length" | "parse_int" => Type::Int,
                 "split" => Type::List(Box::new(Type::String)),
                 _ => Type::Unknown,

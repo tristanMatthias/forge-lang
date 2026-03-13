@@ -182,6 +182,12 @@ int8_t forge_string_starts_with(ForgeString s, ForgeString prefix) {
     return memcmp(s.ptr, prefix.ptr, prefix.len) == 0 ? 1 : 0;
 }
 
+int8_t forge_string_ends_with(ForgeString s, ForgeString suffix) {
+    if (suffix.len > s.len) return 0;
+    if (suffix.len == 0) return 1;
+    return memcmp(s.ptr + s.len - suffix.len, suffix.ptr, suffix.len) == 0 ? 1 : 0;
+}
+
 ForgeString forge_string_replace(ForgeString s, ForgeString find, ForgeString replace) {
     if (find.len == 0) return forge_string_new(s.ptr, s.len);
 

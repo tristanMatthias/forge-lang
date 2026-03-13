@@ -234,6 +234,20 @@ impl<'ctx> Codegen<'ctx> {
                         None
                     }
                 }
+                "ends_with" => {
+                    if let Some(arg) = args.first() {
+                        let arg_val = self.compile_expr(&arg.value)?;
+                        let fn_ref = self.module.get_function("forge_string_ends_with").unwrap();
+                        let result = self.builder.build_call(
+                            fn_ref,
+                            &[obj_val.into(), arg_val.into()],
+                            "ends_with",
+                        ).unwrap();
+                        result.try_as_basic_value().left()
+                    } else {
+                        None
+                    }
+                }
                 "replace" => {
                     if let (Some(find_arg), Some(replace_arg)) = (args.get(0), args.get(1)) {
                         let find_val = self.compile_expr(&find_arg.value)?;

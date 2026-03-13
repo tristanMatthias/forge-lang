@@ -1,0 +1,13 @@
+/// Test: json.stringify for List<Struct> produces JSON array
+///
+/// expect: [{"name":"alice","age":30},{"name":"bob","age":25}]
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let people: List<Person> = [
+    { name: "alice", age: 30 },
+    { name: "bob", age: 25 }
+  ]
+  println(json.stringify(people))
+}

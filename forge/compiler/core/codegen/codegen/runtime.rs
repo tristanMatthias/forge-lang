@@ -85,6 +85,10 @@ impl<'ctx> Codegen<'ctx> {
         let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
         self.module.add_function("forge_string_starts_with", fn_type, None);
 
+        // forge_string_ends_with(ForgeString, ForgeString) -> i8
+        let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
+        self.module.add_function("forge_string_ends_with", fn_type, None);
+
         // forge_string_replace(ForgeString, ForgeString, ForgeString) -> ForgeString
         let fn_type = string_type.fn_type(&[string_type.into(), string_type.into(), string_type.into()], false);
         self.module.add_function("forge_string_replace", fn_type, None);
