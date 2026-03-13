@@ -11,13 +11,14 @@ fn main() {
   let ch = channel(10)
 
   spawn {
+    sleep(10)
     ch <- "a"
   }
   spawn {
+    sleep(50)
     ch <- "b"
   }
 
-  sleep(100)
   let msg1 = <- ch
   let msg2 = <- ch
   println(msg1)
