@@ -1,0 +1,13 @@
+/// # Wrong Argument Count (Zero-Arg Function)
+///
+/// Calling a zero-argument function with arguments.
+///
+/// expect-error: F0014
+
+fn greet() {
+  println("hi")
+}
+
+fn main() {
+  greet(42)
+}

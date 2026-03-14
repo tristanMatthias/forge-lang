@@ -1,0 +1,15 @@
+/// Test: Calling methods directly on string literals
+///
+/// expect: HELLO
+/// expect: world
+/// expect: true
+/// expect: 3
+/// expect: hi
+
+fn main() {
+  println("hello".upper())
+  println("WORLD".lower())
+  println(string("foobar".contains("bar")))
+  println(string("a,b,c".split(",").length))
+  println("  hi  ".trim())
+}

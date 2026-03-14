@@ -1,0 +1,17 @@
+/// # Tagged Template Chained
+///
+/// Result of a tagged template used in further string operations.
+///
+/// expect: true
+/// expect: 40
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let x = 42
+  let result = identity`value: ${x}`
+  println(string(result.contains("42")))
+  println(string(result.length))
+}

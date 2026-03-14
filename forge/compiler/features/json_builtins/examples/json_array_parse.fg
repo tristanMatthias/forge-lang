@@ -1,0 +1,15 @@
+/// # JSON Parse Multiple Fields
+///
+/// Parse JSON with multiple field types including bool.
+///
+/// expect: forge
+/// expect: true
+/// expect: 3
+
+fn main() {
+  let json_str = "{\"name\":\"forge\",\"active\":true,\"version\":3}"
+  let data: {name: string, active: bool, version: int} = json.parse(json_str)
+  println(data.name)
+  println(string(data.active))
+  println(string(data.version))
+}

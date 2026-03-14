@@ -1,0 +1,24 @@
+/// # Is Null Check
+///
+/// Use `is null` to check nullable values.
+///
+/// expect: is null
+/// expect: has value
+
+fn main() {
+  let nums = [1, 2, 3]
+  let found = nums.find((n) -> n > 10)
+
+  if found is null {
+    println("is null")
+  } else {
+    println("has value")
+  }
+
+  let found2 = nums.find((n) -> n > 1)
+  if found2 is null {
+    println("is null")
+  } else {
+    println("has value")
+  }
+}

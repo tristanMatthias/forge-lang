@@ -1,3 +1,11 @@
-// For-loops are statements, not expressions, so they don't have type inference.
-// The loop variable type is inferred from the iterable in the checker (check_for).
-// No additional type inference methods are needed here.
+use crate::parser::ast::{Block, Expr, Pattern};
+
+/// AST data for a `for` loop statement.
+#[derive(Debug, Clone)]
+pub struct ForData {
+    pub pattern: Pattern,
+    pub iterable: Expr,
+    pub body: Block,
+}
+
+crate::impl_feature_node!(ForData);

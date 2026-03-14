@@ -1,0 +1,9 @@
+/// Test: replace with empty string arguments
+///
+/// expect: hllo
+/// expect: hello
+
+fn main() {
+  println("hello".replace("e", ""))
+  println("hello".replace("", "x"))
+}

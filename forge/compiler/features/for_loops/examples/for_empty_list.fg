@@ -1,0 +1,18 @@
+/// # For Over Empty List
+///
+/// Iterating over an empty list should execute the body zero times.
+///
+/// expect: before
+/// expect: count: 0
+/// expect: after
+
+fn main() {
+  println("before")
+  let items: list<int> = []
+  mut count = 0
+  for item in items {
+    count = count + 1
+  }
+  println(`count: ${count}`)
+  println("after")
+}

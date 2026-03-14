@@ -1,0 +1,12 @@
+/// # For Loop Empty Body
+///
+/// Adversarial test: for loop with an empty body should compile
+/// and run without crashing.
+///
+/// expect: done
+
+fn main() {
+  for i in 0..10 {
+  }
+  println("done")
+}

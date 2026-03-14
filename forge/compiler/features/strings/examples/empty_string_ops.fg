@@ -1,0 +1,21 @@
+/// Test: Operations on empty strings
+///
+/// expect: 0
+/// expect:
+/// expect:
+/// expect: true
+/// expect: true
+/// expect: true
+/// expect: 1
+
+fn main() {
+  let empty = ""
+  println(string(empty.length))
+  println(empty.upper())
+  println(empty.lower())
+  println(string(empty.contains("")))
+  println(string(empty.starts_with("")))
+  println(string(empty.ends_with("")))
+  let parts = empty.split(",")
+  println(string(parts.length))
+}

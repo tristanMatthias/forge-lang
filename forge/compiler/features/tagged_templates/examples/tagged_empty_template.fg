@@ -1,0 +1,10 @@
+/// Test: Tagged template with empty string — no interpolations, no text
+/// expect: {"parts":[""],"values":[]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  println(identity``)
+}

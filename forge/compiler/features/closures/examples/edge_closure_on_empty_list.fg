@@ -1,0 +1,11 @@
+/// # Closure On Empty List
+///
+/// Map/filter on an empty list should produce empty list without crash.
+///
+/// expect: 0
+
+fn main() {
+  let empty: list<int> = []
+  let result = empty.map((x) -> x * 2)
+  println(string(result.length))
+}

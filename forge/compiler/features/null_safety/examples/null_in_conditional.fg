@@ -1,0 +1,36 @@
+/// # Null In Conditional
+///
+/// Null checks with if/else and narrowing work correctly.
+///
+/// expect: found: alice
+/// expect: missing
+/// expect: found: bob
+
+fn lookup(id: int) -> string? {
+  if id == 1 { "alice" }
+  else if id == 3 { "bob" }
+  else { null }
+}
+
+fn main() {
+  let a = lookup(1)
+  if a != null {
+    println(`found: ${a}`)
+  } else {
+    println("missing")
+  }
+
+  let b = lookup(2)
+  if b != null {
+    println(`found: ${b}`)
+  } else {
+    println("missing")
+  }
+
+  let c = lookup(3)
+  if c != null {
+    println(`found: ${c}`)
+  } else {
+    println("missing")
+  }
+}

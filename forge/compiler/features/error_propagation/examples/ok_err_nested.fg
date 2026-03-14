@@ -1,0 +1,30 @@
+/// # Ok Err Nested
+///
+/// Nested function calls with Result propagation through multiple layers.
+///
+/// expect: final: 21
+/// expect: layer3 caught: not found
+
+fn layer1(id: int) -> Result<string, string> {
+  if id == 1 { Ok("hello") } else { Err("not found") }
+}
+
+fn layer2(id: int) -> Result<int, string> {
+  let s = layer1(id)?
+  Ok(s.length)
+}
+
+fn layer3(id: int) -> Result<int, string> {
+  let n = layer2(id)?
+  Ok(n * 4 + 1)
+}
+
+fn main() {
+  let a = layer3(1) catch (e) { -1 }
+  println(`final: ${string(a)}`)
+
+  let b = layer3(99) catch (e) {
+    println(`layer3 caught: ${e}`)
+    -1
+  }
+}

@@ -1,0 +1,12 @@
+/// Test: Long string via repeat and length check
+///
+/// expect: 1000
+/// expect: true
+/// expect: true
+
+fn main() {
+  let s = "x".repeat(1000)
+  println(string(s.length))
+  println(string(s.starts_with("xxx")))
+  println(string(s.ends_with("xxx")))
+}

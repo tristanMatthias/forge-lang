@@ -1,0 +1,19 @@
+/// # Result Same Ok Err Type
+///
+/// Result<string, string> where Ok and Err carry the same type.
+/// The tag must correctly distinguish Ok from Err.
+///
+/// expect: ok: success
+/// expect: err: failure
+
+fn ambiguous(x: bool) -> Result<string, string> {
+  if x { Ok("success") } else { Err("failure") }
+}
+
+fn main() {
+  let a = ambiguous(true) catch (e) { `err: ${e}` }
+  println(`ok: ${a}`)
+
+  let b = ambiguous(false) catch (e) { `err: ${e}` }
+  println(b)
+}

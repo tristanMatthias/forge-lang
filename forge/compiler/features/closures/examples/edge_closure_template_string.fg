@@ -1,0 +1,14 @@
+/// # Closure With Template String
+///
+/// Closure body using template string interpolation.
+///
+/// expect: Hello, Alice!
+/// expect: Hello, Bob!
+
+fn main() {
+  let names = ["Alice", "Bob"]
+  let greetings = names.map((name) -> `Hello, ${name}!`)
+  for g in greetings {
+    println(g)
+  }
+}

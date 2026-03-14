@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::WithData;
 
 impl Parser {
     /// Parse the `with` suffix: `expr with { field: value, ... }`
@@ -27,10 +30,14 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RBrace)?;
-        Some(Expr::With {
-            base: Box::new(base),
-            updates,
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "with_expression",
+            kind: "With",
+            data: Box::new(WithData {
+                base: Box::new(base),
+                updates,
+            }),
             span: wspan,
-        })
+        }))
     }
 }

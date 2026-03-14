@@ -1,0 +1,17 @@
+/// # Deep Recursion
+///
+/// A function that recurses 1000 levels deep.
+///
+/// expect: done
+
+fn countdown(n: int) {
+  if n <= 0 {
+    println("done")
+    return
+  }
+  countdown(n - 1)
+}
+
+fn main() {
+  countdown(1000)
+}

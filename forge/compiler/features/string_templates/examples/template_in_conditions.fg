@@ -1,0 +1,19 @@
+/// Test: Template strings used in conditionals and match
+///
+/// expect: positive 5
+/// expect: matched hello
+
+fn main() {
+  let x = 5
+  if x > 0 {
+    println(`positive ${x}`)
+  } else {
+    println(`negative ${x}`)
+  }
+
+  let name = "hello"
+  match name {
+    "hello" -> println(`matched ${name}`)
+    _ -> println(`unknown ${name}`)
+  }
+}

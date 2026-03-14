@@ -1,0 +1,17 @@
+/// # Multiple Destructuring
+///
+/// Destructure multiple tuples in sequence.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 4
+
+fn main() {
+  let (a, b) = (1, 2)
+  let (c, d) = (3, 4)
+  println(string(a))
+  println(string(b))
+  println(string(c))
+  println(string(d))
+}

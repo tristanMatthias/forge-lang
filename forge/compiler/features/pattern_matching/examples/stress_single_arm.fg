@@ -1,0 +1,12 @@
+/// # Match with Single Arm
+///
+/// Match with only a wildcard arm.
+///
+/// expect: always
+
+fn main() {
+  let x = match 42 {
+    _ -> "always"
+  }
+  println(x)
+}

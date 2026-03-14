@@ -1,0 +1,10 @@
+/// # Coalesce Non-Nullable
+///
+/// Using `??` on a non-nullable value should just return the value.
+///
+/// expect: hello
+
+fn main() {
+  let x = "hello" ?? "fallback"
+  println(x)
+}

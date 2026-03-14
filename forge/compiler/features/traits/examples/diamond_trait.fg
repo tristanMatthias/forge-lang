@@ -1,0 +1,28 @@
+/// Diamond-like trait pattern: two traits with same method name
+///
+/// expect: 10
+/// expect: hello
+
+trait HasValue {
+  fn get(self) -> int
+}
+
+trait HasName {
+  fn name(self) -> string
+}
+
+type Entity = { id: int, label: string }
+
+impl HasValue for Entity {
+  fn get(self) -> int { self.id }
+}
+
+impl HasName for Entity {
+  fn name(self) -> string { self.label }
+}
+
+fn main() {
+  let e = Entity { id: 10, label: "hello" }
+  println(string(e.get()))
+  println(e.name())
+}

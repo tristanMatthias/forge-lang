@@ -1,6 +1,9 @@
+use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::{ImplBlockData, TraitDeclData};
 
 impl Parser {
     /// Parse a trait declaration: `trait Name<T> : SuperTrait { fn method(...) -> Type { ... } }`
@@ -79,14 +82,23 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::TraitDecl {
-            name,
-            type_params,
-            super_traits,
-            methods,
-            exported,
+        Some(Statement::Feature(FeatureStmt {
+            feature_id: "traits",
+            kind: "TraitDecl",
+            data: Box::new(TraitDeclData {
+                name,
+                type_params,
+                super_traits,
+                methods,
+                exported,
+            }),
             span: start,
-        })
+        }))
+    }
+
+    /// Wrapper for export context
+    pub(crate) fn parse_trait_decl_feature(&mut self, exported: bool) -> Option<Statement> {
+        self.parse_trait_decl(exported)
     }
 
     /// Parse an impl block: `impl Trait for Type { ... }` or `impl Type { ... }`
@@ -148,13 +160,17 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::ImplBlock {
-            trait_name,
-            type_name,
-            type_params,
-            associated_types,
-            methods,
+        Some(Statement::Feature(FeatureStmt {
+            feature_id: "traits",
+            kind: "ImplBlock",
+            data: Box::new(ImplBlockData {
+                trait_name,
+                type_name,
+                type_params,
+                associated_types,
+                methods,
+            }),
             span: start,
-        })
+        }))
     }
 }

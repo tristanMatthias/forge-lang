@@ -1,0 +1,13 @@
+/// # Pipe With Parenthesized Expression
+///
+/// Pipe from a parenthesized sub-expression.
+///
+/// expect: 7
+
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+
+fn main() {
+  let result = (3 |> double) |> add_one
+  println(string(result))
+}

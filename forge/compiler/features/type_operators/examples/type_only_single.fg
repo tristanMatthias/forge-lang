@@ -1,0 +1,13 @@
+/// # Only with Single Field
+///
+/// Pick a single field from a type.
+///
+/// expect: bob
+
+type User = { id: int, name: string, email: string, password: string }
+type NameOnly = User only {name}
+
+fn main() {
+  let u: NameOnly = { name: "bob" }
+  println(u.name)
+}

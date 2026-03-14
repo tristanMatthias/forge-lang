@@ -1,0 +1,14 @@
+/// # List Any and All
+///
+/// Check if any/all elements satisfy a predicate.
+///
+/// expect: true
+/// expect: false
+/// expect: true
+
+fn main() {
+  let nums = [2, 4, 6, 8]
+  println(string(nums.any((x) -> x > 5)))
+  println(string(nums.any((x) -> x > 10)))
+  println(string(nums.all((x) -> x > 0)))
+}

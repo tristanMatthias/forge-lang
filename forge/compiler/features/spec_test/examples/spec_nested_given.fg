@@ -1,0 +1,32 @@
+/// # Spec Nested Given Setup
+///
+/// Nested given blocks each add setup context.
+///
+/// expect-stderr: ✓ list is empty
+/// expect-stderr: ✓ list has one item
+/// expect-stderr: ✓ list has two items
+/// expect-stderr: 3 passed
+
+use @std.test
+
+fn main() {
+    spec "list building" {
+        given "empty list" {
+            let items: List<int> = []
+
+            then "list is empty" { items.length == 0 }
+
+            given "one item added" {
+                let items = [1]
+
+                then "list has one item" { items.length == 1 }
+
+                given "second item added" {
+                    let items = [1, 2]
+
+                    then "list has two items" { items.length == 2 }
+                }
+            }
+        }
+    }
+}

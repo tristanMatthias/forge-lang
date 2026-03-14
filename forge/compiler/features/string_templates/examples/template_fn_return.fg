@@ -1,0 +1,11 @@
+/// Test: Template string returned from a function
+///
+/// expect: Hello, Alice! You are 30.
+
+fn greet(name: string, age: int) -> string {
+  `Hello, ${name}! You are ${age}.`
+}
+
+fn main() {
+  println(greet("Alice", 30))
+}

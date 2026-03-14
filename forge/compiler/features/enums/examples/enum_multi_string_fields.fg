@@ -1,0 +1,23 @@
+/// # Enum with Multiple String Fields
+///
+/// Enum variant with two string fields, plus a variant with one string.
+///
+/// expect: John Doe
+/// expect: JD
+
+enum Name {
+  full(first: string, last: string)
+  nick(alias: string)
+}
+
+fn display(n: Name) -> string {
+  match n {
+    .full(f, l) -> `${f} ${l}`
+    .nick(a) -> a
+  }
+}
+
+fn main() {
+  println(display(Name.full(first: "John", last: "Doe")))
+  println(display(Name.nick(alias: "JD")))
+}

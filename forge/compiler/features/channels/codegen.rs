@@ -1,9 +1,37 @@
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 
+use super::types::{ChannelReceiveData, ChannelSendData};
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a channel expression via the Feature dispatch system.
+    pub(crate) fn compile_channel_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        match fe.kind {
+            "ChannelSend" => {
+                if let Some(data) = feature_data!(fe, ChannelSendData) {
+                    self.compile_channel_send(&data.channel, &data.value)
+                } else {
+                    None
+                }
+            }
+            "ChannelReceive" => {
+                if let Some(data) = feature_data!(fe, ChannelReceiveData) {
+                    self.compile_channel_receive(&data.channel)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Compile a channel send expression: `ch <- val`
     ///
     /// The channel is an int (channel ID). The value is stringified to a C pointer

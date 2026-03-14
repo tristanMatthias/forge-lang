@@ -1,0 +1,15 @@
+/// # List Sorted
+///
+/// Sort a list of integers.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 5
+/// expect: 8
+
+fn main() {
+  let nums = [5, 3, 8, 1, 2]
+  let s = nums.sorted()
+  s.each((x) -> println(string(x)))
+}

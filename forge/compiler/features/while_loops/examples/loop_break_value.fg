@@ -1,0 +1,16 @@
+/// # Loop Break with Value
+///
+/// Adversarial test: break with a value expression inside loop.
+///
+/// expect: 42
+
+fn main() {
+  mut result = 0
+  loop {
+    result = result + 1
+    if result == 42 {
+      break result
+    }
+  }
+  println(result)
+}

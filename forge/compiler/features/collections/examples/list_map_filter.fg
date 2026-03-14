@@ -1,0 +1,15 @@
+/// # List Map and Filter
+///
+/// Chain map and filter on a list.
+///
+/// expect: 4
+/// expect: 6
+/// expect: 8
+/// expect: 10
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  let doubled = nums.map((x) -> x * 2)
+  let big = doubled.filter((x) -> x > 3)
+  big.each((x) -> println(string(x)))
+}

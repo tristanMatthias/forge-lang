@@ -1,0 +1,22 @@
+/// # For Loop Accumulation
+///
+/// Use a for loop to sum a list, demonstrating mutable accumulator
+/// pattern with both range and list iteration.
+///
+/// expect: range sum: 45
+/// expect: list sum: 150
+
+fn main() {
+  mut sum = 0
+  for i in 0..10 {
+    sum = sum + i
+  }
+  println(`range sum: ${sum}`)
+
+  let values = [10, 20, 30, 40, 50]
+  mut list_sum = 0
+  for v in values {
+    list_sum = list_sum + v
+  }
+  println(`list sum: ${list_sum}`)
+}

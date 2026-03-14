@@ -1,0 +1,12 @@
+/// Test: Chaining methods on template string result
+///
+/// expect: HELLO WORLD
+/// expect: true
+/// expect: 11
+
+fn main() {
+  let name = "world"
+  println(`hello ${name}`.upper())
+  println(string(`hello ${name}`.contains("world")))
+  println(string(`hello ${name}`.length))
+}

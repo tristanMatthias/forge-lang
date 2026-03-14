@@ -1,0 +1,11 @@
+/// Test: Template with boolean and float interpolation
+///
+/// expect: active: true, score: 3.14
+/// expect: done: false, count: 0
+
+fn main() {
+  let active = true
+  let score = 3.14
+  println(`active: ${active}, score: ${score}`)
+  println(`done: ${false}, count: ${0}`)
+}

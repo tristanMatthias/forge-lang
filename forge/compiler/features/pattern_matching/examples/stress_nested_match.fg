@@ -1,0 +1,35 @@
+/// # Deeply Nested Match
+///
+/// Match inside match inside match to stress the pattern matcher.
+///
+/// expect: deep: small even positive
+/// expect: deep: big odd positive
+/// expect: deep: zero neutral
+
+fn classify(n: int) -> string {
+  match n {
+    0 -> match 0 {
+      0 -> match "z" {
+        "z" -> "deep: zero neutral"
+        _ -> "unreachable"
+      }
+      _ -> "unreachable"
+    }
+    _ -> match n % 2 {
+      0 -> match n {
+        _ if n < 10 -> "deep: small even positive"
+        _ -> "deep: big even positive"
+      }
+      _ -> match n {
+        _ if n > 50 -> "deep: big odd positive"
+        _ -> "deep: small odd positive"
+      }
+    }
+  }
+}
+
+fn main() {
+  println(classify(4))
+  println(classify(99))
+  println(classify(0))
+}

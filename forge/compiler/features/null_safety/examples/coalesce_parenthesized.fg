@@ -1,0 +1,14 @@
+/// # Coalesce Parenthesized
+///
+/// Nested parenthesized `??` chains to test precedence.
+///
+/// expect: deep
+
+fn a() -> string? { null }
+fn b() -> string? { null }
+fn c() -> string? { "deep" }
+
+fn main() {
+  let r = a() ?? (b() ?? (c() ?? "fallback"))
+  println(r)
+}

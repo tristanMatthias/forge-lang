@@ -1,0 +1,17 @@
+/// # Void Function Called Multiple Times
+///
+/// A void function called several times in sequence.
+///
+/// expect: tick
+/// expect: tick
+/// expect: tick
+
+fn tick() {
+  println("tick")
+}
+
+fn main() {
+  tick()
+  tick()
+  tick()
+}

@@ -1,0 +1,15 @@
+/// # While Accumulate
+///
+/// Use a while loop to compute factorial of 10.
+///
+/// expect: 3628800
+
+fn main() {
+  mut n = 10
+  mut result = 1
+  while n > 0 {
+    result = result * n
+    n = n - 1
+  }
+  println(result)
+}

@@ -1,0 +1,16 @@
+/// # While Zero Iterations
+///
+/// A while loop whose condition is immediately false runs zero times.
+///
+/// expect: before
+/// expect: after
+
+fn main() {
+  println("before")
+  mut x = 10
+  while x < 5 {
+    println("should not print")
+    x = x + 1
+  }
+  println("after")
+}

@@ -1,0 +1,17 @@
+/// # For Loop Variable Shadowing
+///
+/// Adversarial test: loop variable should shadow outer variable
+/// of the same name, and outer should be restored after loop.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: after: 99
+
+fn main() {
+  let i = 99
+  for i in 0..3 {
+    println(i)
+  }
+  println(`after: ${i}`)
+}

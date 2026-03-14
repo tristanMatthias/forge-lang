@@ -1,0 +1,23 @@
+/// # Multiple Return Paths
+///
+/// Function with multiple return statements in different branches.
+///
+/// expect: negative
+/// expect: zero
+/// expect: positive
+
+fn classify(n: int) -> string {
+  if n < 0 {
+    return "negative"
+  }
+  if n == 0 {
+    return "zero"
+  }
+  return "positive"
+}
+
+fn main() {
+  println(classify(-5))
+  println(classify(0))
+  println(classify(7))
+}

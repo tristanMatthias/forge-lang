@@ -1,0 +1,25 @@
+/// # Deeply Nested Loops
+///
+/// Adversarial test: for inside while inside for, testing that
+/// three levels of nesting with mixed loop types work correctly.
+///
+/// expect: 0-0-0
+/// expect: 0-0-1
+/// expect: 0-1-0
+/// expect: 0-1-1
+/// expect: 1-0-0
+/// expect: 1-0-1
+/// expect: 1-1-0
+/// expect: 1-1-1
+
+fn main() {
+  for i in 0..2 {
+    mut j = 0
+    while j < 2 {
+      for k in 0..2 {
+        println(`${i}-${j}-${k}`)
+      }
+      j = j + 1
+    }
+  }
+}

@@ -1,0 +1,29 @@
+/// # Match Returning Match
+///
+/// The result of one match is immediately matched again.
+///
+/// expect: fizzbuzz
+/// expect: 7
+
+fn fizzbuzz(n: int) -> string {
+  match match n % 3 {
+    0 -> match n % 5 {
+      0 -> "fizzbuzz"
+      _ -> "fizz"
+    }
+    _ -> match n % 5 {
+      0 -> "buzz"
+      _ -> string(n)
+    }
+  } {
+    "fizzbuzz" -> "fizzbuzz"
+    "fizz" -> "fizz"
+    "buzz" -> "buzz"
+    other -> other
+  }
+}
+
+fn main() {
+  println(fizzbuzz(15))
+  println(fizzbuzz(7))
+}

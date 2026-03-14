@@ -1,0 +1,14 @@
+/// # Closure Called Repeatedly
+///
+/// Same closure variable called multiple times with different arguments.
+///
+/// expect: 3
+/// expect: 30
+/// expect: 300
+
+fn main() {
+  let add = (a: int, b: int) -> int { a + b }
+  println(string(add(1, 2)))
+  println(string(add(10, 20)))
+  println(string(add(100, 200)))
+}

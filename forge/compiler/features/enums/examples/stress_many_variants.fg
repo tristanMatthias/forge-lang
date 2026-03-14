@@ -1,0 +1,51 @@
+/// # Enum with Many Variants
+///
+/// Enum with 10 data-less variants to stress tag comparison codegen.
+///
+/// expect: hearts
+/// expect: diamonds
+/// expect: spades
+/// expect: clubs
+/// expect: stars
+/// expect: moons
+/// expect: suns
+/// expect: comets
+
+enum Suit {
+  hearts
+  diamonds
+  spades
+  clubs
+  stars
+  moons
+  suns
+  comets
+  voids
+  nulls
+}
+
+fn name(s: Suit) -> string {
+  match s {
+    .hearts -> "hearts"
+    .diamonds -> "diamonds"
+    .spades -> "spades"
+    .clubs -> "clubs"
+    .stars -> "stars"
+    .moons -> "moons"
+    .suns -> "suns"
+    .comets -> "comets"
+    .voids -> "voids"
+    .nulls -> "nulls"
+  }
+}
+
+fn main() {
+  println(name(Suit.hearts))
+  println(name(Suit.diamonds))
+  println(name(Suit.spades))
+  println(name(Suit.clubs))
+  println(name(Suit.stars))
+  println(name(Suit.moons))
+  println(name(Suit.suns))
+  println(name(Suit.comets))
+}

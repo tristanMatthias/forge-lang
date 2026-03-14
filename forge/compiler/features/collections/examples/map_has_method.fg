@@ -1,0 +1,12 @@
+/// # Map Has Method
+///
+/// The `has` method checks if a key exists in a map.
+///
+/// expect: true
+/// expect: false
+
+fn main() {
+  let m = {"a": 1, "b": 2}
+  println(m.has("a"))
+  println(m.has("c"))
+}

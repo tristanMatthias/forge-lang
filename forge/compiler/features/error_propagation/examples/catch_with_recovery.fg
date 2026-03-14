@@ -1,0 +1,18 @@
+/// # Catch With Recovery
+///
+/// Catch block returns a valid recovery value on error.
+///
+/// expect: 5.0
+/// expect: recovered: -1.0
+
+fn divide(a: float, b: float) -> Result<float, string> {
+  if b == 0.0 { Err("division by zero") } else { Ok(a / b) }
+}
+
+fn main() {
+  let ok = divide(10.0, 2.0) catch (e) { -1.0 }
+  println(string(ok))
+
+  let recovered = divide(10.0, 0.0) catch (e) { -1.0 }
+  println(`recovered: ${string(recovered)}`)
+}

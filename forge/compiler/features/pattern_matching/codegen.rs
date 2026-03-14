@@ -3,10 +3,26 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::MatchData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a match expression via the Feature dispatch system.
+    pub(crate) fn compile_match_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, MatchData) {
+            self.compile_match(&data.subject, &data.arms)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn compile_match(
         &mut self,
         subject: &Expr,
@@ -252,23 +268,44 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 } else if let Type::Enum { variants, .. } = subject_type {
                     if let Some(v) = variants.iter().find(|v| v.name == *variant) {
-                        // Extract fields from the enum struct
+                        // Extract fields from enum via memory bitcast (i64-slot union layout)
                         if subject_val.is_struct_value() {
-                            let struct_val = subject_val.into_struct_value();
-                            for (i, (field_pattern, (field_name, field_type))) in
+                            let enum_llvm_ty = self.type_to_llvm_basic(subject_type).into_struct_type();
+                            let enum_alloca = self.builder.build_alloca(enum_llvm_ty, "enum_extract_tmp").unwrap();
+                            self.builder.build_store(enum_alloca, *subject_val).unwrap();
+
+                            let payload_ptr = self.builder.build_struct_gep(
+                                enum_llvm_ty, enum_alloca, 1, "payload_ptr"
+                            ).unwrap();
+
+                            // Build variant struct type from field types
+                            let variant_field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = v.fields.iter()
+                                .map(|(_, ty)| self.type_to_llvm_basic(ty))
+                                .collect();
+                            let variant_struct_type = self.context.struct_type(&variant_field_types, false);
+
+                            let typed_ptr = self.builder.build_bit_cast(
+                                payload_ptr,
+                                self.context.ptr_type(inkwell::AddressSpace::default()),
+                                "variant_ptr",
+                            ).unwrap().into_pointer_value();
+
+                            let variant_val = self.builder.build_load(
+                                variant_struct_type, typed_ptr, "variant_data"
+                            ).unwrap().into_struct_value();
+
+                            for (i, (field_pattern, (_field_name, field_type))) in
                                 fields.iter().zip(v.fields.iter()).enumerate()
                             {
                                 if let Pattern::Ident(name, _) = field_pattern {
-                                    // Field data starts at index 1 (after tag)
-                                    if let Some(field_val) = self.builder.build_extract_value(
-                                        struct_val,
-                                        (i + 1) as u32,
-                                        &name,
-                                    ).ok() {
-                                        let alloca = self.create_entry_block_alloca(field_type, name);
-                                        self.builder.build_store(alloca, field_val).unwrap();
-                                        self.define_var(name.clone(), alloca, field_type.clone());
-                                    }
+                                    let field_val = self.builder.build_extract_value(
+                                        variant_val,
+                                        i as u32,
+                                        name,
+                                    ).unwrap();
+                                    let alloca = self.create_entry_block_alloca(field_type, name);
+                                    self.builder.build_store(alloca, field_val).unwrap();
+                                    self.define_var(name.clone(), alloca, field_type.clone());
                                 }
                             }
                         }

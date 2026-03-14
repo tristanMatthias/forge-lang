@@ -1,0 +1,15 @@
+/// # Empty Function Body
+///
+/// A function with an empty body compiles and runs fine.
+///
+/// expect: before
+/// expect: after
+
+fn noop() {
+}
+
+fn main() {
+  println("before")
+  noop()
+  println("after")
+}

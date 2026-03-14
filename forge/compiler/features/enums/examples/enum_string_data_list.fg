@@ -1,0 +1,22 @@
+/// # Enum with String Data in List
+///
+/// Enum variants carrying string data, stored in a list and iterated.
+///
+/// expect: hello
+/// expect: quit
+/// expect: world
+
+enum Msg {
+  text(content: string)
+  quit
+}
+
+fn main() {
+  let msgs = [Msg.text(content: "hello"), Msg.quit, Msg.text(content: "world")]
+  for m in msgs {
+    match m {
+      .text(c) -> println(c)
+      .quit -> println("quit")
+    }
+  }
+}

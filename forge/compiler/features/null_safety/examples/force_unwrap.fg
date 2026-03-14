@@ -1,0 +1,10 @@
+/// # Force Unwrap
+///
+/// Use `!` to force-unwrap a nullable value.
+///
+/// expect: 42
+
+fn main() {
+  let x: int? = 42
+  println(string(x!))
+}

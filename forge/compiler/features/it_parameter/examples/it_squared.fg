@@ -1,0 +1,11 @@
+/// # It Squared
+///
+/// Use `it * it` to square elements.
+///
+/// expect: 55
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  let result = nums.map(it * it).sum()
+  println(string(result))
+}

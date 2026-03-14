@@ -1,0 +1,11 @@
+/// # Shadow Mut With Let Then Reassign
+///
+/// A mut variable shadowed by let becomes immutable; reassignment fails.
+///
+/// expect-error: F0013
+
+fn main() {
+  mut x = 10
+  let x = 20
+  x = 30
+}

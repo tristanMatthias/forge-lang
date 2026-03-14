@@ -1,0 +1,17 @@
+/// # Table with Computed Cell Values
+///
+/// Table cells can be arbitrary expressions including string templates.
+///
+/// expect: 2
+/// expect: item-1
+/// expect: item-2
+
+fn main() {
+  mut items: List<{label: string, value: int}> = []
+  for i in 1..3 {
+    items.push({ label: `item-${i}`, value: i })
+  }
+  println(string(items.length))
+  println(items[0].label)
+  println(items[1].label)
+}

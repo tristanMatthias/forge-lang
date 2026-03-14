@@ -1,0 +1,13 @@
+/// # Forward Function Reference
+///
+/// Functions can be called before they are defined in the source.
+///
+/// expect: hello from greet
+
+fn main() {
+  greet()
+}
+
+fn greet() {
+  println("hello from greet")
+}

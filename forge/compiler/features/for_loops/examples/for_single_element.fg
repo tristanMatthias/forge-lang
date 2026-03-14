@@ -1,0 +1,14 @@
+/// # For Loop Single Element List
+///
+/// Adversarial test: iterating over a list with exactly one element.
+///
+/// expect: 42
+/// expect: done
+
+fn main() {
+  let items = [42]
+  for item in items {
+    println(item)
+  }
+  println("done")
+}

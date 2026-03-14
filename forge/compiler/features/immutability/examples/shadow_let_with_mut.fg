@@ -1,0 +1,13 @@
+/// # Shadow Let With Mut
+///
+/// A let binding can be shadowed by a mut binding in the same scope.
+///
+/// expect: 10
+/// expect: 20
+
+fn main() {
+  let x = 10
+  println(string(x))
+  mut x = 20
+  println(string(x))
+}

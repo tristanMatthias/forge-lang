@@ -1,0 +1,16 @@
+/// # Closure With Nested If-Else
+///
+/// Closure body containing nested if-else returning strings.
+///
+/// expect: small
+/// expect: medium
+/// expect: big
+
+fn main() {
+  let classify = (n: int) -> string {
+    if n > 100 { "big" } else { if n > 10 { "medium" } else { "small" } }
+  }
+  println(classify(5))
+  println(classify(50))
+  println(classify(500))
+}

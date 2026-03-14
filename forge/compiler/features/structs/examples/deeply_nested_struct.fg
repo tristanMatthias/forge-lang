@@ -1,0 +1,14 @@
+/// 5 levels of struct nesting (inline)
+///
+/// expect: 99
+
+type L1 = { val: int }
+type L2 = { inner: L1 }
+type L3 = { inner: L2 }
+type L4 = { inner: L3 }
+type L5 = { inner: L4 }
+
+fn main() {
+  let x = L5 { inner: L4 { inner: L3 { inner: L2 { inner: L1 { val: 99 } } } } }
+  println(string(x.inner.inner.inner.inner.val))
+}

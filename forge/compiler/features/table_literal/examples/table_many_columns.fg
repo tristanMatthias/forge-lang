@@ -1,0 +1,21 @@
+/// # Many Columns Table
+///
+/// Table with five columns.
+///
+/// expect: alice
+/// expect: 30
+/// expect: true
+/// expect: admin
+
+fn main() {
+    let users = table {
+        name    | age | active | role    | score
+        "alice" | 30  | true   | "admin" | 95
+        "bob"   | 25  | false  | "user"  | 72
+    }
+
+    println(users[0].name)
+    println(string(users[0].age))
+    println(string(users[0].active))
+    println(users[0].role)
+}

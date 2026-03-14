@@ -1,0 +1,27 @@
+/// # Null Narrowing Int
+///
+/// Smart narrowing with `!= null` on nullable int values,
+/// allowing arithmetic on the narrowed value.
+///
+/// expect: doubled: 84
+/// expect: no value
+
+fn maybe_int(x: bool) -> int? {
+  if x { 42 } else { null }
+}
+
+fn main() {
+  let a = maybe_int(true)
+  if a != null {
+    println(`doubled: ${string(a * 2)}`)
+  } else {
+    println("no value")
+  }
+
+  let b = maybe_int(false)
+  if b != null {
+    println(`doubled: ${string(b * 2)}`)
+  } else {
+    println("no value")
+  }
+}

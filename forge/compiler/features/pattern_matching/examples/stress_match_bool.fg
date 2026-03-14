@@ -1,0 +1,18 @@
+/// # Match on Booleans
+///
+/// Pattern match on boolean values.
+///
+/// expect: yes
+/// expect: no
+
+fn to_word(b: bool) -> string {
+  match b {
+    true -> "yes"
+    false -> "no"
+  }
+}
+
+fn main() {
+  println(to_word(true))
+  println(to_word(false))
+}

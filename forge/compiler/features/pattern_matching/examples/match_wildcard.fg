@@ -1,0 +1,30 @@
+/// # Wildcard in Various Positions
+///
+/// The `_` wildcard used as catch-all in different match contexts.
+///
+/// expect: one
+/// expect: other number
+/// expect: hello greeting
+/// expect: unknown word
+
+fn describe_num(n: int) -> string {
+  match n {
+    1 -> "one"
+    _ -> "other number"
+  }
+}
+
+fn describe_str(s: string) -> string {
+  match s {
+    "hello" -> "hello greeting"
+    "bye" -> "bye greeting"
+    _ -> "unknown word"
+  }
+}
+
+fn main() {
+  println(describe_num(1))
+  println(describe_num(42))
+  println(describe_str("hello"))
+  println(describe_str("xyz"))
+}

@@ -1,0 +1,16 @@
+/// # Variable Shadows Function Name
+///
+/// A variable binding shadows a function of the same name.
+///
+/// expect: 42
+/// expect: 99
+
+fn foo() -> int {
+  return 42
+}
+
+fn main() {
+  println(string(foo()))
+  let foo = 99
+  println(string(foo))
+}

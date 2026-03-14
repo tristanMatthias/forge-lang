@@ -1,0 +1,13 @@
+/// # Empty Template Literal
+///
+/// An empty template literal produces an empty string.
+///
+/// expect: before
+/// expect:
+/// expect: after
+
+fn main() {
+  println("before")
+  println(``)
+  println("after")
+}

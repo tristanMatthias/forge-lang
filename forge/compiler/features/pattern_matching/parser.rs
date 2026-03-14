@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::MatchData;
 
 impl Parser {
     pub(crate) fn parse_match_expr(&mut self) -> Option<Expr> {
@@ -23,11 +26,15 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Expr::Match {
-            subject: Box::new(subject),
-            arms,
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "pattern_matching",
+            kind: "Match",
+            data: Box::new(MatchData {
+                subject: Box::new(subject),
+                arms,
+            }),
             span,
-        })
+        }))
     }
 
     pub(crate) fn parse_match_arm(&mut self) -> Option<MatchArm> {
@@ -123,6 +130,11 @@ impl Parser {
                 let n = *n;
                 self.advance();
                 Some(Pattern::Literal(Box::new(Expr::IntLit(n, tok.span))))
+            }
+            TokenKind::FloatLiteral(f) => {
+                let f = *f;
+                self.advance();
+                Some(Pattern::Literal(Box::new(Expr::FloatLit(f, tok.span))))
             }
             TokenKind::StringLiteral(s) => {
                 let s = s.clone();

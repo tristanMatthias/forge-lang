@@ -3,9 +3,25 @@ use std::collections::HashMap;
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 
+use super::types::SpawnData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a `spawn { ... }` block via the Feature dispatch system.
+    pub(crate) fn compile_spawn_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, SpawnData) {
+            self.compile_spawn_block(&data.body)
+        } else {
+            None
+        }
+    }
+
     /// Compile a `spawn { ... }` block.
     ///
     /// Captures variables from the outer scope into globals, creates an anonymous

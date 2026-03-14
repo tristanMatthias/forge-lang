@@ -1,0 +1,15 @@
+/// # If Without Else
+///
+/// If with no else branch — should compile but not return a value.
+///
+/// expect: before
+/// expect: inside
+/// expect: after
+
+fn main() {
+  println("before")
+  if true {
+    println("inside")
+  }
+  println("after")
+}

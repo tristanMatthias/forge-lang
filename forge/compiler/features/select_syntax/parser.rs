@@ -1,6 +1,9 @@
+use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::SelectData;
 
 impl Parser {
     /// Parse a `select { ... }` statement for channel multiplexing.
@@ -95,9 +98,11 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::Select {
-            arms,
+        Some(Statement::Feature(FeatureStmt {
+            feature_id: "select_syntax",
+            kind: "Select",
+            data: Box::new(SelectData { arms }),
             span: start,
-        })
+        }))
     }
 }

@@ -1,0 +1,16 @@
+/// Generic function with 3 type params
+///
+/// expect: hello
+/// expect: 42
+/// expect: true
+
+fn triple<A, B, C>(a: A, b: B, c: C) -> (A, B, C) {
+  (a, b, c)
+}
+
+fn main() {
+  let t = triple("hello", 42, true)
+  println(t.0)
+  println(string(t.1))
+  println(string(t.2))
+}

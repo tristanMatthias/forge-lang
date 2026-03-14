@@ -1,0 +1,27 @@
+/// # Loop with Match and Break
+///
+/// Adversarial test: match expression inside a loop with break after.
+///
+/// expect: zero
+/// expect: one
+/// expect: two
+/// expect: other
+/// expect: done
+
+fn main() {
+  mut i = 0
+  loop {
+    let x = match i {
+      0 -> "zero"
+      1 -> "one"
+      2 -> "two"
+      _ -> "other"
+    }
+    println(x)
+    i = i + 1
+    if i == 4 {
+      break
+    }
+  }
+  println("done")
+}

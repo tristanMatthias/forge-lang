@@ -1,0 +1,19 @@
+/// # Defer with Conditional No-Return Path
+///
+/// Defer runs when function exits through the normal path.
+///
+/// expect: late path
+/// expect: always runs
+
+fn maybe_return(early: bool) {
+  defer println("always runs")
+  if early {
+    println("early path")
+    return
+  }
+  println("late path")
+}
+
+fn main() {
+  maybe_return(false)
+}

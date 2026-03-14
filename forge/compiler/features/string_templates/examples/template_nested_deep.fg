@@ -1,0 +1,10 @@
+/// Test: Template string interpolating another template string variable
+///
+/// expect: outer: [inner: hello] done
+
+fn main() {
+  let name = "hello"
+  let inner = `inner: ${name}`
+  let outer = `outer: [${inner}] done`
+  println(outer)
+}

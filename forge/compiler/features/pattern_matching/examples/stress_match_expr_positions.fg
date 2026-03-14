@@ -1,0 +1,37 @@
+/// # Match in Expression Positions
+///
+/// Match used inside function calls, string templates, and arithmetic.
+///
+/// expect: result: hello
+/// expect: 30
+/// expect: label is big
+
+fn tag(n: int) -> string {
+  match n {
+    1 -> "hello"
+    _ -> "world"
+  }
+}
+
+fn double(n: int) -> int {
+  match n {
+    0 -> 0
+    _ -> n * 2
+  }
+}
+
+fn main() {
+  println(`result: ${tag(1)}`)
+
+  let x = double(10) + match 5 {
+    5 -> 10
+    _ -> 0
+  }
+  println(x)
+
+  let label = "label is " + match 999 {
+    _ if 999 > 100 -> "big"
+    _ -> "small"
+  }
+  println(label)
+}

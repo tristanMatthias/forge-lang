@@ -1,0 +1,19 @@
+/// # Table Access Last Element
+///
+/// Access the last row by computed index.
+///
+/// expect: carol
+/// expect: 35
+
+fn main() {
+  let users = table {
+    name    | age
+    "alice" | 30
+    "bob"   | 25
+    "carol" | 35
+  }
+
+  let last_idx = users.length - 1
+  println(users[last_idx].name)
+  println(string(users[last_idx].age))
+}

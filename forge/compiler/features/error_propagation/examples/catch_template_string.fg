@@ -1,0 +1,17 @@
+/// # Catch Template String
+///
+/// Catch handler uses a template string that includes
+/// the error value in a descriptive message.
+///
+/// expect: error was: oops, recovered with default
+
+fn risky() -> Result<string, string> {
+  Err("oops")
+}
+
+fn main() {
+  let r = risky() catch (e) {
+    `error was: ${e}, recovered with default`
+  }
+  println(r)
+}

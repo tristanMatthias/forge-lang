@@ -1,25 +1,35 @@
 use std::collections::HashMap;
 
-use crate::codegen::codegen::Codegen;
+use crate::codegen::codegen::{Codegen, ImplInfo, ImplMethodInfo, TraitInfo};
+use crate::feature::FeatureStmt;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::{ImplBlockData, TraitDeclData};
+
 impl<'ctx> Codegen<'ctx> {
     /// Compile all impl block methods, including default methods from traits.
+    /// Two-pass approach: first declare all functions, then compile all bodies.
+    /// This ensures that method calls within impl bodies can resolve any sibling
+    /// method (e.g., self.base_score() inside an overridden total_score()).
     pub(crate) fn compile_all_impl_methods(&mut self) {
         let impls = self.impls.clone();
+
+        // Collect all methods to compile: (mangled_name, resolved_params, return_type, body)
+        let mut methods_to_compile: Vec<(String, Vec<Param>, Option<TypeExpr>, Block)> = Vec::new();
+
         for impl_info in &impls {
             let type_name = &impl_info.type_name;
             let self_type = self.resolve_named_type(type_name);
 
+            // Pass 1a: Declare explicit impl methods
             for (method_name, method_info) in &impl_info.methods {
                 let mangled = format!("{}_{}", type_name, method_name);
 
-                // Build params with self type resolved
                 let mut resolved_params = Vec::new();
                 for p in &method_info.params {
                     if p.name == "self" {
-                        // self has the implementing type
                         resolved_params.push(Param {
                             name: "self".to_string(),
                             type_ann: Some(self.type_to_type_expr(&self_type)),
@@ -27,7 +37,6 @@ impl<'ctx> Codegen<'ctx> {
                             span: p.span,
                         });
                     } else {
-                        // Resolve param types: if the type refers to the implementing type name, use that
                         let mut param = p.clone();
                         if let Some(ref type_ann) = p.type_ann {
                             param.type_ann = Some(self.resolve_impl_type_expr(type_ann, type_name, &impl_info.associated_types));
@@ -37,10 +46,10 @@ impl<'ctx> Codegen<'ctx> {
                 }
 
                 self.declare_function(&mangled, &resolved_params, method_info.return_type.as_ref());
-                self.compile_fn(&mangled, &resolved_params, method_info.return_type.as_ref(), &method_info.body);
+                methods_to_compile.push((mangled, resolved_params, method_info.return_type.clone(), method_info.body.clone()));
             }
 
-            // Generate default methods from the trait if not overridden
+            // Pass 1b: Declare default methods from the trait if not overridden
             if let Some(ref trait_name) = impl_info.trait_name {
                 if let Some(trait_info) = self.traits.get(trait_name).cloned() {
                     for trait_method in &trait_info.methods {
@@ -61,12 +70,17 @@ impl<'ctx> Codegen<'ctx> {
                                     }
                                 }
                                 self.declare_function(&mangled, &resolved_params, trait_method.return_type.as_ref());
-                                self.compile_fn(&mangled, &resolved_params, trait_method.return_type.as_ref(), default_body);
+                                methods_to_compile.push((mangled, resolved_params, trait_method.return_type.clone(), default_body.clone()));
                             }
                         }
                     }
                 }
             }
+        }
+
+        // Pass 2: Compile all method bodies (all functions are now declared)
+        for (mangled, resolved_params, return_type, body) in &methods_to_compile {
+            self.compile_fn(mangled, resolved_params, return_type.as_ref(), body);
         }
     }
 
@@ -196,6 +210,45 @@ impl<'ctx> Codegen<'ctx> {
             Type::Bool => Some("bool".to_string()),
             Type::String => Some("string".to_string()),
             _ => None,
+        }
+    }
+
+    /// Compile trait/impl feature stmts (no-op — handled by compile_program).
+    pub(crate) fn compile_traits_feature(&mut self, _fe: &FeatureStmt) {
+        // Trait/impl blocks are handled in compile_program's first pass
+    }
+
+    /// Handle trait feature stmts in compile_program's first pass.
+    pub(crate) fn compile_program_traits_feature(&mut self, fe: &FeatureStmt) {
+        match fe.kind {
+            "TraitDecl" => {
+                if let Some(data) = feature_data!(fe, TraitDeclData) {
+                    self.traits.insert(data.name.clone(), TraitInfo {
+                        methods: data.methods.clone(),
+                    });
+                }
+            }
+            "ImplBlock" => {
+                if let Some(data) = feature_data!(fe, ImplBlockData) {
+                    let mut method_map = HashMap::new();
+                    for m in &data.methods {
+                        if let Statement::FnDecl { name, params, return_type, body, .. } = m {
+                            method_map.insert(name.clone(), ImplMethodInfo {
+                                params: params.clone(),
+                                return_type: return_type.clone(),
+                                body: body.clone(),
+                            });
+                        }
+                    }
+                    self.impls.push(ImplInfo {
+                        trait_name: data.trait_name.clone(),
+                        type_name: data.type_name.clone(),
+                        methods: method_map,
+                        associated_types: data.associated_types.clone(),
+                    });
+                }
+            }
+            _ => {}
         }
     }
 }

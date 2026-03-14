@@ -1,17 +1,31 @@
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
 
+use super::types::MatchData;
+
 impl TypeChecker {
+    /// Type-check a match expression via the Feature dispatch system.
+    pub(crate) fn check_match_feature(&mut self, fe: &FeatureExpr) -> Type {
+        if let Some(data) = feature_data!(fe, MatchData) {
+            self.check_match(&data.subject, &data.arms)
+        } else {
+            Type::Unknown
+        }
+    }
+
     pub(crate) fn check_match(&mut self, subject: &Expr, arms: &[MatchArm]) -> Type {
         self.check_expr(subject);
         let mut result_type = Type::Unknown;
         for arm in arms {
+            self.env.push_scope();
+            // Bind pattern variables BEFORE checking the guard so they're in scope
+            self.bind_pattern(&arm.pattern);
             if let Some(guard) = &arm.guard {
                 self.check_expr(guard);
             }
-            self.env.push_scope();
-            self.bind_pattern(&arm.pattern);
             let arm_type = self.check_expr(&arm.body);
             if result_type == Type::Unknown {
                 result_type = arm_type;

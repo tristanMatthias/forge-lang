@@ -1,0 +1,23 @@
+/// Test: String operations in function return values
+///
+/// expect: HELLO WORLD
+/// expect: hello
+/// expect: o wor
+
+fn shout(s: string) -> string {
+  s.upper()
+}
+
+fn first_word(s: string) -> string {
+  s.split(" ")[0]
+}
+
+fn middle(s: string) -> string {
+  s.replace("hell", "").replace("ld", "")
+}
+
+fn main() {
+  println(shout("hello world"))
+  println(first_word("hello world"))
+  println(middle("hello world"))
+}

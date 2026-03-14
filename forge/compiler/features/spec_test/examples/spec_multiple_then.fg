@@ -1,0 +1,22 @@
+/// # Spec Multiple Then Assertions
+///
+/// Multiple then assertions checking different properties of the same value.
+///
+/// expect-stderr: ✓ is positive
+/// expect-stderr: ✓ is even
+/// expect-stderr: ✓ is less than 100
+/// expect-stderr: ✓ is greater than 5
+/// expect-stderr: 4 passed
+
+use @std.test
+
+fn main() {
+    spec "number properties" {
+        let n = 42
+
+        then "is positive" { n > 0 }
+        then "is even" { n % 2 == 0 }
+        then "is less than 100" { n < 100 }
+        then "is greater than 5" { n > 5 }
+    }
+}

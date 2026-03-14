@@ -88,17 +88,17 @@ impl Parser {
         self.skip_newlines();
         let tok = self.peek()?;
         match &tok.kind {
-            TokenKind::Let => self.parse_let(),
-            TokenKind::Mut => self.parse_mut(),
-            TokenKind::Const => self.parse_const(),
-            TokenKind::Fn => self.parse_fn_decl(false),
-            TokenKind::Export => self.parse_export(),
+            TokenKind::Let => self.parse_let_feature(),
+            TokenKind::Mut => self.parse_mut_feature(),
+            TokenKind::Const => self.parse_const_feature(),
+            TokenKind::Fn => self.parse_fn_decl_feature(false),
+            TokenKind::Export => self.parse_export_feature(),
             TokenKind::Enum => self.parse_enum_decl(false),
-            TokenKind::Type => self.parse_type_decl(false),
-            TokenKind::Use => self.parse_use(),
-            TokenKind::Trait => self.parse_trait_decl(false),
+            TokenKind::Type => self.parse_type_decl_feature(false),
+            TokenKind::Use => self.parse_use_feature(),
+            TokenKind::Trait => self.parse_trait_decl_feature(false),
             TokenKind::Impl => self.parse_impl_block(),
-            TokenKind::Return => self.parse_return(),
+            TokenKind::Return => self.parse_return_feature(),
             TokenKind::For => self.parse_for(),
             TokenKind::While => self.parse_while(),
             TokenKind::Loop => self.parse_loop(),
@@ -409,7 +409,7 @@ impl Parser {
             TokenKind::Let => self.parse_let_with_export(true),
             TokenKind::Mut => self.parse_mut_with_export(true),
             TokenKind::Const => self.parse_const_with_export(true),
-            TokenKind::Trait => self.parse_trait_decl(true),
+            TokenKind::Trait => self.parse_trait_decl_old(true),
             _ => {
                 self.error("expected fn, enum, type, let, mut, const, or trait after export");
                 None
@@ -417,53 +417,7 @@ impl Parser {
         }
     }
 
-    pub(crate) fn parse_enum_decl(&mut self, exported: bool) -> Option<Statement> {
-        let start = self.advance()?.span; // consume 'enum'
-        self.skip_newlines();
-        let name = self.expect_ident()?;
-        self.skip_newlines();
-        self.expect(&TokenKind::LBrace)?;
-        self.skip_newlines();
-
-        let mut variants = Vec::new();
-        loop {
-            self.skip_newlines();
-            if self.check(&TokenKind::RBrace) {
-                break;
-            }
-            let vstart = self.current_span();
-            let vname = self.expect_ident()?;
-            self.skip_newlines();
-
-            let fields = if self.check(&TokenKind::LParen) {
-                self.advance();
-                let params = self.parse_params()?;
-                self.expect(&TokenKind::RParen)?;
-                params
-            } else {
-                Vec::new()
-            };
-
-            variants.push(EnumVariant {
-                name: vname,
-                fields,
-                span: vstart,
-            });
-            self.skip_newlines();
-            // Allow optional comma or newline between variants
-            if self.check(&TokenKind::Comma) {
-                self.advance();
-            }
-        }
-        self.expect(&TokenKind::RBrace)?;
-
-        Some(Statement::EnumDecl {
-            name,
-            variants,
-            exported,
-            span: start,
-        })
-    }
+    // parse_enum_decl: extracted to features/enums
 
     pub(crate) fn parse_type_decl(&mut self, exported: bool) -> Option<Statement> {
         let start = self.advance()?.span; // consume 'type'
@@ -578,22 +532,165 @@ impl Parser {
         })
     }
     // parse_type_params: extracted to features/
-    // parse_trait_decl: extracted to features/
-    // parse_impl_block: extracted to features/
+
+    /// Old-style trait decl parser that emits Statement::TraitDecl directly.
+    /// The feature version (parse_trait_decl) emits Statement::Feature which
+    /// component_expand and driver don't handle yet.
+    pub(crate) fn parse_trait_decl_old(&mut self, exported: bool) -> Option<Statement> {
+        let start = self.advance()?.span; // consume 'trait'
+        self.skip_newlines();
+        let name = self.expect_ident()?;
+        self.skip_newlines();
+
+        let type_params = if self.check(&TokenKind::Lt) {
+            self.parse_type_params()?
+        } else {
+            Vec::new()
+        };
+        self.skip_newlines();
+
+        let mut super_traits = Vec::new();
+        if self.check(&TokenKind::Colon) {
+            self.advance();
+            self.skip_newlines();
+            let t = self.expect_ident()?;
+            super_traits.push(t);
+            while self.check(&TokenKind::Plus) {
+                self.advance();
+                self.skip_newlines();
+                let t = self.expect_ident()?;
+                super_traits.push(t);
+            }
+        }
+        self.skip_newlines();
+
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut methods = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
+            let mspan = self.current_span();
+            self.expect(&TokenKind::Fn)?;
+            self.skip_newlines();
+            let mname = self.expect_ident()?;
+            self.skip_newlines();
+            self.expect(&TokenKind::LParen)?;
+            let params = self.parse_params()?;
+            self.expect(&TokenKind::RParen)?;
+            self.skip_newlines();
+
+            let return_type = if self.check(&TokenKind::Arrow) {
+                self.advance();
+                self.skip_newlines();
+                Some(self.parse_type_expr()?)
+            } else {
+                None
+            };
+            self.skip_newlines();
+
+            let default_body = if self.check(&TokenKind::LBrace) {
+                Some(self.parse_block()?)
+            } else {
+                None
+            };
+
+            methods.push(TraitMethod {
+                name: mname,
+                params,
+                return_type,
+                default_body,
+                span: mspan,
+            });
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RBrace)?;
+
+        Some(Statement::TraitDecl {
+            name,
+            type_params,
+            super_traits,
+            methods,
+            exported,
+            span: start,
+        })
+    }
+
+    /// Old-style impl block parser that emits Statement::ImplBlock directly.
+    pub(crate) fn parse_impl_block_old(&mut self) -> Option<Statement> {
+        let start = self.advance()?.span; // consume 'impl'
+        self.skip_newlines();
+
+        let first_name = self.expect_ident()?;
+        self.skip_newlines();
+
+        let type_params = if self.check(&TokenKind::Lt) {
+            self.parse_type_params()?
+        } else {
+            Vec::new()
+        };
+        self.skip_newlines();
+
+        let (trait_name, type_name) = if self.check(&TokenKind::For) {
+            self.advance();
+            self.skip_newlines();
+            let tn = self.expect_ident()?;
+            (Some(first_name), tn)
+        } else {
+            (None, first_name)
+        };
+        self.skip_newlines();
+
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut methods = Vec::new();
+        let mut associated_types = Vec::new();
+
+        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
+            if self.check(&TokenKind::Type) {
+                self.advance();
+                self.skip_newlines();
+                let aname = self.expect_ident()?;
+                self.skip_newlines();
+                self.expect(&TokenKind::Eq)?;
+                self.skip_newlines();
+                let atype = self.parse_type_expr()?;
+                associated_types.push((aname, atype));
+            } else if self.check(&TokenKind::Fn) {
+                let method = self.parse_fn_decl(false)?;
+                methods.push(method);
+            } else {
+                self.error("expected fn or type in impl block");
+                self.advance();
+            }
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RBrace)?;
+
+        Some(Statement::ImplBlock {
+            trait_name,
+            type_name,
+            type_params,
+            associated_types,
+            methods,
+            span: start,
+        })
+    }
 
     pub(crate) fn parse_expr_statement(&mut self) -> Option<Statement> {
         let expr = self.parse_expr()?;
 
         // Check for channel send: expr <- value
         if self.check(&TokenKind::LeftArrow) {
-            let span = self.advance()?.span; // consume <-
-            self.skip_newlines();
-            let value = self.parse_expr()?;
-            return Some(Statement::Expr(Expr::ChannelSend {
-                channel: Box::new(expr),
-                value: Box::new(value),
-                span,
-            }));
+            return self.parse_channel_send(expr);
         }
 
         // Check for assignment
@@ -774,13 +871,7 @@ impl Parser {
         }
         // Channel receive: <- channel
         if self.check(&TokenKind::LeftArrow) {
-            let span = self.advance()?.span; // consume <-
-            self.skip_newlines();
-            let channel = self.parse_unary()?;
-            return Some(Expr::ChannelReceive {
-                channel: Box::new(channel),
-                span,
-            });
+            return self.parse_channel_receive();
         }
         self.parse_postfix()
     }
@@ -842,11 +933,12 @@ impl Parser {
                     // Peek inside the brace: if ident : or ident , or ident } then struct literal.
                     // For `ident }` (shorthand single field), require uppercase type name to avoid
                     // ambiguity with `condition { block }` patterns like `if a > b { x }`.
-                    let next_is_ident = self.peek_at(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false);
-                    let after_ident = self.peek_at(2).map(|t| &t.kind);
+                    // Use peek_at_meaningful to skip newlines inside { ... }
+                    let next_is_ident = self.peek_at_meaningful(1).map(|t| matches!(&t.kind, TokenKind::Ident(_))).unwrap_or(false);
+                    let after_ident = self.peek_at_meaningful(2).map(|t| &t.kind);
                     let is_struct = next_is_ident && match after_ident {
-                        Some(TokenKind::Colon) | Some(TokenKind::Comma) => true,
-                        Some(TokenKind::RBrace) => type_name.starts_with(char::is_uppercase),
+                        Some(&TokenKind::Colon) | Some(&TokenKind::Comma) => true,
+                        Some(&TokenKind::RBrace) => type_name.starts_with(char::is_uppercase),
                         _ => false,
                     };
                     if is_struct {
@@ -890,11 +982,15 @@ impl Parser {
             } else if self.check(&TokenKind::QuestionDot) {
                 let span = self.advance()?.span;
                 let field = self.expect_field_name()?;
-                expr = Expr::NullPropagate {
-                    object: Box::new(expr),
-                    field,
+                expr = Expr::Feature(crate::feature::FeatureExpr {
+                    feature_id: "null_safety",
+                    kind: "NullPropagate",
+                    data: Box::new(crate::features::null_safety::types::NullPropagateData {
+                        object: Box::new(expr),
+                        field,
+                    }),
                     span,
-                };
+                });
             } else if self.check(&TokenKind::LBracket) {
                 let span = self.advance()?.span;
                 self.skip_newlines();
@@ -909,10 +1005,25 @@ impl Parser {
             } else if self.check(&TokenKind::Question) {
                 // Error propagation: expr?
                 let span = self.advance()?.span;
-                expr = Expr::ErrorPropagate {
-                    operand: Box::new(expr),
+                expr = Expr::Feature(crate::feature::FeatureExpr {
+                    feature_id: "error_propagation",
+                    kind: "ErrorPropagate",
+                    data: Box::new(crate::features::error_propagation::types::ErrorPropagateData {
+                        operand: Box::new(expr),
+                    }),
                     span,
-                };
+                });
+            } else if self.check(&TokenKind::Not) {
+                // Force unwrap: expr! (unwraps nullable, panics if null)
+                let span = self.advance()?.span;
+                expr = Expr::Feature(crate::feature::FeatureExpr {
+                    feature_id: "null_safety",
+                    kind: "ForceUnwrap",
+                    data: Box::new(crate::features::null_safety::types::ForceUnwrapData {
+                        operand: Box::new(expr),
+                    }),
+                    span,
+                });
             } else {
                 break;
             }
@@ -991,8 +1102,10 @@ impl Parser {
 
         let value = self.parse_expr()?;
 
-        // If the expression references `it`, wrap it in a closure: (it) -> <expr>
-        if Self::expr_contains_it(&value) {
+        // If the expression references `it` in a compound expression, wrap it in a closure: (it) -> <expr>
+        // Skip wrapping bare `Ident("it")` so that a user-defined variable named `it` works normally.
+        let is_bare_it = matches!(&value, Expr::Ident(name, _) if name == "it");
+        if !is_bare_it && Self::expr_contains_it(&value) {
             let span = value.span();
             let closure = Expr::Closure {
                 params: vec![Param {
@@ -1051,10 +1164,14 @@ impl Parser {
                 let value = self.parse_expr()?;
                 self.skip_newlines();
                 self.expect(&TokenKind::RParen)?;
-                Some(Expr::OkExpr {
-                    value: Box::new(value),
+                Some(Expr::Feature(crate::feature::FeatureExpr {
+                    feature_id: "error_propagation",
+                    kind: "OkExpr",
+                    data: Box::new(crate::features::error_propagation::types::OkExprData {
+                        value: Box::new(value),
+                    }),
                     span,
-                })
+                }))
             }
             TokenKind::Err_ => {
                 let span = self.advance()?.span;
@@ -1063,10 +1180,14 @@ impl Parser {
                 let value = self.parse_expr()?;
                 self.skip_newlines();
                 self.expect(&TokenKind::RParen)?;
-                Some(Expr::ErrExpr {
-                    value: Box::new(value),
+                Some(Expr::Feature(crate::feature::FeatureExpr {
+                    feature_id: "error_propagation",
+                    kind: "ErrExpr",
+                    data: Box::new(crate::features::error_propagation::types::ErrExprData {
+                        value: Box::new(value),
+                    }),
                     span,
-                })
+                }))
             }
             TokenKind::DollarString(parts) => {
                 let parts = parts.clone();
@@ -1353,38 +1474,7 @@ impl Parser {
         })
     }
 
-    pub(crate) fn parse_if_expr(&mut self) -> Option<Expr> {
-        let span = self.advance()?.span; // if
-        self.skip_newlines();
-        let condition = self.parse_expr()?;
-        self.skip_newlines();
-        let then_branch = self.parse_block()?;
-        self.skip_newlines();
-        let else_branch = if self.check(&TokenKind::Else) {
-            self.advance();
-            self.skip_newlines();
-            if self.check(&TokenKind::If) {
-                // else if -> wrap in a block containing the if
-                let inner_if = self.parse_if_expr()?;
-                let block_span = inner_if.span();
-                Some(Block {
-                    statements: vec![Statement::Expr(inner_if)],
-                    span: block_span,
-                })
-            } else {
-                Some(self.parse_block()?)
-            }
-        } else {
-            None
-        };
-
-        Some(Expr::If {
-            condition: Box::new(condition),
-            then_branch,
-            else_branch,
-            span,
-        })
-    }
+    // parse_if_expr: extracted to features/if_else
     // parse_match_expr: extracted to features/
     // parse_match_arm: extracted to features/
     // parse_pattern: extracted to features/
@@ -1790,7 +1880,7 @@ impl Parser {
     /// Check if an expression is chainable across newlines with `.`
     /// Only identifiers, calls, member accesses, indexes, and list/map literals should chain.
     pub(crate) fn is_chainable_expr(expr: &Expr) -> bool {
-        matches!(expr,
+        match expr {
             Expr::Ident(_, _) |
             Expr::Call { .. } |
             Expr::MemberAccess { .. } |
@@ -1798,8 +1888,30 @@ impl Parser {
             Expr::ListLit { .. } |
             Expr::MapLit { .. } |
             Expr::NullPropagate { .. } |
-            Expr::ErrorPropagate { .. }
-        )
+            Expr::ErrorPropagate { .. } => true,
+            // Feature variants for NullPropagate and ErrorPropagate
+            Expr::Feature(fe) => matches!(fe.kind, "NullPropagate" | "ErrorPropagate"),
+            _ => false,
+        }
+    }
+
+    /// Peek at the Nth non-newline token from current position (0-indexed)
+    pub(crate) fn peek_at_meaningful(&self, n: usize) -> Option<&Token> {
+        let mut offset = 0;
+        let mut count = 0;
+        loop {
+            match self.tokens.get(self.pos + offset) {
+                Some(t) if t.kind == TokenKind::Newline => offset += 1,
+                Some(t) => {
+                    if count == n {
+                        return Some(t);
+                    }
+                    count += 1;
+                    offset += 1;
+                }
+                None => return None,
+            }
+        }
     }
 
     /// Peek past newlines to see if the next meaningful token matches

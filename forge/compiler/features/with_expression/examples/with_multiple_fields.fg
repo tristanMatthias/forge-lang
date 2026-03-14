@@ -1,0 +1,19 @@
+/// # With Multiple Fields
+///
+/// Update several fields of a struct at once using `with`.
+///
+/// expect: charlie
+/// expect: charlie@example.com
+/// expect: 35
+/// expect: alice
+
+type User = { name: string, email: string, age: int }
+
+fn main() {
+  let u = User { name: "alice", email: "alice@test.com", age: 25 }
+  let u2 = u with { name: "charlie", email: "charlie@example.com", age: 35 }
+  println(u2.name)
+  println(u2.email)
+  println(string(u2.age))
+  println(u.name)
+}

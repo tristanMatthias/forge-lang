@@ -1,0 +1,15 @@
+/// # Closure Changing Element Type
+///
+/// Closure that maps int to string, changing the list element type.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+
+fn main() {
+  let nums = [1, 2, 3]
+  let strs = nums.map((n) -> string(n))
+  for s in strs {
+    println(s)
+  }
+}

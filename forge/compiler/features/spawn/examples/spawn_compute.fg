@@ -1,0 +1,23 @@
+/// # Spawn with Computation
+///
+/// Spawned task does computation before sending result.
+///
+/// expect: 55
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    mut sum = 0
+    for i in 1..11 {
+      sum = sum + i
+    }
+    ch <- string(sum)
+  }
+
+  sleep(50)
+  let result = <- ch
+  println(result)
+}

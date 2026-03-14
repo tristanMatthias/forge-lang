@@ -1,0 +1,18 @@
+/// # For Range Continue
+///
+/// Skip even numbers using continue in a range-based for loop.
+///
+/// expect: 1
+/// expect: 3
+/// expect: 5
+/// expect: done
+
+fn main() {
+  for i in 0..6 {
+    if i % 2 == 0 {
+      continue
+    }
+    println(i)
+  }
+  println("done")
+}

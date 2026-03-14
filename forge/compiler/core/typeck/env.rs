@@ -34,6 +34,14 @@ pub struct TypeEnv {
     pub type_annotations: HashMap<String, Vec<(String, Vec<FieldAnnotation>)>>,
     /// Tracks which types are partial (all fields optional, only present fields validated)
     pub partial_types: HashSet<String>,
+    /// Trait declarations: trait_name -> list of required method names (methods without default bodies)
+    pub trait_methods: HashMap<String, Vec<String>>,
+    /// All trait method names: trait_name -> list of all method names (required + default)
+    pub trait_all_methods: HashMap<String, Vec<String>>,
+    /// Methods declared via impl blocks: type_name -> list of (method_name, return_type)
+    pub type_methods: HashMap<String, Vec<(String, Type)>>,
+    /// Traits implemented by types: type_name -> list of trait_names
+    pub type_traits: HashMap<String, Vec<String>>,
 }
 
 impl TypeEnv {
@@ -47,6 +55,10 @@ impl TypeEnv {
             namespaces: HashSet::new(),
             type_annotations: HashMap::new(),
             partial_types: HashSet::new(),
+            trait_methods: HashMap::new(),
+            trait_all_methods: HashMap::new(),
+            type_methods: HashMap::new(),
+            type_traits: HashMap::new(),
         };
         // Register built-in functions
         env.functions.insert(

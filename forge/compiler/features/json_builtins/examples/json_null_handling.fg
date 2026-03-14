@@ -1,0 +1,16 @@
+/// # JSON Null Handling
+///
+/// Stringify structs with nullable fields — null fields are omitted from output.
+///
+/// expect: {"name":"alice"}
+/// expect: {"name":"bob"}
+
+fn main() {
+  let age: int? = null
+  let data1 = { name: "alice", age: age }
+  println(json.stringify(data1))
+
+  let score: string? = null
+  let data2 = { name: "bob", score: score }
+  println(json.stringify(data2))
+}

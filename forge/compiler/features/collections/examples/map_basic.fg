@@ -1,0 +1,22 @@
+/// # Basic Map Operations
+///
+/// Create a map, get values (nullable), get keys.
+///
+/// expect: 42
+/// expect: null
+/// expect: 2
+
+fn main() {
+  let m = {"a": 42, "b": 99}
+  let val = m.get("a")
+  if val != null {
+    let v = val!
+    println(string(v))
+  }
+  let missing = m.get("c")
+  if missing == null {
+    println("null")
+  }
+  let k = m.keys()
+  println(string(k.length))
+}

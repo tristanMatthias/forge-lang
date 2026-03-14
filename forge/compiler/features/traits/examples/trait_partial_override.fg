@@ -1,0 +1,29 @@
+/// Override only some default methods, keep others
+///
+/// expect: CUSTOM
+/// expect: base: custom
+
+trait Formatter {
+  fn raw(self) -> string
+
+  fn upper_raw(self) -> string {
+    self.raw().upper()
+  }
+
+  fn prefixed(self) -> string {
+    `base: ${self.raw()}`
+  }
+}
+
+type Thing = { text: string }
+
+impl Formatter for Thing {
+  fn raw(self) -> string { self.text }
+  fn upper_raw(self) -> string { "CUSTOM" }
+}
+
+fn main() {
+  let t = Thing { text: "custom" }
+  println(t.upper_raw())
+  println(t.prefixed())
+}

@@ -1,0 +1,12 @@
+/// # Pipe From Integer Literal
+///
+/// Pipe directly from a literal value into a function.
+///
+/// expect: 21
+
+fn triple(x: int) -> int { x * 3 }
+
+fn main() {
+  let result = 7 |> triple
+  println(string(result))
+}

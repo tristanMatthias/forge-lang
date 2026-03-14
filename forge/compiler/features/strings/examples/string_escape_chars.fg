@@ -1,0 +1,14 @@
+/// Test: Strings with escape characters — tabs, newlines, quotes
+///
+/// expect: hello	world
+/// expect: line1
+/// expect: line2
+/// expect: she said "hi"
+/// expect: back\slash
+
+fn main() {
+  println("hello\tworld")
+  println("line1\nline2")
+  println("she said \"hi\"")
+  println("back\\slash")
+}

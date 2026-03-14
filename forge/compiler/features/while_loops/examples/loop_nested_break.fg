@@ -1,0 +1,27 @@
+/// # Nested Loop Break
+///
+/// Adversarial test: inner loop break should only exit inner loop,
+/// not the outer loop.
+///
+/// expect: outer=1 inner=3
+/// expect: outer=2 inner=3
+/// expect: done
+
+fn main() {
+  mut outer = 0
+  loop {
+    mut inner = 0
+    loop {
+      inner = inner + 1
+      if inner == 3 {
+        break
+      }
+    }
+    outer = outer + 1
+    println(`outer=${outer} inner=${inner}`)
+    if outer == 2 {
+      break
+    }
+  }
+  println("done")
+}

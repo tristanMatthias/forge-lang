@@ -1,3 +1,5 @@
+use crate::feature::KeywordId;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     // Literals
@@ -97,6 +99,9 @@ pub enum TokenKind {
     Hash,
     Underscore,
     Spread,
+
+    // Feature-registered keyword (looked up from KeywordRegistry)
+    Keyword(KeywordId),
 
     // Special
     Newline,

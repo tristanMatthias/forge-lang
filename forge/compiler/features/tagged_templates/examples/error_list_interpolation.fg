@@ -1,0 +1,12 @@
+/// # List interpolation in tagged template
+///
+/// Lists cannot be directly interpolated in tagged templates.
+///
+/// expect-error: F0012
+
+fn identity(input: string) -> string { input }
+
+fn main() {
+  let items = [1, 2, 3]
+  println(identity`items: ${items}`)
+}

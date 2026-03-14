@@ -1,0 +1,10 @@
+/// # JSON Stringify List of Structs
+///
+/// Stringify a struct containing a list of ints.
+///
+/// expect: {"items":[1,2,3],"label":"batch"}
+
+fn main() {
+  let data = { items: [1, 2, 3], label: "batch" }
+  println(json.stringify(data))
+}

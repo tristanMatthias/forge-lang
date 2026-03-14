@@ -1,0 +1,12 @@
+/// # Block Scope Isolation
+///
+/// Variables defined in a block are not accessible outside it.
+///
+/// expect-error: F0020
+
+fn main() {
+  {
+    let inner = 42
+  }
+  println(string(inner))
+}

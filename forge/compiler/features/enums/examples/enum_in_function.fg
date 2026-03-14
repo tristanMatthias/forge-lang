@@ -1,0 +1,39 @@
+/// # Enum in Function
+///
+/// Passing enums to and returning enums from functions.
+///
+/// expect: medium
+/// expect: critical
+
+enum Priority {
+  low
+  medium
+  high
+  critical
+}
+
+fn upgrade(p: Priority) -> Priority {
+  match p {
+    .low -> Priority.medium
+    .medium -> Priority.high
+    .high -> Priority.critical
+    .critical -> Priority.critical
+  }
+}
+
+fn label(p: Priority) -> string {
+  match p {
+    .low -> "low"
+    .medium -> "medium"
+    .high -> "high"
+    .critical -> "critical"
+  }
+}
+
+fn main() {
+  let p = Priority.low
+  let p2 = upgrade(p)
+  println(label(p2))
+  let p3 = upgrade(upgrade(p2))
+  println(label(p3))
+}

@@ -1,0 +1,18 @@
+/// # Single Row Table
+///
+/// Table with one data row.
+///
+/// expect: 1
+/// expect: widget
+/// expect: 99
+
+fn main() {
+    let items = table {
+        name     | price
+        "widget" | 99
+    }
+
+    println(string(items.length))
+    println(items[0].name)
+    println(string(items[0].price))
+}

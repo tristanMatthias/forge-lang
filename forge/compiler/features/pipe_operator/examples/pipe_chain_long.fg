@@ -1,0 +1,15 @@
+/// # Long Pipe Chain
+///
+/// Chain 5+ pipe operations in sequence.
+///
+/// expect: 8
+
+fn add_one(x: int) -> int { x + 1 }
+fn double(x: int) -> int { x * 2 }
+fn square(x: int) -> int { x * x }
+fn subtract_three(x: int) -> int { x - 3 }
+
+fn main() {
+  let result = 3 |> add_one |> double |> add_one |> subtract_three |> add_one |> add_one
+  println(string(result))
+}

@@ -1,0 +1,14 @@
+/// # Variable From Block Expression
+///
+/// A variable bound to the result of a block expression.
+///
+/// expect: 30
+
+fn main() {
+  let result = {
+    let a = 10
+    let b = 20
+    a + b
+  }
+  println(string(result))
+}

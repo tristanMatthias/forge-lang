@@ -1,14 +1,17 @@
-use crate::lexer::token::{TemplatePart as LexTemplatePart, TokenKind};
+use crate::feature::FeatureExpr;
+use crate::lexer::token::TemplatePart as LexTemplatePart;
 use crate::lexer::{Lexer, Span};
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::DollarExecData;
 
 impl Parser {
     /// Parse a dollar-exec expression: `$"echo hello ${name}"` or `$\`echo ${name}\``
     ///
     /// Takes the pre-lexed template parts and span from the lexer token,
     /// parses any interpolated expressions within `${}`, and produces
-    /// an `Expr::DollarExec`.
+    /// an `Expr::Feature` with `DollarExecData`.
     pub(crate) fn parse_dollar_exec(&mut self, lex_parts: Vec<LexTemplatePart>, span: Span) -> Option<Expr> {
         let mut parts = Vec::new();
         for part in lex_parts {
@@ -27,6 +30,11 @@ impl Parser {
                 }
             }
         }
-        Some(Expr::DollarExec { parts, span })
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "shell_shorthand",
+            kind: "DollarExec",
+            data: Box::new(DollarExecData { parts }),
+            span,
+        }))
     }
 }

@@ -1,0 +1,27 @@
+/// Trait bound with generic: multiple types through same generic fn
+///
+/// expect: cat says meow
+/// expect: dog says woof
+/// expect: bird says tweet
+
+trait Sound {
+  fn sound(self) -> string
+}
+
+type Cat = { name: string }
+type Dog = { name: string }
+type Bird = { name: string }
+
+impl Sound for Cat { fn sound(self) -> string { "meow" } }
+impl Sound for Dog { fn sound(self) -> string { "woof" } }
+impl Sound for Bird { fn sound(self) -> string { "tweet" } }
+
+fn describe<T: Sound>(animal: T, kind: string) -> string {
+  `${kind} says ${animal.sound()}`
+}
+
+fn main() {
+  println(describe(Cat { name: "c" }, "cat"))
+  println(describe(Dog { name: "d" }, "dog"))
+  println(describe(Bird { name: "b" }, "bird"))
+}

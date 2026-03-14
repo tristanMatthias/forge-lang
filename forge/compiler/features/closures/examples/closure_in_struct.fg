@@ -1,0 +1,22 @@
+/// # Closures with List Methods
+///
+/// Closures passed to various list methods including any, find, and all.
+///
+/// expect: true
+/// expect: 30
+/// expect: false
+
+fn main() {
+  let nums = [10, 20, 30]
+
+  let has_big = nums.any((n) -> n > 25)
+  println(string(has_big))
+
+  let found = nums.find((n) -> n > 25)
+  if found != null {
+    println(string(found))
+  }
+
+  let all_small = nums.all((n) -> n < 15)
+  println(string(all_small))
+}

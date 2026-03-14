@@ -1,0 +1,27 @@
+/// # Null Narrowing Reversed
+///
+/// Null check with null on the left side: `null != a`.
+/// Smart narrowing should still work.
+///
+/// expect: HELLO
+/// expect: missing
+
+fn find(id: int) -> string? {
+  if id == 1 { "hello" } else { null }
+}
+
+fn main() {
+  let a = find(1)
+  if null != a {
+    println(a.upper())
+  } else {
+    println("missing")
+  }
+
+  let b = find(2)
+  if null != b {
+    println(b.upper())
+  } else {
+    println("missing")
+  }
+}

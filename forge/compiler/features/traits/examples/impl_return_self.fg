@@ -1,0 +1,23 @@
+/// Impl method that returns a new instance of the same type
+///
+/// expect: 10
+/// expect: 20
+
+type Counter = { count: int }
+
+impl Counter {
+  fn increment(self) -> Counter {
+    Counter { count: self.count + 1 }
+  }
+  fn times(self, n: int) -> Counter {
+    Counter { count: self.count * n }
+  }
+}
+
+fn main() {
+  let c = Counter { count: 5 }
+  let c2 = c.times(2)
+  let c3 = c.times(4)
+  println(string(c2.count))
+  println(string(c3.count))
+}

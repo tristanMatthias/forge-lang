@@ -1,0 +1,13 @@
+/// # For Loop String Building
+///
+/// Build a string by concatenating in a for loop.
+///
+/// expect: 01234
+
+fn main() {
+  mut s = ""
+  for i in 0..5 {
+    s = s + string(i)
+  }
+  println(s)
+}

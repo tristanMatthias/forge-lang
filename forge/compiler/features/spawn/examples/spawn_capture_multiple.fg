@@ -1,0 +1,21 @@
+/// # Spawn Captures Multiple Variables
+///
+/// A spawned task captures several outer variables.
+///
+/// expect: alice is 30
+
+use @std.channel
+
+fn main() {
+  let name = "alice"
+  let age = 30
+  let ch = channel(1)
+
+  spawn {
+    ch <- `${name} is ${age}`
+  }
+
+  sleep(50)
+  let msg = <- ch
+  println(msg)
+}

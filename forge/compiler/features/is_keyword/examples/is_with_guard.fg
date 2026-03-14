@@ -1,0 +1,25 @@
+/// # Is Combined with && and ||
+///
+/// The `is` keyword used with logical operators in conditions.
+///
+/// expect: both ok
+/// expect: at least one error
+/// expect: mixed
+
+fn main() {
+  let a = Ok(1)
+  let b = Ok(2)
+  let c = Err("fail")
+
+  if a is Ok && b is Ok {
+    println("both ok")
+  }
+
+  if a is Err || c is Err {
+    println("at least one error")
+  }
+
+  if a is Ok && c is Err {
+    println("mixed")
+  }
+}

@@ -199,6 +199,15 @@ fn parse_provider_fg(source: &str) -> Result<(Vec<Statement>, Vec<Statement>, Ve
                 }
             }
             Statement::FnDecl { exported: true, .. } => exported_fns.push(stmt),
+            Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                use crate::feature_data;
+                use crate::features::functions::types::FnDeclData;
+                if let Some(data) = feature_data!(&fe, FnDeclData) {
+                    if data.exported {
+                        exported_fns.push(stmt);
+                    }
+                }
+            }
             _ => {}
         }
     }

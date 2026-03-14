@@ -1,0 +1,18 @@
+/// # Partial Type in Function
+///
+/// Partial type used as a function parameter with some fields omitted.
+///
+/// expect: localhost
+/// expect: none
+
+type Config = { host: string, port: int, debug: bool }
+type PartialConfig = Config only {host, port, debug} as partial
+
+fn show_host(c: PartialConfig) {
+  println(c.host ?? "none")
+}
+
+fn main() {
+  show_host({ host: "localhost" })
+  show_host({ port: 8080 })
+}

@@ -1,0 +1,23 @@
+/// # Four Deep Loop Nesting
+///
+/// Adversarial test: for/for/while/loop four levels deep.
+/// Tests that the compiler handles deeply nested basic blocks.
+///
+/// expect: 27
+
+fn main() {
+  mut count = 0
+  for i in 0..3 {
+    for j in 0..3 {
+      mut k = 0
+      while k < 3 {
+        loop {
+          count = count + 1
+          break
+        }
+        k = k + 1
+      }
+    }
+  }
+  println(count)
+}

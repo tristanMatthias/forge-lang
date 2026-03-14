@@ -1,0 +1,17 @@
+/// Method chaining on structs: a.method1().method2().method3()
+///
+/// expect: 24
+
+type Num = { val: int }
+
+impl Num {
+  fn double(self) -> Num { Num { val: self.val * 2 } }
+  fn add_one(self) -> Num { Num { val: self.val + 1 } }
+  fn get(self) -> int { self.val }
+}
+
+fn main() {
+  let n = Num { val: 5 }
+  let result = n.add_one().double().double()
+  println(string(result.get()))
+}

@@ -1,0 +1,17 @@
+/// # Mutable Variable Modified in Nested Scope
+///
+/// A mut variable can be modified from within a nested block.
+///
+/// expect: 10
+/// expect: 20
+/// expect: 20
+
+fn main() {
+  mut x = 10
+  println(string(x))
+  {
+    x = 20
+    println(string(x))
+  }
+  println(string(x))
+}

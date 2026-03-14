@@ -1,0 +1,19 @@
+/// # Multiline Closure in Map
+///
+/// Closure with block body inside a map call.
+///
+/// expect: 12
+/// expect: 14
+/// expect: 16
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums.map((n) -> {
+    let doubled = n * 2
+    let added = doubled + 10
+    added
+  })
+  for n in result {
+    println(string(n))
+  }
+}

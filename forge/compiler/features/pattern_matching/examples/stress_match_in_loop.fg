@@ -1,0 +1,30 @@
+/// # Match Inside Loops
+///
+/// Match used in for loops with mutation and accumulation.
+///
+/// expect: total: 450
+/// expect: categories: big big small big small small
+
+fn main() {
+  let nums = [100, 200, 3, 150, 7, 1]
+  mut total = 0
+  mut categories = ""
+
+  for n in nums {
+    total = total + match n {
+      _ if n >= 100 -> n
+      _ -> 0
+    }
+    let cat = match n {
+      _ if n >= 100 -> "big"
+      _ -> "small"
+    }
+    if categories == "" {
+      categories = cat
+    } else {
+      categories = categories + " " + cat
+    }
+  }
+  println(`total: ${total}`)
+  println(`categories: ${categories}`)
+}

@@ -1,0 +1,23 @@
+/// # Float Pattern Matching
+///
+/// Float literals can be used as match patterns.
+///
+/// expect: pi
+/// expect: other
+
+fn main() {
+  let x = 3.14
+  let result = match x {
+    3.14 -> "pi"
+    2.71 -> "e"
+    _ -> "other"
+  }
+  println(result)
+
+  let y = 1.0
+  let r2 = match y {
+    3.14 -> "pi"
+    _ -> "other"
+  }
+  println(r2)
+}

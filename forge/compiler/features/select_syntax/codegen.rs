@@ -1,10 +1,21 @@
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureStmt;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::SelectData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a select statement via the Feature dispatch system.
+    pub(crate) fn compile_select_feature(&mut self, fe: &FeatureStmt) {
+        if let Some(data) = feature_data!(fe, SelectData) {
+            self.compile_select(&data.arms);
+        }
+    }
+
     /// Compile a `select { ... }` statement.
     ///
     /// Uses a polling approach: loops over arms, calls `forge_channel_try_receive`

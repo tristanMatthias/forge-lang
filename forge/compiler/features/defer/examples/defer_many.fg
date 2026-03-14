@@ -1,0 +1,19 @@
+/// # Many Defers
+///
+/// Five defers in reverse order.
+///
+/// expect: work
+/// expect: 5
+/// expect: 4
+/// expect: 3
+/// expect: 2
+/// expect: 1
+
+fn main() {
+  defer println("1")
+  defer println("2")
+  defer println("3")
+  defer println("4")
+  defer println("5")
+  println("work")
+}

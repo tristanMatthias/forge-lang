@@ -140,17 +140,14 @@ impl<'ctx> Codegen<'ctx> {
                     .into()
             }
             Type::Enum { variants, .. } => {
-                // Tagged union: {i8 tag, field1_type, field2_type, ...}
-                // Use the largest variant to determine size
-                let max_fields = variants.iter().map(|v| v.fields.len()).max().unwrap_or(0);
+                // Tagged union using i64 slots for type-safe union storage.
+                // Compute max i64 slots needed across all variants' fields.
+                let max_slots = variants.iter().map(|v| {
+                    v.fields.iter().map(|(_, ty)| self.type_i64_slots(ty)).sum::<usize>()
+                }).max().unwrap_or(0).max(1);
                 let mut field_types: Vec<BasicTypeEnum<'ctx>> = vec![self.context.i8_type().into()];
-                // Use the first variant with max fields for layout, or pad with f64 (largest primitive)
-                if max_fields > 0 {
-                    // Find the variant with most fields
-                    let biggest = variants.iter().max_by_key(|v| v.fields.len()).unwrap();
-                    for (_, ty) in &biggest.fields {
-                        field_types.push(self.type_to_llvm_basic(ty));
-                    }
+                for _ in 0..max_slots {
+                    field_types.push(self.context.i64_type().into());
                 }
                 self.context
                     .struct_type(
@@ -641,6 +638,50 @@ impl<'ctx> Codegen<'ctx> {
                         "contains" | "starts_with" | "ends_with" => Type::Nullable(Box::new(Type::Bool)),
                         _ => Type::Unknown,
                     },
+                    _ => Type::Unknown,
+                }
+            }
+            Expr::Feature(fe) => self.infer_feature_type(fe),
+
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Dispatch a feature-owned expression to the appropriate feature's type inference.
+    pub(crate) fn infer_feature_type(&self, fe: &crate::feature::FeatureExpr) -> Type {
+        match fe.feature_id {
+            "ranges" => self.infer_range_feature_type(fe),
+            "is_keyword" => Type::Bool,
+            "with_expression" => self.infer_with_feature_type(fe),
+            "pipe_operator" => self.infer_pipe_feature_type(fe),
+            "shell_shorthand" => self.infer_dollar_exec_feature_type(fe),
+            "table_literal" => self.infer_table_lit_feature_type(fe),
+            "closures" => self.infer_closure_feature_type(fe),
+            "pattern_matching" => self.infer_match_feature_type(fe),
+            "if_else" => self.infer_if_feature_type(fe),
+            "null_safety" => {
+                match fe.kind {
+                    "NullCoalesce" => self.infer_null_coalesce_feature_type(fe),
+                    "NullPropagate" => self.infer_null_propagate_feature_type(fe),
+                    "ForceUnwrap" => self.infer_force_unwrap_feature_type(fe),
+                    _ => Type::Unknown,
+                }
+            }
+            "error_propagation" => {
+                match fe.kind {
+                    "ErrorPropagate" => self.infer_error_propagate_feature_type(fe),
+                    "OkExpr" => self.infer_ok_expr_feature_type(fe),
+                    "ErrExpr" => self.infer_err_expr_feature_type(fe),
+                    "Catch" => self.infer_catch_feature_type(fe),
+                    _ => Type::Unknown,
+                }
+            }
+            "structs" => self.infer_struct_lit_feature_type(fe),
+            "tuples" => self.infer_tuple_lit_feature_type(fe),
+            "collections" => {
+                match fe.kind {
+                    "ListLit" => self.infer_list_lit_feature_type(fe),
+                    "MapLit" => self.infer_map_lit_feature_type(fe),
                     _ => Type::Unknown,
                 }
             }

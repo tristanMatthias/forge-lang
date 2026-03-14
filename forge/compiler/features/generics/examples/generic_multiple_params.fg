@@ -1,0 +1,22 @@
+/// # Generic Multiple Parameters
+///
+/// Function with multiple type parameters.
+///
+/// expect: hello
+/// expect: 42
+/// expect: 99
+/// expect: world
+
+fn swap<A, B>(a: A, b: B) -> (B, A) {
+  (b, a)
+}
+
+fn main() {
+  let r1 = swap(42, "hello")
+  println(r1.0)
+  println(string(r1.1))
+
+  let r2 = swap("world", 99)
+  println(string(r2.0))
+  println(r2.1)
+}

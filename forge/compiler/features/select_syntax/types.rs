@@ -1,2 +1,9 @@
-// Select is a statement, not an expression — it has no return type.
-// This module is a placeholder for consistency with the feature module pattern.
+use crate::parser::ast::SelectArm;
+
+/// AST data for a `select { ... }` statement.
+#[derive(Debug, Clone)]
+pub struct SelectData {
+    pub arms: Vec<SelectArm>,
+}
+
+crate::impl_feature_node!(SelectData);

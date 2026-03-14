@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::PipeData;
 
 impl Parser {
     /// Parse pipe expressions: `expr |> fn` or `expr |> fn(args)`
@@ -15,11 +18,15 @@ impl Parser {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_null_coalesce()?;
-            left = Expr::Pipe {
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr::Feature(FeatureExpr {
+                feature_id: "pipe_operator",
+                kind: "Pipe",
+                data: Box::new(PipeData {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }),
                 span,
-            };
+            });
         }
 
         // Check for `catch` (error_propagation feature)

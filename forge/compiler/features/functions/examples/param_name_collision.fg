@@ -1,0 +1,19 @@
+/// # Parameter Name Collision Across Functions
+///
+/// Different functions can use the same parameter names without interference.
+///
+/// expect: 10
+/// expect: 20
+
+fn foo(x: int) -> int {
+  return x
+}
+
+fn bar(x: int) -> int {
+  return x * 2
+}
+
+fn main() {
+  println(string(foo(10)))
+  println(string(bar(10)))
+}

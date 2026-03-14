@@ -1,0 +1,22 @@
+/// # Enum Match with Wildcard Fallthrough
+///
+/// Match on enum using wildcard to catch multiple variants.
+///
+/// expect: red
+/// expect: not red
+/// expect: not red
+
+enum Color { red, green, blue }
+
+fn check(c: Color) -> string {
+  match c {
+    .red -> "red"
+    _ -> "not red"
+  }
+}
+
+fn main() {
+  println(check(Color.red))
+  println(check(Color.green))
+  println(check(Color.blue))
+}

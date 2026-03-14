@@ -1,0 +1,12 @@
+/// # 10-Step Pipe Chain
+///
+/// Stress test: piping through the same function 10 times.
+///
+/// expect: 10
+
+fn inc(x: int) -> int { x + 1 }
+
+fn main() {
+  let result = 0 |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc |> inc
+  println(string(result))
+}

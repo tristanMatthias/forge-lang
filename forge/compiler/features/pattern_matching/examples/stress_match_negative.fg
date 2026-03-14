@@ -1,0 +1,23 @@
+/// # Match on Zero and Negative
+///
+/// Test matching with zero and the boundary between match and wildcard.
+///
+/// expect: zero
+/// expect: one
+/// expect: other
+/// expect: other
+
+fn label(n: int) -> string {
+  match n {
+    0 -> "zero"
+    1 -> "one"
+    _ -> "other"
+  }
+}
+
+fn main() {
+  println(label(0))
+  println(label(1))
+  println(label(2))
+  println(label(-1))
+}

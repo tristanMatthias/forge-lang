@@ -1,0 +1,16 @@
+/// # While OR Condition
+///
+/// Adversarial test: while loop with OR boolean condition.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: 3
+
+fn main() {
+  mut x = 0
+  while x < 3 || x == 3 {
+    println(x)
+    x = x + 1
+  }
+}

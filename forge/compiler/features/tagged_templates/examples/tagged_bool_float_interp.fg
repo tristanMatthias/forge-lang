@@ -1,0 +1,10 @@
+/// Test: Tagged template with bool and float interpolations
+/// expect: {"parts":["active: "," score: ",""],"values":["true","3.14"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  println(identity`active: ${true} score: ${3.14}`)
+}

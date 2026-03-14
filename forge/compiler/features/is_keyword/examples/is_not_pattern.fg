@@ -1,0 +1,23 @@
+/// # Is Not with Enum Variants
+///
+/// Use `is not` for negated pattern matching on enum variants.
+///
+/// expect: not done
+/// expect: not done
+/// expect: is done
+
+enum Status { pending, active, done }
+
+fn check(s: Status) -> string {
+  if s is not .done {
+    "not done"
+  } else {
+    "is done"
+  }
+}
+
+fn main() {
+  println(check(Status.pending))
+  println(check(Status.active))
+  println(check(Status.done))
+}

@@ -105,6 +105,51 @@ impl<'ctx> Codegen<'ctx> {
                         .left()
                         .unwrap()
                 }
+                Type::Float => {
+                    // Float fields: get as string, then parse (no forge_json_get_float yet)
+                    let get_fn = self.module.get_function("forge_json_get_string").unwrap();
+                    self.builder
+                        .build_call(
+                            get_fn,
+                            &[
+                                json_ptr.into(),
+                                index.into(),
+                                field_name_str.as_pointer_value().into(),
+                            ],
+                            field_name,
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap()
+                }
+                Type::Struct { name: nested_name, fields: nested_fields } => {
+                    // Nested struct: get the raw JSON object pointer, then recursively parse
+                    let get_obj_fn = self.module.get_function("forge_json_get_object").unwrap();
+                    let nested_json_ptr = self.builder
+                        .build_call(
+                            get_obj_fn,
+                            &[
+                                json_ptr.into(),
+                                index.into(),
+                                field_name_str.as_pointer_value().into(),
+                            ],
+                            &format!("{}_json", field_name),
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap();
+
+                    // Recursively parse the nested struct using the raw pointer
+                    let nested_fields_clone = nested_fields.clone();
+                    let nested_name_clone = nested_name.clone();
+                    self.compile_json_parse_struct_from_ptr(
+                        nested_json_ptr.into_pointer_value(),
+                        nested_name_clone.as_deref(),
+                        &nested_fields_clone,
+                    ).unwrap_or_else(|| self.type_to_llvm_basic(field_type).const_zero().into())
+                }
                 _ => {
                     // Default to string
                     let get_fn = self.module.get_function("forge_json_get_string").unwrap();
@@ -127,6 +172,75 @@ impl<'ctx> Codegen<'ctx> {
 
             struct_val = self
                 .builder
+                .build_insert_value(struct_val, field_val, i as u32, field_name)
+                .unwrap()
+                .into_struct_value();
+        }
+
+        Some(struct_val.into())
+    }
+
+    /// Parse a JSON c-string pointer (raw ptr, not ForgeString) into a struct.
+    /// Used for nested struct parsing where the pointer is already extracted.
+    fn compile_json_parse_struct_from_ptr(
+        &mut self,
+        json_ptr: inkwell::values::PointerValue<'ctx>,
+        _name: Option<&str>,
+        fields: &[(String, Type)],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        self.ensure_json_functions_declared();
+
+        let i64_type = self.context.i64_type();
+        let index = i64_type.const_zero();
+
+        let field_types: Vec<BasicTypeEnum<'ctx>> = fields
+            .iter()
+            .map(|(_, ty)| self.type_to_llvm_basic(ty))
+            .collect();
+        let struct_type = self.context.struct_type(&field_types, false);
+        let mut struct_val = struct_type.get_undef();
+
+        for (i, (field_name, field_type)) in fields.iter().enumerate() {
+            let field_name_str = self
+                .builder
+                .build_global_string_ptr(field_name, "field_name")
+                .unwrap();
+
+            let field_val: BasicValueEnum = match field_type {
+                Type::Int => {
+                    let get_fn = self.module.get_function("forge_json_get_int").unwrap();
+                    self.builder
+                        .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
+                        .unwrap().try_as_basic_value().left().unwrap()
+                }
+                Type::Bool => {
+                    let get_fn = self.module.get_function("forge_json_get_bool").unwrap();
+                    self.builder
+                        .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
+                        .unwrap().try_as_basic_value().left().unwrap()
+                }
+                Type::Struct { name: nested_name, fields: nested_fields } => {
+                    let get_obj_fn = self.module.get_function("forge_json_get_object").unwrap();
+                    let nested_json_ptr = self.builder
+                        .build_call(get_obj_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], &format!("{}_json", field_name))
+                        .unwrap().try_as_basic_value().left().unwrap();
+                    let nested_fields_clone = nested_fields.clone();
+                    let nested_name_clone = nested_name.clone();
+                    self.compile_json_parse_struct_from_ptr(
+                        nested_json_ptr.into_pointer_value(),
+                        nested_name_clone.as_deref(),
+                        &nested_fields_clone,
+                    ).unwrap_or_else(|| self.type_to_llvm_basic(field_type).const_zero().into())
+                }
+                _ => {
+                    let get_fn = self.module.get_function("forge_json_get_string").unwrap();
+                    self.builder
+                        .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
+                        .unwrap().try_as_basic_value().left().unwrap()
+                }
+            };
+
+            struct_val = self.builder
                 .build_insert_value(struct_val, field_val, i as u32, field_name)
                 .unwrap()
                 .into_struct_value();
@@ -1554,6 +1668,10 @@ impl<'ctx> Codegen<'ctx> {
         if self.module.get_function("forge_json_is_null").is_none() {
             let ft = i8_type.fn_type(&[ptr_type.into()], false);
             self.module.add_function("forge_json_is_null", ft, None);
+        }
+        if self.module.get_function("forge_json_get_object").is_none() {
+            let ft = ptr_type.fn_type(&[ptr_type.into(), i64_type.into(), ptr_type.into()], false);
+            self.module.add_function("forge_json_get_object", ft, None);
         }
     }
 

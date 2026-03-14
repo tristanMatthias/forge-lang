@@ -1,0 +1,12 @@
+/// # Template with Method Calls
+///
+/// Template strings can call methods on interpolated values.
+///
+/// expect: HELLO has 5 chars
+/// expect: contains? true
+
+fn main() {
+  let s = "hello"
+  println(`${s.upper()} has ${s.length} chars`)
+  println(`contains? ${s.contains("ell")}`)
+}

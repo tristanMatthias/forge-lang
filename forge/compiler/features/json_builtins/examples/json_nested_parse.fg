@@ -1,0 +1,18 @@
+/// # JSON Nested Parse
+///
+/// Parse JSON with nested object fields.
+///
+/// expect: alice
+/// expect: 30
+/// expect: NYC
+
+fn main() {
+  let json_str = "{\"name\":\"alice\",\"age\":30}"
+  let person: {name: string, age: int} = json.parse(json_str)
+  println(person.name)
+  println(string(person.age))
+
+  let addr_str = "{\"city\":\"NYC\",\"zip\":10001}"
+  let addr: {city: string, zip: int} = json.parse(addr_str)
+  println(addr.city)
+}

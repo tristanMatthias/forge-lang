@@ -1,0 +1,14 @@
+/// Test: Tagged template with bool return used in if condition
+/// expect: tag returned true
+
+fn check(input: string) -> bool {
+  true
+}
+
+fn main() {
+  if check`test ${"value"}` {
+    println("tag returned true")
+  } else {
+    println("tag returned false")
+  }
+}

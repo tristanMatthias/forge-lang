@@ -36,6 +36,9 @@ impl<'ctx> Codegen<'ctx> {
                 let result = self.builder.build_call(conv, &[val.into()], "to_str").unwrap();
                 result.try_as_basic_value().left()
             }
+            Type::Nullable(inner) => {
+                self.compile_nullable_to_string(val, inner)
+            }
             _ => {
                 // Try based on LLVM type
                 if val.is_int_value() {
@@ -93,6 +96,9 @@ impl<'ctx> Codegen<'ctx> {
                 result.try_as_basic_value().left()
             }
             Type::String => Some(val),
+            Type::Nullable(ref inner) => {
+                self.compile_nullable_to_string(val, inner)
+            }
             _ => {
                 // Try to figure out from the LLVM type
                 if val.is_int_value() {
@@ -124,5 +130,55 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
         }
+    }
+
+    /// Convert a nullable value to string: "null" if null, or the inner value's string representation.
+    fn compile_nullable_to_string(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        inner_type: &Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if !val.is_struct_value() {
+            return None;
+        }
+        let struct_val = val.into_struct_value();
+
+        // Extract the null tag (index 0, i8: 0=null, 1=has value)
+        let tag = self.builder.build_extract_value(struct_val, 0, "null_tag").unwrap().into_int_value();
+        let is_non_null = self.builder.build_int_compare(
+            IntPredicate::NE,
+            tag,
+            self.context.i8_type().const_zero(),
+            "is_non_null",
+        ).unwrap();
+
+        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let then_bb = self.context.append_basic_block(function, "nullable_has_val");
+        let else_bb = self.context.append_basic_block(function, "nullable_is_null");
+        let merge_bb = self.context.append_basic_block(function, "nullable_merge");
+
+        self.builder.build_conditional_branch(is_non_null, then_bb, else_bb).unwrap();
+
+        // Then: extract inner value and convert to string
+        self.builder.position_at_end(then_bb);
+        let inner_val = self.builder.build_extract_value(struct_val, 1, "inner_val").unwrap();
+        let inner_str = self.value_to_string(inner_val, inner_type)
+            .unwrap_or_else(|| self.build_string_literal("unknown"));
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let then_end = self.builder.get_insert_block().unwrap();
+
+        // Else: return "null"
+        self.builder.position_at_end(else_bb);
+        let null_str = self.build_string_literal("null");
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let else_end = self.builder.get_insert_block().unwrap();
+
+        // Merge
+        self.builder.position_at_end(merge_bb);
+        let string_type = self.string_type();
+        let phi = self.builder.build_phi(string_type, "nullable_str").unwrap();
+        phi.add_incoming(&[(&inner_str, then_end), (&null_str, else_end)]);
+
+        Some(phi.as_basic_value())
     }
 }

@@ -1,0 +1,15 @@
+/// # Closure Inside Closure Call
+///
+/// A closure that calls another closure variable.
+///
+/// expect: 50
+
+fn apply(f: (int) -> int, val: int) -> int {
+  f(val)
+}
+
+fn main() {
+  let double = (x: int) -> int { x * 2 }
+  let result = apply(double, 25)
+  println(string(result))
+}

@@ -1,0 +1,26 @@
+/// # Generic with List
+///
+/// Generic function operating on lists of any type.
+///
+/// expect: 3
+/// expect: first: apple
+/// expect: 2
+/// expect: first: 10
+
+fn first_item<T>(items: List<T>) -> T {
+  items[0]
+}
+
+fn info<T>(items: List<T>) -> string {
+  string(items.length)
+}
+
+fn main() {
+  let fruits = ["apple", "banana", "cherry"]
+  println(info(fruits))
+  println(`first: ${first_item(fruits)}`)
+
+  let nums = [10, 20]
+  println(info(nums))
+  println(`first: ${first_item(nums)}`)
+}

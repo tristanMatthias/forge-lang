@@ -496,18 +496,16 @@ impl<'ctx> Codegen<'ctx> {
         elem_val: BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Expr::Closure { params, body, .. } = &closure_arg.value {
-            self.push_scope();
-            let param_name = &params[0].name;
-            let alloca = self.create_entry_block_alloca(elem_type, param_name);
-            self.builder.build_store(alloca, elem_val).unwrap();
-            self.define_var(param_name.clone(), alloca, elem_type.clone());
-            let result = self.compile_expr(body);
-            self.pop_scope();
-            result
-        } else {
-            None
-        }
+        // Extract params and body from either old Expr::Closure or new Feature("closures")
+        let (params, body) = Self::extract_closure_parts(&closure_arg.value)?;
+        self.push_scope();
+        let param_name = &params[0].name;
+        let alloca = self.create_entry_block_alloca(elem_type, param_name);
+        self.builder.build_store(alloca, elem_val).unwrap();
+        self.define_var(param_name.clone(), alloca, elem_type.clone());
+        let result = self.compile_expr(body);
+        self.pop_scope();
+        result
     }
 
     /// Compile a 2-arg closure inline (for reduce)
@@ -519,23 +517,32 @@ impl<'ctx> Codegen<'ctx> {
         elem_val: BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Expr::Closure { params, body, .. } = &closure_arg.value {
-            self.push_scope();
-            if params.len() >= 2 {
-                let acc_name = &params[0].name;
-                let elem_name = &params[1].name;
-                let alloca1 = self.create_entry_block_alloca(acc_type, acc_name);
-                self.builder.build_store(alloca1, acc_val).unwrap();
-                self.define_var(acc_name.clone(), alloca1, acc_type.clone());
-                let alloca2 = self.create_entry_block_alloca(elem_type, elem_name);
-                self.builder.build_store(alloca2, elem_val).unwrap();
-                self.define_var(elem_name.clone(), alloca2, elem_type.clone());
+        let (params, body) = Self::extract_closure_parts(&closure_arg.value)?;
+        self.push_scope();
+        if params.len() >= 2 {
+            let acc_name = &params[0].name;
+            let elem_name = &params[1].name;
+            let alloca1 = self.create_entry_block_alloca(acc_type, acc_name);
+            self.builder.build_store(alloca1, acc_val).unwrap();
+            self.define_var(acc_name.clone(), alloca1, acc_type.clone());
+            let alloca2 = self.create_entry_block_alloca(elem_type, elem_name);
+            self.builder.build_store(alloca2, elem_val).unwrap();
+            self.define_var(elem_name.clone(), alloca2, elem_type.clone());
+        }
+        let result = self.compile_expr(body);
+        self.pop_scope();
+        result
+    }
+
+    /// Extract closure params and body from either old Expr::Closure or new Feature("closures")
+    fn extract_closure_parts(expr: &Expr) -> Option<(&[Param], &Expr)> {
+        match expr {
+            Expr::Closure { params, body, .. } => Some((params.as_slice(), body.as_ref())),
+            Expr::Feature(fe) if fe.feature_id == "closures" => {
+                let data = fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()?;
+                Some((data.params.as_slice(), data.body.as_ref()))
             }
-            let result = self.compile_expr(body);
-            self.pop_scope();
-            result
-        } else {
-            None
+            _ => None,
         }
     }
 

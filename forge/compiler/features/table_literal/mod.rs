@@ -1,6 +1,7 @@
 pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod types;
 
 crate::forge_feature! {
     name: "Table Literal",

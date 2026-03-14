@@ -1,0 +1,14 @@
+/// # For Range Index Into List
+///
+/// Use a range to iterate with indices and access list elements.
+///
+/// expect: 0: apple
+/// expect: 1: banana
+/// expect: 2: cherry
+
+fn main() {
+  let fruits = ["apple", "banana", "cherry"]
+  for i in 0..3 {
+    println(`${i}: ${fruits[i]}`)
+  }
+}

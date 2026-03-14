@@ -1,0 +1,15 @@
+/// # Defer with Variables
+///
+/// Defer captures the variable reference, not the value at declaration time.
+/// The deferred println sees the final value of the variable.
+///
+/// expect: working
+/// expect: x is 42
+
+mut x = 0
+
+fn main() {
+  defer println(`x is ${x}`)
+  x = 42
+  println("working")
+}

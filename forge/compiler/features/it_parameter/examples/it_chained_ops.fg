@@ -1,0 +1,15 @@
+/// # It Parameter in Chained Operations
+///
+/// Use `it` in multiple chained list operations.
+///
+/// expect: 8
+/// expect: 10
+
+fn main() {
+  let result = [1, 2, 3, 4, 5]
+    .filter(it > 3)
+    .map(it * 2)
+  for n in result {
+    println(string(n))
+  }
+}

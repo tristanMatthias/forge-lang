@@ -1,0 +1,16 @@
+/// # Pipe with Closures
+///
+/// Pipe into map and filter with closure arguments.
+///
+/// expect: 12
+/// expect: 16
+/// expect: 20
+
+fn main() {
+  let result = [1, 2, 3, 4, 5]
+    |> filter((n) -> n > 2)
+    |> map((n) -> n * 4)
+  for n in result {
+    println(string(n))
+  }
+}

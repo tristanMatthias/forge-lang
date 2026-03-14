@@ -1,0 +1,18 @@
+/// # Match on Empty String
+///
+/// Match with empty string literal pattern.
+///
+/// expect: empty
+/// expect: not empty
+
+fn check(s: string) -> string {
+  match s {
+    "" -> "empty"
+    _ -> "not empty"
+  }
+}
+
+fn main() {
+  println(check(""))
+  println(check("hello"))
+}

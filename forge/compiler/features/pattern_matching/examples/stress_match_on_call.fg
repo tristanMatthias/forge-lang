@@ -1,0 +1,22 @@
+/// # Match on Function Call Result
+///
+/// Match directly on the result of a function call.
+///
+/// expect: correct
+/// expect: even
+
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() {
+  let r = match add(10, 20) {
+    30 -> "correct"
+    _ -> "wrong"
+  }
+  println(r)
+
+  let parity = match add(3, 5) % 2 {
+    0 -> "even"
+    _ -> "odd"
+  }
+  println(parity)
+}

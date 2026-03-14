@@ -86,6 +86,7 @@ pub struct Codegen<'ctx> {
     pub(crate) functions: HashMap<String, FunctionValue<'ctx>>,
     pub(crate) type_checker: TypeChecker,
     pub(crate) loop_exit_blocks: Vec<(inkwell::basic_block::BasicBlock<'ctx>, Option<PointerValue<'ctx>>)>,
+    pub(crate) loop_continue_blocks: Vec<inkwell::basic_block::BasicBlock<'ctx>>,
     pub(crate) current_fn_return_type: Option<Type>,
     pub(crate) current_fn_name: Option<String>,
     pub(crate) imported_globals: HashMap<String, (String, Type)>,
@@ -120,6 +121,7 @@ impl<'ctx> Codegen<'ctx> {
             functions: HashMap::new(),
             type_checker: TypeChecker::new(),
             loop_exit_blocks: Vec::new(),
+            loop_continue_blocks: Vec::new(),
             current_fn_return_type: None,
             current_fn_name: None,
             imported_globals: HashMap::new(),
@@ -203,6 +205,15 @@ impl<'ctx> Codegen<'ctx> {
                 Statement::ExternFn { name, params, return_type, .. } => {
                     self.compile_extern_fn(name, params, return_type.as_ref());
                 }
+                Statement::Feature(fe) => {
+                    match fe.feature_id {
+                        "structs" => self.compile_program_structs_feature(fe),
+                        "traits" => self.compile_program_traits_feature(fe),
+                        "functions" => self.compile_program_functions_feature(fe),
+                        "variables" => self.compile_program_variables_feature(fe),
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -214,25 +225,37 @@ impl<'ctx> Codegen<'ctx> {
 
         // Check if we need to auto-wrap top-level statements in main()
         let has_explicit_main = program.statements.iter().any(|s| {
-            matches!(s, Statement::FnDecl { name, .. } if name == "main")
+            match s {
+                Statement::FnDecl { name, .. } => name == "main",
+                Statement::Feature(fe) => Self::is_feature_main_fn(fe),
+                _ => false,
+            }
         });
         let has_top_level_stmts = program.statements.iter().any(|s| {
-            !matches!(s,
+            match s {
                 Statement::FnDecl { .. }
                 | Statement::TypeDecl { .. }
                 | Statement::TraitDecl { .. }
                 | Statement::ImplBlock { .. }
                 | Statement::ExternFn { .. }
-                | Statement::Mut { .. }
-            )
+                | Statement::Mut { .. } => false,
+                Statement::Feature(fe) => !Self::is_feature_declaration_only(fe),
+                _ => true,
+            }
         });
 
         // Declare all named functions first (before any compilation)
         for stmt in &program.statements {
-            if let Statement::FnDecl { name, type_params, params, return_type, .. } = stmt {
-                if type_params.is_empty() {
-                    self.declare_function(name, params, return_type.as_ref());
+            match stmt {
+                Statement::FnDecl { name, type_params, params, return_type, .. } => {
+                    if type_params.is_empty() {
+                        self.declare_function(name, params, return_type.as_ref());
+                    }
                 }
+                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                    self.declare_program_functions_feature(fe);
+                }
+                _ => {}
             }
         }
 
@@ -247,6 +270,9 @@ impl<'ctx> Codegen<'ctx> {
                     | Statement::ImplBlock { .. }
                     | Statement::ExternFn { .. }
                     | Statement::Mut { .. } => {
+                        self.compile_statement(stmt);
+                    }
+                    Statement::Feature(fe) if Self::is_feature_declaration_only(fe) => {
                         self.compile_statement(stmt);
                     }
                     _ => {
@@ -318,9 +344,15 @@ impl<'ctx> Codegen<'ctx> {
         self.type_checker.check_program(program);
 
         for stmt in &program.statements {
-            if let Statement::FnDecl { name, params, return_type, .. } = stmt {
-                let mangled = format!("{}_{}", prefix, name);
-                self.declare_function(&mangled, params, return_type.as_ref());
+            match stmt {
+                Statement::FnDecl { name, params, return_type, .. } => {
+                    let mangled = format!("{}_{}", prefix, name);
+                    self.declare_function(&mangled, params, return_type.as_ref());
+                }
+                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                    self.declare_module_functions_feature(fe, &prefix);
+                }
+                _ => {}
             }
         }
 
@@ -334,6 +366,20 @@ impl<'ctx> Codegen<'ctx> {
                 | Statement::Const { name, value, type_ann, exported: true, .. } => {
                     let mangled = format!("{}_{}", prefix, name);
                     self.compile_exported_global(&mangled, value, type_ann.as_ref());
+                }
+                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                    self.compile_module_functions_feature(fe, &prefix);
+                }
+                Statement::Feature(fe) if fe.feature_id == "variables" => {
+                    // Handle exported let/const in modules
+                    use crate::feature_data;
+                    use crate::features::variables::types::VarDeclData;
+                    if let Some(data) = feature_data!(fe, VarDeclData) {
+                        if data.exported {
+                            let mangled = format!("{}_{}", prefix, data.name);
+                            self.compile_exported_global(&mangled, &data.value, data.type_ann.as_ref());
+                        }
+                    }
                 }
                 _ => {}
             }

@@ -1,0 +1,25 @@
+/// # Enum in List
+///
+/// Storing enum values in a list and iterating with match.
+///
+/// expect: stop
+/// expect: go
+/// expect: caution
+/// expect: stop
+
+enum Light { red, green, yellow }
+
+fn action(l: Light) -> string {
+  match l {
+    .red -> "stop"
+    .green -> "go"
+    .yellow -> "caution"
+  }
+}
+
+fn main() {
+  let lights = [Light.red, Light.green, Light.yellow, Light.red]
+  for l in lights {
+    println(action(l))
+  }
+}

@@ -1,0 +1,15 @@
+/// # Defer with String Template
+///
+/// Defer captures variable by reference — sees final value in template string.
+///
+/// expect: done
+/// expect: count: 10
+
+fn main() {
+  mut count = 0
+  defer println(`count: ${count}`)
+  for i in 0..10 {
+    count = count + 1
+  }
+  println("done")
+}

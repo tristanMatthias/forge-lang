@@ -1,0 +1,14 @@
+/// # Closure Returning Boolean
+///
+/// Closure that returns a boolean used in filter.
+///
+/// expect: true
+/// expect: false
+
+fn main() {
+  let nums = [10, 3]
+  let big = nums.any((n) -> n > 5)
+  let all_big = nums.all((n) -> n > 5)
+  println(string(big))
+  println(string(all_big))
+}

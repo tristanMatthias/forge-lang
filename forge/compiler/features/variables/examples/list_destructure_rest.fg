@@ -1,0 +1,20 @@
+/// # List Destructure With Rest
+///
+/// Destructure first elements from a list using rest syntax.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 3
+/// expect: 4
+/// expect: 5
+
+fn main() {
+  let [first, second, ...rest] = [1, 2, 3, 4, 5]
+  println(string(first))
+  println(string(second))
+  println(string(rest.length))
+  for item in rest {
+    println(string(item))
+  }
+}

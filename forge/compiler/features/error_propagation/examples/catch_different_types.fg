@@ -1,0 +1,25 @@
+/// # Catch Different Types
+///
+/// Functions can return different error strings while sharing the same Result type.
+///
+/// expect: file ok
+/// expect: caught: network timeout
+/// expect: done
+
+fn read_file(path: string) -> Result<string, string> {
+  if path == "valid.txt" { Ok("file ok") } else { Err("file not found") }
+}
+
+fn fetch_url(url: string) -> Result<string, string> {
+  if url == "good" { Ok("data") } else { Err("network timeout") }
+}
+
+fn main() {
+  let f = read_file("valid.txt") catch (e) { `caught: ${e}` }
+  println(f)
+
+  let n = fetch_url("bad") catch (e) { `caught: ${e}` }
+  println(n)
+
+  println("done")
+}

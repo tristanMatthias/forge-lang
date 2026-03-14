@@ -1,0 +1,24 @@
+/// # Empty Err String
+///
+/// Err with an empty string should propagate correctly
+/// without crashing.
+///
+/// expect: caught empty
+/// expect: done
+
+fn empty_err() -> Result<int, string> {
+  Err("")
+}
+
+fn propagate() -> Result<int, string> {
+  let v = empty_err()?
+  Ok(v)
+}
+
+fn main() {
+  let r = propagate() catch (e) {
+    println("caught empty")
+    -1
+  }
+  println("done")
+}

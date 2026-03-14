@@ -1,0 +1,11 @@
+/// # Closure Capture in Variable
+///
+/// Closure stored in a variable that captures an outer variable.
+///
+/// expect: 15
+
+fn main() {
+  let x = 10
+  let f = (y) -> y + x
+  println(string(f(5)))
+}

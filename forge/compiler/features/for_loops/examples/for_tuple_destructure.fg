@@ -1,0 +1,14 @@
+/// # For Loop Tuple Destructuring
+///
+/// Iterate over a list of tuples with destructuring pattern.
+///
+/// expect: 1:a
+/// expect: 2:b
+/// expect: 3:c
+
+fn main() {
+  let pairs = [(1, "a"), (2, "b"), (3, "c")]
+  for (num, letter) in pairs {
+    println(`${num}:${letter}`)
+  }
+}

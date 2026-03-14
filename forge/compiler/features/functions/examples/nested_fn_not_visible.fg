@@ -1,0 +1,16 @@
+/// # Nested Function Not Visible
+///
+/// Functions defined inside other functions are not accessible.
+///
+/// expect-error: F0020
+
+fn outer() -> int {
+  fn inner() -> int {
+    return 42
+  }
+  return inner()
+}
+
+fn main() {
+  println(string(outer()))
+}

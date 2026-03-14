@@ -1,0 +1,10 @@
+/// Empty struct (no fields)
+///
+/// expect: unit created
+
+type Unit = {}
+
+fn main() {
+  let u = Unit {}
+  println("unit created")
+}

@@ -1,0 +1,11 @@
+/// Test: Tagged template with string value containing newline
+/// expect: {"parts":["msg: ",""],"values":["line1\nline2"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let msg = "line1\nline2"
+  println(identity`msg: ${msg}`)
+}

@@ -1,0 +1,14 @@
+/// Test: Template string concatenated with regular string
+///
+/// expect: hello world!
+/// expect: prefix-42-suffix
+
+fn main() {
+  let name = "world"
+  let result = `hello ${name}` + "!"
+  println(result)
+
+  let x = 42
+  let r2 = "prefix-" + `${x}` + "-suffix"
+  println(r2)
+}

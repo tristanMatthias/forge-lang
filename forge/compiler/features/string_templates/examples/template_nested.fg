@@ -1,0 +1,11 @@
+/// # Nested Template Strings
+///
+/// A template string whose result is used inside another template.
+///
+/// expect: greeting: hello world!
+
+fn main() {
+  let name = "world"
+  let inner = `hello ${name}`
+  println(`greeting: ${inner}!`)
+}

@@ -1,0 +1,32 @@
+/// # Trait with Generics
+///
+/// Trait used with generic type parameters in functions.
+///
+/// expect: hello, cat: whiskers
+/// expect: hello, dog: buddy
+/// expect: hello, cat: luna
+
+trait Describable {
+  fn describe(self) -> string
+}
+
+type Cat = { name: string }
+type Dog = { name: string }
+
+impl Describable for Cat {
+  fn describe(self) -> string { `cat: ${self.name}` }
+}
+
+impl Describable for Dog {
+  fn describe(self) -> string { `dog: ${self.name}` }
+}
+
+fn greet<T: Describable>(animal: T) -> string {
+  `hello, ${animal.describe()}`
+}
+
+fn main() {
+  println(greet(Cat { name: "whiskers" }))
+  println(greet(Dog { name: "buddy" }))
+  println(greet(Cat { name: "luna" }))
+}

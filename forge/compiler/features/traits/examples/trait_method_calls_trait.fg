@@ -1,0 +1,37 @@
+/// Trait method that calls another trait method on self
+///
+/// expect: [INFO] engine: 200hp
+/// expect: [WARN] motor: 12v
+
+trait Describable {
+  fn kind(self) -> string
+  fn detail(self) -> string
+
+  fn info(self) -> string {
+    `[INFO] ${self.kind()}: ${self.detail()}`
+  }
+
+  fn warn(self) -> string {
+    `[WARN] ${self.kind()}: ${self.detail()}`
+  }
+}
+
+type Engine = { hp: int }
+type Motor = { volts: int }
+
+impl Describable for Engine {
+  fn kind(self) -> string { "engine" }
+  fn detail(self) -> string { `${self.hp}hp` }
+}
+
+impl Describable for Motor {
+  fn kind(self) -> string { "motor" }
+  fn detail(self) -> string { `${self.volts}v` }
+}
+
+fn main() {
+  let e = Engine { hp: 200 }
+  let m = Motor { volts: 12 }
+  println(e.info())
+  println(m.warn())
+}

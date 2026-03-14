@@ -1,0 +1,15 @@
+/// # It String Length
+///
+/// Use `it.length` to get lengths of strings.
+///
+/// expect: 2
+/// expect: 5
+/// expect: 3
+
+fn main() {
+  let words = ["hi", "hello", "hey"]
+  let lengths = words.map(it.length)
+  for l in lengths {
+    println(string(l))
+  }
+}

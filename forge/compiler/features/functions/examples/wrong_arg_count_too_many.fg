@@ -1,0 +1,13 @@
+/// # Wrong Argument Count (Too Many)
+///
+/// Calling a function with more arguments than it accepts.
+///
+/// expect-error: F0014
+
+fn add(a: int, b: int) -> int {
+  return a + b
+}
+
+fn main() {
+  println(string(add(1, 2, 3)))
+}

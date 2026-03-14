@@ -1,0 +1,14 @@
+/// Generic function taking struct param
+///
+/// expect: 42
+/// expect: hello
+
+type Box = { value: int }
+
+fn identity<T>(x: T) -> T { x }
+
+fn main() {
+  let b = identity(Box { value: 42 })
+  println(string(b.value))
+  println(identity("hello"))
+}

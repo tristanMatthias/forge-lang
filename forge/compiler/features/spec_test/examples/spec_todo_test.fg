@@ -1,0 +1,18 @@
+/// # Spec Todo Placeholder
+///
+/// Todo marks tests that need to be written later.
+///
+/// expect-stderr: ✓ implemented test
+/// expect-stderr: ○ needs error handling
+/// expect-stderr: ○ needs edge cases
+/// expect-stderr: 1 passed
+
+use @std.test
+
+fn main() {
+    spec "feature coverage" {
+        then "implemented test" { 1 + 1 == 2 }
+        todo "needs error handling"
+        todo "needs edge cases"
+    }
+}

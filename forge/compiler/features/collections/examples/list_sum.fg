@@ -1,0 +1,10 @@
+/// # List Sum
+///
+/// Sum a list of integers.
+///
+/// expect: 100
+
+fn main() {
+  let nums = [10, 20, 30, 40]
+  println(string(nums.sum()))
+}

@@ -1,0 +1,17 @@
+/// # Tagged Template with Complex Expressions
+///
+/// Tagged template with arithmetic and method calls in interpolation.
+///
+/// expect: {"parts":["sum: "," upper: ",""],"values":["15","HELLO"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let a = 10
+  let b = 5
+  let s = "hello"
+  let result = identity`sum: ${a + b} upper: ${s.upper()}`
+  println(result)
+}

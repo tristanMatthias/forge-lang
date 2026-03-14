@@ -1,0 +1,14 @@
+/// # Argument type mismatch
+///
+/// Passing a string to a function that expects int
+/// should produce a type mismatch error.
+///
+/// expect-error: F0012
+
+fn square(x: int) -> int {
+    return x * x
+}
+
+fn main() {
+    println(string(square("hello")))
+}

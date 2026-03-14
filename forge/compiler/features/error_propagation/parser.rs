@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::CatchData;
 
 impl Parser {
     /// Parse the `catch` suffix: `expr catch (binding) { handler }`
@@ -19,11 +22,15 @@ impl Parser {
             None
         };
         let handler = self.parse_block()?;
-        Some(Expr::Catch {
-            expr: Box::new(expr),
-            binding,
-            handler,
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "error_propagation",
+            kind: "Catch",
+            data: Box::new(CatchData {
+                expr: Box::new(expr),
+                binding,
+                handler,
+            }),
             span: cspan,
-        })
+        }))
     }
 }

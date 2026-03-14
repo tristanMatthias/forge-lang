@@ -1,0 +1,25 @@
+/// # Identifier Pattern Binding
+///
+/// Using an identifier pattern to capture the entire matched value.
+///
+/// expect: got 42
+/// expect: got hello
+
+fn show_int(n: int) -> string {
+  match n {
+    0 -> "zero"
+    val -> `got ${val}`
+  }
+}
+
+fn show_str(s: string) -> string {
+  match s {
+    "bye" -> "farewell"
+    other -> `got ${other}`
+  }
+}
+
+fn main() {
+  println(show_int(42))
+  println(show_str("hello"))
+}

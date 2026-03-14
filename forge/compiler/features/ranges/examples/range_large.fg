@@ -1,0 +1,14 @@
+/// # Large Range
+///
+/// Adversarial test: range with 1000 iterations to verify no stack overflow
+/// or performance issues.
+///
+/// expect: 499500
+
+fn main() {
+  mut sum = 0
+  for i in 0..1000 {
+    sum = sum + i
+  }
+  println(sum)
+}

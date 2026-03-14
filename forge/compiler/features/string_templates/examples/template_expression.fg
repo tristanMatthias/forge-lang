@@ -1,0 +1,13 @@
+/// # Template with Computed Expressions
+///
+/// Template strings can contain arithmetic and other expressions.
+///
+/// expect: result is 15
+/// expect: 10 * 3 = 30
+
+fn main() {
+  let x = 10
+  let y = 5
+  println(`result is ${x + y}`)
+  println(`${x} * 3 = ${x * 3}`)
+}

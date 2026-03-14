@@ -1,0 +1,16 @@
+/// # Mut Variable Reassign
+///
+/// Mutable variables can be reassigned multiple times.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+
+fn main() {
+  mut x = 1
+  println(string(x))
+  x = 2
+  println(string(x))
+  x = 3
+  println(string(x))
+}

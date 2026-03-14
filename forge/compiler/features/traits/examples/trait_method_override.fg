@@ -1,0 +1,36 @@
+/// # Trait Method Override
+///
+/// Override a default trait method with a custom implementation.
+///
+/// expect: 10
+/// expect: 500
+
+trait Scoreable {
+  fn base_score(self) -> int
+
+  fn total_score(self) -> int {
+    self.base_score() * 2
+  }
+}
+
+type Player = { score: int }
+type Boss = { score: int }
+
+impl Scoreable for Player {
+  fn base_score(self) -> int { self.score }
+}
+
+impl Scoreable for Boss {
+  fn base_score(self) -> int { self.score }
+
+  fn total_score(self) -> int {
+    self.base_score() * 10
+  }
+}
+
+fn main() {
+  let p = Player { score: 5 }
+  let b = Boss { score: 50 }
+  println(string(p.total_score()))
+  println(string(b.total_score()))
+}

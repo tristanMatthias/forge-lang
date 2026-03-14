@@ -1,0 +1,24 @@
+/// # Spec with Helper Functions
+///
+/// Spec using helper functions for computation.
+///
+/// expect-stderr: ✓ factorial of 5 is 120
+/// expect-stderr: ✓ factorial of 0 is 1
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn factorial(n: int) -> int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+fn main() {
+    spec "factorial" {
+        then "factorial of 5 is 120" { factorial(5) == 120 }
+        then "factorial of 0 is 1" { factorial(0) == 1 }
+    }
+}

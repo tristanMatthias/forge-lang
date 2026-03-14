@@ -1,0 +1,27 @@
+/// # Enum with Two Fields Same Type
+///
+/// Enum variants with multiple fields of the same type.
+///
+/// expect: point at 10, 20
+/// expect: rect 5x10
+/// expect: nothing
+
+enum Geo {
+  point(x: int, y: int)
+  rect(w: int, h: int)
+  empty
+}
+
+fn describe(g: Geo) -> string {
+  match g {
+    .point(x, y) -> `point at ${x}, ${y}`
+    .rect(w, h) -> `rect ${w}x${h}`
+    .empty -> "nothing"
+  }
+}
+
+fn main() {
+  println(describe(Geo.point(x: 10, y: 20)))
+  println(describe(Geo.rect(w: 5, h: 10)))
+  println(describe(Geo.empty))
+}

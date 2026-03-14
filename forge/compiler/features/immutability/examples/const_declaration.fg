@@ -1,0 +1,13 @@
+/// # Const Declarations
+///
+/// Const values used in expressions.
+///
+/// expect: 314
+/// expect: 1884
+
+fn main() {
+  const PI_APPROX = 314
+  const MULTIPLIER = 2
+  println(string(PI_APPROX))
+  println(string(PI_APPROX * MULTIPLIER + PI_APPROX * 4))
+}

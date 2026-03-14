@@ -7,6 +7,7 @@ pub use core::codegen;
 pub use core::component_expand;
 pub use core::driver;
 pub use core::errors;
+pub use core::feature;
 pub use core::lexer;
 pub use core::parser;
 pub use core::provider;

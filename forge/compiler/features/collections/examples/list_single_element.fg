@@ -1,0 +1,12 @@
+/// # Single Element List
+///
+/// List with one element - test edge case.
+///
+/// expect: 1
+/// expect: 42
+
+fn main() {
+  let nums = [42]
+  println(string(nums.length))
+  println(string(nums[0]))
+}

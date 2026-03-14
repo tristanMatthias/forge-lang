@@ -351,6 +351,53 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_table_lit(columns, rows, span)
             }
 
+            Expr::Feature(fe) => self.compile_feature_expr(fe),
+
+            _ => None,
+        }
+    }
+
+    /// Dispatch a feature-owned expression to the appropriate feature's codegen.
+    /// Each feature adds one arm here via its feature_id.
+    pub(crate) fn compile_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Option<BasicValueEnum<'ctx>> {
+        match fe.feature_id {
+            "spawn" => self.compile_spawn_feature(fe),
+            "ranges" => self.compile_range_feature(fe),
+            "is_keyword" => self.compile_is_feature(fe),
+            "with_expression" => self.compile_with_feature(fe),
+            "pipe_operator" => self.compile_pipe_feature(fe),
+            "shell_shorthand" => self.compile_dollar_exec_feature(fe),
+            "table_literal" => self.compile_table_lit_feature(fe),
+            "closures" => self.compile_closure_feature(fe),
+            "pattern_matching" => self.compile_match_feature(fe),
+            "channels" => self.compile_channel_feature(fe),
+            "if_else" => self.compile_if_feature(fe),
+            "null_safety" => {
+                match fe.kind {
+                    "NullCoalesce" => self.compile_null_coalesce_feature(fe),
+                    "NullPropagate" => self.compile_null_propagate_feature(fe),
+                    "ForceUnwrap" => self.compile_force_unwrap_feature(fe),
+                    _ => None,
+                }
+            }
+            "error_propagation" => {
+                match fe.kind {
+                    "ErrorPropagate" => self.compile_error_propagate_feature(fe),
+                    "OkExpr" => self.compile_ok_expr_feature(fe),
+                    "ErrExpr" => self.compile_err_expr_feature(fe),
+                    "Catch" => self.compile_catch_feature(fe),
+                    _ => None,
+                }
+            }
+            "structs" => self.compile_struct_lit_feature(fe),
+            "tuples" => self.compile_tuple_lit_feature(fe),
+            "collections" => {
+                match fe.kind {
+                    "ListLit" => self.compile_list_lit_feature(fe),
+                    "MapLit" => self.compile_map_lit_feature(fe),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }

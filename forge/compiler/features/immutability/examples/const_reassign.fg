@@ -1,0 +1,10 @@
+/// # Const Cannot Be Reassigned
+///
+/// Attempting to reassign a const binding produces an error.
+///
+/// expect-error: F0013
+
+fn main() {
+  const X = 42
+  X = 99
+}

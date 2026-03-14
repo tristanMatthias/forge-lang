@@ -1,0 +1,11 @@
+/// Test: Tagged template where interpolated value contains JSON special chars
+/// expect: {"parts":["val: ",""],"values":["has \"quotes\" and \\backslash"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let v = "has \"quotes\" and \\backslash"
+  println(identity`val: ${v}`)
+}

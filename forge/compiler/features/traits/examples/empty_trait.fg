@@ -1,0 +1,14 @@
+/// Empty trait (no methods) - marker trait pattern
+///
+/// expect: marked
+
+trait Marker {}
+
+type Thing = { val: int }
+
+impl Marker for Thing {}
+
+fn main() {
+  let t = Thing { val: 1 }
+  println("marked")
+}

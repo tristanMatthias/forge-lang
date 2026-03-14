@@ -1,0 +1,17 @@
+/// # Null Assignment
+///
+/// Functions returning nullable types can return null or values.
+///
+/// expect: none
+/// expect: world
+
+fn get_null() -> string? { null }
+fn get_value() -> string? { "world" }
+
+fn main() {
+  let a = get_null()
+  println(a ?? "none")
+
+  let b = get_value()
+  println(b ?? "none")
+}

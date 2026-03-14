@@ -1,0 +1,24 @@
+/// # Deeply Nested Shadowing
+///
+/// Variables shadowed through multiple nesting levels restore correctly.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 2
+/// expect: 1
+
+fn main() {
+  let x = 1
+  println(string(x))
+  {
+    let x = 2
+    println(string(x))
+    {
+      let x = 3
+      println(string(x))
+    }
+    println(string(x))
+  }
+  println(string(x))
+}

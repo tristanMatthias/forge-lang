@@ -1,0 +1,15 @@
+/// # It With Unary Negation
+///
+/// Use `-it` to negate list elements.
+///
+/// expect: -1
+/// expect: -2
+/// expect: -3
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums.map(-it)
+  for n in result {
+    println(string(n))
+  }
+}

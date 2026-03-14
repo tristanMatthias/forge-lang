@@ -1,0 +1,26 @@
+/// # Is with Enum Variant Check
+///
+/// Use `is .Variant` to check enum state without destructuring.
+///
+/// expect: loading
+/// expect: false
+/// expect: true
+/// expect: true
+
+enum State { loading, ready, error(msg: string) }
+
+fn main() {
+  let s = State.loading
+
+  if s is .loading {
+    println("loading")
+  }
+
+  println(string(s is .ready))
+
+  let s2 = State.ready
+  println(string(s2 is .ready))
+
+  let s3 = State.error(msg: "timeout")
+  println(string(s3 is .error))
+}

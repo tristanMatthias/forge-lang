@@ -1,0 +1,19 @@
+/// # While Countdown
+///
+/// Adversarial test: while loop counting down to zero.
+///
+/// expect: 5
+/// expect: 4
+/// expect: 3
+/// expect: 2
+/// expect: 1
+/// expect: liftoff
+
+fn main() {
+  mut n = 5
+  while n > 0 {
+    println(n)
+    n = n - 1
+  }
+  println("liftoff")
+}

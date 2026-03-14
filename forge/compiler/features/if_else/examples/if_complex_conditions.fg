@@ -1,0 +1,23 @@
+/// # Complex Boolean Conditions
+///
+/// If with complex &&, || conditions.
+///
+/// expect: both
+/// expect: either
+/// expect: neither
+
+fn check(a: bool, b: bool) -> string {
+  if a && b {
+    "both"
+  } else if a || b {
+    "either"
+  } else {
+    "neither"
+  }
+}
+
+fn main() {
+  println(check(true, true))
+  println(check(true, false))
+  println(check(false, false))
+}

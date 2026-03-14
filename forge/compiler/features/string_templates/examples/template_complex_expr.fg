@@ -1,0 +1,12 @@
+/// Test: Template with complex expressions — arithmetic, comparisons, method calls
+///
+/// expect: sum=15, product=50, eq=false
+/// expect: HELLO has 5 chars
+
+fn main() {
+  let a = 5
+  let b = 10
+  println(`sum=${a + b}, product=${a * b}, eq=${a == b}`)
+  let s = "hello"
+  println(`${s.upper()} has ${s.length} chars`)
+}

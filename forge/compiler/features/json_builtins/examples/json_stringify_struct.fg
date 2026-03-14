@@ -1,0 +1,12 @@
+/// # JSON Stringify Struct
+///
+/// Stringify a named type alias struct to JSON.
+///
+/// expect: {"x":10,"y":20,"label":"origin"}
+
+type Point = { x: int, y: int, label: string }
+
+fn main() {
+  let p: Point = { x: 10, y: 20, label: "origin" }
+  println(json.stringify(p))
+}

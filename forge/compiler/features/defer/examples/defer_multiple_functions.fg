@@ -1,0 +1,23 @@
+/// # Defer in Multiple Functions
+///
+/// Each function has its own defer stack.
+///
+/// expect: a-start
+/// expect: b-start
+/// expect: b-defer
+/// expect: a-defer
+
+fn func_b() {
+  defer println("b-defer")
+  println("b-start")
+}
+
+fn func_a() {
+  defer println("a-defer")
+  println("a-start")
+  func_b()
+}
+
+fn main() {
+  func_a()
+}

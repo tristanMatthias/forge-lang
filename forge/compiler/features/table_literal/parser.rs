@@ -1,11 +1,13 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
+use super::types::TableLitData;
+
 impl Parser {
     /// Parse `table { header | ... \n row | ... \n ... }`
-    /// Produces a TableLit AST node that the checker validates
-    /// and codegen desugars into ListLit of StructLit.
+    /// Produces a Feature(FeatureExpr) with TableLitData.
     pub(crate) fn parse_table_literal(&mut self) -> Option<Expr> {
         let start_span = self.advance()?.span; // consume `table`
         self.expect(&TokenKind::LBrace)?;
@@ -26,11 +28,12 @@ impl Parser {
 
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Expr::TableLit {
-            columns,
-            rows,
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "table_literal",
+            kind: "TableLit",
+            data: Box::new(TableLitData { columns, rows }),
             span: start_span,
-        })
+        }))
     }
 
     /// Parse pipe-separated identifiers: `name | age | active`

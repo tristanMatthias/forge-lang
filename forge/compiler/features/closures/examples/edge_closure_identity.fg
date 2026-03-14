@@ -1,0 +1,10 @@
+/// # Closure Identity Function
+///
+/// Identity closure that just returns its argument.
+///
+/// expect: 42
+
+fn main() {
+  let id = (x: int) -> int { x }
+  println(string(id(42)))
+}

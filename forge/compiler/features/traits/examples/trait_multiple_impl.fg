@@ -1,0 +1,36 @@
+/// # Multiple Types Implementing Same Trait
+///
+/// Several types each implementing the same trait.
+///
+/// expect: 10
+/// expect: 25
+/// expect: 6
+
+trait Area {
+  fn area(self) -> int
+}
+
+type Rect = { w: int, h: int }
+type Square = { side: int }
+type Triangle = { base: int, height: int }
+
+impl Area for Rect {
+  fn area(self) -> int { self.w * self.h }
+}
+
+impl Area for Square {
+  fn area(self) -> int { self.side * self.side }
+}
+
+impl Area for Triangle {
+  fn area(self) -> int { self.base * self.height / 2 }
+}
+
+fn main() {
+  let r = Rect { w: 2, h: 5 }
+  let s = Square { side: 5 }
+  let t = Triangle { base: 3, height: 4 }
+  println(string(r.area()))
+  println(string(s.area()))
+  println(string(t.area()))
+}

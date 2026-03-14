@@ -1,0 +1,11 @@
+/// # Variable From If-Else Expression
+///
+/// A variable bound to the result of an if-else expression.
+///
+/// expect: big
+
+fn main() {
+  let x = 100
+  let label = if x > 50 { "big" } else { "small" }
+  println(label)
+}

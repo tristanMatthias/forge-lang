@@ -1,0 +1,24 @@
+/// # Without on Type with Many Fields
+///
+/// Remove multiple fields from a large type.
+///
+/// expect: alice
+/// expect: admin
+
+type User = {
+  id: int,
+  name: string,
+  email: string,
+  password: string,
+  role: string,
+  created_at: int,
+  updated_at: int,
+}
+
+type PublicUser = User without {id, password, created_at, updated_at}
+
+fn main() {
+  let u: PublicUser = { name: "alice", email: "a@test.com", role: "admin" }
+  println(u.name)
+  println(u.role)
+}

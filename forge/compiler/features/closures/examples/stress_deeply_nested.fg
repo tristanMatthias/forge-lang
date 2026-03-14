@@ -1,0 +1,16 @@
+/// # Deeply Nested Closures
+///
+/// Closures nested 5 levels deep via chained map calls.
+///
+/// expect: 16
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums
+    .map((a) -> a + 1)
+    .map((b) -> b * 2)
+    .map((c) -> c + 1)
+    .map((d) -> d * 2)
+    .map((e) -> e - 2)
+  println(string(result[2]))
+}

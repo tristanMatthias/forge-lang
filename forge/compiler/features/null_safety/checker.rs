@@ -1,11 +1,24 @@
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
+
+use super::types::{NullCoalesceData, NullPropagateData};
 
 impl TypeChecker {
     /// Type-check `NullLit` — returns `Type::Nullable(Unknown)`.
     pub(crate) fn check_null_lit(&mut self) -> Type {
         Type::Nullable(Box::new(Type::Unknown))
+    }
+
+    /// Type-check a null coalesce expression via Feature dispatch.
+    pub(crate) fn check_null_coalesce_feature(&mut self, fe: &FeatureExpr) -> Type {
+        if let Some(data) = feature_data!(fe, NullCoalesceData) {
+            self.check_null_coalesce(&data.left, &data.right)
+        } else {
+            Type::Unknown
+        }
     }
 
     /// Type-check a null coalesce expression: `left ?? right`
@@ -18,6 +31,15 @@ impl TypeChecker {
         match &left_type {
             Type::Nullable(inner) => *inner.clone(),
             _ => right_type,
+        }
+    }
+
+    /// Type-check a null propagate expression via Feature dispatch.
+    pub(crate) fn check_null_propagate_feature(&mut self, fe: &FeatureExpr) -> Type {
+        if let Some(data) = feature_data!(fe, NullPropagateData) {
+            self.check_null_propagate(&data.object, &data.field)
+        } else {
+            Type::Unknown
         }
     }
 

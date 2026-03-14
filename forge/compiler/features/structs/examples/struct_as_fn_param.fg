@@ -1,0 +1,15 @@
+/// Struct passed as function parameter and returned
+///
+/// expect: (3, 7)
+
+type Point = { x: int, y: int }
+
+fn translate(p: Point, dx: int, dy: int) -> Point {
+  Point { x: p.x + dx, y: p.y + dy }
+}
+
+fn main() {
+  let p = Point { x: 1, y: 2 }
+  let p2 = translate(p, 2, 5)
+  println(`(${p2.x}, ${p2.y})`)
+}

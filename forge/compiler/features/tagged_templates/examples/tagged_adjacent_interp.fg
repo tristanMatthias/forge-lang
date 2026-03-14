@@ -1,0 +1,10 @@
+/// Test: Tagged template with adjacent interpolations (no literal between)
+/// expect: {"parts":["","",""],"values":["hello","world"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  println(identity`${"hello"}${"world"}`)
+}

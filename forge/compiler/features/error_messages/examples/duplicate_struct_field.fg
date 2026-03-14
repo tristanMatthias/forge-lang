@@ -1,0 +1,13 @@
+/// # Duplicate struct field
+///
+/// Specifying the same field twice in a struct literal
+/// should produce an error.
+///
+/// expect-error: F0012
+
+type Point = { x: int, y: int }
+
+fn main() {
+    let p = Point { x: 1, x: 2, y: 3 }
+    println(string(p.x))
+}

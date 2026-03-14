@@ -1,0 +1,14 @@
+/// # Defer with Conditional
+///
+/// Defer inside an if block still runs at function exit.
+///
+/// expect: work
+/// expect: conditional defer
+
+fn main() {
+  let x = true
+  if x {
+    defer println("conditional defer")
+  }
+  println("work")
+}

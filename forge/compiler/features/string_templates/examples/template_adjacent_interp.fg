@@ -1,0 +1,11 @@
+/// Test: Adjacent interpolations with no literal text between them
+///
+/// expect: helloworld
+/// expect: 123
+
+fn main() {
+  let a = "hello"
+  let b = "world"
+  println(`${a}${b}`)
+  println(`${1}${2}${3}`)
+}

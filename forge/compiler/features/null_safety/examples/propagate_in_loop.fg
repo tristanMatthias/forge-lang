@@ -1,0 +1,24 @@
+/// # Propagate In Loop
+///
+/// `?.` and `??` used inside a while loop, with the nullable
+/// value changing on each iteration.
+///
+/// expect: 5
+/// expect: 0
+/// expect: 3
+/// expect: 0
+
+fn get(i: int) -> string? {
+  if i == 0 { "hello" }
+  else if i == 2 { "hey" }
+  else { null }
+}
+
+fn main() {
+  mut i = 0
+  while i < 4 {
+    let len = get(i)?.length ?? 0
+    println(string(len))
+    i = i + 1
+  }
+}

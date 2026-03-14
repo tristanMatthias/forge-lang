@@ -1,0 +1,23 @@
+/// # Enum with Mixed Data Types
+///
+/// Enum variants carrying different-sized types (string vs int).
+///
+/// expect: got name: Alice
+/// expect: got value: 42
+
+enum Tag {
+  a(name: string)
+  b(value: int)
+}
+
+fn describe(t: Tag) -> string {
+  match t {
+    .a(name) -> `got name: ${name}`
+    .b(value) -> `got value: ${value}`
+  }
+}
+
+fn main() {
+  println(describe(Tag.a(name: "Alice")))
+  println(describe(Tag.b(value: 42)))
+}

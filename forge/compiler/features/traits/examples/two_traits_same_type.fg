@@ -1,0 +1,34 @@
+/// Two different traits implemented on same type, both with default methods
+///
+/// expect: hello HELLO
+/// expect: length: 5
+
+trait Printable {
+  fn text(self) -> string
+  fn loud(self) -> string {
+    self.text().upper()
+  }
+}
+
+trait Measurable {
+  fn size(self) -> int
+  fn info(self) -> string {
+    `length: ${self.size()}`
+  }
+}
+
+type Word = { content: string }
+
+impl Printable for Word {
+  fn text(self) -> string { self.content }
+}
+
+impl Measurable for Word {
+  fn size(self) -> int { self.content.length }
+}
+
+fn main() {
+  let w = Word { content: "hello" }
+  println(`${w.text()} ${w.loud()}`)
+  println(w.info())
+}

@@ -1,0 +1,9 @@
+/// # Variable Self-Reference in Initializer
+///
+/// A variable cannot reference itself during initialization.
+///
+/// expect-error: F0020
+
+fn main() {
+  let x = x + 1
+}

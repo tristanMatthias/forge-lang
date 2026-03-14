@@ -1,0 +1,14 @@
+/// # It With String Concatenation
+///
+/// Use `it + "!"` to append to string elements.
+///
+/// expect: hello!
+/// expect: world!
+
+fn main() {
+  let words = ["hello", "world"]
+  let result = words.map(it + "!")
+  for w in result {
+    println(w)
+  }
+}

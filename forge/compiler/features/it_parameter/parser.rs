@@ -1,3 +1,4 @@
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
@@ -30,8 +31,67 @@ impl Parser {
             }
             Expr::NullPropagate { object, .. } => Self::expr_contains_it(object),
             Expr::ErrorPropagate { operand, .. } => Self::expr_contains_it(operand),
+            Expr::TemplateLit { parts, .. } => {
+                parts.iter().any(|part| {
+                    if let TemplatePart::Expr(e) = part {
+                        Self::expr_contains_it(e)
+                    } else {
+                        false
+                    }
+                })
+            }
+            Expr::StructLit { fields, .. } => {
+                fields.iter().any(|(_, e)| Self::expr_contains_it(e))
+            }
+            Expr::ListLit { elements, .. } | Expr::TupleLit { elements, .. } => {
+                elements.iter().any(|e| Self::expr_contains_it(e))
+            }
+            Expr::If { condition, then_branch, else_branch, .. } => {
+                Self::expr_contains_it(condition)
+                    || then_branch.statements.iter().any(|s| {
+                        if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                    })
+                    || else_branch.as_ref().map_or(false, |eb| {
+                        eb.statements.iter().any(|s| {
+                            if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                        })
+                    })
+            }
+            Expr::Block(block) => {
+                block.statements.iter().any(|s| {
+                    if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                })
+            }
             // Don't look inside closures - `it` there is already bound
             Expr::Closure { .. } => false,
+            // Handle Feature variants
+            Expr::Feature(fe) => {
+                match fe.feature_id {
+                    "null_safety" => {
+                        if let Some(data) = feature_data!(fe, crate::features::null_safety::types::NullCoalesceData) {
+                            return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);
+                        }
+                        if let Some(data) = feature_data!(fe, crate::features::null_safety::types::NullPropagateData) {
+                            return Self::expr_contains_it(&data.object);
+                        }
+                        false
+                    }
+                    "error_propagation" => {
+                        if let Some(data) = feature_data!(fe, crate::features::error_propagation::types::ErrorPropagateData) {
+                            return Self::expr_contains_it(&data.operand);
+                        }
+                        false
+                    }
+                    "closures" => false, // Don't look inside closures
+                    "pipe_operator" => {
+                        if let Some(data) = feature_data!(fe, crate::features::pipe_operator::types::PipeData) {
+                            return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);
+                        }
+                        false
+                    }
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }

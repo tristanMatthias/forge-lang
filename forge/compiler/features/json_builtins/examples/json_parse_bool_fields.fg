@@ -1,0 +1,13 @@
+/// # JSON Parse Bool Fields
+///
+/// Parse JSON with both true and false boolean fields.
+///
+/// expect: true
+/// expect: false
+
+fn main() {
+  let json_str = "{\"yes\":true,\"no\":false}"
+  let data: {yes: bool, no: bool} = json.parse(json_str)
+  println(string(data.yes))
+  println(string(data.no))
+}

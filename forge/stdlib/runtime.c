@@ -547,6 +547,33 @@ ForgeString forge_json_get_string(const char* json, int64_t index, const char* f
     return forge_string_new("", 0);
 }
 
+// Get nested object/array field as raw JSON c-string pointer
+const char* forge_json_get_object(const char* json, int64_t index, const char* field) {
+    const char* obj = json_find_object(json, index);
+    const char* val = json_find_field(obj, field);
+    if (!val) return "{}";
+    // val points to the start of the value in the JSON buffer
+    // Find the end of the nested object/array
+    if (*val == '{' || *val == '[') {
+        char open = *val;
+        char close = (open == '{') ? '}' : ']';
+        int depth = 1;
+        const char* p = val + 1;
+        while (*p && depth > 0) {
+            if (*p == open) depth++;
+            else if (*p == close) depth--;
+            else if (*p == '"') { p++; while (*p && *p != '"') { if (*p == '\\') p++; p++; } }
+            p++;
+        }
+        int64_t len = p - val;
+        char* buf = (char*)forge_alloc(len + 1);
+        memcpy(buf, val, len);
+        buf[len] = '\0';
+        return buf;
+    }
+    return "{}";
+}
+
 // Get int field from i-th object
 int64_t forge_json_get_int(const char* json, int64_t index, const char* field) {
     const char* obj = json_find_object(json, index);

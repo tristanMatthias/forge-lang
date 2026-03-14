@@ -1,0 +1,11 @@
+/// # Return From Main
+///
+/// Early return from main skips subsequent statements.
+///
+/// expect: before
+
+fn main() {
+  println("before")
+  return
+  println("after")
+}

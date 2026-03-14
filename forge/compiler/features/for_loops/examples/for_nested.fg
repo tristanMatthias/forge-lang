@@ -1,0 +1,20 @@
+/// # Nested For Loops
+///
+/// A range for loop nested inside a list for loop, composing two
+/// different iterable types.
+///
+/// expect: a:0
+/// expect: a:1
+/// expect: b:0
+/// expect: b:1
+/// expect: c:0
+/// expect: c:1
+
+fn main() {
+  let names = ["a", "b", "c"]
+  for name in names {
+    for i in 0..2 {
+      println(`${name}:${i}`)
+    }
+  }
+}

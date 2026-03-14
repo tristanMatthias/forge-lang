@@ -1,0 +1,19 @@
+/// # Basic While Loop
+///
+/// Count up using a while loop with a simple condition.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 4
+/// expect: done: 5
+
+fn main() {
+  mut i = 0
+  while i < 5 {
+    println(i)
+    i = i + 1
+  }
+  println(`done: ${i}`)
+}

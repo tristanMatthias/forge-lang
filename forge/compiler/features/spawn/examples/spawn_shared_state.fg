@@ -1,0 +1,20 @@
+/// # Spawn with Shared State
+///
+/// A spawned task can capture and use variables from the outer scope.
+///
+/// expect: result: hello world
+
+use @std.channel
+
+fn main() {
+  let prefix = "hello"
+  let ch = channel(1)
+
+  spawn {
+    ch <- `${prefix} world`
+  }
+
+  sleep(50)
+  let msg = <- ch
+  println(`result: ${msg}`)
+}

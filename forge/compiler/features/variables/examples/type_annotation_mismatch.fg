@@ -1,0 +1,9 @@
+/// # Type Annotation Mismatch
+///
+/// Value type must match the declared type annotation.
+///
+/// expect-error: F0012
+
+fn main() {
+  let x: int = "hello"
+}

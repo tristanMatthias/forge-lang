@@ -1,0 +1,15 @@
+/// Test: String split edge cases — separator at start/end, consecutive separators
+///
+/// expect: 3
+/// expect: a
+/// expect: b
+/// expect: c
+
+fn main() {
+  let s = "a::b::c"
+  let parts = s.split("::")
+  println(string(parts.length))
+  println(parts[0])
+  println(parts[1])
+  println(parts[2])
+}

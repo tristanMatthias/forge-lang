@@ -1,0 +1,15 @@
+/// # Single-Param Closure Without Parens
+///
+/// `x -> expr` syntax for single parameter closures.
+///
+/// expect: 2
+/// expect: 4
+/// expect: 6
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums.map(x -> x * 2)
+  for n in result {
+    println(string(n))
+  }
+}

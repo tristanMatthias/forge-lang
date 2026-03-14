@@ -1,0 +1,17 @@
+/// # Push Many Items
+///
+/// Push many items onto a list to stress the reallocation.
+///
+/// expect: 10
+/// expect: 0
+/// expect: 9
+
+fn main() {
+  mut items: List<int> = []
+  for i in 0..10 {
+    items.push(i)
+  }
+  println(string(items.length))
+  println(string(items[0]))
+  println(string(items[9]))
+}

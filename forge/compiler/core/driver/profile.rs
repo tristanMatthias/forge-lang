@@ -68,5 +68,8 @@ impl BuildProfile {
 
 /// Count function declarations in a program
 pub fn count_functions(program: &crate::parser::ast::Program) -> usize {
-    program.statements.iter().filter(|s| matches!(s, crate::parser::ast::Statement::FnDecl { .. })).count()
+    program.statements.iter().filter(|s| {
+        matches!(s, crate::parser::ast::Statement::FnDecl { .. })
+        || matches!(s, crate::parser::ast::Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl")
+    }).count()
 }

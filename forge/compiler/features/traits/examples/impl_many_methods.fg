@@ -1,0 +1,22 @@
+/// Impl block with many methods (no trait)
+///
+/// expect: 20
+/// expect: 5
+/// expect: 30
+
+type Counter = { n: int }
+
+impl Counter {
+  fn double(self) -> int { self.n * 2 }
+  fn triple(self) -> int { self.n * 3 }
+  fn quad(self) -> int { self.n * 4 }
+  fn half(self) -> int { self.n / 2 }
+  fn square(self) -> int { self.n * self.n }
+}
+
+fn main() {
+  let c = Counter { n: 10 }
+  println(string(c.double()))
+  println(string(c.half()))
+  println(string(c.triple()))
+}

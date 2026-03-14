@@ -1,0 +1,12 @@
+/// # Wrong Field Access
+///
+/// Accessing a nonexistent field on a struct produces a clear error.
+///
+/// expect-error: F0020
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: 1, y: 2 }
+  println(string(p.z))
+}

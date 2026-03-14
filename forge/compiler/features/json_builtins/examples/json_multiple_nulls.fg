@@ -1,0 +1,13 @@
+/// # JSON Multiple Null Fields
+///
+/// Stringify struct where multiple fields are null — all should be omitted.
+///
+/// expect: {"name":"only"}
+
+fn main() {
+  let a: int? = null
+  let b: string? = null
+  let c: bool? = null
+  let data = { name: "only", a: a, b: b, c: c }
+  println(json.stringify(data))
+}

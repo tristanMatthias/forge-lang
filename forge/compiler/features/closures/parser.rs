@@ -1,7 +1,10 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::lexer::Span;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::ClosureData;
 
 impl Parser {
     /// Parse `(params) -> body` or `(params) { body }` closure when detected inside paren expr.
@@ -53,34 +56,50 @@ impl Parser {
             if self.check(&TokenKind::LBrace) {
                 // Block body: parse as block (NOT as struct literal)
                 let block = self.parse_block()?;
-                Some(Expr::Closure {
-                    params,
-                    body: Box::new(Expr::Block(block)),
+                Some(Expr::Feature(FeatureExpr {
+                    feature_id: "closures",
+                    kind: "Closure",
+                    data: Box::new(ClosureData {
+                        params,
+                        body: Box::new(Expr::Block(block)),
+                    }),
                     span,
-                })
+                }))
             } else {
                 let body = self.parse_expr()?;
-                Some(Expr::Closure {
-                    params,
-                    body: Box::new(body),
+                Some(Expr::Feature(FeatureExpr {
+                    feature_id: "closures",
+                    kind: "Closure",
+                    data: Box::new(ClosureData {
+                        params,
+                        body: Box::new(body),
+                    }),
                     span,
-                })
+                }))
             }
         } else if self.check(&TokenKind::LBrace) {
             // (params) { body } form — also parse as block
             let block = self.parse_block()?;
-            Some(Expr::Closure {
-                params,
-                body: Box::new(Expr::Block(block)),
+            Some(Expr::Feature(FeatureExpr {
+                feature_id: "closures",
+                kind: "Closure",
+                data: Box::new(ClosureData {
+                    params,
+                    body: Box::new(Expr::Block(block)),
+                }),
                 span,
-            })
+            }))
         } else {
             let body = self.parse_expr()?;
-            Some(Expr::Closure {
-                params,
-                body: Box::new(body),
+            Some(Expr::Feature(FeatureExpr {
+                feature_id: "closures",
+                kind: "Closure",
+                data: Box::new(ClosureData {
+                    params,
+                    body: Box::new(body),
+                }),
                 span,
-            })
+            }))
         }
     }
 

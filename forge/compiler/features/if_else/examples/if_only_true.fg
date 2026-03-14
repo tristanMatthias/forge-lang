@@ -1,0 +1,14 @@
+/// # If with False Condition
+///
+/// If with constant false goes to else branch.
+///
+/// expect: no
+/// expect: 0
+
+fn main() {
+  let x = if false { "yes" } else { "no" }
+  println(x)
+
+  let y = if false { 42 } else { 0 }
+  println(y)
+}

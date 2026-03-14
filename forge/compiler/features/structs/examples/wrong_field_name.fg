@@ -1,0 +1,10 @@
+/// Struct literal with wrong field name (typo)
+///
+/// expect-error: F0020
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: 1, z: 2 }
+  println(string(p.x))
+}

@@ -1,0 +1,22 @@
+/// # Defer in Nested Functions
+///
+/// Each function's defers run when that function returns,
+/// in reverse order within the function.
+///
+/// expect: inner start
+/// expect: inner defer
+/// expect: outer defer
+
+fn inner() {
+  defer println("inner defer")
+  println("inner start")
+}
+
+fn outer() {
+  defer println("outer defer")
+  inner()
+}
+
+fn main() {
+  outer()
+}

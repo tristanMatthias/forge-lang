@@ -1,0 +1,12 @@
+/// Nested structs: struct containing struct containing struct
+///
+/// expect: deep value = 42
+
+type Inner = { value: int }
+type Middle = { inner: Inner }
+type Outer = { middle: Middle }
+
+fn main() {
+  let o = Outer { middle: Middle { inner: Inner { value: 42 } } }
+  println(`deep value = ${o.middle.inner.value}`)
+}

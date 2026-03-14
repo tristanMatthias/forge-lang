@@ -1,0 +1,21 @@
+/// # Match with Complex Guards
+///
+/// Match arms with guard conditions using && and ||.
+///
+/// expect: small even
+/// expect: medium
+/// expect: big
+
+fn classify(n: int) -> string {
+  match n {
+    _ if n < 10 && n % 2 == 0 -> "small even"
+    _ if n >= 10 && n < 100 -> "medium"
+    _ -> "big"
+  }
+}
+
+fn main() {
+  println(classify(4))
+  println(classify(50))
+  println(classify(200))
+}

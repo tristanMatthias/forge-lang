@@ -1,0 +1,10 @@
+/// # Let Without Initializer
+///
+/// A let binding must have an initializer value.
+///
+/// expect-error: F0001
+
+fn main() {
+  let x
+  println(string(x))
+}

@@ -1,0 +1,13 @@
+/// # Negative to Positive Inclusive Range
+///
+/// Adversarial test: inclusive range spanning negative to positive.
+///
+/// expect: 0
+
+fn main() {
+  mut sum = 0
+  for i in -5..=5 {
+    sum = sum + i
+  }
+  println(sum)
+}

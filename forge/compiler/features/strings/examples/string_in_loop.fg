@@ -1,0 +1,13 @@
+/// Test: String building in a loop via concatenation
+///
+/// expect: aaaaa
+/// expect: 5
+
+fn main() {
+  mut s = ""
+  for i in 0..5 {
+    s = s + "a"
+  }
+  println(s)
+  println(string(s.length))
+}

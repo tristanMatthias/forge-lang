@@ -1,0 +1,15 @@
+/// # It With String Method
+///
+/// Use `it` to call methods on list elements.
+///
+/// expect: HELLO
+/// expect: WORLD
+/// expect: FORGE
+
+fn main() {
+  let words = ["hello", "world", "forge"]
+  let upper = words.map(it.upper())
+  for w in upper {
+    println(w)
+  }
+}

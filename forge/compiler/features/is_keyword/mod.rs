@@ -1,5 +1,7 @@
 pub mod parser;
 pub mod codegen;
+pub mod checker;
+pub mod types;
 
 crate::forge_feature! {
     name: "Is Keyword",

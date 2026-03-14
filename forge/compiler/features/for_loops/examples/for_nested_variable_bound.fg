@@ -1,0 +1,16 @@
+/// # Nested For with Variable Bound
+///
+/// Inner range start depends on outer loop variable.
+/// Tests dynamic range bounds in nested loops.
+///
+/// expect: 10
+
+fn main() {
+  mut sum = 0
+  for i in 0..4 {
+    for j in i..4 {
+      sum = sum + 1
+    }
+  }
+  println(sum)
+}

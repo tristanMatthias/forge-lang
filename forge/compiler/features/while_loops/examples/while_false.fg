@@ -1,0 +1,12 @@
+/// # While False
+///
+/// Adversarial test: while false should never execute body.
+///
+/// expect: ok
+
+fn main() {
+  while false {
+    println("should not print")
+  }
+  println("ok")
+}

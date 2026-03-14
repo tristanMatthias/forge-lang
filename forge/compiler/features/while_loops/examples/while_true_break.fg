@@ -1,0 +1,20 @@
+/// # While True Break
+///
+/// A `while true` loop that terminates via break.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: stopped
+
+fn main() {
+  mut n = 0
+  while true {
+    if n == 3 {
+      break
+    }
+    println(n)
+    n = n + 1
+  }
+  println("stopped")
+}

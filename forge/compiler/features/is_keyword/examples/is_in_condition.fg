@@ -1,0 +1,30 @@
+/// # Is in Complex Conditions
+///
+/// The `is` keyword used in various conditional contexts.
+///
+/// expect: ok value
+/// expect: fallback
+/// expect: done processing
+
+fn process(r: Result<int, string>) -> string {
+  if r is Ok {
+    "ok value"
+  } else {
+    "fallback"
+  }
+}
+
+fn main() {
+  println(process(Ok(10)))
+  println(process(Err("nope")))
+
+  mut result: Result<int, string> = Err("pending")
+  mut tries = 0
+  while result is Err {
+    tries = tries + 1
+    if tries >= 2 {
+      result = Ok(42)
+    }
+  }
+  println("done processing")
+}

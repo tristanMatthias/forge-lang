@@ -1353,6 +1353,36 @@ fn collect_exports(program: &Program) -> Vec<ExportedSymbol> {
                     type_ann: type_ann.clone(),
                 });
             }
+            Statement::Feature(fe) => {
+                use crate::feature_data;
+                match fe.feature_id {
+                    "functions" => {
+                        use crate::features::functions::types::FnDeclData;
+                        if let Some(data) = feature_data!(fe, FnDeclData) {
+                            if data.exported {
+                                exports.push(ExportedSymbol::Function {
+                                    name: data.name.clone(),
+                                    params: data.params.clone(),
+                                    return_type: data.return_type.clone(),
+                                });
+                            }
+                        }
+                    }
+                    "variables" => {
+                        use crate::features::variables::types::VarDeclData;
+                        if let Some(data) = feature_data!(fe, VarDeclData) {
+                            if data.exported {
+                                exports.push(ExportedSymbol::Value {
+                                    name: data.name.clone(),
+                                    value: data.value.clone(),
+                                    type_ann: data.type_ann.clone(),
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
@@ -1379,84 +1409,88 @@ fn resolve_use_statements(
     let mut imports = Vec::new();
 
     for stmt in &program.statements {
-        if let Statement::Use { path, items, .. } = stmt {
-            // Skip provider use statements (e.g., use @std.model)
-            if !path.is_empty() && path[0].starts_with('@') {
-                continue;
+        // Extract path and items from Use statement (old or new Feature variant)
+        let (path, items) = match stmt {
+            Statement::Use { path, items, .. } => (path.clone(), items.clone()),
+            Statement::Feature(fe) if fe.feature_id == "imports" && fe.kind == "Use" => {
+                use crate::feature_data;
+                use crate::features::imports::types::UseData;
+                if let Some(data) = feature_data!(fe, UseData) {
+                    (data.path.clone(), data.items.clone())
+                } else {
+                    continue;
+                }
             }
+            _ => continue,
+        };
+        // Skip provider use statements (e.g., use @std.model)
+        if !path.is_empty() && path[0].starts_with('@') {
+            continue;
+        }
 
-            let module_path = path.join(".");
+        let module_path = path.join(".");
 
-            let exports = module_exports
-                .get(&module_path)
-                .ok_or_else(|| format!("unresolved module: {}", module_path))?;
+        let exports = module_exports
+            .get(&module_path)
+            .ok_or_else(|| format!("unresolved module: {}", module_path))?;
 
-            if items.is_empty() {
-                // `use math.add` - the last path segment is the item name
-                // This case: path = ["math", "add"], items = []
-                // Module path would be "math.add" but that's wrong.
-                // Actually looking at the parser: `use math.add` gives path=["math", "add"], items=[]
-                // We need to handle this: the module is the path minus the last segment,
-                // and the item is the last segment.
-                // But `use math.{add, multiply}` gives path=["math"], items=[add, multiply]
+        if items.is_empty() {
+            // For the path-only case, module is path[..n-1], item is path[n-1]
+            if path.len() >= 2 {
+                let mod_path = path[..path.len() - 1].join(".");
+                let item_name = path.last().unwrap();
 
-                // For the path-only case, module is path[..n-1], item is path[n-1]
-                if path.len() >= 2 {
-                    let mod_path = path[..path.len() - 1].join(".");
-                    let item_name = path.last().unwrap();
+                let mod_exports = module_exports
+                    .get(&mod_path)
+                    .ok_or_else(|| format!("unresolved module: {}", mod_path))?;
 
-                    let mod_exports = module_exports
-                        .get(&mod_path)
-                        .ok_or_else(|| format!("unresolved module: {}", mod_path))?;
+                let sym = mod_exports
+                    .iter()
+                    .find(|e| match e {
+                        ExportedSymbol::Function { name, .. } => name == item_name,
+                        ExportedSymbol::Value { name, .. } => name == item_name,
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "symbol `{}` is not exported from module `{}`",
+                            item_name, mod_path
+                        )
+                    })?;
 
-                    let sym = mod_exports
-                        .iter()
-                        .find(|e| match e {
-                            ExportedSymbol::Function { name, .. } => name == item_name,
-                            ExportedSymbol::Value { name, .. } => name == item_name,
-                        })
-                        .ok_or_else(|| {
-                            format!(
-                                "symbol `{}` is not exported from module `{}`",
-                                item_name, mod_path
-                            )
-                        })?;
+                let mangled = format!("{}_{}", mod_path.replace('.', "_"), item_name);
+                imports.push(ResolvedImport {
+                    local_name: item_name.clone(),
+                    mangled_name: mangled,
+                    symbol: sym.clone(),
+                });
+            }
+        } else {
+            // `use math.{add, multiply}` - path is the module, items are what to import
+            for item in &items {
+                let sym = exports
+                    .iter()
+                    .find(|e| match e {
+                        ExportedSymbol::Function { name, .. } => name == &item.name,
+                        ExportedSymbol::Value { name, .. } => name == &item.name,
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "symbol `{}` is not exported from module `{}`",
+                            item.name, module_path
+                        )
+                    })?;
 
-                    let mangled = format!("{}_{}", mod_path.replace('.', "_"), item_name);
-                    imports.push(ResolvedImport {
-                        local_name: item_name.clone(),
-                        mangled_name: mangled,
-                        symbol: sym.clone(),
-                    });
-                }
-            } else {
-                // `use math.{add, multiply}` - path is the module, items are what to import
-                for item in items {
-                    let sym = exports
-                        .iter()
-                        .find(|e| match e {
-                            ExportedSymbol::Function { name, .. } => name == &item.name,
-                            ExportedSymbol::Value { name, .. } => name == &item.name,
-                        })
-                        .ok_or_else(|| {
-                            format!(
-                                "symbol `{}` is not exported from module `{}`",
-                                item.name, module_path
-                            )
-                        })?;
-
-                    let local_name = item.alias.clone().unwrap_or_else(|| item.name.clone());
-                    let mangled = format!(
-                        "{}_{}",
-                        module_path.replace('.', "_"),
-                        item.name
-                    );
-                    imports.push(ResolvedImport {
-                        local_name,
-                        mangled_name: mangled,
-                        symbol: sym.clone(),
-                    });
-                }
+                let local_name = item.alias.clone().unwrap_or_else(|| item.name.clone());
+                let mangled = format!(
+                    "{}_{}",
+                    module_path.replace('.', "_"),
+                    item.name
+                );
+                imports.push(ResolvedImport {
+                    local_name,
+                    mangled_name: mangled,
+                    symbol: sym.clone(),
+                });
             }
         }
     }
@@ -1556,15 +1590,23 @@ fn inject_lifecycle_stmts(
 
     // Find the main function and inject statements
     for stmt in program.statements.iter_mut() {
-        if let Statement::FnDecl { name, body, .. } = stmt {
-            if name == "main" {
-                // Insert startup stmts at the beginning of main body
+        // Check both old FnDecl and new Feature variant
+        let is_main = match stmt {
+            Statement::FnDecl { name, .. } => name == "main",
+            Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                use crate::feature_data;
+                use crate::features::functions::types::FnDeclData;
+                feature_data!(fe, FnDeclData).map_or(false, |d| d.name == "main")
+            }
+            _ => false,
+        };
+        if is_main {
+            // Helper closure to inject lifecycle stmts into a body
+            let inject_into_body = |body_stmts: &[Statement]| -> Vec<Statement> {
                 let mut new_body = startup_stmts.to_vec();
-                new_body.extend(body.statements.clone());
-                // Insert main_end stmts before the last statement if it's a return,
-                // otherwise at the end
+                new_body.extend(body_stmts.to_vec());
                 if let Some(last) = new_body.last() {
-                    if matches!(last, Statement::Return { .. }) {
+                    if matches!(last, Statement::Return { .. } | Statement::Feature(crate::feature::FeatureStmt { feature_id: "functions", kind: "Return", .. })) {
                         let ret = new_body.pop().unwrap();
                         new_body.extend(main_end_stmts.to_vec());
                         new_body.push(ret);
@@ -1574,8 +1616,34 @@ fn inject_lifecycle_stmts(
                 } else {
                     new_body.extend(main_end_stmts.to_vec());
                 }
-                body.statements = new_body;
+                new_body
+            };
+
+            if let Statement::FnDecl { body, .. } = stmt {
+                body.statements = inject_into_body(&body.statements);
                 return;
+            }
+            if let Statement::Feature(fe) = stmt {
+                use crate::feature_data;
+                use crate::features::functions::types::FnDeclData;
+                if let Some(data) = feature_data!(fe, FnDeclData) {
+                    let new_stmts = inject_into_body(&data.body.statements);
+                    let new_data = FnDeclData {
+                        name: data.name.clone(),
+                        type_params: data.type_params.clone(),
+                        params: data.params.clone(),
+                        return_type: data.return_type.clone(),
+                        body: crate::parser::ast::Block { statements: new_stmts, span: data.body.span },
+                        exported: data.exported,
+                    };
+                    *stmt = Statement::Feature(crate::feature::FeatureStmt {
+                        feature_id: fe.feature_id,
+                        kind: fe.kind,
+                        data: Box::new(new_data),
+                        span: fe.span,
+                    });
+                    return;
+                }
             }
         }
     }

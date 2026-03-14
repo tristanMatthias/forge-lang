@@ -1,0 +1,14 @@
+/// # Range as List Index
+///
+/// Use a range to iterate over a slice of list indices.
+///
+/// expect: 20
+/// expect: 30
+/// expect: 40
+
+fn main() {
+  let items = [10, 20, 30, 40, 50]
+  for i in 1..4 {
+    println(items[i])
+  }
+}

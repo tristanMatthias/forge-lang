@@ -1,0 +1,10 @@
+/// # Boolean used as template tag
+///
+/// A boolean variable cannot be used as a template tag.
+///
+/// expect-error: F0012
+
+fn main() {
+  let flag = true
+  let result = flag`hello`
+}

@@ -1,0 +1,14 @@
+/// # Function Parameter Reassignment
+///
+/// Function parameters are immutable; reassigning them is an error.
+///
+/// expect-error: F0013
+
+fn double(x: int) -> int {
+  x = x * 2
+  return x
+}
+
+fn main() {
+  println(string(double(5)))
+}

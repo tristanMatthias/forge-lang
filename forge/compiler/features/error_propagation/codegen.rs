@@ -3,10 +3,62 @@ use inkwell::AddressSpace;
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::{ErrorPropagateData, OkExprData, ErrExprData, CatchData};
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile error propagation via Feature dispatch.
+    pub(crate) fn compile_error_propagate_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, ErrorPropagateData) {
+            self.compile_error_propagate(&data.operand)
+        } else {
+            None
+        }
+    }
+
+    /// Compile ok(value) via Feature dispatch.
+    pub(crate) fn compile_ok_expr_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, OkExprData) {
+            self.compile_result_ok(&data.value)
+        } else {
+            None
+        }
+    }
+
+    /// Compile err(value) via Feature dispatch.
+    pub(crate) fn compile_err_expr_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, ErrExprData) {
+            self.compile_result_err(&data.value)
+        } else {
+            None
+        }
+    }
+
+    /// Compile catch expression via Feature dispatch.
+    pub(crate) fn compile_catch_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, CatchData) {
+            self.compile_catch(&data.expr, data.binding.as_deref(), &data.handler)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn compile_error_propagate(
         &mut self,
         operand: &Expr,

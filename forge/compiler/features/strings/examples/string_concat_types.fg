@@ -1,0 +1,11 @@
+/// Test: String concatenation with different types via string() conversion
+///
+/// expect: num=42
+/// expect: pi=3.14
+/// expect: flag=true
+
+fn main() {
+  println("num=" + string(42))
+  println("pi=" + string(3.14))
+  println("flag=" + string(true))
+}

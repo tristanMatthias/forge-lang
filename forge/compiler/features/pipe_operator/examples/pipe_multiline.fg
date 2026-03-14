@@ -1,0 +1,18 @@
+/// # Multiline Pipe
+///
+/// Pipe operator spanning multiple lines with `|>` at the start of line.
+///
+/// expect: 120
+
+fn double(x: int) -> int { x * 2 }
+fn add(a: int, b: int) -> int { a + b }
+
+fn main() {
+  let result = 10
+    |> double
+    |> add(5)
+    |> double
+    |> add(10)
+    |> double
+  println(string(result))
+}

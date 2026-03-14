@@ -1,0 +1,43 @@
+/// # Long Else-If Chain
+///
+/// Stress test with a long chain of else-if branches.
+///
+/// expect: zero
+/// expect: one
+/// expect: five
+/// expect: nine
+/// expect: other
+
+fn name(n: int) -> string {
+  if n == 0 {
+    "zero"
+  } else if n == 1 {
+    "one"
+  } else if n == 2 {
+    "two"
+  } else if n == 3 {
+    "three"
+  } else if n == 4 {
+    "four"
+  } else if n == 5 {
+    "five"
+  } else if n == 6 {
+    "six"
+  } else if n == 7 {
+    "seven"
+  } else if n == 8 {
+    "eight"
+  } else if n == 9 {
+    "nine"
+  } else {
+    "other"
+  }
+}
+
+fn main() {
+  println(name(0))
+  println(name(1))
+  println(name(5))
+  println(name(9))
+  println(name(42))
+}

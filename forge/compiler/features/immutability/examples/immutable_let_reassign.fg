@@ -1,0 +1,10 @@
+/// # Immutable Let Reassign Error
+///
+/// Cannot reassign a let-bound variable.
+///
+/// expect-error: F0013
+
+fn main() {
+  let x = 10
+  x = 20
+}

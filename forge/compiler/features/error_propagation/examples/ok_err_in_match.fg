@@ -1,0 +1,22 @@
+/// # Ok Err In Match
+///
+/// Pattern match on Result values using Ok/Err variants.
+///
+/// expect: success: 5.0
+/// expect: failed: division by zero
+
+fn divide(a: float, b: float) -> Result<float, string> {
+  if b == 0.0 { Err("division by zero") } else { Ok(a / b) }
+}
+
+fn main() {
+  match divide(10.0, 2.0) {
+    Ok(v) -> println(`success: ${string(v)}`)
+    Err(e) -> println(`failed: ${e}`)
+  }
+
+  match divide(1.0, 0.0) {
+    Ok(v) -> println(`success: ${string(v)}`)
+    Err(e) -> println(`failed: ${e}`)
+  }
+}

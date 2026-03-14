@@ -1,0 +1,22 @@
+/// # Generic Return Type
+///
+/// Generic used as the return type of a function.
+///
+/// expect: 42
+/// expect: hello
+
+fn wrap<T>(val: T) -> T {
+  val
+}
+
+fn choose<T>(a: T, b: T, pick_first: bool) -> T {
+  if pick_first { a } else { b }
+}
+
+fn main() {
+  let n = wrap(42)
+  println(string(n))
+
+  let s = choose("hello", "world", true)
+  println(s)
+}

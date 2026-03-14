@@ -1,0 +1,12 @@
+/// # Shell Result Usage
+///
+/// Shell command results can be used in string operations.
+///
+/// expect: HELLO
+
+use @std.process
+
+fn main() {
+  let result = $"echo hello"
+  println(result.trim().upper())
+}

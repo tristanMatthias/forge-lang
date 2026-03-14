@@ -1,0 +1,12 @@
+/// # Closure Returning a Closure
+///
+/// A function that returns a closure, testing higher-order function composition.
+///
+/// expect: 15
+/// expect: 25
+
+fn main() {
+  let add5 = (y: int) -> int { 5 + y }
+  println(string(add5(10)))
+  println(string(add5(20)))
+}

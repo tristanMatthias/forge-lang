@@ -1,0 +1,15 @@
+/// # While Complex Condition
+///
+/// Adversarial test: while loop with compound boolean condition (AND).
+///
+/// expect: x=5 y=5
+
+fn main() {
+  mut x = 0
+  mut y = 10
+  while x < 5 && y > 5 {
+    x = x + 1
+    y = y - 1
+  }
+  println(`x=${x} y=${y}`)
+}

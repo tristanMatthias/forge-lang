@@ -1,0 +1,10 @@
+/// # It As Variable Name
+///
+/// `it` can be used as a regular variable name with `let`.
+///
+/// expect: 42
+
+fn main() {
+  let it = 42
+  println(it)
+}

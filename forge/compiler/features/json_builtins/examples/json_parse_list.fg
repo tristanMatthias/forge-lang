@@ -1,0 +1,15 @@
+/// # JSON Parse List of Structs
+///
+/// Parse a JSON array into a list of typed structs.
+///
+/// expect: 2
+/// expect: alice
+/// expect: bob
+
+fn main() {
+  let json_str = "[{\"name\":\"alice\",\"age\":30},{\"name\":\"bob\",\"age\":25}]"
+  let people: List<{name: string, age: int}> = json.parse(json_str)
+  println(string(people.length))
+  println(people[0].name)
+  println(people[1].name)
+}

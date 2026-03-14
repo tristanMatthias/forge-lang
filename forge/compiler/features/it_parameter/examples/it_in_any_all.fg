@@ -1,0 +1,12 @@
+/// # It In Any and All
+///
+/// Use `it` with any() and all() list methods.
+///
+/// expect: true
+/// expect: false
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  println(string(nums.any(it == 3)))
+  println(string(nums.all(it > 3)))
+}

@@ -1,0 +1,12 @@
+/// # Immutable Field Mutation
+///
+/// Cannot assign to a field of an immutable struct variable.
+///
+/// expect-error: F0013
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: 1, y: 2 }
+  p.x = 10
+}

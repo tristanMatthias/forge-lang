@@ -1,0 +1,21 @@
+/// # Global Mutable Variable
+///
+/// Top-level mut variable modified across function calls.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+
+mut counter = 0
+
+fn increment() {
+  counter = counter + 1
+}
+
+fn main() {
+  println(string(counter))
+  increment()
+  println(string(counter))
+  increment()
+  println(string(counter))
+}

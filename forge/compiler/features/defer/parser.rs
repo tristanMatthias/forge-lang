@@ -1,5 +1,8 @@
+use crate::feature::FeatureStmt;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::DeferData;
 
 impl Parser {
     /// Parse a `defer` statement: `defer <expr>`
@@ -10,9 +13,11 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let body = self.parse_expr()?;
-        Some(Statement::Defer {
-            body,
+        Some(Statement::Feature(FeatureStmt {
+            feature_id: "defer",
+            kind: "Defer",
+            data: Box::new(DeferData { body }),
             span: start,
-        })
+        }))
     }
 }

@@ -1,0 +1,26 @@
+/// # Spawn Multiple Tasks
+///
+/// Spawn several tasks that each send a message through separate channels.
+/// Each channel guarantees ordering.
+///
+/// expect: first
+/// expect: second
+/// expect: third
+
+use @std.channel
+
+fn main() {
+  let ch1 = channel(1)
+  let ch2 = channel(1)
+  let ch3 = channel(1)
+
+  spawn { ch1 <- "first" }
+  spawn { ch2 <- "second" }
+  spawn { ch3 <- "third" }
+
+  sleep(100)
+
+  println(<- ch1)
+  println(<- ch2)
+  println(<- ch3)
+}

@@ -1,0 +1,20 @@
+/// # If with Mutation
+///
+/// Mutation inside if branches.
+///
+/// expect: 15
+/// expect: hello world!
+
+fn main() {
+  mut x = 10
+  if true {
+    x = x + 5
+  }
+  println(x)
+
+  mut s = "hello"
+  if 1 + 1 == 2 {
+    s = s + " world!"
+  }
+  println(s)
+}

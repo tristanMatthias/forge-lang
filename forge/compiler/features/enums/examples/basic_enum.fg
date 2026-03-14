@@ -1,0 +1,24 @@
+/// # Basic Enum
+///
+/// Simple enum declaration and variant creation.
+///
+/// expect: a point
+/// expect: has radius
+
+enum Shape {
+  point
+  circle(radius: float)
+}
+
+fn main() {
+  let p = Shape.point
+  let c = Shape.circle(radius: 3.14)
+  match p {
+    .point -> println("a point")
+    .circle(r) -> println(`radius ${r}`)
+  }
+  match c {
+    .point -> println("no radius")
+    .circle(r) -> println("has radius")
+  }
+}

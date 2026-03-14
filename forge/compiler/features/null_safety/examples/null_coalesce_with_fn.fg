@@ -1,0 +1,18 @@
+/// # Null Coalesce With Function
+///
+/// Use `??` to provide defaults when functions return null.
+///
+/// expect: found
+/// expect: default
+
+fn maybe_find(id: int) -> string? {
+  if id == 1 { "found" } else { null }
+}
+
+fn main() {
+  let a = maybe_find(1) ?? "default"
+  println(a)
+
+  let b = maybe_find(99) ?? "default"
+  println(b)
+}

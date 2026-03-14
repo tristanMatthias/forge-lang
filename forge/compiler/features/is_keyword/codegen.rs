@@ -2,10 +2,26 @@ use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::IsData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile an `is` expression via the Feature dispatch system.
+    pub(crate) fn compile_is_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, IsData) {
+            self.compile_is(&data.value, &data.pattern, data.negated)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn compile_is(
         &mut self,
         value: &Expr,

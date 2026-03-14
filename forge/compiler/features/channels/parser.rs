@@ -1,6 +1,8 @@
-use crate::lexer::token::TokenKind;
+use crate::feature::FeatureExpr;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::{ChannelReceiveData, ChannelSendData};
 
 impl Parser {
     /// Parse a channel send expression: `expr <- value`
@@ -11,11 +13,15 @@ impl Parser {
         let span = self.advance()?.span; // consume <-
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Expr(Expr::ChannelSend {
-            channel: Box::new(channel_expr),
-            value: Box::new(value),
+        Some(Statement::Expr(Expr::Feature(FeatureExpr {
+            feature_id: "channels",
+            kind: "ChannelSend",
+            data: Box::new(ChannelSendData {
+                channel: Box::new(channel_expr),
+                value: Box::new(value),
+            }),
             span,
-        }))
+        })))
     }
 
     /// Parse a channel receive expression: `<- channel`
@@ -25,9 +31,13 @@ impl Parser {
         let span = self.advance()?.span; // consume <-
         self.skip_newlines();
         let channel = self.parse_unary()?;
-        Some(Expr::ChannelReceive {
-            channel: Box::new(channel),
+        Some(Expr::Feature(FeatureExpr {
+            feature_id: "channels",
+            kind: "ChannelReceive",
+            data: Box::new(ChannelReceiveData {
+                channel: Box::new(channel),
+            }),
             span,
-        })
+        }))
     }
 }

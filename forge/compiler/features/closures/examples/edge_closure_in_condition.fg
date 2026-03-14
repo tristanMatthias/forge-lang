@@ -1,0 +1,12 @@
+/// # Closure Result Used In Condition
+///
+/// Using closure-based any() result directly in an if condition.
+///
+/// expect: found big number
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  if nums.any((n) -> n > 3) {
+    println("found big number")
+  }
+}

@@ -1,0 +1,14 @@
+/// # Chained List Operations
+///
+/// Chain multiple list operations: filter, map, reduce.
+///
+/// expect: 36
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5, 6]
+  let result = nums
+    .filter((x) -> x > 2)
+    .map((x) -> x * 2)
+    .reduce(0, (acc, x) -> acc + x)
+  println(string(result))
+}

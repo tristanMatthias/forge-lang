@@ -1,10 +1,26 @@
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::WithData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a `with` expression via the Feature dispatch system.
+    pub(crate) fn compile_with_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, WithData) {
+            self.compile_with(&data.base, &data.updates)
+        } else {
+            None
+        }
+    }
+
     /// Compile a `with` expression: `base with { field: value, ... }`
     ///
     /// Creates a copy of the struct with specified fields updated.

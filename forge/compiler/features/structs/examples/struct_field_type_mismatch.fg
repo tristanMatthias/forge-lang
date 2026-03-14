@@ -1,0 +1,12 @@
+/// # Struct Field Type Mismatch
+///
+/// Passing a string where int is expected produces a type error.
+///
+/// expect-error: F0012
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: "hello", y: 2 }
+  println(p.x)
+}

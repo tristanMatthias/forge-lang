@@ -1,0 +1,31 @@
+/// Implement same trait for many different types
+///
+/// expect: I am a dog
+/// expect: I am a cat
+/// expect: I am a fish
+/// expect: I am a bird
+/// expect: I am a snake
+
+trait Speak {
+  fn speak(self) -> string
+}
+
+type Dog = { name: string }
+type Cat = { name: string }
+type Fish = { name: string }
+type Bird = { name: string }
+type Snake = { name: string }
+
+impl Speak for Dog { fn speak(self) -> string { "I am a dog" } }
+impl Speak for Cat { fn speak(self) -> string { "I am a cat" } }
+impl Speak for Fish { fn speak(self) -> string { "I am a fish" } }
+impl Speak for Bird { fn speak(self) -> string { "I am a bird" } }
+impl Speak for Snake { fn speak(self) -> string { "I am a snake" } }
+
+fn main() {
+  println(Dog { name: "Rex" }.speak())
+  println(Cat { name: "Whiskers" }.speak())
+  println(Fish { name: "Nemo" }.speak())
+  println(Bird { name: "Tweety" }.speak())
+  println(Snake { name: "Slinky" }.speak())
+}

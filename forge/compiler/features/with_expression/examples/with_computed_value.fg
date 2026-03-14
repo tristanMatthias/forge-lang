@@ -1,0 +1,15 @@
+/// # With Computed Value
+///
+/// Field values in `with` expressions can be computed from the original.
+///
+/// expect: alice
+/// expect: 26
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let p = Person { name: "alice", age: 25 }
+  let older = p with { age: p.age + 1 }
+  println(older.name)
+  println(string(older.age))
+}

@@ -1,0 +1,45 @@
+/// # Enum Chain Through Functions
+///
+/// Enum values passed through multiple function calls and matched repeatedly.
+///
+/// expect: critical: ALERT
+/// expect: low: ok
+
+enum Level { low, medium, high, critical }
+
+fn escalate(l: Level) -> Level {
+  match l {
+    .low -> Level.medium
+    .medium -> Level.high
+    .high -> Level.critical
+    .critical -> Level.critical
+  }
+}
+
+fn message(l: Level) -> string {
+  match l {
+    .low -> "ok"
+    .medium -> "watch"
+    .high -> "warning"
+    .critical -> "ALERT"
+  }
+}
+
+fn label(l: Level) -> string {
+  match l {
+    .low -> "low"
+    .medium -> "medium"
+    .high -> "high"
+    .critical -> "critical"
+  }
+}
+
+fn report(l: Level) -> string {
+  let final_level = escalate(escalate(escalate(l)))
+  `${label(final_level)}: ${message(final_level)}`
+}
+
+fn main() {
+  println(report(Level.low))
+  println(`${label(Level.low)}: ${message(Level.low)}`)
+}

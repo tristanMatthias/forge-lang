@@ -1,0 +1,14 @@
+/// # If-Else Scope Isolation
+///
+/// Variables defined in if/else branches do not leak to the outer scope.
+///
+/// expect-error: F0020
+
+fn main() {
+  if true {
+    let x = 10
+  } else {
+    let x = 20
+  }
+  println(string(x))
+}

@@ -1,0 +1,18 @@
+/// # Variable Shadowing in Nested Scopes
+///
+/// Variables can be shadowed in nested blocks, and the outer
+/// value is restored when the inner scope exits.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 1
+
+fn main() {
+  let x = 1
+  println(string(x))
+  {
+    let x = 2
+    println(string(x))
+  }
+  println(string(x))
+}

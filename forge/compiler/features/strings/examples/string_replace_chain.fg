@@ -1,0 +1,9 @@
+/// Test: Multiple replace calls chained
+///
+/// expect: c-c-c
+
+fn main() {
+  let s = "a b c a b c a b c"
+  let result = s.replace("a ", "").replace("b ", "").replace(" ", "-")
+  println(result)
+}

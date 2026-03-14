@@ -1,9 +1,25 @@
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::Expr;
 use crate::lexer::Span;
 use inkwell::values::BasicValueEnum;
 
+use super::types::TableLitData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a table literal via Feature dispatch.
+    pub(crate) fn compile_table_lit_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, TableLitData) {
+            self.compile_table_lit(&data.columns, &data.rows, &fe.span)
+        } else {
+            None
+        }
+    }
+
     /// Compile a table literal by desugaring into a list of struct literals.
     pub(crate) fn compile_table_lit(
         &mut self,

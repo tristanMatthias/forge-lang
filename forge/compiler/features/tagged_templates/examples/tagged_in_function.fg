@@ -1,0 +1,18 @@
+/// # Tagged Template in Function
+///
+/// Tagged template used inside a function and returned.
+///
+/// expect: [WRAP] {"parts":["hello ",""],"values":["forge"]}
+
+fn wrap(input: string) -> string {
+  "[WRAP] " + input
+}
+
+fn greet(name: string) -> string {
+  wrap`hello ${name}`
+}
+
+fn main() {
+  let result = greet("forge")
+  println(result)
+}

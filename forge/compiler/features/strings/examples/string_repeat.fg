@@ -1,0 +1,11 @@
+/// Test: string.repeat() method
+///
+/// expect: abcabcabc
+/// expect:
+/// expect: x
+
+fn main() {
+  println("abc".repeat(3))
+  println("abc".repeat(0))
+  println("x".repeat(1))
+}

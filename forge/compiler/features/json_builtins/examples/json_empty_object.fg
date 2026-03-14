@@ -1,0 +1,11 @@
+/// # Empty JSON Object
+///
+/// Stringify an empty-ish struct and parse back.
+///
+/// expect: {"name":""}
+
+fn main() {
+  let data = { name: "" }
+  let result = json.stringify(data)
+  println(result)
+}

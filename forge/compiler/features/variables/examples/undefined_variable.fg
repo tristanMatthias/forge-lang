@@ -1,0 +1,9 @@
+/// # Undefined Variable
+///
+/// Referencing a variable that was never declared.
+///
+/// expect-error: F0020
+
+fn main() {
+  println(string(y))
+}

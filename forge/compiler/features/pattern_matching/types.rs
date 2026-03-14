@@ -1,8 +1,28 @@
 use crate::codegen::codegen::Codegen;
-use crate::parser::ast::*;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
+use crate::parser::ast::{Expr, MatchArm};
 use crate::typeck::types::Type;
 
+/// AST data for a match expression: `match subject { arms }`.
+#[derive(Debug, Clone)]
+pub struct MatchData {
+    pub subject: Box<Expr>,
+    pub arms: Vec<MatchArm>,
+}
+
+crate::impl_feature_node!(MatchData);
+
 impl<'ctx> Codegen<'ctx> {
+    /// Infer the return type of a match expression via the Feature dispatch system.
+    pub(crate) fn infer_match_feature_type(&self, fe: &FeatureExpr) -> Type {
+        if let Some(data) = feature_data!(fe, MatchData) {
+            self.infer_match_type(&data.arms)
+        } else {
+            Type::Unknown
+        }
+    }
+
     /// Infer the type of a match expression from its first arm.
     pub(crate) fn infer_match_type(&self, arms: &[MatchArm]) -> Type {
         if let Some(first) = arms.first() {

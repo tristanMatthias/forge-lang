@@ -1,0 +1,20 @@
+/// # Early Return From Loop
+///
+/// A function that returns early from within a loop.
+///
+/// expect: found
+
+fn search(target: int) -> string {
+  mut i = 0
+  while i < 10 {
+    if i == target {
+      return "found"
+    }
+    i = i + 1
+  }
+  return "not found"
+}
+
+fn main() {
+  println(search(5))
+}

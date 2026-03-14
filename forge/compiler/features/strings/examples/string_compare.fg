@@ -1,0 +1,13 @@
+/// Test: String equality comparison
+///
+/// expect: true
+/// expect: false
+/// expect: true
+/// expect: true
+
+fn main() {
+  println(string("hello" == "hello"))
+  println(string("hello" == "world"))
+  println(string("" == ""))
+  println(string("hello" != "world"))
+}

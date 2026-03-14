@@ -1,0 +1,15 @@
+/// # With Nested Struct
+///
+/// Using `with` on a struct that contains other struct values.
+///
+/// expect: updated
+/// expect: 100
+
+type Config = { label: string, value: int }
+
+fn main() {
+  let c = Config { label: "original", value: 42 }
+  let c2 = c with { label: "updated", value: 100 }
+  println(c2.label)
+  println(string(c2.value))
+}

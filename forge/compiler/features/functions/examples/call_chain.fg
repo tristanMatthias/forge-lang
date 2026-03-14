@@ -1,0 +1,14 @@
+/// # Chain of Function Calls
+///
+/// Each function calls the next in a chain.
+///
+/// expect: 15
+
+fn a(x: int) -> int { return b(x + 1) }
+fn b(x: int) -> int { return c(x + 2) }
+fn c(x: int) -> int { return d(x + 3) }
+fn d(x: int) -> int { return x + 4 }
+
+fn main() {
+  println(string(a(5)))
+}

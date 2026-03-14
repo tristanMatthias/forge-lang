@@ -7,6 +7,7 @@ pub mod codegen;
 pub mod component_expand;
 pub mod driver;
 pub mod errors;
+pub mod feature;
 pub mod lexer;
 pub mod parser;
 pub mod provider;

@@ -1,0 +1,20 @@
+/// # Defer in Loop
+///
+/// Defer inside a loop body registers at function scope.
+/// The deferred expression runs once when the function exits.
+///
+/// expect: body 0
+/// expect: body 1
+/// expect: body 2
+/// expect: after loop
+/// expect: loop defer
+/// expect: main defer
+
+fn main() {
+  defer println("main defer")
+  for i in 0..3 {
+    defer println("loop defer")
+    println(`body ${i}`)
+  }
+  println("after loop")
+}

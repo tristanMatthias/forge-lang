@@ -1,0 +1,11 @@
+/// # Pipe Into Closure Variable
+///
+/// Pipe operator works with closure variables, not just named functions.
+///
+/// expect: 10
+
+fn main() {
+  let double = (x) -> x * 2
+  let result = 5 |> double
+  println(result)
+}

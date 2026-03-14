@@ -1,0 +1,12 @@
+/// # Closure Capturing Outer Variable
+///
+/// Closure that references a variable from the enclosing scope.
+///
+/// expect: 18
+
+fn main() {
+  let multiplier = 3
+  let nums = [1, 2, 3]
+  let result = nums.map((x) -> x * multiplier).sum()
+  println(string(result))
+}

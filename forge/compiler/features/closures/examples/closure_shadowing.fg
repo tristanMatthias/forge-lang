@@ -1,0 +1,13 @@
+/// # Closure Parameter Shadowing
+///
+/// Closure parameters shadow outer variables of the same name.
+///
+/// expect: 99
+/// expect: 10
+
+fn main() {
+  let x = 10
+  let shadow = (x: int) -> int { x }
+  println(string(shadow(99)))
+  println(string(x))
+}

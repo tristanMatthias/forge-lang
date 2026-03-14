@@ -1,0 +1,15 @@
+/// # Closure Returns Closure
+///
+/// A closure that returns another closure (higher-order).
+///
+/// expect: 15
+
+fn apply(f: (int) -> int, x: int) -> int {
+  f(x)
+}
+
+fn main() {
+  let triple = (x: int) -> int { x * 3 }
+  let result = apply(triple, 5)
+  println(string(result))
+}

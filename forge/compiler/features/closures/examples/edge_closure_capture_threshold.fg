@@ -1,0 +1,16 @@
+/// # Closure Capturing Outer Threshold
+///
+/// Closure that captures a variable for comparison.
+///
+/// expect: 10
+/// expect: 8
+/// expect: 7
+
+fn main() {
+  let threshold = 5
+  let nums = [1, 10, 3, 8, 2, 7]
+  let big = nums.filter((n) -> n > threshold)
+  for n in big {
+    println(string(n))
+  }
+}

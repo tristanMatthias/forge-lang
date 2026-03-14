@@ -1,0 +1,14 @@
+/// # Closure With String Operations
+///
+/// Closures that do string manipulation.
+///
+/// expect: HELLO
+/// expect: WORLD
+
+fn main() {
+  let words = ["hello", "world"]
+  let upper = words.map((w) -> w.upper())
+  for w in upper {
+    println(w)
+  }
+}

@@ -1,0 +1,37 @@
+/// # String Pattern Matching
+///
+/// Match on string values with multiple patterns and mutation in arms.
+///
+/// expect: greeting
+/// expect: farewell
+/// expect: question
+/// expect: other
+/// expect: count: 6
+
+fn kind(s: string) -> string {
+  match s {
+    "hello" -> "greeting"
+    "hi" -> "greeting"
+    "bye" -> "farewell"
+    "why" -> "question"
+    _ -> "other"
+  }
+}
+
+fn main() {
+  println(kind("hello"))
+  println(kind("bye"))
+  println(kind("why"))
+  println(kind("xyz"))
+
+  mut count = 0
+  let words = ["a", "b", "a", "c"]
+  for w in words {
+    match w {
+      "a" -> count = count + 2
+      "b" -> count = count + 1
+      _ -> count = count + 1
+    }
+  }
+  println(`count: ${count}`)
+}

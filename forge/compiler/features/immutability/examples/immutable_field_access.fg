@@ -1,0 +1,14 @@
+/// # Immutable Field Access
+///
+/// Accessing fields of an immutable struct binding.
+///
+/// expect: alice
+/// expect: 30
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let p = Person { name: "alice", age: 30 }
+  println(p.name)
+  println(string(p.age))
+}

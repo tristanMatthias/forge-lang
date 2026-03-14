@@ -174,6 +174,8 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_expr(expr);
             }
             Statement::Return { value, .. } => {
+                // Execute deferred statements before returning
+                self.execute_deferred_stmts();
                 if let Some(val) = value {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
@@ -216,7 +218,7 @@ impl<'ctx> Codegen<'ctx> {
                 // Type declarations handled at type-check time
             }
             Statement::Defer { body, .. } => {
-                // Save deferred expression for execution before function return
+                // DEPRECATED: legacy path, use Statement::Feature with DeferData
                 self.deferred_stmts.push(body.clone());
             }
             Statement::Use { .. }
@@ -258,6 +260,27 @@ impl<'ctx> Codegen<'ctx> {
             Statement::TodoStmt { name, .. } => {
                 self.compile_todo_stmt(name);
             }
+            Statement::Feature(fe) => {
+                self.compile_feature_stmt(fe);
+            }
+        }
+    }
+
+    /// Dispatch a feature-owned statement to the appropriate feature's codegen.
+    /// Each feature adds one arm here via its feature_id.
+    pub(crate) fn compile_feature_stmt(&mut self, fe: &crate::feature::FeatureStmt) {
+        match fe.feature_id {
+            "defer" => self.compile_defer_feature(fe),
+            "select_syntax" => self.compile_select_feature(fe),
+            "for_loops" => self.compile_for_feature(fe),
+            "while_loops" => self.compile_while_loops_feature(fe),
+            "enums" => self.compile_enum_feature(fe),
+            "variables" => self.compile_variables_feature(fe),
+            "functions" => self.compile_functions_feature(fe),
+            "structs" => {} // TypeDecl handled in compile_program first pass
+            "traits" => self.compile_traits_feature(fe),
+            "imports" => self.compile_imports_feature(fe),
+            _ => {} // Unknown feature — no-op (feature not yet migrated)
         }
     }
 
@@ -306,33 +329,47 @@ impl<'ctx> Codegen<'ctx> {
 
         let mut last_val = None;
         for stmt in &body.statements {
+            // Check for return statement (both old and new Feature variant)
+            let return_value = match stmt {
+                Statement::Return { value, .. } => Some(value.as_ref()),
+                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "Return" => {
+                    use crate::feature_data;
+                    use crate::features::functions::types::ReturnData;
+                    if let Some(data) = feature_data!(fe, ReturnData) {
+                        Some(data.value.as_ref())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if let Some(maybe_val) = return_value {
+                // Execute deferred statements in reverse order before returning
+                let deferred = self.deferred_stmts.clone();
+                for d in deferred.iter().rev() {
+                    self.compile_expr(d);
+                }
+                if let Some(val) = maybe_val {
+                    let compiled = self.compile_expr(val);
+                    if let Some(v) = compiled {
+                        self.builder.build_return(Some(&v)).unwrap();
+                    }
+                } else if name == "main" {
+                    // main() returns i32 for C ABI, so bare return must emit `ret i32 0`
+                    self.builder
+                        .build_return(Some(&self.context.i32_type().const_zero()))
+                        .unwrap();
+                } else {
+                    self.builder.build_return(None).unwrap();
+                }
+                self.pop_scope();
+                self.current_fn_name = prev_fn_name;
+                self.deferred_stmts = prev_deferred;
+                return;
+            }
             match stmt {
                 Statement::Expr(expr) => {
                     last_val = self.compile_expr(expr);
-                }
-                Statement::Return { value, .. } => {
-                    // Execute deferred statements in reverse order before returning
-                    let deferred = self.deferred_stmts.clone();
-                    for d in deferred.iter().rev() {
-                        self.compile_expr(d);
-                    }
-                    if let Some(val) = value {
-                        let compiled = self.compile_expr(val);
-                        if let Some(v) = compiled {
-                            self.builder.build_return(Some(&v)).unwrap();
-                        }
-                    } else if name == "main" {
-                        // main() returns i32 for C ABI, so bare return must emit `ret i32 0`
-                        self.builder
-                            .build_return(Some(&self.context.i32_type().const_zero()))
-                            .unwrap();
-                    } else {
-                        self.builder.build_return(None).unwrap();
-                    }
-                    self.pop_scope();
-                    self.current_fn_name = prev_fn_name;
-                    self.deferred_stmts = prev_deferred;
-                    return;
                 }
                 _ => {
                     self.compile_statement(stmt);

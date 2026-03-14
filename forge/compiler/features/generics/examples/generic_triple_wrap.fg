@@ -1,0 +1,13 @@
+/// Generic function calling another generic with different type
+///
+/// expect: 99
+/// expect: wrapped
+
+fn wrap<T>(val: T) -> T { val }
+fn double_wrap<T>(val: T) -> T { wrap(val) }
+fn triple_wrap<T>(val: T) -> T { double_wrap(val) }
+
+fn main() {
+  println(string(triple_wrap(99)))
+  println(triple_wrap("wrapped"))
+}

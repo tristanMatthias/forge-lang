@@ -1,0 +1,17 @@
+/// # Null Propagate Chain
+///
+/// Chained `?.` access stops early when null is encountered.
+///
+/// expect: 5
+/// expect: 0
+
+fn get_name() -> string? { "hello" }
+fn get_nothing() -> string? { null }
+
+fn main() {
+  let a = get_name()?.length ?? 0
+  println(string(a))
+
+  let b = get_nothing()?.length ?? 0
+  println(string(b))
+}

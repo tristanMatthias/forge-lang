@@ -1,0 +1,15 @@
+/// # Empty List
+///
+/// Create an empty list and push to it.
+///
+/// expect: 0
+/// expect: 1
+/// expect: hello
+
+fn main() {
+  mut items: List<string> = []
+  println(string(items.length))
+  items.push("hello")
+  println(string(items.length))
+  println(items[0])
+}

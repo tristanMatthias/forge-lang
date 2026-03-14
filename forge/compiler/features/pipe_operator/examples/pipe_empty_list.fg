@@ -1,0 +1,12 @@
+/// # Pipe From Empty List
+///
+/// Piping an empty list through filter and map produces empty list.
+///
+/// expect: 0
+
+fn main() {
+  let result = [1, 2, 3]
+    |> filter(it > 100)
+    |> map(it * 2)
+  println(string(result.length))
+}

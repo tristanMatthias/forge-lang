@@ -1,0 +1,13 @@
+/// # Shell Interpolation
+///
+/// Dollar-string shell commands support variable interpolation.
+///
+/// expect: hello world
+
+use @std.process
+
+fn main() {
+  let name = "world"
+  let result = $"echo hello ${name}"
+  println(result.trim())
+}

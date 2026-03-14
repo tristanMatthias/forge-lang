@@ -1,0 +1,19 @@
+/// # Basic If/Else
+///
+/// Simple conditional with if/else.
+///
+/// expect: positive
+/// expect: zero or negative
+
+fn sign(n: int) -> string {
+  if n > 0 {
+    "positive"
+  } else {
+    "zero or negative"
+  }
+}
+
+fn main() {
+  println(sign(5))
+  println(sign(-3))
+}

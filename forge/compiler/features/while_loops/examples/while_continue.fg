@@ -1,0 +1,20 @@
+/// # While Continue
+///
+/// Skip even numbers using continue in a while loop.
+///
+/// expect: 1
+/// expect: 3
+/// expect: 5
+/// expect: done
+
+fn main() {
+  mut i = 0
+  while i < 6 {
+    i = i + 1
+    if i % 2 == 0 {
+      continue
+    }
+    println(i)
+  }
+  println("done")
+}

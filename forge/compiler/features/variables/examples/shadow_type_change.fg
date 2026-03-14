@@ -1,0 +1,16 @@
+/// # Shadow With Different Types
+///
+/// Same variable name rebound to different types via shadowing.
+///
+/// expect: 42
+/// expect: hello
+/// expect: true
+
+fn main() {
+  let x = 42
+  println(string(x))
+  let x = "hello"
+  println(x)
+  let x = true
+  println(string(x))
+}

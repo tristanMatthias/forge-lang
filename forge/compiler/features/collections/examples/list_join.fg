@@ -1,0 +1,10 @@
+/// # List Join
+///
+/// Join a list of strings with a separator.
+///
+/// expect: a-b-c
+
+fn main() {
+  let words = ["a", "b", "c"]
+  println(words.join("-"))
+}

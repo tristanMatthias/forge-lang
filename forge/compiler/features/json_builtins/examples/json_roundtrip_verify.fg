@@ -1,0 +1,16 @@
+/// # JSON Roundtrip Verify
+///
+/// Parse JSON, stringify it back, and verify the result matches.
+///
+/// expect: true
+/// expect: forge
+/// expect: 42
+
+fn main() {
+  let original = "{\"name\":\"forge\",\"version\":42}"
+  let parsed: {name: string, version: int} = json.parse(original)
+  let back = json.stringify(parsed)
+  println(string(back == original))
+  println(parsed.name)
+  println(string(parsed.version))
+}

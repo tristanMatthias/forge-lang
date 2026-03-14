@@ -1,9 +1,25 @@
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 
+use super::types::PipeData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a pipe expression via the Feature dispatch system.
+    pub(crate) fn compile_pipe_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, PipeData) {
+            self.compile_pipe(&data.left, &data.right)
+        } else {
+            None
+        }
+    }
+
     /// Compile a pipe expression: `left |> right`
     ///
     /// Two forms:
@@ -48,6 +64,24 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_call(func, &[arg.into()], "pipe_result")
                         .unwrap();
+                    result.try_as_basic_value().left()
+                } else if let Some((ptr, _ty)) = self.lookup_var(name) {
+                    // Variable holding a function pointer (e.g. closure)
+                    let fn_ptr_val = self.builder.build_load(
+                        self.context.ptr_type(inkwell::AddressSpace::default()),
+                        ptr,
+                        "fn_ptr",
+                    ).unwrap();
+                    let fn_type = self.context.i64_type().fn_type(
+                        &[self.context.i64_type().into()],
+                        false,
+                    );
+                    let result = self.builder.build_indirect_call(
+                        fn_type,
+                        fn_ptr_val.into_pointer_value(),
+                        &[arg.into()],
+                        "pipe_closure_result",
+                    ).unwrap();
                     result.try_as_basic_value().left()
                 } else {
                     None

@@ -1,0 +1,26 @@
+/// # If Inside Match Inside If
+///
+/// Deeply combining if/else with match expressions.
+///
+/// expect: positive small even
+/// expect: negative
+/// expect: zero
+
+fn classify(n: int) -> string {
+  if n == 0 {
+    "zero"
+  } else if n > 0 {
+    match n % 2 {
+      0 -> if n < 100 { "positive small even" } else { "positive big even" }
+      _ -> if n < 100 { "positive small odd" } else { "positive big odd" }
+    }
+  } else {
+    "negative"
+  }
+}
+
+fn main() {
+  println(classify(42))
+  println(classify(-5))
+  println(classify(0))
+}

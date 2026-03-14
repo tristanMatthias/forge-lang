@@ -2,10 +2,71 @@ use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::{NullCoalesceData, NullPropagateData, ForceUnwrapData};
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a null coalesce expression via Feature dispatch.
+    pub(crate) fn compile_null_coalesce_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, NullCoalesceData) {
+            self.compile_null_coalesce(&data.left, &data.right)
+        } else {
+            None
+        }
+    }
+
+    /// Compile a null propagate expression via Feature dispatch.
+    pub(crate) fn compile_null_propagate_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, NullPropagateData) {
+            self.compile_null_propagate(&data.object, &data.field)
+        } else {
+            None
+        }
+    }
+
+    /// Compile a force unwrap expression via Feature dispatch: `expr!`
+    pub(crate) fn compile_force_unwrap_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, ForceUnwrapData) {
+            let operand_type = self.infer_type(&data.operand);
+            let val = self.compile_expr(&data.operand)?;
+
+            if let Type::Nullable(inner) = &operand_type {
+                if val.is_struct_value() {
+                    // Nullable is {i8 tag, T value} - just extract the value
+                    let struct_val = val.into_struct_value();
+                    let inner_val = self.builder.build_extract_value(struct_val, 1, "force_unwrap").ok()?;
+                    // May need to coerce to the expected inner type
+                    let inner_llvm = self.type_to_llvm_basic(inner);
+                    if inner_val.get_type() != inner_llvm {
+                        Some(self.coerce_value(inner_val, inner_llvm))
+                    } else {
+                        Some(inner_val)
+                    }
+                } else {
+                    Some(val)
+                }
+            } else {
+                // Not nullable, just pass through
+                Some(val)
+            }
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn compile_null_coalesce(
         &mut self,
         left: &Expr,
@@ -196,6 +257,31 @@ impl<'ctx> Codegen<'ctx> {
 
         // Load the full struct
         self.builder.build_load(nullable_llvm_ty, alloca, "nullable_val").unwrap()
+    }
+
+    /// If the declared type is nullable but the value isn't already the correct nullable struct,
+    /// wrap or re-create appropriately.
+    /// - Non-nullable value → wrap with tag=1 (present)
+    /// - Null with wrong inner type → create properly-typed null with tag=0
+    pub(crate) fn maybe_wrap_nullable(&mut self, val: BasicValueEnum<'ctx>, ty: &Type) -> BasicValueEnum<'ctx> {
+        if let Type::Nullable(_) = ty {
+            let expected_llvm = self.type_to_llvm_basic(ty);
+            if val.get_type() != expected_llvm {
+                // Check if this is a null value (a nullable struct with tag=0).
+                // Null literals compile to const_zero struct of {i8, i64} regardless of target type.
+                // If the value is a struct with 2 fields and the first is i8, assume it's a nullable
+                // and check if it's const_zero (null). If so, recreate with the correct target type.
+                if val.is_struct_value() {
+                    let sv = val.into_struct_value();
+                    if sv.is_const() && sv.get_type().count_fields() == 2 {
+                        // Likely a null literal with wrong inner type — recreate
+                        return self.create_null_value(ty);
+                    }
+                }
+                return self.wrap_in_nullable(val, ty);
+            }
+        }
+        val
     }
 
     /// Create a null nullable value of the given nullable type

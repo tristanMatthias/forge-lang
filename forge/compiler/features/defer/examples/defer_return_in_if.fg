@@ -1,0 +1,18 @@
+/// # Defer Fires on Return Inside If
+///
+/// Defer must execute even when return is inside an if block.
+///
+/// expect: cleanup
+/// expect: positive
+
+fn test(x: int) -> string {
+  defer println("cleanup")
+  if x > 0 {
+    return "positive"
+  }
+  return "non-positive"
+}
+
+fn main() {
+  println(test(5))
+}

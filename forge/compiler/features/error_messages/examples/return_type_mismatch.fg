@@ -1,0 +1,14 @@
+/// # Return type mismatch
+///
+/// Returning a string from a function declared to return int
+/// should produce a type mismatch error.
+///
+/// expect-error: F0012
+
+fn get() -> int {
+    return "hello"
+}
+
+fn main() {
+    println(string(get()))
+}

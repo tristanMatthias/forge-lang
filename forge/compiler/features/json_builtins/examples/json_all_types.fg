@@ -1,0 +1,10 @@
+/// # JSON All Types Mixed
+///
+/// Stringify a struct with string, int, float, bool fields.
+///
+/// expect: {"name":"test","count":42,"ratio":3.140000,"active":true}
+
+fn main() {
+  let data = { name: "test", count: 42, ratio: 3.14, active: true }
+  println(json.stringify(data))
+}

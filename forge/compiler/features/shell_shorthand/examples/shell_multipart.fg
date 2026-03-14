@@ -1,0 +1,14 @@
+/// # Shell Multipart
+///
+/// Shell commands with multiple interpolated variables.
+///
+/// expect: alice is 25
+
+use @std.process
+
+fn main() {
+  let name = "alice"
+  let age = 25
+  let result = $`echo ${name} is ${age}`
+  println(result.trim())
+}

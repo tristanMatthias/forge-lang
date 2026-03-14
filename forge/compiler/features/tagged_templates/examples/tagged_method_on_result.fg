@@ -1,0 +1,13 @@
+/// Test: Calling string methods on tagged template result
+/// expect: true
+/// expect: 45
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let result = identity`hello ${42} world`
+  println(string(result.contains("42")))
+  println(string(result.length))
+}

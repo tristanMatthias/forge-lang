@@ -1,0 +1,15 @@
+/// # Closure Returning Constant
+///
+/// A closure that ignores its param and returns a constant.
+///
+/// expect: 99
+/// expect: 99
+/// expect: 99
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums.map((x) -> 99)
+  for n in result {
+    println(string(n))
+  }
+}

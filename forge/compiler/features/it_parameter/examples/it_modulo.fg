@@ -1,0 +1,14 @@
+/// # It With Modulo
+///
+/// Use `it` with modulo operator for filtering.
+///
+/// expect: 3
+/// expect: 6
+/// expect: 9
+
+fn main() {
+  let result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(it % 3 == 0)
+  for n in result {
+    println(string(n))
+  }
+}

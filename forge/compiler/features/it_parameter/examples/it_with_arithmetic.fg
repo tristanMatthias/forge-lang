@@ -1,0 +1,14 @@
+/// # It With Complex Arithmetic
+///
+/// Use `it` with multiple arithmetic operations.
+///
+/// expect: 5
+/// expect: 8
+/// expect: 11
+
+fn main() {
+  let result = [1, 2, 3].map(it * 3 + 2)
+  for n in result {
+    println(string(n))
+  }
+}

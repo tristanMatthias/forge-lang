@@ -1,0 +1,15 @@
+/// # Closure With Many Operations
+///
+/// Closure body with complex arithmetic.
+///
+/// expect: 39
+
+fn main() {
+  let compute = (a: int, b: int) -> int {
+    let x = a * 2
+    let y = b + 3
+    let z = x + y
+    z * 2 - 1
+  }
+  println(string(compute(5, 7)))
+}

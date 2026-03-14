@@ -1,0 +1,13 @@
+/// # Recursive Closure
+///
+/// A closure cannot reference itself by name since it's not
+/// yet defined when the closure body is compiled.
+///
+/// expect-error: F0020
+
+fn main() {
+  let factorial = (n: int) -> int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+  }
+  println(string(factorial(5)))
+}

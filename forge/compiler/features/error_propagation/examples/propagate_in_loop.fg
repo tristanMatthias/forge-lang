@@ -1,0 +1,28 @@
+/// # Propagate In Loop
+///
+/// The `?` operator inside a while loop exits the function
+/// on the first error encountered.
+///
+/// expect: caught: fail at 3
+
+fn check(i: int) -> Result<int, string> {
+  if i == 3 { Err("fail at 3") } else { Ok(i) }
+}
+
+fn sum_until_fail(n: int) -> Result<int, string> {
+  mut total = 0
+  mut i = 0
+  while i < n {
+    let v = check(i)?
+    total = total + v
+    i = i + 1
+  }
+  Ok(total)
+}
+
+fn main() {
+  let r = sum_until_fail(10) catch (e) {
+    println(`caught: ${e}`)
+    -1
+  }
+}

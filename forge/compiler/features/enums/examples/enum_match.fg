@@ -1,0 +1,27 @@
+/// # Enum Match Exhaustive
+///
+/// Pattern matching on all enum variants.
+///
+/// expect: red
+/// expect: green
+/// expect: blue
+
+enum Color {
+  red
+  green
+  blue
+}
+
+fn name(c: Color) -> string {
+  match c {
+    .red -> "red"
+    .green -> "green"
+    .blue -> "blue"
+  }
+}
+
+fn main() {
+  println(name(Color.red))
+  println(name(Color.green))
+  println(name(Color.blue))
+}

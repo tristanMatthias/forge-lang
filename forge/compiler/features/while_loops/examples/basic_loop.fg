@@ -1,0 +1,20 @@
+/// # Basic Infinite Loop
+///
+/// An infinite `loop` with an explicit `break` to exit.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 2
+/// expect: stopped at 3
+
+fn main() {
+  mut n = 0
+  loop {
+    if n == 3 {
+      break
+    }
+    println(n)
+    n = n + 1
+  }
+  println(`stopped at ${n}`)
+}

@@ -1,0 +1,32 @@
+/// # Trait Default Method
+///
+/// Trait with a default method that calls an abstract method.
+///
+/// expect: [INFO] starting engine
+/// expect: [INFO] starting motor
+
+trait Startable {
+  fn name(self) -> string
+
+  fn start(self) -> string {
+    `[INFO] starting ${self.name()}`
+  }
+}
+
+type Engine = { horsepower: int }
+type Motor = { voltage: int }
+
+impl Startable for Engine {
+  fn name(self) -> string { "engine" }
+}
+
+impl Startable for Motor {
+  fn name(self) -> string { "motor" }
+}
+
+fn main() {
+  let e = Engine { horsepower: 200 }
+  let m = Motor { voltage: 12 }
+  println(e.start())
+  println(m.start())
+}

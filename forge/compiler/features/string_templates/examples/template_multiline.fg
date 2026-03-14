@@ -1,0 +1,13 @@
+/// # Template Multi-Part Construction
+///
+/// Build up a string from multiple template parts.
+///
+/// expect: name=alice, age=30, active=true
+
+fn main() {
+  let name = "alice"
+  let age = 30
+  let active = true
+  let result = `name=${name}, age=${age}, active=${active}`
+  println(result)
+}

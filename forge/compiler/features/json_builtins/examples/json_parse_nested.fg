@@ -1,0 +1,16 @@
+/// # JSON Parse Nested Struct
+///
+/// json.parse with a nested struct type should correctly parse nested objects.
+///
+/// expect: Alice
+/// expect: NYC
+
+type Address = { city: string }
+type Person = { name: string, address: Address }
+
+fn main() {
+  let json_str = "{\"name\":\"Alice\",\"address\":{\"city\":\"NYC\"}}"
+  let person: Person = json.parse(json_str)
+  println(person.name)
+  println(person.address.city)
+}

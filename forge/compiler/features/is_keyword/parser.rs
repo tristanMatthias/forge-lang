@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::IsData;
 
 impl Parser {
     /// Precedence level between && and ==
@@ -23,12 +26,16 @@ impl Parser {
 
             let pattern = self.parse_is_pattern()?;
 
-            left = Expr::Is {
-                value: Box::new(left),
-                pattern,
-                negated,
+            left = Expr::Feature(FeatureExpr {
+                feature_id: "is_keyword",
+                kind: "Is",
+                data: Box::new(IsData {
+                    value: Box::new(left),
+                    pattern,
+                    negated,
+                }),
                 span,
-            };
+            });
         }
 
         Some(left)

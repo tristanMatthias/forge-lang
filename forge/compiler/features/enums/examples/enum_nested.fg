@@ -1,0 +1,25 @@
+/// # Enum Nested Calls
+///
+/// Enum variants passed through multiple function calls.
+///
+/// expect: ok: 42
+/// expect: fail: 0
+
+enum Status {
+  ok(value: int)
+  fail(code: int)
+}
+
+fn describe(s: Status) -> string {
+  match s {
+    .ok(v) -> `ok: ${v}`
+    .fail(c) -> `fail: ${c}`
+  }
+}
+
+fn main() {
+  let o = Status.ok(value: 42)
+  let f = Status.fail(code: 0)
+  println(describe(o))
+  println(describe(f))
+}

@@ -1,0 +1,11 @@
+/// # List Enumerate
+///
+/// Enumerate a list to get index-value tuples.
+///
+/// expect: 3
+
+fn main() {
+  let items = ["a", "b", "c"]
+  let pairs = items.enumerate()
+  println(string(pairs.length))
+}

@@ -1,0 +1,13 @@
+/// # Empty Table
+///
+/// Table with headers but no data rows.
+///
+/// expect: 0
+
+fn main() {
+    let items = table {
+        name | price
+    }
+
+    println(string(items.length))
+}

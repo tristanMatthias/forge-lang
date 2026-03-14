@@ -1,0 +1,12 @@
+/// # While Empty Body
+///
+/// Adversarial test: while loop with empty body that runs zero times.
+///
+/// expect: done
+
+fn main() {
+  mut i = 0
+  while i < 0 {
+  }
+  println("done")
+}

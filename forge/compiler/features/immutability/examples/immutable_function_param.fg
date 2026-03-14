@@ -1,0 +1,14 @@
+/// # Immutable Function Parameters
+///
+/// Function parameters are immutable by default.
+///
+/// expect-error: F0013
+
+fn add_one(x: int) -> int {
+  x = x + 1
+  x
+}
+
+fn main() {
+  println(string(add_one(5)))
+}

@@ -1,0 +1,16 @@
+/// # Pipe Chain With It Parameter
+///
+/// Pipe operator combined with `it` parameter in filter and map.
+///
+/// expect: 40
+/// expect: 50
+
+fn main() {
+  let result = [1, 2, 3, 4, 5]
+    |> filter(it > 2)
+    |> map(it * 10)
+    |> filter(it > 35)
+  for n in result {
+    println(string(n))
+  }
+}

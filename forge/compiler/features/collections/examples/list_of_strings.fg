@@ -1,0 +1,15 @@
+/// # List of Strings
+///
+/// Operations on a list of strings.
+///
+/// expect: 3
+/// expect: HELLO
+/// expect: hello-world-foo
+
+fn main() {
+  let words = ["hello", "world", "foo"]
+  println(string(words.length))
+  let upper = words.map((w) -> w.upper())
+  println(upper[0])
+  println(words.join("-"))
+}

@@ -1,0 +1,18 @@
+/// List of structs - access fields from list elements
+///
+/// expect: alice
+/// expect: bob
+/// expect: charlie
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let people = [
+    Person { name: "alice", age: 30 },
+    Person { name: "bob", age: 25 },
+    Person { name: "charlie", age: 35 }
+  ]
+  println(people[0].name)
+  println(people[1].name)
+  println(people[2].name)
+}

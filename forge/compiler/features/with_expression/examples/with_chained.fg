@@ -1,0 +1,16 @@
+/// # With Chained
+///
+/// Apply `with` in sequence to update fields step by step.
+///
+/// expect: bob
+/// expect: 30
+
+type Person = { name: string, age: int }
+
+fn main() {
+  let p = Person { name: "alice", age: 25 }
+  let p2 = p with { name: "bob" }
+  let p3 = p2 with { age: 30 }
+  println(p3.name)
+  println(string(p3.age))
+}

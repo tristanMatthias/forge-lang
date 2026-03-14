@@ -1,0 +1,11 @@
+/// # It Equals Zero
+///
+/// Filter with `it == 0` to find zero elements.
+///
+/// expect: 3
+
+fn main() {
+  let nums = [0, 1, 0, 2, 0]
+  let zeros = nums.filter(it == 0)
+  println(string(zeros.length))
+}

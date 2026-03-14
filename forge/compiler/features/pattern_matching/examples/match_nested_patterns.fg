@@ -1,0 +1,30 @@
+/// # Nested Enum Pattern Matching
+///
+/// Match on enum variants with multiple data fields for deeply structured data.
+///
+/// expect: user Alice is admin
+/// expect: user Bob is member
+/// expect: anonymous visitor
+
+enum Role { admin, member }
+
+enum User {
+  registered(name: string, role: Role)
+  anonymous
+}
+
+fn describe(u: User) -> string {
+  match u {
+    .registered(name, role) -> match role {
+      .admin -> `user ${name} is admin`
+      .member -> `user ${name} is member`
+    }
+    .anonymous -> "anonymous visitor"
+  }
+}
+
+fn main() {
+  println(describe(User.registered(name: "Alice", role: Role.admin)))
+  println(describe(User.registered(name: "Bob", role: Role.member)))
+  println(describe(User.anonymous))
+}

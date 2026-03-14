@@ -1,0 +1,18 @@
+/// # Nullable Int
+///
+/// Functions returning `int?` with null coalescing.
+///
+/// expect: 42
+/// expect: -1
+
+fn maybe_int(x: bool) -> int? {
+  if x { 42 } else { null }
+}
+
+fn main() {
+  let a = maybe_int(true) ?? -1
+  println(string(a))
+
+  let b = maybe_int(false) ?? -1
+  println(string(b))
+}

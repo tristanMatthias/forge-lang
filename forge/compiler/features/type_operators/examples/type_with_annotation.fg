@@ -1,0 +1,15 @@
+/// # Type With and Annotations
+///
+/// Combine type `with` operator alongside annotated fields.
+///
+/// expect: alice
+/// expect: true
+
+type Base = { name: string }
+type Extended = Base with { active: bool }
+
+fn main() {
+  let e: Extended = { name: "alice", active: true }
+  println(e.name)
+  println(string(e.active))
+}

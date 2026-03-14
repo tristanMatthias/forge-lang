@@ -1,0 +1,22 @@
+/// # Table in Function
+///
+/// Table literal created and returned from a function.
+///
+/// expect: 2
+/// expect: alice
+/// expect: bob
+
+fn make_users() -> List<{name: string, age: int}> {
+    table {
+        name    | age
+        "alice" | 30
+        "bob"   | 25
+    }
+}
+
+fn main() {
+    let users = make_users()
+    println(string(users.length))
+    println(users[0].name)
+    println(users[1].name)
+}

@@ -1,0 +1,10 @@
+/// # JSON Stringify Single Field
+///
+/// Stringify a struct with just one field.
+///
+/// expect: {"x":99}
+
+fn main() {
+  let data = { x: 99 }
+  println(json.stringify(data))
+}

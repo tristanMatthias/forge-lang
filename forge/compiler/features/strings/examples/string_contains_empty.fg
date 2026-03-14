@@ -1,0 +1,13 @@
+/// Test: contains/starts_with/ends_with with empty string argument
+///
+/// expect: true
+/// expect: true
+/// expect: true
+/// expect: true
+
+fn main() {
+  println(string("hello".contains("")))
+  println(string("hello".starts_with("")))
+  println(string("hello".ends_with("")))
+  println(string("".contains("")))
+}

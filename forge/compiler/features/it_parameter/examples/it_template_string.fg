@@ -1,0 +1,15 @@
+/// # It Parameter in Template String
+///
+/// Using `it` inside a template string in map.
+///
+/// expect: 1!
+/// expect: 2!
+/// expect: 3!
+
+fn main() {
+  let nums = [1, 2, 3]
+  let result = nums.map(`${it}!`)
+  for r in result {
+    println(r)
+  }
+}

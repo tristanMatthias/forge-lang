@@ -1,0 +1,16 @@
+/// # Defer with Return
+///
+/// Deferred statements run before an explicit return.
+///
+/// expect: inside
+/// expect: deferred
+
+fn early_return() {
+  defer println("deferred")
+  println("inside")
+  return
+}
+
+fn main() {
+  early_return()
+}

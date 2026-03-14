@@ -1,0 +1,12 @@
+/// # Pipe String Split Then Join
+///
+/// Pipe a string through split and join with different separator.
+///
+/// expect: hello-world-test
+
+fn main() {
+  let result = "hello world test"
+    |> split(" ")
+    |> join("-")
+  println(result)
+}

@@ -1,0 +1,19 @@
+/// # Similar Variable Names
+///
+/// Variables with similar names should not interfere with each other.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 4
+
+fn main() {
+  let x = 1
+  let x1 = 2
+  let x_ = 3
+  let _x = 4
+  println(string(x))
+  println(string(x1))
+  println(string(x_))
+  println(string(_x))
+}

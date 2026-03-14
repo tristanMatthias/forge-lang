@@ -1,0 +1,23 @@
+/// # Exhaustive Enum Matching
+///
+/// Match covering all enum variants ensures complete handling.
+///
+/// expect: red: stop
+/// expect: yellow: caution
+/// expect: green: go
+
+enum Light { red, yellow, green }
+
+fn action(l: Light) -> string {
+  match l {
+    .red -> "red: stop"
+    .yellow -> "yellow: caution"
+    .green -> "green: go"
+  }
+}
+
+fn main() {
+  println(action(Light.red))
+  println(action(Light.yellow))
+  println(action(Light.green))
+}

@@ -1,0 +1,13 @@
+/// # String conversion of nullable values
+///
+/// string() should print "null" for null values and the inner value otherwise.
+///
+/// expect: null
+/// expect: 42
+
+fn main() {
+  let a: int? = null
+  let b: int? = 42
+  println(string(a))
+  println(string(b))
+}

@@ -1,0 +1,26 @@
+/// Trait default method calling another default method
+///
+/// expect: [LOUD] HELLO WORLD
+
+trait Formatter {
+  fn raw(self) -> string
+
+  fn formatted(self) -> string {
+    self.raw().upper()
+  }
+
+  fn loud(self) -> string {
+    `[LOUD] ${self.formatted()}`
+  }
+}
+
+type Message = { text: string }
+
+impl Formatter for Message {
+  fn raw(self) -> string { self.text }
+}
+
+fn main() {
+  let m = Message { text: "hello world" }
+  println(m.loud())
+}

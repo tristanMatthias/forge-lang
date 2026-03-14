@@ -1,0 +1,20 @@
+/// # Catch With Function Call
+///
+/// Catch handler calls a function to compute the recovery value.
+///
+/// expect: fallback: 99
+
+fn risky() -> Result<int, string> {
+  Err("nope")
+}
+
+fn fallback_fn() -> int {
+  99
+}
+
+fn main() {
+  let v = risky() catch (e) {
+    fallback_fn()
+  }
+  println(`fallback: ${string(v)}`)
+}

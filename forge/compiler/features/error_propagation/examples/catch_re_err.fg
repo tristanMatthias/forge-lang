@@ -1,0 +1,20 @@
+/// # Catch Re-Err
+///
+/// Catch handler can return a new Err via `return Err(...)`,
+/// letting the outer catch handle it.
+///
+/// expect: final: 0
+
+fn inner() -> Result<int, string> {
+  Err("inner err")
+}
+
+fn outer() -> Result<int, string> {
+  let v = inner() catch (e) { return Err("outer err") }
+  Ok(v)
+}
+
+fn main() {
+  let r = outer() catch (e) { 0 }
+  println(`final: ${string(r)}`)
+}

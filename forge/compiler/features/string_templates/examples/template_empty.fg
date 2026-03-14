@@ -1,0 +1,9 @@
+/// Test: Template with only interpolation (no literal text)
+///
+/// expect: 42
+/// expect: hello
+
+fn main() {
+  println(`${42}`)
+  println(`${"hello"}`)
+}

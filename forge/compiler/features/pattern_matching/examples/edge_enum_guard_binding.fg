@@ -1,0 +1,20 @@
+/// # Enum Guard with Binding Variable
+///
+/// Pattern binding variables should be accessible in guard expressions.
+///
+/// expect: big circle
+
+enum Shape {
+  circle(radius: int)
+  point
+}
+
+fn main() {
+  let s = Shape.circle(radius: 50)
+  let r = match s {
+    .circle(r) if r > 10 -> "big circle"
+    .circle(r) -> "small circle"
+    .point -> "point"
+  }
+  println(r)
+}

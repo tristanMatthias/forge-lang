@@ -1,0 +1,10 @@
+/// Struct with list field
+///
+/// expect: 3
+
+type HasList = { items: List<int> }
+
+fn main() {
+  let h = HasList { items: [1, 2, 3] }
+  println(string(h.items.length))
+}

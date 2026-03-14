@@ -1,0 +1,29 @@
+/// # Recursive Fibonacci
+///
+/// Classic recursive fibonacci function.
+///
+/// expect: 0
+/// expect: 1
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 5
+/// expect: 8
+
+fn fib(n: int) -> int {
+  if n <= 0 {
+    return 0
+  }
+  if n == 1 {
+    return 1
+  }
+  return fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+  mut i = 0
+  while i < 7 {
+    println(string(fib(i)))
+    i = i + 1
+  }
+}

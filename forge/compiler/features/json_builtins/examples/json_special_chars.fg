@@ -1,0 +1,18 @@
+/// # JSON with Special Characters
+///
+/// Stringify and parse strings containing special characters.
+///
+/// expect: hello world
+/// expect: tabs	here
+
+fn main() {
+  let data1 = { msg: "hello world" }
+  let json1 = json.stringify(data1)
+  let back1: {msg: string} = json.parse(json1)
+  println(back1.msg)
+
+  let data2 = { msg: "tabs\there" }
+  let json2 = json.stringify(data2)
+  let back2: {msg: string} = json.parse(json2)
+  println(back2.msg)
+}

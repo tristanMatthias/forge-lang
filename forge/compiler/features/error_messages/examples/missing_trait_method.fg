@@ -1,0 +1,24 @@
+/// # Missing required trait method
+///
+/// Implementing a trait without providing all required methods
+/// should produce an error.
+///
+/// expect-error: F0012
+
+type Point = { x: int, y: int }
+
+trait Describable {
+    fn describe(self) -> string
+    fn summary(self) -> string
+}
+
+impl Describable for Point {
+    fn describe(self) -> string {
+        "a point"
+    }
+}
+
+fn main() {
+    let p = Point { x: 1, y: 2 }
+    println(p.describe())
+}

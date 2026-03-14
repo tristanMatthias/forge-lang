@@ -1,0 +1,11 @@
+/// Test: Concatenating tagged template result with other strings
+/// expect: [{"parts":["hello ",""],"values":["world"]}]
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  let result = "[" + identity`hello ${"world"}` + "]"
+  println(result)
+}

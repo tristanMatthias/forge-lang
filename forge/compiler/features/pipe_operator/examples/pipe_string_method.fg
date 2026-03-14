@@ -1,0 +1,11 @@
+/// # Pipe To String Method
+///
+/// Pipe a string into a method call.
+///
+/// expect: HELLO WORLD
+
+fn main() {
+  let result = "hello world"
+    |> upper()
+  println(result)
+}

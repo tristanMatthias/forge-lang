@@ -1,9 +1,25 @@
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 
+use super::types::DollarExecData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a dollar-exec expression via Feature dispatch.
+    pub(crate) fn compile_dollar_exec_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(data) = feature_data!(fe, DollarExecData) {
+            self.compile_dollar_exec(&data.parts)
+        } else {
+            None
+        }
+    }
+
     /// Compile a dollar-exec expression: `$"echo hello ${name}"` or `$\`cmd\``
     ///
     /// Builds the command string from template parts, extracts the raw C pointer,

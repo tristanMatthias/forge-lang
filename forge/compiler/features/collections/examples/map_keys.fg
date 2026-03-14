@@ -1,0 +1,11 @@
+/// # Map Keys
+///
+/// Get the keys of a map as a list.
+///
+/// expect: 2
+
+fn main() {
+  let m = {"x": 1, "y": 2}
+  let k = m.keys()
+  println(string(k.length))
+}

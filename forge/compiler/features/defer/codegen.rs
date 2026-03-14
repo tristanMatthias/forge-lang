@@ -1,5 +1,8 @@
 use crate::codegen::codegen::Codegen;
-use crate::parser::ast::*;
+use crate::feature::FeatureStmt;
+use crate::feature_data;
+
+use super::types::DeferData;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a `defer` statement by saving the expression for later execution.
@@ -7,8 +10,10 @@ impl<'ctx> Codegen<'ctx> {
     /// The deferred expression is pushed onto `self.deferred_stmts` and will be
     /// compiled in reverse order before function returns (both explicit `return`
     /// statements and implicit returns at the end of `compile_fn`).
-    pub(crate) fn compile_defer(&mut self, body: &Expr) {
-        self.deferred_stmts.push(body.clone());
+    pub(crate) fn compile_defer_feature(&mut self, fe: &FeatureStmt) {
+        if let Some(data) = feature_data!(fe, DeferData) {
+            self.deferred_stmts.push(data.body.clone());
+        }
     }
 
     /// Execute all deferred statements in reverse order.

@@ -9,6 +9,11 @@ impl<'ctx> Codegen<'ctx> {
     /// and converted to strings via `value_to_string`, then concatenated with
     /// `forge_string_concat`.
     pub(crate) fn compile_template(&mut self, parts: &[TemplatePart]) -> Option<BasicValueEnum<'ctx>> {
+        // Handle empty template literal: `` => empty string
+        if parts.is_empty() {
+            return Some(self.build_string_literal(""));
+        }
+
         let mut result: Option<BasicValueEnum<'ctx>> = None;
         let concat_fn = self.module.get_function("forge_string_concat").unwrap();
 

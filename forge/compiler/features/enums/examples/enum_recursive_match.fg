@@ -1,0 +1,22 @@
+/// # Enum Recursive Function with Match
+///
+/// Enum matched recursively in a function that calls itself.
+///
+/// expect: ((1 + 2) + 3)
+
+enum Expr {
+  num(value: int)
+  add(a: int, b: int)
+}
+
+fn eval(e: Expr) -> string {
+  match e {
+    .num(v) -> string(v)
+    .add(a, b) -> `(${a} + ${b})`
+  }
+}
+
+fn main() {
+  let inner = eval(Expr.add(a: 1, b: 2))
+  println(`(${inner} + 3)`)
+}

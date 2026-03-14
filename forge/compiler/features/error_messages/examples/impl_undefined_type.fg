@@ -1,0 +1,16 @@
+/// # Impl for undefined type
+///
+/// Implementing methods for a type that doesn't exist
+/// should produce an error.
+///
+/// expect-error: F0012
+
+impl Nonexistent {
+    fn hello(self) -> string {
+        "hello"
+    }
+}
+
+fn main() {
+    println("done")
+}

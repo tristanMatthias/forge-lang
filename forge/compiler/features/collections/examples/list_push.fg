@@ -1,0 +1,16 @@
+/// # List Push
+///
+/// Push items onto a mutable list.
+///
+/// expect: 1
+/// expect: 3
+/// expect: 30
+
+fn main() {
+  mut items = [10]
+  println(string(items.length))
+  items.push(20)
+  items.push(30)
+  println(string(items.length))
+  println(string(items[2]))
+}

@@ -653,5 +653,20 @@ fn main() {
     println(sf_obj.sf_age)
     println(sf_obj.city)
 
+    // ---- 33. Query Helpers ----
+    println("--- 33. Query Helpers ---")
+    let qgt = query_gt(100)
+    println(qgt)
+    let qgte = query_gte(50)
+    println(qgte)
+    let qlt = query_lt(10)
+    println(qlt)
+    let qlte = query_lte(5)
+    println(qlte)
+    let qbtw = query_between(10, 50)
+    println(qbtw)
+    let qlk = query_like("ali%")
+    println(qlk)
+
     println("--- ALL TESTS PASSED ---")
 }

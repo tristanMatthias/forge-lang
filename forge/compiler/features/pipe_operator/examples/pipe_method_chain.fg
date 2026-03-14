@@ -1,0 +1,13 @@
+/// # Pipe Combined with Method Calls
+///
+/// Pipe operator mixed with method chaining.
+///
+/// expect: HELLO-WORLD
+
+fn main() {
+  let result = "hello world"
+    |> split(" ")
+    |> map((w) -> w.upper())
+    |> join("-")
+  println(result)
+}

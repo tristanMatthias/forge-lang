@@ -1,0 +1,25 @@
+/// # Enum with Fields
+///
+/// Enum variants carrying data fields.
+///
+/// expect: move to 10, 20
+/// expect: resize to 100x200
+
+enum Action {
+  move_to(x: int, y: int)
+  resize(width: int, height: int)
+  close
+}
+
+fn describe(a: Action) -> string {
+  match a {
+    .move_to(x, y) -> `move to ${x}, ${y}`
+    .resize(w, h) -> `resize to ${w}x${h}`
+    .close -> "close"
+  }
+}
+
+fn main() {
+  println(describe(Action.move_to(x: 10, y: 20)))
+  println(describe(Action.resize(width: 100, height: 200)))
+}

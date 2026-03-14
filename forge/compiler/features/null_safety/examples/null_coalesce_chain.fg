@@ -1,0 +1,28 @@
+/// # Null Coalesce Chain
+///
+/// Chained `??` operators evaluate left to right,
+/// returning the first non-null value.
+///
+/// expect: first
+/// expect: second
+/// expect: third
+/// expect: fallback
+
+fn get_first() -> string? { "first" }
+fn get_second() -> string? { "second" }
+fn get_third() -> string? { "third" }
+fn get_null() -> string? { null }
+
+fn main() {
+  let a = get_first() ?? get_second() ?? "fallback"
+  println(a)
+
+  let b = get_null() ?? get_second() ?? "fallback"
+  println(b)
+
+  let c = get_null() ?? get_null() ?? get_third() ?? "fallback"
+  println(c)
+
+  let d = get_null() ?? get_null() ?? get_null() ?? "fallback"
+  println(d)
+}

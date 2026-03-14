@@ -1,0 +1,32 @@
+/// # Match as Expression
+///
+/// Match used as a value in let bindings and function returns.
+///
+/// expect: two
+/// expect: fizzbuzz
+/// expect: buzz
+/// expect: fizz
+/// expect: 7
+
+fn fizzbuzz(n: int) -> string {
+  match n {
+    _ if n % 15 == 0 -> "fizzbuzz"
+    _ if n % 3 == 0 -> "fizz"
+    _ if n % 5 == 0 -> "buzz"
+    _ -> string(n)
+  }
+}
+
+fn main() {
+  let label = match 2 {
+    1 -> "one"
+    2 -> "two"
+    _ -> "other"
+  }
+  println(label)
+
+  println(fizzbuzz(15))
+  println(fizzbuzz(10))
+  println(fizzbuzz(9))
+  println(fizzbuzz(7))
+}

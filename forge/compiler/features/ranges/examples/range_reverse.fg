@@ -1,0 +1,13 @@
+/// # Reverse Range
+///
+/// Adversarial test: range where start > end should iterate zero times.
+///
+/// expect: count: 0
+
+fn main() {
+  mut count = 0
+  for i in 10..5 {
+    count = count + 1
+  }
+  println(`count: ${count}`)
+}

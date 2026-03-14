@@ -1,0 +1,17 @@
+/// # Generic Nested Calls
+///
+/// Generic functions calling other generic functions.
+///
+/// expect: 10
+/// expect: hello
+
+fn identity<T>(x: T) -> T { x }
+
+fn apply_identity<T>(val: T) -> T {
+  identity(val)
+}
+
+fn main() {
+  println(string(apply_identity(10)))
+  println(apply_identity("hello"))
+}

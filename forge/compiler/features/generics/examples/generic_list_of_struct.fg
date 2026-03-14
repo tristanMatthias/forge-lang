@@ -1,0 +1,14 @@
+/// Generic function with list of structs
+///
+/// expect: 3
+
+type Item = { name: string }
+
+fn count_items<T>(items: List<T>) -> int {
+  items.length
+}
+
+fn main() {
+  let items = [Item { name: "a" }, Item { name: "b" }, Item { name: "c" }]
+  println(string(count_items(items)))
+}

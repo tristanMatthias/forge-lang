@@ -1,0 +1,16 @@
+/// # Defer with Early Return Value
+///
+/// Defer runs before function returns a value.
+///
+/// expect: cleanup
+/// expect: 42
+
+fn compute() -> int {
+  defer println("cleanup")
+  return 42
+}
+
+fn main() {
+  let result = compute()
+  println(string(result))
+}

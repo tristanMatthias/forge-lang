@@ -1,0 +1,17 @@
+/// # Coalesce Chain Five
+///
+/// Five-deep `??` chain where only the last function returns a value.
+/// All earlier functions return null.
+///
+/// expect: fifth
+
+fn n1() -> string? { null }
+fn n2() -> string? { null }
+fn n3() -> string? { null }
+fn n4() -> string? { null }
+fn n5() -> string? { "fifth" }
+
+fn main() {
+  let result = n1() ?? n2() ?? n3() ?? n4() ?? n5() ?? "fallback"
+  println(result)
+}

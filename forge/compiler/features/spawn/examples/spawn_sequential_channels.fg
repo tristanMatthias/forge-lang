@@ -1,0 +1,26 @@
+/// # Spawn with Sequential Channel Reads
+///
+/// Multiple spawned tasks send to the same channel. Read all results.
+///
+/// expect: 3
+
+use @std.channel
+
+fn main() {
+  let ch = channel(3)
+
+  spawn { ch <- "a" }
+  spawn { ch <- "b" }
+  spawn { ch <- "c" }
+
+  sleep(100)
+
+  let m1 = <- ch
+  let m2 = <- ch
+  let m3 = <- ch
+  mut count = 0
+  if m1 != "" { count = count + 1 }
+  if m2 != "" { count = count + 1 }
+  if m3 != "" { count = count + 1 }
+  println(string(count))
+}

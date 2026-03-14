@@ -1,0 +1,41 @@
+/// # Deep Propagation Chain
+///
+/// Error propagation through 5 nested function layers.
+/// The `?` operator should propagate the error all the way up.
+///
+/// expect: final: 1
+/// expect: deep err: bottom
+
+fn layer1(x: int) -> Result<int, string> {
+  if x > 0 { Ok(x) } else { Err("bottom") }
+}
+
+fn layer2(x: int) -> Result<int, string> {
+  let v = layer1(x)?
+  Ok(v + 1)
+}
+
+fn layer3(x: int) -> Result<int, string> {
+  let v = layer2(x)?
+  Ok(v - 1)
+}
+
+fn layer4(x: int) -> Result<int, string> {
+  let v = layer3(x)?
+  Ok(v * 2)
+}
+
+fn layer5(x: int) -> Result<int, string> {
+  let v = layer4(x)?
+  Ok(v / 2)
+}
+
+fn main() {
+  let a = layer5(1) catch (e) { -1 }
+  println(`final: ${string(a)}`)
+
+  let b = layer5(0) catch (e) {
+    println(`deep err: ${e}`)
+    -1
+  }
+}

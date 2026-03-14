@@ -1,0 +1,16 @@
+/// # Variable Type Annotations
+///
+/// Variables with explicit type annotations.
+///
+/// expect: 42
+/// expect: hello
+/// expect: true
+
+fn main() {
+  let x: int = 42
+  let s: string = "hello"
+  let b: bool = true
+  println(string(x))
+  println(s)
+  println(string(b))
+}

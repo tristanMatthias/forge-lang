@@ -1,0 +1,10 @@
+/// Test: Long chain of string concatenation
+///
+/// expect: abcdefghij
+/// expect: 10
+
+fn main() {
+  let s = "a" + "b" + "c" + "d" + "e" + "f" + "g" + "h" + "i" + "j"
+  println(s)
+  println(string(s.length))
+}

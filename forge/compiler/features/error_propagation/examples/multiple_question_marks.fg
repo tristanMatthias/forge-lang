@@ -1,0 +1,36 @@
+/// # Multiple Question Marks
+///
+/// Multiple `?` operators in a single function, each can
+/// short-circuit with a different error.
+///
+/// expect: result: 7
+/// expect: caught: second fail
+
+fn first(x: int) -> Result<int, string> {
+  if x > 0 { Ok(x) } else { Err("first fail") }
+}
+
+fn second(x: int) -> Result<int, string> {
+  if x < 10 { Ok(x * 2) } else { Err("second fail") }
+}
+
+fn third(x: int) -> Result<int, string> {
+  if x != 0 { Ok(x + 1) } else { Err("third fail") }
+}
+
+fn combined(a: int, b: int, c: int) -> Result<int, string> {
+  let x = first(a)?
+  let y = second(b)?
+  let z = third(c)?
+  Ok(x + y + z)
+}
+
+fn main() {
+  let r1 = combined(1, 2, 1) catch (e) { -1 }
+  println(`result: ${string(r1)}`)
+
+  let r2 = combined(1, 20, 1) catch (e) {
+    println(`caught: ${e}`)
+    -1
+  }
+}

@@ -1,0 +1,16 @@
+/// # List Find
+///
+/// Find the first element matching a predicate.
+///
+/// expect: found
+/// expect: 30
+
+fn main() {
+  let nums = [10, 20, 30, 40, 50]
+  let found = nums.find((x) -> x > 25)
+  if found != null {
+    println("found")
+    let val = found!
+    println(string(val))
+  }
+}

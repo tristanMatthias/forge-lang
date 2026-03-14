@@ -1,0 +1,25 @@
+/// # Recursive Factorial
+///
+/// Classic recursive factorial function.
+///
+/// expect: 1
+/// expect: 1
+/// expect: 2
+/// expect: 6
+/// expect: 24
+/// expect: 120
+
+fn factorial(n: int) -> int {
+  if n <= 1 {
+    return 1
+  }
+  return n * factorial(n - 1)
+}
+
+fn main() {
+  mut i = 0
+  while i < 6 {
+    println(string(factorial(i)))
+    i = i + 1
+  }
+}

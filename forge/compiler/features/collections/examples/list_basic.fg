@@ -1,0 +1,14 @@
+/// # Basic List Operations
+///
+/// Create a list, check length, access elements.
+///
+/// expect: 3
+/// expect: 10
+/// expect: 30
+
+fn main() {
+  let nums = [10, 20, 30]
+  println(string(nums.length))
+  println(string(nums[0]))
+  println(string(nums[2]))
+}

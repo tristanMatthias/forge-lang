@@ -1,0 +1,20 @@
+/// # Table with Bool Column
+///
+/// Table with a column of all boolean values.
+///
+/// expect: true
+/// expect: false
+/// expect: true
+
+fn main() {
+  let flags = table {
+    name    | enabled
+    "alpha" | true
+    "beta"  | false
+    "gamma" | true
+  }
+
+  println(string(flags[0].enabled))
+  println(string(flags[1].enabled))
+  println(string(flags[2].enabled))
+}

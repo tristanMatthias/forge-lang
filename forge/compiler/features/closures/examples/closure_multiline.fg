@@ -1,0 +1,14 @@
+/// # Multiline Closure Body
+///
+/// Closure with a block body containing multiple statements.
+///
+/// expect: 30
+
+fn main() {
+  let process = (x: int) -> int {
+    let doubled = x * 2
+    let added = doubled + 10
+    added
+  }
+  println(string(process(10)))
+}

@@ -1,0 +1,10 @@
+/// Test: Tagged template with many interpolated values
+/// expect: {"parts":["","-","-","-","-",""],"values":["1","2","3","4","5"]}
+
+fn identity(input: string) -> string {
+  input
+}
+
+fn main() {
+  println(identity`${1}-${2}-${3}-${4}-${5}`)
+}

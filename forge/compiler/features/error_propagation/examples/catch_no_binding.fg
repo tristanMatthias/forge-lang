@@ -1,0 +1,19 @@
+/// # Catch Without Binding
+///
+/// Catch blocks can omit the error binding when
+/// the error value is not needed.
+///
+/// expect: 42
+/// expect: recovered: -1
+
+fn risky(x: int) -> Result<int, string> {
+  if x > 0 { Ok(x) } else { Err("bad") }
+}
+
+fn main() {
+  let a = risky(42) catch { 0 }
+  println(string(a))
+
+  let b = risky(-1) catch { -1 }
+  println(`recovered: ${string(b)}`)
+}

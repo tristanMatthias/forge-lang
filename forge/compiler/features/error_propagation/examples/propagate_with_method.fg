@@ -1,0 +1,24 @@
+/// # Propagate With Method Call
+///
+/// Using ? to unwrap a Result, then calling a method on the
+/// unwrapped value before re-wrapping in Ok.
+///
+/// expect: HELLO
+/// expect: caught: empty
+
+fn get_name(id: int) -> Result<string, string> {
+  if id == 1 { Ok("hello") } else { Err("empty") }
+}
+
+fn upper_name(id: int) -> Result<string, string> {
+  let name = get_name(id)?
+  Ok(name.upper())
+}
+
+fn main() {
+  let a = upper_name(1) catch (e) { `caught: ${e}` }
+  println(a)
+
+  let b = upper_name(2) catch (e) { `caught: ${e}` }
+  println(b)
+}

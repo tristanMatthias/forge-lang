@@ -1,0 +1,10 @@
+/// # Closure With No Params
+///
+/// Zero-parameter closure `() -> expr` should produce a parse error.
+///
+/// expect-error: F0001
+
+fn main() {
+  let f = () -> 42
+  println(string(f()))
+}

@@ -1,0 +1,14 @@
+/// # Closure With String Concatenation
+///
+/// Closure that concatenates strings in map.
+///
+/// expect: hello!
+/// expect: world!
+
+fn main() {
+  let words = ["hello", "world"]
+  let result = words.map((w) -> w + "!")
+  for w in result {
+    println(w)
+  }
+}

@@ -1,0 +1,28 @@
+/// # Nullable With Result
+///
+/// Nullable values used alongside Result types: a nullable
+/// function feeds into a Result-returning function via `??`.
+///
+/// expect: got: hello
+/// expect: no value
+
+fn maybe(x: bool) -> string? {
+  if x { "hello" } else { null }
+}
+
+fn use_maybe(x: bool) -> Result<string, string> {
+  let val = maybe(x) ?? ""
+  if val.length > 0 {
+    Ok(val)
+  } else {
+    Err("no value")
+  }
+}
+
+fn main() {
+  let a = use_maybe(true) catch (e) { e }
+  println(`got: ${a}`)
+
+  let b = use_maybe(false) catch (e) { e }
+  println(b)
+}

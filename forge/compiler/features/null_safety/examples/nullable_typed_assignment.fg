@@ -1,0 +1,10 @@
+/// # Nullable Typed Assignment
+///
+/// Direct typed nullable assignment wraps non-null values properly.
+///
+/// expect: hello
+
+fn main() {
+  let a: string? = "hello"
+  println(a ?? "fallback")
+}

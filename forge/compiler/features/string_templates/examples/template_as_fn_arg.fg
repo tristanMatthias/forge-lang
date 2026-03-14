@@ -1,0 +1,18 @@
+/// Test: Template string passed directly as function argument
+///
+/// expect: 11
+/// expect: hello world
+
+fn get_length(s: string) -> int {
+  s.length
+}
+
+fn echo(s: string) -> string {
+  s
+}
+
+fn main() {
+  let name = "world"
+  println(string(get_length(`hello ${name}`)))
+  println(echo(`hello ${name}`))
+}

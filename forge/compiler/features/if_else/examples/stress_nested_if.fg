@@ -1,0 +1,45 @@
+/// # Deeply Nested If/Else
+///
+/// If inside if inside if to stress nesting.
+///
+/// expect: small even positive
+/// expect: big odd negative
+/// expect: zero
+
+fn classify(n: int) -> string {
+  if n == 0 {
+    "zero"
+  } else {
+    if n > 0 {
+      if n < 100 {
+        if n % 2 == 0 {
+          "small even positive"
+        } else {
+          "small odd positive"
+        }
+      } else {
+        "big positive"
+      }
+    } else {
+      if n > -100 {
+        if n % 2 == 0 {
+          "small even negative"
+        } else {
+          "small odd negative"
+        }
+      } else {
+        if n % 2 == 0 {
+          "big even negative"
+        } else {
+          "big odd negative"
+        }
+      }
+    }
+  }
+}
+
+fn main() {
+  println(classify(42))
+  println(classify(-999))
+  println(classify(0))
+}

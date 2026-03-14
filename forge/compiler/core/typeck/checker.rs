@@ -152,6 +152,42 @@ impl TypeChecker {
                     }
                 }
             }
+            Statement::ImplBlock { type_name, trait_name, methods, .. } => {
+                // Register trait implementation
+                if let Some(tn) = trait_name {
+                    self.env.type_traits
+                        .entry(type_name.clone())
+                        .or_insert_with(Vec::new)
+                        .push(tn.clone());
+                }
+                // Collect methods first to avoid borrow conflict
+                let mut new_methods: Vec<(String, Type)> = Vec::new();
+                for m in methods {
+                    if let Statement::FnDecl { name, return_type, .. } = m {
+                        let ret = return_type.as_ref()
+                            .map(|t| self.resolve_type_expr(t))
+                            .unwrap_or(Type::Void);
+                        new_methods.push((name.clone(), ret));
+                    }
+                }
+                let type_methods = self.env.type_methods
+                    .entry(type_name.clone())
+                    .or_insert_with(Vec::new);
+                for (name, ret) in new_methods {
+                    if !type_methods.iter().any(|(n, _)| n == &name) {
+                        type_methods.push((name, ret));
+                    }
+                }
+            }
+            Statement::Feature(fe) => {
+                match fe.feature_id {
+                    "enums" => self.register_enum_feature(fe),
+                    "functions" => self.register_fn_feature(fe),
+                    "structs" => self.register_type_decl_feature(fe),
+                    "traits" => self.register_traits_feature(fe),
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
@@ -228,6 +264,25 @@ impl TypeChecker {
                         }
                     }
                 }
+                // Check field assignment on immutable variable: p.x = val
+                if let Expr::MemberAccess { object, .. } = target {
+                    // Walk through nested member accesses to find the root variable
+                    let mut root = object.as_ref();
+                    while let Expr::MemberAccess { object: inner, .. } = root {
+                        root = inner.as_ref();
+                    }
+                    if let Expr::Ident(name, _) = root {
+                        if let Some(info) = self.env.lookup_and_mark_used(name) {
+                            if !info.mutable {
+                                self.diagnostics.push(Diagnostic::error(
+                                    "F0013",
+                                    format!("cannot assign to field of immutable variable '{}'", name),
+                                    *span,
+                                ));
+                            }
+                        }
+                    }
+                }
                 self.check_expr(value);
             }
             Statement::FnDecl {
@@ -296,9 +351,12 @@ impl TypeChecker {
             Statement::Expr(expr) => {
                 self.check_expr(expr);
             }
-            Statement::Return { value, .. } => {
+            Statement::Return { value, span, .. } => {
                 if let Some(val) = value {
-                    self.check_expr(val);
+                    let val_type = self.check_expr(val);
+                    if let Some(expected) = self.current_fn_return_type.clone() {
+                        self.check_type_mismatch_ctx(&expected, &val_type, *span, None, Some(val));
+                    }
                 }
             }
             Statement::For {
@@ -387,6 +445,81 @@ impl TypeChecker {
                     self.env.pop_scope_silent();
                 }
             }
+            Statement::Feature(fe) => {
+                self.check_feature_stmt(fe);
+            }
+        }
+    }
+
+    /// Dispatch a feature-owned statement to the appropriate feature's checker.
+    pub(crate) fn check_feature_stmt(&mut self, fe: &crate::feature::FeatureStmt) {
+        match fe.feature_id {
+            "defer" => self.check_defer_feature(fe),
+            "select_syntax" => self.check_select_feature(fe),
+            "for_loops" => self.check_for_feature(fe),
+            "while_loops" => self.check_while_loops_feature(fe),
+            "enums" => self.check_enum_feature(fe),
+            "variables" => self.check_variables_feature(fe),
+            "functions" => self.check_functions_feature(fe),
+            "structs" => self.check_structs_feature(fe),
+            "traits" => self.check_traits_feature(fe),
+            "imports" => self.check_imports_feature(fe),
+            _ => {} // Unknown feature — no-op
+        }
+    }
+
+    /// Dispatch a feature-owned expression to the appropriate feature's checker.
+    pub(crate) fn check_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Type {
+        match fe.feature_id {
+            "spawn" => self.check_spawn_feature(fe),
+            "ranges" => self.check_range_feature(fe),
+            "is_keyword" => self.check_is_feature(fe),
+            "with_expression" => self.check_with_feature(fe),
+            "pipe_operator" => self.check_pipe_feature(fe),
+            "shell_shorthand" => self.check_dollar_exec_feature(fe),
+            "table_literal" => self.check_table_lit_feature(fe),
+            "closures" => self.check_closure_feature(fe),
+            "pattern_matching" => self.check_match_feature(fe),
+            "channels" => self.check_channel_feature(fe),
+            "if_else" => self.check_if_feature(fe),
+            "null_safety" => {
+                match fe.kind {
+                    "NullCoalesce" => self.check_null_coalesce_feature(fe),
+                    "NullPropagate" => self.check_null_propagate_feature(fe),
+                    "ForceUnwrap" => {
+                        use crate::features::null_safety::types::ForceUnwrapData;
+                        if let Some(data) = crate::feature_data!(fe, ForceUnwrapData) {
+                            let inner = self.check_expr(&data.operand);
+                            match inner {
+                                Type::Nullable(t) => *t,
+                                other => other,
+                            }
+                        } else {
+                            Type::Unknown
+                        }
+                    }
+                    _ => Type::Unknown,
+                }
+            }
+            "error_propagation" => {
+                match fe.kind {
+                    "ErrorPropagate" => self.check_error_propagate_feature(fe),
+                    "OkExpr" => self.check_ok_expr_feature(fe),
+                    "ErrExpr" => self.check_err_expr_feature(fe),
+                    "Catch" => self.check_catch_feature(fe),
+                    _ => Type::Unknown,
+                }
+            }
+            "structs" => self.check_struct_lit_feature(fe),
+            "tuples" => self.check_tuple_lit_feature(fe),
+            "collections" => {
+                match fe.kind {
+                    "ListLit" => self.check_list_lit_feature(fe),
+                    "MapLit" => self.check_map_lit_feature(fe),
+                    _ => Type::Unknown,
+                }
+            }
+            _ => Type::Unknown,
         }
     }
 
@@ -472,16 +605,14 @@ impl TypeChecker {
 
             Expr::Call { callee, args, span, .. } => {
                 let callee_type = self.check_expr(callee);
-                for arg in args {
-                    self.check_expr(&arg.value);
-                }
+                let arg_types: Vec<Type> = args.iter().map(|arg| self.check_expr(&arg.value)).collect();
 
                 match &callee_type {
                     Type::Function { params, return_type } => {
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
-                            if args.len() != params.len()
-                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like")
+                            let is_variadic = matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like");
+                            if args.len() != params.len() && !is_variadic
                             {
                                 let sig = self.format_fn_signature(fn_name, params);
                                 let example = self.format_fn_example(fn_name, params);
@@ -500,6 +631,28 @@ impl TypeChecker {
                                     )
                                     .with_help(format!("expected: {}\n  example:  {}", sig, example)),
                                 );
+                            }
+
+                            // Check argument types
+                            if !is_variadic {
+                                for (i, (arg, param_type)) in args.iter().zip(params.iter()).enumerate() {
+                                    if i < arg_types.len() {
+                                        let arg_type = &arg_types[i];
+                                        if !self.types_compatible(param_type, arg_type) {
+                                            self.diagnostics.push(
+                                                Diagnostic::error(
+                                                    "F0012",
+                                                    format!(
+                                                        "type mismatch in argument {} of '{}': expected {}, found {}",
+                                                        i + 1, fn_name, param_type, arg_type,
+                                                    ),
+                                                    arg.value.span(),
+                                                )
+                                                .with_help(format!("expected: {}", self.format_fn_signature(fn_name, params))),
+                                            );
+                                        }
+                                    }
+                                }
                             }
 
                             // ── validate()-specific checks ──
@@ -587,7 +740,11 @@ impl TypeChecker {
                 }
             }
 
-            Expr::MemberAccess { object, field, .. } => {
+            Expr::MemberAccess { object, field, span, .. } => {
+                // Check if object is a type name used as static method target (e.g., User.create)
+                let is_static_access = matches!(object.as_ref(), Expr::Ident(name, _) if {
+                    self.env.type_aliases.contains_key(name) || self.env.enum_types.contains_key(name)
+                });
                 let obj_type = self.check_expr(object);
                 // Unwrap optional/nullable for field access
                 let effective_type = match &obj_type {
@@ -595,12 +752,44 @@ impl TypeChecker {
                     _ => &obj_type,
                 };
                 match effective_type {
-                    Type::Struct { fields, .. } => {
-                        fields
-                            .iter()
-                            .find(|(name, _)| name == field)
-                            .map(|(_, ty)| ty.clone())
-                            .unwrap_or(Type::Unknown)
+                    Type::Struct { name: type_name, fields } => {
+                        if let Some((_, ty)) = fields.iter().find(|(name, _)| name == field) {
+                            ty.clone()
+                        } else if is_static_access {
+                            // Static method on a type (e.g., User.create) — allow
+                            Type::Unknown
+                        } else {
+                            // Check if it's an instance method (registered via impl block)
+                            let tn = type_name.as_deref().unwrap_or("");
+                            if let Some(methods) = self.env.type_methods.get(tn) {
+                                if methods.iter().any(|(n, _)| n == field) {
+                                    return Type::Unknown;
+                                }
+                            }
+                            // Check trait methods
+                            if let Some(trait_names) = self.env.type_traits.get(tn) {
+                                for trait_name in trait_names {
+                                    if let Some(all_methods) = self.env.trait_all_methods.get(trait_name) {
+                                        if all_methods.contains(&field.to_string()) {
+                                            return Type::Unknown;
+                                        }
+                                    }
+                                }
+                            }
+                            let known: Vec<&str> = fields.iter().map(|(n, _)| n.as_str()).collect();
+                            let mut diag = Diagnostic::error(
+                                "F0020",
+                                format!("'{}' has no field '{}'", tn, field),
+                                *span,
+                            );
+                            if let Some(suggestion) = crate::errors::did_you_mean(field, &known, 2) {
+                                diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                            } else if !known.is_empty() {
+                                diag = diag.with_help(format!("available fields: {}", known.join(", ")));
+                            }
+                            self.diagnostics.push(diag);
+                            Type::Error
+                        }
                     }
                     Type::String => match field.as_str() {
                         "length" => Type::Int,
@@ -801,19 +990,50 @@ impl TypeChecker {
             }
 
             Expr::StructLit { name: struct_name, fields, span: lit_span } => {
+                // Check for duplicate field names
+                {
+                    let mut seen_fields: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                    for (field_name, field_val) in fields {
+                        if !seen_fields.insert(field_name.as_str()) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "F0012",
+                                format!("duplicate field '{}' in struct literal", field_name),
+                                field_val.span(),
+                            ));
+                        }
+                    }
+                }
+
                 let field_types: Vec<(String, Type)> = fields
                     .iter()
                     .map(|(name, val)| (name.clone(), self.check_expr(val)))
                     .collect();
 
                 // For named struct literals (e.g., `User { naem: "alice" }`),
-                // validate field names against the known type fields.
+                // validate field names and types against the known type fields.
                 if let Some(type_name) = struct_name {
                     let resolved = self.env.resolve_type_name(type_name);
                     if let Type::Struct { fields: type_fields, .. } = &resolved {
                         let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
                         for (field_name, field_val) in fields {
-                            if !type_fields.iter().any(|(n, _)| n == field_name) {
+                            if let Some((_, expected_ty)) = type_fields.iter().find(|(n, _)| n == field_name) {
+                                // Check field type matches declared type
+                                let actual_ty = field_types.iter()
+                                    .find(|(n, _)| n == field_name)
+                                    .map(|(_, t)| t.clone())
+                                    .unwrap_or(Type::Unknown);
+                                if !self.types_compatible(expected_ty, &actual_ty) {
+                                    let field_span = field_val.span();
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0012",
+                                        format!(
+                                            "type mismatch for field '{}': expected {}, got {}",
+                                            field_name, expected_ty, actual_ty
+                                        ),
+                                        field_span,
+                                    ));
+                                }
+                            } else {
                                 let field_span = field_val.span();
                                 let mut diag = Diagnostic::error(
                                     "F0020",
@@ -877,6 +1097,7 @@ impl TypeChecker {
             Expr::TableLit { columns, rows, .. } => {
                 self.check_table_literal(columns, rows)
             }
+            Expr::Feature(fe) => self.check_feature_expr(fe),
         }
     }
 
@@ -911,7 +1132,7 @@ impl TypeChecker {
 
     /// Extract field annotations from a type expression, following type operators.
     /// Returns vec of (field_name, annotations) for fields that have annotations.
-    fn extract_type_annotations(&mut self, type_expr: &TypeExpr) -> Vec<(String, Vec<FieldAnnotation>)> {
+    pub(crate) fn extract_type_annotations(&mut self, type_expr: &TypeExpr) -> Vec<(String, Vec<FieldAnnotation>)> {
         use crate::typeck::types::FieldAnnotation;
         use crate::typeck::env::TypeEnv;
 
@@ -1225,7 +1446,7 @@ impl TypeChecker {
     }
 
     /// Check if a type expression ends with `as partial`
-    fn is_partial_type_expr(&self, type_expr: &TypeExpr) -> bool {
+    pub(crate) fn is_partial_type_expr(&self, type_expr: &TypeExpr) -> bool {
         matches!(type_expr, TypeExpr::AsPartial(_))
     }
 
@@ -1253,7 +1474,7 @@ impl TypeChecker {
         }).collect::<Vec<_>>().join(", ")
     }
 
-    fn check_intersection_annotation_conflicts(&mut self, type_expr: &TypeExpr, span: Span) {
+    pub(crate) fn check_intersection_annotation_conflicts(&mut self, type_expr: &TypeExpr, span: Span) {
         if let TypeExpr::Intersection(left, right) = type_expr {
             // Recursively check nested intersections
             self.check_intersection_annotation_conflicts(left, span);
@@ -1543,6 +1764,8 @@ impl TypeChecker {
             }
             // ptr and string are interchangeable at FFI boundary
             (Type::Ptr, Type::String) | (Type::String, Type::Ptr) => true,
+            // Function types are compatible with ptr (function pointers at FFI boundary)
+            (Type::Ptr, Type::Function { .. }) | (Type::Function { .. }, Type::Ptr) => true,
             _ => false,
         }
     }
@@ -1641,10 +1864,10 @@ impl TypeChecker {
                     "get" => Type::Nullable(val_type.clone()),
                     "keys" => Type::List(key_type.clone()),
                     "values" => Type::List(val_type.clone()),
-                    "contains_key" => Type::Bool,
+                    "contains_key" | "has" => Type::Bool,
                     "entries" => Type::List(Box::new(Type::Tuple(vec![*key_type.clone(), *val_type.clone()]))),
                     _ => {
-                        let known = ["get", "keys", "values", "contains_key", "entries"];
+                        let known = ["get", "keys", "values", "contains_key", "has", "entries"];
                         let mut diag = Diagnostic::error(
                             "F0020",
                             format!("map has no method '{}'", method),
@@ -1660,7 +1883,50 @@ impl TypeChecker {
                     }
                 }
             }
-            // For other types (structs, unknown), don't error — may be trait methods etc.
+            Type::Struct { name: Some(type_name), .. } => {
+                // Check if method exists on this type (from impl blocks)
+                if let Some(methods) = self.env.type_methods.get(type_name) {
+                    if let Some((_, ret_type)) = methods.iter().find(|(n, _)| n == method) {
+                        return ret_type.clone();
+                    }
+                }
+                // Check trait methods (all methods, including defaults)
+                if let Some(trait_names) = self.env.type_traits.get(type_name) {
+                    for trait_name in trait_names {
+                        if let Some(all_methods) = self.env.trait_all_methods.get(trait_name) {
+                            if all_methods.contains(&method.to_string()) {
+                                return Type::Unknown; // trait method exists, type unknown
+                            }
+                        }
+                    }
+                }
+                // Only report error if we have tracked methods for this type
+                // (otherwise it may have provider-generated methods)
+                let has_tracked = self.env.type_methods.contains_key(type_name)
+                    || self.env.type_traits.contains_key(type_name);
+                if has_tracked {
+                    let mut known_methods: Vec<String> = Vec::new();
+                    if let Some(methods) = self.env.type_methods.get(type_name) {
+                        known_methods.extend(methods.iter().map(|(n, _)| n.clone()));
+                    }
+                    let known_refs: Vec<&str> = known_methods.iter().map(|s| s.as_str()).collect();
+                    let mut diag = Diagnostic::error(
+                        "F0020",
+                        format!("'{}' has no method '{}'", type_name, method),
+                        span,
+                    );
+                    if let Some(suggestion) = crate::errors::did_you_mean(method, &known_refs, 2) {
+                        diag = diag.with_help(format!("did you mean '{}'?", suggestion));
+                    } else if !known_methods.is_empty() {
+                        diag = diag.with_help(format!("available methods: {}", known_methods.join(", ")));
+                    }
+                    self.diagnostics.push(diag);
+                    Type::Error
+                } else {
+                    Type::Unknown
+                }
+            }
+            // For other types (unknown, generics), don't error
             _ => Type::Unknown,
         }
     }

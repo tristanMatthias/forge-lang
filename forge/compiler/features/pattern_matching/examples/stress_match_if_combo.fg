@@ -1,0 +1,24 @@
+/// # Match + If Combination
+///
+/// Combining match expressions with if/else inside arms and vice versa.
+///
+/// expect: big even
+/// expect: small odd
+/// expect: zero
+
+fn classify(n: int) -> string {
+  if n == 0 {
+    "zero"
+  } else {
+    match n % 2 {
+      0 -> if n > 50 { "big even" } else { "small even" }
+      _ -> if n > 50 { "big odd" } else { "small odd" }
+    }
+  }
+}
+
+fn main() {
+  println(classify(100))
+  println(classify(3))
+  println(classify(0))
+}

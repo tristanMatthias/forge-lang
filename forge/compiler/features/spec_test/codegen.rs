@@ -177,9 +177,23 @@ impl<'ctx> Codegen<'ctx> {
         let then_fn = self.module.get_function("forge_test_run_then")
             .expect("forge_test_run_then not declared - did you `use @std.test`?");
 
-        // Table literal is Expr::TableLit { columns, rows }
-        if let Expr::TableLit { columns, rows, .. } = table {
-            for (row_idx, row) in rows.iter().enumerate() {
+        // Table literal is Expr::TableLit { columns, rows } or Feature("table_literal")
+        let (columns, rows) = if let Expr::TableLit { columns, rows, .. } = table {
+            (columns.as_slice(), rows.as_slice())
+        } else if let Expr::Feature(fe) = table {
+            if fe.feature_id == "table_literal" {
+                if let Some(data) = crate::feature_data!(fe, crate::features::table_literal::types::TableLitData) {
+                    (data.columns.as_slice(), data.rows.as_slice())
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        } else {
+            return;
+        };
+        for (row_idx, row) in rows.iter().enumerate() {
                 self.push_scope();
 
                 // Build descriptive test name: "name (col1=val1, col2=val2)"
@@ -220,7 +234,6 @@ impl<'ctx> Codegen<'ctx> {
 
                 self.pop_scope();
             }
-        }
     }
 
     /// Compile a skip statement: calls forge_test_skip(name)

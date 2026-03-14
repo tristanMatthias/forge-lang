@@ -1,0 +1,14 @@
+/// # For Over String List
+///
+/// Iterate over a list of strings and build a concatenated result.
+///
+/// expect: hello world !
+
+fn main() {
+  let words = ["hello", "world", "!"]
+  mut result = ""
+  for word in words {
+    result = result + word + " "
+  }
+  println(result.trim())
+}

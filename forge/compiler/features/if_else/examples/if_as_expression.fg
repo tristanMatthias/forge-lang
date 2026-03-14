@@ -1,0 +1,18 @@
+/// # If as Expression
+///
+/// Using if/else as a value expression in various positions.
+///
+/// expect: yes
+/// expect: 30
+/// expect: result: big
+
+fn main() {
+  let x = if true { "yes" } else { "no" }
+  println(x)
+
+  let y = 10 + if true { 20 } else { 0 }
+  println(y)
+
+  let label = `result: ${if 100 > 50 { "big" } else { "small" }}`
+  println(label)
+}

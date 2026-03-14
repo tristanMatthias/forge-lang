@@ -1,0 +1,20 @@
+/// # Table Iteration
+///
+/// Iterate over table rows with a for loop.
+///
+/// expect: alice: 30
+/// expect: bob: 25
+/// expect: carol: 35
+
+fn main() {
+    let users = table {
+        name    | age
+        "alice" | 30
+        "bob"   | 25
+        "carol" | 35
+    }
+
+    for user in users {
+        println(`${user.name}: ${user.age}`)
+    }
+}

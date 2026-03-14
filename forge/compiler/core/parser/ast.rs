@@ -1,3 +1,4 @@
+use crate::feature::{FeatureExpr, FeatureStmt};
 use crate::lexer::Span;
 
 #[derive(Debug, Clone)]
@@ -203,6 +204,8 @@ pub enum Statement {
         name: String,
         span: Span,
     },
+    // Feature-owned statement (extension point for modular features)
+    Feature(FeatureStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -521,6 +524,8 @@ pub enum Expr {
         rows: Vec<Vec<Expr>>,
         span: Span,
     },
+    // Feature-owned expression (extension point for modular features)
+    Feature(FeatureExpr),
 }
 
 impl Expr {
@@ -561,6 +566,7 @@ impl Expr {
             | Expr::TaggedTemplate { span, .. }
             | Expr::Is { span, .. }
             | Expr::TableLit { span, .. } => *span,
+            Expr::Feature(fe) => fe.span,
             Expr::Block(block) => block.span,
         }
     }

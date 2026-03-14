@@ -1,6 +1,9 @@
+use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
+
+use super::types::NullCoalesceData;
 
 impl Parser {
     /// Parse null coalesce expressions: `expr ?? fallback`
@@ -14,11 +17,15 @@ impl Parser {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_or()?;
-            left = Expr::NullCoalesce {
-                left: Box::new(left),
-                right: Box::new(right),
+            left = Expr::Feature(FeatureExpr {
+                feature_id: "null_safety",
+                kind: "NullCoalesce",
+                data: Box::new(NullCoalesceData {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }),
                 span,
-            };
+            });
         }
         Some(left)
     }

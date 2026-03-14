@@ -1,0 +1,40 @@
+/// # Multiple Catches in Sequence
+///
+/// Multiple catch expressions in the same function scope,
+/// each handling different Results independently.
+///
+/// expect: a: 10
+/// expect: b err: second
+/// expect: c err: third
+/// expect: d: 40
+
+fn op(x: int) -> Result<int, string> {
+  if x == 1 { Ok(10) }
+  else if x == 2 { Err("second") }
+  else if x == 3 { Err("third") }
+  else { Ok(40) }
+}
+
+fn main() {
+  let a = op(1) catch (e) {
+    println(`a err: ${e}`)
+    -1
+  }
+  println(`a: ${string(a)}`)
+
+  let b = op(2) catch (e) {
+    println(`b err: ${e}`)
+    -1
+  }
+
+  let c = op(3) catch (e) {
+    println(`c err: ${e}`)
+    -1
+  }
+
+  let d = op(4) catch (e) {
+    println(`d err: ${e}`)
+    -1
+  }
+  println(`d: ${string(d)}`)
+}

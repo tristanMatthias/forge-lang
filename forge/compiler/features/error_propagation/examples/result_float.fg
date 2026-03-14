@@ -1,0 +1,21 @@
+/// # Result Float
+///
+/// Result type with float Ok values works correctly
+/// with catch recovery.
+///
+/// expect: 3.14
+/// expect: caught: no pi
+
+fn get_pi(yes: bool) -> Result<float, string> {
+  if yes { Ok(3.14) } else { Err("no pi") }
+}
+
+fn main() {
+  let a = get_pi(true) catch (e) { 0.0 }
+  println(string(a))
+
+  let b = get_pi(false) catch (e) {
+    println(`caught: ${e}`)
+    0.0
+  }
+}
