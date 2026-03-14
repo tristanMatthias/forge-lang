@@ -19,20 +19,15 @@ use crate::typeck::types::Type;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-mod dispatch;
 mod control_flow;
-mod errors;
+mod dispatch;
 mod expressions;
-mod extern_ffi;
 mod linker;
 mod literals;
-mod nullability;
-mod pattern_match;
 mod runtime;
 mod scope;
 mod statements;
 mod tagged;
-mod traits;
 mod types;
 
 /// Information about a service declaration (used by component_expand for mount resolution)
