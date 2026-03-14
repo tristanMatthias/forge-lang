@@ -1410,6 +1410,8 @@ pub fn validate_lang() {
     let mut has_examples_count = 0usize;
     let mut has_description_count = 0usize;
     let mut has_long_desc_count = 0usize;
+    let mut has_grammar_count = 0usize;
+    let mut has_category_count = 0usize;
     let mut has_status_count = 0usize;
     let mut fully_documented = 0usize;
     let mut stable_count = 0usize;
@@ -1425,12 +1427,16 @@ pub fn validate_lang() {
         let has_examples = example_count > 0;
         let has_description = !f.description.is_empty();
         let has_long_desc = !f.long_description.is_empty();
+        let has_grammar = !f.grammar.is_empty();
+        let has_category = !f.category.is_empty();
 
         if has_syntax { has_syntax_count += 1; }
         if has_short { has_short_count += 1; }
         if has_examples { has_examples_count += 1; }
         if has_description { has_description_count += 1; }
         if has_long_desc { has_long_desc_count += 1; }
+        if has_grammar { has_grammar_count += 1; }
+        if has_category { has_category_count += 1; }
         has_status_count += 1; // status is always set (it's an enum)
 
         let is_stable = f.status == crate::registry::FeatureStatus::Stable;
@@ -1439,7 +1445,7 @@ pub fn validate_lang() {
             if has_examples { stable_with_examples += 1; }
         }
 
-        let is_fully_doc = has_syntax && has_short && has_examples && has_long_desc;
+        let is_fully_doc = has_syntax && has_short && has_examples && has_long_desc && has_grammar && has_category;
         if is_fully_doc { fully_documented += 1; }
 
         // Determine line icon
@@ -1454,6 +1460,7 @@ pub fn validate_lang() {
         let syntax_tag = if has_syntax { green("syntax \u{2713}") } else { red("no syntax") };
         let short_tag = if has_short { green("short \u{2713}") } else { red("no short") };
         let long_desc_tag = if has_long_desc { green("long_desc \u{2713}") } else { red("no long_desc") };
+        let grammar_tag = if has_grammar { green("grammar \u{2713}") } else { red("no grammar") };
         let examples_tag = if has_examples {
             format!("{} examples", example_count)
         } else {
@@ -1469,8 +1476,8 @@ pub fn validate_lang() {
         };
 
         println!(
-            "    {} {}: {}, {}, {}, {}",
-            icon_str, f.id, syntax_tag, short_tag, long_desc_tag, examples_tag
+            "    {} {}: {}, {}, {}, {}, {}",
+            icon_str, f.id, syntax_tag, short_tag, long_desc_tag, grammar_tag, examples_tag
         );
     }
 
@@ -1482,6 +1489,8 @@ pub fn validate_lang() {
     let checks: Vec<(&str, usize, usize, bool)> = vec![
         ("All features have descriptions", has_description_count, total, has_description_count == total),
         ("All features have long descriptions", has_long_desc_count, total, has_long_desc_count == total),
+        ("All features have grammar rules", has_grammar_count, total, has_grammar_count == total),
+        ("All features have categories", has_category_count, total, has_category_count == total),
         ("All features have syntax patterns", has_syntax_count, total, has_syntax_count == total),
         ("All features have short descriptions", has_short_count, total, has_short_count == total),
         ("All features have examples", has_examples_count, total, has_examples_count == total),
@@ -1697,26 +1706,7 @@ pub fn show_short(query: &str) {
 
 // ── Feature ordering for compact outputs ────────────────────────────
 
-/// Logical grouping order for features in compact outputs.
-const FEATURE_GROUP_ORDER: &[(&str, &[&str])] = &[
-    ("Variables", &["variables", "immutability"]),
-    ("Functions", &["functions"]),
-    ("Closures", &["closures", "it_parameter"]),
-    ("Control Flow", &["if_else", "for_loops", "while_loops"]),
-    ("Pattern Matching", &["pattern_matching", "is_keyword"]),
-    ("Operators", &["operators", "pipe_operator", "ranges", "type_operators"]),
-    ("Strings", &["strings", "string_templates", "tagged_templates"]),
-    ("Collections", &["collections", "structs", "tuples", "enums", "shorthand_fields"]),
-    ("Null Safety", &["null_safety", "error_propagation"]),
-    ("Concurrency", &["spawn", "channels", "select_syntax", "parallel"]),
-    ("Special", &["defer", "shell_shorthand", "table_literal", "with_expression",
-                   "spec_test", "durations", "datetime", "annotations",
-                   "imports", "json", "json_builtins", "query_helpers",
-                   "process_uptime", "validation", "error_messages"]),
-    ("Components", &["components", "component_syntax", "component_events",
-                      "component_config", "extern_ffi", "c_abi_trampolines",
-                      "generics", "traits"]),
-];
+// Category ordering now lives in FeatureRegistry::by_category()
 
 /// Get the description for a feature (short if available, else description).
 fn feature_desc(meta: &FeatureMetadata) -> &str {
@@ -1736,21 +1726,15 @@ pub fn show_llm_compact() {
     println!("# Truthy: everything except false, null, 0, \"\"");
     println!();
 
-    let all_features = FeatureRegistry::all();
-    let feature_map: std::collections::HashMap<&str, &FeatureMetadata> =
-        all_features.iter().map(|f| (f.id, *f)).collect();
-
-    for (group_name, ids) in FEATURE_GROUP_ORDER {
+    for (group_name, features) in FeatureRegistry::by_category() {
         let mut group_lines: Vec<String> = Vec::new();
-        for id in *ids {
-            if let Some(meta) = feature_map.get(id) {
-                if !meta.syntax.is_empty() {
-                    for s in meta.syntax {
-                        group_lines.push(s.to_string());
-                    }
-                } else {
-                    group_lines.push(format!("# {}", feature_desc(meta)));
+        for meta in &features {
+            if !meta.syntax.is_empty() {
+                for s in meta.syntax {
+                    group_lines.push(s.to_string());
                 }
+            } else {
+                group_lines.push(format!("# {}", feature_desc(meta)));
             }
         }
         if !group_lines.is_empty() {
@@ -1896,33 +1880,25 @@ pub fn show_llm_full() {
     println!("# Truthy: everything except false, null, 0, \"\"");
     println!();
 
-    let all_features = FeatureRegistry::all();
-    let feature_map: std::collections::HashMap<&str, &FeatureMetadata> =
-        all_features.iter().map(|f| (f.id, *f)).collect();
-
-    for (group_name, ids) in FEATURE_GROUP_ORDER {
-        let mut has_content = false;
+    for (group_name, features) in FeatureRegistry::by_category() {
         let mut group_output = String::new();
 
-        for id in *ids {
-            if let Some(meta) = feature_map.get(id) {
-                has_content = true;
-                group_output.push_str(&format!("# {}\n", feature_desc(meta)));
-                if !meta.syntax.is_empty() {
-                    for s in meta.syntax {
-                        group_output.push_str(&format!("{}\n", s));
-                    }
+        for meta in &features {
+            group_output.push_str(&format!("# {}\n", feature_desc(meta)));
+            if !meta.syntax.is_empty() {
+                for s in meta.syntax {
+                    group_output.push_str(&format!("{}\n", s));
                 }
-                if let Some(example) = read_first_example(id) {
-                    group_output.push_str("```\n");
-                    group_output.push_str(&example);
-                    group_output.push_str("\n```\n");
-                }
-                group_output.push('\n');
             }
+            if let Some(example) = read_first_example(meta.id) {
+                group_output.push_str("```\n");
+                group_output.push_str(&example);
+                group_output.push_str("\n```\n");
+            }
+            group_output.push('\n');
         }
 
-        if has_content {
+        if !group_output.is_empty() {
             println!("## {}", group_name);
             print!("{}", group_output);
         }
@@ -2004,25 +1980,16 @@ pub fn show_grammar() {
     println!("                | <component_block> | <expr_stmt>");
     println!();
 
-    let all_features = FeatureRegistry::all();
-    let feature_map: std::collections::HashMap<&str, &FeatureMetadata> =
-        all_features.iter().map(|f| (f.id, *f)).collect();
-
-    for (group_name, ids) in FEATURE_GROUP_ORDER {
+    for (group_name, features) in FeatureRegistry::by_category() {
         let mut group_rules: Vec<String> = Vec::new();
 
-        for id in *ids {
-            if let Some(meta) = feature_map.get(id) {
-                if !meta.syntax.is_empty() {
-                    for s in meta.syntax {
-                        group_rules.push(s.to_string());
-                    }
-                } else {
-                    let rule = generate_grammar_rule(meta);
-                    if !rule.is_empty() {
-                        group_rules.push(rule);
-                    }
+        for meta in &features {
+            if !meta.syntax.is_empty() {
+                for s in meta.syntax {
+                    group_rules.push(s.to_string());
                 }
+            } else if !meta.grammar.is_empty() {
+                group_rules.push(meta.grammar.to_string());
             }
         }
 
@@ -2037,83 +2004,6 @@ pub fn show_grammar() {
             }
             println!();
         }
-    }
-}
-
-/// Generate a basic BNF-style grammar rule from feature metadata.
-fn generate_grammar_rule(meta: &FeatureMetadata) -> String {
-    match meta.id {
-        "variables" => concat!(
-            "<let_stmt>    ::= \"let\" <ident> [\":\" <type>] \"=\" <expr>\n",
-            "<const_stmt>  ::= \"const\" <ident> \"=\" <expr>"
-        ).to_string(),
-        "immutability" => {
-            "<mut_stmt>    ::= \"mut\" <ident> [\":\" <type>] \"=\" <expr>".to_string()
-        }
-        "functions" => {
-            "<fn_decl>     ::= \"fn\" <ident> \"(\" <params> \")\" [\"->\" <type>] <block>"
-                .to_string()
-        }
-        "closures" => concat!(
-            "<closure>     ::= \"(\" <params> \")\" \"->\" <expr>\n",
-            "                | \"(\" <params> \")\" \"->\" <block>"
-        ).to_string(),
-        "it_parameter" => {
-            "<it_closure>  ::= <expr>       # implicit `it` parameter".to_string()
-        }
-        "if_else" => {
-            "<if_stmt>     ::= \"if\" <expr> <block> [\"else\" (<if_stmt> | <block>)]".to_string()
-        }
-        "for_loops" => "<for_stmt>    ::= \"for\" <ident> \"in\" <expr> <block>".to_string(),
-        "while_loops" => "<while_stmt>  ::= \"while\" <expr> <block>".to_string(),
-        "pattern_matching" => {
-            "<match_expr>  ::= \"match\" <expr> \"{\" (<pattern> \"->\" <expr>)* \"}\"".to_string()
-        }
-        "is_keyword" => "<is_expr>     ::= <expr> \"is\" <pattern>".to_string(),
-        "pipe_operator" => "<pipe_expr>   ::= <expr> \"|>\" <expr>".to_string(),
-        "ranges" => {
-            "<range_expr>  ::= <expr> \"..\" <expr> | <expr> \"..=\" <expr>".to_string()
-        }
-        "null_safety" => concat!(
-            "<nullable>    ::= <type> \"?\"\n",
-            "<coalesce>    ::= <expr> \"??\" <expr>\n",
-            "<safe_access> ::= <expr> \"?.\" <ident>"
-        ).to_string(),
-        "error_propagation" => "<propagate>   ::= <expr> \"?\"".to_string(),
-        "spawn" => "<spawn_block> ::= \"spawn\" <block>".to_string(),
-        "channels" => concat!(
-            "<chan_send>   ::= <expr> \"<-\" <expr>\n",
-            "<chan_recv>   ::= \"<-\" <expr>"
-        ).to_string(),
-        "select_syntax" => {
-            "<select_stmt> ::= \"select\" \"{\" (<ident> \"<-\" <expr> \"->\" <block>)* \"}\""
-                .to_string()
-        }
-        "defer" => "<defer_stmt>  ::= \"defer\" <expr>".to_string(),
-        "shell_shorthand" => {
-            "<shell_expr>  ::= \"$\\\"\" <template> \"\\\"\" | \"$`\" <template> \"`\"".to_string()
-        }
-        "with_expression" => {
-            "<with_expr>   ::= <expr> \"with\" \"{\" <field_updates> \"}\"".to_string()
-        }
-        "string_templates" => {
-            "<template>    ::= \"\\\"...${\" <expr> \"}...\\\"\"".to_string()
-        }
-        "imports" => {
-            "<import_stmt> ::= \"use\" \"@\" <namespace> \".\" <name> \"{\" <symbols> \"}\""
-                .to_string()
-        }
-        "structs" => {
-            "<struct_decl> ::= \"type\" <ident> \"{\" (<ident> \":\" <type>)* \"}\"".to_string()
-        }
-        "enums" => {
-            "<enum_decl>   ::= \"enum\" <ident> \"{\" (<ident> [\"(\" <types> \")\"])* \"}\""
-                .to_string()
-        }
-        "components" => {
-            "<component>   ::= \"component\" <ident> \"(\" <args> \")\" <block>".to_string()
-        }
-        _ => String::new(),
     }
 }
 
