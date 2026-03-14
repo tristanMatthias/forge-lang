@@ -10,7 +10,15 @@ pub struct ErrorPropagateData {
     pub operand: Box<Expr>,
 }
 
-crate::impl_feature_node!(ErrorPropagateData);
+impl crate::feature::FeatureNode for ErrorPropagateData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(ErrorPropagateData {
+            operand: Box::new((fns.sub_expr)(&self.operand)),
+        })
+    }
+}
 
 /// AST data for Ok constructor: `ok(value)`
 #[derive(Debug, Clone)]
@@ -18,7 +26,15 @@ pub struct OkExprData {
     pub value: Box<Expr>,
 }
 
-crate::impl_feature_node!(OkExprData);
+impl crate::feature::FeatureNode for OkExprData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(OkExprData {
+            value: Box::new((fns.sub_expr)(&self.value)),
+        })
+    }
+}
 
 /// AST data for Err constructor: `err(value)`
 #[derive(Debug, Clone)]
@@ -26,7 +42,15 @@ pub struct ErrExprData {
     pub value: Box<Expr>,
 }
 
-crate::impl_feature_node!(ErrExprData);
+impl crate::feature::FeatureNode for ErrExprData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(ErrExprData {
+            value: Box::new((fns.sub_expr)(&self.value)),
+        })
+    }
+}
 
 /// AST data for catch expression: `expr catch (binding) { handler }`
 #[derive(Debug, Clone)]
@@ -36,7 +60,17 @@ pub struct CatchData {
     pub handler: Block,
 }
 
-crate::impl_feature_node!(CatchData);
+impl crate::feature::FeatureNode for CatchData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(CatchData {
+            expr: Box::new((fns.sub_expr)(&self.expr)),
+            binding: self.binding.clone(),
+            handler: (fns.sub_block)(&self.handler),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of `ok(value)` via Feature dispatch.

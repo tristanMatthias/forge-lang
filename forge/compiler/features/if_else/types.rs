@@ -12,7 +12,17 @@ pub struct IfData {
     pub else_branch: Option<Block>,
 }
 
-crate::impl_feature_node!(IfData);
+impl crate::feature::FeatureNode for IfData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(IfData {
+            condition: Box::new((fns.sub_expr)(&self.condition)),
+            then_branch: (fns.sub_block)(&self.then_branch),
+            else_branch: self.else_branch.as_ref().map(|b| (fns.sub_block)(b)),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of an if/else expression via the Feature dispatch system.

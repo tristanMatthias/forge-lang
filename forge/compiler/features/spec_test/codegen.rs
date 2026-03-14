@@ -187,9 +187,7 @@ impl<'ctx> Codegen<'ctx> {
         let mut last_val: Option<BasicValueEnum<'ctx>> = None;
         for stmt in &body.statements {
             match stmt {
-                Statement::Expr(expr) => {
-                    last_val = self.compile_expr(expr);
-                }
+                Statement::Expr(expr) => last_val = self.compile_expr(expr),
                 _ => {
                     self.compile_statement(stmt);
                     last_val = None;
@@ -198,16 +196,10 @@ impl<'ctx> Codegen<'ctx> {
         }
         self.pop_scope();
 
-        // The last expression should be a bool (i8). Default to false if no value.
-        if let Some(val) = last_val {
-            if val.is_int_value() {
-                val.into_int_value()
-            } else {
-                self.context.i8_type().const_zero()
-            }
-        } else {
-            self.context.i8_type().const_zero()
-        }
+        last_val
+            .filter(|v| v.is_int_value())
+            .map(|v| v.into_int_value())
+            .unwrap_or_else(|| self.context.i8_type().const_zero())
     }
 
     /// Helper: build a string literal and extract its raw C pointer for runtime calls.

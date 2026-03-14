@@ -11,7 +11,16 @@ pub struct PipeData {
     pub right: Box<Expr>,
 }
 
-crate::impl_feature_node!(PipeData);
+impl crate::feature::FeatureNode for PipeData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(PipeData {
+            left: Box::new((fns.sub_expr)(&self.left)),
+            right: Box::new((fns.sub_expr)(&self.right)),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a pipe expression via the Feature dispatch system.

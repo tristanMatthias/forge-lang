@@ -209,19 +209,17 @@ impl<'ctx> Codegen<'ctx> {
     /// Dispatch a feature-owned statement to the appropriate feature's codegen.
     /// Each feature adds one arm here via its feature_id.
     pub(crate) fn compile_feature_stmt(&mut self, fe: &crate::feature::FeatureStmt) {
-        match fe.feature_id {
-            "defer" => self.compile_defer_feature(fe),
-            "select_syntax" => self.compile_select_feature(fe),
-            "for_loops" => self.compile_for_feature(fe),
-            "while_loops" => self.compile_while_loops_feature(fe),
-            "enums" => self.compile_enum_feature(fe),
-            "variables" => self.compile_variables_feature(fe),
-            "functions" => self.compile_functions_feature(fe),
-            "structs" => {} // TypeDecl handled in compile_program first pass
-            "traits" => self.compile_traits_feature(fe),
-            "imports" => self.compile_imports_feature(fe),
-            _ => {} // Unknown feature — no-op (feature not yet migrated)
-        }
+        crate::dispatch_feature_stmt!(self, fe, {
+            "defer"         => compile_defer_feature,
+            "select_syntax" => compile_select_feature,
+            "for_loops"     => compile_for_feature,
+            "while_loops"   => compile_while_loops_feature,
+            "enums"         => compile_enum_feature,
+            "variables"     => compile_variables_feature,
+            "functions"     => compile_functions_feature,
+            "traits"        => compile_traits_feature,
+            "imports"       => compile_imports_feature,
+        })
     }
 
     /// Compile a simple variable binding (mut or const) without the extra

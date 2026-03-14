@@ -441,60 +441,58 @@ impl TypeChecker {
 
     /// Dispatch a feature-owned statement to the appropriate feature's checker.
     pub(crate) fn check_feature_stmt(&mut self, fe: &crate::feature::FeatureStmt) {
-        match fe.feature_id {
-            "defer" => self.check_defer_feature(fe),
-            "select_syntax" => self.check_select_feature(fe),
-            "for_loops" => self.check_for_feature(fe),
-            "while_loops" => self.check_while_loops_feature(fe),
-            "enums" => self.check_enum_feature(fe),
-            "variables" => self.check_variables_feature(fe),
-            "functions" => self.check_functions_feature(fe),
-            "structs" => self.check_structs_feature(fe),
-            "traits" => self.check_traits_feature(fe),
-            "imports" => self.check_imports_feature(fe),
-            _ => {} // Unknown feature — no-op
-        }
+        crate::dispatch_feature_stmt!(self, fe, {
+            "defer"         => check_defer_feature,
+            "select_syntax" => check_select_feature,
+            "for_loops"     => check_for_feature,
+            "while_loops"   => check_while_loops_feature,
+            "enums"         => check_enum_feature,
+            "variables"     => check_variables_feature,
+            "functions"     => check_functions_feature,
+            "structs"       => check_structs_feature,
+            "traits"        => check_traits_feature,
+            "imports"       => check_imports_feature,
+        })
     }
 
     /// Dispatch a feature-owned expression to the appropriate feature's checker.
     pub(crate) fn check_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Type {
-        match (fe.feature_id, fe.kind) {
-            ("spawn", _) => self.check_spawn_feature(fe),
-            ("ranges", _) => self.check_range_feature(fe),
-            ("is_keyword", _) => self.check_is_feature(fe),
-            ("with_expression", _) => self.check_with_feature(fe),
-            ("pipe_operator", _) => self.check_pipe_feature(fe),
-            ("shell_shorthand", _) => self.check_dollar_exec_feature(fe),
-            ("tagged_templates", _) => self.check_tagged_template_feature(fe),
-            ("table_literal", _) => self.check_table_lit_feature(fe),
-            ("closures", _) => self.check_closure_feature(fe),
-            ("pattern_matching", _) => self.check_match_feature(fe),
-            ("channels", _) => self.check_channel_feature(fe),
-            ("if_else", _) => self.check_if_feature(fe),
-            ("null_safety", "NullCoalesce") => self.check_null_coalesce_feature(fe),
-            ("null_safety", "NullPropagate") => self.check_null_propagate_feature(fe),
-            ("null_safety", "ForceUnwrap") => {
-                use crate::features::null_safety::types::ForceUnwrapData;
-                if let Some(data) = crate::feature_data!(fe, ForceUnwrapData) {
-                    let inner = self.check_expr(&data.operand);
-                    match inner {
-                        Type::Nullable(t) => *t,
-                        other => other,
-                    }
-                } else {
-                    Type::Unknown
-                }
+        // ForceUnwrap has inline logic — handle before the dispatch table
+        if fe.feature_id == "null_safety" && fe.kind == "ForceUnwrap" {
+            use crate::features::null_safety::types::ForceUnwrapData;
+            if let Some(data) = crate::feature_data!(fe, ForceUnwrapData) {
+                let inner = self.check_expr(&data.operand);
+                return match inner {
+                    Type::Nullable(t) => *t,
+                    other => other,
+                };
             }
-            ("error_propagation", "ErrorPropagate") => self.check_error_propagate_feature(fe),
-            ("error_propagation", "OkExpr") => self.check_ok_expr_feature(fe),
-            ("error_propagation", "ErrExpr") => self.check_err_expr_feature(fe),
-            ("error_propagation", "Catch") => self.check_catch_feature(fe),
-            ("structs", _) => self.check_struct_lit_feature(fe),
-            ("tuples", _) => self.check_tuple_lit_feature(fe),
-            ("collections", "ListLit") => self.check_list_lit_feature(fe),
-            ("collections", "MapLit") => self.check_map_lit_feature(fe),
-            _ => Type::Unknown,
+            return Type::Unknown;
         }
+        crate::dispatch_feature_check!(self, fe, {
+            ("spawn", _)                       => check_spawn_feature,
+            ("ranges", _)                      => check_range_feature,
+            ("is_keyword", _)                  => check_is_feature,
+            ("with_expression", _)             => check_with_feature,
+            ("pipe_operator", _)               => check_pipe_feature,
+            ("shell_shorthand", _)             => check_dollar_exec_feature,
+            ("tagged_templates", _)            => check_tagged_template_feature,
+            ("table_literal", _)               => check_table_lit_feature,
+            ("closures", _)                    => check_closure_feature,
+            ("pattern_matching", _)            => check_match_feature,
+            ("channels", _)                    => check_channel_feature,
+            ("if_else", _)                     => check_if_feature,
+            ("null_safety", "NullCoalesce")    => check_null_coalesce_feature,
+            ("null_safety", "NullPropagate")   => check_null_propagate_feature,
+            ("error_propagation", "ErrorPropagate") => check_error_propagate_feature,
+            ("error_propagation", "OkExpr")    => check_ok_expr_feature,
+            ("error_propagation", "ErrExpr")   => check_err_expr_feature,
+            ("error_propagation", "Catch")     => check_catch_feature,
+            ("structs", _)                     => check_struct_lit_feature,
+            ("tuples", _)                      => check_tuple_lit_feature,
+            ("collections", "ListLit")         => check_list_lit_feature,
+            ("collections", "MapLit")          => check_map_lit_feature,
+        })
     }
 
     pub(crate) fn check_block(&mut self, block: &Block) {
@@ -1012,10 +1010,6 @@ impl TypeChecker {
                 }
             }
         }
-    }
-
-    pub(crate) fn check_type_mismatch(&mut self, expected: &Type, actual: &Type, span: Span) {
-        self.check_type_mismatch_ctx(expected, actual, span, None, None);
     }
 
     pub(crate) fn check_type_mismatch_ctx(

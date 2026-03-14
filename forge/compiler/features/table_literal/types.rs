@@ -11,7 +11,16 @@ pub struct TableLitData {
     pub rows: Vec<Vec<Expr>>,
 }
 
-crate::impl_feature_node!(TableLitData);
+impl crate::feature::FeatureNode for TableLitData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(TableLitData {
+            columns: self.columns.clone(),
+            rows: self.rows.iter().map(|row| row.iter().map(|e| (fns.sub_expr)(e)).collect()).collect(),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a table literal via Feature dispatch.

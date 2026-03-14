@@ -10,6 +10,18 @@ crate::forge_feature! {
     syntax: ["process_uptime()"],
     short: "process_uptime() — milliseconds since process start",
     symbols: [],
+    long_description: "\
+Process uptime tracking provides the `process_uptime()` function, which returns the number of \
+milliseconds since the current Forge process started. This is useful for performance monitoring, \
+logging elapsed time, and implementing timeouts.
+
+The uptime is measured from process start, not from when the function is first called. This \
+gives consistent, comparable timestamps throughout the program's execution. Combined with \
+duration literals, you can write expressive timing checks: `if process_uptime() > 30s { ... }`.
+
+The implementation uses the operating system's monotonic clock, so the value always increases \
+and is not affected by system clock adjustments. This makes it reliable for measuring intervals \
+even if the system time is changed during execution.",
 }
 
 pub mod codegen;

@@ -11,7 +11,16 @@ pub struct WithData {
     pub updates: Vec<(String, Expr)>,
 }
 
-crate::impl_feature_node!(WithData);
+impl crate::feature::FeatureNode for WithData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(WithData {
+            base: Box::new((fns.sub_expr)(&self.base)),
+            updates: self.updates.iter().map(|(k, v)| (k.clone(), (fns.sub_expr)(v))).collect(),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a `with` expression via the Feature dispatch system.

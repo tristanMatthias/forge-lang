@@ -1,4 +1,4 @@
-use crate::errors::diagnostic::{Diagnostic, Suggestion};
+use crate::errors::diagnostic::Diagnostic;
 
 /// Apply high-confidence fixes from diagnostics to the source text.
 /// Returns (fixed_source, applied_count, skipped_count).

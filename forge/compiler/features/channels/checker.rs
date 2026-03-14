@@ -25,7 +25,7 @@ impl TypeChecker {
 
         // If channel has a known element type, check that the value matches
         if let Type::Channel(ref inner) = ch_type {
-            if !matches!(**inner, Type::Unknown) && *inner != Box::new(val_type.clone()) {
+            if !matches!(**inner, Type::Unknown) && **inner != val_type {
                 // Type mismatch on send - but we don't block it (runtime uses string serialization)
                 // Future: emit a diagnostic here
             }

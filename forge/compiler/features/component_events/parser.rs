@@ -14,7 +14,7 @@ impl Parser {
             TokenKind::Ident(n) => n.clone(),
             _ => return None,
         };
-        let timing = if timing_name == "before" {
+        let _timing = if timing_name == "before" {
             HookTiming::Before
         } else {
             HookTiming::After

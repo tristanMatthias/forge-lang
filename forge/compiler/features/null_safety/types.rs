@@ -11,7 +11,16 @@ pub struct NullCoalesceData {
     pub right: Box<Expr>,
 }
 
-crate::impl_feature_node!(NullCoalesceData);
+impl crate::feature::FeatureNode for NullCoalesceData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(NullCoalesceData {
+            left: Box::new((fns.sub_expr)(&self.left)),
+            right: Box::new((fns.sub_expr)(&self.right)),
+        })
+    }
+}
 
 /// AST data for null propagate: `object?.field`
 #[derive(Debug, Clone)]
@@ -20,7 +29,16 @@ pub struct NullPropagateData {
     pub field: String,
 }
 
-crate::impl_feature_node!(NullPropagateData);
+impl crate::feature::FeatureNode for NullPropagateData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(NullPropagateData {
+            object: Box::new((fns.sub_expr)(&self.object)),
+            field: self.field.clone(),
+        })
+    }
+}
 
 /// AST data for force unwrap: `expr!`
 #[derive(Debug, Clone)]
@@ -28,22 +46,20 @@ pub struct ForceUnwrapData {
     pub operand: Box<Expr>,
 }
 
-crate::impl_feature_node!(ForceUnwrapData);
+impl crate::feature::FeatureNode for ForceUnwrapData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(ForceUnwrapData {
+            operand: Box::new((fns.sub_expr)(&self.operand)),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
-    /// Infer the type of `NullLit` — returns `Nullable(Unknown)`.
-    pub(crate) fn infer_null_lit_type(&self) -> Type {
-        Type::Nullable(Box::new(Type::Unknown))
-    }
-
     /// Infer the type of a null coalesce expression via Feature dispatch.
     pub(crate) fn infer_null_coalesce_feature_type(&self, fe: &FeatureExpr) -> Type {
         feature_check!(self, fe, NullCoalesceData, |data| self.infer_type(&data.right))
-    }
-
-    /// Infer the type of a null coalesce expression: `left ?? right`
-    pub(crate) fn infer_null_coalesce_type(&self, right: &Expr) -> Type {
-        self.infer_type(right)
     }
 
     /// Infer the type of a null propagate expression via Feature dispatch.

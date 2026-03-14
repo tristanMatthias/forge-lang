@@ -451,37 +451,37 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::Feature(fe) => self.infer_feature_type(fe),
-
-            _ => Type::Unknown,
         }
     }
 
     /// Dispatch a feature-owned expression to the appropriate feature's type inference.
     pub(crate) fn infer_feature_type(&self, fe: &crate::feature::FeatureExpr) -> Type {
-        match (fe.feature_id, fe.kind) {
-            ("ranges", _) => self.infer_range_feature_type(fe),
-            ("is_keyword", _) => Type::Bool,
-            ("with_expression", _) => self.infer_with_feature_type(fe),
-            ("pipe_operator", _) => self.infer_pipe_feature_type(fe),
-            ("shell_shorthand", _) => self.infer_dollar_exec_feature_type(fe),
-            ("tagged_templates", _) => self.infer_tagged_template_feature_type(fe),
-            ("table_literal", _) => self.infer_table_lit_feature_type(fe),
-            ("closures", _) => self.infer_closure_feature_type(fe),
-            ("pattern_matching", _) => self.infer_match_feature_type(fe),
-            ("if_else", _) => self.infer_if_feature_type(fe),
-            ("null_safety", "NullCoalesce") => self.infer_null_coalesce_feature_type(fe),
-            ("null_safety", "NullPropagate") => self.infer_null_propagate_feature_type(fe),
-            ("null_safety", "ForceUnwrap") => self.infer_force_unwrap_feature_type(fe),
-            ("error_propagation", "ErrorPropagate") => self.infer_error_propagate_feature_type(fe),
-            ("error_propagation", "OkExpr") => self.infer_ok_expr_feature_type(fe),
-            ("error_propagation", "ErrExpr") => self.infer_err_expr_feature_type(fe),
-            ("error_propagation", "Catch") => self.infer_catch_feature_type(fe),
-            ("structs", _) => self.infer_struct_lit_feature_type(fe),
-            ("tuples", _) => self.infer_tuple_lit_feature_type(fe),
-            ("collections", "ListLit") => self.infer_list_lit_feature_type(fe),
-            ("collections", "MapLit") => self.infer_map_lit_feature_type(fe),
-            _ => Type::Unknown,
+        // is_keyword always infers to Bool — no method needed
+        if fe.feature_id == "is_keyword" {
+            return Type::Bool;
         }
+        crate::dispatch_feature_infer!(self, fe, {
+            ("ranges", _)                      => infer_range_feature_type,
+            ("with_expression", _)             => infer_with_feature_type,
+            ("pipe_operator", _)               => infer_pipe_feature_type,
+            ("shell_shorthand", _)             => infer_dollar_exec_feature_type,
+            ("tagged_templates", _)            => infer_tagged_template_feature_type,
+            ("table_literal", _)               => infer_table_lit_feature_type,
+            ("closures", _)                    => infer_closure_feature_type,
+            ("pattern_matching", _)            => infer_match_feature_type,
+            ("if_else", _)                     => infer_if_feature_type,
+            ("null_safety", "NullCoalesce")    => infer_null_coalesce_feature_type,
+            ("null_safety", "NullPropagate")   => infer_null_propagate_feature_type,
+            ("null_safety", "ForceUnwrap")     => infer_force_unwrap_feature_type,
+            ("error_propagation", "ErrorPropagate") => infer_error_propagate_feature_type,
+            ("error_propagation", "OkExpr")    => infer_ok_expr_feature_type,
+            ("error_propagation", "ErrExpr")   => infer_err_expr_feature_type,
+            ("error_propagation", "Catch")     => infer_catch_feature_type,
+            ("structs", _)                     => infer_struct_lit_feature_type,
+            ("tuples", _)                      => infer_tuple_lit_feature_type,
+            ("collections", "ListLit")         => infer_list_lit_feature_type,
+            ("collections", "MapLit")          => infer_map_lit_feature_type,
+        })
     }
 
     /// Infer the return type of a method call on a given type

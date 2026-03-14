@@ -1,6 +1,6 @@
 use crate::errors::Diagnostic;
-use crate::lexer::token::{TemplatePart as LexTemplatePart, TokenKind};
-use crate::lexer::{Lexer, Span, Token};
+use crate::lexer::token::TokenKind;
+use crate::lexer::{Span, Token};
 use crate::parser::ast::*;
 use std::collections::HashMap;
 
@@ -47,6 +47,7 @@ pub struct Parser {
     pub(crate) no_newline_dot_chain: bool,
 }
 
+#[allow(dead_code)]
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -141,6 +142,7 @@ impl Parser {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn parse_let_with_export(&mut self, exported: bool) -> Option<Statement> {
         let start = self.advance()?.span; // consume 'let'
         self.skip_newlines();
@@ -1227,7 +1229,7 @@ impl Parser {
                 if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    let fields = self.parse_delimited_until(&TokenKind::RParen, |p| {
+                    let _fields = self.parse_delimited_until(&TokenKind::RParen, |p| {
                         let name = p.expect_ident()?;
                         Some(Pattern::Ident(name, span))
                     })?;

@@ -2,7 +2,7 @@ use crate::errors::Diagnostic;
 use crate::lexer::token::{Span, TemplatePart, Token, TokenKind};
 
 pub struct Lexer<'a> {
-    source: &'a str,
+    _source: &'a str,
     chars: Vec<char>,
     pos: usize,
     line: u32,
@@ -16,7 +16,7 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
-            source,
+            _source: source,
             chars: source.chars().collect(),
             pos: 0,
             line: 1,
@@ -31,7 +31,7 @@ impl<'a> Lexer<'a> {
     /// spans map back to the original source file.
     pub fn new_with_offset(source: &'a str, pos_offset: usize, line: u32, col: u32) -> Self {
         Self {
-            source,
+            _source: source,
             chars: source.chars().collect(),
             pos: 0,
             line,
@@ -267,10 +267,6 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     TokenKind::Slash
                 }
-            }
-            '@' => {
-                self.advance();
-                TokenKind::At
             }
             '$' => {
                 self.advance();

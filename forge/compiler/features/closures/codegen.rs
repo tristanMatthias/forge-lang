@@ -257,7 +257,6 @@ impl<'ctx> Codegen<'ctx> {
                         else if lt == Type::String { Type::String }
                         else { Type::Int }
                     }
-                    _ => self.infer_closure_body_type(left, params),
                 }
             }
             Expr::Call { callee, .. } => {

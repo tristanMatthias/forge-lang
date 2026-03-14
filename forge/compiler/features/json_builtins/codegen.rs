@@ -365,7 +365,6 @@ impl<'ctx> Codegen<'ctx> {
 
         let i64_type = self.context.i64_type();
         let i8_type = self.context.i8_type();
-        let ptr_type = self.context.ptr_type(AddressSpace::default());
         let snprintf = self.module.get_function("snprintf").unwrap();
 
         // Allocate a buffer on the stack (4KB should be enough for JSON)
@@ -1073,7 +1072,6 @@ impl<'ctx> Codegen<'ctx> {
 
         let i64_type = self.context.i64_type();
         let i8_type = self.context.i8_type();
-        let ptr_type = self.context.ptr_type(AddressSpace::default());
 
         // Extract list data ptr and count
         let list_struct = val.into_struct_value();
@@ -1506,7 +1504,7 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_json_parse_list(
         &mut self,
         json_val: BasicValueEnum<'ctx>,
-        name: Option<&str>,
+        _name: Option<&str>,
         fields: &[(String, Type)],
     ) -> Option<BasicValueEnum<'ctx>> {
         self.ensure_json_functions_declared();

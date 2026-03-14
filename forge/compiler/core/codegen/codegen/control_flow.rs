@@ -117,7 +117,7 @@ impl<'ctx> Codegen<'ctx> {
             // This handles cases like: if cond { "alice" } else { null }
             // where one branch is a value and the other is a nullable (null)
             let then_type = self.infer_if_branch_type(then_branch);
-            let else_type = else_branch.map(|eb| self.infer_if_branch_type_block(eb)).unwrap_or(Type::Void);
+            let else_type = else_branch.map(|eb| self.infer_if_branch_type(eb)).unwrap_or(Type::Void);
 
             let is_then_null = matches!(then_type, Type::Nullable(_));
             let is_else_null = matches!(else_type, Type::Nullable(_));

@@ -7,7 +7,6 @@ use std::path::Path;
 
 use crate::docs;
 use crate::errors::ErrorRegistry;
-use crate::lang::long_description;
 use crate::registry::{FeatureMetadata, FeatureRegistry, FeatureStatus};
 
 // ── Feature categories ─────────────────────────────────────────────
@@ -965,7 +964,7 @@ fn generate_feature_page(meta: &FeatureMetadata) -> String {
     }
 
     // Long description
-    let long_desc = long_description(meta.id);
+    let long_desc = meta.long_description;
     if !long_desc.is_empty() {
         body.push_str(r#"<div class="long-description">"#);
         for paragraph in long_desc.split("\n\n") {

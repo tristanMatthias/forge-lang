@@ -6,20 +6,6 @@ use crate::parser::parser::Parser;
 use super::types::TaggedTemplateData;
 
 impl Parser {
-    /// Parse a tagged template literal: `tag\`template ${expr}\``
-    ///
-    /// Takes the pre-lexed tag name, template parts, and span from the lexer token,
-    /// parses any interpolated expressions within `${}`, and produces
-    /// a `feature_expr` with `TaggedTemplateData`.
-    pub(crate) fn parse_tagged_template(
-        &mut self,
-        tag: String,
-        lex_parts: Vec<LexTemplatePart>,
-        span: Span,
-    ) -> Option<Expr> {
-        self.parse_typed_tagged_template(tag, lex_parts, None, span)
-    }
-
     /// Parse a tagged template with an optional type parameter: `tag<Type>\`template\``
     pub(crate) fn parse_typed_tagged_template(
         &mut self,

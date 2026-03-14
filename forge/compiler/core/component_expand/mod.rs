@@ -99,15 +99,6 @@ fn expr_stmt(expr: Expr) -> Statement {
     Statement::Expr(expr)
 }
 
-fn param(name: &str, ty: TypeExpr) -> Param {
-    Param {
-        name: name.to_string(),
-        type_ann: Some(ty),
-        default: None,
-        span: sp(),
-    }
-}
-
 fn named_type(name: &str) -> TypeExpr {
     TypeExpr::Named(name.to_string())
 }
@@ -300,358 +291,27 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
 }
 
 /// Recursively substitute template placeholders inside Feature variant expressions.
-/// Feature data is opaque, so we downcast to known types that contain blocks/sub-expressions.
+/// Delegates to each feature data type's `substitute_exprs` implementation.
 fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionContext) -> Expr {
-    use crate::feature::FeatureExpr;
-    use crate::feature_data;
-
-    match (fe.feature_id, fe.kind) {
-        ("if_else", "If") => {
-            use crate::features::if_else::types::IfData;
-            if let Some(data) = feature_data!(fe, IfData) {
-                let new_data = IfData {
-                    condition: Box::new(substitute_expr(&data.condition, ctx)),
-                    then_branch: substitute_block(&data.then_branch, ctx),
-                    else_branch: data.else_branch.as_ref().map(|b| substitute_block(b, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("pattern_matching", "Match") => {
-            use crate::features::pattern_matching::types::MatchData;
-            if let Some(data) = feature_data!(fe, MatchData) {
-                let new_data = MatchData {
-                    subject: Box::new(substitute_expr(&data.subject, ctx)),
-                    arms: data.arms.iter().map(|arm| {
-                        MatchArm {
-                            pattern: arm.pattern.clone(),
-                            guard: arm.guard.as_ref().map(|g| substitute_expr(g, ctx)),
-                            body: substitute_expr(&arm.body, ctx),
-                            span: arm.span,
-                        }
-                    }).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("closures", "Closure") => {
-            use crate::features::closures::types::ClosureData;
-            if let Some(data) = feature_data!(fe, ClosureData) {
-                let new_data = ClosureData {
-                    params: data.params.clone(),
-                    body: Box::new(substitute_expr(&data.body, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("null_safety", "NullCoalesce") => {
-            use crate::features::null_safety::types::NullCoalesceData;
-            if let Some(data) = feature_data!(fe, NullCoalesceData) {
-                let new_data = NullCoalesceData {
-                    left: Box::new(substitute_expr(&data.left, ctx)),
-                    right: Box::new(substitute_expr(&data.right, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("error_propagation", "Catch") => {
-            use crate::features::error_propagation::types::CatchData;
-            if let Some(data) = feature_data!(fe, CatchData) {
-                let new_data = CatchData {
-                    expr: Box::new(substitute_expr(&data.expr, ctx)),
-                    binding: data.binding.clone(),
-                    handler: substitute_block(&data.handler, ctx),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("pipe_operator", "Pipe") => {
-            use crate::features::pipe_operator::types::PipeData;
-            if let Some(data) = feature_data!(fe, PipeData) {
-                let new_data = PipeData {
-                    left: Box::new(substitute_expr(&data.left, ctx)),
-                    right: Box::new(substitute_expr(&data.right, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("structs", "StructLit") => {
-            use crate::features::structs::types::StructLitData;
-            if let Some(data) = feature_data!(fe, StructLitData) {
-                let new_data = StructLitData {
-                    name: data.name.as_ref().map(|n| substitute_ident_string(n, ctx)),
-                    fields: data.fields.iter().map(|(k, v)| (k.clone(), substitute_expr(v, ctx))).collect(),
-                    span: data.span,
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("with_expression", "With") => {
-            use crate::features::with_expression::types::WithData;
-            if let Some(data) = feature_data!(fe, WithData) {
-                let new_data = WithData {
-                    base: Box::new(substitute_expr(&data.base, ctx)),
-                    updates: data.updates.iter().map(|(k, v)| (k.clone(), substitute_expr(v, ctx))).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("ranges", "Range") => {
-            use crate::features::ranges::types::RangeData;
-            if let Some(data) = feature_data!(fe, RangeData) {
-                let new_data = RangeData {
-                    start: Box::new(substitute_expr(&data.start, ctx)),
-                    end: Box::new(substitute_expr(&data.end, ctx)),
-                    inclusive: data.inclusive,
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("channels", "ChannelSend") => {
-            use crate::features::channels::types::ChannelSendData;
-            if let Some(data) = feature_data!(fe, ChannelSendData) {
-                let new_data = ChannelSendData {
-                    channel: Box::new(substitute_expr(&data.channel, ctx)),
-                    value: Box::new(substitute_expr(&data.value, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("channels", "ChannelReceive") => {
-            use crate::features::channels::types::ChannelReceiveData;
-            if let Some(data) = feature_data!(fe, ChannelReceiveData) {
-                let new_data = ChannelReceiveData {
-                    channel: Box::new(substitute_expr(&data.channel, ctx)),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("spawn", "SpawnBlock") => {
-            use crate::features::spawn::types::SpawnData;
-            if let Some(data) = feature_data!(fe, SpawnData) {
-                let new_data = SpawnData {
-                    body: substitute_block(&data.body, ctx),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("shell_shorthand", "DollarExec") => {
-            use crate::features::shell_shorthand::types::DollarExecData;
-            if let Some(data) = feature_data!(fe, DollarExecData) {
-                let new_data = DollarExecData {
-                    parts: data.parts.iter().map(|p| match p {
-                        crate::parser::ast::TemplatePart::Literal(s) => {
-                            crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
-                        }
-                        crate::parser::ast::TemplatePart::Expr(e) => {
-                            crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
-                        }
-                    }).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("tagged_templates", "TaggedTemplate") => {
-            use crate::features::tagged_templates::types::TaggedTemplateData;
-            if let Some(data) = feature_data!(fe, TaggedTemplateData) {
-                let new_data = TaggedTemplateData {
-                    tag: substitute_ident_string(&data.tag, ctx),
-                    parts: data.parts.iter().map(|p| match p {
-                        crate::parser::ast::TemplatePart::Literal(s) => {
-                            crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
-                        }
-                        crate::parser::ast::TemplatePart::Expr(e) => {
-                            crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
-                        }
-                    }).collect(),
-                    type_param: data.type_param.clone(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("is_keyword", "Is") => {
-            use crate::features::is_keyword::types::IsData;
-            if let Some(data) = feature_data!(fe, IsData) {
-                let new_data = IsData {
-                    value: Box::new(substitute_expr(&data.value, ctx)),
-                    pattern: data.pattern.clone(),
-                    negated: data.negated,
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("table_literal", "TableLit") => {
-            use crate::features::table_literal::types::TableLitData;
-            if let Some(data) = feature_data!(fe, TableLitData) {
-                let new_data = TableLitData {
-                    columns: data.columns.clone(),
-                    rows: data.rows.iter().map(|row| row.iter().map(|e| substitute_expr(e, ctx)).collect()).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("collections", "ListLit") => {
-            use crate::features::collections::types::ListLitData;
-            if let Some(data) = feature_data!(fe, ListLitData) {
-                let new_data = ListLitData {
-                    elements: data.elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("collections", "MapLit") => {
-            use crate::features::collections::types::MapLitData;
-            if let Some(data) = feature_data!(fe, MapLitData) {
-                let new_data = MapLitData {
-                    entries: data.entries.iter().map(|(k, v)| (substitute_expr(k, ctx), substitute_expr(v, ctx))).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        ("tuples", "TupleLit") => {
-            use crate::features::tuples::types::TupleLitData;
-            if let Some(data) = feature_data!(fe, TupleLitData) {
-                let new_data = TupleLitData {
-                    elements: data.elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
-                };
-                Expr::Feature(FeatureExpr {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Expr::Feature(fe.clone())
-            }
-        }
-        _ => Expr::Feature(fe.clone()),
-    }
+    let sub_expr = |e: &Expr| substitute_expr(e, ctx);
+    let sub_block = |b: &Block| substitute_block(b, ctx);
+    let sub_ident = |s: &str| substitute_ident_string(s, ctx);
+    let sub_type_expr = |t: &TypeExpr| substitute_type_expr(t, ctx);
+    let sub_param = |p: &Param| substitute_param(p, ctx);
+    let fns = crate::feature::SubFns {
+        sub_expr: &sub_expr,
+        sub_block: &sub_block,
+        sub_ident: &sub_ident,
+        sub_type_expr: &sub_type_expr,
+        sub_param: &sub_param,
+    };
+    let new_data = fe.data.substitute_exprs(&fns);
+    Expr::Feature(crate::feature::FeatureExpr {
+        feature_id: fe.feature_id,
+        kind: fe.kind,
+        data: new_data,
+        span: fe.span,
+    })
 }
 
 fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
@@ -817,109 +477,27 @@ fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
 }
 
 /// Substitute template placeholders inside Feature variant statements.
-/// Feature data is opaque, so we downcast to known types, apply substitution,
-/// and rebuild the Statement::Feature with updated data.
+/// Delegates to each feature data type's `substitute_exprs` implementation.
 fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionContext) -> Statement {
-    use crate::feature::FeatureStmt;
-    use crate::feature_data;
-
-    match (fe.feature_id, fe.kind) {
-        ("variables", "Let") | ("variables", "Mut") | ("variables", "Const") => {
-            use crate::features::variables::types::VarDeclData;
-            if let Some(data) = feature_data!(fe, VarDeclData) {
-                let new_data = VarDeclData {
-                    kind: data.kind.clone(),
-                    name: substitute_ident_string(&data.name, ctx),
-                    type_ann: data.type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
-                    type_ann_span: data.type_ann_span,
-                    value: substitute_expr(&data.value, ctx),
-                    exported: data.exported,
-                };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Statement::Feature(fe.clone())
-            }
-        }
-        ("variables", "LetDestructure") => {
-            use crate::features::variables::types::LetDestructureData;
-            if let Some(data) = feature_data!(fe, LetDestructureData) {
-                let new_data = LetDestructureData {
-                    pattern: data.pattern.clone(),
-                    value: substitute_expr(&data.value, ctx),
-                };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Statement::Feature(fe.clone())
-            }
-        }
-        ("functions", "FnDecl") => {
-            use crate::features::functions::types::FnDeclData;
-            if let Some(data) = feature_data!(fe, FnDeclData) {
-                let new_data = FnDeclData {
-                    name: substitute_ident_string(&data.name, ctx),
-                    type_params: data.type_params.clone(),
-                    params: data.params.iter().map(|p| substitute_param(p, ctx)).collect(),
-                    return_type: data.return_type.as_ref().map(|t| substitute_type_expr(t, ctx)),
-                    body: substitute_block(&data.body, ctx),
-                    exported: data.exported,
-                };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Statement::Feature(fe.clone())
-            }
-        }
-        ("functions", "Return") => {
-            use crate::features::functions::types::ReturnData;
-            if let Some(data) = feature_data!(fe, ReturnData) {
-                let new_data = ReturnData {
-                    value: data.value.as_ref().map(|v| substitute_expr(v, ctx)),
-                };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Statement::Feature(fe.clone())
-            }
-        }
-        ("structs", "TypeDecl") => {
-            use crate::features::structs::types::TypeDeclData;
-            if let Some(data) = feature_data!(fe, TypeDeclData) {
-                let new_data = TypeDeclData {
-                    name: substitute_ident_string(&data.name, ctx),
-                    type_params: data.type_params.clone(),
-                    value: substitute_type_expr(&data.value, ctx),
-                    exported: data.exported,
-                };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
-            } else {
-                Statement::Feature(fe.clone())
-            }
-        }
-        _ => Statement::Feature(fe.clone()),
-    }
+    let sub_expr = |e: &Expr| substitute_expr(e, ctx);
+    let sub_block = |b: &Block| substitute_block(b, ctx);
+    let sub_ident = |s: &str| substitute_ident_string(s, ctx);
+    let sub_type_expr = |t: &TypeExpr| substitute_type_expr(t, ctx);
+    let sub_param = |p: &Param| substitute_param(p, ctx);
+    let fns = crate::feature::SubFns {
+        sub_expr: &sub_expr,
+        sub_block: &sub_block,
+        sub_ident: &sub_ident,
+        sub_type_expr: &sub_type_expr,
+        sub_param: &sub_param,
+    };
+    let new_data = fe.data.substitute_exprs(&fns);
+    Statement::Feature(crate::feature::FeatureStmt {
+        feature_id: fe.feature_id,
+        kind: fe.kind,
+        data: new_data,
+        span: fe.span,
+    })
 }
 
 // ---- @syntax call expansion ----

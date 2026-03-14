@@ -109,32 +109,31 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Dispatch a feature-owned expression to the appropriate feature's codegen.
     pub(crate) fn compile_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Option<BasicValueEnum<'ctx>> {
-        match (fe.feature_id, fe.kind) {
-            ("spawn", _) => self.compile_spawn_feature(fe),
-            ("ranges", _) => self.compile_range_feature(fe),
-            ("is_keyword", _) => self.compile_is_feature(fe),
-            ("with_expression", _) => self.compile_with_feature(fe),
-            ("pipe_operator", _) => self.compile_pipe_feature(fe),
-            ("shell_shorthand", _) => self.compile_dollar_exec_feature(fe),
-            ("tagged_templates", _) => self.compile_tagged_template_feature(fe),
-            ("table_literal", _) => self.compile_table_lit_feature(fe),
-            ("closures", _) => self.compile_closure_feature(fe),
-            ("pattern_matching", _) => self.compile_match_feature(fe),
-            ("channels", _) => self.compile_channel_feature(fe),
-            ("if_else", _) => self.compile_if_feature(fe),
-            ("null_safety", "NullCoalesce") => self.compile_null_coalesce_feature(fe),
-            ("null_safety", "NullPropagate") => self.compile_null_propagate_feature(fe),
-            ("null_safety", "ForceUnwrap") => self.compile_force_unwrap_feature(fe),
-            ("error_propagation", "ErrorPropagate") => self.compile_error_propagate_feature(fe),
-            ("error_propagation", "OkExpr") => self.compile_ok_expr_feature(fe),
-            ("error_propagation", "ErrExpr") => self.compile_err_expr_feature(fe),
-            ("error_propagation", "Catch") => self.compile_catch_feature(fe),
-            ("structs", _) => self.compile_struct_lit_feature(fe),
-            ("tuples", _) => self.compile_tuple_lit_feature(fe),
-            ("collections", "ListLit") => self.compile_list_lit_feature(fe),
-            ("collections", "MapLit") => self.compile_map_lit_feature(fe),
-            _ => None,
-        }
+        crate::dispatch_feature_expr!(self, fe, {
+            ("spawn", _)                       => compile_spawn_feature,
+            ("ranges", _)                      => compile_range_feature,
+            ("is_keyword", _)                  => compile_is_feature,
+            ("with_expression", _)             => compile_with_feature,
+            ("pipe_operator", _)               => compile_pipe_feature,
+            ("shell_shorthand", _)             => compile_dollar_exec_feature,
+            ("tagged_templates", _)            => compile_tagged_template_feature,
+            ("table_literal", _)               => compile_table_lit_feature,
+            ("closures", _)                    => compile_closure_feature,
+            ("pattern_matching", _)            => compile_match_feature,
+            ("channels", _)                    => compile_channel_feature,
+            ("if_else", _)                     => compile_if_feature,
+            ("null_safety", "NullCoalesce")    => compile_null_coalesce_feature,
+            ("null_safety", "NullPropagate")   => compile_null_propagate_feature,
+            ("null_safety", "ForceUnwrap")     => compile_force_unwrap_feature,
+            ("error_propagation", "ErrorPropagate") => compile_error_propagate_feature,
+            ("error_propagation", "OkExpr")    => compile_ok_expr_feature,
+            ("error_propagation", "ErrExpr")   => compile_err_expr_feature,
+            ("error_propagation", "Catch")     => compile_catch_feature,
+            ("structs", _)                     => compile_struct_lit_feature,
+            ("tuples", _)                      => compile_tuple_lit_feature,
+            ("collections", "ListLit")         => compile_list_lit_feature,
+            ("collections", "MapLit")          => compile_map_lit_feature,
+        })
     }
 
     pub(crate) fn resolve_runtime_type(&self, expr: &Expr, val: &BasicValueEnum<'ctx>) -> Type {

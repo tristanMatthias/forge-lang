@@ -12,7 +12,17 @@ pub struct RangeData {
     pub inclusive: bool,
 }
 
-crate::impl_feature_node!(RangeData);
+impl crate::feature::FeatureNode for RangeData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(RangeData {
+            start: Box::new((fns.sub_expr)(&self.start)),
+            end: Box::new((fns.sub_expr)(&self.end)),
+            inclusive: self.inclusive,
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a range expression via the Feature dispatch system.

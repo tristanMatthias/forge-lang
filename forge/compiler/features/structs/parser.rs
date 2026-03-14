@@ -2,7 +2,7 @@ use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
-use super::types::{StructLitData, TypeDeclData};
+use super::types::TypeDeclData;
 
 impl Parser {
     pub(crate) fn parse_type_decl_feature(&mut self, exported: bool) -> Option<Statement> {
@@ -36,18 +36,4 @@ impl Parser {
         ))
     }
 
-    pub(crate) fn parse_struct_literal_feature(&mut self, span: crate::lexer::Span) -> Option<Expr> {
-        let fields = self.parse_struct_fields()?;
-        self.expect(&TokenKind::RBrace)?;
-        Some(feature_expr(
-            "structs",
-            "StructLit",
-            Box::new(StructLitData {
-                name: None,
-                fields,
-                span,
-            }),
-            span,
-        ))
-    }
 }

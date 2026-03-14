@@ -86,47 +86,28 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn compile_result_ok(&mut self, value: &Expr) -> Option<BasicValueEnum<'ctx>> {
         let val = self.compile_expr(value)?;
-
-        // Get the canonical Result type from the current function's return type
-        let result_llvm_ty = if let Some(ref ret_ty) = self.current_fn_return_type {
-            match ret_ty {
-                Type::Result(_, _) => self.type_to_llvm_basic(ret_ty).into_struct_type(),
-                _ => {
-                    // Infer from value: Result<typeof(val), String>
-                    let inferred = Type::Result(Box::new(self.infer_type(value)), Box::new(Type::String));
-                    self.type_to_llvm_basic(&inferred).into_struct_type()
-                }
-            }
-        } else {
-            let inferred = Type::Result(Box::new(self.infer_type(value)), Box::new(Type::String));
-            self.type_to_llvm_basic(&inferred).into_struct_type()
-        };
-
-        // Build tagged value: tag=0 for Ok
-        let result = self.build_tagged_value(result_llvm_ty, 0, val, "ok");
-        Some(result)
+        let fallback = Type::Result(Box::new(self.infer_type(value)), Box::new(Type::String));
+        let result_llvm_ty = self.resolve_result_struct_type(&fallback);
+        Some(self.build_tagged_value(result_llvm_ty, 0, val, "ok"))
     }
 
     pub(crate) fn compile_result_err(&mut self, value: &Expr) -> Option<BasicValueEnum<'ctx>> {
         let val = self.compile_expr(value)?;
+        let fallback = Type::Result(Box::new(Type::Unknown), Box::new(self.infer_type(value)));
+        let result_llvm_ty = self.resolve_result_struct_type(&fallback);
+        Some(self.build_tagged_value(result_llvm_ty, 1, val, "err"))
+    }
 
-        // Get the canonical Result type from the current function's return type
-        let result_llvm_ty = if let Some(ref ret_ty) = self.current_fn_return_type {
-            match ret_ty {
-                Type::Result(_, _) => self.type_to_llvm_basic(ret_ty).into_struct_type(),
-                _ => {
-                    let inferred = Type::Result(Box::new(Type::Unknown), Box::new(self.infer_type(value)));
-                    self.type_to_llvm_basic(&inferred).into_struct_type()
-                }
-            }
-        } else {
-            let inferred = Type::Result(Box::new(Type::Unknown), Box::new(self.infer_type(value)));
-            self.type_to_llvm_basic(&inferred).into_struct_type()
-        };
-
-        // Build tagged value: tag=1 for Err
-        let result = self.build_tagged_value(result_llvm_ty, 1, val, "err");
-        Some(result)
+    /// Resolve the LLVM struct type for a Result, preferring the current function's
+    /// return type if it's a Result, otherwise using the provided fallback.
+    fn resolve_result_struct_type(
+        &mut self,
+        fallback: &Type,
+    ) -> inkwell::types::StructType<'ctx> {
+        match &self.current_fn_return_type {
+            Some(ret_ty @ Type::Result(_, _)) => self.type_to_llvm_basic(ret_ty).into_struct_type(),
+            _ => self.type_to_llvm_basic(fallback).into_struct_type(),
+        }
     }
 
     pub(crate) fn compile_catch(

@@ -11,7 +11,20 @@ pub struct FnDeclData {
     pub exported: bool,
 }
 
-crate::impl_feature_node!(FnDeclData);
+impl crate::feature::FeatureNode for FnDeclData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(FnDeclData {
+            name: (fns.sub_ident)(&self.name),
+            type_params: self.type_params.clone(),
+            params: self.params.iter().map(|p| (fns.sub_param)(p)).collect(),
+            return_type: self.return_type.as_ref().map(|t| (fns.sub_type_expr)(t)),
+            body: (fns.sub_block)(&self.body),
+            exported: self.exported,
+        })
+    }
+}
 
 /// AST data for a return statement.
 #[derive(Debug, Clone)]
@@ -19,4 +32,12 @@ pub struct ReturnData {
     pub value: Option<Expr>,
 }
 
-crate::impl_feature_node!(ReturnData);
+impl crate::feature::FeatureNode for ReturnData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(ReturnData {
+            value: self.value.as_ref().map(|v| (fns.sub_expr)(v)),
+        })
+    }
+}

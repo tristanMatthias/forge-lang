@@ -8,7 +8,7 @@ use super::types::EnumDeclData;
 impl TypeChecker {
     /// Type-check an enum declaration via the Feature dispatch system.
     /// This registers the enum type in the top-level pass.
-    pub(crate) fn check_enum_feature(&mut self, fe: &FeatureStmt) {
+    pub(crate) fn check_enum_feature(&mut self, _fe: &FeatureStmt) {
         // Already handled in register_top_level_feature
     }
 

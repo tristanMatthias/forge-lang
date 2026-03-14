@@ -9,15 +9,20 @@ pub struct DollarExecData {
     pub parts: Vec<TemplatePart>,
 }
 
-crate::impl_feature_node!(DollarExecData);
+impl crate::feature::FeatureNode for DollarExecData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(DollarExecData {
+            parts: self.parts.iter().map(|p| match p {
+                TemplatePart::Literal(s) => TemplatePart::Literal((fns.sub_ident)(s)),
+                TemplatePart::Expr(e) => TemplatePart::Expr(Box::new((fns.sub_expr)(e))),
+            }).collect(),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
-    /// Infer the type of a dollar-exec expression.
-    /// Always returns `Type::String` since it captures stdout output.
-    pub(crate) fn infer_dollar_exec_type(&self) -> Type {
-        Type::String
-    }
-
     /// Infer type via Feature dispatch.
     pub(crate) fn infer_dollar_exec_feature_type(&self, _fe: &FeatureExpr) -> Type {
         Type::String

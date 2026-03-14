@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use inkwell::AddressSpace;
 use inkwell::IntPredicate;
 use inkwell::types::BasicTypeEnum;
@@ -8,7 +6,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use crate::codegen::codegen::{Codegen, GenericFnInfo};
 use crate::feature::FeatureStmt;
 use crate::feature_data;
-use crate::parser::ast::{CallArg, Expr, Statement, TypeExpr};
+use crate::parser::ast::{CallArg, Expr, TypeExpr};
 use crate::typeck::types::Type;
 
 use super::types::{FnDeclData, ReturnData};

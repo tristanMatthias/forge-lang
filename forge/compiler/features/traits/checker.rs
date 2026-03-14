@@ -8,16 +8,6 @@ use crate::typeck::types::Type;
 use super::types::{ImplBlockData, TraitDeclData};
 
 impl TypeChecker {
-    /// Type-check a trait declaration.
-    pub(crate) fn check_trait_decl(&mut self, _stmt: &Statement) {
-        // Trait declarations are currently handled as no-ops in the checker.
-    }
-
-    /// Type-check an impl block.
-    pub(crate) fn check_impl_block(&mut self, _stmt: &Statement) {
-        // Impl blocks are currently handled as no-ops in the checker.
-    }
-
     /// Type-check trait feature statements via the Feature dispatch system.
     pub(crate) fn check_traits_feature(&mut self, fe: &FeatureStmt) {
         match fe.kind {

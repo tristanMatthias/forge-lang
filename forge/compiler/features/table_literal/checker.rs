@@ -41,7 +41,7 @@ impl TypeChecker {
             .collect();
 
         // Validate subsequent rows
-        for (row_idx, row) in rows.iter().skip(1).enumerate() {
+        for (_row_idx, row) in rows.iter().skip(1).enumerate() {
             for (col_idx, expr) in row.iter().enumerate() {
                 let val_type = self.check_expr(expr);
                 let expected = &col_types[col_idx].1;

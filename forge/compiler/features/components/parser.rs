@@ -285,7 +285,7 @@ impl Parser {
                 }
                 TokenKind::Ident(name) if name == "middleware" => {
                     // `middleware name { on request(req) {...} on response(req, res, elapsed) {...} }`
-                    let sp = self.advance()?.span; // consume 'middleware'
+                    let _sp = self.advance()?.span; // consume 'middleware'
                     self.skip_newlines();
                     let mw_name = match &self.peek()?.kind {
                         TokenKind::Ident(n) => n.clone(),
@@ -581,7 +581,7 @@ impl Parser {
                     }
                     TokenKind::Ident(name) if name == "middleware" => {
                         // Middleware inside under block — same logic as outer
-                        let sp = self.advance().unwrap().span;
+                        let _sp = self.advance().unwrap().span;
                         self.skip_newlines();
                         let mw_name = match self.peek().map(|t| t.kind.clone()) {
                             Some(TokenKind::Ident(n)) => n,

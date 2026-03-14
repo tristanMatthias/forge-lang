@@ -7,11 +7,6 @@ use crate::typeck::types::Type;
 use super::types::{NullCoalesceData, NullPropagateData};
 
 impl TypeChecker {
-    /// Type-check `NullLit` — returns `Type::Nullable(Unknown)`.
-    pub(crate) fn check_null_lit(&mut self) -> Type {
-        Type::Nullable(Box::new(Type::Unknown))
-    }
-
     /// Type-check a null coalesce expression via Feature dispatch.
     pub(crate) fn check_null_coalesce_feature(&mut self, fe: &FeatureExpr) -> Type {
         feature_check!(self, fe, NullCoalesceData, |data| self.check_null_coalesce(&data.left, &data.right))

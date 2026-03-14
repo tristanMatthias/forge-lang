@@ -11,7 +11,7 @@ use super::types::{StructLitData, TypeDeclData};
 
 impl TypeChecker {
     /// Type-check a type declaration via the Feature dispatch system.
-    pub(crate) fn check_structs_feature(&mut self, fe: &FeatureStmt) {
+    pub(crate) fn check_structs_feature(&mut self, _fe: &FeatureStmt) {
         // TypeDecl is handled in register_top_level, nothing to do in check_statement
     }
 

@@ -23,9 +23,7 @@ impl<'ctx> Codegen<'ctx> {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
                 self.call_runtime("forge_string_contains", &[obj_val.into(), arg_val.into()], "contains")
             }
-            "split" => {
-                self.compile_string_split(&obj_val, args)
-            }
+            "split" => self.compile_string_split(&obj_val, args),
             "starts_with" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
                 self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg_val.into()], "starts_with")
@@ -113,9 +111,7 @@ impl<'ctx> Codegen<'ctx> {
             Type::Int => self.call_runtime("forge_int_to_string", &[val.into()], "to_str"),
             Type::Float => self.call_runtime("forge_float_to_string", &[val.into()], "to_str"),
             Type::Bool => self.call_runtime("forge_bool_to_string", &[val.into()], "to_str"),
-            Type::Nullable(inner) => {
-                self.compile_nullable_to_string(val, inner)
-            }
+            Type::Nullable(inner) => self.compile_nullable_to_string(val, inner),
             _ => {
                 // Try based on LLVM type
                 if val.is_int_value() {

@@ -8,9 +8,20 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use crate::lexer::Span;
+use crate::parser::ast::{Block, Expr, Param, TypeExpr};
 use crate::registry::FeatureMetadata;
 
 // ─── Open AST Types ──────────────────────────────────────────────────────────
+
+/// Bundle of substitution functions passed to `FeatureNode::substitute_exprs`.
+/// This avoids features needing access to `SubstitutionContext` or component_expand internals.
+pub struct SubFns<'a> {
+    pub sub_expr: &'a dyn Fn(&Expr) -> Expr,
+    pub sub_block: &'a dyn Fn(&Block) -> Block,
+    pub sub_ident: &'a dyn Fn(&str) -> String,
+    pub sub_type_expr: &'a dyn Fn(&TypeExpr) -> TypeExpr,
+    pub sub_param: &'a dyn Fn(&Param) -> Param,
+}
 
 /// Trait that all feature AST node data implements.
 /// Features define their own data structs and implement this trait
@@ -18,6 +29,13 @@ use crate::registry::FeatureMetadata;
 pub trait FeatureNode: std::fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn FeatureNode>;
+
+    /// Recursively substitute template placeholders in this node's Expr/Block fields.
+    /// Default implementation clones unchanged (correct for nodes with no Expr/Block fields).
+    /// Features with Expr/Block fields override this to walk their data.
+    fn substitute_exprs(&self, _fns: &SubFns) -> Box<dyn FeatureNode> {
+        self.clone_box()
+    }
 }
 
 impl Clone for Box<dyn FeatureNode> {
@@ -325,6 +343,88 @@ macro_rules! feature_stmt {
     ($self:expr, $fe:expr, $data_type:ty, |$data:ident| $body:expr) => {
         if let Some($data) = $crate::feature_data!($fe, $data_type) {
             $body;
+        }
+    };
+}
+
+// ─── Feature Dispatch Table Macros ───────────────────────────────────────────
+
+/// Dispatch a feature expression to a codegen method via a match table.
+/// Returns `Option<BasicValueEnum>` with `None` fallback for unknown features.
+///
+/// Usage:
+/// ```rust,ignore
+/// dispatch_feature_expr!(self, fe, {
+///     ("closures", _) => compile_closure_feature,
+///     ("null_safety", "NullCoalesce") => compile_null_coalesce_feature,
+/// })
+/// ```
+#[macro_export]
+macro_rules! dispatch_feature_expr {
+    ($self:expr, $fe:expr, { $( ($fid:expr, $kind:pat) => $method:ident ),* $(,)? }) => {
+        match ($fe.feature_id, $fe.kind) {
+            $( ($fid, $kind) => $self.$method($fe), )*
+            _ => None,
+        }
+    };
+}
+
+/// Dispatch a feature expression to a type checker method via a match table.
+/// Returns `Type` with `Type::Unknown` fallback for unknown features.
+///
+/// Usage:
+/// ```rust,ignore
+/// dispatch_feature_check!(self, fe, {
+///     ("closures", _) => check_closure_feature,
+///     ("null_safety", "NullCoalesce") => check_null_coalesce_feature,
+/// })
+/// ```
+#[macro_export]
+macro_rules! dispatch_feature_check {
+    ($self:expr, $fe:expr, { $( ($fid:expr, $kind:pat) => $method:ident ),* $(,)? }) => {
+        match ($fe.feature_id, $fe.kind) {
+            $( ($fid, $kind) => $self.$method($fe), )*
+            _ => $crate::typeck::types::Type::Unknown,
+        }
+    };
+}
+
+/// Dispatch a feature statement via a match table on `feature_id`.
+/// Returns `()` with no-op fallback for unknown features.
+///
+/// Usage:
+/// ```rust,ignore
+/// dispatch_feature_stmt!(self, fe, {
+///     "defer" => compile_defer_feature,
+///     "for_loops" => compile_for_feature,
+/// })
+/// ```
+#[macro_export]
+macro_rules! dispatch_feature_stmt {
+    ($self:expr, $fe:expr, { $( $fid:expr => $method:ident ),* $(,)? }) => {
+        match $fe.feature_id {
+            $( $fid => $self.$method($fe), )*
+            _ => {}
+        }
+    };
+}
+
+/// Dispatch a feature expression to a type inference method via a match table.
+/// Returns `Type` with `Type::Unknown` fallback for unknown features.
+///
+/// Usage:
+/// ```rust,ignore
+/// dispatch_feature_infer!(self, fe, {
+///     ("closures", _) => infer_closure_feature_type,
+///     ("is_keyword", _) => Type::Bool,
+/// })
+/// ```
+#[macro_export]
+macro_rules! dispatch_feature_infer {
+    ($self:expr, $fe:expr, { $( ($fid:expr, $kind:pat) => $method:ident ),* $(,)? }) => {
+        match ($fe.feature_id, $fe.kind) {
+            $( ($fid, $kind) => $self.$method($fe), )*
+            _ => $crate::typeck::types::Type::Unknown,
         }
     };
 }

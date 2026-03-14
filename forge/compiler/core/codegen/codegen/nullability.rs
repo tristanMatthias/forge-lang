@@ -7,5 +7,4 @@ impl<'ctx> Codegen<'ctx> {
     // create_null_value: extracted to features/
     // detect_null_check: extracted to features/
     // infer_if_branch_type: extracted to features/
-    // infer_if_branch_type_block: extracted to features/
 }

@@ -11,7 +11,16 @@ pub struct ClosureData {
     pub body: Box<Expr>,
 }
 
-crate::impl_feature_node!(ClosureData);
+impl crate::feature::FeatureNode for ClosureData {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
+    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(ClosureData {
+            params: self.params.clone(),
+            body: Box::new((fns.sub_expr)(&self.body)),
+        })
+    }
+}
 
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a closure via Feature dispatch.
@@ -65,10 +74,9 @@ impl<'ctx> Codegen<'ctx> {
                     BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => {
                         return Type::Bool;
                     }
-                    _ => {}
                 }
             }
-            Expr::Call { callee, args, .. } => {
+            Expr::Call { callee, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
                     match name.as_str() {
                         "string" => return Type::String,

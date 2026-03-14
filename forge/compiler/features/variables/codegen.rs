@@ -4,7 +4,7 @@ use crate::feature_data;
 use crate::parser::ast::Expr;
 use crate::typeck::types::Type;
 
-use super::types::{LetDestructureData, VarDeclData, VarKind};
+use super::types::{LetDestructureData, VarDeclData};
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a variable declaration (let/mut/const) via the Feature dispatch system.

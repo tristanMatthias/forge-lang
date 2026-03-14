@@ -1,4 +1,4 @@
-use crate::lexer::token::{TemplatePart as LexTemplatePart, TokenKind};
+use crate::lexer::token::TemplatePart as LexTemplatePart;
 use crate::lexer::{Lexer, Span};
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;

@@ -1167,7 +1167,7 @@ impl Driver {
         self.runtime_cache_dir().join(format!("forge_runtime_{}.o", opt_tag))
     }
 
-    fn runtime_hash_path(&self, runtime_src: &Path, opt_flag: &str) -> PathBuf {
+    fn runtime_hash_path(&self, _runtime_src: &Path, opt_flag: &str) -> PathBuf {
         let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
         self.runtime_cache_dir().join(format!("forge_runtime_{}.hash", opt_tag))
     }

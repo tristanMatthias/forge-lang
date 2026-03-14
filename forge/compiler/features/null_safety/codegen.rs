@@ -281,17 +281,9 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub(crate) fn infer_if_branch_type(&self, block: &Block) -> Type {
-        self.infer_if_branch_type_block(block)
-    }
-
-    pub(crate) fn infer_if_branch_type_block(&self, block: &Block) -> Type {
-        if let Some(last) = block.statements.last() {
-            match last {
-                Statement::Expr(e) => self.infer_type(e),
-                _ => Type::Void,
-            }
-        } else {
-            Type::Void
+        match block.statements.last() {
+            Some(Statement::Expr(e)) => self.infer_type(e),
+            _ => Type::Void,
         }
     }
 }
