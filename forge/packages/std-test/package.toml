@@ -1,0 +1,8 @@
+[package]
+name = "test"
+namespace = "std"
+version = "0.1.0"
+description = "Test primitives: spec, given, then, skip, todo"
+
+[native]
+library = "forge_test"

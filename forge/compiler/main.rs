@@ -105,10 +105,10 @@ enum Commands {
     /// Print version info
     Version,
 
-    /// Provider management commands
-    Provider {
+    /// Package management commands
+    Package {
         #[command(subcommand)]
-        command: ProviderCommands,
+        command: PackageCommands,
     },
 
     /// Explain how types are derived on a specific line
@@ -244,10 +244,10 @@ enum ErrorCommands {
 }
 
 #[derive(Subcommand)]
-enum ProviderCommands {
-    /// Scaffold a new provider
+enum PackageCommands {
+    /// Scaffold a new package
     New {
-        /// Provider name (e.g., "my-awesome-provider")
+        /// Package name (e.g., "my-awesome-package")
         name: String,
 
         /// Include component template example
@@ -518,9 +518,9 @@ fn run() {
             println!("forge 0.1.0");
         }
 
-        Commands::Provider { command } => match command {
-            ProviderCommands::New { name, component } => {
-                if let Err(e) = scaffold_provider(&name, component) {
+        Commands::Package { command } => match command {
+            PackageCommands::New { name, component } => {
+                if let Err(e) = scaffold_package(&name, component) {
                     fail(CompileError::CliError {
                         message: e.clone(),
                         help: Some("check write permissions and that the directory doesn't already exist".to_string()),
@@ -649,7 +649,7 @@ fn run() {
     }
 }
 
-fn scaffold_provider(name: &str, with_component: bool) -> Result<(), String> {
+fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {
     let lib_name = format!("forge_{}", name.replace('-', "_"));
     let dir = PathBuf::from(name);
 
@@ -662,13 +662,13 @@ fn scaffold_provider(name: &str, with_component: bool) -> Result<(), String> {
     std::fs::create_dir_all(dir.join("native/src"))
         .map_err(|e| format!("failed to create directory: {}", e))?;
 
-    // provider.toml
+    // package.toml
     let mut toml = format!(
-        r#"[provider]
+        r#"[package]
 name = "{name}"
 namespace = "community"
 version = "0.1.0"
-description = "TODO: describe your provider"
+description = "TODO: describe your package"
 
 [native]
 library = "{lib_name}"
@@ -686,11 +686,11 @@ context = "top_level"
         ));
     }
 
-    std::fs::write(dir.join("provider.toml"), toml)
-        .map_err(|e| format!("failed to write provider.toml: {}", e))?;
+    std::fs::write(dir.join("package.toml"), toml)
+        .map_err(|e| format!("failed to write package.toml: {}", e))?;
 
-    // src/provider.fg
-    let provider_fg = if with_component {
+    // src/package.fg
+    let package_fg = if with_component {
         let comp_name = name.replace('-', "_");
         format!(
             r#"extern fn {lib_name}_init(name: string) -> int
@@ -718,8 +718,8 @@ extern fn strlen(s: ptr) -> int
         )
     };
 
-    std::fs::write(dir.join("src/provider.fg"), provider_fg)
-        .map_err(|e| format!("failed to write provider.fg: {}", e))?;
+    std::fs::write(dir.join("src/package.fg"), package_fg)
+        .map_err(|e| format!("failed to write package.fg: {}", e))?;
 
     // native/Cargo.toml
     let cargo_toml = format!(
@@ -800,7 +800,7 @@ fn main() {{
         )
     } else {
         format!(
-            r#"// TODO: Add use statement once provider is installed
+            r#"// TODO: Add use statement once package is installed
 // use @community.{}.{{}}
 
 fn main() {{
@@ -817,17 +817,17 @@ fn main() {{
 
     // README.md
     let readme = format!(
-        "# {name}\n\nForge provider.\n\n## Build\n\n```bash\ncd native && cargo build --release\n```\n"
+        "# {name}\n\nForge package.\n\n## Build\n\n```bash\ncd native && cargo build --release\n```\n"
     );
     std::fs::write(dir.join("README.md"), readme)
         .map_err(|e| format!("failed to write README.md: {}", e))?;
 
-    println!("Created provider '{}'", name);
+    println!("Created package '{}'", name);
     println!();
     println!("  {}/", name);
-    println!("  ├── provider.toml");
+    println!("  ├── package.toml");
     println!("  ├── src/");
-    println!("  │   └── provider.fg");
+    println!("  │   └── package.fg");
     println!("  ├── native/");
     println!("  │   ├── Cargo.toml");
     println!("  │   └── src/");

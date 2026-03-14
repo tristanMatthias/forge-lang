@@ -169,7 +169,7 @@ fn with_defer() {
 }
 
 // ============================================================
-// MODEL DECLARATIONS (top-level, provider-expanded)
+// MODEL DECLARATIONS (top-level, package-expanded)
 // ============================================================
 
 model Task {

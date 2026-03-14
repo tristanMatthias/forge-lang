@@ -1,6 +1,6 @@
-# Forge — Provider Architecture Refactor & Codegen Restructuring
+# Forge — Package Architecture Refactor & Codegen Restructuring
 
-**Context:** Phase 3 is complete. The compiler has working `@std/model` and `@std/http` support, but the codegen has provider-specific logic baked in. This spec refactors to a clean provider architecture and restructures the codegen module.
+**Context:** Phase 3 is complete. The compiler has working `@std/model` and `@std/http` support, but the codegen has package-specific logic baked in. This spec refactors to a clean package architecture and restructures the codegen module.
 
 ---
 
@@ -38,7 +38,7 @@ codegen/
 ├── traits.rs            # Trait method resolution, monomorphization
 ├── extern_ffi.rs        # extern fn → LLVM external declaration + call marshaling
 ├── json.rs              # JSON serialize/deserialize generation
-├── provider_blocks.rs   # Generic provider keyword block codegen (desugared via types.fg)
+├── package_blocks.rs   # Generic package keyword block codegen (desugared via types.fg)
 └── linker.rs            # Object emission, linking .a files + runtime
 ```
 
@@ -55,7 +55,7 @@ pub fn compile(program: &TypedProgram, ctx: &mut CodegenContext) {
             Statement::For { .. } => control_flow::compile_for(stmt, ctx),
             Statement::TraitDecl { .. } => traits::compile_trait(stmt, ctx),
             Statement::ImplDecl { .. } => traits::compile_impl(stmt, ctx),
-            Statement::ProviderBlock { .. } => provider_blocks::compile(stmt, ctx),
+            Statement::PackageBlock { .. } => package_blocks::compile(stmt, ctx),
             // etc.
         }
     }
@@ -69,56 +69,56 @@ This is the bridge between Forge and native libraries. It handles one thing: whe
 1. An LLVM external function declaration with the right C ABI types
 2. A Forge-callable wrapper that marshals Forge types → C types on the way in and C types → Forge types on the way out
 
-Every provider goes through this. No special cases.
+Every package goes through this. No special cases.
 
-### Key: `provider_blocks.rs`
+### Key: `package_blocks.rs`
 
-This handles provider keyword blocks. But it doesn't know anything about HTTP or models. It just:
+This handles package keyword blocks. But it doesn't know anything about HTTP or models. It just:
 
-1. Looks up the keyword in the provider registry
+1. Looks up the keyword in the package registry
 2. Finds the corresponding desugared Forge code (from `types.fg`)
 3. Compiles that Forge code normally
 
-If `types.fg` defines how `server` works in terms of regular Forge function calls, then `provider_blocks.rs` just triggers that Forge code. The complexity lives in `types.fg`, not in the compiler.
+If `types.fg` defines how `server` works in terms of regular Forge function calls, then `package_blocks.rs` just triggers that Forge code. The complexity lives in `types.fg`, not in the compiler.
 
 ---
 
-## 2. Provider Architecture
+## 2. Package Architecture
 
-### 2.1 What a Provider Is
+### 2.1 What a Package Is
 
-A provider is a package containing three things:
+A package is a directory containing three things:
 
 ```
-my-provider/
-├── provider.toml           # Metadata: name, version, keywords, native lib name
+my-package/
+├── package.toml           # Metadata: name, version, keywords, native lib name
 ├── src/
-│   └── provider.fg         # Entry point: types, extern fns, keyword expansions, helpers
-│       (or split into multiple files and re-export from provider.fg)
+│   └── package.fg         # Entry point: types, extern fns, keyword expansions, helpers
+│       (or split into multiple files and re-export from package.fg)
 └── lib/
     └── <platform>/
-        └── libmy_provider.a    # Native library with C ABI exports (any language)
+        └── libmy_package.a    # Native library with C ABI exports (any language)
 ```
 
-For larger providers, split the Forge code:
+For larger packages, split the Forge code:
 
 ```
-my-provider/
-├── provider.toml
+my-package/
+├── package.toml
 ├── src/
-│   ├── provider.fg         # Entry point — re-exports everything
+│   ├── package.fg         # Entry point — re-exports everything
 │   ├── types.fg            # Type definitions
 │   ├── keywords.fg         # Keyword expansions
 │   └── helpers.fg          # Utility functions
 └── lib/
     └── <platform>/
-        └── libmy_provider.a
+        └── libmy_package.a
 ```
 
-### 2.2 provider.toml — Minimal Metadata
+### 2.2 package.toml — Minimal Metadata
 
 ```toml
-[provider]
+[package]
 name = "http"
 namespace = "std"
 version = "0.1.0"
@@ -127,10 +127,10 @@ description = "HTTP server and routing"
 [native]
 library = "forge_http"
 
-# Keywords this provider registers
+# Keywords this package registers
 # kind:
-#   "block"    — has { } body with config/schema/blocks, needs keyword expansion in provider.fg
-#   "function" — scoped function call, no special parsing, calls an exported fn from provider.fg
+#   "block"    — has { } body with config/schema/blocks, needs keyword expansion in package.fg
+#   "function" — scoped function call, no special parsing, calls an exported fn from package.fg
 # context: where it's valid — "top_level" or name of a parent keyword block
 # body: (block only) what's inside — "mixed" (config + schema + blocks)
 # syntax: (block only) custom syntax for the opening line
@@ -156,15 +156,15 @@ body = "mixed"
 ```
 
 That's it. The TOML declares:
-- What this provider is called
+- What this package is called
 - What native library to link
 - What keywords it registers with their context and body type
 
-All the interesting stuff lives in `provider.fg`.
+All the interesting stuff lives in `package.fg`.
 
-### 2.3 provider.fg — The Provider's Heart
+### 2.3 package.fg — The Package's Heart
 
-This is where the provider defines everything: types, native bridges, keyword expansions, and helper functions. It's just Forge code with one addition — the `keyword` block for compile-time expansion.
+This is where the package defines everything: types, native bridges, keyword expansions, and helper functions. It's just Forge code with one addition — the `keyword` block for compile-time expansion.
 
 A keyword expansion has three sections that run in order:
 1. **Setup** — creates scope: variables and functions available inside the block
@@ -173,10 +173,10 @@ A keyword expansion has three sections that run in order:
 
 No explicit `body` placement needed. The user's code always runs between setup and lifecycle hooks.
 
-**@std/http — complete provider.fg:**
+**@std/http — complete package.fg:**
 
 ```forge
-// providers/std-http/src/provider.fg
+// packages/std-http/src/package.fg
 
 // ── Native bridge ──
 extern fn forge_http_create_server(port: int) -> int
@@ -260,10 +260,10 @@ keyword server(port: int, config, schema) {
 }
 ```
 
-**@std/model — complete provider.fg:**
+**@std/model — complete package.fg:**
 
 ```forge
-// providers/std-model/src/provider.fg
+// packages/std-model/src/package.fg
 
 // ── Native bridge ──
 extern fn forge_model_init(db_path: string)
@@ -370,10 +370,10 @@ fn sql_type(t: string) -> string {
 }
 ```
 
-**A simple library provider (no keywords) — @community/redis:**
+**A simple library package (no keywords) — @community/redis:**
 
 ```forge
-// providers/community-redis/src/provider.fg
+// packages/community-redis/src/package.fg
 
 extern fn forge_redis_connect(url: string)
 extern fn forge_redis_get(key: string) -> string?
@@ -455,7 +455,7 @@ keyword my_keyword(name: string, config, schema) {
 
 Keywords that are purely declarative (like `model`) don't need a user body — they only use config and schema. Keywords that have user code (like `server`, `service`) have the body inserted automatically after setup.
 
-### 2.5 What The Compiler Knows vs What Providers Know
+### 2.5 What The Compiler Knows vs What Packages Know
 
 **Compiler knows:**
 - How to parse keyword blocks into config/schema/blocks
@@ -467,20 +467,20 @@ Keywords that are purely declarative (like `model`) don't need a user body — t
 **Compiler does NOT know:**
 - What HTTP, SQL, queues, AI, or any domain concept means
 - What any specific native function does
-- How any specific provider's keywords should expand (that's in provider.fg)
+- How any specific package's keywords should expand (that's in package.fg)
 
-**Provider knows:**
+**Package knows:**
 - Its domain (HTTP, databases, queues, etc.)
 - Its native function implementations
 - How its keywords expand into Forge code
 - Its Forge types
 
-**Provider does NOT know:**
+**Package does NOT know:**
 - How the compiler works
 - What LLVM is
-- How other providers work
+- How other packages work
 
-### 2.6 Adding a New Provider (Author Experience)
+### 2.6 Adding a New Package (Author Experience)
 
 Say someone wants to create `@community/redis`:
 
@@ -498,7 +498,7 @@ pub extern "C" fn forge_redis_get(key: *const c_char) -> *const c_char { ... }
 pub extern "C" fn forge_redis_set(key: *const c_char, value: *const c_char) { ... }
 ```
 
-**Step 2:** Write `provider.fg`:
+**Step 2:** Write `package.fg`:
 
 ```forge
 extern fn forge_redis_connect(url: string)
@@ -512,10 +512,10 @@ export fn set(key: string, value: string) { forge_redis_set(key, value) }
 export fn del(key: string) -> bool { forge_redis_del(key) }
 ```
 
-**Step 3:** Write `provider.toml`:
+**Step 3:** Write `package.toml`:
 
 ```toml
-[provider]
+[package]
 name = "redis"
 namespace = "community"
 version = "0.1.0"
@@ -524,7 +524,7 @@ version = "0.1.0"
 library = "forge_redis"
 ```
 
-No keywords needed. That's the entire provider.
+No keywords needed. That's the entire package.
 
 **Step 4:** Compile and package:
 
@@ -547,30 +547,30 @@ fn main() {
 }
 ```
 
-### 2.7 Two Kinds of Providers
+### 2.7 Two Kinds of Packages
 
-**Library providers** (like redis): just `extern fn` + Forge wrapper functions. No keywords, no `provider.toml` keyword section. Used with regular `use` imports and function calls. Easy to write — most community providers will be this.
+**Library packages** (like redis): just `extern fn` + Forge wrapper functions. No keywords, no `package.toml` keyword section. Used with regular `use` imports and function calls. Easy to write — most community packages will be this.
 
-**Keyword providers** (like http, model): register custom keywords with special syntax via `keyword` blocks in `provider.fg`. More powerful, enable declarative DSL-like syntax. The compiler parses keyword blocks into config/schema/blocks and the `keyword` expansion defines what to generate.
+**Keyword packages** (like http, model): register custom keywords with special syntax via `keyword` blocks in `package.fg`. More powerful, enable declarative DSL-like syntax. The compiler parses keyword blocks into config/schema/blocks and the `keyword` expansion defines what to generate.
 
-### 2.8 How The Compiler Loads Providers
+### 2.8 How The Compiler Loads Packages
 
 ```
-1. Read forge.toml → list of providers
-2. For each provider:
-   a. Find provider directory ($FORGE_HOME/providers/<namespace>/<name>/)
-   b. Read provider.toml → get keyword registrations + native lib name
-   c. Parse provider.fg → add types, extern fns, and keyword expansions
-   d. Register keywords in the parser (if any declared in provider.toml)
+1. Read forge.toml → list of packages
+2. For each package:
+   a. Find package directory ($FORGE_HOME/packages/<namespace>/<name>/)
+   b. Read package.toml → get keyword registrations + native lib name
+   c. Parse package.fg → add types, extern fns, and keyword expansions
+   d. Register keywords in the parser (if any declared in package.toml)
    e. Record native lib path for the linker
-3. Parse user's source files (provider keywords now recognized)
-4. Type check (provider types now available)
+3. Parse user's source files (package keywords now recognized)
+4. Type check (package types now available)
 5. For each keyword block in user code:
    a. Parse body into config / schema / blocks
-   b. Execute the keyword expansion from provider.fg
+   b. Execute the keyword expansion from package.fg
    c. Compile the expanded Forge code normally
 6. Codegen (extern fns generate external LLVM declarations)
-7. Link: user code + runtime + all provider .a files → binary
+7. Link: user code + runtime + all package .a files → binary
 ```
 
 ---
@@ -590,32 +590,32 @@ fn main() {
 - Remove any direct references to `forge_http_*` or `forge_model_*` from the compiler codegen
 
 ### Step 3: Implement keyword expansion engine
-- Create `provider_keywords.rs`
+- Create `package_keywords.rs`
 - Implement the `keyword(name, config, schema, blocks)` compile-time expansion
 - The parser detects keyword blocks → parses body into config/schema/blocks → hands off to the expansion engine
-- The expansion engine evaluates the `keyword` block from `provider.fg` with the parsed data
+- The expansion engine evaluates the `keyword` block from `package.fg` with the parsed data
 - Expanded Forge code is compiled through the normal pipeline
 
-### Step 4: Create provider loading
-- Read `provider.toml` for keyword registration
-- Parse `provider.fg` and inject types, extern fns, and keyword definitions into the compilation
+### Step 4: Create package loading
+- Read `package.toml` for keyword registration
+- Parse `package.fg` and inject types, extern fns, and keyword definitions into the compilation
 - Resolve `.a` file paths for the linker
 
 ### Step 5: Move @std/model out of the compiler
-- Create `providers/std-model/` directory with `provider.toml`, `src/provider.fg`, and native Rust library
-- Write the `keyword model(...)` and `keyword service(...)` expansions in `provider.fg`
-- The compiler loads it through the provider system, not special-cased code
+- Create `packages/std-model/` directory with `package.toml`, `src/package.fg`, and native Rust library
+- Write the `keyword model(...)` and `keyword service(...)` expansions in `package.fg`
+- The compiler loads it through the package system, not special-cased code
 
 ### Step 6: Move @std/http out of the compiler
 - Same as Step 5 for HTTP
-- Write the `keyword server(...)` expansion in `provider.fg`
+- Write the `keyword server(...)` expansion in `package.fg`
 - `route` and `mount` become regular exported functions, not keywords
-- After this step, the compiler has zero provider-specific code
+- After this step, the compiler has zero package-specific code
 
 ### Step 7: Verify
 - All Phase 1-3 tests pass
 - The compiler codebase has no references to "http", "model", "sqlite", or "route" outside of test files
-- Adding a new provider requires zero compiler changes
+- Adding a new package requires zero compiler changes
 
 ---
 
@@ -623,11 +623,11 @@ fn main() {
 
 1. Codegen is split into 15+ focused submodules
 2. No single codegen file exceeds ~500 lines
-3. All `@std/model` code lives in `providers/std-model/`, not the compiler
-4. All `@std/http` code lives in `providers/std-http/`, not the compiler
-5. Provider loading works through `provider.toml` + `provider.fg` + `.a` file
-6. Keyword blocks parse into config/schema/blocks and expand via `provider.fg`
-7. A library provider (no keywords) can be created with just `provider.fg` + `.a` file + toml
-8. A keyword provider can define its expansion entirely in `provider.fg`
+3. All `@std/model` code lives in `packages/std-model/`, not the compiler
+4. All `@std/http` code lives in `packages/std-http/`, not the compiler
+5. Package loading works through `package.toml` + `package.fg` + `.a` file
+6. Keyword blocks parse into config/schema/blocks and expand via `package.fg`
+7. A library package (no keywords) can be created with just `package.fg` + `.a` file + toml
+8. A keyword package can define its expansion entirely in `package.fg`
 9. All Phase 1-3 tests pass with zero regressions
 10. The compiler binary itself doesn't link against rusqlite or tiny_http

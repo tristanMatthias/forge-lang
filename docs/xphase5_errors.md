@@ -77,7 +77,7 @@ Error codes follow the pattern `F{category}{number}`:
 | F04xx | Import/module errors |
 | F05xx | FFI/extern errors |
 | F06xx | Concurrency errors |
-| F07xx | Provider errors |
+| F07xx | Package errors |
 | F08xx | Trait errors |
 | F09xx | Pattern matching errors |
 
@@ -281,9 +281,9 @@ Levenshtein distance matching for misspelled identifiers:
   │  ╰── tip: or add `_ -> ...` as a catch-all
 ```
 
-### 4.5 Provider-Specific Suggestions
+### 4.5 Package-Specific Suggestions
 
-Providers can register custom error messages for common mistakes:
+Packages can register custom error messages for common mistakes:
 
 ```
   ╭─[error[F0071]] Unknown config option
@@ -300,7 +300,7 @@ Providers can register custom error messages for common mistakes:
   │  │
   │  │   available options: cors, logging, rate_limit, tls
   │  │
-  │  ╰── docs: https://forgelang.dev/providers/std-http#server-config
+  │  ╰── docs: https://forgelang.dev/packages/std-http#server-config
 ```
 
 ---
@@ -470,7 +470,7 @@ Build suggestions contextually:
 
 1. **Levenshtein matching** — for undefined identifiers, search all in-scope names
 2. **Type-based suggestions** — for type mismatches, suggest conversions (`string()`, `int()`)
-3. **Import resolver** — for undefined types/functions, search all provider exports
+3. **Import resolver** — for undefined types/functions, search all package exports
 4. **Pattern completeness** — for non-exhaustive matches, list missing variants
 5. **Config validation** — for component blocks, list valid config options with did-you-mean
 
@@ -596,12 +596,12 @@ fn main() {
 }
 ```
 
-### 10.4 Provider error boundaries
+### 10.4 Package error boundaries
 
-Errors from provider native libraries are caught at the FFI boundary and wrapped in diagnostics:
+Errors from package native libraries are caught at the FFI boundary and wrapped in diagnostics:
 
 ```
-  ╭─[error[F0700]] Provider error
+  ╭─[error[F0700]] Package error
   │
   │  ╭─[src/main.fg:14:3]
   │  │
@@ -613,8 +613,8 @@ Errors from provider native libraries are caught at the FFI boundary and wrapped
   │  │
   │  ├── help: increase buffer_size in queue config, or consume messages faster
   │  │
-  │  ╰── This may be a bug in the provider, not in your code.
-  │      Provider: @std/queue v0.1.0
+  │  ╰── This may be a bug in the package, not in your code.
+  │      Package: @std/queue v0.1.0
 ```
 
 ### 10.5 LLVM error wrapping
@@ -704,7 +704,7 @@ echo "=== All error checks passed ==="
 3. `forge explain F0012` prints the full explanation
 4. `forge build --error-format=json` produces valid, parseable JSON with suggestions
 5. Did-you-mean works for identifiers, types, and config options
-6. Missing import suggestions work for all provider exports
+6. Missing import suggestions work for all package exports
 7. Non-exhaustive match lists missing variants
 8. Multi-error reporting works (up to 20 errors per build)
 9. Warnings fire for unused variables, unused imports, unreachable code
@@ -713,7 +713,7 @@ echo "=== All error checks passed ==="
 12. **Zero** `.unwrap()`, `.expect()`, or `panic!()` in compiler source outside tests
 13. **Every** error code in source exists in `registry.toml`
 14. Internal compiler errors produce `F9999` with context, never raw panics
-15. Provider errors produce `F0700` with provider name and version, never raw FFI crashes
+15. Package errors produce `F0700` with package name and version, never raw FFI crashes
 16. LLVM errors produce `F9998` with context, never raw LLVM output
 17. `scripts/lint-errors.sh` passes in CI
 18. `CLAUDE.md` updated with error system rules

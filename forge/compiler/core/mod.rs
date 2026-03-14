@@ -13,7 +13,7 @@ pub mod errors;
 pub mod lang;
 pub mod lexer;
 pub mod parser;
-pub mod provider;
+pub mod package;
 pub mod registry;
 pub mod site;
 pub mod test_runner;

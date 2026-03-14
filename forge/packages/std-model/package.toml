@@ -1,0 +1,17 @@
+[package]
+name = "model"
+namespace = "std"
+version = "0.1.0"
+
+[native]
+library = "forge_model"
+
+[components.model]
+kind = "block"
+context = "top_level"
+syntax = "model <name> { <schema> }"
+
+[components.service]
+kind = "block"
+context = "top_level"
+syntax = "service <name> for <model_ref> { <hooks> <methods> }"

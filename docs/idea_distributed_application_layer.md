@@ -505,7 +505,7 @@ Each layer builds on the previous. Ship Layer 1 without Layer 6. Each layer is i
 
 ### Key Design Principle
 
-**The deploy/infra layer is always packages, never hardcoded.** AWS support is `@deploy/aws`. Docker support is `@deploy/docker`. Hetzner is `@deploy/hetzner`. The core language provides the component interface — backends implement it. This means the community can add providers for any platform without touching the language.
+**The deploy/infra layer is always packages, never hardcoded.** AWS support is `@deploy/aws`. Docker support is `@deploy/docker`. Hetzner is `@deploy/hetzner`. The core language provides the component interface — backends implement it. This means the community can add packages for any platform without touching the language.
 
 ### Open Questions
 

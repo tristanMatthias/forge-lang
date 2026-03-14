@@ -3,7 +3,7 @@
 **Version:** 0.2.0-draft
 **Status:** Design Specification
 **Date:** March 2026
-**Revision:** 2 — incorporates immutability-by-default, trait system, provider-based models, revised imports, error propagation (`?`/`catch`/`errdefer`), `it` implicit closures, deployment primitives, CLI support, observability, and expanded standard provider library.
+**Revision:** 2 — incorporates immutability-by-default, trait system, package-based models, revised imports, error propagation (`?`/`catch`/`errdefer`), `it` implicit closures, deployment primitives, CLI support, observability, and expanded standard package library.
 
 ---
 
@@ -16,8 +16,8 @@
 5. [Traits and Interfaces](#5-traits-and-interfaces)
 6. [Models and Persistence](#6-models-and-persistence)
 7. [Services](#7-services)
-8. [Provider System](#8-provider-system)
-9. [Standard Providers](#9-standard-providers)
+8. [Package System](#8-provider-system)
+9. [Standard Packages](#9-standard-providers)
 10. [Concurrency and Parallelism](#10-concurrency-and-parallelism)
 11. [Error Handling](#11-error-handling)
 12. [Module System](#12-module-system)
@@ -48,7 +48,7 @@ Forge compiles to native code via LLVM, producing single binaries with no runtim
 
 - An orchestration language with first-class infrastructure primitives
 - A compiled language producing single static binaries via LLVM
-- An extensible language where new keywords and syntax blocks are added via providers
+- An extensible language where new keywords and syntax blocks are added via packages
 - An agent-friendly language with machine-readable errors and context-loadable specs
 - A polyglot host that can embed components written in other languages
 
@@ -193,9 +193,9 @@ Forge provides sensible defaults for everything. Defining a model automatically 
 
 The language is declarative where possible, imperative when needed. You declare a server, a queue, a schedule — you don't manually set up sockets, thread pools, or cron daemons.
 
-### 2.3 Providers, Not Frameworks
+### 2.3 Packages, Not Frameworks
 
-New capabilities are added through the provider system rather than baked into the language. The core language is intentionally tiny. Providers register new keywords, syntax blocks, and compile-time behavior.
+New capabilities are added through the package system rather than baked into the language. The core language is intentionally tiny. Packages register new keywords, syntax blocks, and compile-time behavior.
 
 ### 2.4 Single Binary, No Runtime
 
@@ -215,7 +215,7 @@ Forge doesn't replace Rust, Go, or Python. It orchestrates components that may b
 
 ### 3.1 Keywords
 
-The core language has a minimal set of reserved keywords. All other keywords (like `server`, `queue`, `agent`, etc.) are introduced by providers.
+The core language has a minimal set of reserved keywords. All other keywords (like `server`, `queue`, `agent`, etc.) are introduced by packages.
 
 **Core keywords:**
 
@@ -230,7 +230,7 @@ defer     errdefer  spawn     parallel
 with
 ```
 
-Note: `model`, `service`, `server`, `queue`, `agent`, and other domain keywords are introduced by providers, not the core language.
+Note: `model`, `service`, `server`, `queue`, `agent`, and other domain keywords are introduced by packages, not the core language.
 
 **Reserved for future use:**
 
@@ -1018,29 +1018,29 @@ on payment_processed(event) {
 }
 ```
 
-Events are local by default (in-process pub/sub). Providers can extend events to be distributed (e.g., via Redis, Kafka).
+Events are local by default (in-process pub/sub). Packages can extend events to be distributed (e.g., via Redis, Kafka).
 
 ---
 
-## 7. Provider System
+## 7. Package System
 
-The provider system is Forge's core extensibility mechanism. Providers are compiler plugins that register new keywords, syntax blocks, and compile-time transformations. They are backed by native implementations in any language.
+The package system is Forge's core extensibility mechanism. Packages are compiler plugins that register new keywords, syntax blocks, and compile-time transformations. They are backed by native implementations in any language.
 
 ### 7.1 Concept
 
-The core Forge language is intentionally minimal (~20 keywords). All infrastructure primitives — servers, queues, WebSockets, AI agents — are added by providers. This means:
+The core Forge language is intentionally minimal (~20 keywords). All infrastructure primitives — servers, queues, WebSockets, AI agents — are added by packages. This means:
 
 - `server` is not a keyword until you import `@std/http`
 - `queue` is not a keyword until you import `@std/queue`
 - `agent` is not a keyword until you import `@std/ai`
 
-Providers are declared in `forge.toml` and imported in source files.
+Packages are declared in `forge.toml` and imported in source files.
 
-### 7.2 Using Providers
+### 7.2 Using Packages
 
 ```forge
 // forge.toml
-[providers]
+[packages]
 "@std/http" = "0.1.0"
 "@std/queue" = "0.1.0"
 "@community/graphql" = "0.3.2"
@@ -1053,22 +1053,22 @@ use @std.queue.{queue, worker}
 use @community.graphql
 ```
 
-### 7.3 Provider Architecture
+### 7.3 Package Architecture
 
-A provider consists of:
+A package consists of:
 
 1. **Syntax definitions** — what new keywords/blocks are introduced
 2. **Compile-time transformer** — how those blocks lower to core language + native calls
 3. **Native library** — the actual implementation (compiled Rust, Go, C, etc.)
-4. **Type definitions** — types the provider adds to the type system
+4. **Type definitions** — types the package adds to the type system
 5. **Metadata** — name, version, documentation, dependencies
 
-### 7.4 Provider Manifest
+### 7.4 Package Manifest
 
-Every provider has a `provider.toml`:
+Every package has a `provider.toml`:
 
 ```toml
-[provider]
+[package]
 name = "http"
 namespace = "std"
 version = "0.1.0"
@@ -1091,9 +1091,9 @@ types = "types.forge"     # type definitions file
 schema = "provider.wit"   # interface definition
 ```
 
-### 7.5 Provider Syntax Registration
+### 7.5 Package Syntax Registration
 
-Providers register keyword patterns using a structured grammar:
+Packages register keyword patterns using a structured grammar:
 
 ```
 keyword server:
@@ -1109,11 +1109,11 @@ keyword middleware:
   context: server
 ```
 
-### 7.6 Provider Implementation (Rust Example)
+### 7.6 Package Implementation (Rust Example)
 
 ```rust
-// src/lib.rs for @std/http provider
-use forge_provider_sdk::prelude::*;
+// src/lib.rs for @std/http package
+use forge_package_sdk::prelude::*;
 
 #[forge_keyword("server")]
 pub struct ServerBlock {
@@ -1171,13 +1171,13 @@ pub extern "C" fn forge_http_server_start(server: *mut Server) {
 }
 ```
 
-### 7.7 Provider Interface Contract
+### 7.7 Package Interface Contract
 
-Providers expose their interface through a `.wit`-inspired definition file:
+Packages expose their interface through a `.wit`-inspired definition file:
 
 ```wit
 // provider.wit for @std/http
-interface http-provider {
+interface http-package {
   record server-config {
     port: u16,
     host: option<string>,
@@ -1198,26 +1198,26 @@ interface http-provider {
 }
 ```
 
-### 7.8 Provider Composability
+### 7.8 Package Composability
 
-Providers declare what resources they claim and the compiler prevents conflicts:
+Packages declare what resources they claim and the compiler prevents conflicts:
 
 ```toml
 # In provider.toml
 [resources]
-claims = ["tcp:port"]     # This provider binds TCP ports
+claims = ["tcp:port"]     # This package binds TCP ports
 conflicts = []            # Explicit conflict declarations
 
 [resources.shared]
 uses = ["models", "events"]  # Can read models and emit events
 ```
 
-If two providers both claim `tcp:port` in the same project, the compiler emits an error:
+If two packages both claim `tcp:port` in the same project, the compiler emits an error:
 
 ```
 ERROR[E0201]: resource conflict at forge.toml
 
-  Providers @std/http and @community/grpc both claim resource "tcp:port".
+  Packages @std/http and @community/grpc both claim resource "tcp:port".
 
   Options:
     1. Configure distinct ports: @std/http on :8080, @community/grpc on :9090
@@ -1226,11 +1226,11 @@ ERROR[E0201]: resource conflict at forge.toml
 
 ### 7.9 Swappable Implementations
 
-Providers conform to interfaces, allowing implementation swaps:
+Packages conform to interfaces, allowing implementation swaps:
 
 ```toml
 # forge.toml — use a different HTTP engine
-[providers]
+[packages]
 "@std/http" = { version = "0.1.0", impl = "@community/http-bun" }
 ```
 
@@ -1238,9 +1238,9 @@ The syntax in your source code stays identical. Only the compiled native code ch
 
 ---
 
-## 8. Standard Providers
+## 8. Standard Packages
 
-These providers ship with Forge and are maintained as part of the core distribution.
+These packages ship with Forge and are maintained as part of the core distribution.
 
 ### 8.1 @std/http — HTTP Server
 
@@ -1438,7 +1438,7 @@ agent my_agent {
 }
 ```
 
-**Backed by:** Rust (HTTP client calling provider APIs)
+**Backed by:** Rust (HTTP client calling package APIs)
 
 ### 8.7 @std/log — Structured Logging
 
@@ -1765,24 +1765,24 @@ Every error includes:
 - **Docs URL** linking to detailed explanation with examples
 - **Related errors** (if this error is caused by or causes another)
 
-### 10.7 Provider Error Boundaries
+### 10.7 Package Error Boundaries
 
-Errors from provider native code are caught at the FFI boundary and converted to Forge's error type:
+Errors from package native code are caught at the FFI boundary and converted to Forge's error type:
 
 ```
 ERROR at src/main.fg:14:16
-Provider @std/queue encountered an internal error
+Package @std/queue encountered an internal error
 
   14 |  enqueue(payment_queue, order)
      |          ^^^^^^^^^^^^^^^^^^^^
 
-  Provider error (source: Go runtime):
+  Package error (source: Go runtime):
     goroutine panic: index out of range [3] with length 2
 
-  This is a bug in the @std/queue provider, not in your code.
+  This is a bug in the @std/queue package, not in your code.
   Suggestion: try updating @std/queue or report this issue
 
-  Provider trace:
+  Package trace:
     queue.go:142  processMessage()
     queue.go:89   Enqueue()
     [FFI boundary]
@@ -1795,7 +1795,7 @@ The FFI boundary catches:
 - **C/C++:** Signal handlers for segfaults, plus exception catching for C++
 - **Python:** Exception catching in embedded interpreter
 
-A provider crash never takes down the host process. It always surfaces as a catchable `ProviderError`.
+A package crash never takes down the host process. It always surfaces as a catchable `PackageError`.
 
 ---
 
@@ -1832,7 +1832,7 @@ use users.{User, User as BaseUser}          // rename with `as`
 use utils                                    // all exports from utils/
 use tasks                                    // all exports from tasks/
 
-// Import from providers — @ prefix for external
+// Import from packages — @ prefix for external
 use @std.http.{server, route, middleware as mw}
 use @std.queue.{queue, worker}
 use @std.model                               // all exports from @std/model
@@ -1871,7 +1871,7 @@ fn normalize_name(name: string) -> string {
 
 ## 12. Embedded Sublanguages
 
-Forge supports embedding other language syntaxes within blocks. The outer parser handles brace-matching; the provider parses the inner content.
+Forge supports embedding other language syntaxes within blocks. The outer parser handles brace-matching; the package parses the inner content.
 
 ### 12.1 SQL Blocks
 
@@ -1920,13 +1920,13 @@ let git_hash = sh { git rev-parse HEAD }.trim()
 
 The Forge parser treats embedded blocks generically:
 
-1. Parser sees `<keyword> { ... }` where `<keyword>` is registered by a provider as an embedded block
+1. Parser sees `<keyword> { ... }` where `<keyword>` is registered by a package as an embedded block
 2. Parser does brace-matching to find the block boundaries
-3. Raw text inside braces is passed to the provider's parser
-4. Provider parses, validates, and returns typed AST nodes
-5. Compiler lowers provider AST nodes to LLVM IR
+3. Raw text inside braces is passed to the package's parser
+4. Package parses, validates, and returns typed AST nodes
+5. Compiler lowers package AST nodes to LLVM IR
 
-This means new embedded syntaxes can be added by community providers without modifying the Forge parser.
+This means new embedded syntaxes can be added by community packages without modifying the Forge parser.
 
 ---
 
@@ -2040,10 +2040,10 @@ forge run                     # Build and run
 forge test                    # Run tests
 forge repl                    # Interactive REPL
 
-forge add <provider>          # Add a provider
-forge remove <provider>       # Remove a provider
-forge providers list          # List installed providers
-forge providers search <q>    # Search provider registry
+forge add <package>          # Add a provider
+forge remove <package>       # Remove a provider
+forge packages list          # List installed packages
+forge packages search <q>    # Search provider registry
 
 forge migrate create          # Generate migration from model changes
 forge migrate run             # Apply pending migrations
@@ -2051,7 +2051,7 @@ forge migrate rollback        # Rollback last migration
 forge migrate preview         # Preview SQL
 
 forge context                 # Output LLM-friendly project context
-forge context --providers     # Include all provider specs
+forge context --packages     # Include all provider specs
 forge context --compact       # Minimal context for small windows
 
 forge fmt                     # Format source code
@@ -2072,12 +2072,12 @@ Source (.fg files)
        │
        ▼
 ┌─────────────┐
-│   Parser    │  Build AST, delegate provider blocks
+│   Parser    │  Build AST, delegate package blocks
 └──────┬──────┘
        │
        ▼
 ┌─────────────┐
-│  Provider   │  Providers transform their keyword
+│  Package    │  Packages transform their keyword
 │  Transform  │  blocks into core AST + native calls
 └──────┬──────┘
        │
@@ -2102,7 +2102,7 @@ Source (.fg files)
        ▼
 ┌─────────────┐
 │   LLVM      │  Optimization passes, native code gen,
-│  Backend    │  link provider native libs
+│  Backend    │  link package native libs
 └──────┬──────┘
        │
        ▼
@@ -2126,7 +2126,7 @@ The compiler is written in Rust and uses the LLVM C API (via the `inkwell` or `l
 
 Limitations:
 - Model schema changes require a full restart (migration needed)
-- Adding/removing providers requires a full restart
+- Adding/removing packages requires a full restart
 - Changes to `main.fg` entry point require a full restart
 
 ### 14.5 REPL
@@ -2149,9 +2149,9 @@ Model User created (in-memory)
 > User.create({ name: "alice" })
 User { id: "a1b2...", name: "alice" }
 
-> :providers
+> :packages
 @std/core (built-in)
-No additional providers loaded. Use :add @std/http to add.
+No additional packages loaded. Use :add @std/http to add.
 
 > :add @std/http
 Loading @std/http... done.
@@ -2168,10 +2168,10 @@ REPL commands start with `:` to distinguish from language expressions.
 
 Forge ships with a Language Server Protocol implementation for editor support:
 
-- **Completions:** keyword, type, field, provider keyword completions
+- **Completions:** keyword, type, field, package keyword completions
 - **Diagnostics:** real-time error reporting as you type
-- **Go to definition:** works across modules and into provider type definitions
-- **Hover:** type info, documentation, provider docs
+- **Go to definition:** works across modules and into package type definitions
+- **Hover:** type info, documentation, package docs
 - **Rename:** safe rename across modules
 - **Format:** integrated formatter
 
@@ -2188,7 +2188,7 @@ Forge is designed to be written by both humans and AI agents. This section descr
 The `forge context` command outputs a complete, structured description of the current project that can be loaded into an LLM's context window:
 
 ```bash
-# Full project context (spec + providers + models + types)
+# Full project context (spec + packages + models + types)
 forge context
 
 # Output:
@@ -2222,8 +2222,8 @@ Options:
 
 ```bash
 forge context --compact       # Minimal context (~3k tokens)
-forge context --full          # Everything including provider internals (~15k tokens)
-forge context --providers     # Just provider specs
+forge context --full          # Everything including package internals (~15k tokens)
+forge context --packages     # Just package specs
 forge context --models        # Just model definitions
 forge context --format=json   # Machine-parseable output
 ```
@@ -2240,7 +2240,7 @@ This exposes tools for:
 - Querying project structure and models
 - Running builds and getting structured errors
 - Executing tests and getting results
-- Searching provider documentation
+- Searching package documentation
 - Running REPL expressions
 
 ### 15.3 Error Design for Agents
@@ -2262,7 +2262,7 @@ Every compiler error includes machine-actionable fix suggestions:
       "confidence": 0.92
     },
     {
-      "message": "add @std/ws provider for streaming",
+      "message": "add @std/ws package for streaming",
       "action": "forge add @std/ws",
       "confidence": 0.45
     }
@@ -2278,7 +2278,7 @@ An LLM agent can:
 
 ### 15.4 Spec Compactness
 
-The core language spec (keywords, syntax, types) is designed to fit in approximately 5,000 tokens. Provider specs add approximately 500-1,000 tokens each. A typical project's full context (spec + 3-4 providers + models) fits in approximately 10,000 tokens.
+The core language spec (keywords, syntax, types) is designed to fit in approximately 5,000 tokens. Package specs add approximately 500-1,000 tokens each. A typical project's full context (spec + 3-4 packages + models) fits in approximately 10,000 tokens.
 
 This is intentional — every language design decision was evaluated for how concisely it can be described to an LLM.
 
@@ -2290,7 +2290,7 @@ Forge enforces consistent naming to reduce ambiguity for LLM code generation:
 - **Functions:** snake_case (`process_order`, `send_email`)
 - **Variables:** snake_case (`user_count`, `active_tasks`)
 - **Constants:** UPPER_SNAKE_CASE (`MAX_RETRIES`, `DEFAULT_PORT`)
-- **Providers:** kebab-case namespaced (`@std/http`, `@community/graphql`)
+- **Packages:** kebab-case namespaced (`@std/http`, `@community/graphql`)
 - **Files:** snake_case (`task_service.fg`, `user_model.fg`)
 - **Enums:** snake_case values (`.pending`, `.in_progress`, `.done`)
 
@@ -2331,12 +2331,12 @@ fn process_request(req: Request) -> Response {
 // No manual free, no defer, no Drop — it just works
 ```
 
-### 16.3 Provider Authors
+### 16.3 Package Authors
 
-Provider authors writing native Rust/Go/C code manage their own internal memory. However, any object that crosses the FFI boundary into Forge is automatically reference-counted. The Provider SDK handles this:
+Package authors writing native Rust/Go/C code manage their own internal memory. However, any object that crosses the FFI boundary into Forge is automatically reference-counted. The Package SDK handles this:
 
 ```rust
-// Provider SDK automatically wraps returned values
+// Package SDK automatically wraps returned values
 #[forge_export]
 fn create_server(port: u16) -> ForgeHandle<Server> {
     // ForgeHandle adds reference counting at the boundary
@@ -2525,7 +2525,7 @@ path = "./data/app.db"
 default = "postgres"
 url = "${DATABASE_URL}"
 
-[providers]
+[packages]
 "@std/model" = "0.1.0"
 "@std/http" = "0.1.0"
 "@std/sql" = "0.1.0"
@@ -2587,7 +2587,7 @@ exporter = "stdout"                # default: log to stdout
 
 ## 19. Standard Library
 
-Beyond providers, Forge has a small standard library of functions and types always available without imports.
+Beyond packages, Forge has a small standard library of functions and types always available without imports.
 
 ### 19.1 Built-in Functions
 
@@ -2713,11 +2713,11 @@ map.filter(fn)                // Filter entries -> Map<K, V>
 map.merge(other)              // Merge maps -> Map<K, V>
 ```
 
-### 20.6 Standard Provider Release Schedule
+### 20.6 Standard Package Release Schedule
 
 **v0 — Ships with the language:**
 
-| Provider | Description |
+| Package | Description |
 |---|---|
 | `@std/model` | Data models, persistence, migrations, CRUD |
 | `@std/http` | HTTP server, routing, middleware |
@@ -2730,7 +2730,7 @@ map.merge(other)              // Merge maps -> Map<K, V>
 
 **v1 — Fast follow:**
 
-| Provider | Description |
+| Package | Description |
 |---|---|
 | `@std/queue` | Message queues, workers, dead letters |
 | `@std/ws` | WebSockets, pub/sub |
@@ -2745,7 +2745,7 @@ map.merge(other)              // Merge maps -> Map<K, V>
 
 **v2 — Ecosystem expansion:**
 
-| Provider | Description |
+| Package | Description |
 |---|---|
 | `@std/resilience` | Rate limiting, circuit breakers, bulkheads |
 | `@std/storage` | File storage abstraction (local, S3, GCS) |
@@ -2758,7 +2758,7 @@ map.merge(other)              // Merge maps -> Map<K, V>
 
 ## 21. Deployment
 
-Deployment is a first-class concept in Forge via the `@std/deploy` provider. No Dockerfiles, no YAML, no separate IaC tools.
+Deployment is a first-class concept in Forge via the `@std/deploy` package. No Dockerfiles, no YAML, no separate IaC tools.
 
 ### 21.1 Deployment Configuration
 
@@ -2807,7 +2807,7 @@ forge deploy rollback           # rollback last deployment
 forge deploy logs               # stream logs
 ```
 
-The toolchain generates Dockerfiles, Kubernetes manifests, or platform-specific configs automatically. Deployment targets are providers — `@community/deploy-fly`, `@community/deploy-aws`, `@community/deploy-vercel` — so the community can add platforms.
+The toolchain generates Dockerfiles, Kubernetes manifests, or platform-specific configs automatically. Deployment targets are packages — `@community/deploy-fly`, `@community/deploy-aws`, `@community/deploy-vercel` — so the community can add platforms.
 
 ### 21.3 Secrets Management
 
@@ -2915,9 +2915,9 @@ forge build --target aarch64-linux-android    # Android
 
 Write business logic, networking, and data layer in Forge. Write UI in Swift/Kotlin. This is the same approach used by Rust, Go, and Kotlin Multiplatform on mobile today.
 
-### 24.2 Phase 2: UI Provider (Future Vision)
+### 24.2 Phase 2: UI Package (Future Vision)
 
-A `@std/ui` provider that compiles to native controls on each platform:
+A `@std/ui` package that compiles to native controls on each platform:
 
 ```forge
 use @std.ui.{app, view, text, button, list, state}
@@ -2974,20 +2974,20 @@ Deliverables:
 
 **Milestone:** Define a model, create/query records, compile to single binary with embedded SQLite.
 
-### Phase 3: Provider System (Months 6-12)
+### Phase 3: Package System (Months 6-12)
 
-**Goal:** Providers can register keywords and compile to native code.
+**Goal:** Packages can register keywords and compile to native code.
 
 Deliverables:
-- Provider manifest format (`provider.toml`)
-- Provider SDK crate for Rust provider authors
+- Package manifest format (`provider.toml`)
+- Package SDK crate for Rust package authors
 - Keyword registration and syntax pattern matching
-- Provider compile-time transformation pipeline
-- Provider fault boundaries (FFI error catching)
-- `@std/http` provider (server, route, middleware, mount)
-- `@std/queue` provider (queue, worker, enqueue)
-- `forge add`, `forge remove`, `forge providers` commands
-- Provider registry (package hosting)
+- Package compile-time transformation pipeline
+- Package fault boundaries (FFI error catching)
+- `@std/http` package (server, route, middleware, mount)
+- `@std/queue` package (queue, worker, enqueue)
+- `forge add`, `forge remove`, `forge packages` commands
+- Package registry (package hosting)
 
 **Milestone:** Full motivating example (Section 1) compiles and runs.
 
@@ -3024,17 +3024,17 @@ Deliverables:
 
 ### Phase 6: Ecosystem (Months 14-18+)
 
-**Goal:** Community can build and share providers.
+**Goal:** Community can build and share packages.
 
 Deliverables:
-- Provider SDK for Go, Python, C provider authors
-- Public provider registry with search
-- `@std/ws`, `@std/cron`, `@std/ai`, `@std/auth` providers
+- Package SDK for Go, Python, C provider authors
+- Public package registry with search
+- `@std/ws`, `@std/cron`, `@std/ai`, `@std/auth` packages
 - Edge/WASI compilation target
 - CI/CD integration guides
 - Documentation site
 
-**Milestone:** Community members publish third-party providers.
+**Milestone:** Community members publish third-party packages.
 
 ---
 
@@ -3046,14 +3046,14 @@ The following design areas need further exploration and prototyping. Many questi
 
 | Question | Decision |
 |---|---|
-| Event system | First-class (`emit`/`on`), in-process default, provider-extensible (Redis, Kafka via config) |
-| Provider security | Capability-based declarations in `provider.toml`, compiler-verified |
+| Event system | First-class (`emit`/`on`), in-process default, package-extensible (Redis, Kafka via config) |
+| Package security | Capability-based declarations in `provider.toml`, compiler-verified |
 | Package registry | Hybrid — centralized registry for discovery, git-based for source |
 | Streaming | Both `Stream<T>` (lazy pull) and `Channel<T>` (concurrent push), with conversion between them |
 | Observability | First-class via `@std/observe`, auto-instrumented, OpenTelemetry export |
-| Access control | Standard provider `@std/auth` with annotation-based route protection |
+| Access control | Standard package `@std/auth` with annotation-based route protection |
 | Mutability | Immutable-by-default (`let`), opt-in mutation (`mut`), compile-time constants (`const`) |
-| Model as core vs provider | Provider (`@std/model`) — keeps core language minimal |
+| Model as core vs package | Package (`@std/model`) — keeps core language minimal |
 
 ### 26.1 Compile-Time Computation
 
@@ -3067,9 +3067,9 @@ How do model schema changes interact with running services? The migration system
 
 Should Forge track side effects in the type system? An effect system could distinguish pure functions from those that do I/O, mutate state, or panic. This improves testability and reasoning but adds complexity. Deferred to post-v1.0.
 
-### 26.4 Mobile UI Provider Design
+### 26.4 Mobile UI Package Design
 
-The `@std/ui` provider (Section 24.2) needs deep design work around reactivity, state management, layout primitives, and platform-specific escape hatches. This is a post-v1.0 research area.
+The `@std/ui` package (Section 24.2) needs deep design work around reactivity, state management, layout primitives, and platform-specific escape hatches. This is a post-v1.0 research area.
 
 ---
 
@@ -3080,7 +3080,7 @@ program        = declaration* ;
 
 declaration    = fn_decl | type_decl | enum_decl | trait_decl | impl_decl
                | use_decl | export_decl
-               | provider_keyword_block | statement ;
+               | package_keyword_block | statement ;
 
 fn_decl        = "fn" IDENT "(" params? ")" ("->" type)? block ;
 params         = param ("," param)* ;
@@ -3148,7 +3148,7 @@ null_coalesce  = expr "??" expr ;
 null_propagate = expr "?." IDENT ;
 ```
 
-This is a simplified grammar. The full grammar includes provider-extensible syntax patterns and embedded block delegation.
+This is a simplified grammar. The full grammar includes package-extensible syntax patterns and embedded block delegation.
 
 ---
 
@@ -3158,7 +3158,7 @@ This is a simplified grammar. The full grammar includes provider-extensible synt
 |---|---|
 | E0001-E0099 | Syntax errors |
 | E0100-E0199 | Type errors |
-| E0200-E0299 | Provider errors |
+| E0200-E0299 | Package errors |
 | E0300-E0399 | Model/persistence errors |
 | E0400-E0499 | Import/module errors |
 | E0500-E0599 | FFI/extern errors |
@@ -3178,8 +3178,8 @@ Each error code has a permanent, stable meaning. Error codes are never reused or
 | Null safety | Kotlin-style `?` | Nil (unsafe) | `Option<T>` | Optional `?` | Pattern match |
 | Concurrency | Implicit (Go-style) | Goroutines | async/await | async/await | Actors (OTP) |
 | Memory | Ref counting | GC | Ownership | GC | GC |
-| Extensibility | Provider system | Interfaces | Traits + macros | Types | Macros |
-| Built-in HTTP | Provider | `net/http` | Libraries | Libraries | Phoenix |
+| Extensibility | Package system | Interfaces | Traits + macros | Types | Macros |
+| Built-in HTTP | Package | `net/http` | Libraries | Libraries | Phoenix |
 | Built-in DB | Auto-persist | Libraries | Libraries | Libraries | Ecto |
 | Binary output | Single binary | Single binary | Single binary | Requires Node/Bun | Requires BEAM |
 | Agent-friendly | First-class | No | No | Partial | No |
@@ -3188,14 +3188,14 @@ Each error code has a permanent, stable meaning. Error codes are never reused or
 
 ## Appendix D: Glossary
 
-- **Provider:** A compiler plugin that registers keywords, syntax, and native implementations. The primary extensibility mechanism.
+- **Package:** A compiler plugin that registers keywords, syntax, and native implementations. The primary extensibility mechanism.
 - **Model:** A data type declaration that auto-persists to a database.
 - **Service:** Business logic layer around a model with lifecycle hooks and custom methods.
 - **Extern Component:** A module implemented in another language (Rust, Go, Python) and linked into the Forge binary.
-- **Embedded Block:** A syntax block (like `sql { ... }`) whose contents are parsed by a provider, not the core parser.
+- **Embedded Block:** A syntax block (like `sql { ... }`) whose contents are parsed by a package, not the core parser.
 - **Arena:** A memory allocation region where all objects are freed at once when the scope exits.
 - **MIR:** Mid-level Intermediate Representation — Forge's internal representation after type checking but before LLVM IR generation.
-- **Provider SDK:** The library/framework used by provider authors to build new providers.
+- **Package SDK:** The library/framework used by package authors to build new packages.
 - **Forge Context:** The LLM-loadable description of a project generated by `forge context`.
 
 ---

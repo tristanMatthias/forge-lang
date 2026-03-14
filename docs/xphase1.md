@@ -1,6 +1,6 @@
 # Forge Compiler — Phase 1 Implementation Spec
 
-**Goal:** Build a working compiler that takes Forge source files (`.fg`) and produces native binaries via LLVM. Phase 1 covers the core language only — no providers, no models, no servers. Just the foundation that everything else builds on.
+**Goal:** Build a working compiler that takes Forge source files (`.fg`) and produces native binaries via LLVM. Phase 1 covers the core language only — no packages, no models, no servers. Just the foundation that everything else builds on.
 
 **Success criteria:** The test programs at the end of this document all compile and run correctly.
 
@@ -1319,7 +1319,7 @@ Build these in order. Each step produces a working (if limited) compiler that ca
 These are explicitly deferred to Phase 2+:
 
 - The `use` / module system (Phase 1 is single-file only)
-- Providers and the provider SDK
+- Packages and the package SDK
 - Models, services, persistence
 - Traits and impl blocks (partially — basic trait declarations parse but don't codegen)
 - Generics (type checker supports them for built-in types like List<T> but not user-defined)
@@ -1327,7 +1327,7 @@ These are explicitly deferred to Phase 2+:
 - Cycle detection in reference counting
 - Hot reload or REPL
 - Multi-file compilation
-- Any standard providers (@std/http, etc.)
+- Any standard packages (@std/http, etc.)
 - The `forge.toml` project system
 - The `spawn`/`parallel` keywords (parsed but not codegen'd)
 - Annotations (`@`)

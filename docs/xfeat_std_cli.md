@@ -70,7 +70,7 @@ echo $?
 
 # Part 2: @std/term
 
-Library provider. No components. Just functions wrapping ANSI codes.
+Library package. No components. Just functions wrapping ANSI codes.
 
 ## Test 2.1: Colors
 
@@ -558,23 +558,23 @@ cli forge_cli {
   version "0.1.0"
   description "The Forge programming language"
 
-  command provider {
-    description "Provider management"
+  command package {
+    description "Package management"
 
     command new {
-      description "Create a new provider"
+      description "Create a new package"
       arg name: string
 
       run {
-        println(`creating provider: ${name}`)
+        println(`creating package: ${name}`)
       }
     }
 
     command list {
-      description "List installed providers"
+      description "List installed packages"
 
       run {
-        println("listing providers")
+        println("listing packages")
       }
     }
   }
@@ -582,25 +582,25 @@ cli forge_cli {
 ```
 
 ```bash
-./forge_cli provider new my-redis
+./forge_cli package new my-redis
 ```
 
 ```
-creating provider: my-redis
+creating package: my-redis
 ```
 
 ```bash
-./forge_cli provider --help
+./forge_cli package --help
 ```
 
 ```
-  forge_cli provider
+  forge_cli package
 
-  Provider management
+  Package management
 
   Commands:
-    new     Create a new provider
-    list    List installed providers
+    new     Create a new package
+    list    List installed packages
 ```
 
 ## Test 3.12: Before/after hooks
@@ -713,12 +713,12 @@ cli builder {
 
 ---
 
-# Provider Definitions
+# Package Definitions
 
-## @std/term — provider.toml
+## @std/term — package.toml
 
 ```toml
-[provider]
+[package]
 name = "term"
 namespace = "std"
 version = "0.1.0"
@@ -728,7 +728,7 @@ description = "Terminal colors, styles, spinners, and formatting"
 library = "forge_term"
 ```
 
-## @std/term — provider.fg
+## @std/term — package.fg
 
 ```forge
 extern fn forge_term_is_tty() -> bool
@@ -795,10 +795,10 @@ export fn print_table(data: List<any>) {
 }
 ```
 
-## @std/cli — provider.toml
+## @std/cli — package.toml
 
 ```toml
-[provider]
+[package]
 name = "cli"
 namespace = "std"
 version = "0.1.0"
@@ -813,7 +813,7 @@ context = "top_level"
 body = "mixed"
 ```
 
-## @std/cli — provider.fg
+## @std/cli — package.fg
 
 ```forge
 extern fn forge_cli_parse_args(schema_json: string, raw_args_json: string) -> string
@@ -890,7 +890,7 @@ component cli(name: string) {
 ## process additions — two new extern fns
 
 ```forge
-// Added to @std/process provider.fg
+// Added to @std/process package.fg
 
 extern fn forge_process_get_args() -> string
 extern fn forge_process_exit(code: int)
@@ -908,7 +908,7 @@ export fn exit(code: int) {
 
 # What's Needed
 
-| Feature | Provider | Implementation |
+| Feature | Package | Implementation |
 |---|---|---|
 | `process.args()` | @std/process | Wrap `std::env::args()` |
 | `process.exit(code)` | @std/process | Wrap `std::process::exit()` |

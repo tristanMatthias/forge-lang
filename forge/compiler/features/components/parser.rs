@@ -761,7 +761,7 @@ impl Parser {
         })
     }
 
-    /// Parse a component template definition from provider.fg:
+    /// Parse a component template definition from package.fg:
     /// `component model(__tpl_name, schema) { ... }`
     pub(crate) fn parse_component_template_def(&mut self) -> Option<Statement> {
         let start = self.expect(&TokenKind::Component)?.span; // consume 'component'
@@ -938,13 +938,7 @@ impl Parser {
                         let params = self.parse_params()?;
                         self.skip_newlines();
 
-                        let return_type = if self.check(&TokenKind::Arrow) {
-                            self.advance();
-                            self.skip_newlines();
-                            Some(self.parse_type_expr()?)
-                        } else {
-                            None
-                        };
+                        let return_type = self.parse_optional_return_type()?;
                         self.skip_newlines();
                         let body = self.parse_block()?;
 
@@ -967,13 +961,7 @@ impl Parser {
                         self.expect(&TokenKind::LParen)?;
                         let params = self.parse_params()?;
                         self.skip_newlines();
-                        let return_type = if self.check(&TokenKind::Arrow) {
-                            self.advance();
-                            self.skip_newlines();
-                            Some(self.parse_type_expr()?)
-                        } else {
-                            None
-                        };
+                        let return_type = self.parse_optional_return_type()?;
                         self.skip_newlines();
                         let body = self.parse_block()?;
                         let decl = Statement::FnDecl {
@@ -1039,13 +1027,7 @@ impl Parser {
                     self.expect(&TokenKind::LParen)?;
                     let fn_params = self.parse_params().unwrap_or_default();
                     self.skip_newlines();
-                    let _return_type = if self.check(&TokenKind::Arrow) {
-                        self.advance();
-                        self.skip_newlines();
-                        Some(self.parse_type_expr()?)
-                    } else {
-                        None
-                    };
+                    let _return_type = self.parse_optional_return_type()?;
                     self.skip_newlines();
                     let fn_body = self.parse_block()?;
 

@@ -58,21 +58,21 @@ impl TypeChecker {
                             continue;
                         }
 
-                        // ── Provider annotation outside its component context (F0074) ──
-                        // Check against dynamically registered provider annotations.
+                        // ── Package annotation outside its component context (F0074) ──
+                        // Check against dynamically registered package annotations.
                         // Falls back to a hardcoded list for backward compatibility when
-                        // no provider declarations are loaded (e.g., forge check without providers).
-                        let is_provider_ann = if !self.provider_annotations.is_empty() {
-                            self.provider_annotations.iter().any(|(name, target, _)| {
+                        // no package declarations are loaded (e.g., forge check without packages).
+                        let is_package_ann = if !self.package_annotations.is_empty() {
+                            self.package_annotations.iter().any(|(name, target, _)| {
                                 name == ann_name && (target == "field" || target == "type")
                             })
                         } else {
-                            const FALLBACK_PROVIDER_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
-                            FALLBACK_PROVIDER_ANNOTATIONS.contains(&ann_name)
+                            const FALLBACK_PACKAGE_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
+                            FALLBACK_PACKAGE_ANNOTATIONS.contains(&ann_name)
                         };
-                        if is_provider_ann {
+                        if is_package_ann {
                             // Find the component name for a better error message
-                            let component_name = self.provider_annotations.iter()
+                            let component_name = self.package_annotations.iter()
                                 .find(|(name, _, _)| name == ann_name)
                                 .map(|(_, _, comp)| comp.as_str())
                                 .unwrap_or("model");

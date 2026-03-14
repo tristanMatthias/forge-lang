@@ -62,18 +62,7 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        let mut then_val = None;
-        for stmt in &then_branch.statements {
-            match stmt {
-                Statement::Expr(expr) => {
-                    then_val = self.compile_expr(expr);
-                }
-                _ => {
-                    self.compile_statement(stmt);
-                    then_val = None;
-                }
-            }
-        }
+        let then_val = self.compile_block_for_value(then_branch);
         self.pop_scope();
         let then_end_bb = self.builder.get_insert_block().unwrap();
         if then_end_bb.get_terminator().is_none() {
@@ -85,17 +74,7 @@ impl<'ctx> Codegen<'ctx> {
         let mut else_val = None;
         if let Some(else_b) = else_branch {
             self.push_scope();
-            for stmt in &else_b.statements {
-                match stmt {
-                    Statement::Expr(expr) => {
-                        else_val = self.compile_expr(expr);
-                    }
-                    _ => {
-                        self.compile_statement(stmt);
-                        else_val = None;
-                    }
-                }
-            }
+            else_val = self.compile_block_for_value(else_b);
             self.pop_scope();
         }
         let else_end_bb = self.builder.get_insert_block().unwrap();
@@ -178,6 +157,25 @@ impl<'ctx> Codegen<'ctx> {
 
         then_val.or(else_val)
     }
+    /// Compile all statements in a block, tracking the last expression value.
+    /// Returns the value of the last expression statement, or None if the block
+    /// ends with a non-expression statement.
+    pub(crate) fn compile_block_for_value(&mut self, block: &Block) -> Option<BasicValueEnum<'ctx>> {
+        let mut last_val = None;
+        for stmt in &block.statements {
+            match stmt {
+                Statement::Expr(expr) => {
+                    last_val = self.compile_expr(expr);
+                }
+                _ => {
+                    self.compile_statement(stmt);
+                    last_val = None;
+                }
+            }
+        }
+        last_val
+    }
+
     // compile_for: extracted to features/
     // compile_while: extracted to features/
     // compile_loop: extracted to features/

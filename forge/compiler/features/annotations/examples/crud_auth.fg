@@ -1,4 +1,4 @@
-/// Test: CRUD with auth annotations — model + auth provider integration
+/// Test: CRUD with auth annotations — model + auth package integration
 ///
 /// expect: 1
 /// expect: admin

@@ -13,11 +13,7 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         // Parse optional super traits: trait Foo: Bar + Baz { ... }
@@ -54,13 +50,7 @@ impl Parser {
             let params = self.parse_params()?;
             self.skip_newlines();
 
-            let return_type = if self.check(&TokenKind::Arrow) {
-                self.advance();
-                self.skip_newlines();
-                Some(self.parse_type_expr()?)
-            } else {
-                None
-            };
+            let return_type = self.parse_optional_return_type()?;
             self.skip_newlines();
 
             let default_body = if self.check(&TokenKind::LBrace) {
@@ -109,11 +99,7 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters after first name
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         let (trait_name, type_name) = if self.check(&TokenKind::For) {

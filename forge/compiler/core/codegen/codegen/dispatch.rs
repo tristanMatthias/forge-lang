@@ -45,10 +45,7 @@ impl<'ctx> Codegen<'ctx> {
 
                                 // Auto-stringify list args to JSON when extern fn expects ptr or string
                                 if let Type::List(_) = &arg_type {
-                                    if val.is_struct_value() {
-                                        let sv = val.into_struct_value();
-                                        let list_ptr = self.builder.build_extract_value(sv, 0, "list_ptr").unwrap();
-                                        let list_len = self.builder.build_extract_value(sv, 1, "list_len").unwrap();
+                                    if let Some((list_ptr, list_len)) = self.extract_list_fields(&val) {
                                         let json_str = self.call_runtime("forge_list_to_json", &[list_ptr.into(), list_len.into()], "list_json").unwrap();
                                         // If param expects ptr, extract the ptr from ForgeString
                                         if param_type.is_pointer_type() {
@@ -111,8 +108,7 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            let len = self.call_runtime("strlen", &[ptr_val.into()], "slen").unwrap();
-                            return self.call_runtime("forge_string_new", &[ptr_val.into(), len.into()], "fstr");
+                            return self.wrap_ptr_as_string(ptr_val);
                         }
                     }
                     return raw;
@@ -145,8 +141,7 @@ impl<'ctx> Codegen<'ctx> {
                                         "param_val",
                                     ).unwrap().into_pointer_value();
                                     // Convert raw C string ptr to ForgeString
-                                    let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
-                                    return self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "fstr");
+                                    return self.wrap_ptr_as_string(raw_ptr);
                                 }
                             }
                         }
@@ -208,37 +203,40 @@ impl<'ctx> Codegen<'ctx> {
 
                     // Handle Display trait's display method
                     if method == "display" {
-                        if let Some(mangled) = self.find_impl_method(&type_name, "display") {
-                            if let Some(func) = self.functions.get(&mangled).copied() {
-                                let mut call_args: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
-                                for arg in args {
-                                    if let Some(val) = self.compile_expr(&arg.value) {
-                                        call_args.push(val.into());
-                                    }
-                                }
-                                let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
-                                return result.try_as_basic_value().left();
-                            }
+                        if let Some(result) = self.call_impl_method(&type_name, "display", obj_val, args) {
+                            return Some(result);
                         }
                     }
 
                     // Look up trait method impl
-                    if let Some(mangled) = self.find_impl_method(&type_name, method) {
-                        if let Some(func) = self.functions.get(&mangled).copied() {
-                            let mut call_args: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
-                            for arg in args {
-                                if let Some(val) = self.compile_expr(&arg.value) {
-                                    call_args.push(val.into());
-                                }
-                            }
-                            let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
-                            return result.try_as_basic_value().left();
-                        }
+                    if let Some(result) = self.call_impl_method(&type_name, method, obj_val, args) {
+                        return Some(result);
                     }
                 }
                 None
             }
         }
+    }
+
+    /// Look up an impl method by type name and method name, compile the call with
+    /// obj_val as self and the given args, and return the result.
+    pub(crate) fn call_impl_method(
+        &mut self,
+        type_name: &str,
+        method_name: &str,
+        obj_val: BasicValueEnum<'ctx>,
+        args: &[CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let mangled = self.find_impl_method(type_name, method_name)?;
+        let func = self.functions.get(&mangled).copied()?;
+        let mut call_args: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
+        for arg in args {
+            if let Some(val) = self.compile_expr(&arg.value) {
+                call_args.push(val.into());
+            }
+        }
+        let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
+        result.try_as_basic_value().left()
     }
 
     pub(crate) fn compile_index_access(
@@ -253,18 +251,12 @@ impl<'ctx> Codegen<'ctx> {
         match &obj_type {
             Type::List(inner) => {
                 let elem_llvm_ty = self.type_to_llvm_basic(inner);
-                if obj_val.is_struct_value() {
-                    let struct_val = obj_val.into_struct_value();
-                    let data_ptr = self.builder.build_extract_value(struct_val, 0, "list_data")
-                        .ok()?.into_pointer_value();
-                    let idx = idx_val.into_int_value();
-                    let elem_ptr = unsafe {
-                        self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "elem_ptr").unwrap()
-                    };
-                    Some(self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap())
-                } else {
-                    None
-                }
+                let (data_ptr, _) = self.extract_list_fields(&obj_val)?;
+                let idx = idx_val.into_int_value();
+                let elem_ptr = unsafe {
+                    self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "elem_ptr").unwrap()
+                };
+                Some(self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap())
             }
             _ => None,
         }

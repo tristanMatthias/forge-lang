@@ -1,0 +1,10 @@
+/// Test: Package annotation @primary used outside model — compile error
+/// expect-error: F0074
+
+type UserInput = {
+  name: string @primary,
+}
+
+fn main() {
+  println("unreachable")
+}

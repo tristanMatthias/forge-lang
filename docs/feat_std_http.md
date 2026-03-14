@@ -239,7 +239,7 @@ server :8080 {
 }
 ```
 
-## Test 2.6: Custom annotation in a provider
+## Test 2.6: Custom annotation in a package
 
 ```forge
 // In a custom component definition

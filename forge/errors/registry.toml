@@ -181,7 +181,7 @@ fn main() {
 [F0072]
 title = "Unknown annotation"
 level = "error"
-message = "An annotation was used that is not recognized as a core or provider annotation."
+message = "An annotation was used that is not recognized as a core or package annotation."
 help = "Check for typos in the annotation name. Available core annotations: @min, @max, @validate, @pattern, @transform, @default."
 doc = """
 This error occurs when you use an annotation that is not recognized by the compiler.
@@ -228,12 +228,12 @@ model User {
 """
 
 [F0074]
-title = "Provider annotation outside its context"
+title = "Package annotation outside its context"
 level = "error"
-message = "A provider-scoped annotation was used outside its provider context."
+message = "A package-scoped annotation was used outside its package context."
 help = "This annotation is only valid inside a model block. Use `model` instead of `type` for database features."
 doc = """
-This error occurs when a model/provider annotation like @primary, @unique,
+This error occurs when a model/package annotation like @primary, @unique,
 @auto_increment, @hidden, or @owner is used on a plain type declaration
 instead of inside a model block.
 

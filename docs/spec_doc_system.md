@@ -688,8 +688,8 @@ F0012                             → error explanation + examples
 <-                                → symbol lookup → channels
 defer                             → keyword lookup → defer feature
 
-@http.server                      → provider component docs
-@model                            → provider component docs
+@http.server                      → package component docs
+@model                            → package component docs
 ```
 
 Resolution order:
@@ -698,7 +698,7 @@ Resolution order:
 3. Keyword table lookup (`defer`, `spawn`, `match`)
 4. Type name match (`string`, `list`, `int`)
 5. Error code match (`F0012`)
-6. Provider component match (`@http.server`)
+6. Package component match (`@http.server`)
 7. Fuzzy search fallback
 
 ### `forge docs` Resolution (Project)
@@ -721,13 +721,13 @@ Resolution order:
 
 ---
 
-## Provider Documentation
+## Package Documentation
 
-Providers are documented via the same system, extracted from `provider.toml` + `provider.fg`:
+Packages are documented via the same system, extracted from `package.toml` + `package.fg`:
 
-### From `provider.toml`:
+### From `package.toml`:
 ```toml
-[provider]
+[package]
 name = "std-http"
 version = "0.1.0"
 description = "HTTP server components"
@@ -736,7 +736,7 @@ description = "HTTP server components"
 description = "HTTP server with routing"
 ```
 
-### From `provider.fg`:
+### From `package.fg`:
 ```forge
 /// @title: HTTP Server
 /// @section: components
@@ -810,7 +810,7 @@ $ forge docs --validate
 
   Errors: 12/12 documented ✓
 
-  Providers: 7/7 documented ✓
+  Packages: 7/7 documented ✓
     ⚠ std-channel: no component examples
 
   Composition Docs: 3 found
@@ -864,8 +864,8 @@ Runs in CI. Blocks merge if coverage drops below threshold.
 4. Search index generation
 5. Forge syntax highlighter (for the website)
 
-### Phase 7: Provider Docs
-1. Extract docs from `provider.fg` annotations
+### Phase 7: Package Docs
+1. Extract docs from `package.fg` annotations
 2. Extract config schema docs
 3. `forge lang @namespace.component` resolution
 

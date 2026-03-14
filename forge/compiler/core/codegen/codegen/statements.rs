@@ -353,15 +353,7 @@ impl<'ctx> Codegen<'ctx> {
                         self.builder.build_return(Some(&wrapped)).unwrap();
                     } else if ret_ty == Type::String && val.is_pointer_value() {
                         // Auto-wrap ptr -> ForgeString (e.g. extern fn returning string)
-                        let ptr_val = val.into_pointer_value();
-                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                            let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                            self.module.add_function("strlen", ft, None)
-                        });
-                        let len = self.builder.build_call(strlen_fn, &[ptr_val.into()], "slen")
-                            .unwrap().try_as_basic_value().left().unwrap();
-                        let forge_str = self.call_runtime("forge_string_new", &[ptr_val.into(), len.into()], "fstr").unwrap();
+                        let forge_str = self.wrap_ptr_as_string(val.into_pointer_value()).unwrap();
                         self.builder.build_return(Some(&forge_str)).unwrap();
                     } else {
                         let coerced = self.coerce_value(val, expected_llvm);
@@ -437,17 +429,7 @@ impl<'ctx> Codegen<'ctx> {
                         Type::Int
                     };
                     // List is {ptr, len} struct
-                    if val.is_struct_value() {
-                        let list_struct = val.into_struct_value();
-                        let data_ptr = self.builder
-                            .build_extract_value(list_struct, 0, "list_data")
-                            .unwrap()
-                            .into_pointer_value();
-                        let list_len = self.builder
-                            .build_extract_value(list_struct, 1, "list_len")
-                            .unwrap()
-                            .into_int_value();
-
+                    if let Some((data_ptr, list_len)) = self.extract_list_fields(&val) {
                         let elem_llvm_ty = self.type_to_llvm_basic(&elem_type);
 
                         // Extract each named element by index

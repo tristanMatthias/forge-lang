@@ -12,11 +12,7 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters: type Pair<A, B> = ...
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         self.expect(&TokenKind::Eq)?;

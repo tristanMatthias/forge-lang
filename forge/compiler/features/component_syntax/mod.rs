@@ -23,7 +23,7 @@ diverse DSLs.
 
 This mechanism is how Forge supports domain-specific syntax without hardcoding any domain into \
 the compiler. The server's route syntax, the model's field declarations, and the queue's message \
-patterns are all defined through `@syntax` in their respective provider templates.
+patterns are all defined through `@syntax` in their respective package templates.
 
 Compared to macros in Rust or Lisp, `@syntax` patterns are more constrained but also more \
 predictable. They match a fixed pattern shape rather than arbitrary token trees, which keeps \

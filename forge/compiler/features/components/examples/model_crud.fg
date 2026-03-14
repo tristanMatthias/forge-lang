@@ -1,7 +1,7 @@
 /// # Model Component CRUD
 ///
 /// The model component provides create, get, list, update, delete, count.
-/// All component behavior is template-driven from provider.fg.
+/// All component behavior is template-driven from package.fg.
 ///
 /// expect: Write tests
 /// expect: 3

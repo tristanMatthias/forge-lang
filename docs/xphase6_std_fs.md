@@ -1,9 +1,9 @@
-# @std/fs Provider Spec
+# @std/fs Package Spec
 
-## provider.toml
+## package.toml
 
 ```toml
-[provider]
+[package]
 name = "fs"
 namespace = "std"
 version = "0.1.0"
@@ -13,7 +13,7 @@ description = "File system operations"
 library = "forge_fs"
 ```
 
-## provider.fg
+## package.fg
 
 ```forge
 extern fn forge_fs_read(path: string) -> string
@@ -103,7 +103,7 @@ export fn glob(pattern: string) -> Result<List<string>, string> {
 ## Native Library (Rust)
 
 ```rust
-// providers/std-fs/src/lib.rs
+// packages/std-fs/src/lib.rs
 
 use std::ffi::{CStr, CString};
 use std::fs;

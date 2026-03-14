@@ -1,0 +1,12 @@
+[package]
+name = "cli"
+namespace = "std"
+version = "0.1.0"
+description = "Declarative CLI framework"
+
+[native]
+library = "forge_cli"
+
+[components.cli]
+kind = "block"
+context = "top_level"

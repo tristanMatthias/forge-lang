@@ -16,7 +16,7 @@ calling convention used by extern functions. When a Forge string (a struct with 
 length) needs to be passed to a C function expecting a null-terminated pointer, the trampoline \
 handles the conversion.
 
-This automatic coercion means provider authors write straightforward C functions with standard \
+This automatic coercion means package authors write straightforward C functions with standard \
 types, and Forge handles the impedance mismatch at the boundary. No manual marshaling code is \
 needed on either side.
 
@@ -24,7 +24,7 @@ Trampolines are generated at compile time for each extern function call. The com
 the declared parameter and return types, inserts conversion code where needed, and ensures that \
 memory is handled correctly across the boundary.
 
-This system is invisible to both Forge users and provider authors. It exists purely as compiler \
+This system is invisible to both Forge users and package authors. It exists purely as compiler \
 infrastructure to make the FFI seamless. The generated code is optimized to minimize overhead, \
 typically adding only a few instructions per call.",
     category: "Components",

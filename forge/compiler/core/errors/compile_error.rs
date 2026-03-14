@@ -34,7 +34,7 @@ pub enum CompileError {
     /// Runtime.c failed to compile
     RuntimeCompileFailed { stderr: String },
 
-    /// Linker: undefined symbols (missing provider or runtime function)
+    /// Linker: undefined symbols (missing package or runtime function)
     UndefinedSymbols { symbols: Vec<UndefinedSymbol> },
 
     /// Linker: object file missing/empty/corrupt
@@ -46,11 +46,11 @@ pub enum CompileError {
     /// Object file couldn't be written
     ObjectWriteFailed { detail: String },
 
-    /// Provider failed to load (bad provider.toml, missing files, parse errors)
-    ProviderLoadFailed { provider: String, detail: String },
+    /// Package failed to load (bad package.toml, missing files, parse errors)
+    PackageLoadFailed { package: String, detail: String },
 
-    /// Provider referenced in `use @ns.name` but not found on disk
-    ProviderNotFound { namespace: String, name: String },
+    /// Package referenced in `use @ns.name` but not found on disk
+    PackageNotFound { namespace: String, name: String },
 
     /// LLVM codegen failure (module verification, target machine, etc.)
     CodegenFailed { stage: &'static str, detail: String },
@@ -68,7 +68,7 @@ pub enum CompileError {
 #[derive(Debug)]
 pub struct UndefinedSymbol {
     pub name: String,
-    pub provider: Option<&'static str>,
+    pub package: Option<&'static str>,
 }
 
 // ── Conversion from String ──────────────────────────────────────────
@@ -136,15 +136,15 @@ fn parse_undefined_symbols(stderr: &str) -> Vec<UndefinedSymbol> {
                 let sym = &rest[..pos];
                 // Strip leading underscore (C ABI on macOS)
                 let sym = sym.strip_prefix('_').unwrap_or(sym);
-                let provider = guess_provider(sym);
-                symbols.push(UndefinedSymbol { name: sym.to_string(), provider });
+                let package = guess_package(sym);
+                symbols.push(UndefinedSymbol { name: sym.to_string(), package });
             }
         }
         // Linux ld: undefined reference to `symbol'
         if let Some(rest) = trimmed.strip_prefix("undefined reference to `") {
             if let Some(sym) = rest.strip_suffix('\'') {
-                let provider = guess_provider(sym);
-                symbols.push(UndefinedSymbol { name: sym.to_string(), provider });
+                let package = guess_package(sym);
+                symbols.push(UndefinedSymbol { name: sym.to_string(), package });
             }
         }
     }
@@ -170,7 +170,7 @@ fn extract_path_from_linker(stderr: &str) -> Option<String> {
     None
 }
 
-fn guess_provider(symbol: &str) -> Option<&'static str> {
+fn guess_package(symbol: &str) -> Option<&'static str> {
     if symbol.starts_with("forge_channel_") { return Some("@std.channel"); }
     if symbol.starts_with("forge_http_") || symbol.starts_with("forge_server_") { return Some("@std.http"); }
     if symbol.starts_with("forge_model_") { return Some("@std.model"); }
@@ -233,11 +233,11 @@ impl fmt::Display for CompileError {
             CompileError::ObjectWriteFailed { detail } => {
                 write!(f, "failed to write object file: {}", detail)
             }
-            CompileError::ProviderLoadFailed { provider, detail } => {
-                write!(f, "failed to load provider '{}': {}", provider, detail)
+            CompileError::PackageLoadFailed { package, detail } => {
+                write!(f, "failed to load package '{}': {}", package, detail)
             }
-            CompileError::ProviderNotFound { namespace, name } => {
-                write!(f, "provider @{}.{} not found", namespace, name)
+            CompileError::PackageNotFound { namespace, name } => {
+                write!(f, "package @{}.{} not found", namespace, name)
             }
             CompileError::CodegenFailed { stage, detail } => {
                 write!(f, "codegen error ({}): {}", stage, first_line(detail))
@@ -310,15 +310,15 @@ impl CompileError {
                 )));
                 out.push('\n');
 
-                // Group by provider
-                let mut by_provider: std::collections::HashMap<Option<&str>, Vec<&str>> =
+                // Group by package
+                let mut by_package: std::collections::HashMap<Option<&str>, Vec<&str>> =
                     std::collections::HashMap::new();
                 for sym in symbols {
-                    by_provider.entry(sym.provider).or_default().push(&sym.name);
+                    by_package.entry(sym.package).or_default().push(&sym.name);
                 }
 
-                for (provider, syms) in &by_provider {
-                    if let Some(prov) = provider {
+                for (package, syms) in &by_package {
+                    if let Some(prov) = package {
                         let source = if is_tty {
                             format!("\x1b[2m(from {})\x1b[0m", prov)
                         } else {
@@ -339,23 +339,23 @@ impl CompileError {
                 }
 
                 // Generate help
-                let providers: std::collections::HashSet<&str> = symbols.iter()
-                    .filter_map(|s| s.provider)
+                let packages: std::collections::HashSet<&str> = symbols.iter()
+                    .filter_map(|s| s.package)
                     .collect();
 
-                if providers.is_empty() {
-                    out.push_str(&help_line(is_tty, "these symbols are not from any known provider — check your extern declarations"));
+                if packages.is_empty() {
+                    out.push_str(&help_line(is_tty, "these symbols are not from any known package — check your extern declarations"));
                 } else {
-                    let runtime_only = providers.iter().all(|p| p.contains("runtime"));
+                    let runtime_only = packages.iter().all(|p| p.contains("runtime"));
                     if runtime_only {
                         out.push_str(&help_line(is_tty, "runtime function missing — rebuild stdlib/runtime.c and make sure it defines these symbols"));
                     } else {
-                        let imports: Vec<String> = providers.iter()
+                        let imports: Vec<String> = packages.iter()
                             .filter(|p| !p.contains("runtime"))
                             .map(|p| format!("use {}", p))
                             .collect();
                         out.push_str(&help_line(is_tty, &format!(
-                            "add `{}` to your source file, or check that the provider's native library is built",
+                            "add `{}` to your source file, or check that the package's native library is built",
                             imports.join("`, `"),
                         )));
                     }
@@ -390,16 +390,16 @@ impl CompileError {
                 out.push_str(&help_line(is_tty, "check disk space and write permissions"));
             }
 
-            CompileError::ProviderLoadFailed { provider, detail } => {
-                out.push_str(&err_line(is_tty, &format!("failed to load provider `{}`", provider)));
+            CompileError::PackageLoadFailed { package, detail } => {
+                out.push_str(&err_line(is_tty, &format!("failed to load package `{}`", package)));
                 out.push_str(&dim_line(is_tty, detail));
-                out.push_str(&help_line(is_tty, "check provider.toml syntax and that src/provider.fg compiles. Run `forge provider new <name>` to see the expected structure"));
+                out.push_str(&help_line(is_tty, "check package.toml syntax and that src/package.fg compiles. Run `forge package new <name>` to see the expected structure"));
             }
 
-            CompileError::ProviderNotFound { namespace, name } => {
-                out.push_str(&err_line(is_tty, &format!("provider @{}.{} not found", namespace, name)));
-                out.push_str(&dim_line(is_tty, &format!("looked for providers/{}-{}/provider.toml", namespace, name)));
-                out.push_str(&help_line(is_tty, "check that the provider exists in the providers/ directory and has a valid provider.toml. Run `forge provider new <name>` to scaffold a new one"));
+            CompileError::PackageNotFound { namespace, name } => {
+                out.push_str(&err_line(is_tty, &format!("package @{}.{} not found", namespace, name)));
+                out.push_str(&dim_line(is_tty, &format!("looked for packages/{}-{}/package.toml", namespace, name)));
+                out.push_str(&help_line(is_tty, "check that the package exists in the packages/ directory and has a valid package.toml. Run `forge package new <name>` to scaffold a new one"));
             }
 
             CompileError::CodegenFailed { stage, detail } => {

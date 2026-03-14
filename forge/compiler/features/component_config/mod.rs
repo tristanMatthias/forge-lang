@@ -12,7 +12,7 @@ crate::forge_feature! {
     symbols: [],
     long_description: "\
 Component config blocks let templates declare typed configuration fields with defaults. In a \
-provider's template definition, `config { port: int = 3000, cors: bool = false }` declares \
+package's template definition, `config { port: int = 3000, cors: bool = false }` declares \
 two config fields. Users override these when creating a component: `server :8080 { ... }` or \
 `server { config { port: 8080 } }`.
 

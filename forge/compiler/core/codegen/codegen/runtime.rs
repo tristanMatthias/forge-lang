@@ -81,10 +81,10 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Declare helper/utility functions needed by codegen.
-    /// Core provider functions (forge_model_*, forge_http_*) are declared via
-    /// extern fn statements from provider.fg files, loaded by the driver.
+    /// Core package functions (forge_model_*, forge_http_*) are declared via
+    /// extern fn statements from package.fg files, loaded by the driver.
     /// This method only declares runtime helpers used by route/JSON codegen.
-    pub(crate) fn declare_provider_functions(&mut self) {
+    pub(crate) fn declare_package_functions(&mut self) {
         let i64_type = self.context.i64_type();
         let i32_type = self.context.i32_type();
         let i8_type = self.context.i8_type();

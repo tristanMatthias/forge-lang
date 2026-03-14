@@ -1,7 +1,7 @@
 use @std.ai
 
 fn main() {
-  // Configure the AI provider (no API calls made yet)
+  // Configure the AI package (no API calls made yet)
   ai.configure("anthropic", "test-key", "claude-sonnet", "")
 
   // Create an agent (local state only, no API call)
@@ -20,5 +20,5 @@ fn main() {
   let history = ai.conversation_history(conv_id)
   println(history)
 
-  println("ai provider loaded")
+  println("ai package loaded")
 }

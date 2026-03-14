@@ -1,6 +1,6 @@
-# Forge — Phase 4: Provider System Completion (TDD)
+# Forge — Phase 4: Package System Completion (TDD)
 
-**Goal:** Kill `providers.rs`. Build `@std/queue` and `@std/cron` entirely through the provider system with zero compiler changes. Validate the architecture.
+**Goal:** Kill `providers.rs`. Build `@std/queue` and `@std/cron` entirely through the package system with zero compiler changes. Validate the architecture.
 
 **Approach:** Every section starts with tests. Write the tests first, then implement until they pass.
 
@@ -8,7 +8,7 @@
 
 ## Part 1: Kill providers.rs
 
-The expansion engine must generate real Forge AST (function declarations, extern fn calls, struct types) instead of bridging to old provider-specific AST nodes. When done, `providers.rs` is deleted.
+The expansion engine must generate real Forge AST (function declarations, extern fn calls, struct types) instead of bridging to old package-specific AST nodes. When done, `providers.rs` is deleted.
 
 ### Tests
 
@@ -17,7 +17,7 @@ Write these as Forge programs. Each must compile and produce the expected output
 **Test 1.1: Model CRUD still works**
 
 ```forge
-// test_provider_refactor_model.fg
+// test_package_refactor_model.fg
 use @std.model.{model}
 
 model Item {
@@ -57,7 +57,7 @@ Gadget: 19.99
 **Test 1.2: Service hooks still work**
 
 ```forge
-// test_provider_refactor_service.fg
+// test_package_refactor_service.fg
 use @std.model.{model, service}
 
 model Task {
@@ -100,7 +100,7 @@ done
 **Test 1.3: HTTP server still works**
 
 ```forge
-// test_provider_refactor_http.fg
+// test_package_refactor_http.fg
 use @std.model.{model, service}
 use @std.http.{server}
 
@@ -119,7 +119,7 @@ server :9100 {
 
 Test with:
 ```bash
-forge build test_provider_refactor_http.fg -o test_http
+forge build test_package_refactor_http.fg -o test_http
 ./test_http &
 sleep 1
 curl -s http://localhost:9100/ping                              # {"pong":true}
@@ -153,7 +153,7 @@ curl -s http://localhost:9201/admin   # {"service":"admin"}
 kill %1
 ```
 
-**Test 1.5: Compiler has zero provider-specific code**
+**Test 1.5: Compiler has zero package-specific code**
 
 ```bash
 # After refactor, this should return 0 matches:
@@ -182,9 +182,9 @@ nm target/release/forge | grep -i tiny_http | wc -l # 0
 
 ---
 
-## Part 2: @std/queue Provider
+## Part 2: @std/queue Package
 
-Build a message queue provider entirely through `provider.fg` + native Rust library. Zero compiler changes.
+Build a message queue package entirely through `package.fg` + native Rust library. Zero compiler changes.
 
 ### Tests
 
@@ -284,11 +284,11 @@ a
 2
 ```
 
-### Provider Definition
+### Package Definition
 
 ```toml
-# providers/std-queue/provider.toml
-[provider]
+# packages/std-queue/package.toml
+[package]
 name = "queue"
 namespace = "std"
 version = "0.1.0"
@@ -308,7 +308,7 @@ body = "mixed"
 ```
 
 ```forge
-// providers/std-queue/src/provider.fg
+// packages/std-queue/src/package.fg
 
 extern fn forge_queue_create(name: string, buffer_size: int) -> int
 extern fn forge_queue_send(queue_id: int, payload_json: string)
@@ -363,7 +363,7 @@ keyword worker(name: string, config, schema) {
 ### Native Library (Rust)
 
 ```rust
-// providers/std-queue/src/lib.rs
+// packages/std-queue/src/lib.rs
 // In-process message queue using crossbeam channels
 
 use crossbeam_channel::{bounded, Sender, Receiver};
@@ -469,7 +469,7 @@ git diff --stat compiler/src/
 
 ---
 
-## Part 3: @std/cron Provider
+## Part 3: @std/cron Package
 
 Scheduled task execution. Again, zero compiler changes.
 
@@ -559,11 +559,11 @@ syncing
 syncing
 ```
 
-### Provider Definition
+### Package Definition
 
 ```toml
-# providers/std-cron/provider.toml
-[provider]
+# packages/std-cron/package.toml
+[package]
 name = "cron"
 namespace = "std"
 version = "0.1.0"
@@ -578,7 +578,7 @@ body = "mixed"
 ```
 
 ```forge
-// providers/std-cron/src/provider.fg
+// packages/std-cron/src/package.fg
 
 extern fn forge_cron_create(name: string) -> int
 extern fn forge_cron_set_interval_ms(schedule_id: int, ms: int)
@@ -614,7 +614,7 @@ keyword schedule(name: string, config, schema) {
 ### Native Library (Rust)
 
 ```rust
-// providers/std-cron/src/lib.rs
+// packages/std-cron/src/lib.rs
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -698,29 +698,29 @@ git diff --stat compiler/src/
 
 ---
 
-## Part 4: Provider Scaffold Command
+## Part 4: Package Scaffold Command
 
-Build `forge provider new` so creating providers is easy.
+Build `forge package new` so creating packages is easy.
 
 ### Tests
 
 **Test 4.1: Scaffold creates correct structure**
 
 ```bash
-forge provider new my-awesome-provider
-test -f my-awesome-provider/provider.toml && echo "PASS" || echo "FAIL"
-test -f my-awesome-provider/src/provider.fg && echo "PASS" || echo "FAIL"
-test -d my-awesome-provider/native && echo "PASS" || echo "FAIL"
-test -f my-awesome-provider/native/Cargo.toml && echo "PASS" || echo "FAIL"
-test -f my-awesome-provider/native/src/lib.rs && echo "PASS" || echo "FAIL"
-test -f my-awesome-provider/README.md && echo "PASS" || echo "FAIL"
+forge package new my-awesome-package
+test -f my-awesome-package/package.toml && echo "PASS" || echo "FAIL"
+test -f my-awesome-package/src/package.fg && echo "PASS" || echo "FAIL"
+test -d my-awesome-package/native && echo "PASS" || echo "FAIL"
+test -f my-awesome-package/native/Cargo.toml && echo "PASS" || echo "FAIL"
+test -f my-awesome-package/native/src/lib.rs && echo "PASS" || echo "FAIL"
+test -f my-awesome-package/README.md && echo "PASS" || echo "FAIL"
 ```
 
-**Test 4.2: Scaffold provider compiles**
+**Test 4.2: Scaffold package compiles**
 
 ```bash
-forge provider new test-provider
-cd test-provider
+forge package new test-package
+cd test-package
 
 # Native lib should compile
 cd native && cargo build --release && cd ..
@@ -728,48 +728,48 @@ cd native && cargo build --release && cd ..
 # The scaffold should include a working example
 forge build example.fg
 ./build/example
-# Should print something like "test-provider works!"
+# Should print something like "test-package works!"
 ```
 
 **Test 4.3: Scaffold with keyword flag**
 
 ```bash
-forge provider new my-keyword-provider --keyword
+forge package new my-keyword-package --keyword
 
-# Should include keyword example in provider.fg
-grep "keyword" my-keyword-provider/src/provider.fg | wc -l
+# Should include keyword example in package.fg
+grep "keyword" my-keyword-package/src/package.fg | wc -l
 # Expected: > 0
 
-# provider.toml should have keyword section
-grep "\[keywords\." my-keyword-provider/provider.toml | wc -l
+# package.toml should have keyword section
+grep "\[keywords\." my-keyword-package/package.toml | wc -l
 # Expected: > 0
 ```
 
 ### Generated Files
 
-`forge provider new my-provider` generates:
+`forge package new my-package` generates:
 
 ```toml
-# provider.toml
-[provider]
-name = "my-provider"
+# package.toml
+[package]
+name = "my-package"
 namespace = "community"
 version = "0.1.0"
-description = "TODO: describe your provider"
+description = "TODO: describe your package"
 
 [native]
-library = "forge_my_provider"
+library = "forge_my_package"
 ```
 
 ```forge
-// src/provider.fg
+// src/package.fg
 
 // Native bridge — functions implemented in native/src/lib.rs
-extern fn forge_my_provider_hello(name: string) -> string
+extern fn forge_my_package_hello(name: string) -> string
 
 // Exported functions — available to Forge users
 export fn hello(name: string) -> string {
-  forge_my_provider_hello(name)
+  forge_my_package_hello(name)
 }
 ```
 
@@ -779,9 +779,9 @@ use std::os::raw::c_char;
 use std::ffi::{CStr, CString};
 
 #[no_mangle]
-pub extern "C" fn forge_my_provider_hello(name: *const c_char) -> *const c_char {
+pub extern "C" fn forge_my_package_hello(name: *const c_char) -> *const c_char {
     let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
-    let greeting = format!("hello from my-provider, {}!", name);
+    let greeting = format!("hello from my-package, {}!", name);
     CString::new(greeting).unwrap().into_raw()
 }
 ```
@@ -789,7 +789,7 @@ pub extern "C" fn forge_my_provider_hello(name: *const c_char) -> *const c_char 
 ```toml
 # native/Cargo.toml
 [package]
-name = "forge_my_provider"
+name = "forge_my_package"
 version = "0.1.0"
 edition = "2021"
 
@@ -799,37 +799,37 @@ crate-type = ["staticlib"]
 
 ```forge
 // example.fg
-use @local.my_provider
+use @local.my_package
 
 fn main() {
-  println(my_provider.hello("world"))
+  println(my_package.hello("world"))
 }
 ```
 
 With `--keyword` flag, additionally generates:
 
 ```forge
-// src/provider.fg (keyword version)
+// src/package.fg (keyword version)
 
-extern fn forge_my_provider_init(name: string) -> int
-extern fn forge_my_provider_exec(id: int, data: string) -> string
+extern fn forge_my_package_init(name: string) -> int
+extern fn forge_my_package_exec(id: int, data: string) -> string
 
-export type MyProviderResult = {
+export type MyPackageResult = {
   id: int,
   data: string,
 }
 
-keyword my_provider(name: string, config, schema) {
+keyword my_package(name: string, config, schema) {
   config {
     // Add your config options here
     // option_name: type = default_value
   }
 
-  let id = forge_my_provider_init(name)
+  let id = forge_my_package_init(name)
 
   // Define functions available inside the keyword block
-  fn exec(data: string) -> MyProviderResult {
-    json.parse(forge_my_provider_exec(id, data))
+  fn exec(data: string) -> MyPackageResult {
+    json.parse(forge_my_package_exec(id, data))
   }
 
   // User's block body is inserted here automatically
@@ -850,6 +850,6 @@ keyword my_provider(name: string, config, schema) {
 4. Test 1.4 passes (multiple servers on different ports)
 5. `@std/queue` works with zero compiler changes — tests 2.1-2.3 pass
 6. `@std/cron` works with zero compiler changes — tests 3.1-3.3 pass
-7. `forge provider new` scaffolds a working provider — tests 4.1-4.3 pass
+7. `forge package new` scaffolds a working package — tests 4.1-4.3 pass
 8. `git diff --stat compiler/src/` shows zero changes for Parts 2-4
-9. Total provider count: 4 (@std/model, @std/http, @std/queue, @std/cron)
+9. Total package count: 4 (@std/model, @std/http, @std/queue, @std/cron)

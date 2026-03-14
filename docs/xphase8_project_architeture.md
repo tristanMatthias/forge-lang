@@ -65,7 +65,7 @@ forge/
 │   │
 │   └── main.rs                      # CLI entry point
 │
-├── providers/
+├── packages/
 │   ├── std-http/
 │   ├── std-model/
 │   ├── std-channel/

@@ -326,11 +326,11 @@ ls -lh build/test-project
 
 ### 1.5 Note Before Phase 3
 
-Phase 3 is fundamentally different from Phases 1-2. Phases 1-2 are "standard compiler construction." Phase 3 is "language extensibility architecture." The provider system is what makes Forge unique — and it's the hardest part to get right.
+Phase 3 is fundamentally different from Phases 1-2. Phases 1-2 are "standard compiler construction." Phase 3 is "language extensibility architecture." The package system is what makes Forge unique — and it's the hardest part to get right.
 
 Key questions to confirm before starting:
-- Does the trait system work well enough to define provider interfaces?
-- Does the module system handle `@`-prefixed provider paths (even if it just stubs them)?
+- Does the trait system work well enough to define package interfaces?
+- Does the module system handle `@`-prefixed package paths (even if it just stubs them)?
 - Can the codegen link against external C libraries cleanly?
 
 If any of these are shaky, fix them before Phase 3.
@@ -341,7 +341,7 @@ If any of these are shaky, fix them before Phase 3.
 
 ### Goal
 
-Build the **provider system** and the first two standard providers: `@std/model` (data models with auto-persistence) and `@std/http` (HTTP server with routing). At the end of Phase 3, this program compiles and runs:
+Build the **package system** and the first two standard packages: `@std/model` (data models with auto-persistence) and `@std/http` (HTTP server with routing). At the end of Phase 3, this program compiles and runs:
 
 ```forge
 use @std.model.{model, service}
@@ -379,7 +379,7 @@ forge build
 
 ### Success Criteria
 
-1. The provider system loads and resolves provider-registered keywords
+1. The package system loads and resolves package-registered keywords
 2. `@std/model` provides `model` and `service` keywords with auto-persistence to SQLite
 3. `@std/http` provides `server`, `route`, `mount`, and `middleware` keywords with a working HTTP server
 4. A single binary is produced containing the Forge code, SQLite, and the HTTP server
@@ -387,74 +387,74 @@ forge build
 
 ---
 
-### 3.1 Provider System Architecture
+### 3.1 Package System Architecture
 
 This is the core of what makes Forge extensible. The architecture has three layers:
 
 ```
 ┌─────────────────────────────┐
-│  Forge Source Code           │  Uses provider keywords: model, server, route
+│  Forge Source Code           │  Uses package keywords: model, server, route
 ├─────────────────────────────┤
-│  Provider Interface Layer    │  Defines what keywords exist and their syntax
-│  (provider.toml + types.fg)  │  Parsed at compile time
+│  Package Interface Layer    │  Defines what keywords exist and their syntax
+│  (package.toml + types.fg)  │  Parsed at compile time
 ├─────────────────────────────┤
-│  Provider Implementation     │  Actual Rust code that handles the keywords
+│  Package Implementation     │  Actual Rust code that handles the keywords
 │  (compiled native library)   │  Linked into the final binary
 └─────────────────────────────┘
 ```
 
-#### 3.1.1 How Providers Work (The Big Picture)
+#### 3.1.1 How Packages Work (The Big Picture)
 
 1. Developer adds `"@std/http" = "0.1.0"` to `forge.toml`
-2. On `forge build`, the compiler reads the provider's manifest (`provider.toml`)
+2. On `forge build`, the compiler reads the package's manifest (`package.toml`)
 3. The manifest declares keywords (`server`, `route`, etc.) and their syntax patterns
-4. The Forge parser recognizes these keywords and produces provider-specific AST nodes
-5. The type checker validates the provider blocks using type info from the provider
-6. Codegen produces calls into the provider's native library (Rust compiled to a static lib)
-7. The linker includes the provider's static library in the final binary
+4. The Forge parser recognizes these keywords and produces package-specific AST nodes
+5. The type checker validates the package blocks using type info from the package
+6. Codegen produces calls into the package's native library (Rust compiled to a static lib)
+7. The linker includes the package's static library in the final binary
 
-#### 3.1.2 Provider Package Format
+#### 3.1.2 Package Format
 
-Each provider is a directory (or downloaded package) with this structure:
+Each package is a directory (or downloaded package) with this structure:
 
 ```
 std-http/
-├── provider.toml          # Manifest: keywords, syntax, metadata
-├── types.fg               # Forge type definitions the provider exposes
+├── package.toml          # Manifest: keywords, syntax, metadata
+├── types.fg               # Forge type definitions the package exposes
 ├── lib/
 │   └── libforge_http.a    # Compiled static library (per platform)
 └── include/
     └── forge_http.h       # C ABI header for the static library
 ```
 
-For Phase 3, the `@std` providers are **bundled with the compiler** — they live in the compiler's install directory, not downloaded from a registry. Registry support comes in Phase 6.
+For Phase 3, the `@std` packages are **bundled with the compiler** — they live in the compiler's install directory, not downloaded from a registry. Registry support comes in Phase 6.
 
-#### 3.1.3 Provider Discovery
+#### 3.1.3 Package Discovery
 
 ```
-Provider resolution order:
-1. Built-in std providers (bundled with compiler)
-   → $FORGE_HOME/providers/std/
-2. Local providers (in project)
-   → ./providers/
-3. Downloaded providers (future — Phase 6)
-   → $FORGE_HOME/cache/providers/
+Package resolution order:
+1. Built-in std packages (bundled with compiler)
+   → $FORGE_HOME/packages/std/
+2. Local packages (in project)
+   → ./packages/
+3. Downloaded packages (future — Phase 6)
+   → $FORGE_HOME/cache/packages/
 ```
 
 ---
 
-### 3.2 Provider Manifest (provider.toml)
+### 3.2 Package Manifest (package.toml)
 
 ```toml
-# providers/std-http/provider.toml
+# packages/std-http/package.toml
 
-[provider]
+[package]
 name = "http"
 namespace = "std"
 version = "0.1.0"
 description = "HTTP server, routing, and middleware"
 
-# Keywords this provider registers
+# Keywords this package registers
 [[keywords]]
 name = "server"
 kind = "block"                    # introduces a { } block
@@ -484,16 +484,16 @@ pattern = "middleware [<handlers:expr_list>]"
 library = "forge_http"
 link = "static"
 
-# Dependencies this provider's native lib needs
+# Dependencies this package's native lib needs
 [native.deps]
-# These are Rust crate deps compiled into the provider's static lib
-# Not resolved by Forge — the provider ships pre-compiled
+# These are Rust crate deps compiled into the package's static lib
+# Not resolved by Forge — the package ships pre-compiled
 ```
 
 ```toml
-# providers/std-model/provider.toml
+# packages/std-model/package.toml
 
-[provider]
+[package]
 name = "model"
 namespace = "std"
 version = "0.1.0"
@@ -518,25 +518,25 @@ link = "static"
 
 ---
 
-### 3.3 Provider Keyword Parsing
+### 3.3 Package Keyword Parsing
 
-The parser needs to be extended to recognize provider keywords dynamically. Here's the approach:
+The parser needs to be extended to recognize package keywords dynamically. Here's the approach:
 
 #### 3.3.1 Keyword Registry
 
-Before parsing begins, the compiler reads all provider manifests and builds a keyword registry:
+Before parsing begins, the compiler reads all package manifests and builds a keyword registry:
 
 ```rust
-struct ProviderKeyword {
+struct PackageKeyword {
     name: String,              // "server"
-    provider: String,          // "std.http"
+    package: String,          // "std.http"
     kind: KeywordKind,         // Block, Statement, Modifier
     context: KeywordContext,    // TopLevel, InsideBlock("server"), etc.
-    pattern: String,           // the pattern string from provider.toml
+    pattern: String,           // the pattern string from package.toml
 }
 
 struct KeywordRegistry {
-    keywords: HashMap<String, ProviderKeyword>,
+    keywords: HashMap<String, PackageKeyword>,
 }
 ```
 
@@ -553,8 +553,8 @@ fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         // ... core keywords ...
 
         Token::Ident(name) => {
-            if let Some(provider_kw) = self.keyword_registry.get(name) {
-                self.parse_provider_keyword(provider_kw)
+            if let Some(package_kw) = self.keyword_registry.get(name) {
+                self.parse_package_keyword(package_kw)
             } else {
                 self.parse_expr_statement()
             }
@@ -563,20 +563,20 @@ fn parse_statement(&mut self) -> Result<Statement, ParseError> {
 }
 ```
 
-#### 3.3.3 Provider AST Nodes
+#### 3.3.3 Package AST Nodes
 
-Provider keywords parse into a generic `ProviderBlock` AST node:
+Package keywords parse into a generic `PackageBlock` AST node:
 
 ```rust
-pub struct ProviderBlock {
-    pub provider: String,           // "std.http"
+pub struct PackageBlock {
+    pub package: String,           // "std.http"
     pub keyword: String,            // "server"
-    pub args: Vec<ProviderArg>,     // port, name, etc.
-    pub children: Vec<ProviderChild>, // nested keywords (route, mount, etc.)
+    pub args: Vec<PackageArg>,     // port, name, etc.
+    pub children: Vec<PackageChild>, // nested keywords (route, mount, etc.)
     pub span: Span,
 }
 
-pub enum ProviderArg {
+pub enum PackageArg {
     IntLiteral(i64),
     StringLiteral(String),
     Ident(String),
@@ -585,9 +585,9 @@ pub enum ProviderArg {
     ExprOrBlock(Expr),              // handler can be expr or block
 }
 
-pub enum ProviderChild {
-    ProviderBlock(ProviderBlock),   // nested provider keyword
-    Statement(Statement),           // regular Forge statements inside provider blocks
+pub enum PackageChild {
+    PackageBlock(PackageBlock),   // nested package keyword
+    Statement(Statement),           // regular Forge statements inside package blocks
 }
 ```
 
@@ -636,12 +636,12 @@ pub enum HookTiming { Before, After }
 
 ---
 
-### 3.4 Provider Type Integration
+### 3.4 Package Type Integration
 
-Each provider ships a `types.fg` file that defines the Forge types it introduces. The compiler parses this and adds the types to the type system.
+Each package ships a `types.fg` file that defines the Forge types it introduces. The compiler parses this and adds the types to the type system.
 
 ```forge
-// providers/std-http/types.fg
+// packages/std-http/types.fg
 
 export type Request = {
   method: string,
@@ -663,7 +663,7 @@ export fn redirect(url: string, status: int = 302) -> Response
 ```
 
 ```forge
-// providers/std-model/types.fg
+// packages/std-model/types.fg
 
 export type QueryOptions = {
   limit: int?,
@@ -673,7 +673,7 @@ export type QueryOptions = {
 }
 ```
 
-These types are automatically available when the provider is imported.
+These types are automatically available when the package is imported.
 
 ---
 
@@ -691,10 +691,10 @@ The `model` keyword declares a data structure that auto-persists to SQLite. For 
 
 #### 3.5.2 Native Library (Rust)
 
-The `@std/model` provider is backed by a Rust static library that handles SQLite operations:
+The `@std/model` package is backed by a Rust static library that handles SQLite operations:
 
 ```rust
-// providers/std-model/src/lib.rs
+// packages/std-model/src/lib.rs
 // This compiles to libforge_model.a
 
 use rusqlite::{Connection, params};
@@ -794,7 +794,7 @@ pub extern "C" fn forge_model_last_id() -> i64 {
 }
 ```
 
-**Rust dependencies for the model provider:**
+**Rust dependencies for the model package:**
 ```toml
 [dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }  # bundled = includes SQLite
@@ -849,10 +849,10 @@ The `server` keyword starts an HTTP server. `route` defines endpoints. `mount` a
 
 #### 3.6.2 Native Library (Rust)
 
-The HTTP provider is backed by a Rust static library using `tiny_http` (simpler than hyper for Phase 3, can swap to hyper later):
+The HTTP package is backed by a Rust static library using `tiny_http` (simpler than hyper for Phase 3, can swap to hyper later):
 
 ```rust
-// providers/std-http/src/lib.rs
+// packages/std-http/src/lib.rs
 // Compiles to libforge_http.a
 
 use tiny_http::{Server, Request, Response as HttpResponse, Method, Header};
@@ -976,7 +976,7 @@ fn match_path(pattern: &str, actual: &str) -> Option<String> {
 }
 ```
 
-**Rust dependencies for the HTTP provider:**
+**Rust dependencies for the HTTP package:**
 ```toml
 [dependencies]
 tiny_http = "0.12"
@@ -1102,7 +1102,7 @@ name = "my-app"
 version = "0.1.0"
 entry = "src/main.fg"
 
-[providers]
+[packages]
 "@std/model" = "0.1.0"
 "@std/http" = "0.1.0"
 
@@ -1114,7 +1114,7 @@ path = "./data/app.db"
 opt_level = 2
 ```
 
-The compiler reads `[providers]` and loads each provider's manifest. The `[database]` section is passed to `@std/model`'s init function.
+The compiler reads `[packages]` and loads each package's manifest. The `[database]` section is passed to `@std/model`'s init function.
 
 ---
 
@@ -1123,22 +1123,22 @@ The compiler reads `[providers]` and loads each provider's manifest. The `[datab
 ```toml
 # Add to forge compiler's Cargo.toml
 
-# For building provider native libraries
+# For building package native libraries
 [build-dependencies]
-cc = "1"                  # Compile C/Rust provider libs
+cc = "1"                  # Compile C/Rust package libs
 
 # The compiler itself doesn't use rusqlite or tiny_http.
-# Those are compiled into the provider static libraries separately.
+# Those are compiled into the package static libraries separately.
 ```
 
-The build process for providers:
+The build process for packages:
 
 ```bash
-# One-time: compile provider native libraries
-cd providers/std-model && cargo build --release
+# One-time: compile package native libraries
+cd packages/std-model && cargo build --release
 # → produces target/release/libforge_model.a
 
-cd providers/std-http && cargo build --release
+cd packages/std-http && cargo build --release
 # → produces target/release/libforge_http.a
 
 # These .a files are bundled with the Forge compiler distribution
@@ -1329,23 +1329,23 @@ kill %1
 
 ### 3.13 Implementation Order
 
-#### Step 1: Provider Manifest Loading (Week 1)
-- Define `provider.toml` schema and parse with `toml` + `serde`
-- Read `[providers]` from `forge.toml`
-- Load provider manifests from bundled directory
-- Build keyword registry from provider manifests
+#### Step 1: Package Manifest Loading (Week 1)
+- Define `package.toml` schema and parse with `toml` + `serde`
+- Read `[packages]` from `forge.toml`
+- Load package manifests from bundled directory
+- Build keyword registry from package manifests
 - **Test: compiler recognizes `model` and `server` as keywords (even if they don't do anything yet)**
 
-#### Step 2: Provider Keyword Parsing (Week 1-2)
+#### Step 2: Package Keyword Parsing (Week 1-2)
 - Extend parser to check keyword registry for unknown identifiers
 - Parse `model` blocks into `ModelDecl` AST nodes
 - Parse `service` blocks into `ServiceDecl` AST nodes
 - Parse annotation syntax (`@primary`, `@default(value)`, etc.)
 - Parse `server` blocks with `route` and `mount` children
-- **Test: provider keyword programs parse without error, AST is correct**
+- **Test: package keyword programs parse without error, AST is correct**
 
 #### Step 3: Build @std/model Native Library (Week 2-3)
-- Create Rust crate for `forge_model` provider
+- Create Rust crate for `forge_model` package
 - Implement SQLite operations (init, exec, query, insert, last_id)
 - Compile to static library (`libforge_model.a`)
 - Write C header file for the FFI interface
@@ -1367,7 +1367,7 @@ kill %1
 - **Test: `model_service.fg` compiles and runs**
 
 #### Step 6: Build @std/http Native Library (Week 5-6)
-- Create Rust crate for `forge_http` provider
+- Create Rust crate for `forge_http` package
 - Implement HTTP server (tiny_http), route registration, request handling
 - Path pattern matching with parameter extraction
 - Compile to static library (`libforge_http.a`)
@@ -1390,7 +1390,7 @@ kill %1
 - **Test: `full_stack.fg` compiles and all curl tests pass**
 
 #### Step 9: Polish + Edge Cases (Week 8-9)
-- Handle provider import errors gracefully
+- Handle package import errors gracefully
 - Model with no `@primary` field (auto-add `id`)
 - Empty request bodies
 - Invalid JSON in request bodies
@@ -1405,12 +1405,12 @@ kill %1
 
 Deferred to later phases:
 
-- Community/custom providers (only @std providers in Phase 3)
-- Provider registry / downloading
-- Provider SDK for external authors
+- Community/custom packages (only @std packages in Phase 3)
+- Package registry / downloading
+- Package SDK for external authors
 - Middleware implementation
 - WebSocket support
-- Queues, cron, AI, deploy, CLI providers
+- Queues, cron, AI, deploy, CLI packages
 - Relations between models (@relation / JOIN queries)
 - Pagination in list endpoints
 - Authentication / authorization
@@ -1432,10 +1432,10 @@ Phase 3 is complete when:
 3. `model_service.fg` runs before/after hooks correctly
 4. `basic_server.fg` responds to HTTP requests with correct JSON
 5. `full_stack.fg` — the motivating example — works end-to-end with curl
-6. Provider keywords are dynamically loaded from `provider.toml` manifests
-7. Provider native libraries are statically linked into the final binary
+6. Package keywords are dynamically loaded from `package.toml` manifests
+7. Package native libraries are statically linked into the final binary
 8. The resulting binary is self-contained (no runtime dependencies, no external SQLite)
 9. Binary size for `full_stack.fg` is < 20MB
 10. Server handles at least 100 requests/second on basic endpoints
-11. Error messages for provider-related issues are clear and actionable
+11. Error messages for package-related issues are clear and actionable
 12. `cargo test` passes all tests

@@ -6,7 +6,7 @@ use crate::component_expand::{ComponentExpander, ExpansionResult};
 use crate::lexer::Lexer;
 use crate::parser::ast::{ComponentTemplateDef, Expr, Program, Statement};
 use crate::parser::{ComponentMeta, Parser};
-use crate::provider::{self, ProviderInfo};
+use crate::package::{self, PackageInfo};
 
 use inkwell::context::Context;
 use inkwell::OptimizationLevel;
@@ -18,6 +18,13 @@ use std::time::Instant;
 
 /// Global mutex for stdout capture — only one thread can redirect fd 1 at a time.
 static STDOUT_CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Accumulated results from component expansion
+struct ComponentExpansionResult {
+    pub static_methods: Vec<(String, String, String)>,
+    pub startup_stmts: Vec<Statement>,
+    pub main_end_stmts: Vec<Statement>,
+}
 
 pub struct Driver {
     pub emit_ir: bool,
@@ -74,7 +81,7 @@ impl Driver {
     }
 
     /// Shared frontend pipeline: source → lex → parse → expand → typecheck → codegen.
-    /// Calls `action` with the Codegen result, loaded providers, and build profile.
+    /// Calls `action` with the Codegen result, loaded packages, and build profile.
     /// This is the single source of truth for the compilation pipeline — used by both
     /// `compile()` (AOT) and `run_jit()` (JIT).
     fn with_compiled_module<T, F>(
@@ -83,7 +90,7 @@ impl Driver {
         action: F,
     ) -> Result<T, CompileError>
     where
-        F: FnOnce(&Codegen<'_>, &[ProviderInfo], &mut BuildProfile) -> Result<T, CompileError>,
+        F: FnOnce(&Codegen<'_>, &[PackageInfo], &mut BuildProfile) -> Result<T, CompileError>,
     {
         let mut bp = BuildProfile::new();
 
@@ -106,21 +113,18 @@ impl Driver {
         }
         bp.add("lex", t.elapsed());
 
-        if diag_bag.has_errors() {
-            self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "lexer" });
-        }
+        self.check_diagnostics(&diag_bag, &source, filename, "lexer")?;
 
-        // 2. Pre-scan tokens for provider uses
-        let provider_uses = prescan_provider_uses(&tokens);
+        // 2. Pre-scan tokens for package uses
+        let package_uses = prescan_package_uses(&tokens);
 
-        // 3. Load providers → get component_metas, extern_fns
+        // 3. Load packages → get component_metas, extern_fns
         let t = Instant::now();
-        let loaded_providers = self.load_providers_by_uses(&provider_uses)?;
-        bp.add("providers", t.elapsed());
+        let loaded_packages = self.load_packages_by_uses(&package_uses)?;
+        bp.add("packages", t.elapsed());
 
-        // Build component registry from provider metas
-        let component_registry = build_component_registry(&loaded_providers);
+        // Build component registry from package metas
+        let component_registry = build_component_registry(&loaded_packages);
 
         // 4. Parse with component registry
         let t = Instant::now();
@@ -136,121 +140,36 @@ impl Driver {
         }
         bp.add("parse", t.elapsed());
 
-        if diag_bag.has_errors() {
-            self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "parser" });
-        }
+        self.check_diagnostics(&diag_bag, &source, filename, "parser")?;
 
         // emit_ast is handled in compile() before calling this method
 
-        // 5. Inject extern fns from providers
-        for provider in &loaded_providers {
-            for extern_fn in &provider.extern_fns {
-                program.statements.insert(0, extern_fn.clone());
-            }
-        }
-
-        // 5b. Inject exported fns from providers (renamed with provider name prefix)
-        for provider in &loaded_providers {
-            for fn_stmt in &provider.exported_fns {
-                if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
-                    let renamed = Statement::FnDecl {
-                        name: format!("{}_{}", provider.name, name),
-                        type_params: type_params.clone(),
-                        params: params.clone(),
-                        return_type: return_type.clone(),
-                        body: body.clone(),
-                        exported: false,
-                        span: *span,
-                    };
-                    program.statements.insert(0, renamed);
-                }
-            }
-        }
+        // 5. Inject extern fns and exported fns from packages
+        inject_extern_fns(&mut program, &loaded_packages);
+        inject_exported_fns(&mut program, &loaded_packages);
 
         // 6. Expand all ComponentBlock nodes → regular AST + lifecycle stmts
         let t = Instant::now();
-        let mut all_static_methods = Vec::new();
-        let mut startup_stmts = Vec::new();
-        let mut main_end_stmts = Vec::new();
-        let mut extra_stmts = Vec::new();
-        let mut extra_extern_fns = Vec::new();
-        let mut service_infos = Vec::new();
-
-        let mut expanded_statements = Vec::new();
-        for stmt in program.statements.drain(..) {
-            if let Statement::ComponentBlock(ref decl) = stmt {
-                let result = if let Some(template) = find_template(&loaded_providers, &decl.component) {
-                    ComponentExpander::expand_from_template(template, decl, &service_infos)
-                } else {
-                    ExpansionResult::new()
-                };
-
-                if let Some(type_decl) = result.type_decl {
-                    expanded_statements.push(type_decl);
-                }
-                for s in result.statements {
-                    extra_stmts.push(s);
-                }
-                for s in result.startup_stmts {
-                    startup_stmts.push(s);
-                }
-                for s in result.main_end_stmts {
-                    main_end_stmts.push(s);
-                }
-                for sm in result.static_methods {
-                    all_static_methods.push(sm);
-                }
-                for ef in result.extern_fns {
-                    extra_extern_fns.push(ef);
-                }
-                if let Some(si) = result.service_info {
-                    service_infos.push(si);
-                }
-            } else {
-                expanded_statements.push(stmt);
-            }
-        }
-        for ef in extra_extern_fns {
-            expanded_statements.insert(0, ef);
-        }
-        expanded_statements.extend(extra_stmts);
-        program.statements = expanded_statements;
-
-        // 7. Inject lifecycle stmts into main function
-        inject_lifecycle_stmts(&mut program, &startup_stmts, &main_end_stmts);
+        let expansion = expand_components(&mut program, &loaded_packages);
+        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
         bp.add("expand", t.elapsed());
 
         bp.fn_count = count_functions(&program);
 
-        // 7b. Type check
+        // 7. Type check
         let t = Instant::now();
         let mut checker = crate::typeck::TypeChecker::new();
-        for (type_name, _, _) in &all_static_methods {
+        for (type_name, _, _) in &expansion.static_methods {
             checker.env.namespaces.insert(type_name.clone());
         }
-        // Register provider-declared annotations so the type checker can validate them
-        for provider in &loaded_providers {
-            for meta in &provider.component_metas {
-                for ann_decl in &meta.annotation_decls {
-                    checker.provider_annotations.push((
-                        ann_decl.name.clone(),
-                        ann_decl.target.clone(),
-                        meta.name.clone(),
-                    ));
-                }
-            }
-        }
+        register_package_annotations(&mut checker, &loaded_packages);
         checker.check_program(&program);
         for d in &checker.diagnostics {
             diag_bag.report(d.clone());
         }
         bp.add("typeck", t.elapsed());
 
-        if diag_bag.has_errors() {
-            self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
-        }
+        self.check_diagnostics(&diag_bag, &source, filename, "type checker")?;
 
         // 8. Codegen
         let t = Instant::now();
@@ -263,32 +182,32 @@ impl Driver {
         let mut codegen = Codegen::new(&context, module_name);
         codegen.source_file = filename.to_string();
 
-        // Populate static methods registry from providers
-        for (type_name, method_name, fn_name) in &all_static_methods {
+        // Populate static methods registry from packages
+        for (type_name, method_name, fn_name) in &expansion.static_methods {
             codegen.static_methods.insert(
                 (type_name.clone(), method_name.clone()),
                 fn_name.clone(),
             );
         }
-        for provider in &loaded_providers {
-            let prefix = format!("forge_{}_", provider.name);
-            for extern_fn in &provider.extern_fns {
+        for pkg in &loaded_packages {
+            let prefix = format!("forge_{}_", pkg.name);
+            for extern_fn in &pkg.extern_fns {
                 if let Statement::ExternFn { name, .. } = extern_fn {
                     if let Some(method_name) = name.strip_prefix(&prefix) {
                         codegen.static_methods.insert(
-                            (provider.name.clone(), method_name.to_string()),
+                            (pkg.name.clone(), method_name.to_string()),
                             name.clone(),
                         );
                     }
                 }
             }
         }
-        for provider in &loaded_providers {
-            for fn_stmt in &provider.exported_fns {
+        for pkg in &loaded_packages {
+            for fn_stmt in &pkg.exported_fns {
                 if let Statement::FnDecl { name, .. } = fn_stmt {
-                    let full_name = format!("{}_{}", provider.name, name);
+                    let full_name = format!("{}_{}", pkg.name, name);
                     codegen.static_methods.insert(
-                        (provider.name.clone(), name.clone()),
+                        (pkg.name.clone(), name.clone()),
                         full_name,
                     );
                 }
@@ -299,7 +218,7 @@ impl Driver {
         bp.add("codegen", t.elapsed());
 
         // Hand off to the action (AOT write+link or JIT execute)
-        action(&codegen, &loaded_providers, &mut bp)
+        action(&codegen, &loaded_packages, &mut bp)
     }
 
     /// Compile a single .fg file to a binary (AOT path).
@@ -319,7 +238,7 @@ impl Driver {
             return Ok(PathBuf::new());
         }
 
-        self.with_compiled_module(source_path, |codegen, loaded_providers, bp| {
+        self.with_compiled_module(source_path, |codegen, loaded_packages, bp| {
             if self.emit_ir {
                 println!("{}", codegen.emit_ir());
                 return Ok(PathBuf::new());
@@ -345,8 +264,8 @@ impl Driver {
             let runtime_obj = self.compile_runtime(source_path)?;
             bp.add("runtime", t.elapsed());
 
-            // Collect provider native lib paths
-            let provider_lib_paths: Vec<PathBuf> = loaded_providers
+            // Collect package native lib paths
+            let package_lib_paths: Vec<PathBuf> = loaded_packages
                 .iter()
                 .filter(|p| p.lib_path.exists())
                 .map(|p| p.lib_path.clone())
@@ -354,7 +273,7 @@ impl Driver {
 
             // Link
             let t = Instant::now();
-            self.link_with_providers(&obj_path, &runtime_obj, &output_path, &provider_lib_paths)?;
+            self.link_with_packages(&obj_path, &runtime_obj, &output_path, &package_lib_paths)?;
             bp.add("link", t.elapsed());
 
             // Cleanup
@@ -365,25 +284,19 @@ impl Driver {
                 bp.binary_size = meta.len();
             }
 
-            if self.profile {
-                if self.profile_format == "json" {
-                    eprintln!("{}", bp.render_json());
-                } else {
-                    eprintln!("{}", bp.render_human());
-                }
-            }
+            self.emit_profile(bp);
 
             Ok(output_path)
         })
     }
 
     /// JIT-compile and execute a Forge program in-process (no linking, no binary on disk).
-    /// Loads provider .dylib files with RTLD_GLOBAL so JIT can resolve their symbols.
-    /// Falls back to AOT only if a provider has no .dylib (only .a).
+    /// Loads package .dylib files with RTLD_GLOBAL so JIT can resolve their symbols.
+    /// Falls back to AOT only if a package has no .dylib (only .a).
     pub fn run_jit(&self, source_path: &Path) -> Result<i32, CompileError> {
-        self.with_compiled_module(source_path, |codegen, loaded_providers, bp| {
-            // Check if any provider has a native lib but no dylib — must fall back to AOT
-            let needs_aot = loaded_providers.iter().any(|p| {
+        self.with_compiled_module(source_path, |codegen, loaded_packages, bp| {
+            // Check if any package has a native lib but no dylib — must fall back to AOT
+            let needs_aot = loaded_packages.iter().any(|p| {
                 p.lib_path.exists() && !p.dylib_path.exists()
             });
             if needs_aot {
@@ -409,22 +322,22 @@ impl Driver {
             _loaded_libs.push(runtime_lib);
             bp.add("runtime", t.elapsed());
 
-            // Load provider dylibs with RTLD_GLOBAL
+            // Load package dylibs with RTLD_GLOBAL
             let t = Instant::now();
-            for provider in loaded_providers {
-                if provider.dylib_path.exists() {
+            for pkg in loaded_packages {
+                if pkg.dylib_path.exists() {
                     let lib = unsafe {
                         libloading::os::unix::Library::open(
-                            Some(&provider.dylib_path),
+                            Some(&pkg.dylib_path),
                             libloading::os::unix::RTLD_LAZY | libloading::os::unix::RTLD_GLOBAL,
                         )
                     }.map_err(|e| CompileError::JitFailed {
-                        detail: format!("failed to load provider '{}' dylib: {}", provider.name, e),
+                        detail: format!("failed to load package '{}' dylib: {}", pkg.name, e),
                     })?;
                     _loaded_libs.push(lib);
                 }
             }
-            bp.add("providers_load", t.elapsed());
+            bp.add("packages_load", t.elapsed());
 
             // Verify module
             if let Err(msg) = codegen.module.verify() {
@@ -453,13 +366,7 @@ impl Driver {
                     detail: "no main function found — add `fn main() { ... }` or use top-level statements".to_string(),
                 })?;
 
-            if self.profile {
-                if self.profile_format == "json" {
-                    eprintln!("{}", bp.render_json());
-                } else {
-                    eprintln!("{}", bp.render_human());
-                }
-            }
+            self.emit_profile(bp);
 
             // Execute main() in-process
             let exit_code = unsafe { ee.run_function_as_main(main_fn, &[]) };
@@ -737,19 +644,16 @@ impl Driver {
             diag_bag.report(d.clone());
         }
 
-        if diag_bag.has_errors() {
-            self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "lexer" });
-        }
+        self.check_diagnostics(&diag_bag, &source, filename, "lexer")?;
 
-        // Pre-scan tokens for provider uses
-        let provider_uses = prescan_provider_uses(&tokens);
+        // Pre-scan tokens for package uses
+        let package_uses = prescan_package_uses(&tokens);
 
-        // Load providers
-        let loaded_providers = self.load_providers_by_uses(&provider_uses)?;
+        // Load packages
+        let loaded_packages = self.load_packages_by_uses(&package_uses)?;
 
-        // Build component registry from provider metas
-        let component_registry = build_component_registry(&loaded_providers);
+        // Build component registry from package metas
+        let component_registry = build_component_registry(&loaded_packages);
 
         // Parse with component registry
         let mut parser = if component_registry.is_empty() {
@@ -763,104 +667,22 @@ impl Driver {
             diag_bag.report(d.clone());
         }
 
-        if diag_bag.has_errors() {
-            self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "parser" });
-        }
+        self.check_diagnostics(&diag_bag, &source, filename, "parser")?;
 
-        // Inject extern fns from providers
-        for provider in &loaded_providers {
-            for extern_fn in &provider.extern_fns {
-                program.statements.insert(0, extern_fn.clone());
-            }
-        }
-
-        // Inject exported fns from providers (renamed with provider name prefix)
-        for provider in &loaded_providers {
-            for fn_stmt in &provider.exported_fns {
-                if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
-                    let renamed = Statement::FnDecl {
-                        name: format!("{}_{}", provider.name, name),
-                        type_params: type_params.clone(),
-                        params: params.clone(),
-                        return_type: return_type.clone(),
-                        body: body.clone(),
-                        exported: false,
-                        span: *span,
-                    };
-                    program.statements.insert(0, renamed);
-                }
-            }
-        }
+        // Inject extern fns and exported fns from packages
+        inject_extern_fns(&mut program, &loaded_packages);
+        inject_exported_fns(&mut program, &loaded_packages);
 
         // Expand all ComponentBlock nodes → regular AST + lifecycle stmts
-        let mut all_static_methods = Vec::new();
-        let mut startup_stmts = Vec::new();
-        let mut main_end_stmts = Vec::new();
-        let mut extra_stmts = Vec::new();
-        let mut extra_extern_fns = Vec::new();
-        let mut service_infos = Vec::new();
-
-        let mut expanded_statements = Vec::new();
-        for stmt in program.statements.drain(..) {
-            if let Statement::ComponentBlock(ref decl) = stmt {
-                let result = if let Some(template) = find_template(&loaded_providers, &decl.component) {
-                    ComponentExpander::expand_from_template(template, decl, &service_infos)
-                } else {
-                    ExpansionResult::new()
-                };
-
-                if let Some(type_decl) = result.type_decl {
-                    expanded_statements.push(type_decl);
-                }
-                for s in result.statements {
-                    extra_stmts.push(s);
-                }
-                for s in result.startup_stmts {
-                    startup_stmts.push(s);
-                }
-                for s in result.main_end_stmts {
-                    main_end_stmts.push(s);
-                }
-                for sm in result.static_methods {
-                    all_static_methods.push(sm);
-                }
-                for ef in result.extern_fns {
-                    extra_extern_fns.push(ef);
-                }
-                if let Some(si) = result.service_info {
-                    service_infos.push(si);
-                }
-            } else {
-                expanded_statements.push(stmt);
-            }
-        }
-        for ef in extra_extern_fns {
-            expanded_statements.insert(0, ef);
-        }
-        expanded_statements.extend(extra_stmts);
-        program.statements = expanded_statements;
-
-        // Inject lifecycle stmts into main function
-        inject_lifecycle_stmts(&mut program, &startup_stmts, &main_end_stmts);
+        let expansion = expand_components(&mut program, &loaded_packages);
+        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
 
         // Type check
         let mut checker = crate::typeck::TypeChecker::new();
-        for (type_name, _, _) in &all_static_methods {
+        for (type_name, _, _) in &expansion.static_methods {
             checker.env.namespaces.insert(type_name.clone());
         }
-        // Register provider-declared annotations for type checking
-        for provider in &loaded_providers {
-            for meta in &provider.component_metas {
-                for ann_decl in &meta.annotation_decls {
-                    checker.provider_annotations.push((
-                        ann_decl.name.clone(),
-                        ann_decl.target.clone(),
-                        meta.name.clone(),
-                    ));
-                }
-            }
-        }
+        register_package_annotations(&mut checker, &loaded_packages);
         checker.check_program(&program);
         for d in &checker.diagnostics {
             diag_bag.report(d.clone());
@@ -1036,6 +858,48 @@ impl Driver {
         }
     }
 
+    /// Check the diagnostic bag for errors, emit them if present, and return a CompileError.
+    fn check_diagnostics(&self, diag_bag: &DiagnosticBag, source: &str, filename: &str, stage: &'static str) -> Result<(), CompileError> {
+        if diag_bag.has_errors() {
+            self.emit_diagnostics(diag_bag, source, filename);
+            Err(CompileError::DiagnosticErrors { stage })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Emit the build profile if profiling is enabled.
+    fn emit_profile(&self, bp: &BuildProfile) {
+        if self.profile {
+            if self.profile_format == "json" {
+                eprintln!("{}", bp.render_json());
+            } else {
+                eprintln!("{}", bp.render_human());
+            }
+        }
+    }
+
+    /// Return the cc optimization flag for the current opt level.
+    fn opt_flag(&self) -> &'static str {
+        match self.optimization {
+            OptLevel::Release => "-O2",
+            OptLevel::Dev => "-O0",
+        }
+    }
+
+    /// Return a short tag string for the current opt level (for cache filenames).
+    fn opt_tag(&self) -> &'static str {
+        match self.optimization {
+            OptLevel::Release => "O2",
+            OptLevel::Dev => "O0",
+        }
+    }
+
+    /// Return the cache path for a runtime artifact with the given extension (e.g. "o", "hash", "dylib").
+    fn runtime_cache_artifact(&self, ext: &str) -> PathBuf {
+        self.runtime_cache_dir().join(format!("forge_runtime_{}.{}", self.opt_tag(), ext))
+    }
+
     /// Find runtime.c in known locations relative to source file, project dir, or forge binary.
     fn find_runtime_src(&self, hint_path: &Path) -> Result<PathBuf, CompileError> {
         let mut paths = vec![
@@ -1071,14 +935,10 @@ impl Driver {
     /// Cached by content hash, same as the .o path.
     fn compile_runtime_dylib(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
         let runtime_src = self.find_runtime_src(source_path)?;
-        let opt_flag = match self.optimization {
-            OptLevel::Release => "-O2",
-            OptLevel::Dev => "-O0",
-        };
+        let opt_flag = self.opt_flag();
 
-        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
-        let dylib_path = self.runtime_cache_dir().join(format!("forge_runtime_{}.dylib", opt_tag));
-        let hash_path = self.runtime_cache_dir().join(format!("forge_runtime_{}_dylib.hash", opt_tag));
+        let dylib_path = self.runtime_cache_artifact("dylib");
+        let hash_path = self.runtime_cache_dir().join(format!("forge_runtime_{}_dylib.hash", self.opt_tag()));
 
         // Check cache
         let current_hash = self.runtime_hash(&runtime_src);
@@ -1112,17 +972,14 @@ impl Driver {
     }
 
     fn compile_runtime_file(&self, runtime_src: &Path) -> Result<PathBuf, CompileError> {
-        let opt_flag = match self.optimization {
-            OptLevel::Release => "-O2",
-            OptLevel::Dev => "-O0",
-        };
+        let opt_flag = self.opt_flag();
 
         // Cache key: hash of runtime.c content + opt level
-        if let Ok(cached) = self.cached_runtime(runtime_src, opt_flag) {
+        if let Ok(cached) = self.cached_runtime(runtime_src) {
             return Ok(cached);
         }
 
-        let runtime_obj = self.runtime_cache_path(runtime_src, opt_flag);
+        let runtime_obj = self.runtime_cache_artifact("o");
 
         let src_str = runtime_src.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
             stderr: format!("runtime path contains invalid UTF-8: {}", runtime_src.display()),
@@ -1142,7 +999,7 @@ impl Driver {
         }
 
         // Write hash marker so we can validate the cache next time
-        let _ = std::fs::write(self.runtime_hash_path(runtime_src, opt_flag), self.runtime_hash(runtime_src));
+        let _ = std::fs::write(self.runtime_cache_artifact("hash"), self.runtime_hash(runtime_src));
 
         Ok(runtime_obj)
     }
@@ -1162,19 +1019,9 @@ impl Driver {
         dir
     }
 
-    fn runtime_cache_path(&self, _runtime_src: &Path, opt_flag: &str) -> PathBuf {
-        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
-        self.runtime_cache_dir().join(format!("forge_runtime_{}.o", opt_tag))
-    }
-
-    fn runtime_hash_path(&self, _runtime_src: &Path, opt_flag: &str) -> PathBuf {
-        let opt_tag = if opt_flag == "-O2" { "O2" } else { "O0" };
-        self.runtime_cache_dir().join(format!("forge_runtime_{}.hash", opt_tag))
-    }
-
-    fn cached_runtime(&self, runtime_src: &Path, opt_flag: &str) -> Result<PathBuf, ()> {
-        let obj_path = self.runtime_cache_path(runtime_src, opt_flag);
-        let hash_path = self.runtime_hash_path(runtime_src, opt_flag);
+    fn cached_runtime(&self, runtime_src: &Path) -> Result<PathBuf, ()> {
+        let obj_path = self.runtime_cache_artifact("o");
+        let hash_path = self.runtime_cache_artifact("hash");
 
         if !obj_path.exists() || !hash_path.exists() {
             return Err(());
@@ -1191,15 +1038,15 @@ impl Driver {
     }
 
     fn link(&self, obj: &Path, runtime_obj: &Path, output: &Path) -> Result<(), CompileError> {
-        self.link_with_providers(obj, runtime_obj, output, &[])
+        self.link_with_packages(obj, runtime_obj, output, &[])
     }
 
-    fn link_with_providers(
+    fn link_with_packages(
         &self,
         obj: &Path,
         runtime_obj: &Path,
         output: &Path,
-        provider_lib_paths: &[PathBuf],
+        package_lib_paths: &[PathBuf],
     ) -> Result<(), CompileError> {
         let path_str = |p: &Path| -> Result<String, CompileError> {
             p.to_str().map(|s| s.to_string()).ok_or_else(|| CompileError::LinkerFailed {
@@ -1214,15 +1061,15 @@ impl Driver {
             path_str(output)?,
         ];
 
-        // Add provider native library paths
-        let mut has_native_providers = false;
-        for lib_path in provider_lib_paths {
+        // Add package native library paths
+        let mut has_native_packages = false;
+        for lib_path in package_lib_paths {
             args.push(path_str(lib_path)?);
-            has_native_providers = true;
+            has_native_packages = true;
         }
 
         // On macOS, we need to link system frameworks for the Rust static libs
-        if has_native_providers {
+        if has_native_packages {
             args.push("-framework".to_string());
             args.push("CoreFoundation".to_string());
             args.push("-framework".to_string());
@@ -1246,28 +1093,28 @@ impl Driver {
         Ok(())
     }
 
-    /// Load providers by pre-scanned (namespace, name) pairs.
-    /// Returns an error if any provider fails to load — never silently ignores failures.
-    fn load_providers_by_uses(&self, uses: &[(String, String)]) -> Result<Vec<ProviderInfo>, CompileError> {
-        let mut providers = Vec::new();
-        let providers_base = match self.find_providers_dir() {
+    /// Load packages by pre-scanned (namespace, name) pairs.
+    /// Returns an error if any package fails to load — never silently ignores failures.
+    fn load_packages_by_uses(&self, uses: &[(String, String)]) -> Result<Vec<PackageInfo>, CompileError> {
+        let mut packages = Vec::new();
+        let packages_base = match self.find_packages_dir() {
             Some(base) => base,
-            None => return Ok(providers),
+            None => return Ok(packages),
         };
 
         for (namespace, name) in uses {
-            match provider::find_provider(&providers_base, namespace, name) {
-                Some(provider_dir) => {
-                    let info = provider::load_provider(&provider_dir)
-                        .map_err(|e| CompileError::ProviderLoadFailed {
-                            provider: format!("@{}.{}", namespace, name),
+            match package::find_package(&packages_base, namespace, name) {
+                Some(package_dir) => {
+                    let info = package::load_package(&package_dir)
+                        .map_err(|e| CompileError::PackageLoadFailed {
+                            package: format!("@{}.{}", namespace, name),
                             detail: e,
                         })?;
-                    providers.push(info);
+                    packages.push(info);
                 }
                 None => {
-                    // Provider directory doesn't exist — this is an error, not a warning
-                    return Err(CompileError::ProviderNotFound {
+                    // Package directory doesn't exist — this is an error, not a warning
+                    return Err(CompileError::PackageNotFound {
                         namespace: namespace.clone(),
                         name: name.clone(),
                     });
@@ -1275,27 +1122,27 @@ impl Driver {
             }
         }
 
-        Ok(providers)
+        Ok(packages)
     }
 
-    /// Find the providers directory relative to the forge binary or source tree
-    fn find_providers_dir(&self) -> Option<PathBuf> {
+    /// Find the packages directory relative to the forge binary or source tree
+    fn find_packages_dir(&self) -> Option<PathBuf> {
         // Check relative to the cargo manifest dir (for development)
         let candidates = vec![
-            PathBuf::from("providers"),
-            PathBuf::from("../providers"),
+            PathBuf::from("packages"),
+            PathBuf::from("../packages"),
         ];
 
         // Also check relative to the forge binary
         if let Ok(exe) = std::env::current_exe() {
             if let Some(exe_dir) = exe.parent() {
                 let mut extra = vec![
-                    exe_dir.join("../providers"),
-                    exe_dir.join("../../providers"),
-                    exe_dir.join("../../../providers"),
+                    exe_dir.join("../packages"),
+                    exe_dir.join("../../packages"),
+                    exe_dir.join("../../../packages"),
                 ];
                 // For cargo builds, binary is in target/debug/ or target/release/
-                extra.push(exe_dir.join("../../providers"));
+                extra.push(exe_dir.join("../../packages"));
                 for p in extra {
                     if p.exists() {
                         return Some(p);
@@ -1423,7 +1270,7 @@ fn resolve_use_statements(
             }
             _ => continue,
         };
-        // Skip provider use statements (e.g., use @std.model)
+        // Skip package use statements (e.g., use @std.model)
         if !path.is_empty() && path[0].starts_with('@') {
             continue;
         }
@@ -1498,9 +1345,9 @@ fn resolve_use_statements(
     Ok(imports)
 }
 
-/// Pre-scan tokens for `use @namespace.name` patterns to determine which providers to load
-/// before full parsing. This allows the parser to use component registries from providers.
-fn prescan_provider_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)> {
+/// Pre-scan tokens for `use @namespace.name` patterns to determine which packages to load
+/// before full parsing. This allows the parser to use component registries from packages.
+fn prescan_package_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)> {
     use crate::lexer::token::TokenKind;
     let mut uses = Vec::new();
     let mut i = 0;
@@ -1524,8 +1371,8 @@ fn prescan_provider_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)
                         if j < tokens.len() && matches!(tokens[j].kind, TokenKind::Dot) {
                             j += 1;
                             if j < tokens.len() {
-                                if let TokenKind::Ident(ref provider_name) = tokens[j].kind {
-                                    uses.push((namespace.clone(), provider_name.clone()));
+                                if let TokenKind::Ident(ref package_name) = tokens[j].kind {
+                                    uses.push((namespace.clone(), package_name.clone()));
                                 }
                             }
                         }
@@ -1542,8 +1389,8 @@ fn prescan_provider_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)
                         if j < tokens.len() && matches!(tokens[j].kind, TokenKind::Dot) {
                             j += 1;
                             if j < tokens.len() {
-                                if let TokenKind::Ident(ref provider_name) = tokens[j].kind {
-                                    uses.push((namespace, provider_name.clone()));
+                                if let TokenKind::Ident(ref package_name) = tokens[j].kind {
+                                    uses.push((namespace, package_name.clone()));
                                 }
                             }
                         }
@@ -1556,23 +1403,113 @@ fn prescan_provider_uses(tokens: &[crate::lexer::Token]) -> Vec<(String, String)
     uses
 }
 
-/// Build a component registry from loaded providers' component metas
-fn build_component_registry(providers: &[ProviderInfo]) -> HashMap<String, ComponentMeta> {
+/// Build a component registry from loaded packages' component metas
+fn build_component_registry(packages: &[PackageInfo]) -> HashMap<String, ComponentMeta> {
     let mut registry = HashMap::new();
-    for provider in providers {
-        for meta in &provider.component_metas {
+    for pkg in packages {
+        for meta in &pkg.component_metas {
             registry.insert(meta.name.clone(), meta.clone());
         }
     }
     registry
 }
 
+/// Insert extern fn declarations from loaded packages at the front of the program.
+fn inject_extern_fns(program: &mut Program, packages: &[PackageInfo]) {
+    for pkg in packages {
+        for extern_fn in &pkg.extern_fns {
+            program.statements.insert(0, extern_fn.clone());
+        }
+    }
+}
+
+/// Insert exported fns from packages, renamed with the package name prefix.
+fn inject_exported_fns(program: &mut Program, packages: &[PackageInfo]) {
+    for pkg in packages {
+        for fn_stmt in &pkg.exported_fns {
+            if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
+                let renamed = Statement::FnDecl {
+                    name: format!("{}_{}", pkg.name, name),
+                    type_params: type_params.clone(),
+                    params: params.clone(),
+                    return_type: return_type.clone(),
+                    body: body.clone(),
+                    exported: false,
+                    span: *span,
+                };
+                program.statements.insert(0, renamed);
+            }
+        }
+    }
+}
+
+/// Expand all ComponentBlock nodes into regular AST, collecting lifecycle stmts and static methods.
+fn expand_components(program: &mut Program, packages: &[PackageInfo]) -> ComponentExpansionResult {
+    let mut all_static_methods = Vec::new();
+    let mut startup_stmts = Vec::new();
+    let mut main_end_stmts = Vec::new();
+    let mut extra_stmts = Vec::new();
+    let mut extra_extern_fns = Vec::new();
+    let mut service_infos = Vec::new();
+
+    let mut expanded_statements = Vec::new();
+    for stmt in program.statements.drain(..) {
+        if let Statement::ComponentBlock(ref decl) = stmt {
+            let result = if let Some(template) = find_template(packages, &decl.component) {
+                ComponentExpander::expand_from_template(template, decl, &service_infos)
+            } else {
+                ExpansionResult::new()
+            };
+
+            if let Some(type_decl) = result.type_decl {
+                expanded_statements.push(type_decl);
+            }
+            extra_stmts.extend(result.statements);
+            startup_stmts.extend(result.startup_stmts);
+            main_end_stmts.extend(result.main_end_stmts);
+            all_static_methods.extend(result.static_methods);
+            extra_extern_fns.extend(result.extern_fns);
+            if let Some(si) = result.service_info {
+                service_infos.push(si);
+            }
+        } else {
+            expanded_statements.push(stmt);
+        }
+    }
+    for ef in extra_extern_fns {
+        expanded_statements.insert(0, ef);
+    }
+    expanded_statements.extend(extra_stmts);
+    program.statements = expanded_statements;
+
+    ComponentExpansionResult {
+        static_methods: all_static_methods,
+        startup_stmts,
+        main_end_stmts,
+    }
+}
+
+/// Register package-declared annotations into the type checker.
+fn register_package_annotations(checker: &mut crate::typeck::TypeChecker, packages: &[PackageInfo]) {
+    for pkg in packages {
+        for meta in &pkg.component_metas {
+            for ann_decl in &meta.annotation_decls {
+                checker.package_annotations.push((
+                    ann_decl.name.clone(),
+                    ann_decl.target.clone(),
+                    meta.name.clone(),
+                ));
+            }
+        }
+    }
+}
+
 /// Find a component template definition matching the given component name
 fn find_template<'a>(
-    providers: &'a [ProviderInfo],
+    packages: &'a [PackageInfo],
     component: &str,
 ) -> Option<&'a ComponentTemplateDef> {
-    providers
+    packages
         .iter()
         .flat_map(|p| p.component_templates.iter())
         .find(|t| t.component_name == component)

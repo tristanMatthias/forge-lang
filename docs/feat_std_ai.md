@@ -1,4 +1,4 @@
-# @std/ai — AI Provider Spec
+# @std/ai — AI Package Spec
 
 Provider-agnostic AI integration. Works with Anthropic, OpenAI, local models, OpenRouter, or anything with a compatible API. Streaming, structured outputs, tool use, conversation history, and channels — all first-class.
 
@@ -16,7 +16,7 @@ let response = ai.ask("What is the capital of France?") {
 println(response)   // Paris is the capital of France.
 ```
 
-One function call. No setup. The provider is configured globally or inline.
+One function call. No setup. The package is configured globally or inline.
 
 ---
 
@@ -88,7 +88,7 @@ let output = fs.create("response.md")
 ai.stream("Write documentation for this API", context: api_spec)
   |> each(output.append(it))
 
-// Stream to a websocket (via HTTP provider)
+// Stream to a websocket (via HTTP package)
 ai.stream("Help the user", context: conversation)
   |> each(ws.send(client_id, it))
 ```
@@ -551,10 +551,10 @@ specs.each(job -> {
 
 ---
 
-## provider.toml
+## package.toml
 
 ```toml
-[provider]
+[package]
 name = "ai"
 namespace = "std"
 version = "0.1.0"
@@ -581,4 +581,4 @@ The native Rust library (`forge_ai`) is an HTTP client that speaks multiple prov
 
 The native lib handles: HTTP requests, SSE streaming, JSON schema generation from Forge types, tool call marshaling, conversation history management, retry/rate limiting, caching.
 
-The Forge-side (`provider.fg`) handles: the `agent` component definition, tool registration, channel integration, structured output typing, middleware hooks.
+The Forge-side (`package.fg`) handles: the `agent` component definition, tool registration, channel integration, structured output typing, middleware hooks.

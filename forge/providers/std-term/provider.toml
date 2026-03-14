@@ -1,8 +1,0 @@
-[provider]
-name = "term"
-namespace = "std"
-version = "0.1.0"
-description = "Terminal colors, styles, and interactive elements"
-
-[native]
-library = "forge_term"

@@ -1,6 +1,6 @@
 # Forge — Generic C ABI Callbacks & Struct JSON Serialization
 
-**Problem:** HTTP route handler codegen is provider-specific because it needs to (1) wrap Forge closures as C ABI function pointers and (2) serialize structs to JSON. Both are general problems that every callback-taking provider will have.
+**Problem:** HTTP route handler codegen is package-specific because it needs to (1) wrap Forge closures as C ABI function pointers and (2) serialize structs to JSON. Both are general problems that every callback-taking package will have.
 
 **Solution:** Make both generic compiler features. Then delete all HTTP-specific codegen.
 
@@ -127,7 +127,7 @@ For Phase 4, this can use the C runtime's JSON parser (`forge_json_parse_field(j
 - `json.stringify` becomes a built-in function that the compiler special-cases (like `println`)
 - The compiler generates serialization code per struct type on first use
 - `json.parse<T>` generates deserialization code per target type
-- Remove `emit_struct_to_json` from providers.rs — it's now the generic `json.stringify`
+- Remove `emit_struct_to_json` from packages.rs — it's now the generic `json.stringify`
 
 ### Test
 
@@ -180,8 +180,8 @@ Then `req.params.get("id")` is a normal Map method call. No special case.
 
 ## 4. What Gets Deleted After This
 
-- `emit_http_route()` in providers.rs — replaced by generic trampoline
-- `emit_struct_to_json()` in providers.rs — replaced by generic `json.stringify`
+- `emit_http_route()` in packages.rs — replaced by generic trampoline
+- `emit_struct_to_json()` in packages.rs — replaced by generic `json.stringify`
 - `ServerBlock` / `ServerChild::Route` handling in mod.rs — server block becomes normal keyword expansion
 - `req.params.get()` special case in collections.rs — becomes normal Map access
 - `forge_params_get` gated declaration in runtime.rs — no longer needed
@@ -191,5 +191,5 @@ Then `req.params.get("id")` is a normal Map method call. No special case.
 1. `test_callback_trampoline.fg` passes — Forge closures work as C ABI function pointers
 2. `test_json_generic.fg` passes — json.stringify/parse work on arbitrary structs
 3. All existing HTTP tests pass using the generic systems (no HTTP-specific codegen)
-4. `providers.rs` is deleted or reduced to zero provider-specific code
+4. `providers.rs` is deleted or reduced to zero package-specific code
 5. `grep -r "emit_http\|emit_struct_to_json\|ServerBlock\|ServerChild\|forge_params_get" compiler/src/ | grep -v test` returns zero results

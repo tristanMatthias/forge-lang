@@ -1,8 +1,0 @@
-[provider]
-name = "process"
-namespace = "std"
-version = "0.1.0"
-description = "Process spawning, management, and shell integration"
-
-[native]
-library = "forge_process"

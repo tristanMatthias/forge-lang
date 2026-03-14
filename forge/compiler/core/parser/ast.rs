@@ -157,9 +157,9 @@ pub enum Statement {
         return_type: Option<TypeExpr>,
         span: Span,
     },
-    // Generic component block (provider architecture)
+    // Generic component block (package architecture)
     ComponentBlock(ComponentBlockDecl),
-    // Component template definition from provider.fg
+    // Component template definition from package.fg
     ComponentTemplateDef(ComponentTemplateDef),
     // Select statement for channel multiplexing
     Select {
@@ -254,7 +254,7 @@ pub enum HookTiming {
     After,
 }
 
-// Generic component block types (provider architecture)
+// Generic component block types (package architecture)
 #[derive(Debug, Clone)]
 pub struct ComponentConfig {
     pub key: String,
@@ -326,7 +326,7 @@ pub struct AnnotationDeclItem {
     pub span: Span,
 }
 
-/// Component template definition from provider.fg
+/// Component template definition from package.fg
 /// e.g., `component model(__tpl_name, schema) { ... }`
 #[derive(Debug, Clone)]
 pub struct ComponentTemplateDef {

@@ -174,7 +174,7 @@ impl TypeChecker {
                 Type::Error
             }
             None => {
-                // Not found anywhere — extern fns from providers are already registered
+                // Not found anywhere — extern fns from packages are already registered
                 // in env.functions by the time we reach here, so this is truly undefined.
                 let scope_names = self.env.all_names_in_scope();
                 let candidates: Vec<&str> = scope_names.iter().map(|s| s.as_str()).collect();

@@ -16,7 +16,7 @@ But that world is ending.
 
 In the AI-engineered future, the entity writing code doesn't have a specialization. An AI can think about HTTP routing and register manipulation in the same thought. It doesn't find memory management "hard" or garbage collection "easy" — those are just different strategies for different contexts. The bottleneck is no longer human cognitive specialization. The bottleneck is *language boundaries* — the friction of crossing from one language to another, one toolchain to another, one mental model to another.
 
-Forge is already designed as an orchestration language. It already compiles to native code via LLVM. It already has a component/provider system that lets domain-specific syntax feel native. The question is: what if we removed the ceiling?
+Forge is already designed as an orchestration language. It already compiles to native code via LLVM. It already has a component/package system that lets domain-specific syntax feel native. The question is: what if we removed the ceiling?
 
 ---
 
@@ -69,7 +69,7 @@ Forge defines four abstraction levels. Each level is a strict superset of the on
 
 The level most Forge code lives at. Automatic memory management — reference counting with arena allocation and targeted cycle detection, all decided at compile time. No GC. No pauses. Deterministic deallocation. This is what Forge is today.
 
-**You get:** Automatic memory management, auto-serialization, providers (`model`, `server`, `queue`), type inference, pattern matching, channels, spawn, the full standard library.
+**You get:** Automatic memory management, auto-serialization, packages (`model`, `server`, `queue`), type inference, pattern matching, channels, spawn, the full standard library.
 
 **You manage:** Nothing related to memory or resources. The compiler handles it.
 
@@ -253,14 +253,14 @@ This is a web server that directly controls a GPIO pin. The compiler validates t
 
 ---
 
-## Providers Across Levels
+## Packages Across Levels
 
-Forge's component/provider system works at every level. A provider can expose an application-level interface while implementing in a lower level internally. Users of the provider never see the lower level — they interact with a clean, high-level API.
+Forge's component/package system works at every level. A package can expose an application-level interface while implementing in a lower level internally. Users of the package never see the lower level — they interact with a clean, high-level API.
 
-### Provider with Mixed Levels
+### Package with Mixed Levels
 
 ```forge
-// @hw/gpio provider — application-level interface, hardware-level guts
+// @hw/gpio package — application-level interface, hardware-level guts
 component gpio_controller(target: ChipTarget) {
 
   // Public API: application level
@@ -305,7 +305,7 @@ wait(1s)
 led.low()
 ```
 
-### Domain Providers for Different Industries
+### Domain Packages for Different Industries
 
 The level system makes Forge viable as the orchestration surface for domains that were previously inaccessible to high-level languages:
 
@@ -898,7 +898,7 @@ This vision doesn't need to ship all at once. It maps naturally to Forge's exist
 
 ### Phase 1: Current (Application Level Only)
 
-Forge as it exists today. RC-managed, provider-based, application-level orchestration. No level system. The existing `@std/http`, `@std/model`, etc. providers work at application level.
+Forge as it exists today. RC-managed, package-based, application-level orchestration. No level system. The existing `@std/http`, `@std/model`, etc. packages work at application level.
 
 ### Phase 2: Systems Level
 
@@ -936,9 +936,9 @@ Key deliverables:
 - `rt_loop` with real-time verification
 - Bare-metal deployment target (no OS)
 
-### Phase 5: Domain Providers
+### Phase 5: Domain Packages
 
-With all four levels available, build out domain-specific provider ecosystems:
+With all four levels available, build out domain-specific package ecosystems:
 
 - `@hw/gpio`, `@hw/i2c`, `@hw/spi` — hardware communication
 - `@hw/robot` — robotics primitives
@@ -965,7 +965,7 @@ With all four levels available, build out domain-specific provider ecosystems:
 
 **7. Level cost model.** Developers (and AIs) need to understand the cost of level transitions. Should the compiler report the overhead of each boundary crossing? A "performance profile" that shows where copies and conversions happen at level transitions?
 
-**8. Community providers.** When third parties write providers, can they declare that their provider requires a minimum level? A GPIO provider obviously needs hardware level internally. But a caching provider might be pure application level. How is this expressed and verified?
+**8. Community packages.** When third parties write packages, can they declare that their package requires a minimum level? A GPIO package obviously needs hardware level internally. But a caching package might be pure application level. How is this expressed and verified?
 
 ---
 
@@ -1032,7 +1032,7 @@ Ada has different pragma profiles (`Ravenscar`, `Jorvik`) that restrict the lang
 D has function-level annotations that control what operations are allowed:
 
 - `@safe` functions can't use raw pointers. `@system` functions can. `@trusted` is the boundary — a `@safe` interface with `@system` guts.
-- This is very close to Forge's provider pattern where the public API is application-level and the internals use a lower level.
+- This is very close to Forge's package pattern where the public API is application-level and the internals use a lower level.
 - But D's annotations are per-function, not per-block. And D doesn't change memory strategy — it's always GC'd (or manually managed if you opt out project-wide).
 
 ### Summary: What's genuinely new
@@ -1145,7 +1145,7 @@ systems {
 
 **What we should do:**
 
-- Enforce the "level is an implementation detail" pattern: a library's public API should always be at the *highest* level that makes sense (usually application). The implementation can use any level internally. The provider pattern already does this — the public `gpio.output(17)` is application-level even though the guts are hardware-level.
+- Enforce the "level is an implementation detail" pattern: a library's public API should always be at the *highest* level that makes sense (usually application). The implementation can use any level internally. The package pattern already does this — the public `gpio.output(17)` is application-level even though the guts are hardware-level.
 - The compiler can auto-generate application-level wrappers for systems-level functions. If a function takes an `OwnedBuffer`, the wrapper takes a `List<u8>`, does the `.to_owned()` conversion, calls the function, and converts back. This is what C# does with `Span<T>` marshaling.
 - Standard library types should work at all levels. A `string` at application level is RC-managed. The same `string` type at systems level is ownership-tracked. The in-memory representation is identical — the difference is how the compiler manages its lifecycle.
 

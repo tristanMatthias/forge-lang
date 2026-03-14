@@ -1,6 +1,6 @@
 /// # Extern FFI via Process
 ///
-/// Extern functions declare C ABI bindings. The process provider uses
+/// Extern functions declare C ABI bindings. The process package uses
 /// extern fns to call C functions like forge_process_run and forge_process_pipe.
 ///
 /// expect: HELLO WORLD

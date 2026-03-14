@@ -177,6 +177,16 @@ impl<'ctx> Codegen<'ctx> {
         tmp_builder.build_alloca(llvm_ty, name).unwrap()
     }
 
+    /// Wrap a raw C string pointer as a ForgeString by calling strlen + forge_string_new.
+    /// This is the standard pattern for converting `ptr` → `{ptr, len}` ForgeString.
+    pub(crate) fn wrap_ptr_as_string(
+        &mut self,
+        ptr_val: PointerValue<'ctx>,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let len = self.call_runtime("strlen", &[ptr_val.into()], "slen")?;
+        self.call_runtime("forge_string_new", &[ptr_val.into(), len.into()], "fstr")
+    }
+
     /// Extract (data_ptr, len) from a list struct value.
     /// Lists are represented as `{ptr, i64}` structs.
     pub(crate) fn extract_list_fields(

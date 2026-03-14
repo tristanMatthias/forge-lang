@@ -22,9 +22,9 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
     }
 }
 
-// ── Provider documentation ──────────────────────────────────────────
+// ── Package documentation ───────────────────────────────────────────
 
-struct ProviderDoc {
+struct PackageDoc {
     name: String,
     namespace: String,
     description: String,
@@ -47,16 +47,16 @@ struct ExternFnDoc {
     doc: String,
 }
 
-/// Discover all providers by scanning the providers/ directory.
-fn discover_providers() -> Vec<ProviderDoc> {
-    let providers_dir = find_providers_dir();
-    let providers_dir = match providers_dir {
+/// Discover all packages by scanning the packages/ directory.
+fn discover_packages() -> Vec<PackageDoc> {
+    let packages_dir = find_packages_dir();
+    let packages_dir = match packages_dir {
         Some(d) => d,
         None => return vec![],
     };
 
-    let mut providers = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(&providers_dir)
+    let mut packages = Vec::new();
+    let mut entries: Vec<_> = std::fs::read_dir(&packages_dir)
         .ok()
         .into_iter()
         .flatten()
@@ -67,30 +67,30 @@ fn discover_providers() -> Vec<ProviderDoc> {
 
     for entry in entries {
         let dir = entry.path();
-        let toml_path = dir.join("provider.toml");
-        let fg_path = dir.join("src").join("provider.fg");
+        let toml_path = dir.join("package.toml");
+        let fg_path = dir.join("src").join("package.fg");
 
         if !toml_path.exists() {
             continue;
         }
 
-        if let Some(doc) = parse_provider(&toml_path, &fg_path) {
-            providers.push(doc);
+        if let Some(doc) = parse_package(&toml_path, &fg_path) {
+            packages.push(doc);
         }
     }
 
-    providers
+    packages
 }
 
-/// Find the providers/ directory relative to the binary or source tree.
-fn find_providers_dir() -> Option<PathBuf> {
+/// Find the packages/ directory relative to the binary or source tree.
+fn find_packages_dir() -> Option<PathBuf> {
     // Try relative to the current exe
     if let Ok(exe) = std::env::current_exe() {
-        // exe is in target/release/ or target/debug/, providers is at forge/providers/
+        // exe is in target/release/ or target/debug/, packages is at forge/packages/
         let mut dir = exe.parent()?.to_path_buf();
-        // Walk up looking for providers/
+        // Walk up looking for packages/
         for _ in 0..5 {
-            let candidate = dir.join("providers");
+            let candidate = dir.join("packages");
             if candidate.is_dir() {
                 return Some(candidate);
             }
@@ -101,8 +101,8 @@ fn find_providers_dir() -> Option<PathBuf> {
     // Try CWD-based paths
     let cwd = std::env::current_dir().ok()?;
     for candidate in &[
-        cwd.join("providers"),
-        cwd.join("forge").join("providers"),
+        cwd.join("packages"),
+        cwd.join("forge").join("packages"),
     ] {
         if candidate.is_dir() {
             return Some(candidate.clone());
@@ -112,8 +112,8 @@ fn find_providers_dir() -> Option<PathBuf> {
     None
 }
 
-/// Parse a provider from its provider.toml and provider.fg files.
-fn parse_provider(toml_path: &PathBuf, fg_path: &PathBuf) -> Option<ProviderDoc> {
+/// Parse a package from its package.toml and package.fg files.
+fn parse_package(toml_path: &PathBuf, fg_path: &PathBuf) -> Option<PackageDoc> {
     let toml_content = std::fs::read_to_string(toml_path).ok()?;
 
     let name = extract_toml_string(&toml_content, "name")?;
@@ -137,11 +137,11 @@ fn parse_provider(toml_path: &PathBuf, fg_path: &PathBuf) -> Option<ProviderDoc>
         })
         .collect();
 
-    // Parse provider.fg for extern fns and component details
+    // Parse package.fg for extern fns and component details
     let fg_content = std::fs::read_to_string(fg_path).unwrap_or_default();
-    let (extern_fns, components) = parse_provider_fg(&fg_content, &component_names);
+    let (extern_fns, components) = parse_package_fg(&fg_content, &component_names);
 
-    Some(ProviderDoc {
+    Some(PackageDoc {
         name: format!("{}-{}", namespace, name),
         namespace: name,
         description,
@@ -168,8 +168,8 @@ fn extract_toml_string(content: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Parse provider.fg to extract extern fns and component details.
-fn parse_provider_fg(
+/// Parse package.fg to extract extern fns and component details.
+fn parse_package_fg(
     content: &str,
     component_names: &[String],
 ) -> (Vec<ExternFnDoc>, Vec<ComponentDoc>) {
@@ -382,12 +382,12 @@ fn extract_syntax_pattern(line: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// Show documentation for a single provider.
-fn show_provider(provider: &ProviderDoc) {
-    let header = format!("@{}", provider.namespace);
+/// Show documentation for a single package.
+fn show_package(pkg: &PackageDoc) {
+    let header = format!("@{}", pkg.namespace);
     let right = format!(
         "{} v{}",
-        provider.name, provider.version
+        pkg.name, pkg.version
     );
 
     println!();
@@ -395,15 +395,15 @@ fn show_provider(provider: &ProviderDoc) {
     println!("  {}", dim(&"\u{2500}".repeat(57)));
     println!();
 
-    if !provider.description.is_empty() {
-        println!("  {}", provider.description);
+    if !pkg.description.is_empty() {
+        println!("  {}", pkg.description);
         println!();
     }
 
     // Components
-    if !provider.components.is_empty() {
+    if !pkg.components.is_empty() {
         println!("  {}", bold("Components"));
-        for comp in &provider.components {
+        for comp in &pkg.components {
             println!();
             println!("    {}", bold(&comp.name));
 
@@ -440,9 +440,9 @@ fn show_provider(provider: &ProviderDoc) {
     }
 
     // Extern functions
-    if !provider.extern_fns.is_empty() {
+    if !pkg.extern_fns.is_empty() {
         println!("  {}", bold("Extern Functions"));
-        for efn in &provider.extern_fns {
+        for efn in &pkg.extern_fns {
             let params_str: Vec<String> = efn
                 .params
                 .iter()
@@ -473,16 +473,16 @@ fn show_provider(provider: &ProviderDoc) {
     println!();
 }
 
-/// Show documentation for a specific component within a provider.
-fn show_provider_component(provider: &ProviderDoc, component_name: &str) {
-    let comp = match provider.components.iter().find(|c| c.name == component_name) {
+/// Show documentation for a specific component within a package.
+fn show_package_component(pkg: &PackageDoc, component_name: &str) {
+    let comp = match pkg.components.iter().find(|c| c.name == component_name) {
         Some(c) => c,
         None => {
             println!(
                 "\n  No component '{}' in @{}. Available: {}\n",
                 component_name,
-                provider.namespace,
-                provider
+                pkg.namespace,
+                pkg
                     .components
                     .iter()
                     .map(|c| c.name.as_str())
@@ -493,8 +493,8 @@ fn show_provider_component(provider: &ProviderDoc, component_name: &str) {
         }
     };
 
-    let header = format!("@{}.{}", provider.namespace, comp.name);
-    let right = format!("{} v{}", provider.name, provider.version);
+    let header = format!("@{}.{}", pkg.namespace, comp.name);
+    let right = format!("{} v{}", pkg.name, pkg.version);
 
     println!();
     println!("  {:<52} {}", bold(&header), dim(&right));
@@ -529,22 +529,22 @@ fn show_provider_component(provider: &ProviderDoc, component_name: &str) {
     println!();
 }
 
-/// Show all providers in a compact list.
-fn show_all_providers() {
-    let providers = discover_providers();
+/// Show all packages in a compact list.
+fn show_all_packages() {
+    let packages = discover_packages();
 
     println!();
-    println!("  {}", bold("Providers"));
+    println!("  {}", bold("Packages"));
     println!("  {}", dim(&"\u{2500}".repeat(9)));
     println!();
 
-    if providers.is_empty() {
-        println!("    {}", dim("(no providers found)"));
+    if packages.is_empty() {
+        println!("    {}", dim("(no packages found)"));
         println!();
         return;
     }
 
-    for p in &providers {
+    for p in &packages {
         let ns = format!("@{}", p.namespace);
         let name_ver = format!("{} v{}", p.name, p.version);
         let desc = if p.description.is_empty() {
@@ -569,14 +569,14 @@ fn show_all_providers() {
     println!();
     println!(
         "  Detail: {}",
-        cyan("forge lang @<provider>")
+        cyan("forge lang @<package>")
     );
     println!();
 }
 
-/// Look up a provider by namespace (e.g., "http" -> std-http).
-fn find_provider_by_namespace<'a>(providers: &'a [ProviderDoc], ns: &str) -> Option<&'a ProviderDoc> {
-    providers.iter().find(|p| p.namespace == ns)
+/// Look up a package by namespace (e.g., "http" -> std-http).
+fn find_package_by_namespace<'a>(packages: &'a [PackageDoc], ns: &str) -> Option<&'a PackageDoc> {
+    packages.iter().find(|p| p.namespace == ns)
 }
 
 // ── ANSI helpers ────────────────────────────────────────────────────
@@ -1220,13 +1220,13 @@ pub fn show_all() {
         );
     }
 
-    // Providers section
-    let providers = discover_providers();
-    if !providers.is_empty() {
+    // Packages section
+    let packages = discover_packages();
+    if !packages.is_empty() {
         println!();
-        println!("  {} ({})", bold("Providers"), providers.len());
+        println!("  {} ({})", bold("Packages"), packages.len());
         println!();
-        for p in &providers {
+        for p in &packages {
             let ns = format!("@{}", p.namespace);
             let name_ver = format!("{} v{}", p.name, p.version);
             let desc = if p.description.is_empty() {
@@ -1269,7 +1269,7 @@ pub fn show_all() {
         ));
     }
     hints.push(format!(
-        "Providers: {}",
+        "Packages: {}",
         cyan("forge lang @http")
     ));
     hints.push(format!(
@@ -1569,31 +1569,31 @@ fn count_examples(features_dir: &PathBuf, feature_id: &str) -> usize {
 
 /// Main entry point. Resolves a query to the appropriate display.
 pub fn resolve(query: &str) {
-    // 0. Provider queries: @namespace or @namespace.component
+    // 0. Package queries: @namespace or @namespace.component
     if query.starts_with('@') {
-        let provider_query = &query[1..];
-        let providers = discover_providers();
+        let package_query = &query[1..];
+        let packages = discover_packages();
 
-        if let Some(dot_pos) = provider_query.find('.') {
-            let ns = &provider_query[..dot_pos];
-            let comp_name = &provider_query[dot_pos + 1..];
-            if let Some(provider) = find_provider_by_namespace(&providers, ns) {
-                show_provider_component(provider, comp_name);
+        if let Some(dot_pos) = package_query.find('.') {
+            let ns = &package_query[..dot_pos];
+            let comp_name = &package_query[dot_pos + 1..];
+            if let Some(pkg) = find_package_by_namespace(&packages, ns) {
+                show_package_component(pkg, comp_name);
             } else {
                 println!(
-                    "\n  No provider '@{}'. Try {} to see all providers.\n",
+                    "\n  No package '@{}'. Try {} to see all packages.\n",
                     ns,
-                    cyan("forge lang providers")
+                    cyan("forge lang packages")
                 );
             }
         } else {
-            if let Some(provider) = find_provider_by_namespace(&providers, provider_query) {
-                show_provider(provider);
+            if let Some(pkg) = find_package_by_namespace(&packages, package_query) {
+                show_package(pkg);
             } else {
                 println!(
-                    "\n  No provider '@{}'. Try {} to see all providers.\n",
-                    provider_query,
-                    cyan("forge lang providers")
+                    "\n  No package '@{}'. Try {} to see all packages.\n",
+                    package_query,
+                    cyan("forge lang packages")
                 );
             }
         }
@@ -1657,8 +1657,8 @@ pub fn resolve(query: &str) {
         return;
     }
 
-    if query == "providers" {
-        show_all_providers();
+    if query == "packages" {
+        show_all_packages();
         return;
     }
 
@@ -1777,12 +1777,12 @@ pub fn show_llm_compact() {
     }
     println!();
 
-    // Providers section
-    let providers = discover_providers();
-    if !providers.is_empty() {
+    // Packages section
+    let packages = discover_packages();
+    if !packages.is_empty() {
         println!();
-        println!("## Providers");
-        for p in &providers {
+        println!("## Packages");
+        for p in &packages {
             let mut parts = Vec::new();
 
             // Description or component summary
@@ -1803,14 +1803,14 @@ pub fn show_llm_compact() {
                 }
             }
 
-            // Add key extern fn summaries for providers without components
+            // Add key extern fn summaries for packages without components
             if p.components.is_empty() && !p.extern_fns.is_empty() {
                 let fn_names: Vec<String> = p
                     .extern_fns
                     .iter()
                     .take(5)
                     .map(|f| {
-                        // Strip provider prefix for readability
+                        // Strip package prefix for readability
                         let short = f
                             .name
                             .strip_prefix(&format!("forge_{}_", p.namespace))
@@ -1911,12 +1911,12 @@ pub fn show_llm_full() {
     println!("map<K,V>: .has(key) .get(key) .keys() .length");
     println!("json: .parse(str) .stringify(val)");
 
-    // Providers section
-    let providers = discover_providers();
-    if !providers.is_empty() {
+    // Packages section
+    let packages = discover_packages();
+    if !packages.is_empty() {
         println!();
-        println!("## Providers");
-        for p in &providers {
+        println!("## Packages");
+        for p in &packages {
             let mut parts = Vec::new();
             if !p.description.is_empty() {
                 parts.push(p.description.clone());
@@ -2211,9 +2211,9 @@ pub fn show_search(query: &str) {
         }
     }
 
-    // Search providers
-    let providers = discover_providers();
-    for p in &providers {
+    // Search packages
+    let packages = discover_packages();
+    for p in &packages {
         let ns_lower = p.namespace.to_lowercase();
         let name_lower = p.name.to_lowercase();
         let desc_lower = p.description.to_lowercase();
@@ -2238,7 +2238,7 @@ pub fn show_search(query: &str) {
                 p.description.clone()
             };
             results.push(SearchResult {
-                category: "Providers",
+                category: "Packages",
                 name: format!("@{}", p.namespace),
                 description: desc,
                 score,
@@ -2263,7 +2263,7 @@ pub fn show_search(query: &str) {
     println!();
 
     // Group by category
-    let categories = ["Features", "Syntax", "Types", "Methods", "Providers", "Errors"];
+    let categories = ["Features", "Syntax", "Types", "Methods", "Packages", "Errors"];
     for cat in &categories {
         let cat_results: Vec<&SearchResult> =
             results.iter().filter(|r| r.category == *cat).collect();

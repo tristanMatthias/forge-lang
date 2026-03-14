@@ -214,7 +214,7 @@ impl<'ctx> Codegen<'ctx> {
         self.compile_all_impl_methods();
 
         // Declare helper functions (snprintf, route helpers, etc.)
-        self.declare_provider_functions();
+        self.declare_package_functions();
 
         // Check if we need to auto-wrap top-level statements in main()
         let has_explicit_main = program.statements.iter().any(|s| {

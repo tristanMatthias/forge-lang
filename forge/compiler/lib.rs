@@ -12,7 +12,7 @@ pub use core::feature;
 pub use core::lang;
 pub use core::lexer;
 pub use core::parser;
-pub use core::provider;
+pub use core::package;
 pub use core::registry;
 pub use core::site;
 pub use core::test_runner;

@@ -1,6 +1,6 @@
 # @std/test — Test Component (TDD)
 
-`@std/test` is a component provider. `spec`, `given`, `then` are components and scoped functions with `@syntax` sugar. Everything builds on existing language features: `is`, `table`, closures, error handling.
+`@std/test` is a component package. `spec`, `given`, `then` are components and scoped functions with `@syntax` sugar. Everything builds on existing language features: `is`, `table`, closures, error handling.
 
 ---
 
@@ -520,10 +520,10 @@ forge test --bench
 
 ---
 
-## provider.toml
+## package.toml
 
 ```toml
-[provider]
+[package]
 name = "test"
 namespace = "std"
 version = "0.1.0"
@@ -538,7 +538,7 @@ context = "top_level"
 body = "mixed"
 ```
 
-## provider.fg
+## package.fg
 
 ```forge
 extern fn forge_test_start_spec(name: string)
@@ -653,9 +653,9 @@ component spec(name: string) {
 | `is Ok` / `is Err` / `is null` | `is` keyword |
 | `roughly` | Plain function returning bool |
 | `eventually` | Loop + sleep + bool check |
-| `snapshot` | Provider function + filesystem |
-| `fuzz` | Provider function + `Fuzzable` trait |
-| `bench` | Provider function + native timing |
+| `snapshot` | Package function + filesystem |
+| `fuzz` | Package function + `Fuzzable` trait |
+| `bench` | Package function + native timing |
 | `skip` / `todo` | Scoped functions |
 | Struct diff on failure | `json.stringify` + native diff |
 | List diff on failure | Native diff in test runner |

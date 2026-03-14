@@ -10,9 +10,9 @@ pub struct TypeChecker {
     pub env: TypeEnv,
     pub diagnostics: Vec<Diagnostic>,
     pub current_fn_return_type: Option<Type>,
-    /// Provider-declared annotations: (annotation_name, target, component_name)
+    /// Package-declared annotations: (annotation_name, target, component_name)
     /// Populated from component template `annotation <target> <name>(...)` declarations.
-    pub provider_annotations: Vec<(String, String, String)>,
+    pub package_annotations: Vec<(String, String, String)>,
 }
 
 impl TypeChecker {
@@ -21,7 +21,7 @@ impl TypeChecker {
             env: TypeEnv::new(),
             diagnostics: Vec::new(),
             current_fn_return_type: None,
-            provider_annotations: Vec::new(),
+            package_annotations: Vec::new(),
         }
     }
 
@@ -166,7 +166,7 @@ impl TypeChecker {
                         return_type: Box::new(ret),
                     },
                 );
-                // Extract namespace from provider extern fn names (forge_<ns>_<method>)
+                // Extract namespace from package extern fn names (forge_<ns>_<method>)
                 if let Some(rest) = name.strip_prefix("forge_") {
                     if let Some(ns_end) = rest.find('_') {
                         self.env.namespaces.insert(rest[..ns_end].to_string());
@@ -477,7 +477,7 @@ impl TypeChecker {
                     // Named type used as constructor (e.g., Point { x: 1 })
                     self.env.type_aliases[name].clone()
                 } else if self.env.namespaces.contains(name) {
-                    // Provider namespace (e.g., json, fs, process)
+                    // Package namespace (e.g., json, fs, process)
                     Type::Unknown
                 } else {
                     let scope_names = self.env.all_names_in_scope();
@@ -1157,7 +1157,7 @@ impl TypeChecker {
                     }
                 }
                 // Only report error if we have tracked methods for this type
-                // (otherwise it may have provider-generated methods)
+                // (otherwise it may have package-generated methods)
                 let has_tracked = self.env.type_methods.contains_key(type_name)
                     || self.env.type_traits.contains_key(type_name);
                 if has_tracked {

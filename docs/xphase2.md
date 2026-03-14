@@ -173,7 +173,7 @@ As you validate, note:
 
 ### Goal
 
-Phase 2 adds the **module system**, **trait system**, **multi-file compilation**, **generics**, and the **project system** (forge.toml). At the end of Phase 2, Forge is a real multi-file language with a proper type system — ready for providers in Phase 3.
+Phase 2 adds the **module system**, **trait system**, **multi-file compilation**, **generics**, and the **project system** (forge.toml). At the end of Phase 2, Forge is a real multi-file language with a proper type system — ready for packages in Phase 3.
 
 ### Success Criteria
 
@@ -211,7 +211,7 @@ use utils.helpers.{format_date, format_currency as fmt_money}
 // Import everything from a namespace
 use utils.helpers
 
-// Provider imports (parsed but not resolved until Phase 3)
+// Package imports (parsed but not resolved until Phase 3)
 use @std.http.{server, route}
 ```
 
@@ -484,7 +484,7 @@ When `forge build <file.fg>` is run (no forge.toml), it compiles a single file a
 
 #### 2.4.2 forge.toml Parsing
 
-Use the `toml` crate to parse. Only support the `[project]` and `[build]` sections in Phase 2. Provider and database sections are parsed but ignored until Phase 3.
+Use the `toml` crate to parse. Only support the `[project]` and `[build]` sections in Phase 2. Package and database sections are parsed but ignored until Phase 3.
 
 ```toml
 # Full Phase 2 support:
@@ -499,7 +499,7 @@ opt_level = 2                      # 0, 1, 2, 3. Default: 2
 default_target = "native"          # auto-detect current platform
 
 # Parsed but not functional until Phase 3:
-[providers]
+[packages]
 [database]
 [dev]
 ```
@@ -1041,8 +1041,8 @@ fn main() {
 
 Explicitly deferred to Phase 3+:
 
-- Provider system (`@std/http`, etc.)
-- Model/service declarations (these are provider keywords)
+- Package system (`@std/http`, etc.)
+- Model/service declarations (these are package keywords)
 - Dynamic dispatch / trait objects (`dyn Trait`)
 - Associated types on traits (except `type Output` on operator traits)
 - Trait inheritance beyond single level

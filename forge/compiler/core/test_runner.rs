@@ -3,7 +3,7 @@
 /// Every test runs the same way: fork() a child process, JIT-compile and
 /// execute the .fg file in the child, capture stdout+stderr via pipes,
 /// compare against `/// expect:` comments. Fork gives complete process
-/// isolation so provider global state can never leak between tests.
+/// isolation so package global state can never leak between tests.
 ///
 /// Parallel mode (-j N): all forks happen sequentially on the main thread
 /// (avoiding fd inheritance issues), while N worker threads handle pipe
@@ -333,7 +333,7 @@ fn fork_child(fg_file: &Path, is_check: bool) -> Result<(i32, i32, i32, Instant)
             match driver.run_jit(fg_file) { Ok(code) => code, Err(_) => 1 }
         };
 
-        // Call provider cleanup (e.g., forge_test_summary).
+        // Call package cleanup (e.g., forge_test_summary).
         // Use dlsym + _exit because exit() deadlocks in forked children.
         unsafe {
             let sym = dlsym(RTLD_DEFAULT, b"forge_test_summary\0".as_ptr() as *const i8);

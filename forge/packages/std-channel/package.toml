@@ -1,0 +1,8 @@
+[package]
+name = "channel"
+namespace = "std"
+version = "0.1.0"
+description = "Typed channels for concurrent communication"
+
+[native]
+library = "forge_channel"

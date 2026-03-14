@@ -1,6 +1,6 @@
 # Forge — Validation System (TDD)
 
-Validation is a **core language feature**, not a provider feature. Annotations like `@min`, `@max`, `@validate` work on any shaped type — plain `type` aliases, `model` fields, function parameters, anonymous structs. Providers can extend the annotation registry, but the base set lives in the language.
+Validation is a **core language feature**, not a package feature. Annotations like `@min`, `@max`, `@validate` work on any shaped type — plain `type` aliases, `model` fields, function parameters, anonymous structs. Packages can extend the annotation registry, but the base set lives in the language.
 
 Type operators (`with`, `without`, `only`, `as partial`) **inherit** validation annotations from their source type. You define constraints once; they flow everywhere.
 
@@ -14,7 +14,7 @@ Annotations (`@name` or `@name(args)`) are a **language-level** feature. The syn
 annotation = "@" IDENT ("(" args? ")")? ;
 ```
 
-They are **metadata on declarations** — the compiler parses them, validates them, and passes them to whatever system consumes them (the language runtime, a provider, or user code). They are not macros, they are not decorators that wrap functions. They are inert data until something reads them.
+They are **metadata on declarations** — the compiler parses them, validates them, and passes them to whatever system consumes them (the language runtime, a package, or user code). They are not macros, they are not decorators that wrap functions. They are inert data until something reads them.
 
 ### Annotation Targets
 
@@ -28,7 +28,7 @@ Annotations attach to different kinds of declarations. Each annotation has an ex
 | **component** | On a component block declaration | `@persist(postgres(...))` on a model |
 | **function** | On a function declaration | `@deprecated("use v2")` on a fn |
 
-A field annotation on a type-level target is a compile error, and vice versa. The compiler knows which target each annotation belongs to because the annotation is **declared** with an explicit target — either by the language core or by a provider.
+A field annotation on a type-level target is a compile error, and vice versa. The compiler knows which target each annotation belongs to because the annotation is **declared** with an explicit target — either by the language core or by a package.
 
 ### Annotation Sources
 
@@ -45,10 +45,10 @@ type Input = {
 }
 ```
 
-**2. Provider-declared** — A component provider declares annotations scoped to its context using the `annotation` keyword:
+**2. Package-declared** — A component package declares annotations scoped to its context using the `annotation` keyword:
 
 ```forge
-// Inside the @std/model provider definition
+// Inside the @std/model package definition
 component model(name: string) {
   annotation field primary()
   annotation field auto_increment()
@@ -60,10 +60,10 @@ component model(name: string) {
 }
 ```
 
-These are only valid inside that provider's blocks. `@primary` inside a `model` block is valid; `@primary` on a plain `type` field is a compile error.
+These are only valid inside that package's blocks. `@primary` inside a `model` block is valid; `@primary` on a plain `type` field is a compile error.
 
 ```forge
-// Inside the @std/http provider definition
+// Inside the @std/http package definition
 component server(port: int) {
   annotation route public()
   annotation route auth(roles: List<Role>)
@@ -97,7 +97,7 @@ Annotations are passed as data to the functions that handle the annotated declar
 @syntax("{name}: {type}")
 fn field(name: string, type: Type, annotations: List<Annotation>) {
   // annotations contains @min(1), @validate(email), etc.
-  // The provider reads them and acts accordingly
+  // The package reads them and acts accordingly
 }
 ```
 
@@ -145,7 +145,7 @@ type User = {
 ```
 
 ```forge
-// Provider annotation outside its provider context
+// Package annotation outside its package context
 type UserInput = {
   name: string @primary,    // @primary is a model field annotation, not available on plain types
 }
@@ -563,7 +563,7 @@ fn main() {
 
 ## Part 4: Model Validation (Unchanged, But Now Shares Core)
 
-Models use the same core annotations. `@std/model` adds provider-specific annotations (`@primary`, `@auto_increment`, `@unique`, `@hidden`, `@owner`) but validation behavior is identical to plain types.
+Models use the same core annotations. `@std/model` adds package-specific annotations (`@primary`, `@auto_increment`, `@unique`, `@hidden`, `@owner`) but validation behavior is identical to plain types.
 
 ### Test 4.1: Model validates on create
 
@@ -623,7 +623,7 @@ type CreateUser = User without {id, created_at}
 
 fn main() {
   // CreateUser inherits @min(1) on name, @validate(email) on email, @min(8) on password
-  // Does NOT inherit @primary, @auto_increment, @unique, @hidden — those are provider annotations
+  // Does NOT inherit @primary, @auto_increment, @unique, @hidden — those are package annotations
   // that only apply in model context
   let result = validate({ name: "", email: "bad", password: "short" }, CreateUser)
   match result {
@@ -933,12 +933,12 @@ See **Annotations — Language Feature** above for full details on targets, sour
 | Tier | Annotations | Target | Scope |
 |---|---|---|---|
 | **Core (language)** | `@min`, `@max`, `@validate`, `@pattern`, `@transform`, `@default` | field | Any shaped type — `type`, `model`, anonymous struct, function parameter |
-| **Provider (@std/model)** | `@primary`, `@auto_increment`, `@unique`, `@hidden`, `@owner` | field | `model` blocks only |
-| **Provider (@std/model)** | `@table`, `@persist` | type | `model` blocks only |
-| **Provider (@std/http)** | `@public`, `@auth`, `@cache`, `@deprecated`, `@version` | route | `server` blocks only |
+| **Package (@std/model)** | `@primary`, `@auto_increment`, `@unique`, `@hidden`, `@owner` | field | `model` blocks only |
+| **Package (@std/model)** | `@table`, `@persist` | type | `model` blocks only |
+| **Package (@std/http)** | `@public`, `@auth`, `@cache`, `@deprecated`, `@version` | route | `server` blocks only |
 | **User-defined** | Via `annotation target name(args)` in custom components | any declared target | Scoped to that component |
 
-Type operators inherit **core field annotations**. Provider annotations are context-bound and don't propagate to derived plain types (a `CreateUser` derived from `User` doesn't carry `@unique` — that's a database constraint, not a shape constraint).
+Type operators inherit **core field annotations**. Package annotations are context-bound and don't propagate to derived plain types (a `CreateUser` derived from `User` doesn't carry `@unique` — that's a database constraint, not a shape constraint).
 
 ---
 

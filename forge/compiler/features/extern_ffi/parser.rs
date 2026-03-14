@@ -23,13 +23,7 @@ impl Parser {
         let params = self.parse_params()?;
         self.skip_newlines();
 
-        let return_type = if self.check(&TokenKind::Arrow) {
-            self.advance();
-            self.skip_newlines();
-            Some(self.parse_type_expr()?)
-        } else {
-            None
-        };
+        let return_type = self.parse_optional_return_type()?;
 
         Some(Statement::ExternFn {
             name,

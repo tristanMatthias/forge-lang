@@ -17,7 +17,7 @@ pub struct SyntaxPatternDef {
 }
 
 /// Declaration of an annotation that a component template supports.
-/// Parsed from `annotation <target> <name>(<params>)` in provider.fg.
+/// Parsed from `annotation <target> <name>(<params>)` in package.fg.
 #[derive(Debug, Clone)]
 pub struct AnnotationDeclMeta {
     /// Target: "field", "type", "route", "component", "function"
@@ -142,6 +142,26 @@ impl Parser {
         }
     }
 
+    /// Parse optional `<T, U: Clone>` type parameters, returning an empty Vec if none present.
+    pub(crate) fn parse_optional_type_params(&mut self) -> Option<Vec<TypeParam>> {
+        if self.check(&TokenKind::Lt) {
+            Some(self.parse_type_params()?)
+        } else {
+            Some(Vec::new())
+        }
+    }
+
+    /// Parse an optional `-> Type` return type annotation.
+    pub(crate) fn parse_optional_return_type(&mut self) -> Option<Option<TypeExpr>> {
+        if self.check(&TokenKind::Arrow) {
+            self.advance();
+            self.skip_newlines();
+            Some(Some(self.parse_type_expr()?))
+        } else {
+            Some(None)
+        }
+    }
+
     #[allow(dead_code)]
     /// Parse an optional `: Type` annotation, returning the type and its span.
     pub(crate) fn parse_optional_type_ann(&mut self) -> (Option<TypeExpr>, Option<Span>) {
@@ -181,14 +201,7 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Let {
-            name,
-            type_ann,
-            type_ann_span,
-            value,
-            exported,
-            span: start,
-        })
+        Some(Statement::Let { name, type_ann, type_ann_span, value, exported, span: start })
     }
 
     pub(crate) fn parse_let(&mut self) -> Option<Statement> {
@@ -317,7 +330,12 @@ impl Parser {
         })
     }
 
-    pub(crate) fn parse_mut_with_export(&mut self, exported: bool) -> Option<Statement> {
+    /// Shared logic for parsing `mut name: Type = value` and `const name: Type = value`.
+    fn parse_binding_with_export(
+        &mut self,
+        exported: bool,
+        make: fn(String, Option<TypeExpr>, Option<Span>, Expr, bool, Span) -> Statement,
+    ) -> Option<Statement> {
         let start = self.advance()?.span;
         self.skip_newlines();
         let name = self.expect_ident()?;
@@ -326,7 +344,13 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Mut { name, type_ann, type_ann_span, value, exported, span: start })
+        Some(make(name, type_ann, type_ann_span, value, exported, start))
+    }
+
+    pub(crate) fn parse_mut_with_export(&mut self, exported: bool) -> Option<Statement> {
+        self.parse_binding_with_export(exported, |name, type_ann, type_ann_span, value, exported, span| {
+            Statement::Mut { name, type_ann, type_ann_span, value, exported, span }
+        })
     }
 
     pub(crate) fn parse_mut(&mut self) -> Option<Statement> {
@@ -334,15 +358,9 @@ impl Parser {
     }
 
     pub(crate) fn parse_const_with_export(&mut self, exported: bool) -> Option<Statement> {
-        let start = self.advance()?.span;
-        self.skip_newlines();
-        let name = self.expect_ident()?;
-        let (type_ann, type_ann_span) = self.parse_optional_type_ann();
-        self.skip_newlines();
-        self.expect(&TokenKind::Eq)?;
-        self.skip_newlines();
-        let value = self.parse_expr()?;
-        Some(Statement::Const { name, type_ann, type_ann_span, value, exported, span: start })
+        self.parse_binding_with_export(exported, |name, type_ann, type_ann_span, value, exported, span| {
+            Statement::Const { name, type_ann, type_ann_span, value, exported, span }
+        })
     }
 
     pub(crate) fn parse_const(&mut self) -> Option<Statement> {
@@ -356,24 +374,14 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters: fn name<T, U: Clone>(...)
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_params()?;
         self.skip_newlines();
 
-        let return_type = if self.check(&TokenKind::Arrow) {
-            self.advance();
-            self.skip_newlines();
-            Some(self.parse_type_expr()?)
-        } else {
-            None
-        };
+        let return_type = self.parse_optional_return_type()?;
         self.skip_newlines();
         let body = self.parse_block()?;
 
@@ -417,11 +425,7 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters: type Pair<A, B> = ...
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         self.expect(&TokenKind::Eq)?;
@@ -533,11 +537,7 @@ impl Parser {
         let name = self.expect_ident()?;
         self.skip_newlines();
 
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         let mut super_traits = Vec::new();
@@ -573,13 +573,7 @@ impl Parser {
             let params = self.parse_params()?;
             self.skip_newlines();
 
-            let return_type = if self.check(&TokenKind::Arrow) {
-                self.advance();
-                self.skip_newlines();
-                Some(self.parse_type_expr()?)
-            } else {
-                None
-            };
+            let return_type = self.parse_optional_return_type()?;
             self.skip_newlines();
 
             let default_body = if self.check(&TokenKind::LBrace) {
@@ -617,11 +611,7 @@ impl Parser {
         let first_name = self.expect_ident()?;
         self.skip_newlines();
 
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         let (trait_name, type_name) = if self.check(&TokenKind::For) {
@@ -937,6 +927,32 @@ impl Parser {
     /// Try to parse `<TypeExpr, ...>` as call type arguments.
     /// Uses backtracking: saves position, tries to parse, restores on failure.
     /// Only succeeds if the closing `>` is immediately followed by `(`.
+    /// Parse `Ok(expr)` or `Err(expr)` into a FeatureExpr wrapper.
+    fn parse_result_wrapper(
+        &mut self,
+        kind: &'static str,
+        make_data: fn(Expr) -> Box<dyn crate::feature::FeatureNode>,
+    ) -> Option<Expr> {
+        let span = self.advance()?.span;
+        self.expect(&TokenKind::LParen)?;
+        self.skip_newlines();
+        let value = self.parse_expr()?;
+        self.skip_newlines();
+        self.expect(&TokenKind::RParen)?;
+        Some(Expr::Feature(crate::feature::FeatureExpr {
+            feature_id: "error_propagation",
+            kind,
+            data: make_data(value),
+            span,
+        }))
+    }
+
+    /// Restore parser position and diagnostics to a saved state.
+    fn restore_state(&mut self, save_pos: usize, save_diags: usize) {
+        self.pos = save_pos;
+        self.diagnostics.truncate(save_diags);
+    }
+
     fn try_parse_call_type_args(&mut self) -> Option<Vec<TypeExpr>> {
         let save = self.pos;
         let save_diags = self.diagnostics.len();
@@ -955,8 +971,7 @@ impl Parser {
             if let Some(ty) = self.parse_type_expr() {
                 type_args.push(ty);
             } else {
-                self.pos = save;
-                self.diagnostics.truncate(save_diags);
+                self.restore_state(save, save_diags);
                 return None;
             }
             self.skip_newlines();
@@ -965,21 +980,18 @@ impl Parser {
             }
         }
         if !self.check(&TokenKind::Gt) {
-            self.pos = save;
-            self.diagnostics.truncate(save_diags);
+            self.restore_state(save, save_diags);
             return None;
         }
         self.advance();
 
         if !self.check(&TokenKind::LParen) {
-            self.pos = save;
-            self.diagnostics.truncate(save_diags);
+            self.restore_state(save, save_diags);
             return None;
         }
 
         if type_args.is_empty() {
-            self.pos = save;
-            self.diagnostics.truncate(save_diags);
+            self.restore_state(save, save_diags);
             return None;
         }
 
@@ -1063,38 +1075,16 @@ impl Parser {
                 self.advance();
                 Some(Expr::NullLit(tok.span))
             }
-            TokenKind::Ok_ => {
-                let span = self.advance()?.span;
-                self.expect(&TokenKind::LParen)?;
-                self.skip_newlines();
-                let value = self.parse_expr()?;
-                self.skip_newlines();
-                self.expect(&TokenKind::RParen)?;
-                Some(Expr::Feature(crate::feature::FeatureExpr {
-                    feature_id: "error_propagation",
-                    kind: "OkExpr",
-                    data: Box::new(crate::features::error_propagation::types::OkExprData {
-                        value: Box::new(value),
-                    }),
-                    span,
-                }))
-            }
-            TokenKind::Err_ => {
-                let span = self.advance()?.span;
-                self.expect(&TokenKind::LParen)?;
-                self.skip_newlines();
-                let value = self.parse_expr()?;
-                self.skip_newlines();
-                self.expect(&TokenKind::RParen)?;
-                Some(Expr::Feature(crate::feature::FeatureExpr {
-                    feature_id: "error_propagation",
-                    kind: "ErrExpr",
-                    data: Box::new(crate::features::error_propagation::types::ErrExprData {
-                        value: Box::new(value),
-                    }),
-                    span,
-                }))
-            }
+            TokenKind::Ok_ => self.parse_result_wrapper("OkExpr", |v| {
+                Box::new(crate::features::error_propagation::types::OkExprData {
+                    value: Box::new(v),
+                })
+            }),
+            TokenKind::Err_ => self.parse_result_wrapper("ErrExpr", |v| {
+                Box::new(crate::features::error_propagation::types::ErrExprData {
+                    value: Box::new(v),
+                })
+            }),
             TokenKind::DollarString(parts) => {
                 let parts = parts.clone();
                 let span = tok.span;

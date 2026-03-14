@@ -131,7 +131,7 @@ fn type_ann_to_str(te: &TypeExpr) -> &str {
 }
 
 // ---- Schema JSON builder ----
-// Serializes schema fields to JSON for the native provider library to generate SQL.
+// Serializes schema fields to JSON for the native package library to generate SQL.
 // This is generic data serialization — no SQL type mapping knowledge here.
 
 fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[Annotation]) -> String {
@@ -327,6 +327,7 @@ fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionC
     })
 }
 
+
 fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
     match te {
         TypeExpr::Named(name) => {
@@ -335,22 +336,13 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
             }
             if name == "__tpl_schema" {
                 return TypeExpr::Struct {
-                    fields: ctx
-                        .schema
-                        .iter()
-                        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
-                        .collect(),
+                    fields: map_schema_fields(&ctx.schema, false),
                 };
             }
             // Schema excluding @hidden fields — used for response types
             if name == "__tpl_schema_visible" {
                 return TypeExpr::Struct {
-                    fields: ctx
-                        .schema
-                        .iter()
-                        .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
-                        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
-                        .collect(),
+                    fields: map_schema_fields(&ctx.schema, true),
                 };
             }
             if name == "__tpl_model_ref" {
@@ -470,6 +462,39 @@ fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
 /// Delegates to each feature data type's `substitute_exprs` implementation.
 fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionContext) -> Statement {
     let new_data = with_sub_fns(ctx, |fns| fe.data.substitute_exprs(fns));
+    reconstruct_feature_stmt(fe, new_data)
+}
+
+// ---- Schema field mapping helper ----
+
+/// Map schema fields to struct-style (name, type, annotations) tuples,
+/// optionally filtering out fields annotated with @hidden.
+fn map_schema_fields(
+    schema: &[ComponentSchemaField],
+    visible_only: bool,
+) -> Vec<(String, TypeExpr, Vec<Annotation>)> {
+    schema
+        .iter()
+        .filter(|f| !visible_only || !f.annotations.iter().any(|a| a.name == "hidden"))
+        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
+        .collect()
+}
+
+// ---- Component method naming helper ----
+
+/// Build the scoped method name `{component_name}_{method}` used throughout expansion.
+fn component_method_name(component_name: &str, method: &str) -> String {
+    format!("{}_{}", component_name, method)
+}
+
+// ---- Feature statement reconstruction helper ----
+
+/// Build a `Statement::Feature(FeatureStmt { ... })` from an existing FeatureStmt
+/// and new data. Preserves feature_id, kind, and span from the original.
+fn reconstruct_feature_stmt(
+    fe: &crate::feature::FeatureStmt,
+    new_data: Box<dyn crate::feature::FeatureNode>,
+) -> Statement {
     Statement::Feature(crate::feature::FeatureStmt {
         feature_id: fe.feature_id,
         kind: fe.kind,
@@ -568,7 +593,6 @@ fn substitute_syntax_args_feature_stmt(
     args: &std::collections::HashMap<String, Expr>,
     service_infos: &[ServiceInfo],
 ) -> Statement {
-    use crate::feature::FeatureStmt;
     use crate::feature_data;
 
     match (fe.feature_id, fe.kind) {
@@ -591,12 +615,7 @@ fn substitute_syntax_args_feature_stmt(
                     value: substitute_syntax_args_expr(&data.value, args, service_infos),
                     exported: data.exported,
                 };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
+                reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
                 Statement::Feature(fe.clone())
             }
@@ -617,12 +636,7 @@ fn substitute_syntax_args_feature_stmt(
                     },
                     exported: data.exported,
                 };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
+                reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
                 Statement::Feature(fe.clone())
             }
@@ -633,12 +647,7 @@ fn substitute_syntax_args_feature_stmt(
                 let new_data = ReturnData {
                     value: data.value.as_ref().map(|v| substitute_syntax_args_expr(v, args, service_infos)),
                 };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
+                reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
                 Statement::Feature(fe.clone())
             }
@@ -689,7 +698,6 @@ fn replace_tpl_generated(stmt: &Statement, generated_name: &str) -> Statement {
 
 /// Handle Feature variant in replace_tpl_generated
 fn replace_tpl_generated_feature_stmt(fe: &crate::feature::FeatureStmt, generated_name: &str) -> Statement {
-    use crate::feature::FeatureStmt;
     use crate::feature_data;
 
     match (fe.feature_id, fe.kind) {
@@ -714,12 +722,7 @@ fn replace_tpl_generated_feature_stmt(fe: &crate::feature::FeatureStmt, generate
                     },
                     exported: data.exported,
                 };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
+                reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
                 Statement::Feature(fe.clone())
             }
@@ -735,12 +738,7 @@ fn replace_tpl_generated_feature_stmt(fe: &crate::feature::FeatureStmt, generate
                     value: replace_tpl_generated_expr(&data.value, generated_name),
                     exported: data.exported,
                 };
-                Statement::Feature(FeatureStmt {
-                    feature_id: fe.feature_id,
-                    kind: fe.kind,
-                    data: Box::new(new_data),
-                    span: fe.span,
-                })
+                reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
                 Statement::Feature(fe.clone())
             }
@@ -961,7 +959,7 @@ fn substitute_fn_template(
     ctx: &SubstitutionContext,
 ) -> Statement {
     if let Statement::FnDecl { params, return_type, body, span, .. } = decl {
-        let fn_name = format!("{}_{}", ctx.name, method_name);
+        let fn_name = component_method_name(&ctx.name, method_name);
         Statement::FnDecl {
             name: fn_name,
             type_params: Vec::new(),
@@ -976,11 +974,18 @@ fn substitute_fn_template(
     }
 }
 
+/// Find the name of the first parameter whose type annotation matches `type_name`.
+fn find_first_param_by_type<'a>(params: &'a [Param], type_name: &str) -> Option<&'a str> {
+    params.iter()
+        .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == type_name))
+        .map(|p| p.name.as_str())
+}
+
 /// Inject before/after hooks into a template-generated component function.
 /// Prepends before hook body and appends after hook body around the original function body.
 /// Works with any component template that declares events (model, service, etc.).
 ///
-/// Hook param binding conventions (all generic, zero provider knowledge):
+/// Hook param binding conventions (all generic, zero package knowledge):
 /// - Before hooks with `__raw_` prefix: model `on` syntax, bind param via `json.parse(first_string_param)` as component type
 /// - Before hooks without prefix, param not in fn scope, model_ref set: service hook,
 ///   bind param via `json.parse(first_string_param)` as the wrapped component's type
@@ -1006,28 +1011,22 @@ fn build_component_hooked_fn(
             if !hook.param_name.starts_with("__raw_") && !in_fn_scope {
                 if let Some(model_ref) = &ctx.model_ref {
                     // Service hook: bind param to parsed struct from first string param
-                    let first_string_param = params.iter()
-                        .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == "string"))
-                        .map(|p| p.name.clone());
-                    if let Some(str_param) = first_string_param {
+                    if let Some(str_param) = find_first_param_by_type(params, "string") {
                         new_stmts.push(let_typed(
                             &hook.param_name,
                             named_type(model_ref),
-                            method_call("json", "parse", vec![ident(&str_param)]),
+                            method_call("json", "parse", vec![ident(str_param)]),
                         ));
                     }
                 }
             } else if hook.param_name.starts_with("__raw_") {
                 // Model hook: bind original param name to json.parse(first_string_param)
                 // typed as the component's type so the user can access fields like data.title
-                let first_string_param = params.iter()
-                    .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == "string"))
-                    .map(|p| p.name.clone());
-                if let Some(str_param) = first_string_param {
+                if let Some(str_param) = find_first_param_by_type(params, "string") {
                     new_stmts.push(let_typed(
                         &original_name,
                         named_type(&ctx.name),
-                        method_call("json", "parse", vec![ident(&str_param)]),
+                        method_call("json", "parse", vec![ident(str_param)]),
                     ));
                 }
             }
@@ -1190,18 +1189,20 @@ fn extract_hooks_and_methods(
         map.insert(operation, HookInfo { param_name, body: body.clone() });
     }
 
+    // Hook prefix → target map: (prefix, is_before)
+    const HOOK_PREFIXES: &[(&str, bool)] = &[
+        ("__hook_before_", true),
+        ("__hook_after_",  false),
+        ("on_before_",     true),
+        ("on_after_",      false),
+    ];
+
     for stmt in blocks {
         if let Statement::FnDecl { name, params, body, .. } = stmt {
-            if name.starts_with("__hook_before_") {
-                insert_hook(&mut before_hooks, name, "__hook_before_", params, body);
-            } else if name.starts_with("__hook_after_") {
-                insert_hook(&mut after_hooks, name, "__hook_after_", params, body);
-            } else if name.starts_with("on_before_") {
-                // on before_create(data) { ... } syntax
-                insert_hook(&mut before_hooks, name, "on_before_", params, body);
-            } else if name.starts_with("on_after_") {
-                // on after_create(record) { ... } syntax
-                insert_hook(&mut after_hooks, name, "on_after_", params, body);
+            let matched = HOOK_PREFIXES.iter().find(|(prefix, _)| name.starts_with(prefix));
+            if let Some((prefix, is_before)) = matched {
+                let target = if *is_before { &mut before_hooks } else { &mut after_hooks };
+                insert_hook(target, name, prefix, params, body);
             } else {
                 custom_methods.push(stmt.clone());
             }
@@ -1223,7 +1224,7 @@ fn expand_custom_methods(
 
     for method_stmt in custom_methods {
         if let Statement::FnDecl { name, params, return_type, body, .. } = method_stmt {
-            let new_name = format!("{}_{}", ctx.name, name);
+            let new_name = component_method_name(&ctx.name, name);
 
             // Rewrite params typed as the model to `int`
             let new_params: Vec<Param> = params
@@ -1276,7 +1277,7 @@ fn expand_simple_methods(
 ) {
     for stmt in methods {
         if let Statement::FnDecl { name, params, return_type, body, .. } = stmt {
-            let fn_name = format!("{}_{}", ctx.name, name);
+            let fn_name = component_method_name(&ctx.name, name);
             result.statements.push(Statement::FnDecl {
                 name: fn_name,
                 type_params: Vec::new(),
@@ -1295,7 +1296,7 @@ fn expand_simple_methods(
 pub struct ComponentExpander;
 
 impl ComponentExpander {
-    /// Expand a component block using a provider template definition.
+    /// Expand a component block using a package template definition.
     pub fn expand_from_template(
         template: &ComponentTemplateDef,
         decl: &ComponentBlockDecl,
@@ -1379,16 +1380,7 @@ impl ComponentExpander {
         for item in &template.body {
             match item {
                 ComponentTemplateItem::TypeFromSchema { visible_only } => {
-                    let fields: Vec<_> = if *visible_only {
-                        ctx.schema.iter()
-                            .filter(|f| !f.annotations.iter().any(|a| a.name == "hidden"))
-                            .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
-                            .collect()
-                    } else {
-                        ctx.schema.iter()
-                            .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
-                            .collect()
-                    };
+                    let fields = map_schema_fields(&ctx.schema, *visible_only);
                     result.type_decl = Some(Statement::TypeDecl {
                         name: ctx.name.clone(),
                         type_params: Vec::new(),
@@ -1408,7 +1400,7 @@ impl ComponentExpander {
                     }
                 }
                 ComponentTemplateItem::FnTemplate { method_name, decl: fn_decl_stmt } => {
-                    let fn_name = format!("{}_{}", ctx.name, method_name);
+                    let fn_name = component_method_name(&ctx.name, method_name);
 
                     if template.has_model_ref {
                         // Service template: check for hooks
@@ -1481,7 +1473,7 @@ impl ComponentExpander {
                     });
                     if !user_has_handler {
                         // Generate a no-op stub function
-                        let stub_name = format!("{}_{}", ctx.name, event_name);
+                        let stub_name = component_method_name(&ctx.name, event_name);
                         let stub_params: Vec<Param> = event_params.iter().map(|p| {
                             substitute_param(p, &ctx)
                         }).collect();

@@ -12,24 +12,14 @@ impl Parser {
         self.skip_newlines();
 
         // Parse optional type parameters: fn name<T, U: Clone>(...)
-        let type_params = if self.check(&TokenKind::Lt) {
-            self.parse_type_params()?
-        } else {
-            Vec::new()
-        };
+        let type_params = self.parse_optional_type_params()?;
         self.skip_newlines();
 
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_params()?;
         self.skip_newlines();
 
-        let return_type = if self.check(&TokenKind::Arrow) {
-            self.advance();
-            self.skip_newlines();
-            Some(self.parse_type_expr()?)
-        } else {
-            None
-        };
+        let return_type = self.parse_optional_return_type()?;
         self.skip_newlines();
         let body = self.parse_block()?;
 

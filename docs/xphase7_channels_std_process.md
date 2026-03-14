@@ -1,6 +1,6 @@
 # Forge — @std/channel + @std/process (TDD)
 
-Two providers that work together. Channels are the connective tissue. Processes are one of many things that plug into them.
+Two packages that work together. Channels are the connective tissue. Processes are one of many things that plug into them.
 
 ---
 
@@ -1039,12 +1039,12 @@ fn main() {
 
 ---
 
-# Provider Definitions
+# Package Definitions
 
-## @std/channel — provider.toml
+## @std/channel — package.toml
 
 ```toml
-[provider]
+[package]
 name = "channel"
 namespace = "std"
 version = "0.1.0"
@@ -1054,7 +1054,7 @@ description = "Typed channels for concurrent communication"
 library = "forge_channel"
 ```
 
-## @std/channel — provider.fg
+## @std/channel — package.fg
 
 ```forge
 extern fn forge_channel_create(capacity: int) -> int
@@ -1188,10 +1188,10 @@ export fn tick(interval: duration) -> Channel<void> {
 }
 ```
 
-## @std/process — provider.toml
+## @std/process — package.toml
 
 ```toml
-[provider]
+[package]
 name = "process"
 namespace = "std"
 version = "0.1.0"
@@ -1206,7 +1206,7 @@ context = "top_level"
 body = "mixed"
 ```
 
-## @std/process — provider.fg
+## @std/process — package.fg
 
 ```forge
 extern fn forge_process_run(cmd: string, args_json: string, opts_json: string) -> string
@@ -1346,7 +1346,7 @@ component managed(name: string) {
 
 # What needs to be built
 
-| Feature | Provider | Implementation |
+| Feature | Package | Implementation |
 |---|---|---|
 | `channel<T>()` constructor | @std/channel | Typed wrapper around crossbeam channel |
 | `<-` send operator | compiler | New operator, desugars to `.send()` |

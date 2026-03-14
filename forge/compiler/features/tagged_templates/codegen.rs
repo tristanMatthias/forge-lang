@@ -23,7 +23,7 @@ impl<'ctx> Codegen<'ctx> {
     /// `{"parts":["literal1","literal2",...],"values":["val1","val2",...]}`
     ///
     /// Then calls the tag function with this JSON string as the sole argument.
-    /// The tag function can be an extern fn from a provider or a user-defined function.
+    /// The tag function can be an extern fn from a package or a user-defined function.
     pub(crate) fn compile_tagged_template(
         &mut self,
         tag: &str,
@@ -160,7 +160,7 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        // 3. Not found anywhere — declare as extern fn (late binding for providers)
+        // 3. Not found anywhere — declare as extern fn (late binding for packages)
         let fn_type = ptr_type.fn_type(&[ptr_type.into()], false);
         let func = self.module.add_function(tag, fn_type, None);
         self.call_extern_tag(func, json)
