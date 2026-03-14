@@ -1,0 +1,43 @@
+/// # Advanced Shell Pipeline
+///
+/// Combining shell execution with error handling,
+/// string processing, and collection operations
+/// for a multi-step data pipeline.
+///
+/// expect: === Shell Pipeline ===
+/// expect: system: darwin
+/// expect: HELLO FORGE LANG
+/// expect: lines: line-1 line-2 line-3
+/// expect: done
+
+use @std.process
+
+fn safe_exec(cmd: string) -> Result<string, string> {
+  let output = $"${cmd}"
+  if output.trim().length() == 0 {
+    Err("empty output")
+  } else {
+    Ok(output.trim())
+  }
+}
+
+fn main() {
+  println("=== Shell Pipeline ===")
+
+  // Shell + error handling via Result + catch
+  let os = safe_exec("uname") catch (e) { "unknown" }
+  println("system: " + os.lower())
+
+  // Shell + interpolation + string method chaining
+  let phrase = "hello forge lang"
+  let upper = $"echo ${phrase}"
+  println(upper.trim().upper())
+
+  // Shell + collection building from split output
+  let raw = $"echo 'line-1 line-2 line-3'"
+  let parts = raw.trim().split(" ")
+  let joined = parts.join(" ")
+  println("lines: " + joined)
+
+  println("done")
+}
