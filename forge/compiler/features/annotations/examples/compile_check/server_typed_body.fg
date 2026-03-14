@@ -1,0 +1,16 @@
+/// expect-check: pass
+/// Verifies typed request body handler params compile correctly
+/// The __tpl_handler_param_0 mechanism wraps typed params with json.parse()
+
+use @std.http.{server}
+
+type CreatePost = {
+    title: string,
+    body: string
+}
+
+server :3000 {
+    route POST /posts -> (data: CreatePost) {
+        data.title
+    }
+}

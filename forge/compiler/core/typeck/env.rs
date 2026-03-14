@@ -112,6 +112,13 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
+        env.functions.insert(
+            "process_uptime".to_string(),
+            Type::Function {
+                params: vec![],
+                return_type: Box::new(Type::Int),
+            },
+        );
         // Runtime helper functions used by component template expansion
         env.functions.insert(
             "forge_string_new".to_string(),

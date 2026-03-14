@@ -1,0 +1,13 @@
+/// expect: true
+/// expect: true
+type Base = {
+    name: string @min(1),
+}
+type Extended = Base with { age: int @min(0) }
+
+fn main() {
+    let r1 = validate({ name: "", age: 5 }, Extended)
+    println(r1 is Err)
+    let r2 = validate({ name: "alice", age: -1 }, Extended)
+    println(r2 is Err)
+}

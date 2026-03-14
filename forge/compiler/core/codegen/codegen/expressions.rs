@@ -638,6 +638,7 @@ impl<'ctx> Codegen<'ctx> {
                 "assert" => return self.compile_assert(args),
                 "sleep" => return self.compile_sleep(args),
                 "datetime_now" => return self.compile_datetime_now(),
+                "process_uptime" => return self.compile_process_uptime(),
                 "datetime_format" => return self.compile_datetime_format(args),
                 "datetime_parse" => return self.compile_datetime_parse(args),
                 "validate" => return self.compile_validate(args),

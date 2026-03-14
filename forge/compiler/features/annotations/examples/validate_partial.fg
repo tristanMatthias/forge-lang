@@ -1,0 +1,14 @@
+/// expect: true
+/// expect: true
+type User = {
+    name: string @min(1),
+    email: string,
+}
+type UserUpdate = User as partial
+
+fn main() {
+    let r1 = validate({ name: "alice" }, UserUpdate)
+    println(r1 is Ok)
+    let r2 = validate({ name: "" }, UserUpdate)
+    println(r2 is Err)
+}

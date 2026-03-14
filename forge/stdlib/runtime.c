@@ -912,6 +912,21 @@ long long forge_datetime_parse(const char* str, long long str_len) {
     return (long long)mktime(&tm_info) * 1000LL;
 }
 
+// ---- Process uptime ----
+
+static struct timeval _forge_start_time;
+__attribute__((constructor)) void _forge_init_start_time() {
+    gettimeofday(&_forge_start_time, NULL);
+}
+
+long long forge_process_uptime() {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    long long start_ms = (long long)_forge_start_time.tv_sec * 1000LL + _forge_start_time.tv_usec / 1000LL;
+    long long now_ms = (long long)now.tv_sec * 1000LL + now.tv_usec / 1000LL;
+    return now_ms - start_ms;
+}
+
 // ---- Validation helpers ----
 
 // Check if string is a valid email (basic check: contains @ and .)

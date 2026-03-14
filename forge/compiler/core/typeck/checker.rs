@@ -481,7 +481,7 @@ impl TypeChecker {
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
                             if args.len() != params.len()
-                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse")
+                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime")
                             {
                                 let sig = self.format_fn_signature(fn_name, params);
                                 let example = self.format_fn_example(fn_name, params);
@@ -554,7 +554,7 @@ impl TypeChecker {
                             match name.as_str() {
                                 "println" | "print" => Type::Void,
                                 "string" => Type::String,
-                                "datetime_now" | "datetime_parse" => Type::Int,
+                                "datetime_now" | "datetime_parse" | "process_uptime" => Type::Int,
                                 "datetime_format" => Type::String,
                                 _ => Type::Unknown,
                             }
@@ -994,15 +994,22 @@ impl TypeChecker {
                             continue;
                         }
 
-                        // ── Unknown annotation ──
+                        // ── Unknown annotation (F0072) ──
                         let entry = CORE_ANNOTATIONS.iter().find(|(name, _)| *name == ann_name);
                         if entry.is_none() {
-                            self.diagnostics.push(Diagnostic::error(
+                            let core_names: Vec<&str> = CORE_ANNOTATIONS.iter().map(|(n, _)| *n).collect();
+                            let available = core_names.iter().map(|n| format!("@{}", n)).collect::<Vec<_>>().join(", ");
+                            let mut diag = Diagnostic::error(
                                 "F0072",
-                                format!("unknown annotation @{} on field '{}'. available: @min, @max, @validate, @default, @transform, @pattern",
-                                    ann_name, field_name),
+                                format!("@{} is not a valid field annotation", ann_name),
                                 ann.span,
-                            ));
+                            );
+                            if let Some(suggestion) = crate::errors::suggestions::did_you_mean(ann_name, &core_names, 2) {
+                                diag = diag.with_help(format!("did you mean @{}?", suggestion));
+                            } else {
+                                diag = diag.with_help(format!("available annotations: {}", available));
+                            }
+                            self.diagnostics.push(diag);
                             continue;
                         }
                         let (_, allowed_types) = entry.unwrap();

@@ -1,0 +1,12 @@
+/// expect: true
+type User = {
+    name: string @min(1),
+    email: string,
+    password: string,
+}
+type CreateUser = User without { password }
+
+fn main() {
+    let result = validate({ name: "", email: "test@test.com" }, CreateUser)
+    println(result is Err)
+}

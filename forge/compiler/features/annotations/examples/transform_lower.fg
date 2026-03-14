@@ -1,0 +1,11 @@
+/// expect: alice
+
+type Input = { name: string @transform(it.lower()) }
+
+fn main() {
+    let result = validate({ name: "ALICE" }, Input)
+    match result {
+        Ok(v) -> println(v.name)
+        Err(_) -> println("error")
+    }
+}

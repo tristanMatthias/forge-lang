@@ -1,0 +1,5 @@
+/// expect: true
+fn main() {
+    let uptime = process_uptime()
+    println(uptime >= 0)
+}

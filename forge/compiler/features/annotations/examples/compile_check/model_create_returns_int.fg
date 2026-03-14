@@ -1,0 +1,17 @@
+/// Test: Model.create() returns int (the record ID)
+/// Currently returns 0 on validation failure, not a Result type
+///
+/// expect-check: pass
+
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string @min(1)
+    email: string
+}
+
+fn main() {
+    let id: int = User.create({ name: "Alice", email: "alice@example.com" })
+    println(string(id))
+}

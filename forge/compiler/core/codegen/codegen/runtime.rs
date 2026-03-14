@@ -160,6 +160,10 @@ impl<'ctx> Codegen<'ctx> {
         let fn_type = i64_type.fn_type(&[], false);
         self.module.add_function("forge_datetime_now", fn_type, None);
 
+        // forge_process_uptime() -> i64
+        let fn_type = i64_type.fn_type(&[], false);
+        self.module.add_function("forge_process_uptime", fn_type, None);
+
         // forge_datetime_format(i64) -> ForgeString
         let fn_type = string_type.fn_type(&[i64_type.into()], false);
         self.module.add_function("forge_datetime_format", fn_type, None);

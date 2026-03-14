@@ -1,0 +1,8 @@
+/// Test: unknown annotation on field emits F0072
+/// expect-error: F0072
+
+type Bad = {
+    name: string @required,
+}
+
+fn main() {}

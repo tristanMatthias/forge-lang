@@ -1,0 +1,12 @@
+/// expect: true
+type User = {
+    id: int,
+    name: string @min(1),
+    email: string,
+}
+type NameOnly = User only { name }
+
+fn main() {
+    let result = validate({ name: "" }, NameOnly)
+    println(result is Err)
+}

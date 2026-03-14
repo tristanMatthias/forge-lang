@@ -1,0 +1,8 @@
+/// expect: alice
+/// expect: 30
+fn main() {
+    let name = "alice"
+    let obj = { name, age: 30 }
+    println(obj.name)
+    println(obj.age)
+}

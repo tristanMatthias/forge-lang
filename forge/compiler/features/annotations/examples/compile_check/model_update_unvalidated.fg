@@ -1,0 +1,17 @@
+/// Test: update_unvalidated method type-checks correctly
+/// It returns the model type, same as update(), but skips validation
+///
+/// expect-check: pass
+
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string @min(1)
+}
+
+fn main() {
+    let id = User.create({ name: "Alice" })
+    let updated: User = User.update_unvalidated(id, { name: "" })
+    println(updated.name)
+}

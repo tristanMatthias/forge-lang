@@ -1,0 +1,18 @@
+/// expect-check: pass
+/// Verifies error handler syntax compiles
+
+use @std.http.{server}
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string
+}
+
+server :3000 {
+    not_found "{\"error\":\"not found\"}"
+    error_page 500 "{\"error\":\"internal\"}"
+    route GET /health -> { "ok" }
+}
+
+fn main() { println("error handler compiles") }

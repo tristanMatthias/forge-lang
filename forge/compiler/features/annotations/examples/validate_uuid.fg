@@ -1,0 +1,13 @@
+/// Test: @validate(uuid) rejects invalid UUID and accepts valid
+/// expect: true
+/// expect: true
+
+type UuidInput = { id: string @validate(uuid) }
+
+fn main() {
+  let bad = validate({ id: "not-a-uuid" }, UuidInput)
+  println(bad is Err)
+
+  let good = validate({ id: "550e8400-e29b-41d4-a716-446655440000" }, UuidInput)
+  println(good is Ok)
+}

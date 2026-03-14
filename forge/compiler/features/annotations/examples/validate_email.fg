@@ -1,0 +1,9 @@
+/// Test: @validate(email) rejects invalid email
+/// expect: true
+
+type Input = { email: string @validate(email) }
+
+fn main() {
+  let result = validate({ email: "not-an-email" }, Input)
+  println(result is Err)
+}

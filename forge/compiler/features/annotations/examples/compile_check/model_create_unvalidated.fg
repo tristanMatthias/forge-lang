@@ -1,0 +1,16 @@
+/// Test: create_unvalidated method type-checks correctly
+/// It returns int, same as create(), but skips validation
+///
+/// expect-check: pass
+
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string @min(1)
+}
+
+fn main() {
+    let id = User.create_unvalidated({ name: "" })
+    println(string(id))
+}

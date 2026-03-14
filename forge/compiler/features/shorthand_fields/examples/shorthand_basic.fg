@@ -1,0 +1,6 @@
+/// expect: alice
+fn main() {
+    let name = "alice"
+    let obj = { name }
+    println(obj.name)
+}

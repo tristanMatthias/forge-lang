@@ -1,0 +1,11 @@
+/// expect: true
+
+type Input = {
+    name: string @transform(it.trim()) @min(1)
+}
+
+fn main() {
+    // After trim, "  " becomes "" which fails @min(1)
+    let result = validate({ name: "  " }, Input)
+    println(result is Err)
+}

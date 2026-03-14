@@ -1,0 +1,19 @@
+/// expect-check: pass
+/// Verifies model JSON-based query API: where, count_where, find_by, exists, delete_where
+
+use @std.model.{model}
+
+model Post {
+    id: int @primary @auto_increment
+    title: string
+    status: string @default("draft")
+}
+
+fn main() {
+    let posts = Post.where("{\"status\":\"published\"}")
+    let count = Post.count_where("{\"status\":\"draft\"}")
+    let found = Post.find_by("{\"title\":\"hello\"}")
+    let has_draft = Post.exists("{\"status\":\"draft\"}")
+    let deleted = Post.delete_where("{\"status\":\"archived\"}")
+    println("json queries work")
+}

@@ -1,0 +1,13 @@
+/// Test: @validate(url) rejects invalid URL and accepts valid
+/// expect: true
+/// expect: true
+
+type UrlInput = { link: string @validate(url) }
+
+fn main() {
+  let bad = validate({ link: "not-a-url" }, UrlInput)
+  println(bad is Err)
+
+  let good = validate({ link: "https://example.com" }, UrlInput)
+  println(good is Ok)
+}

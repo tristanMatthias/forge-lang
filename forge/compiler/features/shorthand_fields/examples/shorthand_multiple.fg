@@ -1,0 +1,9 @@
+/// expect: hello
+/// expect: world
+fn main() {
+    let a = "hello"
+    let b = "world"
+    let obj = { a, b }
+    println(obj.a)
+    println(obj.b)
+}

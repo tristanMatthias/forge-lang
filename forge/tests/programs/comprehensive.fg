@@ -628,5 +628,14 @@ fn main() {
     let port_good = validate({ port: 8080 }, PortConfig)
     println(string(port_good is Ok))
 
+    // ---- 32. Shorthand Fields ----
+    println("--- 32. Shorthand Fields ---")
+    let sf_name = "alice"
+    let sf_age = 30
+    let sf_obj = { sf_name, sf_age, city: "NYC" }
+    println(sf_obj.sf_name)
+    println(sf_obj.sf_age)
+    println(sf_obj.city)
+
     println("--- ALL TESTS PASSED ---")
 }

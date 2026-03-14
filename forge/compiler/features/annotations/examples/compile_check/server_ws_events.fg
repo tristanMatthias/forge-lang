@@ -1,0 +1,11 @@
+/// expect-check: pass
+/// Verifies websocket with handler compiles
+
+use @std.http.{server}
+
+server :3000 {
+    ws "/chat" -> (client) { "connected" }
+    route GET /health -> { "ok" }
+}
+
+fn main() { println("ws events compile") }

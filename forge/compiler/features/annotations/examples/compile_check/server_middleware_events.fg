@@ -1,0 +1,18 @@
+/// expect-check: pass
+/// Verifies middleware with multiple before/after handlers compiles
+
+use @std.http.{server}
+use @std.model.{model}
+
+model User {
+    id: int @primary @auto_increment
+    name: string
+}
+
+server :3000 {
+    use_middleware "logger" (req_ptr) -> { 0 }
+    use_middleware_after "timer" (req_ptr) -> { 0 }
+    route GET /health -> { "ok" }
+}
+
+fn main() { println("middleware events compile") }
