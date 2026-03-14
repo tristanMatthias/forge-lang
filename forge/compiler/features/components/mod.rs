@@ -29,6 +29,7 @@ This architecture separates concerns cleanly: providers implement behavior in na
 templates describe how to expose that behavior to Forge users, and the compiler handles the \
 mechanical work of template expansion. Adding a new domain (database, message queue, GPU compute) \
 requires only a new provider, never a compiler change.",
+    grammar: "<component>   ::= \"component\" <ident> \"(\" <args> \")\" <block>",
 }
 
 pub mod parser;

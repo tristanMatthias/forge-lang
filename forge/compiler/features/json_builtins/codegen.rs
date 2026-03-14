@@ -1,4 +1,4 @@
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, IntValue, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::types::BasicTypeEnum;
 use inkwell::AddressSpace;
 use inkwell::IntPredicate;
@@ -391,37 +391,10 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_global_string_ptr("{", "open")
             .unwrap();
-        let remaining = self
-            .builder
-            .build_int_sub(buf_size, offset, "rem")
-            .unwrap();
-        let buf_offset = unsafe {
-            self.builder
-                .build_gep(i8_type, buf, &[offset], "buf_off")
-                .unwrap()
-        };
-        let wrote = self
-            .builder
-            .build_call(
-                snprintf,
-                &[
-                    buf_offset.into(),
-                    remaining.into(),
-                    fmt_s.as_pointer_value().into(),
-                    open_brace.as_pointer_value().into(),
-                ],
-                "wrote",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_int_value();
-        let wrote_i64 = self
-            .builder
-            .build_int_z_extend(wrote, i64_type, "w64")
-            .unwrap();
-        offset = self.builder.build_int_add(offset, wrote_i64, "off").unwrap();
+        offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+            fmt_s.as_pointer_value().into(),
+            open_brace.as_pointer_value().into(),
+        ]);
 
         for (i, (field_name, field_type)) in fields.iter().enumerate() {
             let comma = if i > 0 { "," } else { "" };
@@ -437,48 +410,11 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_str.as_pointer_value().into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_str.as_pointer_value().into(),
+                    ]);
 
                     // Write the string value using forge_write_cstring
-                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
                     // Extract ptr and len from ForgeString
                     let str_struct = field_val.into_struct_value();
                     let str_ptr = self.builder
@@ -487,52 +423,17 @@ impl<'ctx> Codegen<'ctx> {
                     let str_len = self.builder
                         .build_extract_value(str_struct, 1, "str_len")
                         .unwrap();
-                    self.builder
-                        .build_call(
-                            write_fn,
-                            &[buf_off.into(), remaining.into(), str_ptr.into(), str_len.into()],
-                            "",
-                        )
-                        .unwrap();
-                    // Advance offset by the string length
-                    offset = self.builder.build_int_add(offset, str_len.into_int_value(), "off").unwrap();
+                    offset = self.write_cstring_advance(buf, buf_size, offset, str_ptr, str_len.into_int_value());
 
                     // Write closing quote
                     let close_q = self
                         .builder
                         .build_global_string_ptr("\"", "close_q")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_s.as_pointer_value().into(),
-                                close_q.as_pointer_value().into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_s.as_pointer_value().into(),
+                        close_q.as_pointer_value().into(),
+                    ]);
                 }
                 Type::Int => {
                     let fmt = format!("{}\"{}\":%lld", comma, field_name);
@@ -540,37 +441,10 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_str.as_pointer_value().into(),
-                                field_val.into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_str.as_pointer_value().into(),
+                        field_val.into(),
+                    ]);
                 }
                 Type::Bool => {
                     // Bools are i8, write as true/false (proper JSON)
@@ -601,37 +475,10 @@ impl<'ctx> Codegen<'ctx> {
                             "bool_str",
                         )
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_s.as_pointer_value().into(),
-                                selected.into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_s.as_pointer_value().into(),
+                        selected.into(),
+                    ]);
                 }
                 Type::Float => {
                     let fmt = format!("{}\"{}\":%f", comma, field_name);
@@ -639,37 +486,10 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_str.as_pointer_value().into(),
-                                field_val.into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_str.as_pointer_value().into(),
+                        field_val.into(),
+                    ]);
                 }
                 Type::List(inner) if matches!(inner.as_ref(), Type::String) => {
                     // List<String> field → call forge_list_to_json(data, count) → write result
@@ -681,37 +501,10 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&key_fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_s.as_pointer_value().into(),
-                                key_str.as_pointer_value().into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_s.as_pointer_value().into(),
+                        key_str.as_pointer_value().into(),
+                    ]);
 
                     // Extract list data_ptr and count from the struct field
                     let list_struct = field_val.into_struct_value();
@@ -749,24 +542,7 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap();
 
                     // Write the JSON array string into the buffer
-                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    self.builder
-                        .build_call(
-                            write_fn,
-                            &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
-                            "",
-                        )
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                    offset = self.write_cstring_advance(buf, buf_size, offset, json_ptr, json_len.into_int_value());
                 }
                 Type::List(inner) if matches!(inner.as_ref(), Type::Int) => {
                     // List<Int> field → call forge_list_int_to_json(data, count)
@@ -778,37 +554,10 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&key_fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_s.as_pointer_value().into(),
-                                key_str.as_pointer_value().into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_s.as_pointer_value().into(),
+                        key_str.as_pointer_value().into(),
+                    ]);
 
                     // Extract list data_ptr and count
                     let list_struct = field_val.into_struct_value();
@@ -843,24 +592,7 @@ impl<'ctx> Codegen<'ctx> {
                         .build_extract_value(json_str_val, 1, "json_len")
                         .unwrap();
 
-                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    self.builder
-                        .build_call(
-                            write_fn,
-                            &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
-                            "",
-                        )
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                    offset = self.write_cstring_advance(buf, buf_size, offset, json_ptr, json_len.into_int_value());
                 }
                 Type::Struct { fields: inner_fields, .. } => {
                     // Nested struct field → recursively stringify, then write into parent buffer
@@ -870,37 +602,10 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_global_string_ptr(&key_fmt, "kv_fmt")
                         .unwrap();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let wrote = self
-                        .builder
-                        .build_call(
-                            snprintf,
-                            &[
-                                buf_off.into(),
-                                remaining.into(),
-                                fmt_s.as_pointer_value().into(),
-                                key_str.as_pointer_value().into(),
-                            ],
-                            "",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap()
-                        .into_int_value();
-                    let w64 = self
-                        .builder
-                        .build_int_z_extend(wrote, i64_type, "w64")
-                        .unwrap();
-                    offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                    offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                        fmt_s.as_pointer_value().into(),
+                        key_str.as_pointer_value().into(),
+                    ]);
 
                     // Recursively stringify the nested struct
                     let inner_fields_clone = inner_fields.clone();
@@ -917,24 +622,7 @@ impl<'ctx> Codegen<'ctx> {
                             .unwrap();
 
                         // Write the nested JSON into the parent buffer
-                        let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                        let remaining = self
-                            .builder
-                            .build_int_sub(buf_size, offset, "rem")
-                            .unwrap();
-                        let buf_off = unsafe {
-                            self.builder
-                                .build_gep(i8_type, buf, &[offset], "off")
-                                .unwrap()
-                        };
-                        self.builder
-                            .build_call(
-                                write_fn,
-                                &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
-                                "",
-                            )
-                            .unwrap();
-                        offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                        offset = self.write_cstring_advance(buf, buf_size, offset, json_ptr, json_len.into_int_value());
                     }
                 }
                 Type::List(inner) if matches!(inner.as_ref(), Type::Struct { .. }) => {
@@ -946,37 +634,10 @@ impl<'ctx> Codegen<'ctx> {
                             .builder
                             .build_global_string_ptr(&key_fmt, "kv_fmt")
                             .unwrap();
-                        let remaining = self
-                            .builder
-                            .build_int_sub(buf_size, offset, "rem")
-                            .unwrap();
-                        let buf_off = unsafe {
-                            self.builder
-                                .build_gep(i8_type, buf, &[offset], "off")
-                                .unwrap()
-                        };
-                        let wrote = self
-                            .builder
-                            .build_call(
-                                snprintf,
-                                &[
-                                    buf_off.into(),
-                                    remaining.into(),
-                                    fmt_s.as_pointer_value().into(),
-                                    key_str.as_pointer_value().into(),
-                                ],
-                                "",
-                            )
-                            .unwrap()
-                            .try_as_basic_value()
-                            .left()
-                            .unwrap()
-                            .into_int_value();
-                        let w64 = self
-                            .builder
-                            .build_int_z_extend(wrote, i64_type, "w64")
-                            .unwrap();
-                        offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+                        offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+                            fmt_s.as_pointer_value().into(),
+                            key_str.as_pointer_value().into(),
+                        ]);
 
                         // Stringify the list
                         let inner_fields_clone = inner_fields.clone();
@@ -991,24 +652,7 @@ impl<'ctx> Codegen<'ctx> {
                                 .build_extract_value(list_struct, 1, "list_json_len")
                                 .unwrap();
 
-                            let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                            let remaining = self
-                                .builder
-                                .build_int_sub(buf_size, offset, "rem")
-                                .unwrap();
-                            let buf_off = unsafe {
-                                self.builder
-                                    .build_gep(i8_type, buf, &[offset], "off")
-                                    .unwrap()
-                            };
-                            self.builder
-                                .build_call(
-                                    write_fn,
-                                    &[buf_off.into(), remaining.into(), json_ptr.into(), json_len.into()],
-                                    "",
-                                )
-                                .unwrap();
-                            offset = self.builder.build_int_add(offset, json_len.into_int_value(), "off").unwrap();
+                            offset = self.write_cstring_advance(buf, buf_size, offset, json_ptr, json_len.into_int_value());
                         }
                     }
                 }
@@ -1021,36 +665,10 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_global_string_ptr("}", "close")
             .unwrap();
-        let remaining = self
-            .builder
-            .build_int_sub(buf_size, offset, "rem")
-            .unwrap();
-        let buf_off = unsafe {
-            self.builder
-                .build_gep(i8_type, buf, &[offset], "off")
-                .unwrap()
-        };
-        let wrote = self.builder
-            .build_call(
-                snprintf,
-                &[
-                    buf_off.into(),
-                    remaining.into(),
-                    fmt_s.as_pointer_value().into(),
-                    close_brace.as_pointer_value().into(),
-                ],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_int_value();
-        let w64 = self
-            .builder
-            .build_int_z_extend(wrote, i64_type, "w64")
-            .unwrap();
-        offset = self.builder.build_int_add(offset, w64, "off").unwrap();
+        offset = self.snprintf_advance(buf, buf_size, offset, snprintf, &[
+            fmt_s.as_pointer_value().into(),
+            close_brace.as_pointer_value().into(),
+        ]);
 
         // Convert the C buffer to a ForgeString using the actual content length
         let string_new = self.module.get_function("forge_string_new").unwrap();
@@ -1210,33 +828,7 @@ impl<'ctx> Codegen<'ctx> {
                         .build_extract_value(str_struct, 1, "str_len")
                         .unwrap();
 
-                    let offset = self
-                        .builder
-                        .build_load(i64_type, offset_alloca, "off")
-                        .unwrap()
-                        .into_int_value();
-                    let remaining = self
-                        .builder
-                        .build_int_sub(buf_size, offset, "rem")
-                        .unwrap();
-                    let buf_off = unsafe {
-                        self.builder
-                            .build_gep(i8_type, buf, &[offset], "off")
-                            .unwrap()
-                    };
-                    let write_fn = self.module.get_function("forge_write_cstring").unwrap();
-                    self.builder
-                        .build_call(
-                            write_fn,
-                            &[buf_off.into(), remaining.into(), str_ptr.into(), str_len.into()],
-                            "",
-                        )
-                        .unwrap();
-                    let new_off = self
-                        .builder
-                        .build_int_add(offset, str_len.into_int_value(), "off")
-                        .unwrap();
-                    self.builder.build_store(offset_alloca, new_off).unwrap();
+                    self.buf_write_cstring(buf, buf_size, offset_alloca, str_ptr, str_len.into_int_value());
 
                     self.buf_write_literal(buf, buf_size, offset_alloca, "\"");
                 }
@@ -1377,6 +969,95 @@ impl<'ctx> Codegen<'ctx> {
         phi.add_incoming(&[(&null_result, null_bb_end), (&some_result, some_bb_end)]);
 
         Some(phi.as_basic_value())
+    }
+
+    /// Advance a direct `IntValue` offset by writing args to snprintf into buf.
+    /// Returns the new offset after writing.
+    fn snprintf_advance(
+        &mut self,
+        buf: PointerValue<'ctx>,
+        buf_size: IntValue<'ctx>,
+        offset: IntValue<'ctx>,
+        snprintf: FunctionValue<'ctx>,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> IntValue<'ctx> {
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let remaining = self.builder.build_int_sub(buf_size, offset, "rem").unwrap();
+        let buf_off = unsafe {
+            self.builder.build_gep(i8_type, buf, &[offset], "off").unwrap()
+        };
+        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> =
+            vec![buf_off.into(), remaining.into()];
+        call_args.extend_from_slice(args);
+        let wrote = self
+            .builder
+            .build_call(snprintf, &call_args, "wrote")
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        let w64 = self.builder.build_int_z_extend(wrote, i64_type, "w64").unwrap();
+        self.builder.build_int_add(offset, w64, "off").unwrap()
+    }
+
+    /// Advance a direct `IntValue` offset by writing a forge_write_cstring call.
+    /// Returns the new offset after writing.
+    fn write_cstring_advance(
+        &mut self,
+        buf: PointerValue<'ctx>,
+        buf_size: IntValue<'ctx>,
+        offset: IntValue<'ctx>,
+        str_ptr: BasicValueEnum<'ctx>,
+        str_len: IntValue<'ctx>,
+    ) -> IntValue<'ctx> {
+        let i8_type = self.context.i8_type();
+        let remaining = self.builder.build_int_sub(buf_size, offset, "rem").unwrap();
+        let buf_off = unsafe {
+            self.builder.build_gep(i8_type, buf, &[offset], "off").unwrap()
+        };
+        let write_fn = self.module.get_function("forge_write_cstring").unwrap();
+        self.builder
+            .build_call(
+                write_fn,
+                &[buf_off.into(), remaining.into(), str_ptr.into(), str_len.into()],
+                "",
+            )
+            .unwrap();
+        self.builder.build_int_add(offset, str_len, "off").unwrap()
+    }
+
+    /// Write a cstring into a buffer at the current offset (stored via alloca), advancing the offset.
+    fn buf_write_cstring(
+        &mut self,
+        buf: PointerValue<'ctx>,
+        buf_size: IntValue<'ctx>,
+        offset_alloca: PointerValue<'ctx>,
+        str_ptr: BasicValueEnum<'ctx>,
+        str_len: IntValue<'ctx>,
+    ) {
+        let i64_type = self.context.i64_type();
+        let i8_type = self.context.i8_type();
+        let offset = self
+            .builder
+            .build_load(i64_type, offset_alloca, "off")
+            .unwrap()
+            .into_int_value();
+        let remaining = self.builder.build_int_sub(buf_size, offset, "rem").unwrap();
+        let buf_off = unsafe {
+            self.builder.build_gep(i8_type, buf, &[offset], "off").unwrap()
+        };
+        let write_fn = self.module.get_function("forge_write_cstring").unwrap();
+        self.builder
+            .build_call(
+                write_fn,
+                &[buf_off.into(), remaining.into(), str_ptr.into(), str_len.into()],
+                "",
+            )
+            .unwrap();
+        let new_off = self.builder.build_int_add(offset, str_len, "off").unwrap();
+        self.builder.build_store(offset_alloca, new_off).unwrap();
     }
 
     /// Write a literal string into a buffer at the current offset (stored via alloca).

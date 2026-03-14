@@ -181,6 +181,31 @@ fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[
 
 // ---- Template substitution context ----
 
+/// Call `f` with a fully-constructed `SubFns` whose closures are bound to `ctx`.
+///
+/// The five closures must be stack-allocated in the same frame as the `SubFns`
+/// struct they feed into (because `SubFns` holds plain `&dyn Fn` references).
+/// This helper encapsulates that stack frame so the two callers don't need to
+/// repeat the boilerplate.
+fn with_sub_fns<T>(
+    ctx: &SubstitutionContext,
+    f: impl FnOnce(&crate::feature::SubFns<'_>) -> T,
+) -> T {
+    let sub_expr = |e: &Expr| substitute_expr(e, ctx);
+    let sub_block = |b: &Block| substitute_block(b, ctx);
+    let sub_ident = |s: &str| substitute_ident_string(s, ctx);
+    let sub_type_expr = |t: &TypeExpr| substitute_type_expr(t, ctx);
+    let sub_param = |p: &Param| substitute_param(p, ctx);
+    let fns = crate::feature::SubFns {
+        sub_expr: &sub_expr,
+        sub_block: &sub_block,
+        sub_ident: &sub_ident,
+        sub_type_expr: &sub_type_expr,
+        sub_param: &sub_param,
+    };
+    f(&fns)
+}
+
 struct SubstitutionContext {
     name: String,
     model_ref: Option<String>,
@@ -293,19 +318,7 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
 /// Recursively substitute template placeholders inside Feature variant expressions.
 /// Delegates to each feature data type's `substitute_exprs` implementation.
 fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionContext) -> Expr {
-    let sub_expr = |e: &Expr| substitute_expr(e, ctx);
-    let sub_block = |b: &Block| substitute_block(b, ctx);
-    let sub_ident = |s: &str| substitute_ident_string(s, ctx);
-    let sub_type_expr = |t: &TypeExpr| substitute_type_expr(t, ctx);
-    let sub_param = |p: &Param| substitute_param(p, ctx);
-    let fns = crate::feature::SubFns {
-        sub_expr: &sub_expr,
-        sub_block: &sub_block,
-        sub_ident: &sub_ident,
-        sub_type_expr: &sub_type_expr,
-        sub_param: &sub_param,
-    };
-    let new_data = fe.data.substitute_exprs(&fns);
+    let new_data = with_sub_fns(ctx, |fns| fe.data.substitute_exprs(fns));
     Expr::Feature(crate::feature::FeatureExpr {
         feature_id: fe.feature_id,
         kind: fe.kind,
@@ -479,19 +492,7 @@ fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
 /// Substitute template placeholders inside Feature variant statements.
 /// Delegates to each feature data type's `substitute_exprs` implementation.
 fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionContext) -> Statement {
-    let sub_expr = |e: &Expr| substitute_expr(e, ctx);
-    let sub_block = |b: &Block| substitute_block(b, ctx);
-    let sub_ident = |s: &str| substitute_ident_string(s, ctx);
-    let sub_type_expr = |t: &TypeExpr| substitute_type_expr(t, ctx);
-    let sub_param = |p: &Param| substitute_param(p, ctx);
-    let fns = crate::feature::SubFns {
-        sub_expr: &sub_expr,
-        sub_block: &sub_block,
-        sub_ident: &sub_ident,
-        sub_type_expr: &sub_type_expr,
-        sub_param: &sub_param,
-    };
-    let new_data = fe.data.substitute_exprs(&fns);
+    let new_data = with_sub_fns(ctx, |fns| fe.data.substitute_exprs(fns));
     Statement::Feature(crate::feature::FeatureStmt {
         feature_id: fe.feature_id,
         kind: fe.kind,

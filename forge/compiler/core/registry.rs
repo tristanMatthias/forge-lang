@@ -43,6 +43,7 @@ pub struct FeatureMetadata {
     pub short: &'static str,
     pub symbols: &'static [&'static str],
     pub long_description: &'static str,
+    pub grammar: &'static str,
 }
 
 /// Entry in the global feature registry, collected by `inventory` at link time
@@ -349,7 +350,43 @@ impl FeatureRegistry {
 /// ```
 #[macro_export]
 macro_rules! forge_feature {
-    // Extended form with syntax, short, symbols, long_description
+    // Full form with grammar
+    (
+        name: $name:expr,
+        id: $id:expr,
+        status: $status:ident,
+        depends: [$($dep:expr),* $(,)?],
+        enables: [$($en:expr),* $(,)?],
+        tokens: [$($tok:expr),* $(,)?],
+        ast_nodes: [$($node:expr),* $(,)?],
+        description: $desc:expr,
+        syntax: [$($syn:expr),* $(,)?],
+        short: $short:expr,
+        symbols: [$($sym:expr),* $(,)?],
+        long_description: $long_desc:expr,
+        grammar: $grammar:expr $(,)?
+    ) => {
+        inventory::submit! {
+            $crate::registry::FeatureEntry {
+                metadata: $crate::registry::FeatureMetadata {
+                    name: $name,
+                    id: $id,
+                    status: $crate::registry::FeatureStatus::$status,
+                    depends: &[$($dep),*],
+                    enables: &[$($en),*],
+                    tokens: &[$($tok),*],
+                    ast_nodes: &[$($node),*],
+                    description: $desc,
+                    syntax: &[$($syn),*],
+                    short: $short,
+                    symbols: &[$($sym),*],
+                    long_description: $long_desc,
+                    grammar: $grammar,
+                },
+            }
+        }
+    };
+    // Extended form with long_description (no grammar)
     (
         name: $name:expr,
         id: $id:expr,
@@ -379,6 +416,7 @@ macro_rules! forge_feature {
                     short: $short,
                     symbols: &[$($sym),*],
                     long_description: $long_desc,
+                    grammar: "",
                 },
             }
         }
@@ -412,6 +450,7 @@ macro_rules! forge_feature {
                     short: $short,
                     symbols: &[$($sym),*],
                     long_description: "",
+                    grammar: "",
                 },
             }
         }
@@ -442,6 +481,7 @@ macro_rules! forge_feature {
                     short: "",
                     symbols: &[],
                     long_description: "",
+                    grammar: "",
                 },
             }
         }
