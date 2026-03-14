@@ -31,4 +31,5 @@ when `enabled` is true. This provides fine-grained control over which channels a
 The select statement is modeled after Go's select and mirrors its semantics. Combined with spawn \
 and channels, it completes Forge's CSP concurrency model, enabling patterns like fan-in, fan-out, \
 timeouts, and graceful shutdown.",
+    grammar: "<select_stmt> ::= \"select\" \"{\" (<ident> \"<-\" <expr> \"->\" <block>)* \"}\"",
 }

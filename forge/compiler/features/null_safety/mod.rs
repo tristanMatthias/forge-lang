@@ -29,6 +29,7 @@ The `?` suffix on function return types indicates the function might return null
 `fn find_user(id: int) -> User?`. Callers must handle the null case, either with `?.`, `??`, \
 or an explicit null check. This makes null a deliberate, visible choice rather than a hidden \
 landmine.",
+    grammar: "<nullable>    ::= <type> \"?\"\\n<coalesce>    ::= <expr> \"??\" <expr>\\n<safe_access> ::= <expr> \"?.\" <ident>",
 }
 
 pub mod parser;

@@ -22,6 +22,7 @@ loop immediately, and `continue` skips to the next iteration.
 While loops are generally less common in idiomatic Forge than `for...in` loops, since most \
 iteration involves collections or ranges. Prefer `for` when you know what you are iterating over, \
 and reserve `while` for conditions that depend on external state or complex termination logic.",
+    grammar: "<while_stmt>  ::= \"while\" <expr> <block>",
 }
 
 pub mod parser;

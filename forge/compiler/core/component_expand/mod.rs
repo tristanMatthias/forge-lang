@@ -360,42 +360,27 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
             }
             TypeExpr::Named(name.clone())
         }
-        TypeExpr::Nullable(inner) => {
-            TypeExpr::Nullable(Box::new(substitute_type_expr(inner, ctx)))
-        }
+        TypeExpr::Nullable(inner)   => TypeExpr::Nullable(Box::new(substitute_type_expr(inner, ctx))),
+        TypeExpr::AsPartial(base)   => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
         TypeExpr::Generic { name, args } => TypeExpr::Generic {
             name: name.clone(),
             args: args.iter().map(|a| substitute_type_expr(a, ctx)).collect(),
         },
-        TypeExpr::Union(types) => {
-            TypeExpr::Union(types.iter().map(|t| substitute_type_expr(t, ctx)).collect())
-        }
-        TypeExpr::Tuple(types) => {
-            TypeExpr::Tuple(types.iter().map(|t| substitute_type_expr(t, ctx)).collect())
-        }
+        TypeExpr::Union(types)  => TypeExpr::Union(types.iter().map(|t| substitute_type_expr(t, ctx)).collect()),
+        TypeExpr::Tuple(types)  => TypeExpr::Tuple(types.iter().map(|t| substitute_type_expr(t, ctx)).collect()),
         TypeExpr::Function { params, return_type } => TypeExpr::Function {
             params: params.iter().map(|t| substitute_type_expr(t, ctx)).collect(),
             return_type: Box::new(substitute_type_expr(return_type, ctx)),
         },
         TypeExpr::Struct { fields } => TypeExpr::Struct {
-            fields: fields
-                .iter()
-                .map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone()))
-                .collect(),
+            fields: fields.iter().map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone())).collect(),
         },
-        TypeExpr::Without { base, fields } => TypeExpr::Without {
-            base: Box::new(substitute_type_expr(base, ctx)),
-            fields: fields.clone(),
-        },
+        TypeExpr::Without  { base, fields } => TypeExpr::Without  { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
+        TypeExpr::Only     { base, fields } => TypeExpr::Only     { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
         TypeExpr::TypeWith { base, fields } => TypeExpr::TypeWith {
             base: Box::new(substitute_type_expr(base, ctx)),
             fields: fields.iter().map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone())).collect(),
         },
-        TypeExpr::Only { base, fields } => TypeExpr::Only {
-            base: Box::new(substitute_type_expr(base, ctx)),
-            fields: fields.clone(),
-        },
-        TypeExpr::AsPartial(base) => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
         TypeExpr::Intersection(left, right) => TypeExpr::Intersection(
             Box::new(substitute_type_expr(left, ctx)),
             Box::new(substitute_type_expr(right, ctx)),
@@ -424,31 +409,23 @@ fn substitute_block(block: &Block, ctx: &SubstitutionContext) -> Block {
 }
 
 fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
+    /// Substitute type annotation and value for Let/Mut/Const, then reconstruct via `ctor`.
+    macro_rules! sub_binding {
+        ($ctor:ident, $name:expr, $type_ann:expr, $value:expr, $exported:expr, $span:expr) => {
+            Statement::$ctor {
+                name: $name.clone(),
+                type_ann: $type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
+                type_ann_span: None,
+                value: substitute_expr($value, ctx),
+                exported: *$exported,
+                span: *$span,
+            }
+        };
+    }
     match stmt {
-        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
-            name: name.clone(),
-            type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
-            type_ann_span: None,
-            value: substitute_expr(value, ctx),
-            exported: *exported,
-            span: *span,
-        },
-        Statement::Mut { name, type_ann, value, exported, span, .. } => Statement::Mut {
-            name: name.clone(),
-            type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
-            type_ann_span: None,
-            value: substitute_expr(value, ctx),
-            exported: *exported,
-            span: *span,
-        },
-        Statement::Const { name, type_ann, value, exported, span, .. } => Statement::Const {
-            name: name.clone(),
-            type_ann: type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
-            type_ann_span: None,
-            value: substitute_expr(value, ctx),
-            exported: *exported,
-            span: *span,
-        },
+        Statement::Let   { name, type_ann, value, exported, span, .. } => sub_binding!(Let,   name, type_ann, value, exported, span),
+        Statement::Mut   { name, type_ann, value, exported, span, .. } => sub_binding!(Mut,   name, type_ann, value, exported, span),
+        Statement::Const { name, type_ann, value, exported, span, .. } => sub_binding!(Const, name, type_ann, value, exported, span),
         Statement::Expr(expr) => Statement::Expr(substitute_expr(expr, ctx)),
         Statement::Return { value, span } => Statement::Return {
             value: value.as_ref().map(|v| substitute_expr(v, ctx)),
@@ -542,42 +519,12 @@ fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collection
         Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos)),
         Statement::Let { name, type_ann, value, exported, span, .. } => {
             // Handle __tpl_handler_param_N: bind closure param names to template-provided values
-            if let Some(idx_str) = name.strip_prefix("__tpl_handler_param_") {
-                if let Ok(idx) = idx_str.parse::<usize>() {
-                    // Find the first closure in args and extract its Nth param
-                    if let Some(closure_param) = find_closure_param_in_args(args, idx) {
-                        let substituted_value = substitute_syntax_args_expr(value, args, service_infos);
-                        // If the closure param has a type annotation, wrap with json.parse()
-                        let (final_name, final_type_ann, final_value) = if closure_param.type_ann.is_some() {
-                            (
-                                closure_param.name.clone(),
-                                closure_param.type_ann.clone(),
-                                Expr::Call {
-                                    callee: Box::new(Expr::MemberAccess {
-                                        object: Box::new(ident("json")),
-                                        field: "parse".to_string(),
-                                        span: sp(),
-                                    }),
-                                    args: vec![CallArg { name: None, value: substituted_value }],
-                                    type_args: vec![],
-                                    span: sp(),
-                                },
-                            )
-                        } else {
-                            (closure_param.name.clone(), None, substituted_value)
-                        };
-                        return Statement::Let {
-                            name: final_name,
-                            type_ann: final_type_ann,
-                            type_ann_span: None,
-                            value: final_value,
-                            exported: *exported,
-                            span: *span,
-                        };
-                    }
+            if name.starts_with("__tpl_handler_param_") {
+                return match try_expand_handler_param(name, value, *exported, *span, args, service_infos) {
+                    Some(s) => s,
                     // No matching closure param — drop this placeholder binding
-                    return Statement::Expr(Expr::IntLit(0, sp()));
-                }
+                    None => Statement::Expr(Expr::IntLit(0, sp())),
+                };
             }
             Statement::Let {
                 name: name.clone(),
@@ -629,42 +576,12 @@ fn substitute_syntax_args_feature_stmt(
             use crate::features::variables::types::VarDeclData;
             if let Some(data) = feature_data!(fe, VarDeclData) {
                 // Handle __tpl_handler_param_N for Let kind
-                if fe.kind == "Let" {
-                    if let Some(idx_str) = data.name.strip_prefix("__tpl_handler_param_") {
-                        if let Ok(idx) = idx_str.parse::<usize>() {
-                            if let Some(closure_param) = find_closure_param_in_args(args, idx) {
-                                let substituted_value = substitute_syntax_args_expr(&data.value, args, service_infos);
-                                let (final_name, final_type_ann, final_value) = if closure_param.type_ann.is_some() {
-                                    (
-                                        closure_param.name.clone(),
-                                        closure_param.type_ann.clone(),
-                                        Expr::Call {
-                                            callee: Box::new(Expr::MemberAccess {
-                                                object: Box::new(ident("json")),
-                                                field: "parse".to_string(),
-                                                span: sp(),
-                                            }),
-                                            args: vec![CallArg { name: None, value: substituted_value }],
-                                            type_args: vec![],
-                                            span: sp(),
-                                        },
-                                    )
-                                } else {
-                                    (closure_param.name.clone(), None, substituted_value)
-                                };
-                                // Return as old-style Let since that's what template expansion expects
-                                return Statement::Let {
-                                    name: final_name,
-                                    type_ann: final_type_ann,
-                                    type_ann_span: None,
-                                    value: final_value,
-                                    exported: data.exported,
-                                    span: fe.span,
-                                };
-                            }
-                            return Statement::Expr(Expr::IntLit(0, sp()));
-                        }
-                    }
+                if fe.kind == "Let" && data.name.starts_with("__tpl_handler_param_") {
+                    // Return as old-style Let since that's what template expansion expects
+                    return match try_expand_handler_param(&data.name, &data.value, data.exported, fe.span, args, service_infos) {
+                        Some(s) => s,
+                        None => Statement::Expr(Expr::IntLit(0, sp())),
+                    };
                 }
                 let new_data = VarDeclData {
                     kind: data.kind.clone(),
@@ -872,6 +789,48 @@ fn find_closure_param_in_args(args: &std::collections::HashMap<String, Expr>, id
     None
 }
 
+/// If `name` starts with `__tpl_handler_param_N`, try to bind to closure param N from `args`.
+/// Returns `Some(Statement::Let {...})` if the binding applies, `None` otherwise.
+fn try_expand_handler_param(
+    name: &str,
+    value: &Expr,
+    exported: bool,
+    span: Span,
+    args: &std::collections::HashMap<String, Expr>,
+    service_infos: &[ServiceInfo],
+) -> Option<Statement> {
+    let idx_str = name.strip_prefix("__tpl_handler_param_")?;
+    let idx: usize = idx_str.parse().ok()?;
+    let closure_param = find_closure_param_in_args(args, idx)?;
+    let substituted_value = substitute_syntax_args_expr(value, args, service_infos);
+    let (final_name, final_type_ann, final_value) = if closure_param.type_ann.is_some() {
+        (
+            closure_param.name.clone(),
+            closure_param.type_ann.clone(),
+            Expr::Call {
+                callee: Box::new(Expr::MemberAccess {
+                    object: Box::new(ident("json")),
+                    field: "parse".to_string(),
+                    span: sp(),
+                }),
+                args: vec![CallArg { name: None, value: substituted_value }],
+                type_args: vec![],
+                span: sp(),
+            },
+        )
+    } else {
+        (closure_param.name.clone(), None, substituted_value)
+    };
+    Some(Statement::Let {
+        name: final_name,
+        type_ann: final_type_ann,
+        type_ann_span: None,
+        value: final_value,
+        exported,
+        span,
+    })
+}
+
 /// Replace identifiers that match syntax fn param names with their captured values
 fn substitute_syntax_args(stmt: &Statement, args: &std::collections::HashMap<String, Expr>) -> Statement {
     substitute_syntax_args_with_services(stmt, args, &[])
@@ -1013,12 +972,8 @@ fn substitute_fn_template(
             span: *span,
         }
     } else {
-        stmt_clone_with_sub(decl, ctx)
+        substitute_stmt(decl, ctx)
     }
-}
-
-fn stmt_clone_with_sub(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
-    substitute_stmt(stmt, ctx)
 }
 
 /// Inject before/after hooks into a template-generated component function.
@@ -1221,50 +1176,32 @@ fn extract_hooks_and_methods(
     let mut after_hooks = HashMap::new();
     let mut custom_methods = Vec::new();
 
+    /// Strip `prefix` from `name`, build a `HookInfo` from `params`/`body`,
+    /// and insert it into `map`.
+    fn insert_hook(
+        map: &mut HashMap<String, HookInfo>,
+        name: &str,
+        prefix: &str,
+        params: &[Param],
+        body: &Block,
+    ) {
+        let operation = name.trim_start_matches(prefix).to_string();
+        let param_name = params.first().map(|p| p.name.clone()).unwrap_or_default();
+        map.insert(operation, HookInfo { param_name, body: body.clone() });
+    }
+
     for stmt in blocks {
         if let Statement::FnDecl { name, params, body, .. } = stmt {
             if name.starts_with("__hook_before_") {
-                let operation = name.trim_start_matches("__hook_before_").to_string();
-                let param_name = params
-                    .first()
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                before_hooks.insert(
-                    operation,
-                    HookInfo { param_name, body: body.clone() },
-                );
+                insert_hook(&mut before_hooks, name, "__hook_before_", params, body);
             } else if name.starts_with("__hook_after_") {
-                let operation = name.trim_start_matches("__hook_after_").to_string();
-                let param_name = params
-                    .first()
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                after_hooks.insert(
-                    operation,
-                    HookInfo { param_name, body: body.clone() },
-                );
+                insert_hook(&mut after_hooks, name, "__hook_after_", params, body);
             } else if name.starts_with("on_before_") {
                 // on before_create(data) { ... } syntax
-                let operation = name.trim_start_matches("on_before_").to_string();
-                let param_name = params
-                    .first()
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                before_hooks.insert(
-                    operation,
-                    HookInfo { param_name, body: body.clone() },
-                );
+                insert_hook(&mut before_hooks, name, "on_before_", params, body);
             } else if name.starts_with("on_after_") {
                 // on after_create(record) { ... } syntax
-                let operation = name.trim_start_matches("on_after_").to_string();
-                let param_name = params
-                    .first()
-                    .map(|p| p.name.clone())
-                    .unwrap_or_default();
-                after_hooks.insert(
-                    operation,
-                    HookInfo { param_name, body: body.clone() },
-                );
+                insert_hook(&mut after_hooks, name, "on_after_", params, body);
             } else {
                 custom_methods.push(stmt.clone());
             }
@@ -1601,28 +1538,10 @@ impl ComponentExpander {
         // Populate service metadata for server mount resolution
         if template.has_model_ref {
             // Service template: build ServiceInfo
-            let hooks: Vec<ServiceHook> = {
-                let mut h = Vec::new();
-                for (op, info) in &before_hooks {
-                    h.push(ServiceHook {
-                        timing: HookTiming::Before,
-                        operation: op.clone(),
-                        param: info.param_name.clone(),
-                        body: info.body.clone(),
-                        span: sp(),
-                    });
-                }
-                for (op, info) in &after_hooks {
-                    h.push(ServiceHook {
-                        timing: HookTiming::After,
-                        operation: op.clone(),
-                        param: info.param_name.clone(),
-                        body: info.body.clone(),
-                        span: sp(),
-                    });
-                }
-                h
-            };
+            let hooks: Vec<ServiceHook> = before_hooks.iter()
+                .map(|(op, info)| ServiceHook { timing: HookTiming::Before, operation: op.clone(), param: info.param_name.clone(), body: info.body.clone(), span: sp() })
+                .chain(after_hooks.iter().map(|(op, info)| ServiceHook { timing: HookTiming::After, operation: op.clone(), param: info.param_name.clone(), body: info.body.clone(), span: sp() }))
+                .collect();
             result.service_info = Some(ServiceInfo {
                 name: ctx.name.clone(),
                 for_model: ctx.model_ref.clone().unwrap_or_default(),

@@ -28,6 +28,7 @@ Unlike classes in object-oriented languages, Forge structs carry no methods or i
 Behavior is attached through trait implementations, keeping data and behavior cleanly separated. \
 This design scales better for large codebases and avoids the deep inheritance hierarchies that \
 plague OOP systems.",
+    grammar: "<struct_decl> ::= \"type\" <ident> \"{\" (<ident> \":\" <type>)* \"}\"",
 }
 
 pub mod types;

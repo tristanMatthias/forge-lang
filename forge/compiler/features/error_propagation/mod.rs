@@ -28,6 +28,7 @@ This design is directly inspired by Rust's `?` operator and Result type. It prov
 safety guarantees — every error must be explicitly handled or propagated — while keeping the \
 syntax lightweight. Compared to exceptions, it makes error paths visible in type signatures and \
 prevents the \"exception from nowhere\" problem.",
+    grammar: "<propagate>   ::= <expr> \"?\"",
 }
 
 pub mod parser;

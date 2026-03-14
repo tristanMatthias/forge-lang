@@ -31,4 +31,5 @@ the channel is closed. This is the idiomatic way to consume a stream of values f
 Unlike C-style for loops, Forge's `for...in` cannot produce off-by-one errors because you never \
 manually manage an index variable. If you need the index alongside the value, use the `enumerate` \
 method on the collection.",
+    grammar: "<for_stmt>    ::= \"for\" <ident> \"in\" <expr> <block>",
 }

@@ -30,6 +30,7 @@ lifetime of the program.
 If you are coming from JavaScript or Python, the key difference is that Forge variables are \
 immutable by default. If you are coming from Rust, the model is similar but without lifetime \
 annotations. If you are coming from Go, think of `let` as a stricter `:=` that forbids reassignment.",
+    grammar: "<let_stmt>    ::= \"let\" <ident> [\":\" <type>] \"=\" <expr>\\n<const_stmt>  ::= \"const\" <ident> \"=\" <expr>",
 }
 
 pub mod types;

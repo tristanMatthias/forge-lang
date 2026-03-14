@@ -34,4 +34,5 @@ This is inspired by shell scripting languages and Perl's backtick operator. Unli
 execution in most languages, Forge's version participates in the type system (the result is \
 always a string) and supports template interpolation with compile-time type checking of the \
 embedded expressions.",
+    grammar: "<shell_expr>  ::= \"$\\\"\" <template> \"\\\"\" | \"$`\" <template> \"`\"",
 }

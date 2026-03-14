@@ -27,6 +27,7 @@ calls efficiently where possible.
 Unlike languages that distinguish between functions and methods at the syntax level, Forge \
 treats all callables uniformly. Methods on types are just functions that receive the type as \
 their first argument, accessed through dot notation.",
+    grammar: "<fn_decl>     ::= \"fn\" <ident> \"(\" <params> \")\" [\"->\" <type>] <block>",
 }
 
 pub mod types;

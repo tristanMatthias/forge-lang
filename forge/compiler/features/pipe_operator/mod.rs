@@ -26,6 +26,7 @@ a continuation line, so you can format pipelines vertically for readability.
 The pipe operator is inspired by Elixir and F#, where it is fundamental to the language's style. \
 In Forge, it pairs especially well with closures and collection methods, enabling a fluent, \
 functional programming style without sacrificing type safety.",
+    grammar: "<pipe_expr>   ::= <expr> \"|>\" <expr>",
 }
 
 pub mod parser;

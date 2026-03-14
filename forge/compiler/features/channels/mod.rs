@@ -32,4 +32,5 @@ value at regular intervals, useful for periodic tasks.
 Forge channels follow the same model as Go channels. They are unbuffered by default, meaning a \
 send blocks until a receiver is ready. This synchronization property makes channel-based programs \
 easier to reason about than lock-based alternatives.",
+    grammar: "<chan_send>   ::= <expr> \"<-\" <expr>\\n<chan_recv>   ::= \"<-\" <expr>",
 }

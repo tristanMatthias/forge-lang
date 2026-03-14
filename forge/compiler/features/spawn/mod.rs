@@ -32,4 +32,5 @@ mutable memory to race on.
 The model is similar to Go's goroutines and Erlang's processes. Tasks are lightweight enough to \
 spawn thousands without performance concerns. Combined with channels and select, spawn provides \
 a complete concurrent programming toolkit.",
+    grammar: "<spawn_block> ::= \"spawn\" <block>",
 }

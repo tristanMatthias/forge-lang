@@ -28,6 +28,7 @@ a `list<int>`, and knows the closure returns `string` because `to_string()` does
 Compared to other languages, Forge closures are closest to Kotlin's lambdas or Swift's \
 closures. The `->` syntax was chosen over `=>` (JavaScript) to avoid ambiguity with comparison \
 operators and to visually distinguish closures from match arms.",
+    grammar: "<closure>     ::= \"(\" <params> \")\" \"->\" <expr>\\n                | \"(\" <params> \")\" \"->\" <block>",
 }
 
 pub mod parser;

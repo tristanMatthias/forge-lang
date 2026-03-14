@@ -221,15 +221,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // OK path — return the transformed struct
         self.builder.position_at_end(ok_block);
-        let ok_alloca = self.builder.build_alloca(result_llvm_ty, "ok_result").unwrap();
-        let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, ok_alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_zero()).unwrap();
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, ok_alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(
-            payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr"
-        ).unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), struct_val).unwrap();
-        let ok_result = self.builder.build_load(result_llvm_ty, ok_alloca, "ok_loaded").unwrap();
+        let ok_result = self.build_tagged_result(result_llvm_ty, 0, struct_val, "ok");
         self.builder.build_unconditional_branch(merge_block).unwrap();
 
         // ERR path
@@ -255,15 +247,7 @@ impl<'ctx> Codegen<'ctx> {
         ve_val = self.builder.build_insert_value(ve_val, list_val, 0, "ve_fields")
             .unwrap().into_struct_value();
 
-        let err_alloca = self.builder.build_alloca(result_llvm_ty, "err_result").unwrap();
-        let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, err_alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(1, false)).unwrap();
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, err_alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(
-            payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr"
-        ).unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), ve_val).unwrap();
-        let err_result = self.builder.build_load(result_llvm_ty, err_alloca, "err_loaded").unwrap();
+        let err_result = self.build_tagged_result(result_llvm_ty, 1, ve_val.into(), "err");
         self.builder.build_unconditional_branch(merge_block).unwrap();
 
         // Merge
@@ -734,14 +718,7 @@ impl<'ctx> Codegen<'ctx> {
                     validate_fn, &[field_val.into()], "validate_result"
                 ).unwrap().try_as_basic_value().left()?.into_int_value();
 
-                let ok = self.builder.build_int_compare(
-                    IntPredicate::NE,
-                    result,
-                    self.context.i64_type().const_zero(),
-                    "validate_ok",
-                ).unwrap();
-
-                Some((ok, rule.to_string(), msg.to_string()))
+                Some((self.int_ne_zero(result, "validate_ok"), rule.to_string(), msg.to_string()))
             }
             Some(AnnotationArg::Expr(expr)) => {
                 // Custom expression validator: @validate(it > 0 && it < 100)
@@ -753,12 +730,9 @@ impl<'ctx> Codegen<'ctx> {
                 self.push_scope();
                 let alloca = self.create_entry_block_alloca(&check_type, "it");
                 self.builder.build_store(alloca, field_val).unwrap();
-                self.define_var("it".to_string(), alloca, check_type);
+                self.define_var("it".to_string(), alloca, check_type.clone());
                 // Also bind `val` as alias for `it`
-                self.define_var("val".to_string(), alloca, match field_type {
-                    Type::Nullable(inner) => inner.as_ref().clone(),
-                    other => other.clone(),
-                });
+                self.define_var("val".to_string(), alloca, check_type);
                 let result = self.compile_expr(&expr.clone())?;
                 self.pop_scope();
 
@@ -770,12 +744,7 @@ impl<'ctx> Codegen<'ctx> {
                         int_val
                     } else {
                         // Treat non-zero as pass
-                        self.builder.build_int_compare(
-                            IntPredicate::NE,
-                            int_val,
-                            int_val.get_type().const_zero(),
-                            "custom_validate_ok",
-                        ).unwrap()
+                        self.int_ne_zero(int_val, "custom_validate_ok")
                     }
                 } else {
                     // Non-int result — can't use as validator
@@ -802,15 +771,17 @@ impl<'ctx> Codegen<'ctx> {
 
         let pattern_str = self.make_forge_string(&pattern);
         let result = self.call_runtime("forge_validate_pattern", &[field_val.into(), pattern_str.into()], "pattern_result")?.into_int_value();
+        Some((self.int_ne_zero(result, "pattern_ok"), "pattern".to_string(), format!("must match pattern {}", pattern)))
+    }
 
-        let ok = self.builder.build_int_compare(
+    /// Compare an integer value against zero with NE predicate (returns i1 bool).
+    fn int_ne_zero(&self, val: IntValue<'ctx>, label: &str) -> IntValue<'ctx> {
+        self.builder.build_int_compare(
             IntPredicate::NE,
-            result,
-            self.context.i64_type().const_zero(),
-            "pattern_ok",
-        ).unwrap();
-
-        Some((ok, "pattern".to_string(), format!("must match pattern {}", pattern)))
+            val,
+            val.get_type().const_zero(),
+            label,
+        ).unwrap()
     }
 
     /// Build the Result<TargetType, ValidationError> type for validation results.
@@ -842,17 +813,27 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         let result_type = Self::validation_result_type(target_type);
         let result_llvm_ty = self.type_to_llvm_basic(&result_type).into_struct_type();
+        Some(self.build_tagged_result(result_llvm_ty, 0, struct_val, "ok"))
+    }
 
-        let alloca = self.builder.build_alloca(result_llvm_ty, "ok_result").unwrap();
+    /// Write a tagged Result value: store tag byte at slot 0, bitcast slot 1 and store payload,
+    /// then load and return the complete struct value.
+    fn build_tagged_result(
+        &mut self,
+        result_llvm_ty: inkwell::types::StructType<'ctx>,
+        tag: u64,
+        payload: BasicValueEnum<'ctx>,
+        label: &str,
+    ) -> BasicValueEnum<'ctx> {
+        let alloca = self.builder.build_alloca(result_llvm_ty, &format!("{}_result", label)).unwrap();
         let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_zero()).unwrap();
+        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(tag, false)).unwrap();
         let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 1, "payload_ptr").unwrap();
         let val_ptr = self.builder.build_bit_cast(
             payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr"
         ).unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), struct_val).unwrap();
-        let result = self.builder.build_load(result_llvm_ty, alloca, "ok_loaded").unwrap();
-        Some(result)
+        self.builder.build_store(val_ptr.into_pointer_value(), payload).unwrap();
+        self.builder.build_load(result_llvm_ty, alloca, &format!("{}_loaded", label)).unwrap()
     }
 
     /// Create a ForgeString constant from a &str

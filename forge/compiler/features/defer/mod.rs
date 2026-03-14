@@ -28,6 +28,7 @@ is properly cleaned up.
 The concept comes from Go, where `defer` is used extensively. Forge's implementation works the \
 same way, executing deferred expressions before every return point in the function, including \
 early returns and error propagation with `?`.",
+    grammar: "<defer_stmt>  ::= \"defer\" <expr>",
 }
 
 pub mod parser;

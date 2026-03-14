@@ -27,6 +27,7 @@ This feature is equivalent to the spread/rest operator for objects in JavaScript
 (`{ ...obj, field: newValue }`), Kotlin's `copy()` method on data classes, or Rust's struct \
 update syntax (`Point { x: 10, ..p }`). Forge's `with` keyword reads naturally in English, \
 making the intent immediately clear.",
+    grammar: "<with_expr>   ::= <expr> \"with\" \"{\" <field_updates> \"}\"",
 }
 
 pub mod parser;
