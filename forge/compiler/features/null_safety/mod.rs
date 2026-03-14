@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["?", "?.", "??", "!"],
     ast_nodes: ["NullCoalesce", "NullPropagate", "Nullable"],
     description: "Optional types with ?, safe access ?., null coalesce ??, and smart narrowing",
+    syntax: ["expr?", "expr?.field", "expr ?? default"],
+    short: "x? (unwrap), x?.field (chain), x ?? default (coalesce)",
+    symbols: ["?", "?.", "??"],
 }
 
 pub mod parser;

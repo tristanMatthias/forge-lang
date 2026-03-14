@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["while", "loop", "break", "continue"],
     ast_nodes: ["While", "Loop", "Break", "Continue"],
     description: "While loops, infinite loops, break with value, and continue",
+    syntax: ["while condition { body }"],
+    short: "while cond { } — conditional loop",
+    symbols: [],
 }
 
 pub mod parser;

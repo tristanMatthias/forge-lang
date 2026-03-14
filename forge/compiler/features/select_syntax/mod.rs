@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["select"],
     ast_nodes: ["Select", "SelectArm"],
     description: "Channel multiplexing with select { binding <- ch -> body } and guards",
+    syntax: ["select { binding <- ch -> body }"],
+    short: "select { x <- ch -> body } — multiplex channel receives",
+    symbols: [],
 }

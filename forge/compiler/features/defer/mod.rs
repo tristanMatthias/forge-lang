@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["defer"],
     ast_nodes: ["Defer"],
     description: "Deferred execution of expressions before function return, executed in reverse order",
+    syntax: ["defer expr"],
+    short: "defer expr — execute when scope exits, LIFO order",
+    symbols: [],
 }
 
 pub mod parser;

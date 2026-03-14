@@ -10,21 +10,7 @@ impl<'ctx> Codegen<'ctx> {
         name: &str,
         body: &Block,
     ) {
-        // Call forge_test_start_spec(name)
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-        self.call_runtime_expect(
-            "forge_test_start_spec", &[name_ptr.into()], "",
-            "forge_test_start_spec not declared - did you `use @std.test`?",
-        );
-
-        // Compile body
-        for stmt in &body.statements {
-            self.compile_statement(stmt);
-        }
-
-        // Call forge_test_end_spec()
-        self.call_runtime_void("forge_test_end_spec", &[]);
+        self.compile_test_section("spec", name, body, false);
     }
 
     /// Compile a given block: calls forge_test_start_given, compiles body, calls forge_test_end_given
@@ -33,23 +19,24 @@ impl<'ctx> Codegen<'ctx> {
         name: &str,
         body: &Block,
     ) {
-        // Call forge_test_start_given(name)
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-        self.call_runtime_expect(
-            "forge_test_start_given", &[name_ptr.into()], "",
-            "forge_test_start_given not declared - did you `use @std.test`?",
-        );
+        self.compile_test_section("given", name, body, true);
+    }
 
-        // Compile body in new scope
-        self.push_scope();
+    /// Shared helper for spec/given blocks: start_{kind}(name), compile body, end_{kind}().
+    fn compile_test_section(&mut self, kind: &str, name: &str, body: &Block, scoped: bool) {
+        let start_fn = format!("forge_test_start_{}", kind);
+        let end_fn = format!("forge_test_end_{}", kind);
+        let name_ptr = self.build_test_cstr(name);
+        self.call_runtime_expect(
+            &start_fn, &[name_ptr.into()], "",
+            &format!("{} not declared - did you `use @std.test`?", start_fn),
+        );
+        if scoped { self.push_scope(); }
         for stmt in &body.statements {
             self.compile_statement(stmt);
         }
-        self.pop_scope();
-
-        // Call forge_test_end_given()
-        self.call_runtime_void("forge_test_end_given", &[]);
+        if scoped { self.pop_scope(); }
+        self.call_runtime_void(&end_fn, &[]);
     }
 
     /// Compile a then block: compiles body, uses last expression as bool result,
@@ -61,22 +48,7 @@ impl<'ctx> Codegen<'ctx> {
         span: &crate::lexer::Span,
     ) {
         let result = self.compile_then_body(body);
-
-        // Build args: name (ptr), result (i8), file (ptr), line (i64)
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-
-        let file_val = self.build_test_string(&self.source_file.clone());
-        let file_ptr = self.extract_string_ptr(file_val);
-
-        let line_val = self.context.i64_type().const_int(span.line as u64, false);
-
-        self.call_runtime_expect(
-            "forge_test_run_then",
-            &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
-            "",
-            "forge_test_run_then not declared - did you `use @std.test`?",
-        );
+        self.emit_test_run_then(name, result, span);
     }
 
     /// Compile a then should_fail block: body is expected to produce a falsy result.
@@ -87,37 +59,22 @@ impl<'ctx> Codegen<'ctx> {
         body: &Block,
         span: &crate::lexer::Span,
     ) {
-        let result = self.compile_then_body(body);
-
-        // Invert: if result is 0 (false/error), did_error = 1 (pass)
-        let did_error = self.builder.build_int_compare(
-            inkwell::IntPredicate::EQ,
-            result,
-            self.context.i8_type().const_zero(),
-            "did_error",
-        ).unwrap();
-        let did_error_i8 = self.builder.build_int_z_extend(
-            did_error, self.context.i8_type(), "did_error_i8"
-        ).unwrap();
-
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-        let empty = self.build_test_string("");
-        let empty_ptr = self.extract_string_ptr(empty);
-        let file_val = self.build_test_string(&self.source_file.clone());
-        let file_ptr = self.extract_string_ptr(file_val);
-        let line_val = self.context.i64_type().const_int(span.line as u64, false);
-
-        self.call_runtime_expect(
-            "forge_test_run_then_should_fail",
-            &[name_ptr.into(), did_error_i8.into(), empty_ptr.into(), empty_ptr.into(), file_ptr.into(), line_val.into()],
-            "",
-            "forge_test_run_then_should_fail not declared - did you `use @std.test`?",
-        );
+        self.compile_then_should_fail_impl(name, "", body, span);
     }
 
     /// Compile a then should_fail_with block: body is expected to produce a falsy result.
     pub(crate) fn compile_then_should_fail_with(
+        &mut self,
+        name: &str,
+        expected: &str,
+        body: &Block,
+        span: &crate::lexer::Span,
+    ) {
+        self.compile_then_should_fail_impl(name, expected, body, span);
+    }
+
+    /// Shared implementation for should_fail and should_fail_with.
+    fn compile_then_should_fail_impl(
         &mut self,
         name: &str,
         expected: &str,
@@ -137,14 +94,10 @@ impl<'ctx> Codegen<'ctx> {
             did_error, self.context.i8_type(), "did_error_i8"
         ).unwrap();
 
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-        let empty = self.build_test_string("");
-        let empty_ptr = self.extract_string_ptr(empty);
-        let expected_val = self.build_test_string(expected);
-        let expected_ptr = self.extract_string_ptr(expected_val);
-        let file_val = self.build_test_string(&self.source_file.clone());
-        let file_ptr = self.extract_string_ptr(file_val);
+        let name_ptr = self.build_test_cstr(name);
+        let empty_ptr = self.build_test_cstr("");
+        let expected_ptr = self.build_test_cstr(expected);
+        let file_ptr = self.build_test_cstr(&self.source_file.clone());
         let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
         self.call_runtime_expect(
@@ -205,20 +158,7 @@ impl<'ctx> Codegen<'ctx> {
 
                 // Compile assertion body
                 let result = self.compile_then_body(body);
-
-                // Call forge_test_run_then
-                let name_val = self.build_test_string(&test_name);
-                let name_ptr = self.extract_string_ptr(name_val);
-                let file_val = self.build_test_string(&self.source_file.clone());
-                let file_ptr = self.extract_string_ptr(file_val);
-                let line_val = self.context.i64_type().const_int(span.line as u64, false);
-
-                self.call_runtime_expect(
-                    "forge_test_run_then",
-                    &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
-                    "",
-                    "forge_test_run_then not declared - did you `use @std.test`?",
-                );
+                self.emit_test_run_then(&test_name, result, span);
 
                 self.pop_scope();
             }
@@ -226,21 +166,20 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Compile a skip statement: calls forge_test_skip(name)
     pub(crate) fn compile_skip_block(&mut self, name: &str) {
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
-        self.call_runtime_expect(
-            "forge_test_skip", &[name_ptr.into()], "",
-            "forge_test_skip not declared - did you `use @std.test`?",
-        );
+        self.emit_test_call("forge_test_skip", name);
     }
 
     /// Compile a todo statement: calls forge_test_todo(name)
     pub(crate) fn compile_todo_stmt(&mut self, name: &str) {
-        let name_val = self.build_test_string(name);
-        let name_ptr = self.extract_string_ptr(name_val);
+        self.emit_test_call("forge_test_todo", name);
+    }
+
+    /// Helper: call a test runtime fn that takes a single name (ptr) arg.
+    fn emit_test_call(&mut self, fn_name: &str, name: &str) {
+        let name_ptr = self.build_test_cstr(name);
         self.call_runtime_expect(
-            "forge_test_todo", &[name_ptr.into()], "",
-            "forge_test_todo not declared - did you `use @std.test`?",
+            fn_name, &[name_ptr.into()], "",
+            &format!("{} not declared - did you `use @std.test`?", fn_name),
         );
     }
 
@@ -273,14 +212,10 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    /// Helper: build a ForgeString from a string literal
-    fn build_test_string(&mut self, s: &str) -> BasicValueEnum<'ctx> {
+    /// Helper: build a string literal and extract its raw C pointer for runtime calls.
+    fn build_test_cstr(&mut self, s: &str) -> BasicValueEnum<'ctx> {
         let expr = Expr::StringLit(s.to_string(), crate::lexer::Span::dummy());
-        self.compile_expr(&expr).unwrap()
-    }
-
-    /// Helper: extract the raw pointer from a ForgeString struct
-    fn extract_string_ptr(&mut self, val: BasicValueEnum<'ctx>) -> BasicValueEnum<'ctx> {
+        let val = self.compile_expr(&expr).unwrap();
         if val.is_struct_value() {
             self.builder
                 .build_extract_value(val.into_struct_value(), 0, "str_ptr")
@@ -289,6 +224,20 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             val
         }
+    }
+
+    /// Helper: emit forge_test_run_then(name, result, file, line).
+    fn emit_test_run_then(&mut self, name: &str, result: inkwell::values::IntValue<'ctx>, span: &crate::lexer::Span) {
+        let name_ptr = self.build_test_cstr(name);
+        let file_ptr = self.build_test_cstr(&self.source_file.clone());
+        let line_val = self.context.i64_type().const_int(span.line as u64, false);
+
+        self.call_runtime_expect(
+            "forge_test_run_then",
+            &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
+            "",
+            "forge_test_run_then not declared - did you `use @std.test`?",
+        );
     }
 }
 

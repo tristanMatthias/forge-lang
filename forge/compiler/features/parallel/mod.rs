@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["parallel"],
     ast_nodes: [],
     description: "Parallel execution blocks for structured concurrency",
+    syntax: [],
+    short: "parallel execution primitives",
+    symbols: [],
 }
 
 pub mod parser;

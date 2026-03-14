@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["is"],
     ast_nodes: ["Is"],
     description: "Inline pattern check: value is Pattern → bool",
+    syntax: ["value is Pattern", "value is Type"],
+    short: "value is Pattern — runtime type and pattern checks",
+    symbols: [],
 }

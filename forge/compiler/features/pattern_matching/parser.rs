@@ -14,17 +14,7 @@ impl Parser {
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
 
-        let mut arms = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-            self.skip_newlines();
-            if self.check(&TokenKind::RBrace) {
-                break;
-            }
-            let arm = self.parse_match_arm()?;
-            arms.push(arm);
-            self.skip_newlines();
-        }
-        self.expect(&TokenKind::RBrace)?;
+        let arms = self.parse_delimited_until(&TokenKind::RBrace, |p| p.parse_match_arm())?;
 
         Some(Expr::Feature(FeatureExpr {
             feature_id: "pattern_matching",
@@ -102,17 +92,7 @@ impl Parser {
                 if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    let mut fields = Vec::new();
-                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                        self.skip_newlines();
-                        let p = self.parse_simple_pattern()?;
-                        fields.push(p);
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::RParen)?;
+                    let fields = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                     Some(Pattern::Enum {
                         variant,
                         fields,
@@ -154,21 +134,13 @@ impl Parser {
                 // Ok(binding) or Err(binding) patterns for Result matching
                 let variant = if matches!(tok.kind, TokenKind::Ok_) { "Ok" } else { "Err" };
                 self.advance();
-                let mut fields = Vec::new();
-                if self.check(&TokenKind::LParen) {
+                let fields = if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                        self.skip_newlines();
-                        let p = self.parse_simple_pattern()?;
-                        fields.push(p);
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::RParen)?;
-                }
+                    self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?
+                } else {
+                    Vec::new()
+                };
                 Some(Pattern::Enum {
                     variant: variant.to_string(),
                     fields,
@@ -198,17 +170,7 @@ impl Parser {
                 // Tuple pattern: (a, b, ...)
                 let span = self.advance()?.span;
                 self.skip_newlines();
-                let mut elems = Vec::new();
-                while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                    self.skip_newlines();
-                    let p = self.parse_simple_pattern()?;
-                    elems.push(p);
-                    self.skip_newlines();
-                    if self.check(&TokenKind::Comma) {
-                        self.advance();
-                    }
-                }
-                self.expect(&TokenKind::RParen)?;
+                let elems = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                 Some(Pattern::Tuple(elems, span))
             }
             TokenKind::Ident(name) => {

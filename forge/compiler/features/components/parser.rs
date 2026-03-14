@@ -152,7 +152,6 @@ impl Parser {
                     let user_params = if self.check(&TokenKind::LParen) {
                         self.advance(); // consume '('
                         let p = self.parse_params().unwrap_or_default();
-                        self.expect(&TokenKind::RParen);
                         p
                     } else {
                         vec![]
@@ -313,7 +312,6 @@ impl Parser {
                                 let params = if self.check(&TokenKind::LParen) {
                                     self.advance();
                                     let p = self.parse_params().unwrap_or_default();
-                                    self.expect(&TokenKind::RParen);
                                     p
                                 } else {
                                     vec![]
@@ -608,7 +606,6 @@ impl Parser {
                                     let params = if self.check(&TokenKind::LParen) {
                                         self.advance();
                                         let p = self.parse_params().unwrap_or_default();
-                                        self.expect(&TokenKind::RParen);
                                         p
                                     } else {
                                         vec![]
@@ -850,7 +847,6 @@ impl Parser {
                     let ann_params = if self.check(&TokenKind::LParen) {
                         self.advance();
                         let p = self.parse_params().unwrap_or_default();
-                        self.expect(&TokenKind::RParen);
                         p
                     } else {
                         vec![]
@@ -870,7 +866,6 @@ impl Parser {
                     let ev_params = if self.check(&TokenKind::LParen) {
                         self.advance();
                         let p = self.parse_params().unwrap_or_default();
-                        self.expect(&TokenKind::RParen);
                         p
                     } else {
                         vec![]
@@ -941,7 +936,6 @@ impl Parser {
                         // Parse params, return type, body as normal fn
                         self.expect(&TokenKind::LParen)?;
                         let params = self.parse_params()?;
-                        self.expect(&TokenKind::RParen)?;
                         self.skip_newlines();
 
                         let return_type = if self.check(&TokenKind::Arrow) {
@@ -972,7 +966,6 @@ impl Parser {
                         // Regular fn in template (unlikely but handle)
                         self.expect(&TokenKind::LParen)?;
                         let params = self.parse_params()?;
-                        self.expect(&TokenKind::RParen)?;
                         self.skip_newlines();
                         let return_type = if self.check(&TokenKind::Arrow) {
                             self.advance();
@@ -1045,7 +1038,6 @@ impl Parser {
                     self.skip_newlines();
                     self.expect(&TokenKind::LParen)?;
                     let fn_params = self.parse_params().unwrap_or_default();
-                    self.expect(&TokenKind::RParen)?;
                     self.skip_newlines();
                     let _return_type = if self.check(&TokenKind::Arrow) {
                         self.advance();

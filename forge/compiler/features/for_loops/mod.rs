@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["for", "in"],
     ast_nodes: ["For"],
     description: "For-in loops over ranges, lists, maps, and channels",
+    syntax: ["for x in collection { body }", "for x in start..end { body }"],
+    short: "for x in collection — iterate lists, ranges, maps, channels",
+    symbols: [],
 }

@@ -373,7 +373,6 @@ impl Parser {
 
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_params()?;
-        self.expect(&TokenKind::RParen)?;
         self.skip_newlines();
 
         let return_type = if self.check(&TokenKind::Arrow) {
@@ -580,7 +579,6 @@ impl Parser {
             self.skip_newlines();
             self.expect(&TokenKind::LParen)?;
             let params = self.parse_params()?;
-            self.expect(&TokenKind::RParen)?;
             self.skip_newlines();
 
             let return_type = if self.check(&TokenKind::Arrow) {
@@ -883,17 +881,7 @@ impl Parser {
             if self.check(&TokenKind::LParen) {
                 let span = self.advance()?.span;
                 self.skip_newlines();
-                let mut args = Vec::new();
-                while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                    self.skip_newlines();
-                    let arg = self.parse_call_arg()?;
-                    args.push(arg);
-                    self.skip_newlines();
-                    if self.check(&TokenKind::Comma) {
-                        self.advance();
-                    }
-                }
-                self.expect(&TokenKind::RParen)?;
+                let args = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
@@ -905,17 +893,7 @@ impl Parser {
                     // try_parse_call_type_args guarantees LParen follows on success
                     let span = self.advance()?.span;
                     self.skip_newlines();
-                    let mut args = Vec::new();
-                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                        self.skip_newlines();
-                        let arg = self.parse_call_arg()?;
-                        args.push(arg);
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::RParen)?;
+                    let args = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_call_arg())?;
                     expr = Expr::Call {
                         callee: Box::new(expr),
                         args,
@@ -1226,18 +1204,10 @@ impl Parser {
                 if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    let mut fields = Vec::new();
-                    while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                        self.skip_newlines();
-                        // Pattern binding in match: just names
-                        let name = self.expect_ident()?;
-                        fields.push(Pattern::Ident(name, span));
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::RParen)?;
+                    let fields = self.parse_delimited_until(&TokenKind::RParen, |p| {
+                        let name = p.expect_ident()?;
+                        Some(Pattern::Ident(name, span))
+                    })?;
                     // This is used in match arms, return as Ident for now
                     // We'll handle it specially in the match pattern parsing
                     return Some(Expr::Ident(format!(".{}", variant), span));
@@ -1310,16 +1280,7 @@ impl Parser {
             self.advance();
             self.skip_newlines();
             let mut elements = vec![first];
-            while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                let elem = self.parse_expr()?;
-                elements.push(elem);
-                self.skip_newlines();
-                if self.check(&TokenKind::Comma) {
-                    self.advance();
-                    self.skip_newlines();
-                }
-            }
-            self.expect(&TokenKind::RParen)?;
+            elements.extend(self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_expr())?);
             Some(Expr::TupleLit {
                 elements,
                 span,
@@ -1457,17 +1418,7 @@ impl Parser {
     pub(crate) fn parse_list_expr(&mut self) -> Option<Expr> {
         let span = self.advance()?.span; // [
         self.skip_newlines();
-        let mut elements = Vec::new();
-        while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
-            self.skip_newlines();
-            let elem = self.parse_expr()?;
-            elements.push(elem);
-            self.skip_newlines();
-            if self.check(&TokenKind::Comma) {
-                self.advance();
-            }
-        }
-        self.expect(&TokenKind::RBracket)?;
+        let elements = self.parse_delimited_until(&TokenKind::RBracket, |p| p.parse_expr())?;
         Some(Expr::ListLit {
             elements,
             span,
@@ -1505,22 +1456,15 @@ impl Parser {
                     // Try to parse as typed fields { name: type, ... }
                     self.advance();
                     self.skip_newlines();
-                    let mut fields = Vec::new();
-                    while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-                        self.skip_newlines();
-                        let name = self.expect_ident()?;
-                        self.skip_newlines();
-                        self.expect(&TokenKind::Colon)?;
-                        self.skip_newlines();
-                        let field_ty = self.parse_type_expr()?;
-                        let annotations = self.parse_type_field_annotations();
-                        fields.push((name, field_ty, annotations));
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::RBrace)?;
+                    let fields = self.parse_delimited_until(&TokenKind::RBrace, |p| {
+                        let name = p.expect_ident()?;
+                        p.skip_newlines();
+                        p.expect(&TokenKind::Colon)?;
+                        p.skip_newlines();
+                        let field_ty = p.parse_type_expr()?;
+                        let annotations = p.parse_type_field_annotations();
+                        Some((name, field_ty, annotations))
+                    })?;
                     ty = TypeExpr::TypeWith {
                         base: Box::new(ty),
                         fields,
@@ -1616,18 +1560,7 @@ impl Parser {
     fn parse_field_name_list(&mut self) -> Option<Vec<String>> {
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
-        let mut names = Vec::new();
-        while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-            self.skip_newlines();
-            let name = self.expect_ident()?;
-            names.push(name);
-            self.skip_newlines();
-            if self.check(&TokenKind::Comma) {
-                self.advance();
-            }
-        }
-        self.expect(&TokenKind::RBrace)?;
-        Some(names)
+        self.parse_delimited_until(&TokenKind::RBrace, |p| p.expect_ident())
     }
 
     pub(crate) fn parse_primary_type(&mut self) -> Option<TypeExpr> {
@@ -1641,20 +1574,7 @@ impl Parser {
                 if self.check(&TokenKind::Lt) {
                     self.advance();
                     self.skip_newlines();
-                    let mut args = Vec::new();
-                    loop {
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Gt) {
-                            break;
-                        }
-                        let arg = self.parse_type_expr()?;
-                        args.push(arg);
-                        self.skip_newlines();
-                        if self.check(&TokenKind::Comma) {
-                            self.advance();
-                        }
-                    }
-                    self.expect(&TokenKind::Gt)?;
+                    let args = self.parse_delimited_until(&TokenKind::Gt, |p| p.parse_type_expr())?;
                     Some(TypeExpr::Generic { name, args })
                 } else {
                     Some(TypeExpr::Named(name))
@@ -1664,17 +1584,7 @@ impl Parser {
                 // Tuple type or function type: (int, string) or (int, int) -> int
                 self.advance();
                 self.skip_newlines();
-                let mut types = Vec::new();
-                while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-                    self.skip_newlines();
-                    let ty = self.parse_type_expr()?;
-                    types.push(ty);
-                    self.skip_newlines();
-                    if self.check(&TokenKind::Comma) {
-                        self.advance();
-                    }
-                }
-                self.expect(&TokenKind::RParen)?;
+                let types = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
                 self.skip_newlines();
 
                 if self.check(&TokenKind::Arrow) {
@@ -1693,26 +1603,15 @@ impl Parser {
                 // Struct type: { name: string @min(1), age: int }
                 self.advance();
                 self.skip_newlines();
-                let mut fields = Vec::new();
-                loop {
-                    self.skip_newlines();
-                    if self.check(&TokenKind::RBrace) || self.is_at_end() {
-                        break;
-                    }
-                    let name = self.expect_ident()?;
-                    self.skip_newlines();
-                    self.expect(&TokenKind::Colon)?;
-                    self.skip_newlines();
-                    let ty = self.parse_type_expr()?;
-                    // Parse field annotations: @min(1) @max(100) @validate(email)
-                    let annotations = self.parse_type_field_annotations();
-                    fields.push((name, ty, annotations));
-                    self.skip_newlines();
-                    if self.check(&TokenKind::Comma) {
-                        self.advance();
-                    }
-                }
-                self.expect(&TokenKind::RBrace)?;
+                let fields = self.parse_delimited_until(&TokenKind::RBrace, |p| {
+                    let name = p.expect_ident()?;
+                    p.skip_newlines();
+                    p.expect(&TokenKind::Colon)?;
+                    p.skip_newlines();
+                    let ty = p.parse_type_expr()?;
+                    let annotations = p.parse_type_field_annotations();
+                    Some((name, ty, annotations))
+                })?;
                 Some(TypeExpr::Struct { fields })
             }
             _ => {
@@ -1725,45 +1624,35 @@ impl Parser {
     // ---- Params ----
 
     pub(crate) fn parse_params(&mut self) -> Option<Vec<Param>> {
-        let mut params = Vec::new();
         self.skip_newlines();
-        while !self.check(&TokenKind::RParen) && !self.is_at_end() {
-            self.skip_newlines();
-            if self.check(&TokenKind::RParen) {
-                break;
-            }
-            let span = self.current_span();
-            let name = self.expect_ident()?;
-            self.skip_newlines();
+        self.parse_delimited_until(&TokenKind::RParen, |p| {
+            let span = p.current_span();
+            let name = p.expect_ident()?;
+            p.skip_newlines();
 
-            let type_ann = if self.check(&TokenKind::Colon) {
-                self.advance();
-                self.skip_newlines();
-                Some(self.parse_type_expr()?)
+            let type_ann = if p.check(&TokenKind::Colon) {
+                p.advance();
+                p.skip_newlines();
+                Some(p.parse_type_expr()?)
             } else {
                 None
             };
 
-            let default = if self.check(&TokenKind::Eq) {
-                self.advance();
-                self.skip_newlines();
-                Some(self.parse_expr()?)
+            let default = if p.check(&TokenKind::Eq) {
+                p.advance();
+                p.skip_newlines();
+                Some(p.parse_expr()?)
             } else {
                 None
             };
 
-            params.push(Param {
+            Some(Param {
                 name,
                 type_ann,
                 default,
                 span,
-            });
-            self.skip_newlines();
-            if self.check(&TokenKind::Comma) {
-                self.advance();
-            }
-        }
-        Some(params)
+            })
+        })
     }
 
     // ---- Block ----
@@ -1785,6 +1674,34 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
         Some(Block { statements, span })
+    }
+
+    // ---- Delimited list helper ----
+
+    /// Parse a list of items between delimiters, with optional commas.
+    /// Skips newlines between items. The opening delimiter should already be consumed.
+    pub(crate) fn parse_delimited_until<T, F>(
+        &mut self,
+        close: &TokenKind,
+        mut parser: F,
+    ) -> Option<Vec<T>>
+    where
+        F: FnMut(&mut Self) -> Option<T>,
+    {
+        let mut items = Vec::new();
+        while !self.check(close) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(close) {
+                break;
+            }
+            items.push(parser(self)?);
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.expect(close)?;
+        Some(items)
     }
 
     // ---- Helpers ----

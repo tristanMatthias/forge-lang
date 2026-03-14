@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["?", "ok", "err", "catch"],
     ast_nodes: ["ErrorPropagate", "OkExpr", "ErrExpr", "Catch"],
     description: "Result types with Ok/Err constructors, ? propagation, and catch blocks",
+    syntax: ["expr?", "catch { body }"],
+    short: "Result types with ? propagation and catch blocks",
+    symbols: [],
 }
 
 pub mod parser;

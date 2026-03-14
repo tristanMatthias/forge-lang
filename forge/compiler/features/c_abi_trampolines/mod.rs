@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: [],
     ast_nodes: [],
     description: "Automatic ForgeString to ptr coercion and ptr to ForgeString wrapping for extern calls",
+    syntax: [],
+    short: "automatic ForgeString/ptr coercion for FFI calls",
+    symbols: [],
 }
 
 pub mod parser;

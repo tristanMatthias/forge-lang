@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: [],
     ast_nodes: [],
     description: "Query comparison helpers: query_gt(), query_gte(), query_lt(), query_lte(), query_between(), query_like() — produce JSON filter strings for model queries",
+    syntax: [],
+    short: "query builder utilities for structured data",
+    symbols: [],
 }
 
 pub mod codegen;

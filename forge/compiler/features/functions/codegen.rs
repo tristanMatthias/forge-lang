@@ -338,51 +338,38 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn compile_println(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() {
-            // Just print a newline
             let newline = self.build_string_literal("\n");
             self.call_runtime_void("forge_print_string", &[newline.into()]);
             return None;
         }
-
-        let arg = &args[0];
-        let val = self.compile_expr(&arg.value)?;
-        let resolved = self.resolve_runtime_type(&arg.value, &val);
-
-        match resolved {
-            Type::String => { self.call_runtime_void("forge_println_string", &[val.into()]); }
-            Type::Int => { self.call_runtime_void("forge_println_int", &[val.into()]); }
-            Type::Float => { self.call_runtime_void("forge_println_float", &[val.into()]); }
-            Type::Bool => { self.call_runtime_void("forge_println_bool", &[val.into()]); }
-            _ => {
-                if val.is_struct_value() {
-                    self.call_runtime_void("forge_println_string", &[val.into()]);
-                }
-            }
-        }
-
-        None
+        self.compile_print_dispatch(args, "forge_println")
     }
 
     pub(crate) fn compile_print(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() {
             return None;
         }
+        self.compile_print_dispatch(args, "forge_print")
+    }
 
+    /// Shared helper for compile_println and compile_print.
+    /// `prefix` is either "forge_println" or "forge_print".
+    fn compile_print_dispatch(&mut self, args: &[CallArg], prefix: &str) -> Option<BasicValueEnum<'ctx>> {
         let arg = &args[0];
         let val = self.compile_expr(&arg.value)?;
         let resolved = self.resolve_runtime_type(&arg.value, &val);
 
-        match resolved {
-            Type::String => { self.call_runtime_void("forge_print_string", &[val.into()]); }
-            Type::Int => { self.call_runtime_void("forge_print_int", &[val.into()]); }
-            Type::Float => { self.call_runtime_void("forge_print_float", &[val.into()]); }
+        let suffix = match resolved {
+            Type::String => "_string",
+            Type::Int => "_int",
+            Type::Float => "_float",
+            Type::Bool => "_bool",
             _ => {
-                if val.is_struct_value() {
-                    self.call_runtime_void("forge_print_string", &[val.into()]);
-                }
+                if val.is_struct_value() { "_string" } else { return None; }
             }
-        }
+        };
 
+        self.call_runtime_void(&format!("{}{}", prefix, suffix), &[val.into()]);
         None
     }
 

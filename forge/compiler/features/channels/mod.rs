@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["<-"],
     ast_nodes: ["ChannelSend", "ChannelReceive"],
     description: "Channel-based communication with send (<-), receive (<-), and iteration",
+    syntax: ["ch <- value", "<- ch", "for msg in ch { }"],
+    short: "ch <- val (send), <- ch (recv) — typed channel communication",
+    symbols: ["<-"],
 }

@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["..", "..="],
     ast_nodes: ["Range"],
     description: "Range expressions: 0..10 (exclusive) and 0..=10 (inclusive)",
+    syntax: ["start..end", "start..=end"],
+    short: "start..end (exclusive), start..=end (inclusive) — range expressions",
+    symbols: ["..", "..="],
 }

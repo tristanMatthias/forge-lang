@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["spawn"],
     ast_nodes: ["SpawnBlock"],
     description: "Concurrent execution with spawn { ... } blocks",
+    syntax: ["spawn { body }"],
+    short: "spawn { } — lightweight concurrent task execution",
+    symbols: [],
 }

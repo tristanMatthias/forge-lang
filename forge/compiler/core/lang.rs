@@ -922,6 +922,895 @@ fn get_examples(feature_id: &str) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+// ── Long descriptions ───────────────────────────────────────────────
+
+/// Return a rich multi-paragraph description for a feature, or empty string if none.
+pub fn long_description(id: &str) -> &'static str {
+    match id {
+        "variables" => "\
+Variables in Forge are declared with `let` for immutable bindings, `mut` for mutable ones, \
+and `const` for compile-time constants. Immutability is the default, which means `let x = 10` \
+creates a binding that can never be reassigned. This design choice catches an entire class of \
+bugs at compile time and makes code easier to reason about, since you always know a `let` \
+binding holds the value it was initialized with.
+
+Type inference means you rarely need to annotate types. The compiler figures out that \
+`let name = \"Alice\"` is a `string` and `let count = 42` is an `int`. When you do want \
+to be explicit, annotations go after the name: `let ratio: float = 3.14`. Mutable variables \
+use `mut`: `mut counter = 0` followed by `counter = counter + 1`.
+
+Constants declared with `const` must have values known at compile time. Unlike `let` bindings, \
+constants are inlined everywhere they are used, so they carry zero runtime cost. Use constants \
+for magic numbers, configuration values, and anything that should never change across the \
+lifetime of the program.
+
+If you are coming from JavaScript or Python, the key difference is that Forge variables are \
+immutable by default. If you are coming from Rust, the model is similar but without lifetime \
+annotations. If you are coming from Go, think of `let` as a stricter `:=` that forbids reassignment.",
+
+        "functions" => "\
+Functions are declared with `fn`, followed by the function name, parameters in parentheses, \
+and an optional return type. The body is a block expression, and the last expression in the \
+block is the implicit return value. For example: `fn double(x: int) -> int { x * 2 }`.
+
+Parameter types are required, but return types can usually be inferred. If a function returns \
+nothing, the return type is `void`. Functions are first-class values: you can pass them as \
+arguments, store them in variables, and return them from other functions.
+
+Forge functions support early return with the `return` keyword, but idiomatic Forge prefers \
+implicit returns via the last expression. This keeps functions concise and encourages a \
+functional style. Functions can call themselves recursively, and the compiler handles tail \
+calls efficiently where possible.
+
+Unlike languages that distinguish between functions and methods at the syntax level, Forge \
+treats all callables uniformly. Methods on types are just functions that receive the type as \
+their first argument, accessed through dot notation.",
+
+        "closures" => "\
+Closures are anonymous functions created with the arrow syntax: `(x) -> x * 2`. They capture \
+variables from their surrounding scope and can be passed as arguments, stored in variables, or \
+returned from functions. Closures are the primary way to pass behavior in Forge, used heavily \
+with collection methods like `map`, `filter`, and `each`.
+
+The syntax is deliberately minimal. A single-parameter closure needs no parentheses around the \
+parameter list: `x -> x + 1`. Multi-parameter closures use parentheses: `(a, b) -> a + b`. \
+For closures with a single parameter, Forge also supports the `it` implicit parameter, so \
+`list.map(it * 2)` is equivalent to `list.map((x) -> x * 2)`.
+
+Closures infer their parameter and return types from context. When you write \
+`numbers.map((n) -> n.to_string())`, the compiler knows `n` is an `int` because `numbers` is \
+a `list<int>`, and knows the closure returns `string` because `to_string()` does.
+
+Compared to other languages, Forge closures are closest to Kotlin's lambdas or Swift's \
+closures. The `->` syntax was chosen over `=>` (JavaScript) to avoid ambiguity with comparison \
+operators and to visually distinguish closures from match arms.",
+
+        "if_else" => "\
+In Forge, `if`/`else` are expressions, not statements. This means they produce a value and can \
+be used anywhere an expression is expected. For example: `let status = if score > 90 { \"A\" } \
+else { \"B\" }`. The last expression in each branch becomes the value of the entire `if` expression.
+
+Conditions do not require parentheses. Write `if x > 0 { ... }` rather than `if (x > 0) { ... }`. \
+The `else if` chain works as expected for multiple conditions: \
+`if x > 0 { \"positive\" } else if x < 0 { \"negative\" } else { \"zero\" }`.
+
+Because `if` is an expression, there is no need for a ternary operator. The expression form is \
+both more readable and more flexible than C-style ternaries. When used as a statement (ignoring \
+the return value), `if` works exactly as you would expect from any other language.
+
+Type checking ensures that both branches of an `if`/`else` return the same type when the result \
+is used as a value. If you write `let x = if cond { 1 } else { \"two\" }`, the compiler will \
+report a type mismatch.",
+
+        "for_loops" => "\
+For loops in Forge use the `for...in` syntax to iterate over ranges, lists, maps, and channels. \
+The simplest form is `for i in 0..10 { ... }` which iterates from 0 to 9. Use `0..=10` for an \
+inclusive range that includes 10.
+
+When iterating over lists, the loop variable takes on each element: `for item in my_list { ... }`. \
+For maps, you can destructure the key-value pair: `for (key, value) in my_map { ... }`. This \
+uniform syntax means you learn one loop construct and use it everywhere.
+
+For loops can also iterate over channels, which makes them a natural fit for concurrent programming \
+patterns. When used with a channel, `for msg in ch { ... }` will receive and process messages until \
+the channel is closed. This is the idiomatic way to consume a stream of values from a concurrent task.
+
+Unlike C-style for loops, Forge's `for...in` cannot produce off-by-one errors because you never \
+manually manage an index variable. If you need the index alongside the value, use the `enumerate` \
+method on the collection.",
+
+        "while_loops" => "\
+While loops repeat a block as long as a condition remains true. The syntax is straightforward: \
+`while condition { body }`. This is the right choice when the number of iterations is not known \
+in advance and depends on some runtime condition.
+
+A common pattern is `while true { ... }` for infinite loops that terminate via `break`. This is \
+useful for event loops, REPL implementations, and retry logic. The `break` keyword exits the \
+loop immediately, and `continue` skips to the next iteration.
+
+While loops are generally less common in idiomatic Forge than `for...in` loops, since most \
+iteration involves collections or ranges. Prefer `for` when you know what you are iterating over, \
+and reserve `while` for conditions that depend on external state or complex termination logic.",
+
+        "operators" => "\
+Forge provides the standard set of arithmetic operators (`+`, `-`, `*`, `/`, `%`), comparison \
+operators (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical operators (`and`, `or`, `not`). \
+Arithmetic operators work on `int` and `float` types, with automatic promotion when mixing them.
+
+String concatenation uses `+`, so `\"hello\" + \" world\"` produces `\"hello world\"`. Comparison \
+operators work on numbers and strings (lexicographic comparison). Logical operators use words \
+rather than symbols (`and` instead of `&&`, `or` instead of `||`) for readability.
+
+The `%` modulo operator returns the remainder of integer division. Division between two integers \
+performs integer division; use a float operand if you need decimal results. All operators have \
+the precedence you would expect from mathematics: multiplication and division bind tighter than \
+addition and subtraction, and comparison operators bind tighter than logical operators.
+
+Forge deliberately omits bitwise operators from the core language, since they are rarely needed \
+in application-level code. This keeps the operator set small and the precedence rules simple.",
+
+        "pattern_matching" => "\
+Pattern matching with `match` is one of the most powerful features in Forge. A match expression \
+takes a value and compares it against a series of patterns, executing the arm that matches first. \
+Unlike chains of `if`/`else if`, match is exhaustive: the compiler verifies that every possible \
+case is covered, preventing subtle bugs.
+
+Patterns can match literal values (`1`, `\"hello\"`), bind variables (`x`), destructure data \
+structures, and use guards for additional conditions. For example: \
+`match status { \"ok\" -> handle_ok(), \"error\" -> handle_err(), _ -> handle_unknown() }`. \
+The underscore `_` is the wildcard pattern that matches anything.
+
+Guards add conditions to patterns with `if`: `match score { n if n > 90 -> \"A\", n if n > 80 -> \"B\", _ -> \"C\" }`. \
+This combines the clarity of pattern matching with the flexibility of arbitrary boolean conditions. \
+Guards are checked after the pattern matches, so you can use bound variables in the guard expression.
+
+Match works especially well with enums, where each variant becomes a pattern. The compiler ensures \
+every variant is handled, so adding a new variant to an enum immediately highlights every match \
+expression that needs updating. This is the same exhaustiveness guarantee that makes Rust's and \
+Haskell's pattern matching so reliable.",
+
+        "ranges" => "\
+Ranges represent a sequence of consecutive values, written with the `..` operator. An exclusive \
+range `0..5` includes 0, 1, 2, 3, 4. An inclusive range `0..=5` also includes 5. Ranges are most \
+commonly used in `for` loops: `for i in 0..n { ... }`.
+
+Ranges are first-class values that can be stored in variables and passed to functions. They support \
+the `contains` method for membership testing: `(1..10).contains(5)` returns true. This makes ranges \
+useful for validation and bounds checking beyond just iteration.
+
+The exclusive range `..` is the default because it aligns with zero-based indexing. When you write \
+`for i in 0..list.length() { ... }`, there is no off-by-one risk. Use the inclusive form `..=` \
+when you specifically need the endpoint, such as `for day in 1..=31 { ... }`.",
+
+        "enums" => "\
+Enums in Forge are algebraic data types that define a type with a fixed set of named variants. \
+Each variant can optionally carry data of any type. This makes enums far more powerful than the \
+simple integer enumerations found in C or Java. For example: \
+`enum Shape { Circle(float), Rectangle(float, float), Point }`.
+
+Enums are constructed by naming the variant: `let s = Shape.Circle(5.0)`. Pattern matching with \
+`match` is the primary way to work with enums, and the compiler ensures every variant is handled. \
+This exhaustiveness checking catches entire categories of bugs at compile time.
+
+Enums are ideal for modeling state machines, command sets, message types, error categories, and \
+any domain where a value is exactly one of several possibilities. The Result and Option types that \
+power Forge's error handling and null safety are themselves enums under the hood.
+
+If you are familiar with Rust enums, Swift enums with associated values, or Haskell data types, \
+Forge enums work the same way. If you are coming from TypeScript, think of them as discriminated \
+unions with compiler-enforced exhaustiveness.",
+
+        "structs" => "\
+Structs define structural types with named fields. They are the primary way to group related data \
+in Forge. Declaration syntax is: `type Point { x: int, y: int }`. Instances are created with \
+literal syntax: `let p = Point { x: 10, y: 20 }`. Fields are accessed with dot notation: `p.x`.
+
+Forge structs are immutable by default. To create a modified copy, use the `with` expression: \
+`let q = p with { x: 30 }`. This creates a new struct with the specified fields changed and all \
+others copied from the original. This approach encourages immutable data flow and makes it clear \
+exactly which fields differ between two values.
+
+Structs support shorthand field initialization when the variable name matches the field name: \
+`let x = 10; let y = 20; Point { x, y }`. This reduces boilerplate when constructing structs \
+from local variables with matching names.
+
+Unlike classes in object-oriented languages, Forge structs carry no methods or inheritance. \
+Behavior is attached through trait implementations, keeping data and behavior cleanly separated. \
+This design scales better for large codebases and avoids the deep inheritance hierarchies that \
+plague OOP systems.",
+
+        "tuples" => "\
+Tuples are fixed-size heterogeneous collections that group values of potentially different types. \
+A tuple is written as `(value1, value2, ...)` and its type is `(Type1, Type2, ...)`. For example, \
+`let pair = (\"Alice\", 30)` creates a tuple of type `(string, int)`.
+
+Elements are accessed by position using dot notation with an index: `pair.0` returns `\"Alice\"` \
+and `pair.1` returns `30`. Tuples are most useful for returning multiple values from functions \
+without defining a named struct: `fn divide(a: int, b: int) -> (int, int) { (a / b, a % b) }`.
+
+Tuples can be destructured in `let` bindings: `let (quotient, remainder) = divide(10, 3)`. This \
+makes working with multi-return functions feel natural. Pattern matching also supports tuple \
+patterns for more complex destructuring scenarios.
+
+Compared to other languages, Forge tuples are closest to Python or Rust tuples. Use tuples for \
+quick grouping of a few values. When you find yourself using tuples with more than three or four \
+elements, consider switching to a named struct for clarity.",
+
+        "collections" => "\
+Forge provides two built-in collection types: `list<T>` and `map<K, V>`. Lists are ordered, \
+indexed sequences created with square brackets: `let nums = [1, 2, 3]`. Maps are key-value \
+stores created with curly braces: `let ages = { \"Alice\": 30, \"Bob\": 25 }`.
+
+Lists support a rich set of methods: `push`, `pop`, `map`, `filter`, `reduce`, `each`, \
+`length`, `contains`, `sorted`, `join`, and more. Chaining these methods with closures is the \
+idiomatic way to transform data: `numbers.filter((n) -> n > 0).map((n) -> n * 2)`. Lists are \
+generic, so `list<int>`, `list<string>`, and `list<list<int>>` are all valid types.
+
+Maps support `get`, `set`, `keys`, `values`, `contains`, and `length`. Map access uses bracket \
+notation: `ages[\"Alice\"]`. When a key might not exist, use the null-safe access `ages[\"Charlie\"]?` \
+combined with `??` to provide a default.
+
+Both collections are mutable when declared with `mut`. Immutable collections cannot have elements \
+added or removed, making them safe to share across function boundaries without defensive copying.",
+
+        "strings" => "\
+Strings in Forge are UTF-8 encoded, immutable sequences of characters. String literals use double \
+quotes: `\"hello world\"`. Template literals with `${}` interpolation provide the primary way to \
+build strings dynamically: `\"Hello, ${name}! You are ${age} years old.\"`.
+
+Strings support a comprehensive set of methods: `length()`, `contains(sub)`, `starts_with(prefix)`, \
+`ends_with(suffix)`, `to_upper()`, `to_lower()`, `trim()`, `split(separator)`, `replace(old, new)`, \
+`substring(start, end)`, and more. These methods return new strings rather than mutating in place, \
+consistent with Forge's immutability-first design.
+
+String comparison uses `==` for value equality, not reference equality. Strings can be concatenated \
+with `+`, though template literals are preferred for building complex strings since they are more \
+readable and less error-prone than chained concatenation.
+
+Multi-line strings are supported naturally. Forge does not have a separate character type; single \
+characters are simply strings of length one.",
+
+        "generics" => "\
+Generics let you write functions and types that work with any type, while still maintaining full \
+type safety. A generic function is declared with type parameters in angle brackets: \
+`fn identity<T>(x: T) -> T { x }`. The type parameter `T` is replaced with a concrete type at \
+each call site.
+
+Generic types work the same way: `type Wrapper<T> { value: T }` creates a type that can wrap any \
+other type. You can instantiate it as `Wrapper<int> { value: 42 }` or `Wrapper<string> { value: \"hi\" }`.
+
+Type parameters can be constrained with trait bounds to require certain capabilities. This ensures \
+that generic code can only be called with types that support the operations it needs, catching type \
+errors at compile time rather than runtime.
+
+Forge's generics are similar to those in Rust, TypeScript, and Java. They use monomorphization \
+at compile time, meaning generic code has zero runtime overhead: the compiler generates specialized \
+versions for each concrete type used.",
+
+        "traits" => "\
+Traits define shared interfaces that types can implement. A trait declares a set of method \
+signatures that implementing types must provide: `trait Printable { fn to_display() -> string }`. \
+Types implement traits with `impl` blocks: `impl Printable for Point { fn to_display() -> string { ... } }`.
+
+Traits enable polymorphism without inheritance. A function that accepts `impl Printable` can work \
+with any type that implements the trait, regardless of the type's other characteristics. This is \
+more flexible than class-based inheritance because a type can implement any number of traits.
+
+Trait bounds on generic type parameters constrain what operations are available: \
+`fn print_all<T: Printable>(items: list<T>)` ensures every item can be displayed. This catches \
+errors at compile time and provides clear documentation about what a function requires.
+
+If you are coming from Go, Forge traits are similar to interfaces. From Rust, they work the same \
+way. From Java or C#, think of them as interfaces with no default methods. From TypeScript, they \
+are like structural interfaces but explicitly declared.",
+
+        "imports" => "\
+The `use` statement brings names from other modules and providers into scope. External providers \
+are imported with the `@` prefix: `use @std.http` makes the HTTP provider's functions and \
+components available. Local module imports follow the same pattern without the prefix.
+
+Provider imports are the primary mechanism for extending Forge's capabilities. Each provider \
+contributes types, functions, and component templates. The `use` statement triggers provider \
+loading at compile time, making all provider exports available for the rest of the file.
+
+Multiple imports can be grouped, and the compiler resolves dependencies between providers \
+automatically. Circular dependencies between user modules are detected and reported as errors.",
+
+        "immutability" => "\
+Forge is immutable by default. Variables declared with `let` cannot be reassigned after \
+initialization. This is not a convention or a lint rule; it is enforced by the compiler. \
+Attempting to assign to a `let` binding produces error F0013 with a clear message explaining \
+the immutability constraint.
+
+Mutable bindings require the explicit `mut` keyword: `mut counter = 0`. This makes every \
+mutation point visible in the code. When reading a function, you can immediately see which \
+values might change by scanning for `mut` declarations. This is especially valuable in larger \
+codebases where understanding data flow is critical.
+
+Constants declared with `const` are even stricter: their values must be known at compile time, \
+and they are inlined at every usage site. Use `const` for configuration values, mathematical \
+constants, and fixed strings.
+
+The immutable-by-default philosophy extends beyond variables to data structures. Structs created \
+with `let` have immutable fields. The `with` expression creates modified copies rather than \
+mutating in place. This approach eliminates shared mutable state, the root cause of countless \
+bugs in imperative programs.",
+
+        "type_operators" => "\
+Type operators are compile-time transformations that derive new types from existing ones. \
+Forge provides `without`, `only`, `partial`, and `with` for manipulating struct types. \
+For example, `type CreateUser = User without { id }` creates a type with all User fields \
+except `id`.
+
+The `only` operator selects a subset of fields: `type UserName = User only { name, email }`. \
+The `partial` operator makes all fields optional: `type UserUpdate = User partial`. \
+The `with` operator adds or overrides fields: `type AdminUser = User with { role: string }`.
+
+These operators are essential for API design, where you often need variations of a base type \
+for different operations (create, update, response). Instead of manually maintaining parallel \
+type definitions that drift out of sync, type operators derive the variations and keep them \
+consistent automatically.
+
+Type operators compose: `type CreateUser = User without { id } with { password: string }` \
+removes the `id` field and adds a `password` field in a single declaration. This is similar \
+to TypeScript's `Omit`, `Pick`, and `Partial` utility types but with cleaner syntax.",
+
+        "pipe_operator" => "\
+The pipe operator `|>` passes the result of the left expression as the first argument to the \
+right function. It transforms nested function calls into a readable left-to-right chain. Instead \
+of `to_upper(trim(read_file(\"input.txt\")))`, you write: \
+`read_file(\"input.txt\") |> trim() |> to_upper()`.
+
+Pipes also work with method calls. `data |> process(config)` is equivalent to `process(data, config)`, \
+and `text |> .trim()` calls the method on the piped value. This makes long transformation \
+pipelines read like a recipe: each step takes the previous result and transforms it further.
+
+Multi-line pipes are supported for complex chains. The `|>` operator can appear at the start of \
+a continuation line, so you can format pipelines vertically for readability.
+
+The pipe operator is inspired by Elixir and F#, where it is fundamental to the language's style. \
+In Forge, it pairs especially well with closures and collection methods, enabling a fluent, \
+functional programming style without sacrificing type safety.",
+
+        "null_safety" => "\
+Forge eliminates null pointer exceptions through its type system. A type like `string` can never \
+be null. To represent the absence of a value, you use a nullable type: `string?`. The compiler \
+tracks nullability through every operation and refuses to compile code that could dereference a \
+null value without checking first.
+
+The optional chaining operator `?.` safely accesses fields and methods on nullable values. \
+`user?.name` returns the name if `user` is not null, or null otherwise. This chains beautifully: \
+`user?.address?.city` navigates a nullable chain without any of the defensive `if` checks that \
+litter null-unsafe code.
+
+The null coalescing operator `??` provides a default value when something is null: \
+`user?.name ?? \"anonymous\"` returns the name if available, or `\"anonymous\"` if not. Combined \
+with `?.`, this handles the vast majority of null-handling scenarios in a single expression.
+
+The `?` suffix on function return types indicates the function might return null: \
+`fn find_user(id: int) -> User?`. Callers must handle the null case, either with `?.`, `??`, \
+or an explicit null check. This makes null a deliberate, visible choice rather than a hidden \
+landmine.",
+
+        "error_propagation" => "\
+Error propagation in Forge uses the `?` operator to bubble errors up the call stack. When a \
+function returns a Result type, appending `?` to the call either unwraps the success value or \
+immediately returns the error to the caller. This eliminates the verbose `if err != nil` checks \
+found in Go and the sprawling try/catch blocks of Java.
+
+The `?` operator can only be used inside functions that themselves return a Result type. The \
+compiler enforces this rule, so you always know whether a function can fail by looking at its \
+return type. There are no hidden error paths.
+
+For functions that need to handle errors rather than propagate them, the `catch` pattern provides \
+structured error handling. This gives you the control of try/catch when you need it, while the \
+`?` operator handles the common case of simply passing errors upward.
+
+This design is directly inspired by Rust's `?` operator and Result type. It provides the same \
+safety guarantees — every error must be explicitly handled or propagated — while keeping the \
+syntax lightweight. Compared to exceptions, it makes error paths visible in type signatures and \
+prevents the \"exception from nowhere\" problem.",
+
+        "defer" => "\
+The `defer` statement schedules an expression to execute when the enclosing scope exits, \
+regardless of whether the exit is normal or due to an error. This is the primary mechanism \
+for resource cleanup in Forge: `let f = open(path); defer close(f)`. No matter how the \
+function returns, the file will be closed.
+
+Deferred expressions execute in LIFO (last-in, first-out) order. If you defer A then defer B, \
+B executes first, then A. This matches the natural pattern of resource acquisition: resources \
+acquired later should be released first.
+
+Defer eliminates the need for finally blocks, destructors, or RAII patterns for resource management. \
+It keeps the cleanup code next to the acquisition code, rather than at the bottom of a try/finally \
+block potentially hundreds of lines away. This locality makes it easy to verify that every resource \
+is properly cleaned up.
+
+The concept comes from Go, where `defer` is used extensively. Forge's implementation works the \
+same way, executing deferred expressions before every return point in the function, including \
+early returns and error propagation with `?`.",
+
+        "is_keyword" => "\
+The `is` keyword tests whether a value matches a pattern or belongs to a type. It returns a \
+boolean and is used in conditions: `if value is int { ... }` or `if shape is Circle { ... }`. \
+This is the lightweight alternative to a full `match` expression when you only care about one case.
+
+With enums, `is` checks for a specific variant: `if result is Ok { ... }`. Combined with \
+`if let`-style binding, it can extract the associated data: `if result is Ok(value) { ... }`. \
+This handles the common pattern of checking-and-extracting in a single, readable expression.
+
+The `is` keyword also works with nullable types: `if x is null { ... }` checks for null, and \
+`if x is string { ... }` checks that a nullable value is present and of the expected type. \
+This integrates naturally with Forge's null safety system.
+
+Compared to `instanceof` in Java or `typeof` in JavaScript, `is` is a pattern matching \
+operation, not just a type check. It can match literal values, types, enum variants, and \
+complex patterns, making it strictly more powerful.",
+
+        "with_expression" => "\
+The `with` expression creates a modified copy of an immutable struct. Given \
+`let p = Point { x: 1, y: 2 }`, writing `let q = p with { x: 10 }` creates a new Point where \
+`x` is 10 and `y` is copied from `p`. The original `p` is unchanged.
+
+This is the idiomatic way to \"update\" immutable data in Forge. Rather than mutating fields in \
+place, you express transformations as new values derived from old ones. This makes data flow \
+explicit and eliminates bugs caused by unexpected mutation of shared references.
+
+The `with` expression copies all fields from the original, then applies the overrides. Only the \
+fields you specify are different; everything else is preserved. This is concise even for structs \
+with many fields, since you only mention what changes.
+
+This feature is equivalent to the spread/rest operator for objects in JavaScript \
+(`{ ...obj, field: newValue }`), Kotlin's `copy()` method on data classes, or Rust's struct \
+update syntax (`Point { x: 10, ..p }`). Forge's `with` keyword reads naturally in English, \
+making the intent immediately clear.",
+
+        "it_parameter" => "\
+The `it` keyword is an implicit parameter available inside single-argument closures. Instead of \
+writing `list.map((x) -> x * 2)`, you can write `list.map(it * 2)`. The `it` variable \
+automatically refers to the single argument passed to the closure.
+
+This syntactic sugar reduces noise in common patterns. Collection operations like `map`, `filter`, \
+`each`, and `reduce` frequently take simple closures where naming the parameter adds no clarity. \
+`numbers.filter(it > 0)` is clearer than `numbers.filter((n) -> n > 0)` because the intent is \
+immediately obvious.
+
+The `it` parameter is only available in single-argument closure contexts. If a closure takes \
+multiple arguments, you must name them explicitly. This restriction prevents ambiguity and \
+ensures `it` always has a clear, unambiguous meaning.
+
+Kotlin popularized this pattern, and it works the same way in Forge. Groovy also uses `it` as \
+an implicit closure parameter. The feature is purely syntactic sugar; every use of `it` has an \
+equivalent explicit closure form.",
+
+        "table_literal" => "\
+Table literals provide a concise syntax for defining tabular data using pipe-delimited columns. \
+Instead of a list of structs or a list of lists, you write the data as a visual table directly \
+in your source code, with `|` separating columns and each row on its own line.
+
+This syntax is especially useful for test data, configuration tables, and any scenario where \
+data is naturally two-dimensional. The visual alignment of columns makes the data easy to read \
+and verify at a glance, unlike nested data structures that obscure the tabular nature of the data.
+
+Table literals produce a typed list of records. The first row defines the column names and types, \
+and subsequent rows provide the values. The compiler verifies that every row has the correct \
+number of columns and that values match the declared types.
+
+This feature is unique to Forge. While languages like Haskell have QuasiQuoters and Ruby has \
+heredocs for embedding structured data, Forge's table literals are first-class syntax with full \
+type checking and compile-time validation.",
+
+        "shorthand_fields" => "\
+Shorthand field syntax allows you to write `{ name }` instead of `{ name: name }` when \
+constructing a struct and the variable name matches the field name. This eliminates the \
+redundancy that often occurs when building structs from local variables.
+
+For example, if you have `let name = \"Alice\"` and `let age = 30`, you can write \
+`Person { name, age }` instead of `Person { name: name, age: age }`. The compiler expands \
+each shorthand field to use the variable of the same name as the value.
+
+Shorthand fields can be mixed with regular fields: `Person { name, age: calculate_age(birth_year) }`. \
+Only fields where the variable name matches get the shorthand; fields with computed values use \
+the full `field: expression` syntax as usual.
+
+This feature is borrowed from JavaScript/TypeScript ES6 object shorthand and Rust's field init \
+shorthand. It is a small convenience that significantly reduces visual clutter in code that \
+constructs many structs.",
+
+        "tagged_templates" => "\
+Tagged templates let you process template literals through a function before they are assembled \
+into a string. A tagged template is a function call followed by a template literal: \
+`sql\"SELECT * FROM ${table} WHERE id = ${id}\"`. The tag function receives the string parts \
+and interpolated values separately, enabling safe, structured processing.
+
+The primary use case is safe SQL query construction, where interpolated values must be \
+parameterized to prevent injection attacks. The `sql` tag can build a parameterized query \
+with `$1`, `$2` placeholders and a separate values array. HTML escaping, URL encoding, and \
+regex construction are other natural applications.
+
+Tag functions receive an array of string fragments and an array of interpolated values, \
+giving them full control over how the pieces are assembled. This is strictly more powerful \
+than simple string interpolation, since the tag can validate, transform, or reject the \
+interpolated values.
+
+Tagged templates originate in JavaScript (ES2015) and work similarly in Forge. The key \
+difference is that Forge's version is fully typed: the compiler knows the return type of \
+the tag function and type-checks the interpolated expressions.",
+
+        "durations" => "\
+Duration literals express time spans directly in code using intuitive suffixes: `7d` for seven \
+days, `24h` for twenty-four hours, `5m` for five minutes, and `10s` for ten seconds. These \
+compile to millisecond values, providing a type-safe and readable alternative to raw numbers.
+
+Durations are commonly used with timers, timeouts, scheduling, and any API that accepts a time \
+interval. Writing `timeout = 30s` is immediately clear, whereas `timeout = 30000` requires the \
+reader to mentally convert milliseconds. Duration literals prevent unit confusion bugs entirely.
+
+The supported suffixes are `d` (days), `h` (hours), `m` (minutes), and `s` (seconds). Each is \
+converted to milliseconds at compile time, so `1h` equals `3600000`. Duration values can be \
+used anywhere an integer is expected, since they are simply integers representing milliseconds.
+
+Duration suffixes are inspired by Kotlin's duration API and Go's time.Duration, but as literal \
+syntax they provide even less friction. No imports or method calls are needed; the suffix is \
+part of the number literal itself.",
+
+        "datetime" => "\
+Forge provides built-in datetime functions for working with timestamps: `datetime_now()` returns \
+the current time as epoch milliseconds, `datetime_format(epoch, pattern)` converts an epoch \
+timestamp to a formatted string, and `datetime_parse(str, pattern)` parses a date string back \
+to epoch milliseconds.
+
+Using epoch milliseconds as the internal representation keeps datetime values as plain integers, \
+which means they can be compared with standard operators, stored in any collection, and \
+serialized without special handling. The format and parse functions handle the conversion to \
+and from human-readable strings.
+
+Format patterns use standard date format specifiers. Common patterns include `\"YYYY-MM-DD\"` \
+for dates and `\"YYYY-MM-DD HH:mm:ss\"` for timestamps. The pattern syntax is familiar to \
+anyone who has used date formatting in JavaScript, Python, or Java.
+
+Duration literals pair naturally with datetime functions. `datetime_now() + 7d` gives you a \
+timestamp one week in the future. `datetime_now() - 24h` gives you yesterday. This makes \
+date arithmetic readable and type-safe.",
+
+        "spawn" => "\
+The `spawn` keyword launches a concurrent task that executes independently from the spawning \
+code. `spawn { expensive_computation() }` starts the computation and immediately continues \
+with the next line. Tasks run concurrently, and their results can be communicated back through \
+channels.
+
+Spawn is the primary concurrency primitive in Forge. Rather than managing threads directly, you \
+spawn lightweight tasks and communicate between them using channels. This follows the CSP \
+(Communicating Sequential Processes) model, where shared state is replaced by message passing.
+
+Spawned tasks share no mutable state with the spawning code. Any data needed by the task is \
+captured at spawn time. This eliminates data races by construction, since there is no shared \
+mutable memory to race on.
+
+The model is similar to Go's goroutines and Erlang's processes. Tasks are lightweight enough to \
+spawn thousands without performance concerns. Combined with channels and select, spawn provides \
+a complete concurrent programming toolkit.",
+
+        "channels" => "\
+Channels are typed conduits for communication between concurrent tasks. Create a channel with \
+`channel.new()`, send values with `ch <- value`, and receive with `<- ch`. Channels are the \
+safe, structured way to pass data between spawned tasks without shared mutable state.
+
+Channels are generic: `channel.new<int>()` creates a channel that carries integers. The type \
+system ensures you never accidentally send a string through an int channel. Both the send and \
+receive operations are type-checked at compile time.
+
+Channels can be iterated with `for msg in ch { ... }`, which receives messages in a loop until \
+the channel is closed with `channel.close(ch)`. This pattern is the idiomatic way to process a \
+stream of values from a producer task. Timed channels created with `channel.tick(ms)` send a \
+value at regular intervals, useful for periodic tasks.
+
+Forge channels follow the same model as Go channels. They are unbuffered by default, meaning a \
+send blocks until a receiver is ready. This synchronization property makes channel-based programs \
+easier to reason about than lock-based alternatives.",
+
+        "select_syntax" => "\
+The `select` expression multiplexes receives from multiple channels, executing the arm for \
+whichever channel has data ready first. This is essential for concurrent programs that need to \
+respond to events from multiple sources without dedicating a task to each.
+
+Syntax: `select { msg <- ch1 -> handle(msg), data <- ch2 -> process(data) }`. Each arm binds \
+the received value and executes its body. If multiple channels are ready simultaneously, one is \
+chosen at random to prevent starvation. Select blocks until at least one channel is ready.
+
+Select arms support guards with `if condition`, enabling conditional receives. A guard is checked \
+before attempting the receive, so `data <- ch if enabled -> handle(data)` only receives from `ch` \
+when `enabled` is true. This provides fine-grained control over which channels are active.
+
+The select statement is modeled after Go's select and mirrors its semantics. Combined with spawn \
+and channels, it completes Forge's CSP concurrency model, enabling patterns like fan-in, fan-out, \
+timeouts, and graceful shutdown.",
+
+        "shell_shorthand" => "\
+Shell shorthands let you execute system commands directly from Forge code. The dollar-string \
+syntax `$\"echo hello ${name}\"` runs the command and returns its stdout as a string. The \
+backtick form `$\\`echo ${name}\\`` works identically. Both support template interpolation for \
+dynamic command construction.
+
+This feature bridges the gap between system scripting and application programming. Tasks that \
+would normally require shelling out through a process API can be expressed as a single \
+expression. The interpolated values are included in the command string, so `$\"ls ${dir}\"` \
+lists the contents of whatever directory `dir` refers to.
+
+Shell shorthands return the command's standard output as a trimmed string. If the command fails \
+(non-zero exit code), an error is returned. This integrates with Forge's error propagation, so \
+`$\"git status\"?` propagates the error if git is not available.
+
+This is inspired by shell scripting languages and Perl's backtick operator. Unlike raw shell \
+execution in most languages, Forge's version participates in the type system (the result is \
+always a string) and supports template interpolation with compile-time type checking of the \
+embedded expressions.",
+
+        "spec_test" => "\
+Forge includes a built-in BDD-style testing framework with `spec`, `given`, `then`, and `expect` \
+blocks. Tests are written as structured specifications that read like documentation: \
+`spec \"math\" { given \"addition\" { then \"1 + 1 = 2\" { expect(1 + 1 == 2) } } }`.
+
+The `spec` block names the feature being tested. Inside it, `given` blocks describe preconditions \
+or scenarios. `then` blocks describe expected behaviors. `expect(condition)` asserts that a \
+condition is true. This three-level structure organizes tests into a readable hierarchy.
+
+Test output shows the full path of each assertion: `math > addition > 1 + 1 = 2: PASS`. Failed \
+tests show the expected and actual values with source location. The structured output makes it \
+easy to identify exactly which scenario failed and why.
+
+This approach is inspired by RSpec (Ruby), Jest's describe/it (JavaScript), and Kotest (Kotlin). \
+The benefit over flat test functions is that related tests are grouped by topic, and the test \
+names form readable sentences that serve as living documentation.",
+
+        "components" => "\
+Components are Forge's template-driven extension system. A component defines a reusable, \
+domain-specific abstraction backed by a provider. For example, a `model` component creates a \
+data model with CRUD operations, a `server` component sets up an HTTP server, and a `queue` \
+component provides message queue functionality.
+
+Components are defined entirely through provider template files (`provider.fg`). The compiler \
+has zero knowledge of any specific component; it simply expands templates by substituting \
+placeholders. This means new component types can be added without modifying the compiler.
+
+Using a component is as simple as writing a block: `model User { name: string, email: string }`. \
+The compiler finds the matching template from the loaded providers, expands it with the user's \
+schema and configuration, and produces plain Forge code that calls extern functions from the \
+provider's native library.
+
+This architecture separates concerns cleanly: providers implement behavior in native code, \
+templates describe how to expose that behavior to Forge users, and the compiler handles the \
+mechanical work of template expansion. Adding a new domain (database, message queue, GPU compute) \
+requires only a new provider, never a compiler change.",
+
+        "component_config" => "\
+Component config blocks let templates declare typed configuration fields with defaults. In a \
+provider's template definition, `config { port: int = 3000, cors: bool = false }` declares \
+two config fields. Users override these when creating a component: `server :8080 { ... }` or \
+`server { config { port: 8080 } }`.
+
+Config resolution merges user-provided values with the template's defaults. Fields not specified \
+by the user get the default value from the template. The compiler validates that provided config \
+values match the declared types, catching configuration errors at compile time.
+
+This system ensures that every component has a well-defined, documented configuration surface. \
+Users can see what options are available and what their defaults are. Template authors can add \
+new config fields with defaults without breaking existing code.
+
+Config blocks replace the ad-hoc configuration approaches found in most frameworks (environment \
+variables, magic strings, untyped JSON). Everything is checked at compile time, and the schema \
+is defined in one place alongside the component template.",
+
+        "component_events" => "\
+Component events declare hookable extension points in templates. A template can declare \
+`event before_create(record)` to let users run custom logic before a record is created. Users \
+hook into events with `on before_create(data) { validate(data) }` inside the component block.
+
+Events follow a declaration-and-hook pattern. The template declares what events exist and what \
+arguments they carry. User code attaches handlers to events it cares about. Events without \
+handlers get no-op stubs, so unhandled events have zero runtime cost.
+
+This provides a clean alternative to the middleware stacks and callback chains found in frameworks \
+like Express or Django. Each event has a typed signature, so the compiler verifies that hook \
+handlers accept the correct argument types.
+
+The event system enables components to be customizable without inheritance or complex plugin \
+architectures. A model component might offer `before_create`, `after_create`, `before_delete` \
+events, letting users add validation, logging, or side effects without modifying the component \
+template.",
+
+        "component_syntax" => "\
+The `@syntax` decorator lets component templates define custom syntactic patterns. For example, \
+`@syntax(\"{method} {path} -> {handler}\")` on a function in a server template enables users \
+to write `GET /users -> list_users` inside the component block. The compiler matches user code \
+against registered patterns and desugars matches into function calls.
+
+Syntax patterns consist of literal segments and `{placeholder}` captures. Literals must match \
+exactly, and placeholders capture the corresponding user input. The pattern engine handles \
+identifier, string, and brace-balanced expression captures, making it flexible enough for \
+diverse DSLs.
+
+This mechanism is how Forge supports domain-specific syntax without hardcoding any domain into \
+the compiler. The server's route syntax, the model's field declarations, and the queue's message \
+patterns are all defined through `@syntax` in their respective provider templates.
+
+Compared to macros in Rust or Lisp, `@syntax` patterns are more constrained but also more \
+predictable. They match a fixed pattern shape rather than arbitrary token trees, which keeps \
+error messages clear and prevents the readability problems that plague macro-heavy codebases.",
+
+        "annotations" => "\
+Annotations attach metadata to declarations using the `@name` or `@name(args)` syntax. They \
+appear before functions, types, fields, and other declarations. For example, `@deprecated fn old() { }` \
+marks a function as deprecated, and `@syntax(\"pattern\")` configures a component syntax pattern.
+
+Annotations are the primary extensibility mechanism for Forge's compiler and provider system. \
+Rather than adding keywords for every new concept, Forge uses annotations to layer behavior \
+onto existing syntax. This keeps the core language small while allowing rich, domain-specific features.
+
+The compiler processes annotations during different compilation phases. Some annotations affect \
+parsing (`@syntax`), some affect type checking (`@deprecated`), and some affect code generation. \
+Provider templates can define custom annotations that control template expansion behavior.
+
+This design is similar to Java annotations, Python decorators, and C# attributes. The key \
+difference is that Forge annotations integrate with the template system, so providers can define \
+new annotations without compiler changes.",
+
+        "string_templates" => "\
+String template literals use `${}` syntax to embed expressions inside strings: \
+`\"Hello, ${name}!\"`. The expression inside the braces is evaluated, converted to a string, \
+and inserted into the result. Any valid Forge expression can appear inside `${}`, including \
+function calls, arithmetic, and method chains.
+
+Template literals are the preferred way to construct dynamic strings in Forge. They are more \
+readable than string concatenation and less error-prone than format functions with positional \
+arguments. The embedded expressions are type-checked at compile time.
+
+Nested templates are supported: `\"outer ${\"inner ${value}\"}\"`. Template interpolation works \
+with all types that have a string representation, including numbers, booleans, and any type with \
+a `to_string()` method.
+
+This feature works identically to JavaScript template literals and Kotlin string templates. It \
+is the foundation for tagged templates, which process the string parts and interpolated values \
+through a custom function.",
+
+        "json_builtins" => "\
+Forge provides built-in JSON functions: `json.parse(str)` converts a JSON string into a Forge \
+value, and `json.stringify(value)` converts a Forge value into a JSON string. These functions \
+handle the full JSON specification including nested objects, arrays, numbers, strings, booleans, \
+and null.
+
+`json.parse()` returns a dynamic value that can be accessed with field notation and indexing. \
+The parsed structure maps JSON objects to Forge maps, JSON arrays to lists, and JSON primitives \
+to their Forge equivalents (int, float, string, bool, null).
+
+`json.stringify()` serializes any Forge value to its JSON representation. Structs become JSON \
+objects with field names as keys. Lists become JSON arrays. This round-trips cleanly with \
+`json.parse()`, so `json.parse(json.stringify(value))` preserves the structure.
+
+These built-in functions avoid the need for an external JSON library in the vast majority of use \
+cases. They are implemented as intrinsics for maximum performance, with the serialization and \
+deserialization happening in optimized native code.",
+
+        "error_messages" => "\
+Forge's error system produces structured, actionable error messages with unique error codes. \
+Every error includes a code (like F0012 for type mismatch), a clear description of what went \
+wrong, the source location with highlighted code, and a help message suggesting how to fix it.
+
+Error codes are stable identifiers that can be looked up with `forge explain F0012`. Each code \
+has a detailed explanation with examples of common causes and fixes. This makes errors searchable \
+and referenceable in documentation and team communication.
+
+The error system covers not just syntax and type errors but also common mistakes from other \
+languages. Writing a semicolon, using `=>` instead of `->`, or using `var`/`let` from JavaScript \
+all produce targeted error messages that explain the Forge equivalent.
+
+Every error path in the compiler goes through the structured error rendering system. There are no \
+raw error strings or panics that produce unhelpful messages. This is enforced by design: the \
+`CompileError` type has a fixed set of variants, each with a dedicated rendering function that \
+includes help text.",
+
+        "extern_ffi" => "\
+The foreign function interface allows Forge code to call C ABI functions from native libraries. \
+Extern functions are declared in provider template files with their C signatures, and the \
+compiler generates the appropriate calling convention code.
+
+Provider `.a` static libraries implement the native side, and the Forge linker combines them \
+with the compiled Forge code. This is how providers like `std-http`, `std-model`, and `std-fs` \
+implement their functionality: Forge templates declare the interface, native code implements it.
+
+Type coercion between Forge types and C types is handled automatically. Forge strings are \
+converted to C pointers when passed to extern functions, and pointer returns are wrapped back \
+into Forge strings. This happens transparently at call sites.
+
+The FFI is designed for provider authors, not end users. Application code uses providers through \
+their Forge-level APIs (components, functions, static methods). The FFI layer is the plumbing \
+that makes providers possible.",
+
+        "c_abi_trampolines" => "\
+ABI trampolines automatically convert between Forge's internal type representations and the C \
+calling convention used by extern functions. When a Forge string (a struct with pointer and \
+length) needs to be passed to a C function expecting a null-terminated pointer, the trampoline \
+handles the conversion.
+
+This automatic coercion means provider authors write straightforward C functions with standard \
+types, and Forge handles the impedance mismatch at the boundary. No manual marshaling code is \
+needed on either side.
+
+Trampolines are generated at compile time for each extern function call. The compiler inspects \
+the declared parameter and return types, inserts conversion code where needed, and ensures that \
+memory is handled correctly across the boundary.
+
+This system is invisible to both Forge users and provider authors. It exists purely as compiler \
+infrastructure to make the FFI seamless. The generated code is optimized to minimize overhead, \
+typically adding only a few instructions per call.",
+
+        "parallel" => "\
+Parallel execution primitives in Forge enable concurrent processing of independent tasks. The \
+parallel infrastructure works with the spawn and channel systems to distribute work across \
+available cores.
+
+Parallel operations are built on top of Forge's lightweight task system. Multiple spawned tasks \
+can execute truly in parallel, and channels provide the synchronization points where results \
+are collected. This model scales naturally with available hardware.
+
+The parallel system handles the underlying thread management, work distribution, and result \
+collection. User code simply spawns tasks and communicates through channels, without needing to \
+manage threads, locks, or condition variables directly.",
+
+        "process_uptime" => "\
+Process uptime tracking provides the `process_uptime()` function, which returns the number of \
+milliseconds since the current Forge process started. This is useful for performance monitoring, \
+logging elapsed time, and implementing timeouts.
+
+The uptime is measured from process start, not from when the function is first called. This \
+gives consistent, comparable timestamps throughout the program's execution. Combined with \
+duration literals, you can write expressive timing checks: `if process_uptime() > 30s { ... }`.
+
+The implementation uses the operating system's monotonic clock, so the value always increases \
+and is not affected by system clock adjustments. This makes it reliable for measuring intervals \
+even if the system time is changed during execution.",
+
+        "query_helpers" => "\
+Query helpers provide a fluent builder API for constructing structured queries. Rather than \
+concatenating strings to build queries (which is error-prone and vulnerable to injection), \
+the query builder lets you compose queries programmatically with methods like `where`, `order_by`, \
+`limit`, and `offset`.
+
+The query builder supports comparison operators and chaining: \
+`query.where(\"age\", \">\", 18).order_by(\"name\").limit(10)` constructs a structured query \
+that can be safely executed against a data source. All values are parameterized, preventing \
+injection attacks.
+
+Query helpers are used internally by component templates (especially model components) to \
+generate the queries that back CRUD operations. They can also be used directly in application \
+code for custom query patterns that go beyond the standard CRUD operations.
+
+Validation errors from the query builder are structured, providing field-level error details \
+rather than a single error string. This makes it easy to map validation failures to specific \
+user inputs in UI applications.",
+
+        "validation" => "\
+Runtime validation in Forge provides structured checking of values against constraints. \
+Validators can verify types, ranges, string patterns, and custom predicates. Validation errors \
+are returned as structured data with field names and error descriptions, making them easy to \
+present to users.
+
+Validation integrates with the component system. Model components can declare named validators \
+that run before create and update operations. The validation results are structured as \
+field-level errors, compatible with form validation in frontend applications.
+
+The validation system produces `ValidationError` values with `field` and `message` properties. \
+Multiple validation errors can be collected and returned together, rather than failing on the \
+first error. This gives users all the information they need to fix their input in one pass.
+
+Unlike assertion-based validation that throws exceptions, Forge's validation returns errors as \
+values. This fits with Forge's philosophy of making error paths explicit and visible in the \
+type system.",
+
+        _ => ""
+    }
+}
+
 // ── Show a single feature ───────────────────────────────────────────
 
 /// Display a rich feature page.
@@ -958,6 +1847,17 @@ pub fn show_feature(query: &str) {
     if !meta.short.is_empty() && meta.description != meta.short {
         println!();
         println!("  {}", meta.description);
+    }
+
+    // Long description
+    let long_desc = long_description(meta.id);
+    if !long_desc.is_empty() {
+        println!();
+        for paragraph in long_desc.split("\n\n") {
+            let wrapped = paragraph.replace('\n', " ");
+            println!("  {}", wrapped);
+            println!();
+        }
     }
 
     // Syntax

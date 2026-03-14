@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["tag`...`"],
     ast_nodes: ["TaggedTemplate"],
     description: "Tagged template literals: tag`template ${expr}` desugars to calling tag with separated parts and values as JSON",
+    syntax: ["tag\"template ${expr}\"", "tag`template`"],
+    short: "tag\"...\" — tagged template literal processing",
+    symbols: [],
 }

@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["with"],
     ast_nodes: ["With"],
     description: "Struct update syntax: expr with { field: value } creates a copy with updated fields",
+    syntax: ["expr with { field: value }"],
+    short: "expr with { field: val } — immutable copy with overrides",
+    symbols: [],
 }
 
 pub mod parser;

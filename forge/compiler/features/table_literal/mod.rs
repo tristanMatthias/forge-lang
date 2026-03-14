@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["table"],
     ast_nodes: [],
     description: "Inline table literals that desugar to List<struct>",
+    syntax: ["table { col1 | col2; val1 | val2 }"],
+    short: "table { cols | rows } — tabular data literals",
+    symbols: [],
 }

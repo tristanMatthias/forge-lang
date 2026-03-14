@@ -21,7 +21,6 @@ impl Parser {
 
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_params()?;
-        self.expect(&TokenKind::RParen)?;
         self.skip_newlines();
 
         let return_type = if self.check(&TokenKind::Arrow) {

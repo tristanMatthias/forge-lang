@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["@"],
     ast_nodes: ["SyntaxFnDef", "SyntaxPatternDef"],
     description: "@syntax decorators for pattern-based sugar in component templates",
+    syntax: ["@syntax(\"pattern\") fn name(...)"],
+    short: "@syntax — pattern-based sugar for component DSLs",
+    symbols: [],
 }
 
 pub mod parser;

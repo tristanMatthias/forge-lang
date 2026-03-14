@@ -27,7 +27,6 @@ impl Parser {
             let fields = if self.check(&TokenKind::LParen) {
                 self.advance();
                 let params = self.parse_params()?;
-                self.expect(&TokenKind::RParen)?;
                 params
             } else {
                 Vec::new()

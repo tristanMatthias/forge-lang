@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["$\"", "$`"],
     ast_nodes: ["DollarExec"],
     description: "Shell command execution with $\"cmd\" and $`cmd ${arg}` returning stdout as string",
+    syntax: ["$\"command ${arg}\"", "$`command`"],
+    short: "$\"cmd\" — execute shell command, return stdout",
+    symbols: ["$\"", "$`"],
 }

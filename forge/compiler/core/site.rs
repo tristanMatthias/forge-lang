@@ -7,7 +7,59 @@ use std::path::Path;
 
 use crate::docs;
 use crate::errors::ErrorRegistry;
+use crate::lang::long_description;
 use crate::registry::{FeatureMetadata, FeatureRegistry, FeatureStatus};
+
+// ── Feature categories ─────────────────────────────────────────────
+
+struct FeatureCategory {
+    title: &'static str,
+    ids: &'static [&'static str],
+}
+
+const FEATURE_CATEGORIES: &[FeatureCategory] = &[
+    FeatureCategory {
+        title: "Core Language",
+        ids: &[
+            "variables", "functions", "closures", "if_else", "for_loops",
+            "while_loops", "operators", "pattern_matching", "ranges", "enums",
+            "structs", "tuples", "collections", "strings", "generics", "traits",
+            "imports", "immutability", "type_operators",
+        ],
+    },
+    FeatureCategory {
+        title: "Forge Features",
+        ids: &[
+            "pipe_operator", "null_safety", "error_propagation", "defer",
+            "is_keyword", "with_expression", "it_parameter", "table_literal",
+            "shorthand_fields", "tagged_templates", "durations", "datetime",
+        ],
+    },
+    FeatureCategory {
+        title: "Concurrency",
+        ids: &["spawn", "channels", "select_syntax", "shell_shorthand"],
+    },
+    FeatureCategory {
+        title: "Testing",
+        ids: &["spec_test"],
+    },
+    FeatureCategory {
+        title: "Component System",
+        ids: &[
+            "components", "component_config", "component_events",
+            "component_syntax", "annotations",
+        ],
+    },
+    FeatureCategory {
+        title: "Internals",
+        ids: &[
+            "string_templates", "json_builtins", "error_messages", "extern_ffi",
+            "c_abi_trampolines", "parallel", "process_uptime", "query_helpers",
+            "validation",
+        ],
+    },
+];
+
 
 // ── CSS Stylesheet ──────────────────────────────────────────────────
 
@@ -470,16 +522,39 @@ fn lang_nav(active: &str, base: &str) -> String {
     }
     nav.push_str("</ul>");
 
-    // Features
-    nav.push_str(r#"<div class="section-title">Features</div><ul>"#);
-    for f in &features {
-        let cls = if active == f.id { r#" class="active""# } else { "" };
-        nav.push_str(&format!(
-            r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
-            f.id, base, f.id, cls, f.name
-        ));
+    // Features grouped by category
+    let feature_map: std::collections::HashMap<&str, &&FeatureMetadata> =
+        features.iter().map(|f| (f.id, f)).collect();
+    let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    for cat in FEATURE_CATEGORIES {
+        nav.push_str(&format!(r#"<div class="section-title">{}</div><ul>"#, cat.title));
+        for id in cat.ids {
+            if let Some(f) = feature_map.get(id) {
+                shown.insert(id);
+                let cls = if active == f.id { r#" class="active""# } else { "" };
+                nav.push_str(&format!(
+                    r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
+                    f.id, base, f.id, cls, f.name
+                ));
+            }
+        }
+        nav.push_str("</ul>");
     }
-    nav.push_str("</ul>");
+
+    // Any features not in a category go into "Other"
+    let other: Vec<_> = features.iter().filter(|f| !shown.contains(f.id)).collect();
+    if !other.is_empty() {
+        nav.push_str(r#"<div class="section-title">Other</div><ul>"#);
+        for f in &other {
+            let cls = if active == f.id { r#" class="active""# } else { "" };
+            nav.push_str(&format!(
+                r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
+                f.id, base, f.id, cls, f.name
+            ));
+        }
+        nav.push_str("</ul>");
+    }
 
     // Errors
     nav.push_str(r#"<div class="section-title">Reference</div><ul>"#);
@@ -789,18 +864,47 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
     }
     body.push_str("</div>");
 
-    // Features
-    body.push_str("<h2>Features</h2>");
-    body.push_str(r#"<div class="feature-grid">"#);
-    for f in features {
-        let desc = if !f.short.is_empty() { f.short } else { f.description };
-        body.push_str(&format!(
-            r#"<div class="card"><a href="features/{}.html"><h3>{} {}</h3></a><p>{}</p></div>"#,
-            f.id, html_escape(f.name), status_badge(f.status),
-            truncate_html(desc, 100)
-        ));
+    // Features grouped by category
+    let feature_map: std::collections::HashMap<&str, &&FeatureMetadata> =
+        features.iter().map(|f| (f.id, f)).collect();
+    let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    for cat in FEATURE_CATEGORIES {
+        let cat_features: Vec<_> = cat.ids.iter()
+            .filter_map(|id| feature_map.get(id).copied())
+            .collect();
+        if cat_features.is_empty() {
+            continue;
+        }
+        body.push_str(&format!("<h2>{}</h2>", html_escape(cat.title)));
+        body.push_str(r#"<div class="feature-grid">"#);
+        for f in &cat_features {
+            shown.insert(f.id);
+            let desc = if !f.short.is_empty() { f.short } else { f.description };
+            body.push_str(&format!(
+                r#"<div class="card"><a href="features/{}.html"><h3>{} {}</h3></a><p>{}</p></div>"#,
+                f.id, html_escape(f.name), status_badge(f.status),
+                truncate_html(desc, 100)
+            ));
+        }
+        body.push_str("</div>");
     }
-    body.push_str("</div>");
+
+    // Any features not in a category
+    let other: Vec<_> = features.iter().filter(|f| !shown.contains(f.id)).collect();
+    if !other.is_empty() {
+        body.push_str("<h2>Other</h2>");
+        body.push_str(r#"<div class="feature-grid">"#);
+        for f in &other {
+            let desc = if !f.short.is_empty() { f.short } else { f.description };
+            body.push_str(&format!(
+                r#"<div class="card"><a href="features/{}.html"><h3>{} {}</h3></a><p>{}</p></div>"#,
+                f.id, html_escape(f.name), status_badge(f.status),
+                truncate_html(desc, 100)
+            ));
+        }
+        body.push_str("</div>");
+    }
 
     // Quick links
     body.push_str("<h2>Reference</h2>");
@@ -858,6 +962,17 @@ fn generate_feature_page(meta: &FeatureMetadata) -> String {
     body.push_str(&format!("<p>{}</p>", html_escape(desc)));
     if !meta.short.is_empty() && meta.description != meta.short {
         body.push_str(&format!("<p>{}</p>", html_escape(meta.description)));
+    }
+
+    // Long description
+    let long_desc = long_description(meta.id);
+    if !long_desc.is_empty() {
+        body.push_str(r#"<div class="long-description">"#);
+        for paragraph in long_desc.split("\n\n") {
+            let cleaned = paragraph.replace('\n', " ");
+            body.push_str(&format!("<p>{}</p>", html_escape(&cleaned)));
+        }
+        body.push_str("</div>");
     }
 
     // Syntax

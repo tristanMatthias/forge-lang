@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: [],
     ast_nodes: [],
     description: "Built-in json.parse(), json.stringify(), and json.parse_list() intrinsics",
+    syntax: ["json.parse(str)", "json.stringify(val)"],
+    short: "json.parse/stringify — JSON serialization/deserialization",
+    symbols: [],
 }
 
 pub mod parser;

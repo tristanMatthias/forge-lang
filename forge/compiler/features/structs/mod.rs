@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["type"],
     ast_nodes: ["TypeDecl", "StructLit"],
     description: "Type declarations (structs and aliases) and struct literal expressions",
+    syntax: ["struct Name { field: type }", "let x = Name { field: value }"],
+    short: "struct declarations, literals, and field access",
+    symbols: [],
 }
 
 pub mod types;

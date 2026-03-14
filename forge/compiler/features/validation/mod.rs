@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: [],
     ast_nodes: [],
     description: "validate() intrinsic with annotation-based field validation, defaults, transforms, and named validators",
+    syntax: ["validate(value)"],
+    short: "validate() — runtime value validation",
+    symbols: [],
 }
 
 pub mod checker;

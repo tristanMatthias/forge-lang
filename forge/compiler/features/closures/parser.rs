@@ -41,7 +41,6 @@ impl Parser {
     pub(crate) fn parse_closure(&mut self, span: Span) -> Option<Expr> {
         // We're past the opening '(' already
         let params = self.parse_params()?;
-        self.expect(&TokenKind::RParen)?;
         self.skip_newlines();
         // Support both (params) -> body and (params) { body }
         if self.check(&TokenKind::Arrow) {

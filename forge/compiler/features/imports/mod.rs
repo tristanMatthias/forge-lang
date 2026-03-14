@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["use", "export"],
     ast_nodes: ["Use"],
     description: "Module imports with use statements and export modifiers",
+    syntax: ["use @namespace.name"],
+    short: "use statements for provider imports",
+    symbols: [],
 }
 
 pub mod types;

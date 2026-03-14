@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["=>", "->"],
     ast_nodes: ["Closure"],
     description: "First-class anonymous functions with captured environment",
+    syntax: ["(params) -> expr", "(params) -> { body }"],
+    short: "(params) -> body — first-class closures with scope capture",
+    symbols: ["->"],
 }
 
 pub mod parser;

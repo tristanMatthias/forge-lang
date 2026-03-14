@@ -12,4 +12,7 @@ crate::forge_feature! {
     tokens: ["match", "->", "_"],
     ast_nodes: ["Match", "MatchArm", "Pattern"],
     description: "Exhaustive pattern matching with destructuring, guards, and or-patterns",
+    syntax: ["match expr { pattern -> body, ... }", "match expr { pattern if guard -> body }"],
+    short: "match expr { pattern -> body } — exhaustive pattern matching with guards",
+    symbols: [],
 }

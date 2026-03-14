@@ -7,6 +7,9 @@ crate::forge_feature! {
     tokens: ["enum"],
     ast_nodes: ["EnumDecl"],
     description: "Algebraic data types with named variants and optional fields",
+    syntax: ["enum Name { Variant, Variant(fields) }"],
+    short: "enum Name { Variants } — algebraic data types with match support",
+    symbols: [],
 }
 
 pub mod parser;
