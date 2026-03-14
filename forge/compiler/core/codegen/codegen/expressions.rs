@@ -108,18 +108,9 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             Expr::Closure { params, body, .. } => self.compile_closure(params, body),
-            Expr::Pipe { left, right, .. } => self.compile_pipe(left, right),
             Expr::NullCoalesce { left, right, .. } => self.compile_null_coalesce(left, right),
             Expr::NullPropagate { object, field, .. } => self.compile_null_propagate(object, field),
             Expr::ErrorPropagate { operand, .. } => self.compile_error_propagate(operand),
-            Expr::With { base, updates, .. } => self.compile_with(base, updates),
-
-            Expr::Range { start, end, .. } => {
-                self.compile_expr(start)?;
-                self.compile_expr(end)?;
-                None
-            }
-
             Expr::StructLit { fields, .. } => self.compile_struct_lit(fields),
             Expr::ListLit { elements, .. } => self.compile_list_lit(elements),
             Expr::MapLit { entries, .. } => self.compile_map_lit(entries),
@@ -128,99 +119,6 @@ impl<'ctx> Codegen<'ctx> {
             Expr::ErrExpr { value, .. } => self.compile_result_err(value),
             Expr::Catch { expr, binding, handler, .. } =>
                 self.compile_catch(expr, binding.as_deref(), handler),
-
-            Expr::ChannelSend { channel, value, .. } => {
-                let ch_val = self.compile_expr(channel)?;
-                if !ch_val.is_int_value() { return None; }
-                let ch_id = ch_val.into_int_value();
-                let val_compiled = self.compile_expr(value)?;
-                let val_string = self.value_to_cstring_ptr(val_compiled, value);
-                self.call_runtime_expect(
-                    "forge_channel_send", &[ch_id.into(), val_string.into()], "send",
-                    "forge_channel_send not declared - did you `use @std.channel`?",
-                );
-                None
-            }
-
-            Expr::ChannelReceive { channel, .. } => {
-                let ch_val = self.compile_expr(channel)?;
-                if !ch_val.is_int_value() { return None; }
-                let raw_ptr = self.call_runtime_expect(
-                    "forge_channel_receive", &[ch_val.into()], "recv",
-                    "forge_channel_receive not declared - did you `use @std.channel`?",
-                )?;
-                let len = self.call_runtime("strlen", &[raw_ptr.into()], "len")?;
-                self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")
-            }
-
-            Expr::SpawnBlock { body, .. } => {
-                let cap_prefix = format!("__spawn_cap_{}", self.functions.len());
-                let captured = self.capture_scope_vars_to_globals(&cap_prefix);
-
-                let spawn_fn_name = format!("__spawn_{}", self.functions.len());
-                let fn_type = self.context.void_type().fn_type(&[], false);
-                let spawn_function = self.module.add_function(&spawn_fn_name, fn_type, None);
-
-                let saved_block = self.builder.get_insert_block();
-                let saved_deferred = std::mem::take(&mut self.deferred_stmts);
-                let saved_vars = std::mem::take(&mut self.variables);
-                let saved_scope_vars = std::mem::take(&mut self.scope_vars);
-
-                self.variables = vec![HashMap::new()];
-                self.scope_vars = vec![Vec::new()];
-
-                let entry = self.context.append_basic_block(spawn_function, "entry");
-                self.builder.position_at_end(entry);
-
-                for (name, global_name, ty) in &captured {
-                    if let Some(global) = self.module.get_global(global_name) {
-                        let llvm_ty = self.type_to_llvm_basic(ty);
-                        let val = self.builder.build_load(llvm_ty, global.as_pointer_value(), name).unwrap();
-                        let alloca = self.create_entry_block_alloca(ty, name);
-                        self.builder.build_store(alloca, val).unwrap();
-                        self.define_var(name.clone(), alloca, ty.clone());
-                    }
-                }
-
-                for stmt in &body.statements {
-                    self.compile_statement(stmt);
-                }
-
-                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                    self.builder.build_return(None).unwrap();
-                }
-
-                self.variables = saved_vars;
-                self.scope_vars = saved_scope_vars;
-                self.deferred_stmts = saved_deferred;
-                if let Some(block) = saved_block {
-                    self.builder.position_at_end(block);
-                }
-
-                let fn_ptr = spawn_function.as_global_value().as_pointer_value();
-                self.call_runtime_void("forge_spawn", &[fn_ptr.into()]);
-                None
-            }
-
-            Expr::DollarExec { parts, .. } => {
-                let cmd_str = self.compile_template(parts)?;
-                let cmd_ptr = self.builder.build_extract_value(
-                    cmd_str.into_struct_value(), 0, "cmd_ptr"
-                ).unwrap();
-                let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                let exec_fn = self.module.get_function("forge_process_exec").unwrap_or_else(|| {
-                    let ft = ptr_type.fn_type(&[ptr_type.into()], false);
-                    self.module.add_function("forge_process_exec", ft, None)
-                });
-                let result = self.builder.build_call(exec_fn, &[cmd_ptr.into()], "exec_result").unwrap();
-                let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
-                let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
-                self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "stdout_str")
-            }
-
-            Expr::TaggedTemplate { tag, parts, .. } => self.compile_tagged_template(tag, parts),
-            Expr::Is { value, pattern, negated, .. } => self.compile_is(value, pattern, *negated),
-            Expr::TableLit { columns, rows, span } => self.compile_table_lit(columns, rows, span),
 
             Expr::Feature(fe) => self.compile_feature_expr(fe),
         }
@@ -235,6 +133,7 @@ impl<'ctx> Codegen<'ctx> {
             ("with_expression", _) => self.compile_with_feature(fe),
             ("pipe_operator", _) => self.compile_pipe_feature(fe),
             ("shell_shorthand", _) => self.compile_dollar_exec_feature(fe),
+            ("tagged_templates", _) => self.compile_tagged_template_feature(fe),
             ("table_literal", _) => self.compile_table_lit_feature(fe),
             ("closures", _) => self.compile_closure_feature(fe),
             ("pattern_matching", _) => self.compile_match_feature(fe),

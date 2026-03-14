@@ -1,9 +1,27 @@
 use crate::errors::Diagnostic;
+use crate::feature::FeatureExpr;
+use crate::feature_data;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
 
+use super::types::TaggedTemplateData;
+
 impl TypeChecker {
+    /// Type-check a tagged template via the Feature dispatch system.
+    pub(crate) fn check_tagged_template_feature(&mut self, fe: &FeatureExpr) -> Type {
+        if let Some(data) = feature_data!(fe, TaggedTemplateData) {
+            let base_type = self.check_tagged_template(&data.tag, &data.parts, &fe.span);
+            if let Some(tp) = &data.type_param {
+                self.resolve_type_expr(tp)
+            } else {
+                base_type
+            }
+        } else {
+            Type::Unknown
+        }
+    }
+
     /// Type-check a tagged template literal: `tag\`template ${expr}\``
     ///
     /// Checks that the tag function exists, has the right signature (exactly 1 string param),

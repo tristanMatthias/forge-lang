@@ -1,10 +1,22 @@
 use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
+use super::types::TaggedTemplateData;
+
 impl<'ctx> Codegen<'ctx> {
+    /// Compile a tagged template literal via Feature dispatch.
+    pub(crate) fn compile_tagged_template_feature(
+        &mut self,
+        fe: &FeatureExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        feature_codegen!(self, fe, TaggedTemplateData, |data| self.compile_tagged_template(&data.tag, &data.parts))
+    }
+
     /// Compile a tagged template literal: `tag\`template ${expr}\``
     ///
     /// Builds a JSON string with the structure:
@@ -160,8 +172,6 @@ impl<'ctx> Codegen<'ctx> {
         func: inkwell::values::FunctionValue<'ctx>,
         json: BasicValueEnum<'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-
         let ptr = self.builder.build_extract_value(
             json.into_struct_value(), 0, "json_ptr"
         ).unwrap();

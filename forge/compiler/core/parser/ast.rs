@@ -423,12 +423,6 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
-    Pipe {
-        left: Box<Expr>,
-        right: Box<Expr>,
-        span: Span,
-    },
-
     Closure {
         params: Vec<Param>,
         body: Box<Expr>,
@@ -463,19 +457,6 @@ pub enum Expr {
         span: Span,
     },
 
-    With {
-        base: Box<Expr>,
-        updates: Vec<(String, Expr)>,
-        span: Span,
-    },
-
-    Range {
-        start: Box<Expr>,
-        end: Box<Expr>,
-        inclusive: bool,
-        span: Span,
-    },
-
     // Result constructors
     OkExpr {
         value: Box<Expr>,
@@ -494,46 +475,6 @@ pub enum Expr {
         span: Span,
     },
 
-    // Channel operations
-    ChannelSend {
-        channel: Box<Expr>,
-        value: Box<Expr>,
-        span: Span,
-    },
-    ChannelReceive {
-        channel: Box<Expr>,
-        span: Span,
-    },
-    // Spawn block
-    SpawnBlock {
-        body: Block,
-        span: Span,
-    },
-    // Dollar-string: $"cmd" or $`cmd ${arg}` — shell execution
-    DollarExec {
-        parts: Vec<TemplatePart>,
-        span: Span,
-    },
-    // Tagged template literal: tag`template ${expr}` or tag<Type>`template`
-    TaggedTemplate {
-        tag: String,
-        parts: Vec<TemplatePart>,
-        type_param: Option<TypeExpr>,
-        span: Span,
-    },
-    // Is expression: value is Pattern → bool
-    Is {
-        value: Box<Expr>,
-        pattern: Pattern,
-        negated: bool,
-        span: Span,
-    },
-    // Table literal: desugars to ListLit of StructLit
-    TableLit {
-        columns: Vec<String>,
-        rows: Vec<Vec<Expr>>,
-        span: Span,
-    },
     // Feature-owned expression (extension point for modular features)
     Feature(FeatureExpr),
 }
@@ -557,25 +498,15 @@ impl Expr {
             | Expr::Call { span, .. }
             | Expr::MemberAccess { span, .. }
             | Expr::Index { span, .. }
-            | Expr::Pipe { span, .. }
             | Expr::Closure { span, .. }
             | Expr::If { span, .. }
             | Expr::Match { span, .. }
             | Expr::NullCoalesce { span, .. }
             | Expr::NullPropagate { span, .. }
             | Expr::ErrorPropagate { span, .. }
-            | Expr::With { span, .. }
-            | Expr::Range { span, .. }
             | Expr::OkExpr { span, .. }
             | Expr::ErrExpr { span, .. }
-            | Expr::Catch { span, .. }
-            | Expr::ChannelSend { span, .. }
-            | Expr::ChannelReceive { span, .. }
-            | Expr::SpawnBlock { span, .. }
-            | Expr::DollarExec { span, .. }
-            | Expr::TaggedTemplate { span, .. }
-            | Expr::Is { span, .. }
-            | Expr::TableLit { span, .. } => *span,
+            | Expr::Catch { span, .. } => *span,
             Expr::Feature(fe) => fe.span,
             Expr::Block(block) => block.span,
         }

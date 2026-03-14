@@ -465,6 +465,7 @@ impl TypeChecker {
             ("with_expression", _) => self.check_with_feature(fe),
             ("pipe_operator", _) => self.check_pipe_feature(fe),
             ("shell_shorthand", _) => self.check_dollar_exec_feature(fe),
+            ("tagged_templates", _) => self.check_tagged_template_feature(fe),
             ("table_literal", _) => self.check_table_lit_feature(fe),
             ("closures", _) => self.check_closure_feature(fe),
             ("pattern_matching", _) => self.check_match_feature(fe),
@@ -832,8 +833,6 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Pipe { left, right, .. } => self.check_pipe(left, right),
-
             Expr::Closure {
                 params, body, ..
             } => self.check_closure(params, body),
@@ -862,10 +861,6 @@ impl TypeChecker {
 
             Expr::ErrorPropagate { operand, .. } => self.check_error_propagate(operand),
 
-            Expr::With { base, updates, .. } => self.check_with(base, updates),
-
-            Expr::Range { start, .. } => self.check_range(start),
-
             Expr::OkExpr { value, .. } => self.check_ok_expr(value),
 
             Expr::ErrExpr { value, .. } => self.check_err_expr(value),
@@ -882,22 +877,6 @@ impl TypeChecker {
 
             Expr::TupleLit { elements, .. } => self.check_tuple_lit(elements),
 
-            Expr::ChannelSend { channel, value, .. } => self.check_channel_send(channel, value),
-            Expr::ChannelReceive { channel, .. } => self.check_channel_receive(channel),
-            Expr::SpawnBlock { body, .. } => self.check_spawn_block(body),
-            Expr::DollarExec { parts, .. } => self.check_dollar_exec(parts),
-            Expr::TaggedTemplate { tag, parts, type_param, span } => {
-                let base_type = self.check_tagged_template(tag, parts, span);
-                if let Some(tp) = type_param {
-                    self.resolve_type_expr(tp)
-                } else {
-                    base_type
-                }
-            }
-            Expr::Is { value, .. } => self.check_is_expr(value),
-            Expr::TableLit { columns, rows, .. } => {
-                self.check_table_literal(columns, rows)
-            }
             Expr::Feature(fe) => self.check_feature_expr(fe),
         }
     }

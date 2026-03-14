@@ -58,12 +58,6 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
         }
-        // Handle range iteration: for i in start..end (legacy variant)
-        if let Expr::Range { start, end, inclusive, .. } = iterable {
-            self.compile_for_range(pattern, start, end, *inclusive, body);
-            return;
-        }
-
         // Handle list iteration: for item in list or for (i, item) in list.enumerate()
         let iter_type = self.infer_type(iterable);
         if let Type::List(elem_type) = &iter_type {

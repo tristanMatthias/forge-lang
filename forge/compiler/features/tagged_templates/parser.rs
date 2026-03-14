@@ -3,12 +3,14 @@ use crate::lexer::{Lexer, Span};
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
+use super::types::TaggedTemplateData;
+
 impl Parser {
     /// Parse a tagged template literal: `tag\`template ${expr}\``
     ///
     /// Takes the pre-lexed tag name, template parts, and span from the lexer token,
     /// parses any interpolated expressions within `${}`, and produces
-    /// an `Expr::TaggedTemplate`.
+    /// a `feature_expr` with `TaggedTemplateData`.
     pub(crate) fn parse_tagged_template(
         &mut self,
         tag: String,
@@ -43,6 +45,11 @@ impl Parser {
                 }
             }
         }
-        Some(Expr::TaggedTemplate { tag, parts, type_param, span })
+        Some(feature_expr(
+            "tagged_templates",
+            "TaggedTemplate",
+            Box::new(TaggedTemplateData { tag, parts, type_param }),
+            span,
+        ))
     }
 }

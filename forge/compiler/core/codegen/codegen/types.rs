@@ -173,15 +173,8 @@ impl<'ctx> Codegen<'ctx> {
         match expr {
             Expr::IntLit(_, _) => Type::Int,
             Expr::FloatLit(_, _) => Type::Float,
-            Expr::StringLit(_, _) | Expr::TemplateLit { .. } | Expr::DollarExec { .. } => Type::String,
-            Expr::TaggedTemplate { tag, type_param, .. } => {
-                if let Some(tp) = type_param {
-                    self.type_checker.resolve_type_expr(tp)
-                } else {
-                    self.infer_tagged_template_type(tag)
-                }
-            }
-            Expr::BoolLit(_, _) | Expr::Is { .. } => Type::Bool,
+            Expr::StringLit(_, _) | Expr::TemplateLit { .. } => Type::String,
+            Expr::BoolLit(_, _) => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
             Expr::Ident(name, _) => {
                 // Check codegen's own variable scope first
@@ -485,7 +478,6 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::NullCoalesce { right, .. } => self.infer_type(right),
-            Expr::Range { start, .. } => Type::Range(Box::new(self.infer_type(start))),
             Expr::StructLit { name, fields, .. } => {
                 // If named struct, resolve from named_types
                 if let Some(ref type_name) = name {
@@ -576,23 +568,12 @@ impl<'ctx> Codegen<'ctx> {
                     return_type: Box::new(ret_type),
                 }
             }
-            Expr::Pipe { left, right, .. } => self.infer_pipe_type(left, right),
             Expr::ErrorPropagate { operand, .. } => {
                 let ot = self.infer_type(operand);
                 match &ot {
                     Type::Result(ok, _) => *ok.clone(),
                     _ => ot,
                 }
-            }
-            Expr::TableLit { columns, rows, .. } => {
-                let fields: Vec<(String, Type)> = if let Some(first_row) = rows.first() {
-                    columns.iter().zip(first_row.iter())
-                        .map(|(name, expr)| (name.clone(), self.infer_type(expr)))
-                        .collect()
-                } else {
-                    columns.iter().map(|n| (n.clone(), Type::Unknown)).collect()
-                };
-                Type::List(Box::new(Type::Struct { name: None, fields }))
             }
             Expr::Index { object, .. } => {
                 let obj_type = self.infer_type(object);
@@ -602,7 +583,6 @@ impl<'ctx> Codegen<'ctx> {
                     _ => Type::Unknown,
                 }
             }
-            Expr::With { base, .. } => self.infer_type(base),
             Expr::NullPropagate { object, field, .. } => {
                 let ot = self.infer_type(object);
                 let inner = match &ot {
@@ -638,6 +618,7 @@ impl<'ctx> Codegen<'ctx> {
             ("with_expression", _) => self.infer_with_feature_type(fe),
             ("pipe_operator", _) => self.infer_pipe_feature_type(fe),
             ("shell_shorthand", _) => self.infer_dollar_exec_feature_type(fe),
+            ("tagged_templates", _) => self.infer_tagged_template_feature_type(fe),
             ("table_literal", _) => self.infer_table_lit_feature_type(fe),
             ("closures", _) => self.infer_closure_feature_type(fe),
             ("pattern_matching", _) => self.infer_match_feature_type(fe),

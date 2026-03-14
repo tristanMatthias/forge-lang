@@ -301,11 +301,6 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             index: Box::new(substitute_expr(index, ctx)),
             span: *span,
         },
-        Expr::Pipe { left, right, span } => Expr::Pipe {
-            left: Box::new(substitute_expr(left, ctx)),
-            right: Box::new(substitute_expr(right, ctx)),
-            span: *span,
-        },
         Expr::ListLit { elements, span } => Expr::ListLit {
             elements: elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
             span: *span,
@@ -361,20 +356,6 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             operand: Box::new(substitute_expr(operand, ctx)),
             span: *span,
         },
-        Expr::With { base, updates, span } => Expr::With {
-            base: Box::new(substitute_expr(base, ctx)),
-            updates: updates
-                .iter()
-                .map(|(k, v)| (k.clone(), substitute_expr(v, ctx)))
-                .collect(),
-            span: *span,
-        },
-        Expr::Range { start, end, inclusive, span } => Expr::Range {
-            start: Box::new(substitute_expr(start, ctx)),
-            end: Box::new(substitute_expr(end, ctx)),
-            inclusive: *inclusive,
-            span: *span,
-        },
         Expr::OkExpr { value, span } => Expr::OkExpr {
             value: Box::new(substitute_expr(value, ctx)),
             span: *span,
@@ -387,60 +368,6 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             expr: Box::new(substitute_expr(expr, ctx)),
             binding: binding.clone(),
             handler: substitute_block(handler, ctx),
-            span: *span,
-        },
-        Expr::ChannelSend { channel, value, span } => Expr::ChannelSend {
-            channel: Box::new(substitute_expr(channel, ctx)),
-            value: Box::new(substitute_expr(value, ctx)),
-            span: *span,
-        },
-        Expr::ChannelReceive { channel, span } => Expr::ChannelReceive {
-            channel: Box::new(substitute_expr(channel, ctx)),
-            span: *span,
-        },
-        Expr::SpawnBlock { body, span } => Expr::SpawnBlock {
-            body: substitute_block(body, ctx),
-            span: *span,
-        },
-        Expr::DollarExec { parts, span } => Expr::DollarExec {
-            parts: parts
-                .iter()
-                .map(|p| match p {
-                    crate::parser::ast::TemplatePart::Literal(s) => {
-                        crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
-                    }
-                    crate::parser::ast::TemplatePart::Expr(e) => {
-                        crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
-                    }
-                })
-                .collect(),
-            span: *span,
-        },
-        Expr::TaggedTemplate { tag, parts, type_param, span } => Expr::TaggedTemplate {
-            tag: substitute_ident_string(tag, ctx),
-            parts: parts
-                .iter()
-                .map(|p| match p {
-                    crate::parser::ast::TemplatePart::Literal(s) => {
-                        crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
-                    }
-                    crate::parser::ast::TemplatePart::Expr(e) => {
-                        crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
-                    }
-                })
-                .collect(),
-            type_param: type_param.clone(),
-            span: *span,
-        },
-        Expr::Is { value, pattern, negated, span } => Expr::Is {
-            value: Box::new(substitute_expr(value, ctx)),
-            pattern: pattern.clone(),
-            negated: *negated,
-            span: *span,
-        },
-        Expr::TableLit { columns, rows, span } => Expr::TableLit {
-            columns: columns.clone(),
-            rows: rows.iter().map(|row| row.iter().map(|e| substitute_expr(e, ctx)).collect()).collect(),
             span: *span,
         },
         Expr::Feature(fe) => substitute_feature_expr(fe, ctx),
@@ -572,6 +499,173 @@ fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionC
                     name: data.name.as_ref().map(|n| substitute_ident_string(n, ctx)),
                     fields: data.fields.iter().map(|(k, v)| (k.clone(), substitute_expr(v, ctx))).collect(),
                     span: data.span,
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("with_expression", "With") => {
+            use crate::features::with_expression::types::WithData;
+            if let Some(data) = feature_data!(fe, WithData) {
+                let new_data = WithData {
+                    base: Box::new(substitute_expr(&data.base, ctx)),
+                    updates: data.updates.iter().map(|(k, v)| (k.clone(), substitute_expr(v, ctx))).collect(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("ranges", "Range") => {
+            use crate::features::ranges::types::RangeData;
+            if let Some(data) = feature_data!(fe, RangeData) {
+                let new_data = RangeData {
+                    start: Box::new(substitute_expr(&data.start, ctx)),
+                    end: Box::new(substitute_expr(&data.end, ctx)),
+                    inclusive: data.inclusive,
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("channels", "ChannelSend") => {
+            use crate::features::channels::types::ChannelSendData;
+            if let Some(data) = feature_data!(fe, ChannelSendData) {
+                let new_data = ChannelSendData {
+                    channel: Box::new(substitute_expr(&data.channel, ctx)),
+                    value: Box::new(substitute_expr(&data.value, ctx)),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("channels", "ChannelReceive") => {
+            use crate::features::channels::types::ChannelReceiveData;
+            if let Some(data) = feature_data!(fe, ChannelReceiveData) {
+                let new_data = ChannelReceiveData {
+                    channel: Box::new(substitute_expr(&data.channel, ctx)),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("spawn", "SpawnBlock") => {
+            use crate::features::spawn::types::SpawnData;
+            if let Some(data) = feature_data!(fe, SpawnData) {
+                let new_data = SpawnData {
+                    body: substitute_block(&data.body, ctx),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("shell_shorthand", "DollarExec") => {
+            use crate::features::shell_shorthand::types::DollarExecData;
+            if let Some(data) = feature_data!(fe, DollarExecData) {
+                let new_data = DollarExecData {
+                    parts: data.parts.iter().map(|p| match p {
+                        crate::parser::ast::TemplatePart::Literal(s) => {
+                            crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
+                        }
+                        crate::parser::ast::TemplatePart::Expr(e) => {
+                            crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
+                        }
+                    }).collect(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("tagged_templates", "TaggedTemplate") => {
+            use crate::features::tagged_templates::types::TaggedTemplateData;
+            if let Some(data) = feature_data!(fe, TaggedTemplateData) {
+                let new_data = TaggedTemplateData {
+                    tag: substitute_ident_string(&data.tag, ctx),
+                    parts: data.parts.iter().map(|p| match p {
+                        crate::parser::ast::TemplatePart::Literal(s) => {
+                            crate::parser::ast::TemplatePart::Literal(substitute_ident_string(s, ctx))
+                        }
+                        crate::parser::ast::TemplatePart::Expr(e) => {
+                            crate::parser::ast::TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
+                        }
+                    }).collect(),
+                    type_param: data.type_param.clone(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("is_keyword", "Is") => {
+            use crate::features::is_keyword::types::IsData;
+            if let Some(data) = feature_data!(fe, IsData) {
+                let new_data = IsData {
+                    value: Box::new(substitute_expr(&data.value, ctx)),
+                    pattern: data.pattern.clone(),
+                    negated: data.negated,
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("table_literal", "TableLit") => {
+            use crate::features::table_literal::types::TableLitData;
+            if let Some(data) = feature_data!(fe, TableLitData) {
+                let new_data = TableLitData {
+                    columns: data.columns.clone(),
+                    rows: data.rows.iter().map(|row| row.iter().map(|e| substitute_expr(e, ctx)).collect()).collect(),
                 };
                 Expr::Feature(FeatureExpr {
                     feature_id: fe.feature_id,

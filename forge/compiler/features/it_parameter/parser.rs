@@ -23,9 +23,6 @@ impl Parser {
             Expr::Index { object, index, .. } => {
                 Self::expr_contains_it(object) || Self::expr_contains_it(index)
             }
-            Expr::Pipe { left, right, .. } => {
-                Self::expr_contains_it(left) || Self::expr_contains_it(right)
-            }
             Expr::NullCoalesce { left, right, .. } => {
                 Self::expr_contains_it(left) || Self::expr_contains_it(right)
             }

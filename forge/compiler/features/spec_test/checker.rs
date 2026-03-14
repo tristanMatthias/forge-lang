@@ -35,11 +35,7 @@ impl TypeChecker {
         // Check body in a scope — column bindings would be defined at runtime
         self.env.push_scope();
         // For table literals, register column names as variables
-        if let Expr::TableLit { columns, .. } = table {
-            for col in columns {
-                self.env.define(col.clone(), crate::typeck::types::Type::Unknown, false);
-            }
-        } else if let Expr::Feature(fe) = table {
+        if let Expr::Feature(fe) = table {
             if fe.feature_id == "table_literal" {
                 if let Some(data) = crate::feature_data!(fe, crate::features::table_literal::types::TableLitData) {
                     for col in &data.columns {

@@ -1,43 +1,60 @@
 /// # Advanced Shell Pipeline
 ///
-/// Combining shell execution with error handling,
-/// string processing, and collection operations
-/// for a multi-step data pipeline.
+/// Combining process.spawn with channels for streaming
+/// stdout processing, plus process.pipe for stdin piping.
 ///
-/// expect: === Shell Pipeline ===
-/// expect: system: darwin
-/// expect: HELLO FORGE LANG
-/// expect: lines: line-1 line-2 line-3
+/// expect: === Stream Processing ===
+/// expect: lines: 3
+/// expect: === Pipe Transform ===
+/// expect: HELLO FORGE
+/// expect: === Process Lifecycle ===
+/// expect: spawned
+/// expect: stopped
 /// expect: done
 
 use @std.process
-
-fn safe_exec(cmd: string) -> Result<string, string> {
-  let output = $"${cmd}"
-  if output.trim().length() == 0 {
-    Err("empty output")
-  } else {
-    Ok(output.trim())
-  }
-}
+use @std.channel
 
 fn main() {
-  println("=== Shell Pipeline ===")
+  println("=== Stream Processing ===")
 
-  // Shell + error handling via Result + catch
-  let os = safe_exec("uname") catch (e) { "unknown" }
-  println("system: " + os.lower())
+  // Spawn a process and stream stdout line-by-line via channel
+  let out = channel(10)
 
-  // Shell + interpolation + string method chaining
-  let phrase = "hello forge lang"
-  let upper = $"echo ${phrase}"
-  println(upper.trim().upper())
+  spawn {
+    let pid = process.spawn("sh", ["-c", "echo alpha && echo beta && echo gamma"])
+    sleep(200)
+    loop {
+      let line = process.read_line(pid)
+      if line.length == 0 { break }
+      out <- line
+    }
+    channel.close(out)
+  }
 
-  // Shell + collection building from split output
-  let raw = $"echo 'line-1 line-2 line-3'"
-  let parts = raw.trim().split(" ")
-  let joined = parts.join(" ")
-  println("lines: " + joined)
+  // Consume streamed lines from channel
+  mut count = 0
+  for line in out {
+    count = count + 1
+  }
+  println("lines: " + string(count))
+
+  // Pipe: send input through a command's stdin, get stdout back
+  println("=== Pipe Transform ===")
+  let result_json = process.pipe("hello forge", "tr", ["a-z", "A-Z"])
+  let result: {stdout: string, stderr: string, code: int} = json.parse(result_json)
+  println(result.stdout)
+
+  // Lifecycle: spawn, check alive, kill
+  println("=== Process Lifecycle ===")
+  let pid = process.spawn("sleep", ["30"])
+  if process.is_alive(pid) {
+    println("spawned")
+  }
+  process.kill(pid)
+  if process.is_alive(pid) == false {
+    println("stopped")
+  }
 
   println("done")
 }
