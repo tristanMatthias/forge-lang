@@ -642,6 +642,12 @@ impl<'ctx> Codegen<'ctx> {
                 "datetime_format" => return self.compile_datetime_format(args),
                 "datetime_parse" => return self.compile_datetime_parse(args),
                 "validate" => return self.compile_validate(args),
+                "query_gt" => return self.compile_query_int1(args, "forge_query_gt"),
+                "query_gte" => return self.compile_query_int1(args, "forge_query_gte"),
+                "query_lt" => return self.compile_query_int1(args, "forge_query_lt"),
+                "query_lte" => return self.compile_query_int1(args, "forge_query_lte"),
+                "query_between" => return self.compile_query_between(args),
+                "query_like" => return self.compile_query_like(args),
                 "channel" => {
                     // channel(capacity) -> int (channel ID)
                     let capacity = if args.is_empty() {

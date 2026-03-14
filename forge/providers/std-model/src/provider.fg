@@ -42,6 +42,7 @@ extern fn forge_model_update_json_no_validate(table: string, id: int, changes_js
 
 extern fn forge_model_check_owner(table: string, record_id: int, user_id: int) -> int
 extern fn forge_model_get_owner_field(table: string) -> string
+extern fn forge_model_last_error() -> string
 
 extern fn forge_model_query_build(table: string) -> string
 extern fn forge_model_query_where(query: string, filter: string) -> string
@@ -83,6 +84,14 @@ component model(__tpl_name, schema) {
         let __id = forge_json_get_int(__result, 0, "id")
         forge_model_free_string(__result)
         __id
+    }
+
+    fn __tpl_name.last_error() -> string {
+        let __result: ptr = forge_model_last_error()
+        let __len = strlen(__result)
+        let __s = forge_string_new(__result, __len)
+        forge_model_free_string(__result)
+        __s
     }
 
     fn __tpl_name.get(id: int) -> __tpl_name? {

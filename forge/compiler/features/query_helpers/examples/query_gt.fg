@@ -1,0 +1,5 @@
+/// expect: {"$gt":100}
+fn main() {
+    let filter = query_gt(100)
+    println(filter)
+}

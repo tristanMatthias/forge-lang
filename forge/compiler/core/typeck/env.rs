@@ -119,6 +119,25 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
+        // Query comparison helpers
+        env.functions.insert("query_gt".to_string(), Type::Function {
+            params: vec![Type::Int], return_type: Box::new(Type::String),
+        });
+        env.functions.insert("query_gte".to_string(), Type::Function {
+            params: vec![Type::Int], return_type: Box::new(Type::String),
+        });
+        env.functions.insert("query_lt".to_string(), Type::Function {
+            params: vec![Type::Int], return_type: Box::new(Type::String),
+        });
+        env.functions.insert("query_lte".to_string(), Type::Function {
+            params: vec![Type::Int], return_type: Box::new(Type::String),
+        });
+        env.functions.insert("query_between".to_string(), Type::Function {
+            params: vec![Type::Int, Type::Int], return_type: Box::new(Type::String),
+        });
+        env.functions.insert("query_like".to_string(), Type::Function {
+            params: vec![Type::String], return_type: Box::new(Type::String),
+        });
         // Runtime helper functions used by component template expansion
         env.functions.insert(
             "forge_string_new".to_string(),

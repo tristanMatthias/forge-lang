@@ -47,3 +47,4 @@ pub mod durations;
 pub mod datetime;
 pub mod shorthand_fields;
 pub mod process_uptime;
+pub mod query_helpers;

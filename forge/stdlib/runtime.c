@@ -1002,3 +1002,44 @@ int64_t forge_validate_pattern(ForgeString s, ForgeString pattern) {
     }
     return 1; // Default: pass if pattern not understood
 }
+
+// ---- Query comparison helpers ----
+
+ForgeString forge_query_gt(int64_t value) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "{\"$gt\":%lld}", (long long)value);
+    return forge_string_new(buf, len);
+}
+
+ForgeString forge_query_gte(int64_t value) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "{\"$gte\":%lld}", (long long)value);
+    return forge_string_new(buf, len);
+}
+
+ForgeString forge_query_lt(int64_t value) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "{\"$lt\":%lld}", (long long)value);
+    return forge_string_new(buf, len);
+}
+
+ForgeString forge_query_lte(int64_t value) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "{\"$lte\":%lld}", (long long)value);
+    return forge_string_new(buf, len);
+}
+
+ForgeString forge_query_between(int64_t low, int64_t high) {
+    char buf[128];
+    int len = snprintf(buf, sizeof(buf), "{\"$gte\":%lld,\"$lte\":%lld}", (long long)low, (long long)high);
+    return forge_string_new(buf, len);
+}
+
+ForgeString forge_query_like(ForgeString pattern) {
+    int64_t buf_len = pattern.len + 32;
+    char* buf = (char*)malloc(buf_len);
+    int len = snprintf(buf, buf_len, "{\"$like\":\"%.*s\"}", (int)pattern.len, pattern.ptr);
+    ForgeString result = forge_string_new(buf, len);
+    free(buf);
+    return result;
+}

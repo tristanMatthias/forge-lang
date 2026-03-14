@@ -7,6 +7,9 @@ use std::sync::Mutex;
 
 static DB: Mutex<Option<Connection>> = Mutex::new(None);
 
+/// Last validation error (per-table key is not needed; just last error globally)
+static LAST_VALIDATION_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
 /// Per-table schema storage for validation
 /// Maps table_name -> Vec<FieldSchema>
 static SCHEMAS: Mutex<Option<HashMap<String, Vec<FieldSchema>>>> = Mutex::new(None);
@@ -339,8 +342,14 @@ pub extern "C" fn forge_model_insert_json(
     // Validate data against schema annotations
     let validation_errors = validate_data(table, &data);
     if !validation_errors.is_empty() {
-        return json_result(format_validation_errors(&validation_errors));
+        let err_json = format_validation_errors(&validation_errors);
+        // Store for later retrieval via forge_model_last_error
+        *LAST_VALIDATION_ERROR.lock().unwrap() = Some(err_json.clone());
+        return json_result(err_json);
     }
+
+    // Clear last error on successful validation
+    *LAST_VALIDATION_ERROR.lock().unwrap() = None;
 
     let columns: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
     let placeholders: Vec<String> = (0..columns.len()).map(|_| "?".to_string()).collect();
@@ -840,6 +849,16 @@ pub extern "C" fn forge_model_health() -> i64 {
     }
 }
 
+/// Return last validation error as JSON string, or empty string if no error
+#[no_mangle]
+pub extern "C" fn forge_model_last_error() -> *mut c_char {
+    let guard = LAST_VALIDATION_ERROR.lock().unwrap();
+    match guard.as_ref() {
+        Some(err) => json_result(err.clone()),
+        None => json_result("".to_string()),
+    }
+}
+
 /// Paginated query
 #[no_mangle]
 pub extern "C" fn forge_model_paginate_json(
@@ -896,32 +915,38 @@ fn build_where_clause(filter_str: &str) -> (String, Vec<String>) {
                 continue;
             }
             if let Some(op) = v.as_object() {
-                if let Some(val) = op.get("$gt") { clauses.push(format!("{} > ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$gte") { clauses.push(format!("{} >= ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$lt") { clauses.push(format!("{} < ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$lte") { clauses.push(format!("{} <= ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$like") { clauses.push(format!("{} LIKE ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$ne") { clauses.push(format!("{} != ?", k)); values.push(jv(val)); }
-                else if let Some(val) = op.get("$not_like") { clauses.push(format!("{} NOT LIKE ?", k)); values.push(jv(val)); }
-                else if op.get("$is_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NULL", k)); }
-                else if op.get("$is_not_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NOT NULL", k)); }
-                else if let Some(arr) = op.get("$between").and_then(|b| b.as_array()) {
-                    if arr.len() == 2 { clauses.push(format!("{} BETWEEN ? AND ?", k)); values.push(jv(&arr[0])); values.push(jv(&arr[1])); }
+                // Handle each operator independently (not else-if) so combined
+                // filters like {"$gte":10,"$lte":50} produce multiple clauses.
+                let mut handled = false;
+                if let Some(val) = op.get("$gt") { clauses.push(format!("{} > ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$gte") { clauses.push(format!("{} >= ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$lt") { clauses.push(format!("{} < ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$lte") { clauses.push(format!("{} <= ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$like") { clauses.push(format!("{} LIKE ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$ne") { clauses.push(format!("{} != ?", k)); values.push(jv(val)); handled = true; }
+                if let Some(val) = op.get("$not_like") { clauses.push(format!("{} NOT LIKE ?", k)); values.push(jv(val)); handled = true; }
+                if op.get("$is_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NULL", k)); handled = true; }
+                if op.get("$is_not_null").and_then(|v| v.as_bool()) == Some(true) { clauses.push(format!("{} IS NOT NULL", k)); handled = true; }
+                if let Some(arr) = op.get("$between").and_then(|b| b.as_array()) {
+                    if arr.len() == 2 { clauses.push(format!("{} BETWEEN ? AND ?", k)); values.push(jv(&arr[0])); values.push(jv(&arr[1])); handled = true; }
                 }
-                else if let Some(arr) = op.get("$in").and_then(|b| b.as_array()) {
+                if let Some(arr) = op.get("$in").and_then(|b| b.as_array()) {
                     if !arr.is_empty() {
                         let placeholders: Vec<&str> = arr.iter().map(|_| "?").collect();
                         clauses.push(format!("{} IN ({})", k, placeholders.join(",")));
                         for item in arr { values.push(jv(item)); }
+                        handled = true;
                     }
                 }
-                else if let Some(arr) = op.get("$not_in").and_then(|b| b.as_array()) {
+                if let Some(arr) = op.get("$not_in").and_then(|b| b.as_array()) {
                     if !arr.is_empty() {
                         let placeholders: Vec<&str> = arr.iter().map(|_| "?").collect();
                         clauses.push(format!("{} NOT IN ({})", k, placeholders.join(",")));
                         for item in arr { values.push(jv(item)); }
+                        handled = true;
                     }
                 }
+                if !handled { clauses.push(format!("{} = ?", k)); values.push(serde_json::to_string(v).unwrap_or_default()); }
             } else {
                 clauses.push(format!("{} = ?", k)); values.push(jv(v));
             }

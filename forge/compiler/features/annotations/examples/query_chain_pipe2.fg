@@ -1,0 +1,19 @@
+/// Test: Query builder with minimal chain
+///
+/// expect: 0
+
+use @std.model.{model}
+
+model Post {
+    id: int @primary @auto_increment
+    title: string
+    status: string @default("draft")
+}
+
+fn main() {
+    let results = Post.build_query()
+    let results2 = Post.add_where(results, "{}")
+    let results3 = Post.add_limit(results2, 5)
+    let final_results = Post.exec_query(results3)
+    println(string(final_results.length))
+}

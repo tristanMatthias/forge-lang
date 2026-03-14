@@ -1,0 +1,5 @@
+/// expect: {"$gte":10,"$lte":50}
+fn main() {
+    let filter = query_between(10, 50)
+    println(filter)
+}

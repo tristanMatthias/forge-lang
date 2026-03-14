@@ -1,0 +1,26 @@
+/// # Model Validation Error
+///
+/// When create() returns 0, Model.last_error() returns structured
+/// JSON describing which fields failed validation and why.
+///
+/// expect: 0
+/// expect: name
+
+use @std.model.{model}
+
+model User {
+  id: int @primary @auto_increment
+  name: string @min(1)
+}
+
+fn main() {
+  let id = User.create({ name: "" })
+  println(string(id))
+
+  let err = User.last_error()
+  // err is JSON like: {"__validation_error":true,"error":"validation failed","fields":[{"field":"name","rule":"min","message":"name must be at least 1 characters, got 0"}]}
+  // Just check it contains "name"
+  if err.contains("name") {
+    println("name")
+  }
+}

@@ -481,7 +481,7 @@ impl TypeChecker {
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
                             if args.len() != params.len()
-                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime")
+                                && !matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like")
                             {
                                 let sig = self.format_fn_signature(fn_name, params);
                                 let example = self.format_fn_example(fn_name, params);
@@ -555,7 +555,7 @@ impl TypeChecker {
                                 "println" | "print" => Type::Void,
                                 "string" => Type::String,
                                 "datetime_now" | "datetime_parse" | "process_uptime" => Type::Int,
-                                "datetime_format" => Type::String,
+                                "datetime_format" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like" => Type::String,
                                 _ => Type::Unknown,
                             }
                         } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {

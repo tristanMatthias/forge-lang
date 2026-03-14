@@ -171,6 +171,20 @@ impl<'ctx> Codegen<'ctx> {
         // forge_datetime_parse(ptr, i64) -> i64 (takes ForgeString fields)
         let fn_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
         self.module.add_function("forge_datetime_parse", fn_type, None);
+
+        // Query comparison helpers — return ForgeString (JSON filter)
+        let fn_type = string_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_query_gt", fn_type, None);
+        let fn_type = string_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_query_gte", fn_type, None);
+        let fn_type = string_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_query_lt", fn_type, None);
+        let fn_type = string_type.fn_type(&[i64_type.into()], false);
+        self.module.add_function("forge_query_lte", fn_type, None);
+        let fn_type = string_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+        self.module.add_function("forge_query_between", fn_type, None);
+        let fn_type = string_type.fn_type(&[string_type.into()], false);
+        self.module.add_function("forge_query_like", fn_type, None);
     }
 
     /// Declare helper/utility functions needed by codegen.

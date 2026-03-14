@@ -184,6 +184,11 @@ model Item {
     active: bool @default(true)
 }
 
+model ValidatedUser {
+    id: int @primary @auto_increment
+    name: string @min(1)
+}
+
 service ItemService for Item {
     before create(item) {
         println(`creating: ${item.name}`)
@@ -515,6 +520,17 @@ fn main() {
 
     Task.delete(id3)
     println(`after delete: ${Task.count()}`)
+
+    // ---- 21b. Model Validation Errors ----
+    println("--- 21b. Validation Errors ---")
+    let _bad_id = ValidatedUser.create({ name: "" })
+    println(`bad create id: ${_bad_id}`)
+    let err = ValidatedUser.last_error()
+    if err.contains("name") {
+        println("validation error has field name")
+    }
+    let _good_id = ValidatedUser.create({ name: "Alice" })
+    println(`good create id: ${_good_id}`)
 
     // ---- 22. Service ----
     println("--- 22. Service ---")

@@ -1,0 +1,5 @@
+/// expect: {"$like":"ali%"}
+fn main() {
+    let filter = query_like("ali%")
+    println(filter)
+}
