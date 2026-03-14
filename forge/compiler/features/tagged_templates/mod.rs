@@ -6,7 +6,7 @@ pub mod types;
 crate::forge_feature! {
     name: "Tagged Templates",
     id: "tagged_templates",
-    status: Wip,
+    status: Stable,
     depends: ["string_templates"],
     enables: [],
     tokens: ["tag`...`"],
