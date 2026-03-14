@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -34,10 +33,10 @@ impl Parser {
         self.skip_newlines();
         let body = self.parse_block()?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "functions",
-            kind: "FnDecl",
-            data: Box::new(FnDeclData {
+        Some(feature_stmt(
+            "functions",
+            "FnDecl",
+            Box::new(FnDeclData {
                 name,
                 type_params,
                 params,
@@ -45,8 +44,8 @@ impl Parser {
                 body,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_return_feature(&mut self) -> Option<Statement> {
@@ -59,11 +58,11 @@ impl Parser {
         } else {
             Some(self.parse_expr()?)
         };
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "functions",
-            kind: "Return",
-            data: Box::new(ReturnData { value }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "functions",
+            "Return",
+            Box::new(ReturnData { value }),
+            start,
+        ))
     }
 }

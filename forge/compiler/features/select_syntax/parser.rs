@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -76,16 +75,7 @@ impl Parser {
             self.skip_newlines();
 
             // Parse body: either a block { ... } or wrap a single statement in a block
-            let body = if self.check(&TokenKind::LBrace) {
-                self.parse_block()?
-            } else {
-                let stmt_span = self.current_span();
-                let stmt = self.parse_statement()?;
-                Block {
-                    statements: vec![stmt],
-                    span: stmt_span,
-                }
-            };
+            let body = self.parse_block_or_stmt()?;
 
             arms.push(SelectArm {
                 binding,
@@ -98,11 +88,11 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "select_syntax",
-            kind: "Select",
-            data: Box::new(SelectData { arms }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "select_syntax",
+            "Select",
+            Box::new(SelectData { arms }),
+            start,
+        ))
     }
 }

@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
@@ -13,15 +12,15 @@ impl Parser {
         let span = self.advance()?.span; // consume <-
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Expr(Expr::Feature(FeatureExpr {
-            feature_id: "channels",
-            kind: "ChannelSend",
-            data: Box::new(ChannelSendData {
+        Some(Statement::Expr(feature_expr(
+            "channels",
+            "ChannelSend",
+            Box::new(ChannelSendData {
                 channel: Box::new(channel_expr),
                 value: Box::new(value),
             }),
             span,
-        })))
+        )))
     }
 
     /// Parse a channel receive expression: `<- channel`
@@ -31,13 +30,13 @@ impl Parser {
         let span = self.advance()?.span; // consume <-
         self.skip_newlines();
         let channel = self.parse_unary()?;
-        Some(Expr::Feature(FeatureExpr {
-            feature_id: "channels",
-            kind: "ChannelReceive",
-            data: Box::new(ChannelReceiveData {
+        Some(feature_expr(
+            "channels",
+            "ChannelReceive",
+            Box::new(ChannelReceiveData {
                 channel: Box::new(channel),
             }),
             span,
-        }))
+        ))
     }
 }

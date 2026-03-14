@@ -1,4 +1,3 @@
-use crate::feature::{FeatureExpr, FeatureStmt};
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -24,30 +23,30 @@ impl Parser {
         self.skip_newlines();
         let value = self.parse_type_expr()?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "structs",
-            kind: "TypeDecl",
-            data: Box::new(TypeDeclData {
+        Some(feature_stmt(
+            "structs",
+            "TypeDecl",
+            Box::new(TypeDeclData {
                 name,
                 type_params,
                 value,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_struct_literal_feature(&mut self, span: crate::lexer::Span) -> Option<Expr> {
         let fields = self.parse_struct_fields()?;
         self.expect(&TokenKind::RBrace)?;
-        Some(Expr::Feature(FeatureExpr {
-            feature_id: "structs",
-            kind: "StructLit",
-            data: Box::new(StructLitData {
+        Some(feature_expr(
+            "structs",
+            "StructLit",
+            Box::new(StructLitData {
                 name: None,
                 fields,
             }),
             span,
-        }))
+        ))
     }
 }

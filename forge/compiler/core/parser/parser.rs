@@ -72,6 +72,20 @@ impl Parser {
         &self.diagnostics
     }
 
+    /// Parse either a `{ ... }` block or a single statement wrapped in a block.
+    pub(crate) fn parse_block_or_stmt(&mut self) -> Option<Block> {
+        if self.check(&TokenKind::LBrace) {
+            self.parse_block()
+        } else {
+            let span = self.current_span();
+            let stmt = self.parse_statement()?;
+            Some(Block {
+                statements: vec![stmt],
+                span,
+            })
+        }
+    }
+
     pub fn parse_program(&mut self) -> Program {
         let mut statements = Vec::new();
         self.skip_newlines();

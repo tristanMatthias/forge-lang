@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -16,15 +15,15 @@ impl Parser {
         let iterable = self.parse_expr()?;
         self.skip_newlines();
         let body = self.parse_block()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "for_loops",
-            kind: "For",
-            data: Box::new(ForData {
+        Some(feature_stmt(
+            "for_loops",
+            "For",
+            Box::new(ForData {
                 pattern,
                 iterable,
                 body,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 }

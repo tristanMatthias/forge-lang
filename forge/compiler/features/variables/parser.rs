@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -40,10 +39,10 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "Let",
-            data: Box::new(VarDeclData {
+        Some(feature_stmt(
+            "variables",
+            "Let",
+            Box::new(VarDeclData {
                 kind: VarKind::Let,
                 name,
                 type_ann,
@@ -51,8 +50,8 @@ impl Parser {
                 value,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_mut_feature(&mut self) -> Option<Statement> {
@@ -77,10 +76,10 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "Mut",
-            data: Box::new(VarDeclData {
+        Some(feature_stmt(
+            "variables",
+            "Mut",
+            Box::new(VarDeclData {
                 kind: VarKind::Mut,
                 name,
                 type_ann,
@@ -88,8 +87,8 @@ impl Parser {
                 value,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_const_feature(&mut self) -> Option<Statement> {
@@ -114,10 +113,10 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "Const",
-            data: Box::new(VarDeclData {
+        Some(feature_stmt(
+            "variables",
+            "Const",
+            Box::new(VarDeclData {
                 kind: VarKind::Const,
                 name,
                 type_ann,
@@ -125,8 +124,8 @@ impl Parser {
                 value,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     fn parse_tuple_destructure_feature(&mut self, start: crate::lexer::Span) -> Option<Statement> {
@@ -153,15 +152,15 @@ impl Parser {
         self.skip_newlines();
         let value = self.parse_expr()?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "LetDestructure",
-            data: Box::new(LetDestructureData {
+        Some(feature_stmt(
+            "variables",
+            "LetDestructure",
+            Box::new(LetDestructureData {
                 pattern: Pattern::Tuple(patterns, start),
                 value,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     fn parse_struct_destructure_feature(&mut self, start: crate::lexer::Span) -> Option<Statement> {
@@ -188,10 +187,10 @@ impl Parser {
         self.skip_newlines();
         let value = self.parse_expr()?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "LetDestructure",
-            data: Box::new(LetDestructureData {
+        Some(feature_stmt(
+            "variables",
+            "LetDestructure",
+            Box::new(LetDestructureData {
                 pattern: Pattern::Struct {
                     fields,
                     rest: false,
@@ -199,8 +198,8 @@ impl Parser {
                 },
                 value,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     fn parse_list_destructure_feature(&mut self, start: crate::lexer::Span) -> Option<Statement> {
@@ -235,10 +234,10 @@ impl Parser {
         self.skip_newlines();
         let value = self.parse_expr()?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "variables",
-            kind: "LetDestructure",
-            data: Box::new(LetDestructureData {
+        Some(feature_stmt(
+            "variables",
+            "LetDestructure",
+            Box::new(LetDestructureData {
                 pattern: Pattern::List {
                     elements,
                     rest: rest_name,
@@ -246,7 +245,7 @@ impl Parser {
                 },
                 value,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 }

@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -16,15 +15,15 @@ impl Parser {
 
         let arms = self.parse_delimited_until(&TokenKind::RBrace, |p| p.parse_match_arm())?;
 
-        Some(Expr::Feature(FeatureExpr {
-            feature_id: "pattern_matching",
-            kind: "Match",
-            data: Box::new(MatchData {
+        Some(feature_expr(
+            "pattern_matching",
+            "Match",
+            Box::new(MatchData {
                 subject: Box::new(subject),
                 arms,
             }),
             span,
-        }))
+        ))
     }
 
     pub(crate) fn parse_match_arm(&mut self) -> Option<MatchArm> {

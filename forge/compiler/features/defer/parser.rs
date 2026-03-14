@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
 
@@ -13,11 +12,11 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let body = self.parse_expr()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "defer",
-            kind: "Defer",
-            data: Box::new(DeferData { body }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "defer",
+            "Defer",
+            Box::new(DeferData { body }),
+            start,
+        ))
     }
 }

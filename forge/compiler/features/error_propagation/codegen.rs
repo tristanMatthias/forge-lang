@@ -102,20 +102,8 @@ impl<'ctx> Codegen<'ctx> {
             self.type_to_llvm_basic(&inferred).into_struct_type()
         };
 
-        // Alloca the canonical Result type, store tag and payload via memory
-        let alloca = self.builder.build_alloca(result_llvm_ty, "ok_result").unwrap();
-
-        // Store tag = 0 (Ok)
-        let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_zero()).unwrap();
-
-        // Store payload: cast the payload pointer to the value's type and store
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr").unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), val).unwrap();
-
-        // Load the canonical struct back
-        let result = self.builder.build_load(result_llvm_ty, alloca, "ok_loaded").unwrap();
+        // Build tagged value: tag=0 for Ok
+        let result = self.build_tagged_value(result_llvm_ty, 0, val, "ok");
         Some(result)
     }
 
@@ -136,20 +124,8 @@ impl<'ctx> Codegen<'ctx> {
             self.type_to_llvm_basic(&inferred).into_struct_type()
         };
 
-        // Alloca the canonical Result type, store tag and payload via memory
-        let alloca = self.builder.build_alloca(result_llvm_ty, "err_result").unwrap();
-
-        // Store tag = 1 (Err)
-        let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(1, false)).unwrap();
-
-        // Store payload: cast the payload pointer to the value's type and store
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr").unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), val).unwrap();
-
-        // Load the canonical struct back
-        let result = self.builder.build_load(result_llvm_ty, alloca, "err_loaded").unwrap();
+        // Build tagged value: tag=1 for Err
+        let result = self.build_tagged_value(result_llvm_ty, 1, val, "err");
         Some(result)
     }
 

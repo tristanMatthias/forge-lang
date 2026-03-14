@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -60,12 +59,12 @@ impl Parser {
             path.push(segment);
         }
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "imports",
-            kind: "Use",
-            data: Box::new(UseData { path, items }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "imports",
+            "Use",
+            Box::new(UseData { path, items }),
+            start,
+        ))
     }
 
     pub(crate) fn parse_export_feature(&mut self) -> Option<Statement> {

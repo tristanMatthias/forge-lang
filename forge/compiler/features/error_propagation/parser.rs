@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -22,15 +21,15 @@ impl Parser {
             None
         };
         let handler = self.parse_block()?;
-        Some(Expr::Feature(FeatureExpr {
-            feature_id: "error_propagation",
-            kind: "Catch",
-            data: Box::new(CatchData {
+        Some(feature_expr(
+            "error_propagation",
+            "Catch",
+            Box::new(CatchData {
                 expr: Box::new(expr),
                 binding,
                 handler,
             }),
-            span: cspan,
-        }))
+            cspan,
+        ))
     }
 }

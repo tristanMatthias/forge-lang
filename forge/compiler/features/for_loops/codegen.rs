@@ -35,9 +35,7 @@ impl<'ctx> Codegen<'ctx> {
         let iter_type = self.infer_type(iterable);
         if let Type::List(elem_type) = &iter_type {
             let list_val = self.compile_expr(iterable).unwrap();
-            let struct_val = list_val.into_struct_value();
-            let data_ptr = self.builder.build_extract_value(struct_val, 0, "list_data").unwrap().into_pointer_value();
-            let list_len = self.builder.build_extract_value(struct_val, 1, "list_len").unwrap().into_int_value();
+            let (data_ptr, list_len) = self.extract_list_fields(&list_val).unwrap();
 
             let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
@@ -124,14 +122,7 @@ impl<'ctx> Codegen<'ctx> {
 
             // Increment block: bump index and jump back to condition
             self.builder.position_at_end(inc_bb);
-            let current_idx = self.builder
-                .build_load(self.context.i64_type(), idx_alloca, "idx")
-                .unwrap()
-                .into_int_value();
-            let next_idx = self.builder
-                .build_int_add(current_idx, self.context.i64_type().const_int(1, false), "next_idx")
-                .unwrap();
-            self.builder.build_store(idx_alloca, next_idx).unwrap();
+            self.increment_i64(idx_alloca, 1);
             self.builder.build_unconditional_branch(loop_bb).unwrap();
 
             self.builder.position_at_end(end_bb);
@@ -339,14 +330,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Increment block
         self.builder.position_at_end(inc_bb);
-        let current = self.builder
-            .build_load(self.context.i64_type(), alloca, "current")
-            .unwrap()
-            .into_int_value();
-        let next = self.builder
-            .build_int_add(current, self.context.i64_type().const_int(1, false), "next")
-            .unwrap();
-        self.builder.build_store(alloca, next).unwrap();
+        self.increment_i64(alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);

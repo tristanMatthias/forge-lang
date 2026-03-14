@@ -2,34 +2,32 @@ use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 
 impl TypeChecker {
-    pub(crate) fn check_spec_block(&mut self, body: &Block) {
+    /// Check a block in its own scope, silently popping the scope afterwards.
+    /// Used by spec, given, then, and related test blocks.
+    fn check_scoped_block(&mut self, body: &Block) {
         self.env.push_scope();
         self.check_block(body);
         self.env.pop_scope_silent();
+    }
+
+    pub(crate) fn check_spec_block(&mut self, body: &Block) {
+        self.check_scoped_block(body);
     }
 
     pub(crate) fn check_given_block(&mut self, body: &Block) {
-        self.env.push_scope();
-        self.check_block(body);
-        self.env.pop_scope_silent();
+        self.check_scoped_block(body);
     }
 
     pub(crate) fn check_then_block(&mut self, body: &Block) {
-        self.env.push_scope();
-        self.check_block(body);
-        self.env.pop_scope_silent();
+        self.check_scoped_block(body);
     }
 
     pub(crate) fn check_then_should_fail(&mut self, body: &Block) {
-        self.env.push_scope();
-        self.check_block(body);
-        self.env.pop_scope_silent();
+        self.check_scoped_block(body);
     }
 
     pub(crate) fn check_then_should_fail_with(&mut self, body: &Block) {
-        self.env.push_scope();
-        self.check_block(body);
-        self.env.pop_scope_silent();
+        self.check_scoped_block(body);
     }
 
     pub(crate) fn check_then_where(&mut self, table: &Expr, body: &Block) {

@@ -1,4 +1,5 @@
 use super::*;
+use inkwell::basic_block::BasicBlock;
 
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn push_scope(&mut self) {
@@ -170,5 +171,88 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         tmp_builder.build_alloca(llvm_ty, name).unwrap()
+    }
+
+    /// Extract (data_ptr, len) from a list struct value.
+    /// Lists are represented as `{ptr, i64}` structs.
+    pub(crate) fn extract_list_fields(
+        &self,
+        list_val: &BasicValueEnum<'ctx>,
+    ) -> Option<(PointerValue<'ctx>, IntValue<'ctx>)> {
+        let struct_val = list_val.into_struct_value();
+        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data_ptr").ok()?.into_pointer_value();
+        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        Some((data_ptr, list_len))
+    }
+
+    /// Build a list struct `{ptr, i64}` from a data pointer and length.
+    pub(crate) fn build_list_struct(
+        &self,
+        elem_type: &Type,
+        data_ptr: PointerValue<'ctx>,
+        len: impl Into<BasicValueEnum<'ctx>>,
+    ) -> inkwell::values::StructValue<'ctx> {
+        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
+        let list_struct_type = list_type.into_struct_type();
+        let mut result = list_struct_type.get_undef();
+        result = self.builder.build_insert_value(result, data_ptr, 0, "list_data").unwrap().into_struct_value();
+        result = self.builder.build_insert_value(result, len.into(), 1, "list_len").unwrap().into_struct_value();
+        result
+    }
+
+    /// Create loop/body/end basic blocks, branch unconditionally to loop, and position at loop.
+    /// Returns (loop_bb, body_bb, end_bb).
+    pub(crate) fn setup_loop_blocks(
+        &self,
+        prefix: &str,
+    ) -> (BasicBlock<'ctx>, BasicBlock<'ctx>, BasicBlock<'ctx>) {
+        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let loop_bb = self.context.append_basic_block(function, &format!("{}_loop", prefix));
+        let body_bb = self.context.append_basic_block(function, &format!("{}_body", prefix));
+        let end_bb = self.context.append_basic_block(function, &format!("{}_end", prefix));
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        self.builder.position_at_end(loop_bb);
+        (loop_bb, body_bb, end_bb)
+    }
+
+    /// Load from an i64 alloca, add `delta`, store back.
+    pub(crate) fn increment_i64(
+        &self,
+        alloca: PointerValue<'ctx>,
+        delta: u64,
+    ) -> IntValue<'ctx> {
+        let current = self.builder.build_load(self.context.i64_type(), alloca, "cur").unwrap().into_int_value();
+        let next = self.builder.build_int_add(current, self.context.i64_type().const_int(delta, false), "next").unwrap();
+        self.builder.build_store(alloca, next).unwrap();
+        next
+    }
+
+    /// Build a tagged struct value `{i8, payload}` for Result/Nullable types.
+    /// `struct_type` is the LLVM struct type, `tag` is the tag byte, `payload` is the value.
+    /// Uses alloca+GEP+bitcast to correctly handle different payload sizes.
+    pub(crate) fn build_tagged_value(
+        &self,
+        struct_type: inkwell::types::StructType<'ctx>,
+        tag: u8,
+        payload: BasicValueEnum<'ctx>,
+        label: &str,
+    ) -> BasicValueEnum<'ctx> {
+        let alloca = self.builder.build_alloca(struct_type, &format!("{}_tmp", label)).unwrap();
+
+        // Store tag
+        let tag_ptr = self.builder.build_struct_gep(struct_type, alloca, 0, "tag_ptr").unwrap();
+        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(tag as u64, false)).unwrap();
+
+        // Store payload via bitcast to handle type size differences
+        let payload_ptr = self.builder.build_struct_gep(struct_type, alloca, 1, "payload_ptr").unwrap();
+        let val_ptr = self.builder.build_bit_cast(
+            payload_ptr,
+            self.context.ptr_type(inkwell::AddressSpace::default()),
+            "val_ptr",
+        ).unwrap();
+        self.builder.build_store(val_ptr.into_pointer_value(), payload).unwrap();
+
+        // Load the full struct back
+        self.builder.build_load(struct_type, alloca, &format!("{}_loaded", label)).unwrap()
     }
 }

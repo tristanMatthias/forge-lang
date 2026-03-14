@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -13,31 +12,31 @@ impl Parser {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_addition()?;
-            return Some(Expr::Feature(FeatureExpr {
-                feature_id: "ranges",
-                kind: "Range",
-                data: Box::new(RangeData {
+            return Some(feature_expr(
+                "ranges",
+                "Range",
+                Box::new(RangeData {
                     start: Box::new(left),
                     end: Box::new(right),
                     inclusive: false,
                 }),
                 span,
-            }));
+            ));
         }
         if self.check(&TokenKind::DotDotEq) {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_addition()?;
-            return Some(Expr::Feature(FeatureExpr {
-                feature_id: "ranges",
-                kind: "Range",
-                data: Box::new(RangeData {
+            return Some(feature_expr(
+                "ranges",
+                "Range",
+                Box::new(RangeData {
                     start: Box::new(left),
                     end: Box::new(right),
                     inclusive: true,
                 }),
                 span,
-            }));
+            ));
         }
         Some(left)
     }

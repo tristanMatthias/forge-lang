@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -12,27 +11,27 @@ impl Parser {
         let condition = self.parse_expr()?;
         self.skip_newlines();
         let body = self.parse_block()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "while_loops",
-            kind: "While",
-            data: Box::new(WhileData { condition, body }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "while_loops",
+            "While",
+            Box::new(WhileData { condition, body }),
+            start,
+        ))
     }
 
     pub(crate) fn parse_loop(&mut self) -> Option<Statement> {
         let start = self.advance()?.span;
         self.skip_newlines();
         let body = self.parse_block()?;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "while_loops",
-            kind: "Loop",
-            data: Box::new(LoopData {
+        Some(feature_stmt(
+            "while_loops",
+            "Loop",
+            Box::new(LoopData {
                 body,
                 label: None,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_break(&mut self) -> Option<Statement> {
@@ -45,24 +44,24 @@ impl Parser {
         } else {
             Some(self.parse_expr()?)
         };
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "while_loops",
-            kind: "Break",
-            data: Box::new(BreakData {
+        Some(feature_stmt(
+            "while_loops",
+            "Break",
+            Box::new(BreakData {
                 value,
                 label: None,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     pub(crate) fn parse_continue(&mut self) -> Option<Statement> {
         let start = self.advance()?.span;
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "while_loops",
-            kind: "Continue",
-            data: Box::new(ContinueData { label: None }),
-            span: start,
-        }))
+        Some(feature_stmt(
+            "while_loops",
+            "Continue",
+            Box::new(ContinueData { label: None }),
+            start,
+        ))
     }
 }

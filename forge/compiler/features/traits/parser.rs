@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -81,18 +80,18 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "traits",
-            kind: "TraitDecl",
-            data: Box::new(TraitDeclData {
+        Some(feature_stmt(
+            "traits",
+            "TraitDecl",
+            Box::new(TraitDeclData {
                 name,
                 type_params,
                 super_traits,
                 methods,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 
     /// Wrapper for export context
@@ -159,17 +158,17 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "traits",
-            kind: "ImplBlock",
-            data: Box::new(ImplBlockData {
+        Some(feature_stmt(
+            "traits",
+            "ImplBlock",
+            Box::new(ImplBlockData {
                 trait_name,
                 type_name,
                 type_params,
                 associated_types,
                 methods,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 }

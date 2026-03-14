@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -26,16 +25,16 @@ impl Parser {
 
             let pattern = self.parse_is_pattern()?;
 
-            left = Expr::Feature(FeatureExpr {
-                feature_id: "is_keyword",
-                kind: "Is",
-                data: Box::new(IsData {
+            left = feature_expr(
+                "is_keyword",
+                "Is",
+                Box::new(IsData {
                     value: Box::new(left),
                     pattern,
                     negated,
                 }),
                 span,
-            });
+            );
         }
 
         Some(left)

@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::lexer::Span;
 use crate::parser::ast::*;
@@ -55,50 +54,50 @@ impl Parser {
             if self.check(&TokenKind::LBrace) {
                 // Block body: parse as block (NOT as struct literal)
                 let block = self.parse_block()?;
-                Some(Expr::Feature(FeatureExpr {
-                    feature_id: "closures",
-                    kind: "Closure",
-                    data: Box::new(ClosureData {
+                Some(feature_expr(
+                    "closures",
+                    "Closure",
+                    Box::new(ClosureData {
                         params,
                         body: Box::new(Expr::Block(block)),
                     }),
                     span,
-                }))
+                ))
             } else {
                 let body = self.parse_expr()?;
-                Some(Expr::Feature(FeatureExpr {
-                    feature_id: "closures",
-                    kind: "Closure",
-                    data: Box::new(ClosureData {
+                Some(feature_expr(
+                    "closures",
+                    "Closure",
+                    Box::new(ClosureData {
                         params,
                         body: Box::new(body),
                     }),
                     span,
-                }))
+                ))
             }
         } else if self.check(&TokenKind::LBrace) {
             // (params) { body } form — also parse as block
             let block = self.parse_block()?;
-            Some(Expr::Feature(FeatureExpr {
-                feature_id: "closures",
-                kind: "Closure",
-                data: Box::new(ClosureData {
+            Some(feature_expr(
+                "closures",
+                "Closure",
+                Box::new(ClosureData {
                     params,
                     body: Box::new(Expr::Block(block)),
                 }),
                 span,
-            }))
+            ))
         } else {
             let body = self.parse_expr()?;
-            Some(Expr::Feature(FeatureExpr {
-                feature_id: "closures",
-                kind: "Closure",
-                data: Box::new(ClosureData {
+            Some(feature_expr(
+                "closures",
+                "Closure",
+                Box::new(ClosureData {
                     params,
                     body: Box::new(body),
                 }),
                 span,
-            }))
+            ))
         }
     }
 

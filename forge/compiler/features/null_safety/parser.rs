@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -17,15 +16,15 @@ impl Parser {
             let span = self.advance()?.span;
             self.skip_newlines();
             let right = self.parse_or()?;
-            left = Expr::Feature(FeatureExpr {
-                feature_id: "null_safety",
-                kind: "NullCoalesce",
-                data: Box::new(NullCoalesceData {
+            left = feature_expr(
+                "null_safety",
+                "NullCoalesce",
+                Box::new(NullCoalesceData {
                     left: Box::new(left),
                     right: Box::new(right),
                 }),
                 span,
-            });
+            );
         }
         Some(left)
     }

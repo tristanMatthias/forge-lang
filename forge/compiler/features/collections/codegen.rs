@@ -68,9 +68,7 @@ impl<'ctx> Codegen<'ctx> {
         let elem_llvm_ty = self.type_to_llvm_basic(&elem_type);
 
         // Extract current data ptr and len
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "list_data").ok()?.into_pointer_value();
-        let old_len = self.builder.build_extract_value(struct_val, 1, "list_len").ok()?.into_int_value();
+        let (data_ptr, old_len) = self.extract_list_fields(list_val)?;
 
         // New length = old_len + 1
         let new_len = self.builder.build_int_add(
@@ -98,11 +96,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_store(new_elem_ptr, new_val).unwrap();
 
         // Build new list struct
-        let list_llvm_ty = self.type_to_llvm_basic(list_type);
-        let list_struct_type = list_llvm_ty.into_struct_type();
-        let mut new_list = list_struct_type.get_undef();
-        new_list = self.builder.build_insert_value(new_list, new_ptr, 0, "new_list_ptr").unwrap().into_struct_value();
-        new_list = self.builder.build_insert_value(new_list, new_len, 1, "new_list_len").unwrap().into_struct_value();
+        let new_list = self.build_list_struct(&elem_type, new_ptr, new_len);
 
         // Update the mutable variable
         if let Expr::Ident(name, _) = list_expr {
@@ -122,9 +116,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -167,25 +159,18 @@ impl<'ctx> Codegen<'ctx> {
         let count = self.builder.build_load(self.context.i64_type(), count_alloca, "c").unwrap().into_int_value();
         let dest_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, result_ptr, &[count], "dp").unwrap() };
         self.builder.build_store(dest_ptr, elem_val).unwrap();
-        let new_count = self.builder.build_int_add(count, self.context.i64_type().const_int(1, false), "nc").unwrap();
-        self.builder.build_store(count_alloca, new_count).unwrap();
+        self.increment_i64(count_alloca, 1);
         self.builder.build_unconditional_branch(next_bb).unwrap();
 
         // Next
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         // End: build result list
         self.builder.position_at_end(end_bb);
         let final_count = self.builder.build_load(self.context.i64_type(), count_alloca, "fc").unwrap();
-        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
-        let list_struct_type = list_type.into_struct_type();
-        let mut result_list = list_struct_type.get_undef();
-        result_list = self.builder.build_insert_value(result_list, result_ptr, 0, "rp").unwrap().into_struct_value();
-        result_list = self.builder.build_insert_value(result_list, final_count, 1, "rl").unwrap().into_struct_value();
+        let result_list = self.build_list_struct(elem_type, result_ptr, final_count);
         Some(result_list.into())
     }
 
@@ -197,17 +182,13 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
 
         // Infer the output element type from the closure body
         let out_type = self.infer_closure_return_type(closure_arg, elem_type);
         let out_llvm_ty = self.type_to_llvm_basic(&out_type);
-
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         // Allocate result buffer
         let out_size = out_llvm_ty.size_of().unwrap();
@@ -218,12 +199,7 @@ impl<'ctx> Codegen<'ctx> {
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "map_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let loop_bb = self.context.append_basic_block(function, "map_loop");
-        let body_bb = self.context.append_basic_block(function, "map_body");
-        let end_bb = self.context.append_basic_block(function, "map_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
+        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("map");
 
         let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
         let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
@@ -237,17 +213,12 @@ impl<'ctx> Codegen<'ctx> {
         let dest_ptr = unsafe { self.builder.build_gep(out_llvm_ty, result_ptr, &[idx], "dp").unwrap() };
         self.builder.build_store(dest_ptr, mapped).unwrap();
 
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         // End
         self.builder.position_at_end(end_bb);
-        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(out_type.clone())));
-        let list_struct_type = list_type.into_struct_type();
-        let mut result_list = list_struct_type.get_undef();
-        result_list = self.builder.build_insert_value(result_list, result_ptr, 0, "rp").unwrap().into_struct_value();
-        result_list = self.builder.build_insert_value(result_list, list_len, 1, "rl").unwrap().into_struct_value();
+        let result_list = self.build_list_struct(&out_type, result_ptr, list_len);
         Some(result_list.into())
     }
 
@@ -257,12 +228,9 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         let sum_alloca = self.builder.build_alloca(self.context.i64_type(), "sum").unwrap();
         self.builder.build_store(sum_alloca, self.context.i64_type().const_zero()).unwrap();
@@ -270,12 +238,7 @@ impl<'ctx> Codegen<'ctx> {
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "sum_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let loop_bb = self.context.append_basic_block(function, "sum_loop");
-        let body_bb = self.context.append_basic_block(function, "sum_body");
-        let end_bb = self.context.append_basic_block(function, "sum_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
+        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("sum");
 
         let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
         let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
@@ -299,8 +262,7 @@ impl<'ctx> Codegen<'ctx> {
         let new_acc = self.builder.build_int_add(acc, elem_i64, "nacc").unwrap();
         self.builder.build_store(sum_alloca, new_acc).unwrap();
 
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -316,9 +278,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let nullable_type = Type::Nullable(Box::new(elem_type.clone()));
@@ -361,9 +321,7 @@ impl<'ctx> Codegen<'ctx> {
 
         // Next
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -379,9 +337,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -418,9 +374,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(end_bb).unwrap();
 
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -436,9 +390,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -475,9 +427,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(end_bb).unwrap();
 
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -491,14 +441,11 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let tuple_type = Type::Tuple(vec![Type::Int, elem_type.clone()]);
         let tuple_llvm_ty = self.type_to_llvm_basic(&tuple_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         // Allocate result buffer
         let tuple_size = tuple_llvm_ty.size_of().unwrap();
@@ -509,12 +456,7 @@ impl<'ctx> Codegen<'ctx> {
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "enum_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let loop_bb = self.context.append_basic_block(function, "enum_loop");
-        let body_bb = self.context.append_basic_block(function, "enum_body");
-        let end_bb = self.context.append_basic_block(function, "enum_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
+        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("enum");
 
         let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
         let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
@@ -533,17 +475,11 @@ impl<'ctx> Codegen<'ctx> {
         let dest_ptr = unsafe { self.builder.build_gep(tuple_llvm_ty, result_ptr, &[idx], "dp").unwrap() };
         self.builder.build_store(dest_ptr, tuple_val).unwrap();
 
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
-        let result_list_type = Type::List(Box::new(tuple_type));
-        let result_list_llvm = self.type_to_llvm_basic(&result_list_type);
-        let list_struct_type = result_list_llvm.into_struct_type();
-        let mut result_list = list_struct_type.get_undef();
-        result_list = self.builder.build_insert_value(result_list, result_ptr, 0, "rp").unwrap().into_struct_value();
-        result_list = self.builder.build_insert_value(result_list, list_len, 1, "rl").unwrap().into_struct_value();
+        let result_list = self.build_list_struct(&tuple_type, result_ptr, list_len);
         Some(result_list.into())
     }
 
@@ -555,9 +491,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let sep_val = self.compile_expr(&args.first()?.value)?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let string_llvm_ty = self.string_type();
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -616,8 +550,7 @@ impl<'ctx> Codegen<'ctx> {
         phi.add_incoming(&[(&with_elem, sep_end), (&just_elem, nosep_end)]);
         self.builder.build_store(result_alloca, phi.as_basic_value()).unwrap();
 
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -636,13 +569,10 @@ impl<'ctx> Codegen<'ctx> {
         let init_val = self.compile_expr(&args[0].value)?;
         let closure_arg = &args[1];
 
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let acc_type = self.infer_type(&args[0].value);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         let acc_alloca = self.builder.build_alloca(init_val.get_type(), "reduce_acc").unwrap();
         self.builder.build_store(acc_alloca, init_val).unwrap();
@@ -650,12 +580,7 @@ impl<'ctx> Codegen<'ctx> {
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "reduce_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let loop_bb = self.context.append_basic_block(function, "reduce_loop");
-        let body_bb = self.context.append_basic_block(function, "reduce_body");
-        let end_bb = self.context.append_basic_block(function, "reduce_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
+        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("reduce");
 
         let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
         let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
@@ -669,8 +594,7 @@ impl<'ctx> Codegen<'ctx> {
         let new_acc = self.compile_closure_inline_2(closure_arg, acc_val, &acc_type, elem_val, elem_type)?;
         self.builder.build_store(acc_alloca, new_acc).unwrap();
 
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -684,9 +608,7 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let elem_size = elem_llvm_ty.size_of().unwrap();
@@ -709,11 +631,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_call(sort_fn, &[new_ptr.into(), list_len.into()], "").unwrap();
 
         // Build new list struct
-        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
-        let list_struct_type = list_type.into_struct_type();
-        let mut result_list = list_struct_type.get_undef();
-        result_list = self.builder.build_insert_value(result_list, new_ptr, 0, "sorted_p").unwrap().into_struct_value();
-        result_list = self.builder.build_insert_value(result_list, list_len, 1, "sorted_l").unwrap().into_struct_value();
+        let result_list = self.build_list_struct(elem_type, new_ptr, list_len);
         Some(result_list.into())
     }
 
@@ -725,9 +643,7 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -760,9 +676,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -816,9 +730,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(end_bb).unwrap();
 
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -880,9 +792,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(end_bb).unwrap();
 
         self.builder.position_at_end(next_bb);
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let next_idx = self.builder.build_int_add(idx, self.context.i64_type().const_int(1, false), "ni").unwrap();
-        self.builder.build_store(idx_alloca, next_idx).unwrap();
+        self.increment_i64(idx_alloca, 1);
         self.builder.build_unconditional_branch(loop_bb).unwrap();
 
         self.builder.position_at_end(end_bb);
@@ -902,12 +812,7 @@ impl<'ctx> Codegen<'ctx> {
         let map_len = self.builder.build_extract_value(struct_val, 2, "len").ok()?.into_int_value();
 
         // Return a list {keys_ptr, length}
-        let list_type = Type::List(Box::new(key_type.clone()));
-        let list_llvm_ty = self.type_to_llvm_basic(&list_type);
-        let list_struct_type = list_llvm_ty.into_struct_type();
-        let mut result = list_struct_type.get_undef();
-        result = self.builder.build_insert_value(result, keys_ptr, 0, "rp").unwrap().into_struct_value();
-        result = self.builder.build_insert_value(result, map_len, 1, "rl").unwrap().into_struct_value();
+        let result = self.build_list_struct(key_type, keys_ptr, map_len);
         Some(result.into())
     }
 

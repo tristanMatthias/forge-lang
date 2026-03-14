@@ -1,4 +1,3 @@
-use crate::feature::FeatureStmt;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -45,15 +44,15 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
 
-        Some(Statement::Feature(FeatureStmt {
-            feature_id: "enums",
-            kind: "EnumDecl",
-            data: Box::new(EnumDeclData {
+        Some(feature_stmt(
+            "enums",
+            "EnumDecl",
+            Box::new(EnumDeclData {
                 name,
                 variants,
                 exported,
             }),
-            span: start,
-        }))
+            start,
+        ))
     }
 }

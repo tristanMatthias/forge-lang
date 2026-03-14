@@ -1,4 +1,3 @@
-use crate::feature::FeatureExpr;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::*;
 use crate::parser::parser::Parser;
@@ -31,15 +30,15 @@ impl Parser {
             None
         };
 
-        Some(Expr::Feature(FeatureExpr {
-            feature_id: "if_else",
-            kind: "If",
-            data: Box::new(IfData {
+        Some(feature_expr(
+            "if_else",
+            "If",
+            Box::new(IfData {
                 condition: Box::new(condition),
                 then_branch,
                 else_branch,
             }),
             span,
-        }))
+        ))
     }
 }
