@@ -1,0 +1,23 @@
+/// # Testing Data Transformations
+///
+/// BDD-style tests verifying collection
+/// operations with closures.
+///
+/// expect-stderr: ✓ double maps correctly
+/// expect-stderr: ✓ filter and sum
+/// expect-stderr: 2 passed
+
+use @std.test
+
+fn main() {
+    spec "list operations" {
+        then "double maps correctly" {
+            let result = [1, 2, 3].map((x) -> x * 2)
+            result.sum() == 12
+        }
+        then "filter and sum" {
+            let result = [1, 2, 3, 4].filter((x) -> x > 2)
+            result.sum() == 7
+        }
+    }
+}

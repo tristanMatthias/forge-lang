@@ -1,0 +1,19 @@
+/// # Resource Cleanup with Defer
+///
+/// Using defer for guaranteed cleanup in
+/// functions that return values.
+///
+/// expect: working...
+/// expect: cleanup complete
+/// expect: result: 42
+
+fn compute() -> int {
+  defer println("cleanup complete")
+  println("working...")
+  42
+}
+
+fn main() {
+  let result = compute()
+  println("result: " + string(result))
+}

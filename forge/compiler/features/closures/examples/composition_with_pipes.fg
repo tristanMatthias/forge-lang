@@ -1,0 +1,26 @@
+/// # Closures with Pipes and Collections
+///
+/// Composing closures with the pipe operator for
+/// expressive data transformation pipelines.
+///
+/// expect: 4
+/// expect: 16
+/// expect: 36
+/// expect: 64
+/// expect: 100
+/// expect: 220
+
+fn main() {
+  let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+  let even_squares = numbers
+    |> filter((x) -> x % 2 == 0)
+    |> map((x) -> x * x)
+
+  for n in even_squares {
+    println(string(n))
+  }
+
+  let total = even_squares.reduce(0, (acc, x) -> acc + x)
+  println(string(total))
+}

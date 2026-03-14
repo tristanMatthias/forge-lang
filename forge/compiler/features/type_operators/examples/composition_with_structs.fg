@@ -1,0 +1,20 @@
+/// # Type Transformations
+///
+/// Using only to pick specific fields
+/// for type-safe struct projections.
+///
+/// expect: alice
+/// expect: 30
+
+type User = { name: string, age: int, email: string }
+type Summary = User only {name, age}
+
+fn print_summary(u: Summary) {
+  println(u.name)
+  println(u.age)
+}
+
+fn main() {
+  let user: Summary = { name: "alice", age: 30 }
+  print_summary(user)
+}

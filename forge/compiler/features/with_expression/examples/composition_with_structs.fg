@@ -1,0 +1,20 @@
+/// # Immutable Updates with 'with'
+///
+/// Creating modified copies of structs without
+/// mutation, enabling functional data patterns.
+///
+/// expect: Alice is 31
+/// expect: Alice is 30
+
+type Person = { name: string, age: int }
+
+fn birthday(p: Person) -> Person {
+  p with { age: p.age + 1 }
+}
+
+fn main() {
+  let alice = Person { name: "Alice", age: 30 }
+  let older = birthday(alice)
+  println(older.name + " is " + string(older.age))
+  println(alice.name + " is " + string(alice.age))
+}

@@ -1,0 +1,31 @@
+/// # Polymorphic Trait Methods
+///
+/// Using traits for type-safe polymorphic
+/// behavior across different types.
+///
+/// expect: woof!
+/// expect: meow!
+
+trait Animal {
+  fn speak(self) -> string
+}
+
+type Dog = { name: string }
+type Cat = { name: string }
+
+impl Animal for Dog {
+  fn speak(self) -> string { "woof!" }
+}
+
+impl Animal for Cat {
+  fn speak(self) -> string { "meow!" }
+}
+
+fn announce<T: Animal>(a: T) {
+  println(a.speak())
+}
+
+fn main() {
+  announce(Dog { name: "Rex" })
+  announce(Cat { name: "Whiskers" })
+}

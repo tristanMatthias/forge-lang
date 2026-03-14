@@ -1,0 +1,15 @@
+/// # Duration Calculations
+///
+/// Using duration literals for readable
+/// time-based computations.
+///
+/// expect: 90000
+/// expect: 604800000
+
+fn main() {
+  let timeout = 1m + 30s
+  println(timeout)
+
+  let week = 7d
+  println(week)
+}

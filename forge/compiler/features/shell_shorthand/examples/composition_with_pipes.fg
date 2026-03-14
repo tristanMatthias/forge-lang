@@ -1,0 +1,16 @@
+/// # Shell Pipeline Processing
+///
+/// Executing shell commands and processing
+/// output with string methods and pipes.
+///
+/// expect: HELLO WORLD
+/// expect: 11
+
+use @std.process
+
+fn main() {
+  let output = $"echo 'hello world'"
+  let cleaned = output.trim()
+  println(cleaned.upper())
+  println(string(cleaned.length()))
+}

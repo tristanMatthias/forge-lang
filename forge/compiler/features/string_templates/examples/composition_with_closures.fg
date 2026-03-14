@@ -1,0 +1,16 @@
+/// # Dynamic String Building
+///
+/// Using template literals with closures
+/// for expressive string construction.
+///
+/// expect: Hello, Alice! You are 30 years old.
+/// expect: Hello, Bob! You are 25 years old.
+
+fn greet(name: string, age: int) -> string {
+  `Hello, ${name}! You are ${string(age)} years old.`
+}
+
+fn main() {
+  println(greet("Alice", 30))
+  println(greet("Bob", 25))
+}

@@ -1,0 +1,23 @@
+/// # Error Handling Pipeline
+///
+/// Combining Result types with pattern matching
+/// for robust error handling chains.
+///
+/// expect: doubled: 42
+/// expect: error: not a number
+
+fn try_parse(input: string) -> Result<int, string> {
+  if input == "21" { Ok(21) } else { Err("not a number") }
+}
+
+fn parse_and_double(input: string) -> string {
+  match try_parse(input) {
+    Ok(n) -> "doubled: " + string(n * 2)
+    Err(e) -> "error: " + e
+  }
+}
+
+fn main() {
+  println(parse_and_double("21"))
+  println(parse_and_double("abc"))
+}

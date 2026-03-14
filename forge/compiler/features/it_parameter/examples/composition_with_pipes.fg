@@ -1,0 +1,17 @@
+/// # Concise Pipelines with 'it'
+///
+/// Using the implicit 'it' parameter for
+/// ultra-concise data transformation chains.
+///
+/// expect: 12
+/// expect: 56
+
+fn main() {
+  let nums = [1, 2, 3, 4, 5, 6]
+
+  let evens = nums.filter(it % 2 == 0)
+  println(string(evens.sum()))
+
+  let squared = evens.map(it * it)
+  println(string(squared.sum()))
+}

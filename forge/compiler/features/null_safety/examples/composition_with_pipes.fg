@@ -1,0 +1,21 @@
+/// # Null-Safe Data Pipelines
+///
+/// Using null coalescing with pipes for safe
+/// data transformation chains.
+///
+/// expect: HELLO
+/// expect: DEFAULT
+
+fn find_name(id: int) -> string? {
+  if id == 1 { "hello" } else { null }
+}
+
+fn main() {
+  let a = find_name(1) ?? "default"
+    |> upper()
+  println(a)
+
+  let b = find_name(99) ?? "default"
+    |> upper()
+  println(b)
+}

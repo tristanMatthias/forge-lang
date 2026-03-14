@@ -1,0 +1,14 @@
+/// # Data Processing Pipeline
+///
+/// Multi-step data transformation using pipes
+/// with method calls and closures.
+///
+/// expect: HELLO-WORLD-FORGE
+
+fn main() {
+  let result = "hello world forge"
+    |> split(" ")
+    |> map((w) -> w.upper())
+    |> join("-")
+  println(result)
+}

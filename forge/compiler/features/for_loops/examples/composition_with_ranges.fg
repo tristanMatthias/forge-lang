@@ -1,0 +1,28 @@
+/// # Building Collections with Loops
+///
+/// Using for loops with ranges to build and
+/// transform collections functionally.
+///
+/// expect: 1
+/// expect: 4
+/// expect: 9
+/// expect: 16
+/// expect: 25
+/// expect: total: 55
+
+fn main() {
+  mut squares = []
+  for i in 1..6 {
+    squares = squares.push(i * i)
+  }
+
+  for n in squares {
+    println(string(n))
+  }
+
+  mut total = 0
+  for n in squares {
+    total = total + n
+  }
+  println("total: " + string(total))
+}

@@ -1,0 +1,21 @@
+/// # Concurrent Computation with Spawn
+///
+/// Spawning a background task and collecting
+/// the result via a channel.
+///
+/// expect: result: 42
+
+use @std.channel
+
+fn main() {
+  let ch = channel(1)
+
+  spawn {
+    let answer = 6 * 7
+    ch <- string(answer)
+  }
+
+  sleep(50)
+  let result = <- ch
+  println(`result: ${result}`)
+}

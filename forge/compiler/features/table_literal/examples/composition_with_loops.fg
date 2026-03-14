@@ -1,0 +1,21 @@
+/// # Table Processing
+///
+/// Using table literals with loops for
+/// structured data processing.
+///
+/// expect: Alice: 30
+/// expect: Bob: 25
+/// expect: Charlie: 35
+
+fn main() {
+  let people = table {
+    name      | age
+    "Alice"   | 30
+    "Bob"     | 25
+    "Charlie" | 35
+  }
+
+  for row in people {
+    println(`${row.name}: ${row.age}`)
+  }
+}

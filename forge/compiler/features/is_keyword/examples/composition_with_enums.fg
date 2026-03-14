@@ -1,0 +1,24 @@
+/// # Type Checks with 'is'
+///
+/// Using 'is' for enum variant checking
+/// combined with conditional logic.
+///
+/// expect: got a circle
+/// expect: not a circle
+/// expect: not a circle
+
+enum Shape { circle, square, triangle }
+
+fn describe(s: Shape) -> string {
+  if s is .circle {
+    "got a circle"
+  } else {
+    "not a circle"
+  }
+}
+
+fn main() {
+  println(describe(Shape.circle))
+  println(describe(Shape.square))
+  println(describe(Shape.triangle))
+}

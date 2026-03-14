@@ -1,0 +1,26 @@
+/// # Producer-Consumer with Channels
+///
+/// Spawning concurrent tasks that communicate
+/// through channels with iteration.
+///
+/// expect: received: 0
+/// expect: received: 1
+/// expect: received: 2
+
+use @std.channel
+
+fn main() {
+  let ch = channel(3)
+
+  spawn {
+    for i in 0..3 {
+      ch <- i
+    }
+    channel.close(ch)
+  }
+
+  sleep(50)
+  for msg in ch {
+    println("received: " + string(msg))
+  }
+}

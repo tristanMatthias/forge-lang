@@ -1,0 +1,31 @@
+/// # Pattern Matching with Enums
+///
+/// Using match expressions with algebraic data types
+/// for type-safe exhaustive handling.
+///
+/// expect: area = 78
+/// expect: area = 24
+/// expect: area = 0
+
+enum Shape {
+  Circle(radius: int)
+  Rectangle(width: int, height: int)
+  Point
+}
+
+fn area(shape: Shape) -> int {
+  match shape {
+    .Circle(r) -> 314 * r * r / 100
+    .Rectangle(w, h) -> w * h
+    .Point -> 0
+  }
+}
+
+fn main() {
+  let c = Shape.Circle(radius: 5)
+  let r = Shape.Rectangle(width: 4, height: 6)
+  let p = Shape.Point
+  println("area = " + string(area(c)))
+  println("area = " + string(area(r)))
+  println("area = " + string(area(p)))
+}

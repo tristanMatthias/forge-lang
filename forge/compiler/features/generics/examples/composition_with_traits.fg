@@ -1,0 +1,31 @@
+/// # Generic Functions with Trait Bounds
+///
+/// Type-safe generic programming with trait
+/// constraints for compile-time guarantees.
+///
+/// expect: 42 is the answer
+/// expect: hello is the answer
+
+trait Answerable {
+  fn show(self) -> string
+}
+
+type IntVal = { value: int }
+type StrVal = { value: string }
+
+impl Answerable for IntVal {
+  fn show(self) -> string { string(self.value) }
+}
+
+impl Answerable for StrVal {
+  fn show(self) -> string { self.value }
+}
+
+fn announce<T: Answerable>(item: T) -> string {
+  `${item.show()} is the answer`
+}
+
+fn main() {
+  println(announce(IntVal { value: 42 }))
+  println(announce(StrVal { value: "hello" }))
+}
