@@ -4,7 +4,7 @@ use crate::errors::suggestions::placeholder_for_type;
 use crate::lexer::Span;
 use crate::parser::ast::*;
 use crate::typeck::env::TypeEnv;
-use crate::typeck::types::{EnumVariantType, FieldAnnotation, Type};
+use crate::typeck::types::{EnumVariantType, Type};
 
 pub struct TypeChecker {
     pub env: TypeEnv,
@@ -417,7 +417,7 @@ impl TypeChecker {
             }
             Statement::Continue { .. } => {}
             Statement::Defer { body, .. } => {
-                self.check_expr(body);
+                self.check_defer_stmt(body);
             }
             Statement::EnumDecl { .. } | Statement::TypeDecl { .. } => {
                 // Already handled in register_top_level
@@ -451,21 +451,7 @@ impl TypeChecker {
             Statement::SkipBlock { .. } | Statement::TodoStmt { .. } => {
                 // No type checking needed
             }
-            Statement::Select { arms, .. } => {
-                for arm in arms {
-                    self.check_expr(&arm.channel);
-                    if let Some(guard) = &arm.guard {
-                        self.check_expr(guard);
-                    }
-                    // Register the binding variable in a new scope for the arm body
-                    self.env.push_scope();
-                    if let Pattern::Ident(name, _) = &arm.binding {
-                        self.env.define(name.clone(), Type::Unknown, false);
-                    }
-                    self.check_block(&arm.body);
-                    self.env.pop_scope_silent();
-                }
-            }
+            Statement::Select { arms, .. } => self.check_select(arms),
             Statement::Feature(fe) => {
                 self.check_feature_stmt(fe);
             }
@@ -885,65 +871,18 @@ impl TypeChecker {
 
             Expr::Closure {
                 params, body, ..
-            } => {
-                self.env.push_scope();
-                let param_types: Vec<Type> = params
-                    .iter()
-                    .map(|p| {
-                        let ty = p
-                            .type_ann
-                            .as_ref()
-                            .map(|t| self.resolve_type_expr(t))
-                            .unwrap_or(Type::Unknown);
-                        self.env.define(p.name.clone(), ty.clone(), false);
-                        ty
-                    })
-                    .collect();
-                let ret_type = self.check_expr(body);
-                self.env.pop_scope_silent();
-                Type::Function {
-                    params: param_types,
-                    return_type: Box::new(ret_type),
-                }
-            }
+            } => self.check_closure(params, body),
 
             Expr::If {
                 condition,
                 then_branch,
                 else_branch,
                 ..
-            } => {
-                self.check_expr(condition);
-                self.env.push_scope();
-                let then_type = self.check_block_type(then_branch);
-                self.env.pop_scope_silent();
-                if let Some(else_b) = else_branch {
-                    self.env.push_scope();
-                    let _else_type = self.check_block_type(else_b);
-                    self.env.pop_scope_silent();
-                }
-                then_type
-            }
+            } => self.check_if_expr_impl(condition, then_branch, else_branch.as_ref()),
 
             Expr::Match {
                 subject, arms, ..
-            } => {
-                self.check_expr(subject);
-                let mut result_type = Type::Unknown;
-                for arm in arms {
-                    if let Some(guard) = &arm.guard {
-                        self.check_expr(guard);
-                    }
-                    self.env.push_scope();
-                    self.bind_pattern(&arm.pattern);
-                    let arm_type = self.check_expr(&arm.body);
-                    if result_type == Type::Unknown {
-                        result_type = arm_type;
-                    }
-                    self.env.pop_scope_silent();
-                }
-                result_type
-            }
+            } => self.check_match(subject, arms),
 
             Expr::Block(block) => {
                 self.env.push_scope();
@@ -952,178 +891,31 @@ impl TypeChecker {
                 ty
             }
 
-            Expr::NullCoalesce { left, right, .. } => {
-                let left_type = self.check_expr(left);
-                let right_type = self.check_expr(right);
-                match &left_type {
-                    Type::Nullable(inner) => *inner.clone(),
-                    _ => right_type,
-                }
-            }
+            Expr::NullCoalesce { left, right, .. } => self.check_null_coalesce(left, right),
 
-            Expr::NullPropagate { object, field, .. } => {
-                let obj_type = self.check_expr(object);
-                let inner = match &obj_type {
-                    Type::Nullable(inner) => inner.as_ref(),
-                    _ => &obj_type,
-                };
-                let field_type = match inner {
-                    Type::Struct { fields, .. } => {
-                        fields
-                            .iter()
-                            .find(|(name, _)| name == field)
-                            .map(|(_, ty)| ty.clone())
-                            .unwrap_or(Type::Unknown)
-                    }
-                    Type::String => match field.as_str() {
-                        "length" => Type::Int,
-                        _ => Type::Unknown,
-                    },
-                    _ => Type::Unknown,
-                };
-                Type::Nullable(Box::new(field_type))
-            }
+            Expr::NullPropagate { object, field, .. } => self.check_null_propagate(object, field),
 
-            Expr::ErrorPropagate { operand, .. } => {
-                let op_type = self.check_expr(operand);
-                match &op_type {
-                    Type::Result(ok, _) => *ok.clone(),
-                    _ => op_type,
-                }
-            }
+            Expr::ErrorPropagate { operand, .. } => self.check_error_propagate(operand),
 
-            Expr::With { base, updates, .. } => {
-                let base_type = self.check_expr(base);
-                for (_, val) in updates {
-                    self.check_expr(val);
-                }
-                base_type
-            }
+            Expr::With { base, updates, .. } => self.check_with(base, updates),
 
-            Expr::Range { start, .. } => {
-                let start_type = self.check_expr(start);
-                Type::Range(Box::new(start_type))
-            }
+            Expr::Range { start, .. } => self.check_range(start),
 
-            Expr::OkExpr { value, .. } => {
-                let val_type = self.check_expr(value);
-                Type::Result(Box::new(val_type), Box::new(Type::String))
-            }
+            Expr::OkExpr { value, .. } => self.check_ok_expr(value),
 
-            Expr::ErrExpr { value, .. } => {
-                let val_type = self.check_expr(value);
-                Type::Result(Box::new(Type::Unknown), Box::new(val_type))
-            }
+            Expr::ErrExpr { value, .. } => self.check_err_expr(value),
 
-            Expr::Catch { expr, handler, binding, .. } => {
-                let expr_type = self.check_expr(expr);
-                self.env.push_scope();
-                if let Some(name) = binding {
-                    self.env.define(name.clone(), Type::String, false);
-                }
-                let handler_type = self.check_block_type(handler);
-                self.env.pop_scope_silent();
-                match &expr_type {
-                    Type::Result(ok, _) => *ok.clone(),
-                    _ => handler_type,
-                }
-            }
+            Expr::Catch { expr, handler, binding, .. } => self.check_catch(expr, binding, handler),
 
-            Expr::ListLit { elements, .. } => {
-                let elem_type = if let Some(first) = elements.first() {
-                    self.check_expr(first)
-                } else {
-                    Type::Unknown
-                };
-                for elem in elements.iter().skip(1) {
-                    self.check_expr(elem);
-                }
-                Type::List(Box::new(elem_type))
-            }
+            Expr::ListLit { elements, .. } => self.check_list_lit(elements),
 
-            Expr::MapLit { entries, .. } => {
-                let (key_type, val_type) = if let Some((k, v)) = entries.first() {
-                    (self.check_expr(k), self.check_expr(v))
-                } else {
-                    (Type::Unknown, Type::Unknown)
-                };
-                Type::Map(Box::new(key_type), Box::new(val_type))
-            }
+            Expr::MapLit { entries, .. } => self.check_map_lit(entries),
 
             Expr::StructLit { name: struct_name, fields, span: lit_span } => {
-                // Check for duplicate field names
-                {
-                    let mut seen_fields: std::collections::HashSet<&str> = std::collections::HashSet::new();
-                    for (field_name, field_val) in fields {
-                        if !seen_fields.insert(field_name.as_str()) {
-                            self.diagnostics.push(Diagnostic::error(
-                                "F0012",
-                                format!("duplicate field '{}' in struct literal", field_name),
-                                field_val.span(),
-                            ));
-                        }
-                    }
-                }
-
-                let field_types: Vec<(String, Type)> = fields
-                    .iter()
-                    .map(|(name, val)| (name.clone(), self.check_expr(val)))
-                    .collect();
-
-                // For named struct literals (e.g., `User { naem: "alice" }`),
-                // validate field names and types against the known type fields.
-                if let Some(type_name) = struct_name {
-                    let resolved = self.env.resolve_type_name(type_name);
-                    if let Type::Struct { fields: type_fields, .. } = &resolved {
-                        let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
-                        for (field_name, field_val) in fields {
-                            if let Some((_, expected_ty)) = type_fields.iter().find(|(n, _)| n == field_name) {
-                                // Check field type matches declared type
-                                let actual_ty = field_types.iter()
-                                    .find(|(n, _)| n == field_name)
-                                    .map(|(_, t)| t.clone())
-                                    .unwrap_or(Type::Unknown);
-                                if !self.types_compatible(expected_ty, &actual_ty) {
-                                    let field_span = field_val.span();
-                                    self.diagnostics.push(Diagnostic::error(
-                                        "F0012",
-                                        format!(
-                                            "type mismatch for field '{}': expected {}, got {}",
-                                            field_name, expected_ty, actual_ty
-                                        ),
-                                        field_span,
-                                    ));
-                                }
-                            } else {
-                                let field_span = field_val.span();
-                                let mut diag = Diagnostic::error(
-                                    "F0020",
-                                    format!("'{}' is not a field on {}", field_name, type_name),
-                                    *lit_span,
-                                )
-                                .with_label(field_span, format!("'{}' is not a field on {}", field_name, type_name), LabelKind::Primary);
-
-                                if let Some(suggestion) = crate::errors::did_you_mean(field_name, &known_names, 2) {
-                                    diag = diag.with_help(format!("did you mean '{}'?", suggestion));
-                                } else {
-                                    diag = diag.with_help(format!("available fields on {}: {}", type_name, known_names.join(", ")));
-                                }
-                                self.diagnostics.push(diag);
-                            }
-                        }
-                    }
-                }
-
-                Type::Struct {
-                    name: struct_name.clone(),
-                    fields: field_types,
-                }
+                self.check_struct_lit(struct_name, fields, *lit_span)
             }
 
-            Expr::TupleLit { elements, .. } => {
-                let types: Vec<Type> = elements.iter().map(|e| self.check_expr(e)).collect();
-                Type::Tuple(types)
-            }
+            Expr::TupleLit { elements, .. } => self.check_tuple_lit(elements),
 
             Expr::ChannelSend { channel, value, .. } => {
                 self.check_channel_send(channel, value)
@@ -1131,18 +923,8 @@ impl TypeChecker {
             Expr::ChannelReceive { channel, .. } => {
                 self.check_channel_receive(channel)
             }
-            Expr::SpawnBlock { body, .. } => {
-                self.check_block(body);
-                Type::Unknown
-            }
-            Expr::DollarExec { parts, .. } => {
-                for part in parts {
-                    if let crate::parser::ast::TemplatePart::Expr(e) = part {
-                        self.check_expr(e);
-                    }
-                }
-                Type::String
-            }
+            Expr::SpawnBlock { body, .. } => self.check_spawn_block(body),
+            Expr::DollarExec { parts, .. } => self.check_dollar_exec(parts),
             Expr::TaggedTemplate { tag, parts, type_param, span } => {
                 let base_type = self.check_tagged_template(tag, parts, span);
                 if let Some(tp) = type_param {
@@ -1151,10 +933,7 @@ impl TypeChecker {
                     base_type
                 }
             }
-            Expr::Is { value, .. } => {
-                self.check_expr(value);
-                Type::Bool
-            }
+            Expr::Is { value, .. } => self.check_is_expr(value),
             Expr::TableLit { columns, rows, .. } => {
                 self.check_table_literal(columns, rows)
             }
@@ -1490,101 +1269,9 @@ impl TypeChecker {
     /// Emits an error diagnostic for undefined methods.
     fn check_method_call(&mut self, obj_type: &Type, method: &str, _arg_count: usize, span: Span) -> Type {
         match obj_type {
-            Type::String => {
-                match method {
-                    "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
-                    "contains" | "starts_with" | "ends_with" => Type::Bool,
-                    "parse_int" => Type::Int,
-                    "split" => Type::List(Box::new(Type::String)),
-                    "length" => Type::Int,
-                    _ => {
-                        let known = ["upper", "lower", "trim", "contains", "split",
-                            "starts_with", "ends_with", "replace", "parse_int", "repeat", "length"];
-                        let mut diag = Diagnostic::error(
-                            "F0020",
-                            format!("string has no method '{}'", method),
-                            span,
-                        );
-                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
-                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
-                        } else {
-                            diag = diag.with_help(format!("available string methods: {}", known.join(", ")));
-                        }
-                        self.diagnostics.push(diag);
-                        Type::Error
-                    }
-                }
-            }
-            Type::List(inner) => {
-                match method {
-                    "push" | "each" | "sorted" | "reverse" | "flat" | "dedup"
-                    | "take" | "skip" | "chunks" | "windows" => {
-                        match method {
-                            "push" | "each" => Type::Void,
-                            "sorted" | "reverse" | "flat" | "dedup"
-                            | "take" | "skip" => Type::List(inner.clone()),
-                            "chunks" | "windows" => Type::List(Box::new(Type::List(inner.clone()))),
-                            _ => Type::Unknown,
-                        }
-                    }
-                    "filter" | "map" => Type::List(inner.clone()),
-                    "find" | "find_map" => Type::Nullable(inner.clone()),
-                    "reduce" => *inner.clone(),
-                    "sum" => Type::Int,
-                    "join" => Type::String,
-                    "contains" | "any" | "all" => Type::Bool,
-                    "enumerate" => Type::List(Box::new(Type::Tuple(vec![Type::Int, *inner.clone()]))),
-                    "length" | "clone" => {
-                        match method {
-                            "length" => Type::Int,
-                            "clone" => Type::List(inner.clone()),
-                            _ => Type::Unknown,
-                        }
-                    }
-                    _ => {
-                        let known = ["push", "filter", "map", "find", "reduce", "sum",
-                            "join", "each", "sorted", "contains", "any", "all",
-                            "enumerate", "length", "clone", "reverse", "flat",
-                            "dedup", "take", "skip", "chunks", "windows", "find_map"];
-                        let mut diag = Diagnostic::error(
-                            "F0020",
-                            format!("list has no method '{}'", method),
-                            span,
-                        );
-                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
-                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
-                        } else {
-                            diag = diag.with_help(format!("available list methods: {}", known.join(", ")));
-                        }
-                        self.diagnostics.push(diag);
-                        Type::Error
-                    }
-                }
-            }
-            Type::Map(key_type, val_type) => {
-                match method {
-                    "get" => Type::Nullable(val_type.clone()),
-                    "keys" => Type::List(key_type.clone()),
-                    "values" => Type::List(val_type.clone()),
-                    "contains_key" | "has" => Type::Bool,
-                    "entries" => Type::List(Box::new(Type::Tuple(vec![*key_type.clone(), *val_type.clone()]))),
-                    _ => {
-                        let known = ["get", "keys", "values", "contains_key", "has", "entries"];
-                        let mut diag = Diagnostic::error(
-                            "F0020",
-                            format!("map has no method '{}'", method),
-                            span,
-                        );
-                        if let Some(suggestion) = crate::errors::did_you_mean(method, &known, 2) {
-                            diag = diag.with_help(format!("did you mean '{}'?", suggestion));
-                        } else {
-                            diag = diag.with_help(format!("available map methods: {}", known.join(", ")));
-                        }
-                        self.diagnostics.push(diag);
-                        Type::Error
-                    }
-                }
-            }
+            Type::String => self.check_string_method_call(method, span),
+            Type::List(inner) => self.check_list_method_call(inner, method, span),
+            Type::Map(key_type, val_type) => self.check_map_method_call(key_type, val_type, method, span),
             Type::Struct { name: Some(type_name), .. } => {
                 // Check if method exists on this type (from impl blocks)
                 if let Some(methods) = self.env.type_methods.get(type_name) {

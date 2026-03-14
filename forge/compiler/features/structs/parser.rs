@@ -45,6 +45,7 @@ impl Parser {
             Box::new(StructLitData {
                 name: None,
                 fields,
+                span,
             }),
             span,
         ))

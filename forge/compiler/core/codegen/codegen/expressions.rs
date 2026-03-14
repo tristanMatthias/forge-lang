@@ -339,8 +339,6 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             Expr::Feature(fe) => self.compile_feature_expr(fe),
-
-            _ => None,
         }
     }
 

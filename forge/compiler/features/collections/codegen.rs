@@ -12,6 +12,179 @@ use crate::typeck::types::Type;
 use super::types::{ListLitData, MapLitData};
 
 impl<'ctx> Codegen<'ctx> {
+    pub(crate) fn compile_list_lit(
+        &mut self,
+        elements: &[Expr],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if elements.is_empty() {
+            // Empty list: {null, 0}
+            let list_type = self.context.struct_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                ],
+                false,
+            );
+            let mut list_val = list_type.get_undef();
+            list_val = self.builder
+                .build_insert_value(
+                    list_val,
+                    self.context.ptr_type(AddressSpace::default()).const_null(),
+                    0,
+                    "null_ptr",
+                )
+                .unwrap()
+                .into_struct_value();
+            list_val = self.builder
+                .build_insert_value(
+                    list_val,
+                    self.context.i64_type().const_zero(),
+                    1,
+                    "zero_len",
+                )
+                .unwrap()
+                .into_struct_value();
+            return Some(list_val.into());
+        }
+
+        // Compile all elements
+        let mut elem_vals = Vec::new();
+        let mut elem_type = Type::Unknown;
+        for expr in elements {
+            let val = self.compile_expr(expr)?;
+            if elem_type == Type::Unknown {
+                elem_type = self.infer_type(expr);
+            }
+            elem_vals.push(val);
+        }
+
+        let elem_llvm_ty = self.type_to_llvm_basic(&elem_type);
+        let count = elem_vals.len() as u64;
+
+        // Allocate memory: forge_alloc(count * sizeof(elem))
+        let elem_size = elem_llvm_ty.size_of().unwrap();
+        let total_size = self.builder
+            .build_int_mul(
+                elem_size,
+                self.context.i64_type().const_int(count, false),
+                "total_size",
+            )
+            .unwrap();
+
+        let data_ptr = self.call_runtime("forge_alloc", &[total_size.into()], "list_data")?
+            .into_pointer_value();
+
+        // Store each element
+        for (i, val) in elem_vals.iter().enumerate() {
+            let idx = self.context.i64_type().const_int(i as u64, false);
+            let elem_ptr = unsafe {
+                self.builder.build_gep(
+                    elem_llvm_ty,
+                    data_ptr,
+                    &[idx],
+                    &format!("elem_{}_ptr", i),
+                ).unwrap()
+            };
+            self.builder.build_store(elem_ptr, *val).unwrap();
+        }
+
+        // Build list struct {ptr, len}
+        let list_type = self.context.struct_type(
+            &[
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.i64_type().into(),
+            ],
+            false,
+        );
+        let mut list_val = list_type.get_undef();
+        list_val = self.builder
+            .build_insert_value(list_val, data_ptr, 0, "list_ptr")
+            .unwrap()
+            .into_struct_value();
+        list_val = self.builder
+            .build_insert_value(
+                list_val,
+                self.context.i64_type().const_int(count, false),
+                1,
+                "list_len",
+            )
+            .unwrap()
+            .into_struct_value();
+
+        Some(list_val.into())
+    }
+
+    pub(crate) fn compile_map_lit(&mut self, entries: &[(Expr, Expr)]) -> Option<BasicValueEnum<'ctx>> {
+        if entries.is_empty() {
+            let map_type = self.context.struct_type(
+                &[
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.ptr_type(AddressSpace::default()).into(),
+                    self.context.i64_type().into(),
+                ],
+                false,
+            );
+            return Some(map_type.const_zero().into());
+        }
+
+        let count = entries.len() as u64;
+
+        // Infer key and value types
+        let key_type = self.infer_type(&entries[0].0);
+        let val_type = self.infer_type(&entries[0].1);
+        let key_llvm_ty = self.type_to_llvm_basic(&key_type);
+        let val_llvm_ty = self.type_to_llvm_basic(&val_type);
+
+        // Allocate keys array
+        let key_size = key_llvm_ty.size_of().unwrap();
+        let keys_total = self.builder.build_int_mul(
+            key_size,
+            self.context.i64_type().const_int(count, false),
+            "keys_total",
+        ).unwrap();
+        let keys_ptr = self.call_runtime("forge_alloc", &[keys_total.into()], "keys_ptr")?
+            .into_pointer_value();
+
+        // Allocate values array
+        let val_size = val_llvm_ty.size_of().unwrap();
+        let vals_total = self.builder.build_int_mul(
+            val_size,
+            self.context.i64_type().const_int(count, false),
+            "vals_total",
+        ).unwrap();
+        let vals_ptr = self.call_runtime("forge_alloc", &[vals_total.into()], "vals_ptr")?
+            .into_pointer_value();
+
+        // Store entries
+        for (i, (key_expr, val_expr)) in entries.iter().enumerate() {
+            let key_val = self.compile_expr(key_expr)?;
+            let val_val = self.compile_expr(val_expr)?;
+
+            let idx = self.context.i64_type().const_int(i as u64, false);
+            let kp = unsafe { self.builder.build_gep(key_llvm_ty, keys_ptr, &[idx], "kp").unwrap() };
+            self.builder.build_store(kp, key_val).unwrap();
+
+            let vp = unsafe { self.builder.build_gep(val_llvm_ty, vals_ptr, &[idx], "vp").unwrap() };
+            self.builder.build_store(vp, val_val).unwrap();
+        }
+
+        // Build map struct {keys_ptr, vals_ptr, length}
+        let map_struct_ty = self.context.struct_type(
+            &[
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.i64_type().into(),
+            ],
+            false,
+        );
+        let mut map_val = map_struct_ty.get_undef();
+        map_val = self.builder.build_insert_value(map_val, keys_ptr, 0, "mp_keys").unwrap().into_struct_value();
+        map_val = self.builder.build_insert_value(map_val, vals_ptr, 1, "mp_vals").unwrap().into_struct_value();
+        map_val = self.builder.build_insert_value(map_val, self.context.i64_type().const_int(count, false), 2, "mp_len").unwrap().into_struct_value();
+
+        Some(map_val.into())
+    }
+
     /// Compile a list literal expression via the Feature dispatch system.
     pub(crate) fn compile_list_lit_feature(
         &mut self,

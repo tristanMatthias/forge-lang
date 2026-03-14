@@ -571,6 +571,7 @@ fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionC
                 let new_data = StructLitData {
                     name: data.name.as_ref().map(|n| substitute_ident_string(n, ctx)),
                     fields: data.fields.iter().map(|(k, v)| (k.clone(), substitute_expr(v, ctx))).collect(),
+                    span: data.span,
                 };
                 Expr::Feature(FeatureExpr {
                     feature_id: fe.feature_id,

@@ -16,6 +16,7 @@ crate::impl_feature_node!(TypeDeclData);
 pub struct StructLitData {
     pub name: Option<String>,
     pub fields: Vec<(String, Expr)>,
+    pub span: crate::lexer::Span,
 }
 
 crate::impl_feature_node!(StructLitData);
