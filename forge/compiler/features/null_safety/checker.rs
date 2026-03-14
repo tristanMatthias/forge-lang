@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -14,11 +14,7 @@ impl TypeChecker {
 
     /// Type-check a null coalesce expression via Feature dispatch.
     pub(crate) fn check_null_coalesce_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, NullCoalesceData) {
-            self.check_null_coalesce(&data.left, &data.right)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, NullCoalesceData, |data| self.check_null_coalesce(&data.left, &data.right))
     }
 
     /// Type-check a null coalesce expression: `left ?? right`
@@ -36,11 +32,7 @@ impl TypeChecker {
 
     /// Type-check a null propagate expression via Feature dispatch.
     pub(crate) fn check_null_propagate_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, NullPropagateData) {
-            self.check_null_propagate(&data.object, &data.field)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, NullPropagateData, |data| self.check_null_propagate(&data.object, &data.field))
     }
 
     /// Type-check a null propagate expression: `object?.field`

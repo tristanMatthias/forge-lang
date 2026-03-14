@@ -127,10 +127,10 @@ impl<'ctx> Codegen<'ctx> {
             if let Expr::Ident(obj_name, _) = object.as_ref() {
                 if obj_name == "channel" && field == "tick" {
                     let interval_ms = self.compile_expr(&args[0].value)?;
-                    let tick_fn = self.module.get_function("forge_channel_tick_create")
-                        .expect("forge_channel_tick_create not declared");
-                    let result = self.builder.build_call(tick_fn, &[interval_ms.into()], "tick_ch").unwrap();
-                    return result.try_as_basic_value().left();
+                    return self.call_runtime_expect(
+                        "forge_channel_tick_create", &[interval_ms.into()], "tick_ch",
+                        "forge_channel_tick_create not declared",
+                    );
                 }
             }
         }
@@ -164,10 +164,10 @@ impl<'ctx> Codegen<'ctx> {
                             None => return None,
                         }
                     };
-                    let create_fn = self.module.get_function("forge_channel_create")
-                        .expect("forge_channel_create not declared - did you `use @std.channel`?");
-                    let result = self.builder.build_call(create_fn, &[capacity], "ch").unwrap();
-                    return result.try_as_basic_value().left();
+                    return self.call_runtime_expect(
+                        "forge_channel_create", &[capacity], "ch",
+                        "forge_channel_create not declared - did you `use @std.channel`?",
+                    );
                 }
                 _ => {}
             }
@@ -340,8 +340,7 @@ impl<'ctx> Codegen<'ctx> {
         if args.is_empty() {
             // Just print a newline
             let newline = self.build_string_literal("\n");
-            let print_fn = self.module.get_function("forge_print_string").unwrap();
-            self.builder.build_call(print_fn, &[newline.into()], "").unwrap();
+            self.call_runtime_void("forge_print_string", &[newline.into()]);
             return None;
         }
 
@@ -350,26 +349,13 @@ impl<'ctx> Codegen<'ctx> {
         let resolved = self.resolve_runtime_type(&arg.value, &val);
 
         match resolved {
-            Type::String => {
-                let print_fn = self.module.get_function("forge_println_string").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
-            Type::Int => {
-                let print_fn = self.module.get_function("forge_println_int").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
-            Type::Float => {
-                let print_fn = self.module.get_function("forge_println_float").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
-            Type::Bool => {
-                let print_fn = self.module.get_function("forge_println_bool").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
+            Type::String => { self.call_runtime_void("forge_println_string", &[val.into()]); }
+            Type::Int => { self.call_runtime_void("forge_println_int", &[val.into()]); }
+            Type::Float => { self.call_runtime_void("forge_println_float", &[val.into()]); }
+            Type::Bool => { self.call_runtime_void("forge_println_bool", &[val.into()]); }
             _ => {
                 if val.is_struct_value() {
-                    let print_fn = self.module.get_function("forge_println_string").unwrap();
-                    self.builder.build_call(print_fn, &[val.into()], "").unwrap();
+                    self.call_runtime_void("forge_println_string", &[val.into()]);
                 }
             }
         }
@@ -387,22 +373,12 @@ impl<'ctx> Codegen<'ctx> {
         let resolved = self.resolve_runtime_type(&arg.value, &val);
 
         match resolved {
-            Type::String => {
-                let print_fn = self.module.get_function("forge_print_string").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
-            Type::Int => {
-                let print_fn = self.module.get_function("forge_print_int").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
-            Type::Float => {
-                let print_fn = self.module.get_function("forge_print_float").unwrap();
-                self.builder.build_call(print_fn, &[val.into()], "").unwrap();
-            }
+            Type::String => { self.call_runtime_void("forge_print_string", &[val.into()]); }
+            Type::Int => { self.call_runtime_void("forge_print_int", &[val.into()]); }
+            Type::Float => { self.call_runtime_void("forge_print_float", &[val.into()]); }
             _ => {
                 if val.is_struct_value() {
-                    let print_fn = self.module.get_function("forge_print_string").unwrap();
-                    self.builder.build_call(print_fn, &[val.into()], "").unwrap();
+                    self.call_runtime_void("forge_print_string", &[val.into()]);
                 }
             }
         }
@@ -478,10 +454,9 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_sleep(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() { return None; }
         let val = self.compile_expr(&args[0].value)?;
-        let sleep_fn = self.module.get_function("forge_sleep_ms").unwrap();
         // If the arg is an int, treat it as milliseconds
         if val.is_int_value() {
-            self.builder.build_call(sleep_fn, &[val.into()], "").unwrap();
+            self.call_runtime_void("forge_sleep_ms", &[val.into()]);
         }
         None
     }

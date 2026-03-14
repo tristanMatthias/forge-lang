@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 
 use super::types::{ChannelReceiveData, ChannelSendData};
@@ -14,20 +14,8 @@ impl<'ctx> Codegen<'ctx> {
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
         match fe.kind {
-            "ChannelSend" => {
-                if let Some(data) = feature_data!(fe, ChannelSendData) {
-                    self.compile_channel_send(&data.channel, &data.value)
-                } else {
-                    None
-                }
-            }
-            "ChannelReceive" => {
-                if let Some(data) = feature_data!(fe, ChannelReceiveData) {
-                    self.compile_channel_receive(&data.channel)
-                } else {
-                    None
-                }
-            }
+            "ChannelSend" => feature_codegen!(self, fe, ChannelSendData, |data| self.compile_channel_send(&data.channel, &data.value)),
+            "ChannelReceive" => feature_codegen!(self, fe, ChannelReceiveData, |data| self.compile_channel_receive(&data.channel)),
             _ => None,
         }
     }
@@ -54,10 +42,10 @@ impl<'ctx> Codegen<'ctx> {
         let val_string = self.value_to_cstring_ptr(val_compiled, value);
 
         // Call forge_channel_send(id, data_ptr)
-        let send_fn = self.module.get_function("forge_channel_send")
-            .expect("forge_channel_send not declared - did you `use @std.channel`?");
-        let send_args = [ch_id.into(), val_string.into()];
-        self.builder.build_call(send_fn, &send_args, "send").unwrap();
+        self.call_runtime_expect(
+            "forge_channel_send", &[ch_id.into(), val_string.into()], "send",
+            "forge_channel_send not declared - did you `use @std.channel`?",
+        );
         None
     }
 
@@ -77,18 +65,14 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // Call forge_channel_receive(id) -> ptr (C string)
-        let recv_fn = self.module.get_function("forge_channel_receive")
-            .expect("forge_channel_receive not declared - did you `use @std.channel`?");
-        let result = self.builder.build_call(recv_fn, &[ch_id.into()], "recv").unwrap();
-        let raw_ptr = result.try_as_basic_value().left()?;
+        let raw_ptr = self.call_runtime_expect(
+            "forge_channel_receive", &[ch_id.into()], "recv",
+            "forge_channel_receive not declared - did you `use @std.channel`?",
+        )?;
 
         // Convert ptr to ForgeString: strlen(ptr) + forge_string_new(ptr, len)
-        let strlen_fn = self.module.get_function("strlen").unwrap();
-        let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "len").unwrap()
-            .try_as_basic_value().left()?.into_int_value();
-        let string_new = self.module.get_function("forge_string_new").unwrap();
-        let forge_str = self.builder.build_call(string_new, &[raw_ptr.into(), len.into()], "str").unwrap()
-            .try_as_basic_value().left()?;
+        let len = self.call_runtime("strlen", &[raw_ptr.into()], "len")?;
+        let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")?;
         Some(forge_str)
     }
 }

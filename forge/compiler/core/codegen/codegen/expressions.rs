@@ -210,10 +210,10 @@ impl<'ctx> Codegen<'ctx> {
                 let val_string = self.value_to_cstring_ptr(val_compiled, value);
 
                 // Call forge_channel_send(id, data_ptr)
-                let send_fn = self.module.get_function("forge_channel_send")
-                    .expect("forge_channel_send not declared - did you `use @std.channel`?");
-                let send_args = [ch_id.into(), val_string.into()];
-                self.builder.build_call(send_fn, &send_args, "send").unwrap();
+                self.call_runtime_expect(
+                    "forge_channel_send", &[ch_id.into(), val_string.into()], "send",
+                    "forge_channel_send not declared - did you `use @std.channel`?",
+                );
                 None
             }
 
@@ -226,18 +226,14 @@ impl<'ctx> Codegen<'ctx> {
                 };
 
                 // Call forge_channel_receive(id) -> ptr (C string)
-                let recv_fn = self.module.get_function("forge_channel_receive")
-                    .expect("forge_channel_receive not declared - did you `use @std.channel`?");
-                let result = self.builder.build_call(recv_fn, &[ch_id.into()], "recv").unwrap();
-                let raw_ptr = result.try_as_basic_value().left()?;
+                let raw_ptr = self.call_runtime_expect(
+                    "forge_channel_receive", &[ch_id.into()], "recv",
+                    "forge_channel_receive not declared - did you `use @std.channel`?",
+                )?;
 
                 // Convert ptr to ForgeString: strlen(ptr) + forge_string_new(ptr, len)
-                let strlen_fn = self.module.get_function("strlen").unwrap();
-                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "len").unwrap()
-                    .try_as_basic_value().left()?.into_int_value();
-                let string_new = self.module.get_function("forge_string_new").unwrap();
-                let forge_str = self.builder.build_call(string_new, &[raw_ptr.into(), len.into()], "str").unwrap()
-                    .try_as_basic_value().left()?;
+                let len = self.call_runtime("strlen", &[raw_ptr.into()], "len")?;
+                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")?;
                 Some(forge_str)
             }
 
@@ -296,9 +292,8 @@ impl<'ctx> Codegen<'ctx> {
                 }
 
                 // Call forge_spawn(fn_ptr)
-                let forge_spawn = self.module.get_function("forge_spawn").unwrap();
                 let fn_ptr = spawn_function.as_global_value().as_pointer_value();
-                self.builder.build_call(forge_spawn, &[fn_ptr.into()], "").unwrap();
+                self.call_runtime_void("forge_spawn", &[fn_ptr.into()]);
                 None
             }
 
@@ -325,16 +320,8 @@ impl<'ctx> Codegen<'ctx> {
                 let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
 
                 // Convert ptr to ForgeString
-                let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                    let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                    self.module.add_function("strlen", ft, None)
-                });
-                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
-                    .unwrap().try_as_basic_value().left().unwrap();
-                let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-                let stdout_str = self.builder.build_call(
-                    str_new_fn, &[raw_ptr.into(), len.into()], "stdout_str",
-                ).unwrap().try_as_basic_value().left()?;
+                let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
+                let stdout_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "stdout_str")?;
 
                 Some(stdout_str)
             }
@@ -444,9 +431,7 @@ impl<'ctx> Codegen<'ctx> {
         // Handle string.length as a function call
         if obj_type == Type::String && field == "length" {
             let obj_val = self.compile_expr(object)?;
-            let len_fn = self.module.get_function("forge_string_length").unwrap();
-            let result = self.builder.build_call(len_fn, &[obj_val.into()], "len").unwrap();
-            return result.try_as_basic_value().left();
+            return self.call_runtime("forge_string_length", &[obj_val.into()], "len");
         }
 
         // Handle list.length
@@ -540,21 +525,15 @@ impl<'ctx> Codegen<'ctx> {
             }
             Type::Int => {
                 // Convert int to string first, then extract ptr
-                let to_str = self.module.get_function("forge_int_to_string").unwrap();
-                let str_val = self.builder.build_call(to_str, &[val.into()], "int_str").unwrap()
-                    .try_as_basic_value().left().unwrap();
+                let str_val = self.call_runtime("forge_int_to_string", &[val.into()], "int_str").unwrap();
                 self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
             }
             Type::Float => {
-                let to_str = self.module.get_function("forge_float_to_string").unwrap();
-                let str_val = self.builder.build_call(to_str, &[val.into()], "float_str").unwrap()
-                    .try_as_basic_value().left().unwrap();
+                let str_val = self.call_runtime("forge_float_to_string", &[val.into()], "float_str").unwrap();
                 self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
             }
             Type::Bool => {
-                let to_str = self.module.get_function("forge_bool_to_string").unwrap();
-                let str_val = self.builder.build_call(to_str, &[val.into()], "bool_str").unwrap()
-                    .try_as_basic_value().left().unwrap();
+                let str_val = self.call_runtime("forge_bool_to_string", &[val.into()], "bool_str").unwrap();
                 self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
             }
             _ => {

@@ -1,5 +1,5 @@
 use crate::feature::FeatureStmt;
-use crate::feature_data;
+use crate::feature_stmt;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,9 +9,7 @@ use super::types::SelectData;
 impl TypeChecker {
     /// Type-check a select statement via the Feature dispatch system.
     pub(crate) fn check_select_feature(&mut self, fe: &FeatureStmt) {
-        if let Some(data) = feature_data!(fe, SelectData) {
-            self.check_select(&data.arms);
-        }
+        feature_stmt!(self, fe, SelectData, |data| self.check_select(&data.arms));
     }
 
     /// Type-check a `select { ... }` statement.

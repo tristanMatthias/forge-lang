@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::PipeData;
 impl TypeChecker {
     /// Type-check a pipe expression via the Feature dispatch system.
     pub(crate) fn check_pipe_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, PipeData) {
-            self.check_pipe(&data.left, &data.right)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, PipeData, |data| self.check_pipe(&data.left, &data.right))
     }
 
     /// Type-check a pipe expression.

@@ -1,9 +1,8 @@
 use inkwell::values::BasicValueEnum;
-use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::{feature_codegen, feature_data};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -15,11 +14,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, NullCoalesceData) {
-            self.compile_null_coalesce(&data.left, &data.right)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, NullCoalesceData, |data| self.compile_null_coalesce(&data.left, &data.right))
     }
 
     /// Compile a null propagate expression via Feature dispatch.
@@ -27,11 +22,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, NullPropagateData) {
-            self.compile_null_propagate(&data.object, &data.field)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, NullPropagateData, |data| self.compile_null_propagate(&data.object, &data.field))
     }
 
     /// Compile a force unwrap expression via Feature dispatch: `expr!`
@@ -47,7 +38,7 @@ impl<'ctx> Codegen<'ctx> {
                 if val.is_struct_value() {
                     // Nullable is {i8 tag, T value} - just extract the value
                     let struct_val = val.into_struct_value();
-                    let inner_val = self.builder.build_extract_value(struct_val, 1, "force_unwrap").ok()?;
+                    let inner_val = self.extract_tagged_payload(struct_val, "force_unwrap")?;
                     // May need to coerce to the expected inner type
                     let inner_llvm = self.type_to_llvm_basic(inner);
                     if inner_val.get_type() != inner_llvm {
@@ -81,13 +72,7 @@ impl<'ctx> Codegen<'ctx> {
             // For nullable types represented as {i8, T}, check the tag
             if left_val.is_struct_value() {
                 let struct_val = left_val.into_struct_value();
-                let tag = self.builder.build_extract_value(struct_val, 0, "null_tag").ok()?;
-                let is_present = self.builder.build_int_compare(
-                    IntPredicate::NE,
-                    tag.into_int_value(),
-                    self.context.i8_type().const_zero(),
-                    "is_present",
-                ).unwrap();
+                let is_present = self.extract_tag_is_set(struct_val, "null")?;
 
                 let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
                 let then_bb = self.context.append_basic_block(function, "coalesce_present");
@@ -97,7 +82,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder.build_conditional_branch(is_present, then_bb, else_bb).unwrap();
 
                 self.builder.position_at_end(then_bb);
-                let present_val = self.builder.build_extract_value(struct_val, 1, "present_val").ok()?;
+                let present_val = self.extract_tagged_payload(struct_val, "present")?;
                 // If right side is nullable, wrap present_val in nullable to match
                 let right_type = self.infer_type(right);
                 let present_val = if right_type.is_nullable() && present_val.get_type() != right_val.get_type() {
@@ -164,13 +149,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         let struct_val = obj_val.into_struct_value();
-        let tag = self.builder.build_extract_value(struct_val, 0, "np_tag").ok()?;
-        let is_present = self.builder.build_int_compare(
-            IntPredicate::NE,
-            tag.into_int_value(),
-            self.context.i8_type().const_zero(),
-            "np_present",
-        ).unwrap();
+        let is_present = self.extract_tag_is_set(struct_val, "np")?;
 
         let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let then_bb = self.context.append_basic_block(function, "np_present");
@@ -181,25 +160,13 @@ impl<'ctx> Codegen<'ctx> {
 
         // Present path: extract inner value and access field
         self.builder.position_at_end(then_bb);
-        let inner_val = self.builder.build_extract_value(struct_val, 1, "np_inner").ok()?;
+        let inner_val = self.extract_tagged_payload(struct_val, "np")?;
 
         let field_val = match &inner_type {
             Type::String => match field {
-                "length" => {
-                    let len_fn = self.module.get_function("forge_string_length").unwrap();
-                    let result = self.builder.build_call(len_fn, &[inner_val.into()], "len").unwrap();
-                    result.try_as_basic_value().left()
-                }
-                "upper" => {
-                    let upper_fn = self.module.get_function("forge_string_upper").unwrap();
-                    let result = self.builder.build_call(upper_fn, &[inner_val.into()], "upper").unwrap();
-                    result.try_as_basic_value().left()
-                }
-                "lower" => {
-                    let lower_fn = self.module.get_function("forge_string_lower").unwrap();
-                    let result = self.builder.build_call(lower_fn, &[inner_val.into()], "lower").unwrap();
-                    result.try_as_basic_value().left()
-                }
+                "length" => self.call_runtime("forge_string_length", &[inner_val.into()], "len"),
+                "upper" => self.call_runtime("forge_string_upper", &[inner_val.into()], "upper"),
+                "lower" => self.call_runtime("forge_string_lower", &[inner_val.into()], "lower"),
                 _ => None,
             },
             Type::Struct { fields, .. } => {

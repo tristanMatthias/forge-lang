@@ -2,7 +2,7 @@ use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureStmt;
-use crate::feature_data;
+use crate::{feature_data, feature_stmt};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -12,9 +12,7 @@ use super::types::ForData;
 impl<'ctx> Codegen<'ctx> {
     /// Compile a for loop via the Feature dispatch system.
     pub(crate) fn compile_for_feature(&mut self, fe: &FeatureStmt) {
-        if let Some(data) = feature_data!(fe, ForData) {
-            self.compile_for(&data.pattern, &data.iterable, &data.body);
-        }
+        feature_stmt!(self, fe, ForData, |data| self.compile_for(&data.pattern, &data.iterable, &data.body));
     }
 
     pub(crate) fn compile_for(&mut self, pattern: &Pattern, iterable: &Expr, body: &Block) {
@@ -156,9 +154,8 @@ impl<'ctx> Codegen<'ctx> {
 
             // Call forge_channel_receive(id) -> ptr
             let ch_id = self.builder.build_load(self.context.i64_type(), ch_id_alloca, "ch_id").unwrap();
-            let recv_fn = self.module.get_function("forge_channel_receive").unwrap();
-            let raw_ptr = self.builder.build_call(recv_fn, &[ch_id.into()], "recv_ptr")
-                .unwrap().try_as_basic_value().left().unwrap().into_pointer_value();
+            let raw_ptr = self.call_runtime("forge_channel_receive", &[ch_id.into()], "recv_ptr")
+                .unwrap().into_pointer_value();
 
             // Check if result starts with \0 (sentinel for closed)
             // Load first byte and check if it's 0 (the \0 in \0CLOSED)
@@ -173,17 +170,8 @@ impl<'ctx> Codegen<'ctx> {
             self.push_scope();
 
             // Convert raw ptr to ForgeString for the loop variable
-            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-            let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                self.module.add_function("strlen", ft, None)
-            });
-            let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
-                .unwrap().try_as_basic_value().left().unwrap();
-            let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-            let forge_str = self.builder.build_call(
-                str_new_fn, &[raw_ptr.into(), len.into()], "msg_str",
-            ).unwrap().try_as_basic_value().left().unwrap();
+            let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
+            let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "msg_str").unwrap();
 
             // Bind the pattern
             match pattern {

@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::IfData;
 impl TypeChecker {
     /// Type-check an if/else expression via the Feature dispatch system.
     pub(crate) fn check_if_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, IfData) {
-            self.check_if_expr_impl(&data.condition, &data.then_branch, data.else_branch.as_ref())
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, IfData, |data| self.check_if_expr_impl(&data.condition, &data.then_branch, data.else_branch.as_ref()))
     }
 
     /// Type-check an if/else expression.

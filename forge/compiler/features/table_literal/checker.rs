@@ -1,6 +1,6 @@
 use crate::errors::diagnostic::{Diagnostic, LabelKind};
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::Expr;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -10,11 +10,7 @@ use super::types::TableLitData;
 impl TypeChecker {
     /// Type-check a table literal via Feature dispatch.
     pub(crate) fn check_table_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, TableLitData) {
-            self.check_table_literal(&data.columns, &data.rows)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, TableLitData, |data| self.check_table_literal(&data.columns, &data.rows))
     }
 
     /// Type-check a table literal. Infers column types from the first row,

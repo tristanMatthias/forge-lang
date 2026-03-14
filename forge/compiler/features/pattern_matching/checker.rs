@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::MatchData;
 impl TypeChecker {
     /// Type-check a match expression via the Feature dispatch system.
     pub(crate) fn check_match_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, MatchData) {
-            self.check_match(&data.subject, &data.arms)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, MatchData, |data| self.check_match(&data.subject, &data.arms))
     }
 
     pub(crate) fn check_match(&mut self, subject: &Expr, arms: &[MatchArm]) -> Type {

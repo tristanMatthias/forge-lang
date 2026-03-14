@@ -2,15 +2,9 @@ use super::*;
 
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn build_string_literal(&mut self, s: &str) -> BasicValueEnum<'ctx> {
-        let string_new = self.module.get_function("forge_string_new").unwrap();
         let str_val = self.builder.build_global_string_ptr(s, "str").unwrap();
         let len = self.context.i64_type().const_int(s.len() as u64, false);
-        let result = self.builder.build_call(
-            string_new,
-            &[str_val.as_pointer_value().into(), len.into()],
-            "str",
-        ).unwrap();
-        result.try_as_basic_value().left().unwrap()
+        self.call_runtime("forge_string_new", &[str_val.as_pointer_value().into(), len.into()], "str").unwrap()
     }
 
     pub(crate) fn compile_struct_lit(
@@ -209,12 +203,7 @@ impl<'ctx> Codegen<'ctx> {
             )
             .unwrap();
 
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let data_ptr = self.builder
-            .build_call(alloc_fn, &[total_size.into()], "list_data")
-            .unwrap()
-            .try_as_basic_value()
-            .left()?
+        let data_ptr = self.call_runtime("forge_alloc", &[total_size.into()], "list_data")?
             .into_pointer_value();
 
         // Store each element
@@ -344,8 +333,6 @@ impl<'ctx> Codegen<'ctx> {
         let key_llvm_ty = self.type_to_llvm_basic(&key_type);
         let val_llvm_ty = self.type_to_llvm_basic(&val_type);
 
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-
         // Allocate keys array
         let key_size = key_llvm_ty.size_of().unwrap();
         let keys_total = self.builder.build_int_mul(
@@ -353,8 +340,8 @@ impl<'ctx> Codegen<'ctx> {
             self.context.i64_type().const_int(count, false),
             "keys_total",
         ).unwrap();
-        let keys_ptr = self.builder.build_call(alloc_fn, &[keys_total.into()], "keys_ptr").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let keys_ptr = self.call_runtime("forge_alloc", &[keys_total.into()], "keys_ptr")?
+            .into_pointer_value();
 
         // Allocate values array
         let val_size = val_llvm_ty.size_of().unwrap();
@@ -363,8 +350,8 @@ impl<'ctx> Codegen<'ctx> {
             self.context.i64_type().const_int(count, false),
             "vals_total",
         ).unwrap();
-        let vals_ptr = self.builder.build_call(alloc_fn, &[vals_total.into()], "vals_ptr").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let vals_ptr = self.call_runtime("forge_alloc", &[vals_total.into()], "vals_ptr")?
+            .into_pointer_value();
 
         // Store entries
         for (i, (key_expr, val_expr)) in entries.iter().enumerate() {

@@ -253,6 +253,82 @@ pub fn all_features() -> impl Iterator<Item = &'static LanguageFeatureEntry> {
     inventory::iter::<LanguageFeatureEntry>.into_iter()
 }
 
+// ─── Feature Dispatch Macros ─────────────────────────────────────────────────
+
+/// Dispatch a feature expression to a codegen method, returning `Option<BasicValueEnum>`.
+///
+/// Eliminates the repetitive pattern:
+/// ```rust,ignore
+/// if let Some(data) = feature_data!(fe, FooData) {
+///     self.compile_foo(&data.field)
+/// } else {
+///     None
+/// }
+/// ```
+///
+/// Usage:
+/// ```rust,ignore
+/// feature_codegen!(self, fe, FooData, |data| self.compile_foo(&data.field))
+/// ```
+#[macro_export]
+macro_rules! feature_codegen {
+    ($self:expr, $fe:expr, $data_type:ty, |$data:ident| $body:expr) => {
+        if let Some($data) = $crate::feature_data!($fe, $data_type) {
+            $body
+        } else {
+            None
+        }
+    };
+}
+
+/// Dispatch a feature expression/statement to a checker or infer method, returning `Type`.
+///
+/// Eliminates the repetitive pattern:
+/// ```rust,ignore
+/// if let Some(data) = feature_data!(fe, FooData) {
+///     self.check_foo(&data.field)
+/// } else {
+///     Type::Unknown
+/// }
+/// ```
+///
+/// Usage:
+/// ```rust,ignore
+/// feature_check!(self, fe, FooData, |data| self.check_foo(&data.field))
+/// ```
+#[macro_export]
+macro_rules! feature_check {
+    ($self:expr, $fe:expr, $data_type:ty, |$data:ident| $body:expr) => {
+        if let Some($data) = $crate::feature_data!($fe, $data_type) {
+            $body
+        } else {
+            $crate::typeck::types::Type::Unknown
+        }
+    };
+}
+
+/// Dispatch a feature statement where the handler returns `()`.
+///
+/// Eliminates the repetitive pattern:
+/// ```rust,ignore
+/// if let Some(data) = feature_data!(fe, FooData) {
+///     self.handle_foo(&data.field);
+/// }
+/// ```
+///
+/// Usage:
+/// ```rust,ignore
+/// feature_stmt!(self, fe, FooData, |data| self.handle_foo(&data.field))
+/// ```
+#[macro_export]
+macro_rules! feature_stmt {
+    ($self:expr, $fe:expr, $data_type:ty, |$data:ident| $body:expr) => {
+        if let Some($data) = $crate::feature_data!($fe, $data_type) {
+            $body;
+        }
+    };
+}
+
 // ─── Feature Expr/Stmt Dispatch Helpers ──────────────────────────────────────
 
 // Codegen dispatch: features add `impl Codegen<'ctx>` blocks with

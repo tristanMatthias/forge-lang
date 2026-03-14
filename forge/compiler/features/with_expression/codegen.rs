@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -14,11 +14,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, WithData) {
-            self.compile_with(&data.base, &data.updates)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, WithData, |data| self.compile_with(&data.base, &data.updates))
     }
 
     /// Compile a `with` expression: `base with { field: value, ... }`

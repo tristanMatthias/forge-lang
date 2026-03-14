@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::DollarExecData;
 impl TypeChecker {
     /// Type-check a dollar-exec expression via Feature dispatch.
     pub(crate) fn check_dollar_exec_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, DollarExecData) {
-            self.check_dollar_exec(&data.parts)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, DollarExecData, |data| self.check_dollar_exec(&data.parts))
     }
 
     /// Type-check a dollar-exec expression.

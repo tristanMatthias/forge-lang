@@ -1,5 +1,5 @@
 use crate::feature::FeatureStmt;
-use crate::feature_data;
+use crate::feature_stmt;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,9 +9,7 @@ use super::types::ForData;
 impl TypeChecker {
     /// Type-check a for loop via the Feature dispatch system.
     pub(crate) fn check_for_feature(&mut self, fe: &FeatureStmt) {
-        if let Some(data) = feature_data!(fe, ForData) {
-            self.check_for(&data.pattern, &data.iterable, &data.body);
-        }
+        feature_stmt!(self, fe, ForData, |data| self.check_for(&data.pattern, &data.iterable, &data.body));
     }
 
     pub(crate) fn check_for(&mut self, pattern: &Pattern, iterable: &Expr, body: &Block) {

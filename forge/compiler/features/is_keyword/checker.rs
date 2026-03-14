@@ -9,6 +9,7 @@ impl TypeChecker {
     /// Type-check an `is` expression via the Feature dispatch system.
     /// Returns Type::Bool since `is` always produces a boolean.
     pub(crate) fn check_is_feature(&mut self, fe: &FeatureExpr) -> Type {
+        // Note: doesn't use feature_check! because it always returns Bool regardless
         if let Some(data) = feature_data!(fe, IsData) {
             self.check_expr(&data.value);
         }

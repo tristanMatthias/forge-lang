@@ -17,8 +17,6 @@ impl<'ctx> Codegen<'ctx> {
         tag: &str,
         parts: &[TemplatePart],
     ) -> Option<BasicValueEnum<'ctx>> {
-        let concat_fn = self.module.get_function("forge_string_concat").unwrap();
-
         // Build the JSON: {"parts":[...], "values":[...]}
         let mut json = self.build_string_literal("{\"parts\":[");
 
@@ -51,43 +49,34 @@ impl<'ctx> Codegen<'ctx> {
         // Build parts array JSON: "literal1","literal2",...
         for (i, lit) in literals.iter().enumerate() {
             let quote = self.build_string_literal("\"");
-            json = self.builder.build_call(concat_fn, &[json.into(), quote.into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
-
-            json = self.builder.build_call(concat_fn, &[json.into(), (*lit).into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), quote.into()], "c").unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), (*lit).into()], "c").unwrap();
 
             let suffix = if i < literals.len() - 1 { "\"," } else { "\"" };
             let s = self.build_string_literal(suffix);
-            json = self.builder.build_call(concat_fn, &[json.into(), s.into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), s.into()], "c").unwrap();
         }
 
         // Add ],values:[
         let mid = self.build_string_literal("],\"values\":[");
-        json = self.builder.build_call(concat_fn, &[json.into(), mid.into()], "c")
-            .unwrap().try_as_basic_value().left().unwrap();
+        json = self.call_runtime("forge_string_concat", &[json.into(), mid.into()], "c").unwrap();
 
         // Build values array JSON
         for (i, val) in values.iter().enumerate() {
             let quote = self.build_string_literal("\"");
-            json = self.builder.build_call(concat_fn, &[json.into(), quote.into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), quote.into()], "c").unwrap();
 
             let escaped = self.call_json_escape(*val);
-            json = self.builder.build_call(concat_fn, &[json.into(), escaped.into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), escaped.into()], "c").unwrap();
 
             let suffix = if i < values.len() - 1 { "\"," } else { "\"" };
             let s = self.build_string_literal(suffix);
-            json = self.builder.build_call(concat_fn, &[json.into(), s.into()], "c")
-                .unwrap().try_as_basic_value().left().unwrap();
+            json = self.call_runtime("forge_string_concat", &[json.into(), s.into()], "c").unwrap();
         }
 
         // Close: ]}
         let close = self.build_string_literal("]}");
-        json = self.builder.build_call(concat_fn, &[json.into(), close.into()], "c")
-            .unwrap().try_as_basic_value().left().unwrap();
+        json = self.call_runtime("forge_string_concat", &[json.into(), close.into()], "c").unwrap();
 
         // Call the tag function with the JSON string
         self.call_tag_function(tag, json)
@@ -183,16 +172,8 @@ impl<'ctx> Codegen<'ctx> {
             if ret.is_pointer_value() {
                 // Convert ptr return to ForgeString
                 let raw_ptr = ret.into_pointer_value();
-                let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                    let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                    self.module.add_function("strlen", ft, None)
-                });
-                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
-                    .unwrap().try_as_basic_value().left().unwrap();
-                let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-                let forge_str = self.builder.build_call(
-                    str_new_fn, &[raw_ptr.into(), len.into()], "tagged_str"
-                ).unwrap().try_as_basic_value().left()?;
+                let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
+                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "tagged_str")?;
                 Some(forge_str)
             } else {
                 Some(ret)
@@ -220,16 +201,8 @@ impl<'ctx> Codegen<'ctx> {
         ).unwrap().try_as_basic_value().left().unwrap();
         let escaped_ptr = result.into_pointer_value();
 
-        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-            let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-            self.module.add_function("strlen", ft, None)
-        });
-        let len = self.builder.build_call(strlen_fn, &[escaped_ptr.into()], "elen")
-            .unwrap().try_as_basic_value().left().unwrap();
-        let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-        self.builder.build_call(
-            str_new_fn, &[escaped_ptr.into(), len.into()], "escaped_str"
-        ).unwrap().try_as_basic_value().left().unwrap()
+        let len = self.call_runtime("strlen", &[escaped_ptr.into()], "elen").unwrap();
+        self.call_runtime("forge_string_new", &[escaped_ptr.into(), len.into()], "escaped_str").unwrap()
     }
 
     /// Infer the type of a tagged template expression.

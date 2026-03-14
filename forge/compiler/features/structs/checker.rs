@@ -1,5 +1,5 @@
 use crate::feature::{FeatureExpr, FeatureStmt};
-use crate::feature_data;
+use crate::{feature_check, feature_data};
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
 
@@ -37,7 +37,7 @@ impl TypeChecker {
 
     /// Type-check a struct literal expression via the Feature dispatch system.
     pub(crate) fn check_struct_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, StructLitData) {
+        feature_check!(self, fe, StructLitData, |data| {
             // Check for duplicate field names
             let mut seen_fields: std::collections::HashSet<&str> = std::collections::HashSet::new();
             for (field_name, field_val) in &data.fields {
@@ -95,8 +95,6 @@ impl TypeChecker {
                 name: data.name.clone(),
                 fields: field_types,
             }
-        } else {
-            Type::Unknown
-        }
+        })
     }
 }

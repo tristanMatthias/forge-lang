@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -10,20 +10,8 @@ impl TypeChecker {
     /// Type-check a channel expression via the Feature dispatch system.
     pub(crate) fn check_channel_feature(&mut self, fe: &FeatureExpr) -> Type {
         match fe.kind {
-            "ChannelSend" => {
-                if let Some(data) = feature_data!(fe, ChannelSendData) {
-                    self.check_channel_send(&data.channel, &data.value)
-                } else {
-                    Type::Unknown
-                }
-            }
-            "ChannelReceive" => {
-                if let Some(data) = feature_data!(fe, ChannelReceiveData) {
-                    self.check_channel_receive(&data.channel)
-                } else {
-                    Type::Unknown
-                }
-            }
+            "ChannelSend" => feature_check!(self, fe, ChannelSendData, |data| self.check_channel_send(&data.channel, &data.value)),
+            "ChannelReceive" => feature_check!(self, fe, ChannelReceiveData, |data| self.check_channel_receive(&data.channel)),
             _ => Type::Unknown,
         }
     }

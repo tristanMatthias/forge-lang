@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -41,11 +41,7 @@ crate::impl_feature_node!(CatchData);
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of `ok(value)` via Feature dispatch.
     pub(crate) fn infer_ok_expr_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, OkExprData) {
-            self.infer_ok_expr_type(&data.value)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, OkExprData, |data| self.infer_ok_expr_type(&data.value))
     }
 
     /// Infer the type of `ok(value)` — returns `Result<T, String>`.
@@ -55,11 +51,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `err(value)` via Feature dispatch.
     pub(crate) fn infer_err_expr_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ErrExprData) {
-            self.infer_err_expr_type(&data.value)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, ErrExprData, |data| self.infer_err_expr_type(&data.value))
     }
 
     /// Infer the type of `err(value)` — returns `Result<Unknown, T>`.
@@ -69,11 +61,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `expr catch { handler }` via Feature dispatch.
     pub(crate) fn infer_catch_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, CatchData) {
-            self.infer_catch_type(&data.expr)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, CatchData, |data| self.infer_catch_type(&data.expr))
     }
 
     /// Infer the type of `expr catch { handler }`.
@@ -95,11 +83,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `expr?` via Feature dispatch.
     pub(crate) fn infer_error_propagate_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ErrorPropagateData) {
-            self.infer_error_propagate_type(&data.operand)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, ErrorPropagateData, |data| self.infer_error_propagate_type(&data.operand))
     }
 
     /// Infer the type of `expr?` — error propagation.

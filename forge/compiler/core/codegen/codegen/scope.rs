@@ -108,6 +108,50 @@ impl<'ctx> Codegen<'ctx> {
         captured
     }
 
+    /// Call a runtime function by name, returning its result.
+    /// Returns None if the function is not found or has no return value.
+    pub(crate) fn call_runtime(
+        &mut self,
+        fn_name: &str,
+        args: &[inkwell::values::BasicMetadataValueEnum<'ctx>],
+        label: &str,
+    ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+        let func = self.module.get_function(fn_name)?;
+        self.builder.build_call(func, args, label)
+            .ok()?
+            .try_as_basic_value()
+            .left()
+    }
+
+    /// Call a runtime function by name, expecting it to exist (panics if not found).
+    /// Returns the result value if the function has one.
+    pub(crate) fn call_runtime_expect(
+        &mut self,
+        fn_name: &str,
+        args: &[inkwell::values::BasicMetadataValueEnum<'ctx>],
+        label: &str,
+        msg: &str,
+    ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+        let func = self.module.get_function(fn_name)
+            .unwrap_or_else(|| panic!("{}", msg));
+        self.builder.build_call(func, args, label)
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+    }
+
+    /// Call a runtime function for its side effect (ignore return value).
+    /// Silently does nothing if the function is not found.
+    pub(crate) fn call_runtime_void(
+        &mut self,
+        fn_name: &str,
+        args: &[inkwell::values::BasicMetadataValueEnum<'ctx>],
+    ) {
+        if let Some(func) = self.module.get_function(fn_name) {
+            self.builder.build_call(func, args, "").unwrap();
+        }
+    }
+
     pub(crate) fn create_entry_block_alloca(
         &self,
         ty: &Type,

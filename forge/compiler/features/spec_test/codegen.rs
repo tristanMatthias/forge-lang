@@ -10,15 +10,13 @@ impl<'ctx> Codegen<'ctx> {
         name: &str,
         body: &Block,
     ) {
-        let start_fn = self.module.get_function("forge_test_start_spec")
-            .expect("forge_test_start_spec not declared - did you `use @std.test`?");
-        let end_fn = self.module.get_function("forge_test_end_spec")
-            .expect("forge_test_end_spec not declared");
-
         // Call forge_test_start_spec(name)
         let name_val = self.build_test_string(name);
         let name_ptr = self.extract_string_ptr(name_val);
-        self.builder.build_call(start_fn, &[name_ptr.into()], "").unwrap();
+        self.call_runtime_expect(
+            "forge_test_start_spec", &[name_ptr.into()], "",
+            "forge_test_start_spec not declared - did you `use @std.test`?",
+        );
 
         // Compile body
         for stmt in &body.statements {
@@ -26,7 +24,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Call forge_test_end_spec()
-        self.builder.build_call(end_fn, &[], "").unwrap();
+        self.call_runtime_void("forge_test_end_spec", &[]);
     }
 
     /// Compile a given block: calls forge_test_start_given, compiles body, calls forge_test_end_given
@@ -35,15 +33,13 @@ impl<'ctx> Codegen<'ctx> {
         name: &str,
         body: &Block,
     ) {
-        let start_fn = self.module.get_function("forge_test_start_given")
-            .expect("forge_test_start_given not declared - did you `use @std.test`?");
-        let end_fn = self.module.get_function("forge_test_end_given")
-            .expect("forge_test_end_given not declared");
-
         // Call forge_test_start_given(name)
         let name_val = self.build_test_string(name);
         let name_ptr = self.extract_string_ptr(name_val);
-        self.builder.build_call(start_fn, &[name_ptr.into()], "").unwrap();
+        self.call_runtime_expect(
+            "forge_test_start_given", &[name_ptr.into()], "",
+            "forge_test_start_given not declared - did you `use @std.test`?",
+        );
 
         // Compile body in new scope
         self.push_scope();
@@ -53,7 +49,7 @@ impl<'ctx> Codegen<'ctx> {
         self.pop_scope();
 
         // Call forge_test_end_given()
-        self.builder.build_call(end_fn, &[], "").unwrap();
+        self.call_runtime_void("forge_test_end_given", &[]);
     }
 
     /// Compile a then block: compiles body, uses last expression as bool result,
@@ -64,9 +60,6 @@ impl<'ctx> Codegen<'ctx> {
         body: &Block,
         span: &crate::lexer::Span,
     ) {
-        let then_fn = self.module.get_function("forge_test_run_then")
-            .expect("forge_test_run_then not declared - did you `use @std.test`?");
-
         let result = self.compile_then_body(body);
 
         // Build args: name (ptr), result (i8), file (ptr), line (i64)
@@ -78,11 +71,12 @@ impl<'ctx> Codegen<'ctx> {
 
         let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
-        self.builder.build_call(
-            then_fn,
+        self.call_runtime_expect(
+            "forge_test_run_then",
             &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
             "",
-        ).unwrap();
+            "forge_test_run_then not declared - did you `use @std.test`?",
+        );
     }
 
     /// Compile a then should_fail block: body is expected to produce a falsy result.
@@ -93,9 +87,6 @@ impl<'ctx> Codegen<'ctx> {
         body: &Block,
         span: &crate::lexer::Span,
     ) {
-        let should_fail_fn = self.module.get_function("forge_test_run_then_should_fail")
-            .expect("forge_test_run_then_should_fail not declared - did you `use @std.test`?");
-
         let result = self.compile_then_body(body);
 
         // Invert: if result is 0 (false/error), did_error = 1 (pass)
@@ -117,11 +108,12 @@ impl<'ctx> Codegen<'ctx> {
         let file_ptr = self.extract_string_ptr(file_val);
         let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
-        self.builder.build_call(
-            should_fail_fn,
+        self.call_runtime_expect(
+            "forge_test_run_then_should_fail",
             &[name_ptr.into(), did_error_i8.into(), empty_ptr.into(), empty_ptr.into(), file_ptr.into(), line_val.into()],
             "",
-        ).unwrap();
+            "forge_test_run_then_should_fail not declared - did you `use @std.test`?",
+        );
     }
 
     /// Compile a then should_fail_with block: body is expected to produce a falsy result.
@@ -132,9 +124,6 @@ impl<'ctx> Codegen<'ctx> {
         body: &Block,
         span: &crate::lexer::Span,
     ) {
-        let should_fail_fn = self.module.get_function("forge_test_run_then_should_fail")
-            .expect("forge_test_run_then_should_fail not declared - did you `use @std.test`?");
-
         let result = self.compile_then_body(body);
 
         // Invert: if result is 0 (false/error), did_error = 1 (pass)
@@ -158,11 +147,12 @@ impl<'ctx> Codegen<'ctx> {
         let file_ptr = self.extract_string_ptr(file_val);
         let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
-        self.builder.build_call(
-            should_fail_fn,
+        self.call_runtime_expect(
+            "forge_test_run_then_should_fail",
             &[name_ptr.into(), did_error_i8.into(), empty_ptr.into(), expected_ptr.into(), file_ptr.into(), line_val.into()],
             "",
-        ).unwrap();
+            "forge_test_run_then_should_fail not declared - did you `use @std.test`?",
+        );
     }
 
     /// Compile a then where block: iterates over table rows, running assertion per row.
@@ -174,9 +164,6 @@ impl<'ctx> Codegen<'ctx> {
         body: &Block,
         span: &crate::lexer::Span,
     ) {
-        let then_fn = self.module.get_function("forge_test_run_then")
-            .expect("forge_test_run_then not declared - did you `use @std.test`?");
-
         // Table literal is Expr::TableLit { columns, rows } or Feature("table_literal")
         let (columns, rows) = if let Expr::TableLit { columns, rows, .. } = table {
             (columns.as_slice(), rows.as_slice())
@@ -226,11 +213,12 @@ impl<'ctx> Codegen<'ctx> {
                 let file_ptr = self.extract_string_ptr(file_val);
                 let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
-                self.builder.build_call(
-                    then_fn,
+                self.call_runtime_expect(
+                    "forge_test_run_then",
                     &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
                     "",
-                ).unwrap();
+                    "forge_test_run_then not declared - did you `use @std.test`?",
+                );
 
                 self.pop_scope();
             }
@@ -238,22 +226,22 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Compile a skip statement: calls forge_test_skip(name)
     pub(crate) fn compile_skip_block(&mut self, name: &str) {
-        let skip_fn = self.module.get_function("forge_test_skip")
-            .expect("forge_test_skip not declared - did you `use @std.test`?");
-
         let name_val = self.build_test_string(name);
         let name_ptr = self.extract_string_ptr(name_val);
-        self.builder.build_call(skip_fn, &[name_ptr.into()], "").unwrap();
+        self.call_runtime_expect(
+            "forge_test_skip", &[name_ptr.into()], "",
+            "forge_test_skip not declared - did you `use @std.test`?",
+        );
     }
 
     /// Compile a todo statement: calls forge_test_todo(name)
     pub(crate) fn compile_todo_stmt(&mut self, name: &str) {
-        let todo_fn = self.module.get_function("forge_test_todo")
-            .expect("forge_test_todo not declared - did you `use @std.test`?");
-
         let name_val = self.build_test_string(name);
         let name_ptr = self.extract_string_ptr(name_val);
-        self.builder.build_call(todo_fn, &[name_ptr.into()], "").unwrap();
+        self.call_runtime_expect(
+            "forge_test_todo", &[name_ptr.into()], "",
+            "forge_test_todo not declared - did you `use @std.test`?",
+        );
     }
 
     /// Compile a then body, returning the last expression as an i8 bool value.

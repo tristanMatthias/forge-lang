@@ -5,7 +5,7 @@ use inkwell::AddressSpace;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::{feature_codegen, feature_check};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -17,11 +17,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, ListLitData) {
-            self.compile_list_lit(&data.elements)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, ListLitData, |data| self.compile_list_lit(&data.elements))
     }
 
     /// Compile a map literal expression via the Feature dispatch system.
@@ -29,39 +25,31 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, MapLitData) {
-            self.compile_map_lit(&data.entries)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, MapLitData, |data| self.compile_map_lit(&data.entries))
     }
 
     /// Infer the type of a list literal expression.
     pub(crate) fn infer_list_lit_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ListLitData) {
+        feature_check!(self, fe, ListLitData, |data| {
             let elem_type = if let Some(first) = data.elements.first() {
                 self.infer_type(first)
             } else {
                 Type::Unknown
             };
             Type::List(Box::new(elem_type))
-        } else {
-            Type::Unknown
-        }
+        })
     }
 
     /// Infer the type of a map literal expression.
     pub(crate) fn infer_map_lit_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, MapLitData) {
+        feature_check!(self, fe, MapLitData, |data| {
             let (key_type, val_type) = if let Some((k, v)) = data.entries.first() {
                 (self.infer_type(k), self.infer_type(v))
             } else {
                 (Type::Unknown, Type::Unknown)
             };
             Type::Map(Box::new(key_type), Box::new(val_type))
-        } else {
-            Type::Unknown
-        }
+        })
     }
 
     /// Compile list.push(item) - reallocates and appends
@@ -94,9 +82,8 @@ impl<'ctx> Codegen<'ctx> {
         // Allocate new buffer
         let elem_size = elem_llvm_ty.size_of().unwrap();
         let new_total = self.builder.build_int_mul(elem_size, new_len, "new_total").unwrap();
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let new_ptr = self.builder.build_call(alloc_fn, &[new_total.into()], "new_data").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let new_ptr = self.call_runtime("forge_alloc", &[new_total.into()], "new_data")?
+            .into_pointer_value();
 
         // Copy old data: memcpy old_len * elem_size bytes
         let old_total = self.builder.build_int_mul(elem_size, old_len, "old_total").unwrap();
@@ -145,9 +132,8 @@ impl<'ctx> Codegen<'ctx> {
         // Allocate result buffer (max size = list_len)
         let elem_size = elem_llvm_ty.size_of().unwrap();
         let total = self.builder.build_int_mul(elem_size, list_len, "total").unwrap();
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let result_ptr = self.builder.build_call(alloc_fn, &[total.into()], "filter_buf").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "filter_buf")?
+            .into_pointer_value();
 
         // Index and result count allocas
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "filter_idx").unwrap();
@@ -226,9 +212,8 @@ impl<'ctx> Codegen<'ctx> {
         // Allocate result buffer
         let out_size = out_llvm_ty.size_of().unwrap();
         let total = self.builder.build_int_mul(out_size, list_len, "total").unwrap();
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let result_ptr = self.builder.build_call(alloc_fn, &[total.into()], "map_buf").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "map_buf")?
+            .into_pointer_value();
 
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "map_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
@@ -518,9 +503,8 @@ impl<'ctx> Codegen<'ctx> {
         // Allocate result buffer
         let tuple_size = tuple_llvm_ty.size_of().unwrap();
         let total = self.builder.build_int_mul(tuple_size, list_len, "total").unwrap();
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let result_ptr = self.builder.build_call(alloc_fn, &[total.into()], "enum_buf").unwrap()
-            .try_as_basic_value().left()?.into_pointer_value();
+        let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "enum_buf")?
+            .into_pointer_value();
 
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "enum_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
@@ -586,8 +570,6 @@ impl<'ctx> Codegen<'ctx> {
         let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "join_idx").unwrap();
         self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let concat_fn = self.module.get_function("forge_string_concat").unwrap();
-
         let loop_bb = self.context.append_basic_block(function, "join_loop");
         let body_bb = self.context.append_basic_block(function, "join_body");
         let end_bb = self.context.append_basic_block(function, "join_end");
@@ -618,17 +600,14 @@ impl<'ctx> Codegen<'ctx> {
 
         // With separator
         self.builder.position_at_end(sep_block);
-        let with_sep = self.builder.build_call(concat_fn, &[current.into(), sep_val.into()], "ws").unwrap()
-            .try_as_basic_value().left().unwrap();
-        let with_elem = self.builder.build_call(concat_fn, &[with_sep.into(), elem_val.into()], "we").unwrap()
-            .try_as_basic_value().left().unwrap();
+        let with_sep = self.call_runtime("forge_string_concat", &[current.into(), sep_val.into()], "ws").unwrap();
+        let with_elem = self.call_runtime("forge_string_concat", &[with_sep.into(), elem_val.into()], "we").unwrap();
         let sep_end = self.builder.get_insert_block().unwrap();
         self.builder.build_unconditional_branch(merge_block).unwrap();
 
         // Without separator (first element)
         self.builder.position_at_end(nosep_block);
-        let just_elem = self.builder.build_call(concat_fn, &[current.into(), elem_val.into()], "je").unwrap()
-            .try_as_basic_value().left().unwrap();
+        let just_elem = self.call_runtime("forge_string_concat", &[current.into(), elem_val.into()], "je").unwrap();
         let nosep_end = self.builder.get_insert_block().unwrap();
         self.builder.build_unconditional_branch(merge_block).unwrap();
 
@@ -714,12 +693,7 @@ impl<'ctx> Codegen<'ctx> {
         let total = self.builder.build_int_mul(elem_size, list_len, "total").unwrap();
 
         // Clone the list data
-        let alloc_fn = self.module.get_function("forge_alloc").unwrap();
-        let new_ptr = self.builder
-            .build_call(alloc_fn, &[total.into()], "sort_buf")
-            .unwrap()
-            .try_as_basic_value()
-            .left()?
+        let new_ptr = self.call_runtime("forge_alloc", &[total.into()], "sort_buf")?
             .into_pointer_value();
         self.builder.build_memcpy(new_ptr, 1, data_ptr, 1, total).ok();
 
@@ -946,9 +920,7 @@ impl<'ctx> Codegen<'ctx> {
     ) -> IntValue<'ctx> {
         match key_type {
             Type::String => {
-                let eq_fn = self.module.get_function("forge_string_eq").unwrap();
-                let result = self.builder.build_call(eq_fn, &[a.into(), b.into()], "str_eq").unwrap();
-                let val = result.try_as_basic_value().left().unwrap().into_int_value();
+                let val = self.call_runtime("forge_string_eq", &[a.into(), b.into()], "str_eq").unwrap().into_int_value();
                 self.builder.build_int_compare(IntPredicate::NE, val, self.context.i8_type().const_zero(), "eq_bool").unwrap()
             }
             Type::Int => {

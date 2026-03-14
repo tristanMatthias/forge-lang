@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::Expr;
 use crate::typeck::types::Type;
 
@@ -16,11 +16,7 @@ crate::impl_feature_node!(PipeData);
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of a pipe expression via the Feature dispatch system.
     pub(crate) fn infer_pipe_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, PipeData) {
-            self.infer_pipe_type(&data.left, &data.right)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, PipeData, |data| self.infer_pipe_type(&data.left, &data.right))
     }
 
     /// Infer the return type of a pipe expression.

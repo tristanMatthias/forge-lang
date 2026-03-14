@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 
 use super::types::DollarExecData;
@@ -13,11 +13,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, DollarExecData) {
-            self.compile_dollar_exec(&data.parts)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, DollarExecData, |data| self.compile_dollar_exec(&data.parts))
     }
 
     /// Compile a dollar-exec expression: `$"echo hello ${name}"` or `$\`cmd\``
@@ -51,16 +47,8 @@ impl<'ctx> Codegen<'ctx> {
         let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
 
         // Convert ptr to ForgeString
-        let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-            let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-            self.module.add_function("strlen", ft, None)
-        });
-        let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
-            .unwrap().try_as_basic_value().left().unwrap();
-        let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-        let stdout_str = self.builder.build_call(
-            str_new_fn, &[raw_ptr.into(), len.into()], "stdout_str",
-        ).unwrap().try_as_basic_value().left()?;
+        let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
+        let stdout_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "stdout_str")?;
 
         Some(stdout_str)
     }

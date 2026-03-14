@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::{feature_codegen, feature_check};
 use crate::typeck::types::Type;
 
 use super::types::TupleLitData;
@@ -13,19 +13,13 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, TupleLitData) {
-            self.compile_tuple_lit(&data.elements)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, TupleLitData, |data| self.compile_tuple_lit(&data.elements))
     }
 
     /// Infer the type of a tuple literal expression.
     pub(crate) fn infer_tuple_lit_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, TupleLitData) {
+        feature_check!(self, fe, TupleLitData, |data| {
             Type::Tuple(data.elements.iter().map(|e| self.infer_type(e)).collect())
-        } else {
-            Type::Unknown
-        }
+        })
     }
 }

@@ -1,10 +1,9 @@
 use inkwell::values::BasicValueEnum;
 use inkwell::AddressSpace;
-use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -16,11 +15,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, ErrorPropagateData) {
-            self.compile_error_propagate(&data.operand)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, ErrorPropagateData, |data| self.compile_error_propagate(&data.operand))
     }
 
     /// Compile ok(value) via Feature dispatch.
@@ -28,11 +23,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, OkExprData) {
-            self.compile_result_ok(&data.value)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, OkExprData, |data| self.compile_result_ok(&data.value))
     }
 
     /// Compile err(value) via Feature dispatch.
@@ -40,11 +31,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, ErrExprData) {
-            self.compile_result_err(&data.value)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, ErrExprData, |data| self.compile_result_err(&data.value))
     }
 
     /// Compile catch expression via Feature dispatch.
@@ -52,11 +39,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, CatchData) {
-            self.compile_catch(&data.expr, data.binding.as_deref(), &data.handler)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, CatchData, |data| self.compile_catch(&data.expr, data.binding.as_deref(), &data.handler))
     }
 
     pub(crate) fn compile_error_propagate(
@@ -68,13 +51,7 @@ impl<'ctx> Codegen<'ctx> {
         // Result is {i8, i64[, i64]}. Tag 0 = Ok, 1 = Err
         if val.is_struct_value() {
             let struct_val = val.into_struct_value();
-            let tag = self.builder.build_extract_value(struct_val, 0, "result_tag").ok()?;
-            let is_err = self.builder.build_int_compare(
-                IntPredicate::NE,
-                tag.into_int_value(),
-                self.context.i8_type().const_zero(),
-                "is_err",
-            ).unwrap();
+            let is_err = self.extract_tag_is_set(struct_val, "result")?;
 
             let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
             let ok_bb = self.context.append_basic_block(function, "result_ok");
@@ -196,13 +173,7 @@ impl<'ctx> Codegen<'ctx> {
 
         if val.is_struct_value() {
             let struct_val = val.into_struct_value();
-            let tag = self.builder.build_extract_value(struct_val, 0, "result_tag").ok()?;
-            let is_err = self.builder.build_int_compare(
-                IntPredicate::NE,
-                tag.into_int_value(),
-                self.context.i8_type().const_zero(),
-                "is_err",
-            ).unwrap();
+            let is_err = self.extract_tag_is_set(struct_val, "result")?;
 
             let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 

@@ -7,9 +7,7 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_query_int1(&mut self, args: &[CallArg], runtime_fn: &str) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() { return None; }
         let val = self.compile_expr(&args[0].value)?;
-        let func = self.module.get_function(runtime_fn).unwrap();
-        let result = self.builder.build_call(func, &[val.into()], "qfilter").unwrap();
-        result.try_as_basic_value().left()
+        self.call_runtime(runtime_fn, &[val.into()], "qfilter")
     }
 
     /// Compile query_between(low, high) — two int args, returns ForgeString
@@ -17,17 +15,13 @@ impl<'ctx> Codegen<'ctx> {
         if args.len() < 2 { return None; }
         let low = self.compile_expr(&args[0].value)?;
         let high = self.compile_expr(&args[1].value)?;
-        let func = self.module.get_function("forge_query_between").unwrap();
-        let result = self.builder.build_call(func, &[low.into(), high.into()], "qbetween").unwrap();
-        result.try_as_basic_value().left()
+        self.call_runtime("forge_query_between", &[low.into(), high.into()], "qbetween")
     }
 
     /// Compile query_like(pattern) — string arg, returns ForgeString
     pub(crate) fn compile_query_like(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() { return None; }
         let val = self.compile_expr(&args[0].value)?;
-        let func = self.module.get_function("forge_query_like").unwrap();
-        let result = self.builder.build_call(func, &[val.into()], "qlike").unwrap();
-        result.try_as_basic_value().left()
+        self.call_runtime("forge_query_like", &[val.into()], "qlike")
     }
 }

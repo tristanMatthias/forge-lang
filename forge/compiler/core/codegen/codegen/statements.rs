@@ -410,10 +410,7 @@ impl<'ctx> Codegen<'ctx> {
                         });
                         let len = self.builder.build_call(strlen_fn, &[ptr_val.into()], "slen")
                             .unwrap().try_as_basic_value().left().unwrap();
-                        let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-                        let forge_str = self.builder.build_call(
-                            str_new_fn, &[ptr_val.into(), len.into()], "fstr",
-                        ).unwrap().try_as_basic_value().left().unwrap();
+                        let forge_str = self.call_runtime("forge_string_new", &[ptr_val.into(), len.into()], "fstr").unwrap();
                         self.builder.build_return(Some(&forge_str)).unwrap();
                     } else {
                         let coerced = self.coerce_value(val, expected_llvm);

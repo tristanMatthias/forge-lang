@@ -49,10 +49,7 @@ impl<'ctx> Codegen<'ctx> {
                                         let sv = val.into_struct_value();
                                         let list_ptr = self.builder.build_extract_value(sv, 0, "list_ptr").unwrap();
                                         let list_len = self.builder.build_extract_value(sv, 1, "list_len").unwrap();
-                                        let to_json_fn = self.module.get_function("forge_list_to_json").unwrap();
-                                        let json_str = self.builder.build_call(
-                                            to_json_fn, &[list_ptr.into(), list_len.into()], "list_json"
-                                        ).unwrap().try_as_basic_value().left().unwrap();
+                                        let json_str = self.call_runtime("forge_list_to_json", &[list_ptr.into(), list_len.into()], "list_json").unwrap();
                                         // If param expects ptr, extract the ptr from ForgeString
                                         if param_type.is_pointer_type() {
                                             let str_ptr = self.builder.build_extract_value(
@@ -114,18 +111,8 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            let ptr_type = self.context.ptr_type(AddressSpace::default());
-                            let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                                let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                                self.module.add_function("strlen", ft, None)
-                            });
-                            let len = self.builder.build_call(strlen_fn, &[ptr_val.into()], "slen")
-                                .unwrap().try_as_basic_value().left().unwrap();
-                            let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-                            let forge_str = self.builder.build_call(
-                                str_new_fn, &[ptr_val.into(), len.into()], "fstr",
-                            ).unwrap().try_as_basic_value().left();
-                            return forge_str;
+                            let len = self.call_runtime("strlen", &[ptr_val.into()], "slen").unwrap();
+                            return self.call_runtime("forge_string_new", &[ptr_val.into(), len.into()], "fstr");
                         }
                     }
                     return raw;
@@ -152,24 +139,14 @@ impl<'ctx> Codegen<'ctx> {
                             if let Some(arg) = args.first() {
                                 if let Expr::StringLit(key, _) = &arg.value {
                                     let key_str = self.builder.build_global_string_ptr(key, "param_key").unwrap();
-                                    let params_get_fn = self.module.get_function("forge_params_get").unwrap();
-                                    let raw_ptr = self.builder.build_call(
-                                        params_get_fn,
+                                    let raw_ptr = self.call_runtime(
+                                        "forge_params_get",
                                         &[params_json.into(), key_str.as_pointer_value().into()],
                                         "param_val",
-                                    ).unwrap().try_as_basic_value().left().unwrap().into_pointer_value();
+                                    ).unwrap().into_pointer_value();
                                     // Convert raw C string ptr to ForgeString
-                                    let strlen_fn = self.module.get_function("strlen").unwrap_or_else(|| {
-                                        let ft = self.context.i64_type().fn_type(&[ptr_type.into()], false);
-                                        self.module.add_function("strlen", ft, None)
-                                    });
-                                    let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "slen")
-                                        .unwrap().try_as_basic_value().left().unwrap().into_int_value();
-                                    let str_new_fn = self.module.get_function("forge_string_new").unwrap();
-                                    let forge_str = self.builder.build_call(
-                                        str_new_fn, &[raw_ptr.into(), len.into()], "fstr",
-                                    ).unwrap();
-                                    return forge_str.try_as_basic_value().left();
+                                    let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
+                                    return self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "fstr");
                                 }
                             }
                         }
@@ -183,104 +160,34 @@ impl<'ctx> Codegen<'ctx> {
 
         match &obj_type {
             Type::String => match method {
-                "length" => {
-                    let len_fn = self.module.get_function("forge_string_length").unwrap();
-                    let result = self.builder.build_call(len_fn, &[obj_val.into()], "len").unwrap();
-                    result.try_as_basic_value().left()
-                }
-                "upper" => {
-                    let upper_fn = self.module.get_function("forge_string_upper").unwrap();
-                    let result = self.builder.build_call(upper_fn, &[obj_val.into()], "upper").unwrap();
-                    result.try_as_basic_value().left()
-                }
-                "lower" => {
-                    let lower_fn = self.module.get_function("forge_string_lower").unwrap();
-                    let result = self.builder.build_call(lower_fn, &[obj_val.into()], "lower").unwrap();
-                    result.try_as_basic_value().left()
-                }
-                "trim" => {
-                    let trim_fn = self.module.get_function("forge_string_trim").unwrap();
-                    let result = self.builder.build_call(trim_fn, &[obj_val.into()], "trim").unwrap();
-                    result.try_as_basic_value().left()
-                }
+                "length" => self.call_runtime("forge_string_length", &[obj_val.into()], "len"),
+                "upper" => self.call_runtime("forge_string_upper", &[obj_val.into()], "upper"),
+                "lower" => self.call_runtime("forge_string_lower", &[obj_val.into()], "lower"),
+                "trim" => self.call_runtime("forge_string_trim", &[obj_val.into()], "trim"),
                 "contains" => {
-                    if let Some(arg) = args.first() {
-                        let arg_val = self.compile_expr(&arg.value)?;
-                        let contains_fn = self.module.get_function("forge_string_contains").unwrap();
-                        let result = self.builder.build_call(
-                            contains_fn,
-                            &[obj_val.into(), arg_val.into()],
-                            "contains",
-                        ).unwrap();
-                        result.try_as_basic_value().left()
-                    } else {
-                        None
-                    }
+                    let arg_val = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_contains", &[obj_val.into(), arg_val.into()], "contains")
                 }
                 "split" => {
                     self.compile_string_split(&obj_val, args)
                 }
                 "starts_with" => {
-                    if let Some(arg) = args.first() {
-                        let arg_val = self.compile_expr(&arg.value)?;
-                        let fn_ref = self.module.get_function("forge_string_starts_with").unwrap();
-                        let result = self.builder.build_call(
-                            fn_ref,
-                            &[obj_val.into(), arg_val.into()],
-                            "starts_with",
-                        ).unwrap();
-                        result.try_as_basic_value().left()
-                    } else {
-                        None
-                    }
+                    let arg_val = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg_val.into()], "starts_with")
                 }
                 "ends_with" => {
-                    if let Some(arg) = args.first() {
-                        let arg_val = self.compile_expr(&arg.value)?;
-                        let fn_ref = self.module.get_function("forge_string_ends_with").unwrap();
-                        let result = self.builder.build_call(
-                            fn_ref,
-                            &[obj_val.into(), arg_val.into()],
-                            "ends_with",
-                        ).unwrap();
-                        result.try_as_basic_value().left()
-                    } else {
-                        None
-                    }
+                    let arg_val = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_ends_with", &[obj_val.into(), arg_val.into()], "ends_with")
                 }
                 "replace" => {
-                    if let (Some(find_arg), Some(replace_arg)) = (args.get(0), args.get(1)) {
-                        let find_val = self.compile_expr(&find_arg.value)?;
-                        let replace_val = self.compile_expr(&replace_arg.value)?;
-                        let fn_ref = self.module.get_function("forge_string_replace").unwrap();
-                        let result = self.builder.build_call(
-                            fn_ref,
-                            &[obj_val.into(), find_val.into(), replace_val.into()],
-                            "replace",
-                        ).unwrap();
-                        result.try_as_basic_value().left()
-                    } else {
-                        None
-                    }
+                    let find_val = self.compile_expr(&args.get(0)?.value)?;
+                    let replace_val = self.compile_expr(&args.get(1)?.value)?;
+                    self.call_runtime("forge_string_replace", &[obj_val.into(), find_val.into(), replace_val.into()], "replace")
                 }
-                "parse_int" => {
-                    let fn_ref = self.module.get_function("forge_string_parse_int").unwrap();
-                    let result = self.builder.build_call(fn_ref, &[obj_val.into()], "parse_int").unwrap();
-                    result.try_as_basic_value().left()
-                }
+                "parse_int" => self.call_runtime("forge_string_parse_int", &[obj_val.into()], "parse_int"),
                 "repeat" => {
-                    if let Some(arg) = args.first() {
-                        let count_val = self.compile_expr(&arg.value)?;
-                        let fn_ref = self.module.get_function("forge_string_repeat").unwrap();
-                        let result = self.builder.build_call(
-                            fn_ref,
-                            &[obj_val.into(), count_val.into()],
-                            "repeat",
-                        ).unwrap();
-                        result.try_as_basic_value().left()
-                    } else {
-                        None
-                    }
+                    let count_val = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_repeat", &[obj_val.into(), count_val.into()], "repeat")
                 }
                 _ => None,
             },

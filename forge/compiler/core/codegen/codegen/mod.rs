@@ -31,6 +31,7 @@ mod pattern_match;
 mod runtime;
 mod scope;
 mod statements;
+mod tagged;
 mod traits;
 mod types;
 

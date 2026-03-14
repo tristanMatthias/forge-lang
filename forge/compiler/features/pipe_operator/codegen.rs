@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 
 use super::types::PipeData;
@@ -13,11 +13,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, PipeData) {
-            self.compile_pipe(&data.left, &data.right)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, PipeData, |data| self.compile_pipe(&data.left, &data.right))
     }
 
     /// Compile a pipe expression: `left |> right`

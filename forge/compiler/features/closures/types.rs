@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::{feature_check, feature_data};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -16,7 +16,7 @@ crate::impl_feature_node!(ClosureData);
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a closure via Feature dispatch.
     pub(crate) fn infer_closure_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ClosureData) {
+        feature_check!(self, fe, ClosureData, |data| {
             let param_types: Vec<Type> = data.params
                 .iter()
                 .map(|p| {
@@ -36,9 +36,7 @@ impl<'ctx> Codegen<'ctx> {
                 params: param_types,
                 return_type: Box::new(ret_type),
             }
-        } else {
-            Type::Unknown
-        }
+        })
     }
 
     /// Infer the return type of a closure given its input element type.

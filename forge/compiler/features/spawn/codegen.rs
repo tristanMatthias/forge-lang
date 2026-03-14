@@ -4,7 +4,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 
 use super::types::SpawnData;
@@ -15,11 +15,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, SpawnData) {
-            self.compile_spawn_block(&data.body)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, SpawnData, |data| self.compile_spawn_block(&data.body))
     }
 
     /// Compile a `spawn { ... }` block.
@@ -85,9 +81,8 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Call forge_spawn(fn_ptr)
-        let forge_spawn = self.module.get_function("forge_spawn").unwrap();
         let fn_ptr = spawn_function.as_global_value().as_pointer_value();
-        self.builder.build_call(forge_spawn, &[fn_ptr.into()], "").unwrap();
+        self.call_runtime_void("forge_spawn", &[fn_ptr.into()]);
         None
     }
 }

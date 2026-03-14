@@ -3,7 +3,7 @@ use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -15,11 +15,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, IsData) {
-            self.compile_is(&data.value, &data.pattern, data.negated)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, IsData, |data| self.compile_is(&data.value, &data.pattern, data.negated))
     }
 
     pub(crate) fn compile_is(

@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::ClosureData;
 impl TypeChecker {
     /// Type-check a closure via Feature dispatch.
     pub(crate) fn check_closure_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ClosureData) {
-            self.check_closure(&data.params, &data.body)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, ClosureData, |data| self.check_closure(&data.params, &data.body))
     }
 
     /// Type-check a closure expression.

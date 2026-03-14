@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::{FeatureExpr, FeatureStmt};
-use crate::feature_data;
+use crate::{feature_codegen, feature_check, feature_data};
 use crate::typeck::types::Type;
 
 use super::types::{StructLitData, TypeDeclData};
@@ -13,16 +13,12 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, StructLitData) {
-            self.compile_struct_lit(&data.fields)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, StructLitData, |data| self.compile_struct_lit(&data.fields))
     }
 
     /// Infer the type of a struct literal expression.
     pub(crate) fn infer_struct_lit_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, StructLitData) {
+        feature_check!(self, fe, StructLitData, |data| {
             if let Some(ref type_name) = data.name {
                 if let Some(ty) = self.named_types.get(type_name) {
                     return ty.clone();
@@ -45,9 +41,7 @@ impl<'ctx> Codegen<'ctx> {
                 name: data.name.clone(),
                 fields: field_types,
             }
-        } else {
-            Type::Unknown
-        }
+        })
     }
 
     /// Handle type declaration in compile_program's first pass.

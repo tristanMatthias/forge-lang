@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::{Block, Expr, Statement};
 use crate::typeck::types::Type;
 
@@ -17,11 +17,7 @@ crate::impl_feature_node!(IfData);
 impl<'ctx> Codegen<'ctx> {
     /// Infer the return type of an if/else expression via the Feature dispatch system.
     pub(crate) fn infer_if_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, IfData) {
-            self.infer_if_type(&data.then_branch, data.else_branch.as_ref())
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, IfData, |data| self.infer_if_type(&data.then_branch, data.else_branch.as_ref()))
     }
 
     /// Infer the return type of an if/else expression.

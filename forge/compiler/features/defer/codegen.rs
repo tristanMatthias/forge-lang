@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureStmt;
-use crate::feature_data;
+use crate::feature_stmt;
 
 use super::types::DeferData;
 
@@ -11,9 +11,7 @@ impl<'ctx> Codegen<'ctx> {
     /// compiled in reverse order before function returns (both explicit `return`
     /// statements and implicit returns at the end of `compile_fn`).
     pub(crate) fn compile_defer_feature(&mut self, fe: &FeatureStmt) {
-        if let Some(data) = feature_data!(fe, DeferData) {
-            self.deferred_stmts.push(data.body.clone());
-        }
+        feature_stmt!(self, fe, DeferData, |data| self.deferred_stmts.push(data.body.clone()));
     }
 
     /// Execute all deferred statements in reverse order.

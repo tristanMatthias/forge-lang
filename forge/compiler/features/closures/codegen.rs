@@ -3,7 +3,7 @@ use inkwell::values::BasicValueEnum;
 use std::collections::{HashMap, HashSet};
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::{feature_codegen, feature_data};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -80,11 +80,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, ClosureData) {
-            self.compile_closure(&data.params, &data.body)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, ClosureData, |data| self.compile_closure(&data.params, &data.body))
     }
 
     /// Compile a closure expression into an anonymous function, returning a function pointer.

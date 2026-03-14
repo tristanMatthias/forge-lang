@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::Expr;
 use crate::typeck::types::Type;
 
@@ -17,11 +17,7 @@ crate::impl_feature_node!(RangeData);
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a range expression via the Feature dispatch system.
     pub(crate) fn infer_range_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, RangeData) {
-            self.infer_range_type(&data.start)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, RangeData, |data| self.infer_range_type(&data.start))
     }
 
     /// Infer the type of a range expression: Range<T> where T is the start type.

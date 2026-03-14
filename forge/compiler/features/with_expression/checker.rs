@@ -1,5 +1,5 @@
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
@@ -9,11 +9,7 @@ use super::types::WithData;
 impl TypeChecker {
     /// Type-check a `with` expression via the Feature dispatch system.
     pub(crate) fn check_with_feature(&mut self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, WithData) {
-            self.check_with(&data.base, &data.updates)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, WithData, |data| self.check_with(&data.base, &data.updates))
     }
 
     /// Type-check a `with` expression: `expr with { field: value }`.

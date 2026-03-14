@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::Expr;
 use crate::lexer::Span;
 use inkwell::values::BasicValueEnum;
@@ -13,11 +13,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, TableLitData) {
-            self.compile_table_lit(&data.columns, &data.rows, &fe.span)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, TableLitData, |data| self.compile_table_lit(&data.columns, &data.rows, &fe.span))
     }
 
     /// Compile a table literal by desugaring into a list of struct literals.

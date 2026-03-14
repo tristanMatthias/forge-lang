@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 
 use super::types::IfData;
 
@@ -12,10 +12,6 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, IfData) {
-            self.compile_if(&data.condition, &data.then_branch, data.else_branch.as_ref())
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, IfData, |data| self.compile_if(&data.condition, &data.then_branch, data.else_branch.as_ref()))
     }
 }

@@ -160,26 +160,14 @@ impl<'ctx> Codegen<'ctx> {
         // String concat
         if lhs.is_struct_value() && rhs.is_struct_value() {
             if matches!(op, BinaryOp::Add) && left_type == Type::String {
-                let concat_fn = self.module.get_function("forge_string_concat").unwrap();
-                let result = self.builder.build_call(
-                    concat_fn,
-                    &[lhs.into(), rhs.into()],
-                    "concat",
-                ).unwrap();
-                return result.try_as_basic_value().left();
+                return self.call_runtime("forge_string_concat", &[lhs.into(), rhs.into()], "concat");
             }
         }
 
         // String equality
         if left_type == Type::String && right_type == Type::String {
             if matches!(op, BinaryOp::Eq | BinaryOp::NotEq) {
-                let eq_fn = self.module.get_function("forge_string_eq").unwrap();
-                let result = self.builder.build_call(
-                    eq_fn,
-                    &[lhs.into(), rhs.into()],
-                    "string_eq",
-                ).unwrap();
-                let val = result.try_as_basic_value().left()?;
+                let val = self.call_runtime("forge_string_eq", &[lhs.into(), rhs.into()], "string_eq")?;
                 if matches!(op, BinaryOp::NotEq) {
                     let int_v = val.into_int_value();
                     let zero = int_v.get_type().const_zero();

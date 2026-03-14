@@ -2,7 +2,7 @@ use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureStmt;
-use crate::feature_data;
+use crate::feature_stmt;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -11,9 +11,7 @@ use super::types::SelectData;
 impl<'ctx> Codegen<'ctx> {
     /// Compile a select statement via the Feature dispatch system.
     pub(crate) fn compile_select_feature(&mut self, fe: &FeatureStmt) {
-        if let Some(data) = feature_data!(fe, SelectData) {
-            self.compile_select(&data.arms);
-        }
+        feature_stmt!(self, fe, SelectData, |data| self.compile_select(&data.arms));
     }
 
     /// Compile a `select { ... }` statement.
@@ -36,11 +34,11 @@ impl<'ctx> Codegen<'ctx> {
                 let ch_id = ch_val.into_int_value();
 
                 // Call forge_channel_try_receive(id, timeout_ms) for non-blocking check
-                let try_recv = self.module.get_function("forge_channel_try_receive")
-                    .expect("forge_channel_try_receive not declared");
                 let timeout = self.context.i64_type().const_int(10, false); // 10ms poll
-                let result = self.builder.build_call(try_recv, &[ch_id.into(), timeout.into()], "try_recv").unwrap();
-                let raw_ptr = result.try_as_basic_value().left().unwrap();
+                let raw_ptr = self.call_runtime_expect(
+                    "forge_channel_try_receive", &[ch_id.into(), timeout.into()], "try_recv",
+                    "forge_channel_try_receive not declared",
+                ).unwrap();
 
                 // Check if result starts with \0 (sentinel for TIMEOUT/CLOSED)
                 let first_byte_ptr = raw_ptr.into_pointer_value();
@@ -61,12 +59,8 @@ impl<'ctx> Codegen<'ctx> {
                 self.push_scope();
 
                 // Convert ptr to ForgeString and bind to pattern
-                let strlen_fn = self.module.get_function("strlen").unwrap();
-                let len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "len").unwrap()
-                    .try_as_basic_value().left().unwrap().into_int_value();
-                let string_new = self.module.get_function("forge_string_new").unwrap();
-                let forge_str = self.builder.build_call(string_new, &[raw_ptr.into(), len.into()], "str").unwrap()
-                    .try_as_basic_value().left().unwrap();
+                let len = self.call_runtime("strlen", &[raw_ptr.into()], "len").unwrap();
+                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str").unwrap();
 
                 // Bind pattern
                 if let Pattern::Ident(name, _) = &arm.binding {

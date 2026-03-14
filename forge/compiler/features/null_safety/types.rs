@@ -1,6 +1,6 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_check;
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
 
@@ -38,11 +38,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of a null coalesce expression via Feature dispatch.
     pub(crate) fn infer_null_coalesce_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, NullCoalesceData) {
-            self.infer_type(&data.right)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, NullCoalesceData, |data| self.infer_type(&data.right))
     }
 
     /// Infer the type of a null coalesce expression: `left ?? right`
@@ -52,24 +48,18 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of a null propagate expression via Feature dispatch.
     pub(crate) fn infer_null_propagate_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, NullPropagateData) {
-            self.infer_null_propagate_type_inner(&data.object, &data.field)
-        } else {
-            Type::Unknown
-        }
+        feature_check!(self, fe, NullPropagateData, |data| self.infer_null_propagate_type_inner(&data.object, &data.field))
     }
 
     /// Infer the type of a force unwrap expression: `expr!`
     pub(crate) fn infer_force_unwrap_feature_type(&self, fe: &FeatureExpr) -> Type {
-        if let Some(data) = feature_data!(fe, ForceUnwrapData) {
+        feature_check!(self, fe, ForceUnwrapData, |data| {
             let inner_type = self.infer_type(&data.operand);
             match inner_type {
                 Type::Nullable(inner) => *inner,
                 other => other,
             }
-        } else {
-            Type::Unknown
-        }
+        })
     }
 
     /// Infer the type of a null propagate expression: `object?.field`

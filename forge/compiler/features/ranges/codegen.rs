@@ -2,7 +2,7 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::feature_data;
+use crate::feature_codegen;
 use crate::parser::ast::*;
 
 use super::types::RangeData;
@@ -13,11 +13,7 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(data) = feature_data!(fe, RangeData) {
-            self.compile_range(&data.start, &data.end, data.inclusive)
-        } else {
-            None
-        }
+        feature_codegen!(self, fe, RangeData, |data| self.compile_range(&data.start, &data.end, data.inclusive))
     }
 
     /// Compile a range expression.

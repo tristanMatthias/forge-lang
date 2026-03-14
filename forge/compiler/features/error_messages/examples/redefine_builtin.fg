@@ -1,0 +1,13 @@
+/// # Redefine Builtin
+///
+/// Cannot redefine a builtin function like `string`.
+///
+/// expect-error: F0012
+
+fn string(x: int) -> string {
+  return "custom"
+}
+
+fn main() {
+  println(string(42))
+}

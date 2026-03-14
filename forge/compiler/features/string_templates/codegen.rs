@@ -15,7 +15,6 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         let mut result: Option<BasicValueEnum<'ctx>> = None;
-        let concat_fn = self.module.get_function("forge_string_concat").unwrap();
 
         for part in parts {
             let part_val = match part {
@@ -28,12 +27,7 @@ impl<'ctx> Codegen<'ctx> {
             };
 
             result = Some(if let Some(prev) = result {
-                let call = self.builder.build_call(
-                    concat_fn,
-                    &[prev.into(), part_val.into()],
-                    "concat",
-                ).unwrap();
-                call.try_as_basic_value().left().unwrap()
+                self.call_runtime("forge_string_concat", &[prev.into(), part_val.into()], "concat").unwrap()
             } else {
                 part_val
             });
