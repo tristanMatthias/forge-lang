@@ -58,3 +58,5 @@ pub mod tuples;
 pub mod imports;
 pub mod operators;
 pub mod collections;
+pub mod validation;
+pub mod strings;

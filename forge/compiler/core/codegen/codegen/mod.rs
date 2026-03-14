@@ -24,7 +24,6 @@ mod control_flow;
 mod errors;
 mod expressions;
 mod extern_ffi;
-mod json;
 mod linker;
 mod literals;
 mod nullability;
@@ -32,10 +31,8 @@ mod pattern_match;
 mod runtime;
 mod scope;
 mod statements;
-mod strings;
 mod traits;
 mod types;
-mod validate;
 
 /// Information about a service declaration (used by component_expand for mount resolution)
 #[derive(Debug, Clone)]

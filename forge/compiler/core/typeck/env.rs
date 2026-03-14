@@ -1,7 +1,14 @@
 use crate::lexer::Span;
-use crate::parser::ast::{Annotation, Expr};
+use crate::parser::ast::{Annotation, Expr, TypeParam};
 use crate::typeck::types::{AnnotationArg, FieldAnnotation, Type};
 use std::collections::{HashMap, HashSet};
+
+pub const BUILTIN_FN_NAMES: &[&str] = &[
+    "println", "print", "string", "assert", "sleep", "channel",
+    "datetime_now", "datetime_format", "datetime_parse", "process_uptime",
+    "validate", "strlen", "forge_string_new",
+    "query_gt", "query_gte", "query_lt", "query_lte", "query_between", "query_like",
+];
 
 #[derive(Debug, Clone)]
 pub struct VarInfo {
@@ -42,6 +49,10 @@ pub struct TypeEnv {
     pub type_methods: HashMap<String, Vec<(String, Type)>>,
     /// Traits implemented by types: type_name -> list of trait_names
     pub type_traits: HashMap<String, Vec<String>>,
+    /// Type parameters for generic functions: fn_name -> type params
+    pub fn_type_params: HashMap<String, Vec<TypeParam>>,
+    /// Parameter type names for generic functions: fn_name -> vec of optional type name per param
+    pub fn_param_type_names: HashMap<String, Vec<Option<String>>>,
 }
 
 impl TypeEnv {
@@ -59,6 +70,8 @@ impl TypeEnv {
             trait_all_methods: HashMap::new(),
             type_methods: HashMap::new(),
             type_traits: HashMap::new(),
+            fn_type_params: HashMap::new(),
+            fn_param_type_names: HashMap::new(),
         };
         // Register built-in functions
         env.functions.insert(
