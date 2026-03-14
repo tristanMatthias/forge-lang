@@ -143,6 +143,23 @@ impl Parser {
     }
 
     #[allow(dead_code)]
+    /// Parse an optional `: Type` annotation, returning the type and its span.
+    pub(crate) fn parse_optional_type_ann(&mut self) -> (Option<TypeExpr>, Option<Span>) {
+        if self.check(&TokenKind::Colon) {
+            let colon_pos = self.tokens[self.pos].span.start;
+            self.advance();
+            self.skip_newlines();
+            if let Some(ty) = self.parse_type_expr() {
+                let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
+                (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    }
+
     pub(crate) fn parse_let_with_export(&mut self, exported: bool) -> Option<Statement> {
         let start = self.advance()?.span; // consume 'let'
         self.skip_newlines();
@@ -159,16 +176,7 @@ impl Parser {
         }
 
         let name = self.expect_ident()?;
-        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
-            let colon_pos = self.tokens[self.pos].span.start;
-            self.advance();
-            self.skip_newlines();
-            let ty = self.parse_type_expr()?;
-            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
-        } else {
-            (None, None)
-        };
+        let (type_ann, type_ann_span) = self.parse_optional_type_ann();
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
@@ -313,28 +321,12 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let name = self.expect_ident()?;
-        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
-            let colon_pos = self.tokens[self.pos].span.start;
-            self.advance();
-            self.skip_newlines();
-            let ty = self.parse_type_expr()?;
-            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
-        } else {
-            (None, None)
-        };
+        let (type_ann, type_ann_span) = self.parse_optional_type_ann();
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Mut {
-            name,
-            type_ann,
-            type_ann_span,
-            value,
-            exported,
-            span: start,
-        })
+        Some(Statement::Mut { name, type_ann, type_ann_span, value, exported, span: start })
     }
 
     pub(crate) fn parse_mut(&mut self) -> Option<Statement> {
@@ -345,28 +337,12 @@ impl Parser {
         let start = self.advance()?.span;
         self.skip_newlines();
         let name = self.expect_ident()?;
-        let (type_ann, type_ann_span) = if self.check(&TokenKind::Colon) {
-            let colon_pos = self.tokens[self.pos].span.start;
-            self.advance();
-            self.skip_newlines();
-            let ty = self.parse_type_expr()?;
-            let end_pos = self.tokens[self.pos.saturating_sub(1)].span.end;
-            (Some(ty), Some(Span::new(colon_pos, end_pos, 0, 0)))
-        } else {
-            (None, None)
-        };
+        let (type_ann, type_ann_span) = self.parse_optional_type_ann();
         self.skip_newlines();
         self.expect(&TokenKind::Eq)?;
         self.skip_newlines();
         let value = self.parse_expr()?;
-        Some(Statement::Const {
-            name,
-            type_ann,
-            type_ann_span,
-            value,
-            exported,
-            span: start,
-        })
+        Some(Statement::Const { name, type_ann, type_ann_span, value, exported, span: start })
     }
 
     pub(crate) fn parse_const(&mut self) -> Option<Statement> {
@@ -731,135 +707,62 @@ impl Parser {
     // parse_pipe: moved to features/pipe_operator/parser.rs
     // parse_null_coalesce: extracted to features/
 
-    pub(crate) fn parse_or(&mut self) -> Option<Expr> {
-        let mut left = self.parse_and()?;
-        while self.check(&TokenKind::Or) {
+    /// Parse a left-associative binary operator level.
+    /// `ops` maps token kinds to binary ops; `next` parses the next-higher precedence.
+    fn parse_binary_level(
+        &mut self,
+        ops: &[(TokenKind, BinaryOp)],
+        next: fn(&mut Self) -> Option<Expr>,
+    ) -> Option<Expr> {
+        let mut left = next(self)?;
+        loop {
+            let op = ops.iter().find(|(tk, _)| self.check(tk)).map(|(_, op)| *op);
+            let Some(op) = op else { break };
             let span = self.advance()?.span;
             self.skip_newlines();
-            let right = self.parse_and()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: BinaryOp::Or,
-                right: Box::new(right),
-                span,
-            };
+            let right = next(self)?;
+            left = Expr::Binary { left: Box::new(left), op, right: Box::new(right), span };
         }
         Some(left)
+    }
+
+    pub(crate) fn parse_or(&mut self) -> Option<Expr> {
+        self.parse_binary_level(&[(TokenKind::Or, BinaryOp::Or)], Self::parse_and)
     }
 
     pub(crate) fn parse_and(&mut self) -> Option<Expr> {
-        let mut left = self.parse_is_check()?;
-        while self.check(&TokenKind::And) {
-            let span = self.advance()?.span;
-            self.skip_newlines();
-            let right = self.parse_is_check()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: BinaryOp::And,
-                right: Box::new(right),
-                span,
-            };
-        }
-        Some(left)
+        self.parse_binary_level(&[(TokenKind::And, BinaryOp::And)], Self::parse_is_check)
     }
 
     pub(crate) fn parse_equality(&mut self) -> Option<Expr> {
-        let mut left = self.parse_comparison()?;
-        loop {
-            let op = if self.check(&TokenKind::EqEq) {
-                BinaryOp::Eq
-            } else if self.check(&TokenKind::NotEq) {
-                BinaryOp::NotEq
-            } else {
-                break;
-            };
-            let span = self.advance()?.span;
-            self.skip_newlines();
-            let right = self.parse_comparison()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-                span,
-            };
-        }
-        Some(left)
+        self.parse_binary_level(
+            &[(TokenKind::EqEq, BinaryOp::Eq), (TokenKind::NotEq, BinaryOp::NotEq)],
+            Self::parse_comparison,
+        )
     }
 
     pub(crate) fn parse_comparison(&mut self) -> Option<Expr> {
-        let mut left = self.parse_range()?;
-        loop {
-            let op = if self.check(&TokenKind::Lt) {
-                BinaryOp::Lt
-            } else if self.check(&TokenKind::LtEq) {
-                BinaryOp::LtEq
-            } else if self.check(&TokenKind::Gt) {
-                BinaryOp::Gt
-            } else if self.check(&TokenKind::GtEq) {
-                BinaryOp::GtEq
-            } else {
-                break;
-            };
-            let span = self.advance()?.span;
-            self.skip_newlines();
-            let right = self.parse_range()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-                span,
-            };
-        }
-        Some(left)
+        self.parse_binary_level(
+            &[(TokenKind::Lt, BinaryOp::Lt), (TokenKind::LtEq, BinaryOp::LtEq),
+              (TokenKind::Gt, BinaryOp::Gt), (TokenKind::GtEq, BinaryOp::GtEq)],
+            Self::parse_range,
+        )
     }
     // parse_range: extracted to features/
 
     pub(crate) fn parse_addition(&mut self) -> Option<Expr> {
-        let mut left = self.parse_multiplication()?;
-        loop {
-            let op = if self.check(&TokenKind::Plus) {
-                BinaryOp::Add
-            } else if self.check(&TokenKind::Minus) {
-                BinaryOp::Sub
-            } else {
-                break;
-            };
-            let span = self.advance()?.span;
-            self.skip_newlines();
-            let right = self.parse_multiplication()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-                span,
-            };
-        }
-        Some(left)
+        self.parse_binary_level(
+            &[(TokenKind::Plus, BinaryOp::Add), (TokenKind::Minus, BinaryOp::Sub)],
+            Self::parse_multiplication,
+        )
     }
 
     pub(crate) fn parse_multiplication(&mut self) -> Option<Expr> {
-        let mut left = self.parse_unary()?;
-        loop {
-            let op = if self.check(&TokenKind::Star) {
-                BinaryOp::Mul
-            } else if self.check(&TokenKind::Slash) {
-                BinaryOp::Div
-            } else if self.check(&TokenKind::Percent) {
-                BinaryOp::Mod
-            } else {
-                break;
-            };
-            let span = self.advance()?.span;
-            self.skip_newlines();
-            let right = self.parse_unary()?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-                span,
-            };
-        }
-        Some(left)
+        self.parse_binary_level(
+            &[(TokenKind::Star, BinaryOp::Mul), (TokenKind::Slash, BinaryOp::Div),
+              (TokenKind::Percent, BinaryOp::Mod)],
+            Self::parse_unary,
+        )
     }
 
     pub(crate) fn parse_unary(&mut self) -> Option<Expr> {

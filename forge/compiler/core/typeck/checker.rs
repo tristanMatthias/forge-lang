@@ -215,60 +215,12 @@ impl TypeChecker {
 
     pub(crate) fn check_statement(&mut self, stmt: &Statement) {
         match stmt {
-            Statement::Let {
-                name,
-                type_ann,
-                type_ann_span,
-                value,
-                span,
-                ..
-            } => {
-                let val_type = self.check_expr(value);
-                let ty = if let Some(ann) = type_ann {
-                    let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
-                    ann_type
-                } else {
-                    val_type
-                };
-                self.env.define_with_span(name.clone(), ty, false, *span);
-            }
-            Statement::Mut {
-                name,
-                type_ann,
-                type_ann_span,
-                value,
-                span,
-                ..
-            } => {
-                let val_type = self.check_expr(value);
-                let ty = if let Some(ann) = type_ann {
-                    let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
-                    ann_type
-                } else {
-                    val_type
-                };
-                self.env.define_with_span(name.clone(), ty, true, *span);
-            }
-            Statement::Const {
-                name,
-                type_ann,
-                type_ann_span,
-                value,
-                span,
-                ..
-            } => {
-                let val_type = self.check_expr(value);
-                let ty = if let Some(ann) = type_ann {
-                    let ann_type = self.resolve_type_expr(ann);
-                    self.check_type_mismatch_ctx(&ann_type, &val_type, *span, *type_ann_span, Some(value));
-                    ann_type
-                } else {
-                    val_type
-                };
-                self.env.define_with_span(name.clone(), ty, false, *span);
-            }
+            Statement::Let { name, type_ann, type_ann_span, value, span, .. } =>
+                self.check_binding(name, type_ann.as_ref(), *type_ann_span, value, false, *span),
+            Statement::Mut { name, type_ann, type_ann_span, value, span, .. } =>
+                self.check_binding(name, type_ann.as_ref(), *type_ann_span, value, true, *span),
+            Statement::Const { name, type_ann, type_ann_span, value, span, .. } =>
+                self.check_binding(name, type_ann.as_ref(), *type_ann_span, value, false, *span),
             Statement::LetDestructure { pattern, value, .. } => {
                 let val_type = self.check_expr(value);
                 self.bind_destructure_pattern(pattern, &val_type);
@@ -1010,6 +962,27 @@ impl TypeChecker {
                 }
             }
         }
+    }
+
+    /// Check a variable binding (let/mut/const): resolve type annotation, check mismatch, define.
+    fn check_binding(
+        &mut self,
+        name: &str,
+        type_ann: Option<&TypeExpr>,
+        type_ann_span: Option<Span>,
+        value: &Expr,
+        mutable: bool,
+        span: Span,
+    ) {
+        let val_type = self.check_expr(value);
+        let ty = if let Some(ann) = type_ann {
+            let ann_type = self.resolve_type_expr(ann);
+            self.check_type_mismatch_ctx(&ann_type, &val_type, span, type_ann_span, Some(value));
+            ann_type
+        } else {
+            val_type
+        };
+        self.env.define_with_span(name.to_string(), ty, mutable, span);
     }
 
     pub(crate) fn check_type_mismatch_ctx(
