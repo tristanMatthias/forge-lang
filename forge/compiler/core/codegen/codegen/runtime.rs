@@ -9,182 +9,75 @@ impl<'ctx> Codegen<'ctx> {
         let ptr_type = self.context.ptr_type(AddressSpace::default());
         let string_type = self.string_type();
 
-        // forge_println_string(ForgeString)
-        let fn_type = void_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_println_string", fn_type, None);
+        macro_rules! rt {
+            ($self:expr, $name:expr, $ret:expr, $($param:expr),*) => {
+                let fn_type = $ret.fn_type(&[$($param.into()),*], false);
+                $self.module.add_function($name, fn_type, None);
+            };
+        }
 
-        // forge_println_int(i64)
-        let fn_type = void_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_println_int", fn_type, None);
+        // Print functions
+        rt!(self, "forge_println_string", void_type, string_type);
+        rt!(self, "forge_println_int", void_type, i64_type);
+        rt!(self, "forge_println_float", void_type, f64_type);
+        rt!(self, "forge_println_bool", void_type, i8_type);
+        rt!(self, "forge_print_string", void_type, string_type);
+        rt!(self, "forge_print_int", void_type, i64_type);
+        rt!(self, "forge_print_float", void_type, f64_type);
+        rt!(self, "forge_print_bool", void_type, i8_type);
 
-        // forge_println_float(f64)
-        let fn_type = void_type.fn_type(&[f64_type.into()], false);
-        self.module.add_function("forge_println_float", fn_type, None);
+        // String construction and manipulation
+        rt!(self, "forge_string_new", string_type, ptr_type, i64_type);
+        rt!(self, "forge_string_concat", string_type, string_type, string_type);
+        rt!(self, "forge_int_to_string", string_type, i64_type);
+        rt!(self, "forge_float_to_string", string_type, f64_type);
+        rt!(self, "forge_bool_to_string", string_type, i8_type);
+        rt!(self, "forge_string_length", i64_type, string_type);
+        rt!(self, "forge_string_upper", string_type, string_type);
+        rt!(self, "forge_string_lower", string_type, string_type);
+        rt!(self, "forge_string_trim", string_type, string_type);
+        rt!(self, "forge_string_contains", i8_type, string_type, string_type);
+        rt!(self, "forge_string_starts_with", i8_type, string_type, string_type);
+        rt!(self, "forge_string_ends_with", i8_type, string_type, string_type);
+        rt!(self, "forge_string_replace", string_type, string_type, string_type, string_type);
+        rt!(self, "forge_string_parse_int", i64_type, string_type);
+        rt!(self, "forge_string_repeat", string_type, string_type, i64_type);
+        rt!(self, "forge_string_eq", i8_type, string_type, string_type);
 
-        // forge_println_bool(i8)
-        let fn_type = void_type.fn_type(&[i8_type.into()], false);
-        self.module.add_function("forge_println_bool", fn_type, None);
+        // List helpers
+        rt!(self, "forge_list_to_json", string_type, ptr_type, i64_type);
+        rt!(self, "forge_list_int_to_json", string_type, ptr_type, i64_type);
 
-        // forge_print_string(ForgeString)
-        let fn_type = void_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_print_string", fn_type, None);
+        // Memory and concurrency
+        rt!(self, "forge_rc_retain", void_type, ptr_type);
+        rt!(self, "forge_rc_release", void_type, ptr_type);
+        rt!(self, "forge_alloc", ptr_type, i64_type);
+        rt!(self, "forge_spawn", void_type, ptr_type);
+        rt!(self, "forge_sleep_ms", void_type, i64_type);
 
-        // forge_print_int(i64)
-        let fn_type = void_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_print_int", fn_type, None);
-
-        // forge_print_float(f64)
-        let fn_type = void_type.fn_type(&[f64_type.into()], false);
-        self.module.add_function("forge_print_float", fn_type, None);
-
-        // forge_print_bool(i8)
-        let fn_type = void_type.fn_type(&[i8_type.into()], false);
-        self.module.add_function("forge_print_bool", fn_type, None);
-
-        // forge_string_new(ptr, i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_string_new", fn_type, None);
-
-        // forge_string_concat(ForgeString, ForgeString) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_concat", fn_type, None);
-
-        // forge_int_to_string(i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_int_to_string", fn_type, None);
-
-        // forge_float_to_string(f64) -> ForgeString
-        let fn_type = string_type.fn_type(&[f64_type.into()], false);
-        self.module.add_function("forge_float_to_string", fn_type, None);
-
-        // forge_bool_to_string(i8) -> ForgeString
-        let fn_type = string_type.fn_type(&[i8_type.into()], false);
-        self.module.add_function("forge_bool_to_string", fn_type, None);
-
-        // forge_string_length(ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_string_length", fn_type, None);
-
-        // forge_string_upper(ForgeString) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_string_upper", fn_type, None);
-
-        // forge_string_lower(ForgeString) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_string_lower", fn_type, None);
-
-        // forge_string_trim(ForgeString) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_string_trim", fn_type, None);
-
-        // forge_string_contains(ForgeString, ForgeString) -> i8
-        let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_contains", fn_type, None);
-
-        // forge_string_starts_with(ForgeString, ForgeString) -> i8
-        let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_starts_with", fn_type, None);
-
-        // forge_string_ends_with(ForgeString, ForgeString) -> i8
-        let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_ends_with", fn_type, None);
-
-        // forge_string_replace(ForgeString, ForgeString, ForgeString) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into(), string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_replace", fn_type, None);
-
-        // forge_string_parse_int(ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_string_parse_int", fn_type, None);
-
-        // forge_string_repeat(ForgeString, i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[string_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_string_repeat", fn_type, None);
-
-        // forge_string_eq(ForgeString, ForgeString) -> i8
-        let fn_type = i8_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_string_eq", fn_type, None);
-
-        // forge_list_to_json(ptr, i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_list_to_json", fn_type, None);
-
-        // forge_list_int_to_json(ptr, i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_list_int_to_json", fn_type, None);
-
-        // forge_rc_retain(ptr)
-        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
-        self.module.add_function("forge_rc_retain", fn_type, None);
-
-        // forge_rc_release(ptr)
-        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
-        self.module.add_function("forge_rc_release", fn_type, None);
-
-        // forge_alloc(i64) -> ptr
-        let fn_type = ptr_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_alloc", fn_type, None);
-
-        // forge_spawn(fn_ptr)
-        let fn_type = void_type.fn_type(&[ptr_type.into()], false);
-        self.module.add_function("forge_spawn", fn_type, None);
-
-        // forge_sleep_ms(i64)
-        let fn_type = void_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_sleep_ms", fn_type, None);
-
-        // strlen(ptr) -> i64 (for string conversion from extern ptr)
+        // strlen(ptr) -> i64 (conditional — may already be declared)
         if self.module.get_function("strlen").is_none() {
-            let fn_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module.add_function("strlen", fn_type, None);
+            rt!(self, "strlen", i64_type, ptr_type);
         }
 
         // Validation helpers
-        // forge_validate_email(ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_validate_email", fn_type, None);
+        rt!(self, "forge_validate_email", i64_type, string_type);
+        rt!(self, "forge_validate_url", i64_type, string_type);
+        rt!(self, "forge_validate_uuid", i64_type, string_type);
+        rt!(self, "forge_validate_pattern", i64_type, string_type, string_type);
 
-        // forge_validate_url(ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_validate_url", fn_type, None);
+        // Datetime
+        rt!(self, "forge_datetime_now", i64_type,);
+        rt!(self, "forge_process_uptime", i64_type,);
+        rt!(self, "forge_datetime_format", string_type, i64_type);
+        rt!(self, "forge_datetime_parse", i64_type, ptr_type, i64_type);
 
-        // forge_validate_uuid(ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_validate_uuid", fn_type, None);
-
-        // forge_validate_pattern(ForgeString, ForgeString) -> i64
-        let fn_type = i64_type.fn_type(&[string_type.into(), string_type.into()], false);
-        self.module.add_function("forge_validate_pattern", fn_type, None);
-
-        // forge_datetime_now() -> i64
-        let fn_type = i64_type.fn_type(&[], false);
-        self.module.add_function("forge_datetime_now", fn_type, None);
-
-        // forge_process_uptime() -> i64
-        let fn_type = i64_type.fn_type(&[], false);
-        self.module.add_function("forge_process_uptime", fn_type, None);
-
-        // forge_datetime_format(i64) -> ForgeString
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_datetime_format", fn_type, None);
-
-        // forge_datetime_parse(ptr, i64) -> i64 (takes ForgeString fields)
-        let fn_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_datetime_parse", fn_type, None);
-
-        // Query comparison helpers — return ForgeString (JSON filter)
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_query_gt", fn_type, None);
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_query_gte", fn_type, None);
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_query_lt", fn_type, None);
-        let fn_type = string_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("forge_query_lte", fn_type, None);
-        let fn_type = string_type.fn_type(&[i64_type.into(), i64_type.into()], false);
-        self.module.add_function("forge_query_between", fn_type, None);
-        let fn_type = string_type.fn_type(&[string_type.into()], false);
-        self.module.add_function("forge_query_like", fn_type, None);
+        // Query comparison helpers
+        for name in &["forge_query_gt", "forge_query_gte", "forge_query_lt", "forge_query_lte"] {
+            rt!(self, *name, string_type, i64_type);
+        }
+        rt!(self, "forge_query_between", string_type, i64_type, i64_type);
+        rt!(self, "forge_query_like", string_type, string_type);
     }
 
     /// Declare helper/utility functions needed by codegen.
@@ -198,7 +91,7 @@ impl<'ctx> Codegen<'ctx> {
         let void_type = self.context.void_type();
         let ptr_type = self.context.ptr_type(AddressSpace::default());
 
-        // snprintf - for JSON serialization
+        // snprintf - variadic, can't use rt! macro
         if self.module.get_function("snprintf").is_none() {
             let ft = i32_type.fn_type(&[ptr_type.into(), i64_type.into(), ptr_type.into()], true);
             self.module.add_function("snprintf", ft, None);

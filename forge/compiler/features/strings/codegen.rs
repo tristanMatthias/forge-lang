@@ -146,43 +146,9 @@ impl<'ctx> Codegen<'ctx> {
             return None;
         }
 
-        let arg = &args[0];
-        let val = self.compile_expr(&arg.value)?;
-        let arg_type = self.resolve_runtime_type(&arg.value, &val);
-
-        match arg_type {
-            Type::Int => self.call_runtime("forge_int_to_string", &[val.into()], "to_str"),
-            Type::Float => self.call_runtime("forge_float_to_string", &[val.into()], "to_str"),
-            Type::Bool => self.call_runtime("forge_bool_to_string", &[val.into()], "to_str"),
-            Type::String => Some(val),
-            Type::Nullable(ref inner) => {
-                self.compile_nullable_to_string(val, inner)
-            }
-            _ => {
-                // Try to figure out from the LLVM type
-                if val.is_int_value() {
-                    let bit_width = val.into_int_value().get_type().get_bit_width();
-                    if bit_width == 64 {
-                        self.call_runtime("forge_int_to_string", &[val.into()], "to_str")
-                    } else if bit_width == 8 || bit_width == 1 {
-                        self.call_runtime("forge_bool_to_string", &[val.into()], "to_str")
-                    } else {
-                        None
-                    }
-                } else if val.is_float_value() {
-                    self.call_runtime("forge_float_to_string", &[val.into()], "to_str")
-                } else if val.is_struct_value() {
-                    let st = val.into_struct_value().get_type();
-                    if self.is_forge_string_struct(st) {
-                        Some(val)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-        }
+        let val = self.compile_expr(&args[0].value)?;
+        let arg_type = self.resolve_runtime_type(&args[0].value, &val);
+        self.value_to_string(val, &arg_type)
     }
 
     /// Convert a nullable value to string: "null" if null, or the inner value's string representation.

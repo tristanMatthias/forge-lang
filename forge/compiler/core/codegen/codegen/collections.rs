@@ -159,36 +159,7 @@ impl<'ctx> Codegen<'ctx> {
         let obj_type = self.infer_type(object);
 
         match &obj_type {
-            Type::String => match method {
-                "length" => self.call_runtime("forge_string_length", &[obj_val.into()], "len"),
-                "upper" => self.call_runtime("forge_string_upper", &[obj_val.into()], "upper"),
-                "lower" => self.call_runtime("forge_string_lower", &[obj_val.into()], "lower"),
-                "trim" => self.call_runtime("forge_string_trim", &[obj_val.into()], "trim"),
-                "parse_int" => self.call_runtime("forge_string_parse_int", &[obj_val.into()], "parse_int"),
-                "split" => self.compile_string_split(&obj_val, args),
-                "contains" => {
-                    let arg = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_contains", &[obj_val.into(), arg.into()], "contains")
-                }
-                "starts_with" => {
-                    let arg = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg.into()], "starts_with")
-                }
-                "ends_with" => {
-                    let arg = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_ends_with", &[obj_val.into(), arg.into()], "ends_with")
-                }
-                "replace" => {
-                    let find = self.compile_expr(&args.get(0)?.value)?;
-                    let replace = self.compile_expr(&args.get(1)?.value)?;
-                    self.call_runtime("forge_string_replace", &[obj_val.into(), find.into(), replace.into()], "replace")
-                }
-                "repeat" => {
-                    let count = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_repeat", &[obj_val.into(), count.into()], "repeat")
-                }
-                _ => None,
-            },
+            Type::String => self.compile_string_method(obj_val, method, args),
             Type::List(inner) => match method {
                 "push" => self.compile_list_push(object, &obj_val, &obj_type, args),
                 "clone" => Some(obj_val),
