@@ -465,9 +465,7 @@ impl<'ctx> Codegen<'ctx> {
         // Check for closure validator: @validate((val) -> { Ok(val) / Err("msg") })
         if ann.name == "validate" {
             if let Some(AnnotationArg::Expr(closure_expr)) = ann.args.first() {
-                // Handle both old Expr::Closure and new Feature("closures") variant
                 let closure_parts = match closure_expr {
-                    Expr::Closure { params, body, .. } => Some((params.as_slice(), body.as_ref())),
                     Expr::Feature(fe) if fe.feature_id == "closures" => {
                         fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()
                             .map(|data| (data.params.as_slice(), data.body.as_ref()))

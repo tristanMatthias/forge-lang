@@ -406,23 +406,6 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
-    Closure {
-        params: Vec<Param>,
-        body: Box<Expr>,
-        span: Span,
-    },
-
-    If {
-        condition: Box<Expr>,
-        then_branch: Block,
-        else_branch: Option<Block>,
-        span: Span,
-    },
-    Match {
-        subject: Box<Expr>,
-        arms: Vec<MatchArm>,
-        span: Span,
-    },
     Block(Block),
 
     // Feature-owned expression (extension point for modular features)
@@ -443,10 +426,7 @@ impl Expr {
             | Expr::Unary { span, .. }
             | Expr::Call { span, .. }
             | Expr::MemberAccess { span, .. }
-            | Expr::Index { span, .. }
-            | Expr::Closure { span, .. }
-            | Expr::If { span, .. }
-            | Expr::Match { span, .. } => *span,
+            | Expr::Index { span, .. } => *span,
             Expr::Feature(fe) => fe.span,
             Expr::Block(block) => block.span,
         }

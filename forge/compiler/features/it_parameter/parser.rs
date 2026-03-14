@@ -6,7 +6,7 @@ impl Parser {
     /// Check whether an expression tree contains a reference to the implicit `it` parameter.
     ///
     /// When `it` is found in a call argument, `parse_call_arg` wraps the expression
-    /// in `Expr::Closure { params: [it], body: <expr> }` so downstream compilation
+    /// in a closure Feature expression so downstream compilation
     /// sees a normal closure.
     pub(crate) fn expr_contains_it(expr: &Expr) -> bool {
         match expr {
@@ -32,24 +32,11 @@ impl Parser {
                     }
                 })
             }
-            Expr::If { condition, then_branch, else_branch, .. } => {
-                Self::expr_contains_it(condition)
-                    || then_branch.statements.iter().any(|s| {
-                        if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
-                    })
-                    || else_branch.as_ref().map_or(false, |eb| {
-                        eb.statements.iter().any(|s| {
-                            if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
-                        })
-                    })
-            }
             Expr::Block(block) => {
                 block.statements.iter().any(|s| {
                     if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
                 })
             }
-            // Don't look inside closures - `it` there is already bound
-            Expr::Closure { .. } => false,
             // Handle Feature variants
             Expr::Feature(fe) => {
                 match fe.feature_id {
@@ -69,6 +56,30 @@ impl Parser {
                         false
                     }
                     "closures" => false, // Don't look inside closures
+                    "if_else" => {
+                        if let Some(data) = feature_data!(fe, crate::features::if_else::types::IfData) {
+                            return Self::expr_contains_it(&data.condition)
+                                || data.then_branch.statements.iter().any(|s| {
+                                    if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                                })
+                                || data.else_branch.as_ref().map_or(false, |eb| {
+                                    eb.statements.iter().any(|s| {
+                                        if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                                    })
+                                });
+                        }
+                        false
+                    }
+                    "pattern_matching" => {
+                        if let Some(data) = feature_data!(fe, crate::features::pattern_matching::types::MatchData) {
+                            return Self::expr_contains_it(&data.subject)
+                                || data.arms.iter().any(|arm| {
+                                    Self::expr_contains_it(&arm.body)
+                                        || arm.guard.as_ref().map_or(false, |g| Self::expr_contains_it(g))
+                                });
+                        }
+                        false
+                    }
                     "pipe_operator" => {
                         if let Some(data) = feature_data!(fe, crate::features::pipe_operator::types::PipeData) {
                             return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);

@@ -1104,16 +1104,20 @@ impl Parser {
         let is_bare_it = matches!(&value, Expr::Ident(name, _) if name == "it");
         if !is_bare_it && Self::expr_contains_it(&value) {
             let span = value.span();
-            let closure = Expr::Closure {
-                params: vec![Param {
-                    name: "it".to_string(),
-                    type_ann: None,
-                    default: None,
-                    span,
-                }],
-                body: Box::new(value),
+            let closure = feature_expr(
+                "closures",
+                "Closure",
+                Box::new(crate::features::closures::types::ClosureData {
+                    params: vec![Param {
+                        name: "it".to_string(),
+                        type_ann: None,
+                        default: None,
+                        span,
+                    }],
+                    body: Box::new(value),
+                }),
                 span,
-            };
+            );
             return Some(CallArg { name: None, value: closure });
         }
 
@@ -1257,16 +1261,20 @@ impl Parser {
             self.advance();
             self.skip_newlines();
             let body = self.parse_expr()?;
-            return Some(Expr::Closure {
-                params: vec![Param {
-                    name: name.clone(),
-                    type_ann: None,
-                    default: None,
-                    span,
-                }],
-                body: Box::new(body),
+            return Some(feature_expr(
+                "closures",
+                "Closure",
+                Box::new(crate::features::closures::types::ClosureData {
+                    params: vec![Param {
+                        name: name.clone(),
+                        type_ann: None,
+                        default: None,
+                        span,
+                    }],
+                    body: Box::new(body),
+                }),
                 span,
-            });
+            ));
         }
 
         Some(Expr::Ident(name, span))

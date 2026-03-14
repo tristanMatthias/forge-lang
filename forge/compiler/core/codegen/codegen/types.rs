@@ -432,41 +432,6 @@ impl<'ctx> Codegen<'ctx> {
                     _ => Type::Unknown,
                 }
             }
-            Expr::If { then_branch, else_branch, .. } => {
-                let then_type = if let Some(last) = then_branch.statements.last() {
-                    match last {
-                        Statement::Expr(e) => self.infer_type(e),
-                        _ => Type::Void,
-                    }
-                } else {
-                    Type::Void
-                };
-                let else_type = else_branch.as_ref().and_then(|eb| {
-                    eb.statements.last().and_then(|s| match s {
-                        Statement::Expr(e) => Some(self.infer_type(e)),
-                        _ => None,
-                    })
-                }).unwrap_or(Type::Void);
-                // If one branch is nullable (null) and the other is not, wrap in Nullable
-                let then_is_null = matches!(then_type, Type::Nullable(_));
-                let else_is_null = matches!(else_type, Type::Nullable(_));
-                if then_is_null && !else_is_null && else_type != Type::Void {
-                    Type::Nullable(Box::new(else_type))
-                } else if else_is_null && !then_is_null && then_type != Type::Void {
-                    Type::Nullable(Box::new(then_type))
-                } else {
-                    // Pick the more specific type when one branch is underspecified
-                    // e.g. if cond { [] } else { list_of_strings } should be list<string>
-                    self.unify_branch_types(&then_type, &else_type)
-                }
-            }
-            Expr::Match { arms, .. } => {
-                if let Some(first) = arms.first() {
-                    self.infer_type(&first.body)
-                } else {
-                    Type::Unknown
-                }
-            }
             Expr::Block(block) => {
                 if let Some(last) = block.statements.last() {
                     match last {
@@ -475,28 +440,6 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 } else {
                     Type::Void
-                }
-            }
-            Expr::Closure { params, body, .. } => {
-                let param_types: Vec<Type> = params
-                    .iter()
-                    .map(|p| {
-                        p.type_ann
-                            .as_ref()
-                            .map(|t| self.type_checker.resolve_type_expr(t))
-                            .unwrap_or(Type::Unknown)
-                    })
-                    .collect();
-                // Build param name→type map for body inference
-                let param_map: std::collections::HashMap<String, Type> = params
-                    .iter()
-                    .zip(param_types.iter())
-                    .map(|(p, t)| (p.name.clone(), t.clone()))
-                    .collect();
-                let ret_type = self.infer_closure_body_type(body, &param_map);
-                Type::Function {
-                    params: param_types,
-                    return_type: Box::new(ret_type),
                 }
             }
             Expr::Index { object, .. } => {

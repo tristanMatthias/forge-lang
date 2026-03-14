@@ -276,7 +276,7 @@ impl<'ctx> Codegen<'ctx> {
         elem_val: BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        // Extract params and body from either old Expr::Closure or new Feature("closures")
+        // Extract params and body from Feature("closures")
         let (params, body) = Self::extract_closure_parts(&closure_arg.value)?;
         self.push_scope();
         let param_name = &params[0].name;
@@ -314,10 +314,9 @@ impl<'ctx> Codegen<'ctx> {
         result
     }
 
-    /// Extract closure params and body from either old Expr::Closure or new Feature("closures")
+    /// Extract closure params and body from a Feature("closures") expression.
     fn extract_closure_parts(expr: &Expr) -> Option<(&[Param], &Expr)> {
         match expr {
-            Expr::Closure { params, body, .. } => Some((params.as_slice(), body.as_ref())),
             Expr::Feature(fe) if fe.feature_id == "closures" => {
                 let data = fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()?;
                 Some((data.params.as_slice(), data.body.as_ref()))

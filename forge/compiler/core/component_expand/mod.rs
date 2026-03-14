@@ -289,34 +289,10 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             operand: Box::new(substitute_expr(operand, ctx)),
             span: *span,
         },
-        Expr::If { condition, then_branch, else_branch, span } => Expr::If {
-            condition: Box::new(substitute_expr(condition, ctx)),
-            then_branch: substitute_block(then_branch, ctx),
-            else_branch: else_branch.as_ref().map(|b| substitute_block(b, ctx)),
-            span: *span,
-        },
         Expr::Block(block) => Expr::Block(substitute_block(block, ctx)),
         Expr::Index { object, index, span } => Expr::Index {
             object: Box::new(substitute_expr(object, ctx)),
             index: Box::new(substitute_expr(index, ctx)),
-            span: *span,
-        },
-        Expr::Closure { params, body, span } => Expr::Closure {
-            params: params.iter().map(|p| substitute_param(p, ctx)).collect(),
-            body: Box::new(substitute_expr(body, ctx)),
-            span: *span,
-        },
-        Expr::Match { subject, arms, span } => Expr::Match {
-            subject: Box::new(substitute_expr(subject, ctx)),
-            arms: arms
-                .iter()
-                .map(|a| MatchArm {
-                    pattern: a.pattern.clone(),
-                    guard: a.guard.as_ref().map(|g| substitute_expr(g, ctx)),
-                    body: substitute_expr(&a.body, ctx),
-                    span: a.span,
-                })
-                .collect(),
             span: *span,
         },
         Expr::Feature(fe) => substitute_feature_expr(fe, ctx),
@@ -1301,10 +1277,16 @@ fn replace_tpl_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
 
 /// Find the Nth param from the first closure found in the args map
 fn find_closure_param_in_args(args: &std::collections::HashMap<String, Expr>, idx: usize) -> Option<Param> {
+    use crate::feature_data;
+    use crate::features::closures::types::ClosureData;
     for value in args.values() {
-        if let Expr::Closure { params, .. } = value {
-            if !params.is_empty() {
-                return params.get(idx).cloned();
+        if let Expr::Feature(fe) = value {
+            if fe.feature_id == "closures" {
+                if let Some(data) = feature_data!(fe, ClosureData) {
+                    if !data.params.is_empty() {
+                        return data.params.get(idx).cloned();
+                    }
+                }
             }
         }
     }
@@ -1321,8 +1303,12 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
         Expr::Ident(name, _span) => {
             if let Some(replacement) = args.get(name) {
                 // Closure unwrapping: when a handler arg is a closure, unwrap to just the body
-                if let Expr::Closure { body, .. } = replacement {
-                    return *body.clone();
+                if let Expr::Feature(fe) = replacement {
+                    if fe.feature_id == "closures" {
+                        if let Some(data) = crate::feature_data!(fe, crate::features::closures::types::ClosureData) {
+                            return *data.body.clone();
+                        }
+                    }
                 }
                 return replacement.clone();
             }

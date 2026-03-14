@@ -43,9 +43,7 @@ impl<'ctx> Codegen<'ctx> {
     ///
     /// Used by list.map, list.filter, list.reduce, etc. to determine the output element type.
     pub(crate) fn infer_closure_return_type(&self, closure_arg: &CallArg, input_type: &Type) -> Type {
-        // Check both old Expr::Closure and new Feature variant
         let (params, body) = match &closure_arg.value {
-            Expr::Closure { params, body, .. } => (params.as_slice(), body.as_ref()),
             Expr::Feature(fe) if fe.feature_id == "closures" => {
                 if let Some(data) = feature_data!(fe, ClosureData) {
                     (data.params.as_slice(), data.body.as_ref())

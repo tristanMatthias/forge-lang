@@ -33,13 +33,6 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
                 collect_free_vars_stmt(stmt, free);
             }
         }
-        Expr::If { condition, then_branch, else_branch, .. } => {
-            collect_free_vars(condition, free);
-            for stmt in &then_branch.statements { collect_free_vars_stmt(stmt, free); }
-            if let Some(eb) = else_branch {
-                for stmt in &eb.statements { collect_free_vars_stmt(stmt, free); }
-            }
-        }
         Expr::TemplateLit { parts, .. } => {
             for part in parts {
                 if let TemplatePart::Expr(e) = part { collect_free_vars(e, free); }
@@ -49,6 +42,20 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
             // Recurse into feature data expressions
             if let Some(data) = feature_data!(fe, ClosureData) {
                 collect_free_vars(&data.body, free);
+            }
+            if let Some(data) = feature_data!(fe, crate::features::if_else::types::IfData) {
+                collect_free_vars(&data.condition, free);
+                for stmt in &data.then_branch.statements { collect_free_vars_stmt(stmt, free); }
+                if let Some(eb) = &data.else_branch {
+                    for stmt in &eb.statements { collect_free_vars_stmt(stmt, free); }
+                }
+            }
+            if let Some(data) = feature_data!(fe, crate::features::pattern_matching::types::MatchData) {
+                collect_free_vars(&data.subject, free);
+                for arm in &data.arms {
+                    collect_free_vars(&arm.body, free);
+                    if let Some(g) = &arm.guard { collect_free_vars(g, free); }
+                }
             }
             if let Some(data) = feature_data!(fe, crate::features::structs::types::StructLitData) {
                 for (_, e) in &data.fields { collect_free_vars(e, free); }
@@ -224,13 +231,6 @@ impl<'ctx> Codegen<'ctx> {
             }
             Expr::Block(block) => {
                 if let Some(Statement::Expr(last)) = block.statements.last() {
-                    self.infer_closure_body_type(last, params)
-                } else {
-                    Type::Void
-                }
-            }
-            Expr::If { then_branch, .. } => {
-                if let Some(Statement::Expr(last)) = then_branch.statements.last() {
                     self.infer_closure_body_type(last, params)
                 } else {
                     Type::Void

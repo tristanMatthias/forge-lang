@@ -833,21 +833,6 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Closure {
-                params, body, ..
-            } => self.check_closure(params, body),
-
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => self.check_if_expr_impl(condition, then_branch, else_branch.as_ref()),
-
-            Expr::Match {
-                subject, arms, ..
-            } => self.check_match(subject, arms),
-
             Expr::Block(block) => {
                 self.env.push_scope();
                 let ty = self.check_block_type(block);

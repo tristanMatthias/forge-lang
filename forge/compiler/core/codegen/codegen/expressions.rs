@@ -81,10 +81,6 @@ impl<'ctx> Codegen<'ctx> {
             Expr::Call { callee, args, type_args, .. } => self.compile_call(callee, args, type_args),
             Expr::MemberAccess { object, field, .. } => self.compile_member_access(object, field),
             Expr::Index { object, index, .. } => self.compile_index_access(object, index),
-            Expr::If { condition, then_branch, else_branch, .. } =>
-                self.compile_if(condition, then_branch, else_branch.as_ref()),
-            Expr::Match { subject, arms, .. } => self.compile_match(subject, arms),
-
             Expr::Block(block) => {
                 self.push_scope();
                 let mut last = None;
@@ -106,8 +102,6 @@ impl<'ctx> Codegen<'ctx> {
                 self.pop_scope_with_drops();
                 last
             }
-
-            Expr::Closure { params, body, .. } => self.compile_closure(params, body),
 
             Expr::Feature(fe) => self.compile_feature_expr(fe),
         }
