@@ -39,6 +39,9 @@ pub struct FeatureMetadata {
     pub tokens: &'static [&'static str],
     pub ast_nodes: &'static [&'static str],
     pub description: &'static str,
+    pub syntax: &'static [&'static str],
+    pub short: &'static str,
+    pub symbols: &'static [&'static str],
 }
 
 /// Entry in the global feature registry, collected by `inventory` at link time
@@ -345,6 +348,39 @@ impl FeatureRegistry {
 /// ```
 #[macro_export]
 macro_rules! forge_feature {
+    // Extended form with syntax, short, symbols
+    (
+        name: $name:expr,
+        id: $id:expr,
+        status: $status:ident,
+        depends: [$($dep:expr),* $(,)?],
+        enables: [$($en:expr),* $(,)?],
+        tokens: [$($tok:expr),* $(,)?],
+        ast_nodes: [$($node:expr),* $(,)?],
+        description: $desc:expr,
+        syntax: [$($syn:expr),* $(,)?],
+        short: $short:expr,
+        symbols: [$($sym:expr),* $(,)?] $(,)?
+    ) => {
+        inventory::submit! {
+            $crate::registry::FeatureEntry {
+                metadata: $crate::registry::FeatureMetadata {
+                    name: $name,
+                    id: $id,
+                    status: $crate::registry::FeatureStatus::$status,
+                    depends: &[$($dep),*],
+                    enables: &[$($en),*],
+                    tokens: &[$($tok),*],
+                    ast_nodes: &[$($node),*],
+                    description: $desc,
+                    syntax: &[$($syn),*],
+                    short: $short,
+                    symbols: &[$($sym),*],
+                },
+            }
+        }
+    };
+    // Base form without syntax/short/symbols (defaults to empty)
     (
         name: $name:expr,
         id: $id:expr,
@@ -366,6 +402,9 @@ macro_rules! forge_feature {
                     tokens: &[$($tok),*],
                     ast_nodes: &[$($node),*],
                     description: $desc,
+                    syntax: &[],
+                    short: "",
+                    symbols: &[],
                 },
             }
         }

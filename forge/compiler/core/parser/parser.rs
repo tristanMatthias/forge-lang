@@ -1872,8 +1872,13 @@ impl Parser {
     }
 
     pub(crate) fn skip_newlines(&mut self) {
-        while self.check(&TokenKind::Newline) {
-            self.advance();
+        loop {
+            match self.peek() {
+                Some(t) if matches!(t.kind, TokenKind::Newline | TokenKind::DocComment(_)) => {
+                    self.advance();
+                }
+                _ => break,
+            }
         }
     }
 

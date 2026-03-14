@@ -133,6 +133,70 @@ enum Commands {
         graph: bool,
     },
 
+    /// Explore the Forge language: features, types, syntax, errors
+    Lang {
+        /// Feature, type, symbol, or error code to look up
+        query: Option<String>,
+
+        /// Show all features, types, and errors
+        #[arg(long)]
+        all: bool,
+
+        /// Show symbol/token reference
+        #[arg(long)]
+        symbols: bool,
+
+        /// Compact LLM-friendly language spec (use with query "full" for examples)
+        #[arg(long)]
+        llm: bool,
+
+        /// Show just the one-liner for a feature
+        #[arg(long)]
+        short: bool,
+
+        /// Show BNF-style grammar
+        #[arg(long)]
+        grammar: bool,
+
+        /// Show printable cheatsheet
+        #[arg(long)]
+        cheatsheet: bool,
+
+        /// Search language docs
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Validate documentation coverage for the language
+        #[arg(long)]
+        validate: bool,
+
+        /// Generate a static documentation website
+        #[arg(long)]
+        site: bool,
+
+        /// Output directory for --site (default: docs/lang-site)
+        #[arg(long, default_value = "docs/lang-site")]
+        site_dir: String,
+    },
+
+    /// Project documentation -- look up your project's functions, types, and enums
+    Docs {
+        /// Symbol to look up (function, type, enum name)
+        query: Option<String>,
+
+        /// Validate documentation coverage for the project
+        #[arg(long)]
+        validate: bool,
+
+        /// Generate a static documentation website
+        #[arg(long)]
+        site: bool,
+
+        /// Output directory for --site (default: docs/project-site)
+        #[arg(long, default_value = "docs/project-site")]
+        site_dir: String,
+    },
+
     /// Run feature example tests
     Test {
         /// Feature name or path to test (e.g., "pipe_operator" or "features/pipe_operator/examples/")
@@ -472,6 +536,63 @@ fn run() {
                 forge::registry::FeatureRegistry::print_graph();
             } else {
                 forge::registry::FeatureRegistry::print_table();
+            }
+        }
+
+        Commands::Lang { query, all, symbols, llm, short, grammar, cheatsheet, search, validate, site, site_dir } => {
+            if site {
+                forge::site::generate_lang_site(&site_dir);
+                println!("Site generated at {}/", site_dir);
+            } else if validate {
+                forge::lang::validate_lang();
+            } else if let Some(term) = search {
+                forge::lang::show_search(&term);
+            } else if grammar {
+                forge::lang::show_grammar();
+            } else if cheatsheet {
+                forge::lang::show_cheatsheet();
+            } else if llm {
+                if query.as_deref() == Some("full") {
+                    forge::lang::show_llm_full();
+                } else {
+                    forge::lang::show_llm_compact();
+                }
+            } else if symbols {
+                forge::lang::show_symbols();
+            } else if all {
+                forge::lang::show_all();
+            } else if let Some(q) = query {
+                if short {
+                    forge::lang::show_short(&q);
+                } else {
+                    forge::lang::resolve(&q);
+                }
+            } else {
+                forge::lang::show_all();
+            }
+        }
+
+        Commands::Docs { query, validate, site, site_dir } => {
+            if site {
+                forge::site::generate_docs_site(".", &site_dir);
+                println!("Site generated at {}/", site_dir);
+            } else if validate {
+                forge::docs::validate_docs(".");
+            } else {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let docs = forge::docs::extract_project_docs(&cwd);
+
+                if let Some(q) = query {
+                    if !forge::docs::show_symbol(&q, &docs) {
+                        eprintln!(
+                            "\n  No symbol '{}' found in project.\n  Hint: try `forge docs` for an overview.\n",
+                            q
+                        );
+                        process::exit(1);
+                    }
+                } else {
+                    forge::docs::show_overview(&docs);
+                }
             }
         }
 

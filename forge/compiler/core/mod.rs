@@ -5,12 +5,15 @@
 
 pub mod codegen;
 pub mod component_expand;
+pub mod docs;
 pub mod driver;
 pub mod errors;
 pub mod feature;
+pub mod lang;
 pub mod lexer;
 pub mod parser;
 pub mod provider;
 pub mod registry;
+pub mod site;
 pub mod test_runner;
 pub mod typeck;

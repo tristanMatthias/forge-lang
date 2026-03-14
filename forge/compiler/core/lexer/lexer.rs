@@ -245,8 +245,28 @@ impl<'a> Lexer<'a> {
                 }
             }
             '/' => {
-                self.advance();
-                TokenKind::Slash
+                // Check for doc comment: /// (but not ////)
+                if self.peek_at(1) == Some('/') && self.peek_at(2) == Some('/') && self.peek_at(3) != Some('/') {
+                    self.advance(); // /
+                    self.advance(); // /
+                    self.advance(); // /
+                    // Skip optional single leading space
+                    if self.peek() == Some(' ') {
+                        self.advance();
+                    }
+                    let mut text = String::new();
+                    while let Some(c) = self.peek() {
+                        if c == '\n' {
+                            break;
+                        }
+                        text.push(c);
+                        self.advance();
+                    }
+                    TokenKind::DocComment(text)
+                } else {
+                    self.advance();
+                    TokenKind::Slash
+                }
             }
             '@' => {
                 self.advance();
@@ -933,6 +953,10 @@ impl<'a> Lexer<'a> {
 
     fn skip_comments(&mut self) {
         if self.peek() == Some('/') && self.peek_at(1) == Some('/') {
+            // Don't skip doc comments (///) — they become DocComment tokens
+            if self.peek_at(2) == Some('/') && self.peek_at(3) != Some('/') {
+                return;
+            }
             while let Some(c) = self.peek() {
                 if c == '\n' {
                     break;

@@ -103,6 +103,9 @@ pub enum TokenKind {
     // Feature-registered keyword (looked up from KeywordRegistry)
     Keyword(KeywordId),
 
+    // Doc comment: `/// text`
+    DocComment(String),
+
     // Special
     Newline,
     Eof,
