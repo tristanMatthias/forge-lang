@@ -32,4 +32,5 @@ The select statement is modeled after Go's select and mirrors its semantics. Com
 and channels, it completes Forge's CSP concurrency model, enabling patterns like fan-in, fan-out, \
 timeouts, and graceful shutdown.",
     grammar: "<select_stmt> ::= \"select\" \"{\" (<ident> \"<-\" <expr> \"->\" <block>)* \"}\"",
+    category: "Concurrency",
 }

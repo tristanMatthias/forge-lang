@@ -27,6 +27,7 @@ The event system enables components to be customizable without inheritance or co
 architectures. A model component might offer `before_create`, `after_create`, `before_delete` \
 events, letting users add validation, logging, or side effects without modifying the component \
 template.",
+    category: "Components",
 }
 
 pub mod parser;

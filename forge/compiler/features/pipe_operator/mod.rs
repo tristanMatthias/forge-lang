@@ -27,6 +27,7 @@ The pipe operator is inspired by Elixir and F#, where it is fundamental to the l
 In Forge, it pairs especially well with closures and collection methods, enabling a fluent, \
 functional programming style without sacrificing type safety.",
     grammar: "<pipe_expr>   ::= <expr> \"|>\" <expr>",
+    category: "Operators",
 }
 
 pub mod parser;

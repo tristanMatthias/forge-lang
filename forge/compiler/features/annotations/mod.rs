@@ -26,4 +26,5 @@ Provider templates can define custom annotations that control template expansion
 This design is similar to Java annotations, Python decorators, and C# attributes. The key \
 difference is that Forge annotations integrate with the template system, so providers can define \
 new annotations without compiler changes.",
+    category: "Special",
 }

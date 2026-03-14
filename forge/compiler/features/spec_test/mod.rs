@@ -30,4 +30,5 @@ easy to identify exactly which scenario failed and why.
 This approach is inspired by RSpec (Ruby), Jest's describe/it (JavaScript), and Kotest (Kotlin). \
 The benefit over flat test functions is that related tests are grouped by topic, and the test \
 names form readable sentences that serve as living documentation.",
+    category: "Special",
 }

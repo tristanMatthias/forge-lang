@@ -26,4 +26,5 @@ the full `field: expression` syntax as usual.
 This feature is borrowed from JavaScript/TypeScript ES6 object shorthand and Rust's field init \
 shorthand. It is a small convenience that significantly reduces visual clutter in code that \
 constructs many structs.",
+    category: "Collections",
 }

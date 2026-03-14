@@ -26,6 +26,7 @@ into Forge strings. This happens transparently at call sites.
 The FFI is designed for provider authors, not end users. Application code uses providers through \
 their Forge-level APIs (components, functions, static methods). The FFI layer is the plumbing \
 that makes providers possible.",
+    category: "Components",
 }
 
 pub mod parser;

@@ -22,6 +22,7 @@ loading at compile time, making all provider exports available for the rest of t
 Multiple imports can be grouped, and the compiler resolves dependencies between providers \
 automatically. Circular dependencies between user modules are detected and reported as errors.",
     grammar: "<import_stmt> ::= \"use\" \"@\" <namespace> \".\" <name> \"{\" <symbols> \"}\"",
+    category: "Special",
 }
 
 pub mod types;

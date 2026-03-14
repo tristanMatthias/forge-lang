@@ -30,6 +30,7 @@ with `let` have immutable fields. The `with` expression creates modified copies 
 mutating in place. This approach eliminates shared mutable state, the root cause of countless \
 bugs in imperative programs.",
     grammar: "<mut_stmt>    ::= \"mut\" <ident> [\":\" <type>] \"=\" <expr>",
+    category: "Variables",
 }
 
 pub mod parser;

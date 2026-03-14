@@ -26,6 +26,7 @@ readable and less error-prone than chained concatenation.
 
 Multi-line strings are supported naturally. Forge does not have a separate character type; single \
 characters are simply strings of length one.",
+    category: "Strings",
 }
 
 pub mod checker;

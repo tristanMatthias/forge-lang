@@ -32,4 +32,5 @@ Compared to `instanceof` in Java or `typeof` in JavaScript, `is` is a pattern ma
 operation, not just a type check. It can match literal values, types, enum variants, and \
 complex patterns, making it strictly more powerful.",
     grammar: "<is_expr>     ::= <expr> \"is\" <pattern>",
+    category: "Pattern Matching",
 }

@@ -26,4 +26,5 @@ used anywhere an integer is expected, since they are simply integers representin
 Duration suffixes are inspired by Kotlin's duration API and Go's time.Duration, but as literal \
 syntax they provide even less friction. No imports or method calls are needed; the suffix is \
 part of the number literal itself.",
+    category: "Special",
 }

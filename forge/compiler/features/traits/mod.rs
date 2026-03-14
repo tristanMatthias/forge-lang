@@ -26,6 +26,7 @@ errors at compile time and provides clear documentation about what a function re
 If you are coming from Go, Forge traits are similar to interfaces. From Rust, they work the same \
 way. From Java or C#, think of them as interfaces with no default methods. From TypeScript, they \
 are like structural interfaces but explicitly declared.",
+    category: "Components",
 }
 
 pub mod parser;

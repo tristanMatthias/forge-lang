@@ -35,4 +35,5 @@ execution in most languages, Forge's version participates in the type system (th
 always a string) and supports template interpolation with compile-time type checking of the \
 embedded expressions.",
     grammar: "<shell_expr>  ::= \"$\\\"\" <template> \"\\\"\" | \"$`\" <template> \"`\"",
+    category: "Special",
 }

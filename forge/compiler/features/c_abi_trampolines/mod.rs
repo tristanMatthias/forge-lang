@@ -27,6 +27,7 @@ memory is handled correctly across the boundary.
 This system is invisible to both Forge users and provider authors. It exists purely as compiler \
 infrastructure to make the FFI seamless. The generated code is optimized to minimize overhead, \
 typically adding only a few instructions per call.",
+    category: "Components",
 }
 
 pub mod parser;

@@ -28,6 +28,7 @@ Kotlin popularized this pattern, and it works the same way in Forge. Groovy also
 an implicit closure parameter. The feature is purely syntactic sugar; every use of `it` has an \
 equivalent explicit closure form.",
     grammar: "<it_closure>  ::= <expr>       # implicit `it` parameter",
+    category: "Closures",
 }
 
 pub mod parser;

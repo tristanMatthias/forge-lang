@@ -28,4 +28,5 @@ consistent automatically.
 Type operators compose: `type CreateUser = User without { id } with { password: string }` \
 removes the `id` field and adds a `password` field in a single declaration. This is similar \
 to TypeScript's `Omit`, `Pick`, and `Partial` utility types but with cleaner syntax.",
+    category: "Operators",
 }

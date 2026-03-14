@@ -11,53 +11,8 @@ use crate::registry::{FeatureMetadata, FeatureRegistry, FeatureStatus};
 
 // ── Feature categories ─────────────────────────────────────────────
 
-struct FeatureCategory {
-    title: &'static str,
-    ids: &'static [&'static str],
-}
-
-const FEATURE_CATEGORIES: &[FeatureCategory] = &[
-    FeatureCategory {
-        title: "Core Language",
-        ids: &[
-            "variables", "functions", "closures", "if_else", "for_loops",
-            "while_loops", "operators", "pattern_matching", "ranges", "enums",
-            "structs", "tuples", "collections", "strings", "generics", "traits",
-            "imports", "immutability", "type_operators",
-        ],
-    },
-    FeatureCategory {
-        title: "Forge Features",
-        ids: &[
-            "pipe_operator", "null_safety", "error_propagation", "defer",
-            "is_keyword", "with_expression", "it_parameter", "table_literal",
-            "shorthand_fields", "tagged_templates", "durations", "datetime",
-        ],
-    },
-    FeatureCategory {
-        title: "Concurrency",
-        ids: &["spawn", "channels", "select_syntax", "shell_shorthand"],
-    },
-    FeatureCategory {
-        title: "Testing",
-        ids: &["spec_test"],
-    },
-    FeatureCategory {
-        title: "Component System",
-        ids: &[
-            "components", "component_config", "component_events",
-            "component_syntax", "annotations",
-        ],
-    },
-    FeatureCategory {
-        title: "Internals",
-        ids: &[
-            "string_templates", "json_builtins", "error_messages", "extern_ffi",
-            "c_abi_trampolines", "parallel", "process_uptime", "query_helpers",
-            "validation",
-        ],
-    },
-];
+// Feature categories are now derived from FeatureMetadata::category
+// via FeatureRegistry::by_category()
 
 
 // ── CSS Stylesheet ──────────────────────────────────────────────────
@@ -521,22 +476,18 @@ fn lang_nav(active: &str, base: &str) -> String {
     }
     nav.push_str("</ul>");
 
-    // Features grouped by category
-    let feature_map: std::collections::HashMap<&str, &&FeatureMetadata> =
-        features.iter().map(|f| (f.id, f)).collect();
+    // Features grouped by category (from FeatureMetadata::category)
     let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-    for cat in FEATURE_CATEGORIES {
-        nav.push_str(&format!(r#"<div class="section-title">{}</div><ul>"#, cat.title));
-        for id in cat.ids {
-            if let Some(f) = feature_map.get(id) {
-                shown.insert(id);
-                let cls = if active == f.id { r#" class="active""# } else { "" };
-                nav.push_str(&format!(
-                    r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
-                    f.id, base, f.id, cls, f.name
-                ));
-            }
+    for (cat_name, cat_features) in FeatureRegistry::by_category() {
+        nav.push_str(&format!(r#"<div class="section-title">{}</div><ul>"#, cat_name));
+        for f in &cat_features {
+            shown.insert(f.id);
+            let cls = if active == f.id { r#" class="active""# } else { "" };
+            nav.push_str(&format!(
+                r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
+                f.id, base, f.id, cls, f.name
+            ));
         }
         nav.push_str("</ul>");
     }
@@ -864,18 +815,13 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
     body.push_str("</div>");
 
     // Features grouped by category
-    let feature_map: std::collections::HashMap<&str, &&FeatureMetadata> =
-        features.iter().map(|f| (f.id, f)).collect();
     let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-    for cat in FEATURE_CATEGORIES {
-        let cat_features: Vec<_> = cat.ids.iter()
-            .filter_map(|id| feature_map.get(id).copied())
-            .collect();
+    for (cat_name, cat_features) in FeatureRegistry::by_category() {
         if cat_features.is_empty() {
             continue;
         }
-        body.push_str(&format!("<h2>{}</h2>", html_escape(cat.title)));
+        body.push_str(&format!("<h2>{}</h2>", html_escape(cat_name)));
         body.push_str(r#"<div class="feature-grid">"#);
         for f in &cat_features {
             shown.insert(f.id);

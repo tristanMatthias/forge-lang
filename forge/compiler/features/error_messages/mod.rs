@@ -27,4 +27,5 @@ Every error path in the compiler goes through the structured error rendering sys
 raw error strings or panics that produce unhelpful messages. This is enforced by design: the \
 `CompileError` type has a fixed set of variants, each with a dedicated rendering function that \
 includes help text.",
+    category: "Special",
 }

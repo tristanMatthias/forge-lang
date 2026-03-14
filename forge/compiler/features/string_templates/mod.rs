@@ -28,6 +28,7 @@ This feature works identically to JavaScript template literals and Kotlin string
 is the foundation for tagged templates, which process the string parts and interpolated values \
 through a custom function.",
     grammar: "<template>    ::= \"\\\"...${\" <expr> \"}...\\\"\"",
+    category: "Strings",
 }
 
 pub mod parser;

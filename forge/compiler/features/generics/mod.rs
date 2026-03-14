@@ -26,6 +26,7 @@ errors at compile time rather than runtime.
 Forge's generics are similar to those in Rust, TypeScript, and Java. They use monomorphization \
 at compile time, meaning generic code has zero runtime overhead: the compiler generates specialized \
 versions for each concrete type used.",
+    category: "Components",
 }
 
 pub mod parser;

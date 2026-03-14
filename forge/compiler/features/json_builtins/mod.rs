@@ -27,6 +27,7 @@ objects with field names as keys. Lists become JSON arrays. This round-trips cle
 These built-in functions avoid the need for an external JSON library in the vast majority of use \
 cases. They are implemented as intrinsics for maximum performance, with the serialization and \
 deserialization happening in optimized native code.",
+    category: "Special",
 }
 
 pub mod parser;

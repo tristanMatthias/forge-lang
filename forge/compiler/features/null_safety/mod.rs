@@ -30,6 +30,7 @@ The `?` suffix on function return types indicates the function might return null
 or an explicit null check. This makes null a deliberate, visible choice rather than a hidden \
 landmine.",
     grammar: "<nullable>    ::= <type> \"?\"\\n<coalesce>    ::= <expr> \"??\" <expr>\\n<safe_access> ::= <expr> \"?.\" <ident>",
+    category: "Null Safety",
 }
 
 pub mod parser;

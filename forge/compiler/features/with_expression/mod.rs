@@ -28,6 +28,7 @@ This feature is equivalent to the spread/rest operator for objects in JavaScript
 update syntax (`Point { x: 10, ..p }`). Forge's `with` keyword reads naturally in English, \
 making the intent immediately clear.",
     grammar: "<with_expr>   ::= <expr> \"with\" \"{\" <field_updates> \"}\"",
+    category: "Special",
 }
 
 pub mod parser;

@@ -28,6 +28,7 @@ code for custom query patterns that go beyond the standard CRUD operations.
 Validation errors from the query builder are structured, providing field-level error details \
 rather than a single error string. This makes it easy to map validation failures to specific \
 user inputs in UI applications.",
+    category: "Special",
 }
 
 pub mod codegen;

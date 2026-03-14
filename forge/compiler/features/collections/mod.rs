@@ -26,6 +26,7 @@ combined with `??` to provide a default.
 
 Both collections are mutable when declared with `mut`. Immutable collections cannot have elements \
 added or removed, making them safe to share across function boundaries without defensive copying.",
+    category: "Collections",
 }
 
 pub mod types;

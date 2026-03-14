@@ -22,6 +22,7 @@ are collected. This model scales naturally with available hardware.
 The parallel system handles the underlying thread management, work distribution, and result \
 collection. User code simply spawns tasks and communicates through channels, without needing to \
 manage threads, locks, or condition variables directly.",
+    category: "Concurrency",
 }
 
 pub mod parser;

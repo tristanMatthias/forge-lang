@@ -23,6 +23,7 @@ While loops are generally less common in idiomatic Forge than `for...in` loops, 
 iteration involves collections or ranges. Prefer `for` when you know what you are iterating over, \
 and reserve `while` for conditions that depend on external state or complex termination logic.",
     grammar: "<while_stmt>  ::= \"while\" <expr> <block>",
+    category: "Control Flow",
 }
 
 pub mod parser;

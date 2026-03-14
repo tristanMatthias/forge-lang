@@ -29,6 +29,7 @@ Behavior is attached through trait implementations, keeping data and behavior cl
 This design scales better for large codebases and avoids the deep inheritance hierarchies that \
 plague OOP systems.",
     grammar: "<struct_decl> ::= \"type\" <ident> \"{\" (<ident> \":\" <type>)* \"}\"",
+    category: "Collections",
 }
 
 pub mod types;

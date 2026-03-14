@@ -28,6 +28,7 @@ anyone who has used date formatting in JavaScript, Python, or Java.
 Duration literals pair naturally with datetime functions. `datetime_now() + 7d` gives you a \
 timestamp one week in the future. `datetime_now() - 24h` gives you yesterday. This makes \
 date arithmetic readable and type-safe.",
+    category: "Special",
 }
 
 pub mod codegen;

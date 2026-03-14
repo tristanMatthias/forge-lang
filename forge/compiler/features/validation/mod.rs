@@ -27,6 +27,7 @@ first error. This gives users all the information they need to fix their input i
 Unlike assertion-based validation that throws exceptions, Forge's validation returns errors as \
 values. This fits with Forge's philosophy of making error paths explicit and visible in the \
 type system.",
+    category: "Special",
 }
 
 pub mod checker;

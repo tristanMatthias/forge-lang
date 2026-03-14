@@ -22,6 +22,7 @@ duration literals, you can write expressive timing checks: `if process_uptime() 
 The implementation uses the operating system's monotonic clock, so the value always increases \
 and is not affected by system clock adjustments. This makes it reliable for measuring intervals \
 even if the system time is changed during execution.",
+    category: "Special",
 }
 
 pub mod codegen;

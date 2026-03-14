@@ -28,4 +28,5 @@ The exclusive range `..` is the default because it aligns with zero-based indexi
 `for i in 0..list.length() { ... }`, there is no off-by-one risk. Use the inclusive form `..=` \
 when you specifically need the endpoint, such as `for day in 1..=31 { ... }`.",
     grammar: "<range_expr>  ::= <expr> \"..\" <expr> | <expr> \"..=\" <expr>",
+    category: "Operators",
 }

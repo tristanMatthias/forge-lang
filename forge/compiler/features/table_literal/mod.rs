@@ -31,4 +31,5 @@ number of columns and that values match the declared types.
 This feature is unique to Forge. While languages like Haskell have QuasiQuoters and Ruby has \
 heredocs for embedding structured data, Forge's table literals are first-class syntax with full \
 type checking and compile-time validation.",
+    category: "Special",
 }

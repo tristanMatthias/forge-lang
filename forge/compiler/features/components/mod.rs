@@ -30,6 +30,7 @@ templates describe how to expose that behavior to Forge users, and the compiler 
 mechanical work of template expansion. Adding a new domain (database, message queue, GPU compute) \
 requires only a new provider, never a compiler change.",
     grammar: "<component>   ::= \"component\" <ident> \"(\" <args> \")\" <block>",
+    category: "Components",
 }
 
 pub mod parser;

@@ -28,6 +28,7 @@ patterns are all defined through `@syntax` in their respective provider template
 Compared to macros in Rust or Lisp, `@syntax` patterns are more constrained but also more \
 predictable. They match a fixed pattern shape rather than arbitrary token trees, which keeps \
 error messages clear and prevents the readability problems that plague macro-heavy codebases.",
+    category: "Components",
 }
 
 pub mod parser;

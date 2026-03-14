@@ -82,6 +82,60 @@ fn collect_free_vars_stmt(stmt: &Statement, free: &mut HashSet<String>) {
 }
 
 impl<'ctx> Codegen<'ctx> {
+    pub(crate) fn compile_closure_inline(
+        &mut self,
+        closure_arg: &crate::parser::ast::CallArg,
+        elem_val: BasicValueEnum<'ctx>,
+        elem_type: &crate::typeck::types::Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let (params, body) = Self::extract_closure_parts(&closure_arg.value)?;
+        self.push_scope();
+        let param_name = &params[0].name;
+        let alloca = self.create_entry_block_alloca(elem_type, param_name);
+        self.builder.build_store(alloca, elem_val).unwrap();
+        self.define_var(param_name.clone(), alloca, elem_type.clone());
+        let result = self.compile_expr(body);
+        self.pop_scope();
+        result
+    }
+
+    /// Compile a 2-arg closure inline (for reduce)
+    pub(crate) fn compile_closure_inline_2(
+        &mut self,
+        closure_arg: &crate::parser::ast::CallArg,
+        acc_val: BasicValueEnum<'ctx>,
+        acc_type: &crate::typeck::types::Type,
+        elem_val: BasicValueEnum<'ctx>,
+        elem_type: &crate::typeck::types::Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let (params, body) = Self::extract_closure_parts(&closure_arg.value)?;
+        self.push_scope();
+        if params.len() >= 2 {
+            let acc_name = &params[0].name;
+            let elem_name = &params[1].name;
+            let alloca1 = self.create_entry_block_alloca(acc_type, acc_name);
+            self.builder.build_store(alloca1, acc_val).unwrap();
+            self.define_var(acc_name.clone(), alloca1, acc_type.clone());
+            let alloca2 = self.create_entry_block_alloca(elem_type, elem_name);
+            self.builder.build_store(alloca2, elem_val).unwrap();
+            self.define_var(elem_name.clone(), alloca2, elem_type.clone());
+        }
+        let result = self.compile_expr(body);
+        self.pop_scope();
+        result
+    }
+
+    /// Extract closure params and body from a Feature("closures") expression.
+    fn extract_closure_parts(expr: &crate::parser::ast::Expr) -> Option<(&[crate::parser::ast::Param], &crate::parser::ast::Expr)> {
+        match expr {
+            crate::parser::ast::Expr::Feature(fe) if fe.feature_id == "closures" => {
+                let data = fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()?;
+                Some((data.params.as_slice(), data.body.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
     /// Compile a closure via Feature dispatch.
     pub(crate) fn compile_closure_feature(
         &mut self,

@@ -19,7 +19,7 @@ use crate::typeck::types::Type;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-mod collections;
+mod dispatch;
 mod control_flow;
 mod errors;
 mod expressions;

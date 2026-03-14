@@ -29,6 +29,7 @@ Compared to other languages, Forge closures are closest to Kotlin's lambdas or S
 closures. The `->` syntax was chosen over `=>` (JavaScript) to avoid ambiguity with comparison \
 operators and to visually distinguish closures from match arms.",
     grammar: "<closure>     ::= \"(\" <params> \")\" \"->\" <expr>\\n                | \"(\" <params> \")\" \"->\" <block>",
+    category: "Closures",
 }
 
 pub mod parser;

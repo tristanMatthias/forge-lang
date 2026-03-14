@@ -44,6 +44,7 @@ pub struct FeatureMetadata {
     pub symbols: &'static [&'static str],
     pub long_description: &'static str,
     pub grammar: &'static str,
+    pub category: &'static str,
 }
 
 /// Entry in the global feature registry, collected by `inventory` at link time
@@ -75,6 +76,37 @@ impl FeatureRegistry {
     /// Find a feature by its id
     pub fn get(id: &str) -> Option<&'static FeatureMetadata> {
         Self::all().into_iter().find(|f| f.id == id)
+    }
+
+    /// Group features by their `category` field, ordered by `CATEGORY_ORDER`.
+    pub fn by_category() -> Vec<(&'static str, Vec<&'static FeatureMetadata>)> {
+        const CATEGORY_ORDER: &[&str] = &[
+            "Variables", "Functions", "Closures", "Control Flow",
+            "Pattern Matching", "Operators", "Strings", "Collections",
+            "Null Safety", "Concurrency", "Special", "Components",
+        ];
+
+        let all = Self::all();
+        let mut groups: std::collections::HashMap<&str, Vec<&FeatureMetadata>> =
+            std::collections::HashMap::new();
+        for f in &all {
+            if !f.category.is_empty() {
+                groups.entry(f.category).or_default().push(f);
+            }
+        }
+        for v in groups.values_mut() {
+            v.sort_by_key(|f| f.id);
+        }
+        let mut result = Vec::new();
+        for cat in CATEGORY_ORDER {
+            if let Some(features) = groups.remove(cat) {
+                result.push((*cat, features));
+            }
+        }
+        let mut remaining: Vec<_> = groups.into_iter().collect();
+        remaining.sort_by_key(|(k, _)| *k);
+        result.extend(remaining);
+        result
     }
 
     /// Get features filtered by status
@@ -350,7 +382,45 @@ impl FeatureRegistry {
 /// ```
 #[macro_export]
 macro_rules! forge_feature {
-    // Full form with grammar
+    // Full form with all fields
+    (
+        name: $name:expr,
+        id: $id:expr,
+        status: $status:ident,
+        depends: [$($dep:expr),* $(,)?],
+        enables: [$($en:expr),* $(,)?],
+        tokens: [$($tok:expr),* $(,)?],
+        ast_nodes: [$($node:expr),* $(,)?],
+        description: $desc:expr,
+        syntax: [$($syn:expr),* $(,)?],
+        short: $short:expr,
+        symbols: [$($sym:expr),* $(,)?],
+        long_description: $long_desc:expr,
+        grammar: $grammar:expr,
+        category: $category:expr $(,)?
+    ) => {
+        inventory::submit! {
+            $crate::registry::FeatureEntry {
+                metadata: $crate::registry::FeatureMetadata {
+                    name: $name,
+                    id: $id,
+                    status: $crate::registry::FeatureStatus::$status,
+                    depends: &[$($dep),*],
+                    enables: &[$($en),*],
+                    tokens: &[$($tok),*],
+                    ast_nodes: &[$($node),*],
+                    description: $desc,
+                    syntax: &[$($syn),*],
+                    short: $short,
+                    symbols: &[$($sym),*],
+                    long_description: $long_desc,
+                    grammar: $grammar,
+                    category: $category,
+                },
+            }
+        }
+    };
+    // Form with grammar but no category
     (
         name: $name:expr,
         id: $id:expr,
@@ -382,11 +452,49 @@ macro_rules! forge_feature {
                     symbols: &[$($sym),*],
                     long_description: $long_desc,
                     grammar: $grammar,
+                    category: "",
                 },
             }
         }
     };
-    // Extended form with long_description (no grammar)
+    // Form with long_description + category (no grammar)
+    (
+        name: $name:expr,
+        id: $id:expr,
+        status: $status:ident,
+        depends: [$($dep:expr),* $(,)?],
+        enables: [$($en:expr),* $(,)?],
+        tokens: [$($tok:expr),* $(,)?],
+        ast_nodes: [$($node:expr),* $(,)?],
+        description: $desc:expr,
+        syntax: [$($syn:expr),* $(,)?],
+        short: $short:expr,
+        symbols: [$($sym:expr),* $(,)?],
+        long_description: $long_desc:expr,
+        category: $category:expr $(,)?
+    ) => {
+        inventory::submit! {
+            $crate::registry::FeatureEntry {
+                metadata: $crate::registry::FeatureMetadata {
+                    name: $name,
+                    id: $id,
+                    status: $crate::registry::FeatureStatus::$status,
+                    depends: &[$($dep),*],
+                    enables: &[$($en),*],
+                    tokens: &[$($tok),*],
+                    ast_nodes: &[$($node),*],
+                    description: $desc,
+                    syntax: &[$($syn),*],
+                    short: $short,
+                    symbols: &[$($sym),*],
+                    long_description: $long_desc,
+                    grammar: "",
+                    category: $category,
+                },
+            }
+        }
+    };
+    // Extended form with long_description only (no grammar, no category)
     (
         name: $name:expr,
         id: $id:expr,
@@ -417,6 +525,7 @@ macro_rules! forge_feature {
                     symbols: &[$($sym),*],
                     long_description: $long_desc,
                     grammar: "",
+                    category: "",
                 },
             }
         }
@@ -451,6 +560,7 @@ macro_rules! forge_feature {
                     symbols: &[$($sym),*],
                     long_description: "",
                     grammar: "",
+                    category: "",
                 },
             }
         }
@@ -482,6 +592,7 @@ macro_rules! forge_feature {
                     symbols: &[],
                     long_description: "",
                     grammar: "",
+                    category: "",
                 },
             }
         }

@@ -27,6 +27,7 @@ Type checking ensures that both branches of an `if`/`else` return the same type 
 is used as a value. If you write `let x = if cond { 1 } else { \"two\" }`, the compiler will \
 report a type mismatch.",
     grammar: "<if_stmt>     ::= \"if\" <expr> <block> [\"else\" (<if_stmt> | <block>)]",
+    category: "Control Flow",
 }
 
 pub mod parser;

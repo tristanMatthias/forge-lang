@@ -26,6 +26,7 @@ patterns for more complex destructuring scenarios.
 Compared to other languages, Forge tuples are closest to Python or Rust tuples. Use tuples for \
 quick grouping of a few values. When you find yourself using tuples with more than three or four \
 elements, consider switching to a named struct for clarity.",
+    category: "Collections",
 }
 
 pub mod types;

@@ -27,6 +27,7 @@ new config fields with defaults without breaking existing code.
 Config blocks replace the ad-hoc configuration approaches found in most frameworks (environment \
 variables, magic strings, untyped JSON). Everything is checked at compile time, and the schema \
 is defined in one place alongside the component template.",
+    category: "Components",
 }
 
 pub mod parser;

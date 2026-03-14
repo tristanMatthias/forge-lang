@@ -28,6 +28,7 @@ If you are familiar with Rust enums, Swift enums with associated values, or Hask
 Forge enums work the same way. If you are coming from TypeScript, think of them as discriminated \
 unions with compiler-enforced exhaustiveness.",
     grammar: "<enum_decl>   ::= \"enum\" <ident> \"{\" (<ident> [\"(\" <types> \")\"])* \"}\"",
+    category: "Collections",
 }
 
 pub mod parser;

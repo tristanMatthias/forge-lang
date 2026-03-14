@@ -34,4 +34,5 @@ interpolated values.
 Tagged templates originate in JavaScript (ES2015) and work similarly in Forge. The key \
 difference is that Forge's version is fully typed: the compiler knows the return type of \
 the tag function and type-checks the interpolated expressions.",
+    category: "Strings",
 }

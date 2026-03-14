@@ -35,4 +35,5 @@ every variant is handled, so adding a new variant to an enum immediately highlig
 expression that needs updating. This is the same exhaustiveness guarantee that makes Rust's and \
 Haskell's pattern matching so reliable.",
     grammar: "<match_expr>  ::= \"match\" <expr> \"{\" (<pattern> \"->\" <expr>)* \"}\"",
+    category: "Pattern Matching",
 }

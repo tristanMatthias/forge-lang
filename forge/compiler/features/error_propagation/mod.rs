@@ -29,6 +29,7 @@ safety guarantees — every error must be explicitly handled or propagated — w
 syntax lightweight. Compared to exceptions, it makes error paths visible in type signatures and \
 prevents the \"exception from nowhere\" problem.",
     grammar: "<propagate>   ::= <expr> \"?\"",
+    category: "Null Safety",
 }
 
 pub mod parser;
