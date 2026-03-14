@@ -477,75 +477,6 @@ impl<'ctx> Codegen<'ctx> {
                     Type::Void
                 }
             }
-            Expr::NullCoalesce { right, .. } => self.infer_type(right),
-            Expr::StructLit { name, fields, .. } => {
-                // If named struct, resolve from named_types
-                if let Some(ref type_name) = name {
-                    if let Some(ty) = self.named_types.get(type_name) {
-                        return ty.clone();
-                    }
-                    if let Some(ty) = self.type_checker.env.type_aliases.get(type_name) {
-                        return match ty {
-                            Type::Struct { fields: f, name: None } => Type::Struct {
-                                name: Some(type_name.clone()),
-                                fields: f.clone(),
-                            },
-                            other => other.clone(),
-                        };
-                    }
-                }
-                let field_types: Vec<(String, Type)> = fields
-                    .iter()
-                    .map(|(name, expr)| (name.clone(), self.infer_type(expr)))
-                    .collect();
-                Type::Struct {
-                    name: name.clone(),
-                    fields: field_types,
-                }
-            }
-            Expr::TupleLit { elements, .. } => {
-                Type::Tuple(elements.iter().map(|e| self.infer_type(e)).collect())
-            }
-            Expr::ListLit { elements, .. } => {
-                let elem_type = if let Some(first) = elements.first() {
-                    self.infer_type(first)
-                } else {
-                    Type::Unknown
-                };
-                Type::List(Box::new(elem_type))
-            }
-            Expr::MapLit { entries, .. } => {
-                let (key_type, val_type) = if let Some((k, v)) = entries.first() {
-                    (self.infer_type(k), self.infer_type(v))
-                } else {
-                    (Type::Unknown, Type::Unknown)
-                };
-                Type::Map(Box::new(key_type), Box::new(val_type))
-            }
-            Expr::OkExpr { value, .. } => {
-                Type::Result(Box::new(self.infer_type(value)), Box::new(Type::String))
-            }
-            Expr::ErrExpr { value, .. } => {
-                Type::Result(Box::new(Type::Unknown), Box::new(self.infer_type(value)))
-            }
-            Expr::Catch { expr, handler, .. } => {
-                let et = self.infer_type(expr);
-                match &et {
-                    Type::Result(ok, _) => {
-                        let ok_type = *ok.clone();
-                        // If Ok type is Unknown (e.g., generic with no info),
-                        // use the handler's last expression type instead
-                        if matches!(ok_type, Type::Unknown) {
-                            handler.statements.iter().rev().find_map(|s| {
-                                if let Statement::Expr(e) = s { Some(self.infer_type(e)) } else { None }
-                            }).unwrap_or(ok_type)
-                        } else {
-                            ok_type
-                        }
-                    }
-                    _ => et,
-                }
-            }
             Expr::Closure { params, body, .. } => {
                 let param_types: Vec<Type> = params
                     .iter()
@@ -568,39 +499,11 @@ impl<'ctx> Codegen<'ctx> {
                     return_type: Box::new(ret_type),
                 }
             }
-            Expr::ErrorPropagate { operand, .. } => {
-                let ot = self.infer_type(operand);
-                match &ot {
-                    Type::Result(ok, _) => *ok.clone(),
-                    _ => ot,
-                }
-            }
             Expr::Index { object, .. } => {
                 let obj_type = self.infer_type(object);
                 match &obj_type {
                     Type::List(inner) => *inner.clone(),
                     Type::String => Type::String,
-                    _ => Type::Unknown,
-                }
-            }
-            Expr::NullPropagate { object, field, .. } => {
-                let ot = self.infer_type(object);
-                let inner = match &ot {
-                    Type::Nullable(inner) => inner.as_ref(),
-                    _ => &ot,
-                };
-                match inner {
-                    Type::Struct { fields, .. } => {
-                        fields.iter().find(|(n, _)| n == field)
-                            .map(|(_, ty)| Type::Nullable(Box::new(ty.clone())))
-                            .unwrap_or(Type::Unknown)
-                    }
-                    Type::String => match field.as_str() {
-                        "length" | "parse_int" => Type::Nullable(Box::new(Type::Int)),
-                        "upper" | "lower" | "trim" | "replace" => Type::Nullable(Box::new(Type::String)),
-                        "contains" | "starts_with" | "ends_with" => Type::Nullable(Box::new(Type::Bool)),
-                        _ => Type::Unknown,
-                    },
                     _ => Type::Unknown,
                 }
             }

@@ -45,19 +45,19 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
                 if let TemplatePart::Expr(e) = part { collect_free_vars(e, free); }
             }
         }
-        Expr::StructLit { fields, .. } => {
-            for (_, e) in fields { collect_free_vars(e, free); }
-        }
-        Expr::ListLit { elements, .. } => {
-            for e in elements { collect_free_vars(e, free); }
-        }
-        Expr::TupleLit { elements, .. } => {
-            for e in elements { collect_free_vars(e, free); }
-        }
         Expr::Feature(fe) => {
             // Recurse into feature data expressions
             if let Some(data) = feature_data!(fe, ClosureData) {
                 collect_free_vars(&data.body, free);
+            }
+            if let Some(data) = feature_data!(fe, crate::features::structs::types::StructLitData) {
+                for (_, e) in &data.fields { collect_free_vars(e, free); }
+            }
+            if let Some(data) = feature_data!(fe, crate::features::collections::types::ListLitData) {
+                for e in &data.elements { collect_free_vars(e, free); }
+            }
+            if let Some(data) = feature_data!(fe, crate::features::tuples::types::TupleLitData) {
+                for e in &data.elements { collect_free_vars(e, free); }
             }
         }
         _ => {}

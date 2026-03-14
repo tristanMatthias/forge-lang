@@ -855,27 +855,7 @@ impl TypeChecker {
                 ty
             }
 
-            Expr::NullCoalesce { left, right, .. } => self.check_null_coalesce(left, right),
 
-            Expr::NullPropagate { object, field, .. } => self.check_null_propagate(object, field),
-
-            Expr::ErrorPropagate { operand, .. } => self.check_error_propagate(operand),
-
-            Expr::OkExpr { value, .. } => self.check_ok_expr(value),
-
-            Expr::ErrExpr { value, .. } => self.check_err_expr(value),
-
-            Expr::Catch { expr, handler, binding, .. } => self.check_catch(expr, binding, handler),
-
-            Expr::ListLit { elements, .. } => self.check_list_lit(elements),
-
-            Expr::MapLit { entries, .. } => self.check_map_lit(entries),
-
-            Expr::StructLit { name: struct_name, fields, span: lit_span } => {
-                self.check_struct_lit(struct_name, fields, *lit_span)
-            }
-
-            Expr::TupleLit { elements, .. } => self.check_tuple_lit(elements),
 
             Expr::Feature(fe) => self.check_feature_expr(fe),
         }
@@ -1269,7 +1249,18 @@ impl TypeChecker {
         let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
 
         for arg in args {
-            if let Expr::StructLit { fields: lit_fields, span: lit_span, .. } = &arg.value {
+            let struct_data = if let Expr::Feature(fe) = &arg.value {
+                if fe.kind == "StructLit" {
+                    crate::feature_data!(fe, crate::features::structs::types::StructLitData)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(data) = struct_data {
+                let lit_fields = &data.fields;
+                let lit_span = &data.span;
                 for (field_name, field_val) in lit_fields {
                     // Skip exact matches — field is valid
                     if type_fields.iter().any(|(n, _)| n == field_name) {

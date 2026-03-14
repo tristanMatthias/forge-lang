@@ -301,29 +301,6 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             index: Box::new(substitute_expr(index, ctx)),
             span: *span,
         },
-        Expr::ListLit { elements, span } => Expr::ListLit {
-            elements: elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
-            span: *span,
-        },
-        Expr::MapLit { entries, span } => Expr::MapLit {
-            entries: entries
-                .iter()
-                .map(|(k, v)| (substitute_expr(k, ctx), substitute_expr(v, ctx)))
-                .collect(),
-            span: *span,
-        },
-        Expr::StructLit { name, fields, span } => Expr::StructLit {
-            name: name.as_ref().map(|n| substitute_ident_string(n, ctx)),
-            fields: fields
-                .iter()
-                .map(|(k, v)| (k.clone(), substitute_expr(v, ctx)))
-                .collect(),
-            span: *span,
-        },
-        Expr::TupleLit { elements, span } => Expr::TupleLit {
-            elements: elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
-            span: *span,
-        },
         Expr::Closure { params, body, span } => Expr::Closure {
             params: params.iter().map(|p| substitute_param(p, ctx)).collect(),
             body: Box::new(substitute_expr(body, ctx)),
@@ -340,34 +317,6 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
                     span: a.span,
                 })
                 .collect(),
-            span: *span,
-        },
-        Expr::NullCoalesce { left, right, span } => Expr::NullCoalesce {
-            left: Box::new(substitute_expr(left, ctx)),
-            right: Box::new(substitute_expr(right, ctx)),
-            span: *span,
-        },
-        Expr::NullPropagate { object, field, span } => Expr::NullPropagate {
-            object: Box::new(substitute_expr(object, ctx)),
-            field: field.clone(),
-            span: *span,
-        },
-        Expr::ErrorPropagate { operand, span } => Expr::ErrorPropagate {
-            operand: Box::new(substitute_expr(operand, ctx)),
-            span: *span,
-        },
-        Expr::OkExpr { value, span } => Expr::OkExpr {
-            value: Box::new(substitute_expr(value, ctx)),
-            span: *span,
-        },
-        Expr::ErrExpr { value, span } => Expr::ErrExpr {
-            value: Box::new(substitute_expr(value, ctx)),
-            span: *span,
-        },
-        Expr::Catch { expr, binding, handler, span } => Expr::Catch {
-            expr: Box::new(substitute_expr(expr, ctx)),
-            binding: binding.clone(),
-            handler: substitute_block(handler, ctx),
             span: *span,
         },
         Expr::Feature(fe) => substitute_feature_expr(fe, ctx),
@@ -666,6 +615,54 @@ fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionC
                 let new_data = TableLitData {
                     columns: data.columns.clone(),
                     rows: data.rows.iter().map(|row| row.iter().map(|e| substitute_expr(e, ctx)).collect()).collect(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("collections", "ListLit") => {
+            use crate::features::collections::types::ListLitData;
+            if let Some(data) = feature_data!(fe, ListLitData) {
+                let new_data = ListLitData {
+                    elements: data.elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("collections", "MapLit") => {
+            use crate::features::collections::types::MapLitData;
+            if let Some(data) = feature_data!(fe, MapLitData) {
+                let new_data = MapLitData {
+                    entries: data.entries.iter().map(|(k, v)| (substitute_expr(k, ctx), substitute_expr(v, ctx))).collect(),
+                };
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(new_data),
+                    span: fe.span,
+                })
+            } else {
+                Expr::Feature(fe.clone())
+            }
+        }
+        ("tuples", "TupleLit") => {
+            use crate::features::tuples::types::TupleLitData;
+            if let Some(data) = feature_data!(fe, TupleLitData) {
+                let new_data = TupleLitData {
+                    elements: data.elements.iter().map(|e| substitute_expr(e, ctx)).collect(),
                 };
                 Expr::Feature(FeatureExpr {
                     feature_id: fe.feature_id,
@@ -1377,13 +1374,26 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
                 .collect(),
             span: block.span,
         }),
-        Expr::StructLit { name, fields, span } => Expr::StructLit {
-            name: name.clone(),
-            fields: fields.iter()
-                .map(|(k, v)| (k.clone(), substitute_syntax_args_expr(v, args, service_infos)))
-                .collect(),
-            span: *span,
-        },
+        Expr::Feature(ref fe) if fe.kind == "StructLit" => {
+            use crate::features::structs::types::StructLitData;
+            use crate::feature::FeatureExpr;
+            if let Some(data) = crate::feature_data!(fe, StructLitData) {
+                Expr::Feature(FeatureExpr {
+                    feature_id: fe.feature_id,
+                    kind: fe.kind,
+                    data: Box::new(StructLitData {
+                        name: data.name.clone(),
+                        fields: data.fields.iter()
+                            .map(|(k, v)| (k.clone(), substitute_syntax_args_expr(v, args, service_infos)))
+                            .collect(),
+                        span: data.span,
+                    }),
+                    span: fe.span,
+                })
+            } else {
+                expr.clone()
+            }
+        }
         Expr::TemplateLit { parts, span } => Expr::TemplateLit {
             parts: parts.iter()
                 .map(|p| match p {
@@ -1391,11 +1401,6 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
                     TemplatePart::Expr(e) => TemplatePart::Expr(Box::new(substitute_syntax_args_expr(e, args, service_infos))),
                 })
                 .collect(),
-            span: *span,
-        },
-        Expr::NullCoalesce { left, right, span } => Expr::NullCoalesce {
-            left: Box::new(substitute_syntax_args_expr(left, args, service_infos)),
-            right: Box::new(substitute_syntax_args_expr(right, args, service_infos)),
             span: *span,
         },
         _ => expr.clone(),

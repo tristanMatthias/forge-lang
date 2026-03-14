@@ -378,23 +378,6 @@ pub enum Expr {
 
     Ident(String, Span),
 
-    ListLit {
-        elements: Vec<Expr>,
-        span: Span,
-    },
-    MapLit {
-        entries: Vec<(Expr, Expr)>,
-        span: Span,
-    },
-    StructLit {
-        name: Option<String>,
-        fields: Vec<(String, Expr)>,
-        span: Span,
-    },
-    TupleLit {
-        elements: Vec<Expr>,
-        span: Span,
-    },
 
     Binary {
         left: Box<Expr>,
@@ -442,39 +425,6 @@ pub enum Expr {
     },
     Block(Block),
 
-    NullCoalesce {
-        left: Box<Expr>,
-        right: Box<Expr>,
-        span: Span,
-    },
-    NullPropagate {
-        object: Box<Expr>,
-        field: String,
-        span: Span,
-    },
-    ErrorPropagate {
-        operand: Box<Expr>,
-        span: Span,
-    },
-
-    // Result constructors
-    OkExpr {
-        value: Box<Expr>,
-        span: Span,
-    },
-    ErrExpr {
-        value: Box<Expr>,
-        span: Span,
-    },
-
-    // Catch expression
-    Catch {
-        expr: Box<Expr>,
-        binding: Option<String>,
-        handler: Block,
-        span: Span,
-    },
-
     // Feature-owned expression (extension point for modular features)
     Feature(FeatureExpr),
 }
@@ -489,10 +439,6 @@ impl Expr {
             | Expr::NullLit(s)
             | Expr::Ident(_, s) => *s,
             Expr::TemplateLit { span, .. }
-            | Expr::ListLit { span, .. }
-            | Expr::MapLit { span, .. }
-            | Expr::StructLit { span, .. }
-            | Expr::TupleLit { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Call { span, .. }
@@ -500,13 +446,7 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::Closure { span, .. }
             | Expr::If { span, .. }
-            | Expr::Match { span, .. }
-            | Expr::NullCoalesce { span, .. }
-            | Expr::NullPropagate { span, .. }
-            | Expr::ErrorPropagate { span, .. }
-            | Expr::OkExpr { span, .. }
-            | Expr::ErrExpr { span, .. }
-            | Expr::Catch { span, .. } => *span,
+            | Expr::Match { span, .. } => *span,
             Expr::Feature(fe) => fe.span,
             Expr::Block(block) => block.span,
         }

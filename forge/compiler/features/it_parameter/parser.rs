@@ -23,11 +23,6 @@ impl Parser {
             Expr::Index { object, index, .. } => {
                 Self::expr_contains_it(object) || Self::expr_contains_it(index)
             }
-            Expr::NullCoalesce { left, right, .. } => {
-                Self::expr_contains_it(left) || Self::expr_contains_it(right)
-            }
-            Expr::NullPropagate { object, .. } => Self::expr_contains_it(object),
-            Expr::ErrorPropagate { operand, .. } => Self::expr_contains_it(operand),
             Expr::TemplateLit { parts, .. } => {
                 parts.iter().any(|part| {
                     if let TemplatePart::Expr(e) = part {
@@ -36,12 +31,6 @@ impl Parser {
                         false
                     }
                 })
-            }
-            Expr::StructLit { fields, .. } => {
-                fields.iter().any(|(_, e)| Self::expr_contains_it(e))
-            }
-            Expr::ListLit { elements, .. } | Expr::TupleLit { elements, .. } => {
-                elements.iter().any(|e| Self::expr_contains_it(e))
             }
             Expr::If { condition, then_branch, else_branch, .. } => {
                 Self::expr_contains_it(condition)
@@ -83,6 +72,24 @@ impl Parser {
                     "pipe_operator" => {
                         if let Some(data) = feature_data!(fe, crate::features::pipe_operator::types::PipeData) {
                             return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);
+                        }
+                        false
+                    }
+                    "structs" => {
+                        if let Some(data) = feature_data!(fe, crate::features::structs::types::StructLitData) {
+                            return data.fields.iter().any(|(_, e)| Self::expr_contains_it(e));
+                        }
+                        false
+                    }
+                    "collections" => {
+                        if let Some(data) = feature_data!(fe, crate::features::collections::types::ListLitData) {
+                            return data.elements.iter().any(|e| Self::expr_contains_it(e));
+                        }
+                        false
+                    }
+                    "tuples" => {
+                        if let Some(data) = feature_data!(fe, crate::features::tuples::types::TupleLitData) {
+                            return data.elements.iter().any(|e| Self::expr_contains_it(e));
                         }
                         false
                     }

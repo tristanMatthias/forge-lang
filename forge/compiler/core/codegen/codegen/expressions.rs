@@ -108,17 +108,6 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             Expr::Closure { params, body, .. } => self.compile_closure(params, body),
-            Expr::NullCoalesce { left, right, .. } => self.compile_null_coalesce(left, right),
-            Expr::NullPropagate { object, field, .. } => self.compile_null_propagate(object, field),
-            Expr::ErrorPropagate { operand, .. } => self.compile_error_propagate(operand),
-            Expr::StructLit { fields, .. } => self.compile_struct_lit(fields),
-            Expr::ListLit { elements, .. } => self.compile_list_lit(elements),
-            Expr::MapLit { entries, .. } => self.compile_map_lit(entries),
-            Expr::TupleLit { elements, .. } => self.compile_tuple_lit(elements),
-            Expr::OkExpr { value, .. } => self.compile_result_ok(value),
-            Expr::ErrExpr { value, .. } => self.compile_result_err(value),
-            Expr::Catch { expr, binding, handler, .. } =>
-                self.compile_catch(expr, binding.as_deref(), handler),
 
             Expr::Feature(fe) => self.compile_feature_expr(fe),
         }

@@ -938,11 +938,16 @@ impl Parser {
                         self.skip_newlines();
                         let fields = self.parse_struct_fields()?;
                         self.expect(&TokenKind::RBrace)?;
-                        expr = Expr::StructLit {
-                            name: Some(type_name.clone()),
-                            fields,
-                            span: ident_span,
-                        };
+                        expr = feature_expr(
+                            "structs",
+                            "StructLit",
+                            Box::new(crate::features::structs::types::StructLitData {
+                                name: Some(type_name.clone()),
+                                fields,
+                                span: ident_span,
+                            }),
+                            ident_span,
+                        );
                         continue;
                     }
                 }
@@ -1274,10 +1279,12 @@ impl Parser {
         // Empty parens -> unit/void
         if self.check(&TokenKind::RParen) {
             self.advance();
-            return Some(Expr::TupleLit {
-                elements: vec![],
+            return Some(feature_expr(
+                "tuples",
+                "TupleLit",
+                Box::new(crate::features::tuples::types::TupleLitData { elements: vec![] }),
                 span,
-            });
+            ));
         }
 
         // Check for closure: (params) -> body
@@ -1295,10 +1302,12 @@ impl Parser {
             self.skip_newlines();
             let mut elements = vec![first];
             elements.extend(self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_expr())?);
-            Some(Expr::TupleLit {
-                elements,
+            Some(feature_expr(
+                "tuples",
+                "TupleLit",
+                Box::new(crate::features::tuples::types::TupleLitData { elements }),
                 span,
-            })
+            ))
         } else {
             self.expect(&TokenKind::RParen)?;
             Some(first) // parenthesized expression
@@ -1367,11 +1376,16 @@ impl Parser {
     pub(crate) fn parse_struct_literal(&mut self, span: Span) -> Option<Expr> {
         let fields = self.parse_struct_fields()?;
         self.expect(&TokenKind::RBrace)?;
-        Some(Expr::StructLit {
-            name: None,
-            fields,
+        Some(feature_expr(
+            "structs",
+            "StructLit",
+            Box::new(crate::features::structs::types::StructLitData {
+                name: None,
+                fields,
+                span,
+            }),
             span,
-        })
+        ))
     }
 
     /// Parse struct fields with shorthand support: `{ name, email, age: 30 }`
@@ -1423,20 +1437,24 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RBrace)?;
-        Some(Expr::MapLit {
-            entries,
+        Some(feature_expr(
+            "collections",
+            "MapLit",
+            Box::new(crate::features::collections::types::MapLitData { entries }),
             span,
-        })
+        ))
     }
 
     pub(crate) fn parse_list_expr(&mut self) -> Option<Expr> {
         let span = self.advance()?.span; // [
         self.skip_newlines();
         let elements = self.parse_delimited_until(&TokenKind::RBracket, |p| p.parse_expr())?;
-        Some(Expr::ListLit {
-            elements,
+        Some(feature_expr(
+            "collections",
+            "ListLit",
+            Box::new(crate::features::collections::types::ListLitData { elements }),
             span,
-        })
+        ))
     }
 
     // parse_if_expr: extracted to features/if_else
@@ -1820,13 +1838,9 @@ impl Parser {
             Expr::Ident(_, _) |
             Expr::Call { .. } |
             Expr::MemberAccess { .. } |
-            Expr::Index { .. } |
-            Expr::ListLit { .. } |
-            Expr::MapLit { .. } |
-            Expr::NullPropagate { .. } |
-            Expr::ErrorPropagate { .. } => true,
-            // Feature variants for NullPropagate and ErrorPropagate
-            Expr::Feature(fe) => matches!(fe.kind, "NullPropagate" | "ErrorPropagate"),
+            Expr::Index { .. } => true,
+            // Feature variants for NullPropagate, ErrorPropagate, ListLit, MapLit
+            Expr::Feature(fe) => matches!(fe.kind, "NullPropagate" | "ErrorPropagate" | "ListLit" | "MapLit"),
             _ => false,
         }
     }

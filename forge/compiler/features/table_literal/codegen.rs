@@ -1,7 +1,7 @@
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
 use crate::feature_codegen;
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, feature_expr};
 use crate::lexer::Span;
 use inkwell::values::BasicValueEnum;
 
@@ -32,11 +32,16 @@ impl<'ctx> Codegen<'ctx> {
                     .zip(row.iter())
                     .map(|(name, val)| (name.clone(), val.clone()))
                     .collect();
-                Expr::StructLit {
-                    name: None,
-                    fields,
-                    span: *span,
-                }
+                feature_expr(
+                    "structs",
+                    "StructLit",
+                    Box::new(crate::features::structs::types::StructLitData {
+                        name: None,
+                        fields,
+                        span: *span,
+                    }),
+                    *span,
+                )
             })
             .collect();
 
