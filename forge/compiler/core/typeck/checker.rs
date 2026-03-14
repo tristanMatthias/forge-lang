@@ -419,42 +419,23 @@ impl TypeChecker {
             Statement::Defer { body, .. } => {
                 self.check_defer_stmt(body);
             }
-            Statement::EnumDecl { .. } | Statement::TypeDecl { .. } => {
-                // Already handled in register_top_level
-            }
-            Statement::Use { .. }
+            Statement::EnumDecl { .. }
+            | Statement::TypeDecl { .. }
+            | Statement::Use { .. }
             | Statement::TraitDecl { .. }
             | Statement::ImplBlock { .. }
             | Statement::ExternFn { .. }
             | Statement::ComponentBlock(_)
-            | Statement::ComponentTemplateDef(_) => {
-                // Phase 2/3 constructs; extern fns are declarations only
-            }
-            Statement::SpecBlock { body, .. } => {
-                self.check_spec_block(body);
-            }
-            Statement::GivenBlock { body, .. } => {
-                self.check_given_block(body);
-            }
-            Statement::ThenBlock { body, .. } => {
-                self.check_then_block(body);
-            }
-            Statement::ThenShouldFail { body, .. } => {
-                self.check_then_should_fail(body);
-            }
-            Statement::ThenShouldFailWith { body, .. } => {
-                self.check_then_should_fail_with(body);
-            }
-            Statement::ThenWhere { table, body, .. } => {
-                self.check_then_where(table, body);
-            }
-            Statement::SkipBlock { .. } | Statement::TodoStmt { .. } => {
-                // No type checking needed
-            }
+            | Statement::ComponentTemplateDef(_) => {}
+            Statement::SpecBlock { body, .. } => self.check_spec_block(body),
+            Statement::GivenBlock { body, .. } => self.check_given_block(body),
+            Statement::ThenBlock { body, .. } => self.check_then_block(body),
+            Statement::ThenShouldFail { body, .. } => self.check_then_should_fail(body),
+            Statement::ThenShouldFailWith { body, .. } => self.check_then_should_fail_with(body),
+            Statement::ThenWhere { table, body, .. } => self.check_then_where(table, body),
+            Statement::SkipBlock { .. } | Statement::TodoStmt { .. } => {}
             Statement::Select { arms, .. } => self.check_select(arms),
-            Statement::Feature(fe) => {
-                self.check_feature_stmt(fe);
-            }
+            Statement::Feature(fe) => self.check_feature_stmt(fe),
         }
     }
 
@@ -477,55 +458,40 @@ impl TypeChecker {
 
     /// Dispatch a feature-owned expression to the appropriate feature's checker.
     pub(crate) fn check_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Type {
-        match fe.feature_id {
-            "spawn" => self.check_spawn_feature(fe),
-            "ranges" => self.check_range_feature(fe),
-            "is_keyword" => self.check_is_feature(fe),
-            "with_expression" => self.check_with_feature(fe),
-            "pipe_operator" => self.check_pipe_feature(fe),
-            "shell_shorthand" => self.check_dollar_exec_feature(fe),
-            "table_literal" => self.check_table_lit_feature(fe),
-            "closures" => self.check_closure_feature(fe),
-            "pattern_matching" => self.check_match_feature(fe),
-            "channels" => self.check_channel_feature(fe),
-            "if_else" => self.check_if_feature(fe),
-            "null_safety" => {
-                match fe.kind {
-                    "NullCoalesce" => self.check_null_coalesce_feature(fe),
-                    "NullPropagate" => self.check_null_propagate_feature(fe),
-                    "ForceUnwrap" => {
-                        use crate::features::null_safety::types::ForceUnwrapData;
-                        if let Some(data) = crate::feature_data!(fe, ForceUnwrapData) {
-                            let inner = self.check_expr(&data.operand);
-                            match inner {
-                                Type::Nullable(t) => *t,
-                                other => other,
-                            }
-                        } else {
-                            Type::Unknown
-                        }
+        match (fe.feature_id, fe.kind) {
+            ("spawn", _) => self.check_spawn_feature(fe),
+            ("ranges", _) => self.check_range_feature(fe),
+            ("is_keyword", _) => self.check_is_feature(fe),
+            ("with_expression", _) => self.check_with_feature(fe),
+            ("pipe_operator", _) => self.check_pipe_feature(fe),
+            ("shell_shorthand", _) => self.check_dollar_exec_feature(fe),
+            ("table_literal", _) => self.check_table_lit_feature(fe),
+            ("closures", _) => self.check_closure_feature(fe),
+            ("pattern_matching", _) => self.check_match_feature(fe),
+            ("channels", _) => self.check_channel_feature(fe),
+            ("if_else", _) => self.check_if_feature(fe),
+            ("null_safety", "NullCoalesce") => self.check_null_coalesce_feature(fe),
+            ("null_safety", "NullPropagate") => self.check_null_propagate_feature(fe),
+            ("null_safety", "ForceUnwrap") => {
+                use crate::features::null_safety::types::ForceUnwrapData;
+                if let Some(data) = crate::feature_data!(fe, ForceUnwrapData) {
+                    let inner = self.check_expr(&data.operand);
+                    match inner {
+                        Type::Nullable(t) => *t,
+                        other => other,
                     }
-                    _ => Type::Unknown,
+                } else {
+                    Type::Unknown
                 }
             }
-            "error_propagation" => {
-                match fe.kind {
-                    "ErrorPropagate" => self.check_error_propagate_feature(fe),
-                    "OkExpr" => self.check_ok_expr_feature(fe),
-                    "ErrExpr" => self.check_err_expr_feature(fe),
-                    "Catch" => self.check_catch_feature(fe),
-                    _ => Type::Unknown,
-                }
-            }
-            "structs" => self.check_struct_lit_feature(fe),
-            "tuples" => self.check_tuple_lit_feature(fe),
-            "collections" => {
-                match fe.kind {
-                    "ListLit" => self.check_list_lit_feature(fe),
-                    "MapLit" => self.check_map_lit_feature(fe),
-                    _ => Type::Unknown,
-                }
-            }
+            ("error_propagation", "ErrorPropagate") => self.check_error_propagate_feature(fe),
+            ("error_propagation", "OkExpr") => self.check_ok_expr_feature(fe),
+            ("error_propagation", "ErrExpr") => self.check_err_expr_feature(fe),
+            ("error_propagation", "Catch") => self.check_catch_feature(fe),
+            ("structs", _) => self.check_struct_lit_feature(fe),
+            ("tuples", _) => self.check_tuple_lit_feature(fe),
+            ("collections", "ListLit") => self.check_list_lit_feature(fe),
+            ("collections", "MapLit") => self.check_map_lit_feature(fe),
             _ => Type::Unknown,
         }
     }
@@ -540,10 +506,9 @@ impl TypeChecker {
         match expr {
             Expr::IntLit(_, _) => Type::Int,
             Expr::FloatLit(_, _) => Type::Float,
-            Expr::StringLit(_, _) => Type::String,
+            Expr::StringLit(_, _) | Expr::TemplateLit { .. } => Type::String,
             Expr::BoolLit(_, _) => Type::Bool,
             Expr::NullLit(_) => Type::Nullable(Box::new(Type::Unknown)),
-            Expr::TemplateLit { .. } => Type::String,
 
             Expr::Ident(name, span) => {
                 if let Some(info) = self.env.lookup_and_mark_used(name) {
@@ -917,12 +882,8 @@ impl TypeChecker {
 
             Expr::TupleLit { elements, .. } => self.check_tuple_lit(elements),
 
-            Expr::ChannelSend { channel, value, .. } => {
-                self.check_channel_send(channel, value)
-            }
-            Expr::ChannelReceive { channel, .. } => {
-                self.check_channel_receive(channel)
-            }
+            Expr::ChannelSend { channel, value, .. } => self.check_channel_send(channel, value),
+            Expr::ChannelReceive { channel, .. } => self.check_channel_receive(channel),
             Expr::SpawnBlock { body, .. } => self.check_spawn_block(body),
             Expr::DollarExec { parts, .. } => self.check_dollar_exec(parts),
             Expr::TaggedTemplate { tag, parts, type_param, span } => {
@@ -962,16 +923,11 @@ impl TypeChecker {
         }
         last_type
     }
-    // bind_destructure_pattern: extracted to features/
-    // bind_pattern: extracted to features/
 
     /// Public wrapper to infer the type of an expression (for forge why)
     pub fn infer_type(&mut self, expr: &Expr) -> Type {
         self.check_expr(expr)
     }
-
-    // extract_type_annotations, format_annotation_args, format_field_annotation_args,
-    // check_intersection_annotation_conflicts extracted to compiler/features/validation/checker.rs
 
     /// Check if a type expression ends with `as partial`
     pub(crate) fn is_partial_type_expr(&self, type_expr: &TypeExpr) -> bool {

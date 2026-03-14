@@ -1554,7 +1554,7 @@ impl<'ctx> Codegen<'ctx> {
             .into_pointer_value();
 
         // Loop: for i in 0..count, parse each object
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let loop_bb = self.context.append_basic_block(function, "parse_loop");
         let body_bb = self.context.append_basic_block(function, "parse_body");
         let done_bb = self.context.append_basic_block(function, "parse_done");

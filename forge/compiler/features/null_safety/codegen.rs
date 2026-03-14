@@ -74,7 +74,7 @@ impl<'ctx> Codegen<'ctx> {
                 let struct_val = left_val.into_struct_value();
                 let is_present = self.extract_tag_is_set(struct_val, "null")?;
 
-                let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let function = self.current_function();
                 let then_bb = self.context.append_basic_block(function, "coalesce_present");
                 let else_bb = self.context.append_basic_block(function, "coalesce_null");
                 let merge_bb = self.context.append_basic_block(function, "coalesce_merge");
@@ -151,7 +151,7 @@ impl<'ctx> Codegen<'ctx> {
         let struct_val = obj_val.into_struct_value();
         let is_present = self.extract_tag_is_set(struct_val, "np")?;
 
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let then_bb = self.context.append_basic_block(function, "np_present");
         let else_bb = self.context.append_basic_block(function, "np_null");
         let merge_bb = self.context.append_basic_block(function, "np_merge");

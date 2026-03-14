@@ -3,18 +3,10 @@ use super::*;
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_expr(&mut self, expr: &Expr) -> Option<BasicValueEnum<'ctx>> {
         match expr {
-            Expr::IntLit(n, _) => {
-                Some(self.context.i64_type().const_int(*n as u64, true).into())
-            }
-            Expr::FloatLit(f, _) => {
-                Some(self.context.f64_type().const_float(*f).into())
-            }
-            Expr::BoolLit(b, _) => {
-                Some(self.context.i8_type().const_int(*b as u64, false).into())
-            }
+            Expr::IntLit(n, _) => Some(self.context.i64_type().const_int(*n as u64, true).into()),
+            Expr::FloatLit(f, _) => Some(self.context.f64_type().const_float(*f).into()),
+            Expr::BoolLit(b, _) => Some(self.context.i8_type().const_int(*b as u64, false).into()),
             Expr::NullLit(_) => {
-                // Represent null as a nullable struct with tag=0
-                // Use the current function's return type to determine the inner type
                 let inner_ty = if let Some(Type::Nullable(inner)) = &self.current_fn_return_type {
                     self.type_to_llvm_basic(inner)
                 } else {
@@ -24,8 +16,7 @@ impl<'ctx> Codegen<'ctx> {
                     &[self.context.i8_type().into(), inner_ty.into()],
                     false,
                 );
-                let val = null_struct.const_zero();
-                Some(val.into())
+                Some(null_struct.const_zero().into())
             }
             Expr::StringLit(s, _) => Some(self.build_string_literal(s)),
             Expr::TemplateLit { parts, .. } => self.compile_template(parts),
@@ -87,28 +78,12 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
 
-            Expr::Call { callee, args, type_args, .. } => {
-                self.compile_call(callee, args, type_args)
-            }
-
-            Expr::MemberAccess { object, field, .. } => {
-                self.compile_member_access(object, field)
-            }
-
-            Expr::Index { object, index, .. } => {
-                self.compile_index_access(object, index)
-            }
-
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => self.compile_if(condition, then_branch, else_branch.as_ref()),
-
-            Expr::Match {
-                subject, arms, ..
-            } => self.compile_match(subject, arms),
+            Expr::Call { callee, args, type_args, .. } => self.compile_call(callee, args, type_args),
+            Expr::MemberAccess { object, field, .. } => self.compile_member_access(object, field),
+            Expr::Index { object, index, .. } => self.compile_index_access(object, index),
+            Expr::If { condition, then_branch, else_branch, .. } =>
+                self.compile_if(condition, then_branch, else_branch.as_ref()),
+            Expr::Match { subject, arms, .. } => self.compile_match(subject, arms),
 
             Expr::Block(block) => {
                 self.push_scope();
@@ -127,89 +102,39 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     }
                 }
-                // Capture type before popping scope (variables inside block are still visible)
-                if last_expr.is_some() {
-                    self.last_block_result_type = Some(self.infer_type(last_expr.unwrap()));
-                } else {
-                    self.last_block_result_type = None;
-                }
+                self.last_block_result_type = last_expr.map(|e| self.infer_type(e));
                 self.pop_scope_with_drops();
                 last
             }
 
-            Expr::Closure { params, body, .. } => {
-                self.compile_closure(params, body)
-            }
-
+            Expr::Closure { params, body, .. } => self.compile_closure(params, body),
             Expr::Pipe { left, right, .. } => self.compile_pipe(left, right),
+            Expr::NullCoalesce { left, right, .. } => self.compile_null_coalesce(left, right),
+            Expr::NullPropagate { object, field, .. } => self.compile_null_propagate(object, field),
+            Expr::ErrorPropagate { operand, .. } => self.compile_error_propagate(operand),
+            Expr::With { base, updates, .. } => self.compile_with(base, updates),
 
-            Expr::NullCoalesce { left, right, .. } => {
-                self.compile_null_coalesce(left, right)
-            }
-
-            Expr::NullPropagate { object, field, .. } => {
-                self.compile_null_propagate(object, field)
-            }
-
-            Expr::ErrorPropagate { operand, .. } => {
-                // Simplified: compile the operand and handle Result
-                self.compile_error_propagate(operand)
-            }
-
-            Expr::With { base, updates, .. } => {
-                self.compile_with(base, updates)
-            }
-
-            Expr::Range { start, end, inclusive, .. } => {
-                // Ranges are used in for loops, not as values typically
-                // Store start and end for the for loop to pick up
-                let _start_val = self.compile_expr(start)?;
-                let _end_val = self.compile_expr(end)?;
+            Expr::Range { start, end, .. } => {
+                self.compile_expr(start)?;
+                self.compile_expr(end)?;
                 None
             }
 
-            Expr::StructLit { fields, .. } => {
-                self.compile_struct_lit(fields)
-            }
-
-            Expr::ListLit { elements, .. } => {
-                self.compile_list_lit(elements)
-            }
-
-            Expr::MapLit { entries, .. } => {
-                self.compile_map_lit(entries)
-            }
-
-            Expr::TupleLit { elements, .. } => {
-                self.compile_tuple_lit(elements)
-            }
-
-            Expr::OkExpr { value, .. } => {
-                self.compile_result_ok(value)
-            }
-
-            Expr::ErrExpr { value, .. } => {
-                self.compile_result_err(value)
-            }
-
-            Expr::Catch { expr, binding, handler, .. } => {
-                self.compile_catch(expr, binding.as_deref(), handler)
-            }
+            Expr::StructLit { fields, .. } => self.compile_struct_lit(fields),
+            Expr::ListLit { elements, .. } => self.compile_list_lit(elements),
+            Expr::MapLit { entries, .. } => self.compile_map_lit(entries),
+            Expr::TupleLit { elements, .. } => self.compile_tuple_lit(elements),
+            Expr::OkExpr { value, .. } => self.compile_result_ok(value),
+            Expr::ErrExpr { value, .. } => self.compile_result_err(value),
+            Expr::Catch { expr, binding, handler, .. } =>
+                self.compile_catch(expr, binding.as_deref(), handler),
 
             Expr::ChannelSend { channel, value, .. } => {
-                // Channel is an int (channel ID), value needs to be stringified
                 let ch_val = self.compile_expr(channel)?;
-                let ch_id = if ch_val.is_int_value() {
-                    ch_val.into_int_value()
-                } else {
-                    return None;
-                };
-
-                // Stringify the value - convert to ForgeString, then to C ptr for extern fn
+                if !ch_val.is_int_value() { return None; }
+                let ch_id = ch_val.into_int_value();
                 let val_compiled = self.compile_expr(value)?;
                 let val_string = self.value_to_cstring_ptr(val_compiled, value);
-
-                // Call forge_channel_send(id, data_ptr)
                 self.call_runtime_expect(
                     "forge_channel_send", &[ch_id.into(), val_string.into()], "send",
                     "forge_channel_send not declared - did you `use @std.channel`?",
@@ -219,49 +144,34 @@ impl<'ctx> Codegen<'ctx> {
 
             Expr::ChannelReceive { channel, .. } => {
                 let ch_val = self.compile_expr(channel)?;
-                let ch_id = if ch_val.is_int_value() {
-                    ch_val.into_int_value()
-                } else {
-                    return None;
-                };
-
-                // Call forge_channel_receive(id) -> ptr (C string)
+                if !ch_val.is_int_value() { return None; }
                 let raw_ptr = self.call_runtime_expect(
-                    "forge_channel_receive", &[ch_id.into()], "recv",
+                    "forge_channel_receive", &[ch_val.into()], "recv",
                     "forge_channel_receive not declared - did you `use @std.channel`?",
                 )?;
-
-                // Convert ptr to ForgeString: strlen(ptr) + forge_string_new(ptr, len)
                 let len = self.call_runtime("strlen", &[raw_ptr.into()], "len")?;
-                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")?;
-                Some(forge_str)
+                self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")
             }
 
             Expr::SpawnBlock { body, .. } => {
-                // Capture variables from outer scope into globals so the spawn
-                // function (a separate LLVM function) can access them.
                 let cap_prefix = format!("__spawn_cap_{}", self.functions.len());
                 let captured = self.capture_scope_vars_to_globals(&cap_prefix);
 
-                // Create an anonymous function for the spawn body
                 let spawn_fn_name = format!("__spawn_{}", self.functions.len());
                 let fn_type = self.context.void_type().fn_type(&[], false);
                 let spawn_function = self.module.add_function(&spawn_fn_name, fn_type, None);
 
-                // Save current state
                 let saved_block = self.builder.get_insert_block();
                 let saved_deferred = std::mem::take(&mut self.deferred_stmts);
                 let saved_vars = std::mem::take(&mut self.variables);
                 let saved_scope_vars = std::mem::take(&mut self.scope_vars);
 
-                // Start fresh scope for spawn function
                 self.variables = vec![HashMap::new()];
                 self.scope_vars = vec![Vec::new()];
 
                 let entry = self.context.append_basic_block(spawn_function, "entry");
                 self.builder.position_at_end(entry);
 
-                // Load captured variables from globals into local allocas
                 for (name, global_name, ty) in &captured {
                     if let Some(global) = self.module.get_global(global_name) {
                         let llvm_ty = self.type_to_llvm_basic(ty);
@@ -276,67 +186,41 @@ impl<'ctx> Codegen<'ctx> {
                     self.compile_statement(stmt);
                 }
 
-                // Add return if no terminator
                 if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                     self.builder.build_return(None).unwrap();
                 }
 
-                // Restore state
                 self.variables = saved_vars;
                 self.scope_vars = saved_scope_vars;
                 self.deferred_stmts = saved_deferred;
-
-                // Restore position
                 if let Some(block) = saved_block {
                     self.builder.position_at_end(block);
                 }
 
-                // Call forge_spawn(fn_ptr)
                 let fn_ptr = spawn_function.as_global_value().as_pointer_value();
                 self.call_runtime_void("forge_spawn", &[fn_ptr.into()]);
                 None
             }
 
             Expr::DollarExec { parts, .. } => {
-                // Build the command string from template parts
                 let cmd_str = self.compile_template(parts)?;
-
-                // Extract ptr from ForgeString
                 let cmd_ptr = self.builder.build_extract_value(
                     cmd_str.into_struct_value(), 0, "cmd_ptr"
                 ).unwrap();
-
-                // Declare forge_process_exec if not already declared
                 let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
                 let exec_fn = self.module.get_function("forge_process_exec").unwrap_or_else(|| {
                     let ft = ptr_type.fn_type(&[ptr_type.into()], false);
                     self.module.add_function("forge_process_exec", ft, None)
                 });
-
-                // Call forge_process_exec(cmd) — returns raw ptr to stdout string
-                let result = self.builder.build_call(
-                    exec_fn, &[cmd_ptr.into()], "exec_result"
-                ).unwrap();
+                let result = self.builder.build_call(exec_fn, &[cmd_ptr.into()], "exec_result").unwrap();
                 let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
-
-                // Convert ptr to ForgeString
                 let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
-                let stdout_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "stdout_str")?;
-
-                Some(stdout_str)
+                self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "stdout_str")
             }
 
-            Expr::TaggedTemplate { tag, parts, .. } => {
-                self.compile_tagged_template(tag, parts)
-            }
-
-            Expr::Is { value, pattern, negated, .. } => {
-                self.compile_is(value, pattern, *negated)
-            }
-
-            Expr::TableLit { columns, rows, span } => {
-                self.compile_table_lit(columns, rows, span)
-            }
+            Expr::TaggedTemplate { tag, parts, .. } => self.compile_tagged_template(tag, parts),
+            Expr::Is { value, pattern, negated, .. } => self.compile_is(value, pattern, *negated),
+            Expr::TableLit { columns, rows, span } => self.compile_table_lit(columns, rows, span),
 
             Expr::Feature(fe) => self.compile_feature_expr(fe),
         }
@@ -344,51 +228,32 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Dispatch a feature-owned expression to the appropriate feature's codegen.
     pub(crate) fn compile_feature_expr(&mut self, fe: &crate::feature::FeatureExpr) -> Option<BasicValueEnum<'ctx>> {
-        match fe.feature_id {
-            "spawn" => self.compile_spawn_feature(fe),
-            "ranges" => self.compile_range_feature(fe),
-            "is_keyword" => self.compile_is_feature(fe),
-            "with_expression" => self.compile_with_feature(fe),
-            "pipe_operator" => self.compile_pipe_feature(fe),
-            "shell_shorthand" => self.compile_dollar_exec_feature(fe),
-            "table_literal" => self.compile_table_lit_feature(fe),
-            "closures" => self.compile_closure_feature(fe),
-            "pattern_matching" => self.compile_match_feature(fe),
-            "channels" => self.compile_channel_feature(fe),
-            "if_else" => self.compile_if_feature(fe),
-            "null_safety" => {
-                match fe.kind {
-                    "NullCoalesce" => self.compile_null_coalesce_feature(fe),
-                    "NullPropagate" => self.compile_null_propagate_feature(fe),
-                    "ForceUnwrap" => self.compile_force_unwrap_feature(fe),
-                    _ => None,
-                }
-            }
-            "error_propagation" => {
-                match fe.kind {
-                    "ErrorPropagate" => self.compile_error_propagate_feature(fe),
-                    "OkExpr" => self.compile_ok_expr_feature(fe),
-                    "ErrExpr" => self.compile_err_expr_feature(fe),
-                    "Catch" => self.compile_catch_feature(fe),
-                    _ => None,
-                }
-            }
-            "structs" => self.compile_struct_lit_feature(fe),
-            "tuples" => self.compile_tuple_lit_feature(fe),
-            "collections" => {
-                match fe.kind {
-                    "ListLit" => self.compile_list_lit_feature(fe),
-                    "MapLit" => self.compile_map_lit_feature(fe),
-                    _ => None,
-                }
-            }
+        match (fe.feature_id, fe.kind) {
+            ("spawn", _) => self.compile_spawn_feature(fe),
+            ("ranges", _) => self.compile_range_feature(fe),
+            ("is_keyword", _) => self.compile_is_feature(fe),
+            ("with_expression", _) => self.compile_with_feature(fe),
+            ("pipe_operator", _) => self.compile_pipe_feature(fe),
+            ("shell_shorthand", _) => self.compile_dollar_exec_feature(fe),
+            ("table_literal", _) => self.compile_table_lit_feature(fe),
+            ("closures", _) => self.compile_closure_feature(fe),
+            ("pattern_matching", _) => self.compile_match_feature(fe),
+            ("channels", _) => self.compile_channel_feature(fe),
+            ("if_else", _) => self.compile_if_feature(fe),
+            ("null_safety", "NullCoalesce") => self.compile_null_coalesce_feature(fe),
+            ("null_safety", "NullPropagate") => self.compile_null_propagate_feature(fe),
+            ("null_safety", "ForceUnwrap") => self.compile_force_unwrap_feature(fe),
+            ("error_propagation", "ErrorPropagate") => self.compile_error_propagate_feature(fe),
+            ("error_propagation", "OkExpr") => self.compile_ok_expr_feature(fe),
+            ("error_propagation", "ErrExpr") => self.compile_err_expr_feature(fe),
+            ("error_propagation", "Catch") => self.compile_catch_feature(fe),
+            ("structs", _) => self.compile_struct_lit_feature(fe),
+            ("tuples", _) => self.compile_tuple_lit_feature(fe),
+            ("collections", "ListLit") => self.compile_list_lit_feature(fe),
+            ("collections", "MapLit") => self.compile_map_lit_feature(fe),
             _ => None,
         }
     }
-
-    // compile_binary_op, widen_ints: features/operators/codegen.rs
-    // compile_call, compile_call_args*, coerce_value, compile_println,
-    // compile_print, compile_assert, compile_sleep: features/functions/codegen.rs
 
     pub(crate) fn resolve_runtime_type(&self, expr: &Expr, val: &BasicValueEnum<'ctx>) -> Type {
         let inferred = self.infer_type(expr);
@@ -512,36 +377,21 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn value_to_cstring_ptr(&mut self, val: BasicValueEnum<'ctx>, expr: &Expr) -> BasicValueEnum<'ctx> {
         let resolved = self.resolve_runtime_type(expr, &val);
-        match resolved {
-            Type::String => {
-                // Already a ForgeString, extract ptr for extern call
-                if val.is_struct_value() {
-                    self.builder.build_extract_value(val.into_struct_value(), 0, "str_ptr").unwrap().into()
-                } else {
-                    val
-                }
-            }
-            Type::Int => {
-                // Convert int to string first, then extract ptr
-                let str_val = self.call_runtime("forge_int_to_string", &[val.into()], "int_str").unwrap();
-                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
-            }
-            Type::Float => {
-                let str_val = self.call_runtime("forge_float_to_string", &[val.into()], "float_str").unwrap();
-                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
-            }
-            Type::Bool => {
-                let str_val = self.call_runtime("forge_bool_to_string", &[val.into()], "bool_str").unwrap();
-                self.builder.build_extract_value(str_val.into_struct_value(), 0, "str_ptr").unwrap().into()
-            }
-            _ => {
-                // For structs (ForgeString), extract ptr
-                if val.is_struct_value() {
-                    self.builder.build_extract_value(val.into_struct_value(), 0, "str_ptr").unwrap().into()
-                } else {
-                    val
-                }
-            }
+
+        // Convert non-string types to ForgeString first
+        let str_val = match resolved {
+            Type::Int => self.call_runtime("forge_int_to_string", &[val.into()], "int_str"),
+            Type::Float => self.call_runtime("forge_float_to_string", &[val.into()], "float_str"),
+            Type::Bool => self.call_runtime("forge_bool_to_string", &[val.into()], "bool_str"),
+            _ => None,
+        };
+
+        // Extract ptr from ForgeString (either converted or original)
+        let target = str_val.unwrap_or(val);
+        if target.is_struct_value() {
+            self.builder.build_extract_value(target.into_struct_value(), 0, "str_ptr").unwrap().into()
+        } else {
+            target
         }
     }
 }

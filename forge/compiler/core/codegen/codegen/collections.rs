@@ -164,85 +164,51 @@ impl<'ctx> Codegen<'ctx> {
                 "upper" => self.call_runtime("forge_string_upper", &[obj_val.into()], "upper"),
                 "lower" => self.call_runtime("forge_string_lower", &[obj_val.into()], "lower"),
                 "trim" => self.call_runtime("forge_string_trim", &[obj_val.into()], "trim"),
+                "parse_int" => self.call_runtime("forge_string_parse_int", &[obj_val.into()], "parse_int"),
+                "split" => self.compile_string_split(&obj_val, args),
                 "contains" => {
-                    let arg_val = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_contains", &[obj_val.into(), arg_val.into()], "contains")
-                }
-                "split" => {
-                    self.compile_string_split(&obj_val, args)
+                    let arg = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_contains", &[obj_val.into(), arg.into()], "contains")
                 }
                 "starts_with" => {
-                    let arg_val = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg_val.into()], "starts_with")
+                    let arg = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg.into()], "starts_with")
                 }
                 "ends_with" => {
-                    let arg_val = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_ends_with", &[obj_val.into(), arg_val.into()], "ends_with")
+                    let arg = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_ends_with", &[obj_val.into(), arg.into()], "ends_with")
                 }
                 "replace" => {
-                    let find_val = self.compile_expr(&args.get(0)?.value)?;
-                    let replace_val = self.compile_expr(&args.get(1)?.value)?;
-                    self.call_runtime("forge_string_replace", &[obj_val.into(), find_val.into(), replace_val.into()], "replace")
+                    let find = self.compile_expr(&args.get(0)?.value)?;
+                    let replace = self.compile_expr(&args.get(1)?.value)?;
+                    self.call_runtime("forge_string_replace", &[obj_val.into(), find.into(), replace.into()], "replace")
                 }
-                "parse_int" => self.call_runtime("forge_string_parse_int", &[obj_val.into()], "parse_int"),
                 "repeat" => {
-                    let count_val = self.compile_expr(&args.first()?.value)?;
-                    self.call_runtime("forge_string_repeat", &[obj_val.into(), count_val.into()], "repeat")
+                    let count = self.compile_expr(&args.first()?.value)?;
+                    self.call_runtime("forge_string_repeat", &[obj_val.into(), count.into()], "repeat")
                 }
                 _ => None,
             },
             Type::List(inner) => match method {
-                "push" => {
-                    self.compile_list_push(object, &obj_val, &obj_type, args)
-                }
-                "clone" => {
-                    Some(obj_val)
-                }
-                "filter" => {
-                    self.compile_list_filter(&obj_val, inner, args)
-                }
-                "map" => {
-                    self.compile_list_map(&obj_val, inner, args)
-                }
-                "sum" => {
-                    self.compile_list_sum(&obj_val, inner)
-                }
-                "find" => {
-                    self.compile_list_find(&obj_val, inner, args)
-                }
-                "any" => {
-                    self.compile_list_any(&obj_val, inner, args)
-                }
-                "all" => {
-                    self.compile_list_all(&obj_val, inner, args)
-                }
-                "enumerate" => {
-                    self.compile_list_enumerate(&obj_val, inner)
-                }
-                "join" => {
-                    self.compile_list_join(&obj_val, inner, args)
-                }
-                "reduce" => {
-                    self.compile_list_reduce(&obj_val, inner, args)
-                }
-                "sorted" => {
-                    self.compile_list_sorted(&obj_val, inner)
-                }
-                "each" => {
-                    self.compile_list_each(&obj_val, inner, args)
-                }
+                "push" => self.compile_list_push(object, &obj_val, &obj_type, args),
+                "clone" => Some(obj_val),
+                "filter" => self.compile_list_filter(&obj_val, inner, args),
+                "map" => self.compile_list_map(&obj_val, inner, args),
+                "sum" => self.compile_list_sum(&obj_val, inner),
+                "find" => self.compile_list_find(&obj_val, inner, args),
+                "any" => self.compile_list_any(&obj_val, inner, args),
+                "all" => self.compile_list_all(&obj_val, inner, args),
+                "enumerate" => self.compile_list_enumerate(&obj_val, inner),
+                "join" => self.compile_list_join(&obj_val, inner, args),
+                "reduce" => self.compile_list_reduce(&obj_val, inner, args),
+                "sorted" => self.compile_list_sorted(&obj_val, inner),
+                "each" => self.compile_list_each(&obj_val, inner, args),
                 _ => None,
             },
             Type::Map(key_type, val_type) => match method {
-                "has" => {
-                    self.compile_map_has(&obj_val, key_type, val_type, args)
-                }
-                "get" => {
-                    self.compile_map_get(&obj_val, key_type, val_type, args)
-                }
-                "keys" => {
-                    self.compile_map_keys(&obj_val, key_type, val_type)
-                }
+                "has" => self.compile_map_has(&obj_val, key_type, val_type, args),
+                "get" => self.compile_map_get(&obj_val, key_type, val_type, args),
+                "keys" => self.compile_map_keys(&obj_val, key_type, val_type),
                 _ => None,
             },
             _ => {
@@ -388,14 +354,6 @@ impl<'ctx> Codegen<'ctx> {
             _ => None,
         }
     }
-
-    // compile_string_split: extracted to compiler/features/strings/codegen.rs
-
-    // list/map method implementations extracted to compiler/features/collections/codegen.rs:
-    // compile_list_push, compile_list_filter, compile_list_map, compile_list_sum,
-    // compile_list_find, compile_list_any, compile_list_all, compile_list_enumerate,
-    // compile_list_join, compile_list_reduce, compile_list_sorted, compile_list_each,
-    // compile_map_has, compile_map_get, compile_map_keys, compile_key_eq
 
     /// Parse a raw JSON C-string pointer into a typed struct.
     /// Wraps the JSON object in `[...]` so forge_json_get_* can parse it at index 0.

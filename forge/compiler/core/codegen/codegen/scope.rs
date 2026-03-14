@@ -2,6 +2,11 @@ use super::*;
 use inkwell::basic_block::BasicBlock;
 
 impl<'ctx> Codegen<'ctx> {
+    /// Get the current function being compiled.
+    pub(crate) fn current_function(&self) -> inkwell::values::FunctionValue<'ctx> {
+        self.builder.get_insert_block().unwrap().get_parent().unwrap()
+    }
+
     pub(crate) fn push_scope(&mut self) {
         self.variables.push(HashMap::new());
         self.scope_vars.push(Vec::new());
@@ -159,8 +164,7 @@ impl<'ctx> Codegen<'ctx> {
         name: &str,
     ) -> PointerValue<'ctx> {
         let llvm_ty = self.type_to_llvm_basic(ty);
-        let current_block = self.builder.get_insert_block().unwrap();
-        let function = current_block.get_parent().unwrap();
+        let function = self.current_function();
         let entry = function.get_first_basic_block().unwrap();
 
         let tmp_builder = self.context.create_builder();
@@ -206,7 +210,7 @@ impl<'ctx> Codegen<'ctx> {
         &self,
         prefix: &str,
     ) -> (BasicBlock<'ctx>, BasicBlock<'ctx>, BasicBlock<'ctx>) {
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let loop_bb = self.context.append_basic_block(function, &format!("{}_loop", prefix));
         let body_bb = self.context.append_basic_block(function, &format!("{}_body", prefix));
         let end_bb = self.context.append_basic_block(function, &format!("{}_end", prefix));

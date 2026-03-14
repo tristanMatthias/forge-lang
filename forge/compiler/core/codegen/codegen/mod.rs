@@ -449,7 +449,7 @@ impl<'ctx> Codegen<'ctx> {
                 ExportedSymbol::Value { value, .. } => {
                     self.imported_globals.insert(
                         import.local_name.clone(),
-                        (import.mangled_name.clone(), self.infer_type_from_expr(value)),
+                        (import.mangled_name.clone(), self.infer_type(value)),
                     );
                 }
             }

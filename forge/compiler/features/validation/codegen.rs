@@ -1,5 +1,5 @@
-use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, IntValue, PointerValue};
+use inkwell::types::StructType;
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::IntPredicate;
 
@@ -53,7 +53,7 @@ impl<'ctx> Codegen<'ctx> {
             return self.build_validate_ok(initial_val, &target_type);
         }
 
-        let current_fn = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let current_fn = self.current_function();
 
         // ── Phase 1: @default — fill null nullable fields with defaults ──
         let mut struct_val = initial_val;
@@ -152,15 +152,7 @@ impl<'ctx> Codegen<'ctx> {
 
             // For partial types, skip validation if field is null
             let after_field_block = if is_partial && matches!(field_type, Type::Nullable(_)) {
-                let has_value = self.builder.build_extract_value(
-                    field_val.into_struct_value(), 0, "has_val"
-                ).unwrap();
-                let has_val_bool = self.builder.build_int_compare(
-                    IntPredicate::NE,
-                    has_value.into_int_value(),
-                    self.context.i8_type().const_zero(),
-                    "has_val_bool",
-                ).unwrap();
+                let has_val_bool = self.extract_tag_is_set(field_val.into_struct_value(), "has_val").unwrap();
 
                 let check_block = self.context.append_basic_block(current_fn, &format!("check_{}", field_name));
                 let skip_block = self.context.append_basic_block(current_fn, &format!("skip_{}", field_name));
@@ -174,9 +166,7 @@ impl<'ctx> Codegen<'ctx> {
 
             // Get the actual value to check (unwrap nullable for partial types)
             let check_val = if is_partial && matches!(field_type, Type::Nullable(_)) {
-                self.builder.build_extract_value(
-                    field_val.into_struct_value(), 1, "inner_val"
-                ).unwrap()
+                self.extract_tagged_payload(field_val.into_struct_value(), "inner").unwrap()
             } else {
                 field_val
             };
@@ -226,23 +216,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_conditional_branch(has_errors, err_block, ok_block).unwrap();
 
         // Build the Result type
-        let validation_error_type = Type::Struct {
-            name: Some("ValidationError".to_string()),
-            fields: vec![
-                ("fields".to_string(), Type::List(Box::new(Type::Struct {
-                    name: Some("FieldError".to_string()),
-                    fields: vec![
-                        ("field".to_string(), Type::String),
-                        ("rule".to_string(), Type::String),
-                        ("message".to_string(), Type::String),
-                    ],
-                }))),
-            ],
-        };
-        let result_type = Type::Result(
-            Box::new(target_type.clone()),
-            Box::new(validation_error_type),
-        );
+        let result_type = Self::validation_result_type(&target_type);
         let result_llvm_ty = self.type_to_llvm_basic(&result_type).into_struct_type();
 
         // OK path — return the transformed struct
@@ -319,15 +293,8 @@ impl<'ctx> Codegen<'ctx> {
             struct_val.into_struct_value(), field_idx as u32, "default_field"
         ).unwrap();
 
-        let has_value = self.builder.build_extract_value(
-            field_val.into_struct_value(), 0, "has_val"
-        ).unwrap();
-        let is_null = self.builder.build_int_compare(
-            IntPredicate::EQ,
-            has_value.into_int_value(),
-            self.context.i8_type().const_zero(),
-            "is_null",
-        ).unwrap();
+        let has_val = self.extract_tag_is_set(field_val.into_struct_value(), "default").unwrap();
+        let is_null = self.builder.build_not(has_val, "is_null").unwrap();
 
         let apply_block = self.context.append_basic_block(current_fn, "apply_default");
         let skip_block = self.context.append_basic_block(current_fn, "skip_default");
@@ -412,15 +379,7 @@ impl<'ctx> Codegen<'ctx> {
             let field_val = self.builder.build_extract_value(
                 struct_val.into_struct_value(), field_idx as u32, "tf_field"
             ).unwrap();
-            let has_value = self.builder.build_extract_value(
-                field_val.into_struct_value(), 0, "tf_has"
-            ).unwrap();
-            let has_val_bool = self.builder.build_int_compare(
-                IntPredicate::NE,
-                has_value.into_int_value(),
-                self.context.i8_type().const_zero(),
-                "tf_has_bool",
-            ).unwrap();
+            let has_val_bool = self.extract_tag_is_set(field_val.into_struct_value(), "tf").unwrap();
 
             let transform_block = self.context.append_basic_block(current_fn, "transform");
             let skip_block = self.context.append_basic_block(current_fn, "skip_transform");
@@ -429,9 +388,7 @@ impl<'ctx> Codegen<'ctx> {
             let pre_block = self.builder.get_insert_block().unwrap();
 
             self.builder.position_at_end(transform_block);
-            let inner_val = self.builder.build_extract_value(
-                field_val.into_struct_value(), 1, "tf_inner"
-            ).unwrap();
+            let inner_val = self.extract_tagged_payload(field_val.into_struct_value(), "tf").unwrap();
 
             // Bind `it` and compile transform expression
             self.push_scope();
@@ -528,8 +485,8 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         let check_result = match ann.name.as_str() {
-            "min" => self.compile_min_check(ann, field_val, field_type),
-            "max" => self.compile_max_check(ann, field_val, field_type),
+            "min" => self.compile_bound_check(ann, field_val, field_type, true),
+            "max" => self.compile_bound_check(ann, field_val, field_type, false),
             "validate" => self.compile_named_validator_check(ann, field_val, field_type),
             "pattern" => self.compile_validate_pattern_check(ann, field_val, field_type),
             _ => return, // @default, @transform already handled in earlier phases
@@ -557,30 +514,8 @@ impl<'ctx> Codegen<'ctx> {
         let rule_str = self.make_forge_string(&rule_name);
         let msg_str = self.make_forge_string(&error_message);
 
-        let mut error_val = field_error_type.get_undef();
-        error_val = self.builder.build_insert_value(error_val, field_str, 0, "fe_field")
-            .unwrap().into_struct_value();
-        error_val = self.builder.build_insert_value(error_val, rule_str, 1, "fe_rule")
-            .unwrap().into_struct_value();
-        error_val = self.builder.build_insert_value(error_val, msg_str, 2, "fe_msg")
-            .unwrap().into_struct_value();
-
-        // Store at errors_ptr[error_count]
-        let count = self.builder.build_load(
-            self.context.i64_type(), error_count_ptr, "cur_count"
-        ).unwrap().into_int_value();
-        let elem_ptr = unsafe {
-            self.builder.build_gep(
-                field_error_type, errors_ptr, &[count], "error_slot"
-            ).unwrap()
-        };
-        self.builder.build_store(elem_ptr, error_val).unwrap();
-
-        // Increment count
-        let new_count = self.builder.build_int_add(
-            count, self.context.i64_type().const_int(1, false), "inc_count"
-        ).unwrap();
-        self.builder.build_store(error_count_ptr, new_count).unwrap();
+        let error_val = self.build_field_error(field_error_type, field_str, rule_str, msg_str);
+        self.append_field_error(error_val, field_error_type, errors_ptr, error_count_ptr);
 
         self.builder.build_unconditional_branch(cont_block).unwrap();
         self.builder.position_at_end(cont_block);
@@ -646,14 +581,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         let struct_val = result_val.into_struct_value();
-        let tag = self.builder.build_extract_value(struct_val, 0, "closure_tag")
-            .unwrap();
-        let is_err = self.builder.build_int_compare(
-            IntPredicate::NE,
-            tag.into_int_value(),
-            self.context.i8_type().const_zero(),
-            "closure_is_err",
-        ).unwrap();
+        let is_err = self.extract_tag_is_set(struct_val, "closure").unwrap();
 
         let fail_block = self.context.append_basic_block(
             current_fn, &format!("fail_{}_closure", field_name)
@@ -683,15 +611,39 @@ impl<'ctx> Codegen<'ctx> {
         let field_str = self.make_forge_string(field_name);
         let rule_str = self.make_forge_string("validate");
 
+        let error_val = self.build_field_error(field_error_type, field_str, rule_str, err_msg);
+        self.append_field_error(error_val, field_error_type, errors_ptr, error_count_ptr);
+
+        self.builder.build_unconditional_branch(cont_block).unwrap();
+        self.builder.position_at_end(cont_block);
+    }
+
+    /// Build a FieldError struct value from field name, rule name, and message.
+    fn build_field_error(
+        &mut self,
+        field_error_type: StructType<'ctx>,
+        field_str: BasicValueEnum<'ctx>,
+        rule_str: BasicValueEnum<'ctx>,
+        msg_str: BasicValueEnum<'ctx>,
+    ) -> inkwell::values::StructValue<'ctx> {
         let mut error_val = field_error_type.get_undef();
         error_val = self.builder.build_insert_value(error_val, field_str, 0, "fe_field")
             .unwrap().into_struct_value();
         error_val = self.builder.build_insert_value(error_val, rule_str, 1, "fe_rule")
             .unwrap().into_struct_value();
-        error_val = self.builder.build_insert_value(error_val, err_msg, 2, "fe_msg")
+        error_val = self.builder.build_insert_value(error_val, msg_str, 2, "fe_msg")
             .unwrap().into_struct_value();
+        error_val
+    }
 
-        // Store at errors_ptr[error_count]
+    /// Store a FieldError at the current index in the errors array and increment the count.
+    fn append_field_error(
+        &mut self,
+        error_val: inkwell::values::StructValue<'ctx>,
+        field_error_type: StructType<'ctx>,
+        errors_ptr: PointerValue<'ctx>,
+        error_count_ptr: PointerValue<'ctx>,
+    ) {
         let count = self.builder.build_load(
             self.context.i64_type(), error_count_ptr, "cur_count"
         ).unwrap().into_int_value();
@@ -702,101 +654,61 @@ impl<'ctx> Codegen<'ctx> {
         };
         self.builder.build_store(elem_ptr, error_val).unwrap();
 
-        // Increment count
         let new_count = self.builder.build_int_add(
             count, self.context.i64_type().const_int(1, false), "inc_count"
         ).unwrap();
         self.builder.build_store(error_count_ptr, new_count).unwrap();
-
-        self.builder.build_unconditional_branch(cont_block).unwrap();
-        self.builder.position_at_end(cont_block);
     }
 
-    /// Check @min(n) — string length >= n or numeric value >= n
-    fn compile_min_check(
+    /// Check @min(n) or @max(n) — string length or numeric value bound check.
+    /// `is_min`: true for @min (>= check), false for @max (<= check).
+    fn compile_bound_check(
         &mut self,
         ann: &FieldAnnotation,
         field_val: BasicValueEnum<'ctx>,
         field_type: &Type,
+        is_min: bool,
     ) -> Option<(IntValue<'ctx>, String, String)> {
-        let min_val = match ann.args.first() {
+        let bound_val = match ann.args.first() {
             Some(AnnotationArg::Int(n)) => *n,
             _ => return None,
         };
+
+        let (int_pred, float_pred, rule, qualifier) = if is_min {
+            (IntPredicate::SGE, inkwell::FloatPredicate::OGE, "min", "at least")
+        } else {
+            (IntPredicate::SLE, inkwell::FloatPredicate::OLE, "max", "at most")
+        };
+        let check_label = format!("{}_ok", rule);
 
         match field_type {
             Type::String => {
                 let len = self.call_runtime("forge_string_length", &[field_val.into()], "str_len")?.into_int_value();
                 let ok = self.builder.build_int_compare(
-                    IntPredicate::SGE, len,
-                    self.context.i64_type().const_int(min_val as u64, false),
-                    "min_ok",
+                    int_pred, len,
+                    self.context.i64_type().const_int(bound_val as u64, false),
+                    &check_label,
                 ).unwrap();
-                Some((ok, "min".to_string(),
-                    format!("must be at least {} character{}", min_val, if min_val != 1 { "s" } else { "" })))
+                Some((ok, rule.to_string(),
+                    format!("must be {} {} character{}", qualifier, bound_val, if bound_val != 1 { "s" } else { "" })))
             }
             Type::Int => {
                 let ok = self.builder.build_int_compare(
-                    IntPredicate::SGE,
+                    int_pred,
                     field_val.into_int_value(),
-                    self.context.i64_type().const_int(min_val as u64, true),
-                    "min_ok",
+                    self.context.i64_type().const_int(bound_val as u64, true),
+                    &check_label,
                 ).unwrap();
-                Some((ok, "min".to_string(), format!("must be at least {}", min_val)))
+                Some((ok, rule.to_string(), format!("must be {} {}", qualifier, bound_val)))
             }
             Type::Float => {
                 let ok = self.builder.build_float_compare(
-                    inkwell::FloatPredicate::OGE,
+                    float_pred,
                     field_val.into_float_value(),
-                    self.context.f64_type().const_float(min_val as f64),
-                    "min_ok",
+                    self.context.f64_type().const_float(bound_val as f64),
+                    &check_label,
                 ).unwrap();
-                Some((ok, "min".to_string(), format!("must be at least {}", min_val)))
-            }
-            _ => None,
-        }
-    }
-
-    /// Check @max(n) — string length <= n or numeric value <= n
-    fn compile_max_check(
-        &mut self,
-        ann: &FieldAnnotation,
-        field_val: BasicValueEnum<'ctx>,
-        field_type: &Type,
-    ) -> Option<(IntValue<'ctx>, String, String)> {
-        let max_val = match ann.args.first() {
-            Some(AnnotationArg::Int(n)) => *n,
-            _ => return None,
-        };
-
-        match field_type {
-            Type::String => {
-                let len = self.call_runtime("forge_string_length", &[field_val.into()], "str_len")?.into_int_value();
-                let ok = self.builder.build_int_compare(
-                    IntPredicate::SLE, len,
-                    self.context.i64_type().const_int(max_val as u64, false),
-                    "max_ok",
-                ).unwrap();
-                Some((ok, "max".to_string(),
-                    format!("must be at most {} character{}", max_val, if max_val != 1 { "s" } else { "" })))
-            }
-            Type::Int => {
-                let ok = self.builder.build_int_compare(
-                    IntPredicate::SLE,
-                    field_val.into_int_value(),
-                    self.context.i64_type().const_int(max_val as u64, true),
-                    "max_ok",
-                ).unwrap();
-                Some((ok, "max".to_string(), format!("must be at most {}", max_val)))
-            }
-            Type::Float => {
-                let ok = self.builder.build_float_compare(
-                    inkwell::FloatPredicate::OLE,
-                    field_val.into_float_value(),
-                    self.context.f64_type().const_float(max_val as f64),
-                    "max_ok",
-                ).unwrap();
-                Some((ok, "max".to_string(), format!("must be at most {}", max_val)))
+                Some((ok, rule.to_string(), format!("must be {} {}", qualifier, bound_val)))
             }
             _ => None,
         }
@@ -903,12 +815,8 @@ impl<'ctx> Codegen<'ctx> {
         Some((ok, "pattern".to_string(), format!("must match pattern {}", pattern)))
     }
 
-    /// Build a Result::Ok wrapping the given struct value
-    fn build_validate_ok(
-        &mut self,
-        struct_val: BasicValueEnum<'ctx>,
-        target_type: &Type,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    /// Build the Result<TargetType, ValidationError> type for validation results.
+    fn validation_result_type(target_type: &Type) -> Type {
         let validation_error_type = Type::Struct {
             name: Some("ValidationError".to_string()),
             fields: vec![
@@ -922,10 +830,19 @@ impl<'ctx> Codegen<'ctx> {
                 }))),
             ],
         };
-        let result_type = Type::Result(
+        Type::Result(
             Box::new(target_type.clone()),
             Box::new(validation_error_type),
-        );
+        )
+    }
+
+    /// Build a Result::Ok wrapping the given struct value
+    fn build_validate_ok(
+        &mut self,
+        struct_val: BasicValueEnum<'ctx>,
+        target_type: &Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let result_type = Self::validation_result_type(target_type);
         let result_llvm_ty = self.type_to_llvm_basic(&result_type).into_struct_type();
 
         let alloca = self.builder.build_alloca(result_llvm_ty, "ok_result").unwrap();

@@ -1,5 +1,6 @@
-use inkwell::values::{BasicValueEnum, IntValue};
+use inkwell::values::{BasicValueEnum, IntValue, PointerValue};
 use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::basic_block::BasicBlock;
 use inkwell::IntPredicate;
 use inkwell::AddressSpace;
 
@@ -11,7 +12,127 @@ use crate::typeck::types::Type;
 
 use super::types::{ListLitData, MapLitData};
 
+/// Result of setting up a list iteration loop.
+/// Holds all the LLVM values needed for the method-specific body.
+struct ListIterSetup<'ctx> {
+    /// Pointer to the list's element data
+    #[allow(dead_code)]
+    data_ptr: PointerValue<'ctx>,
+    /// Length of the list
+    list_len: IntValue<'ctx>,
+    /// Alloca for the loop index counter
+    idx_alloca: PointerValue<'ctx>,
+    /// The current index value (loaded at the start of each iteration)
+    idx: IntValue<'ctx>,
+    /// The current element value (loaded at the start of each iteration)
+    elem_val: BasicValueEnum<'ctx>,
+    /// The loop condition check block (branch back here to continue looping)
+    loop_bb: BasicBlock<'ctx>,
+    /// The loop body block (positioned here after setup)
+    #[allow(dead_code)]
+    body_bb: BasicBlock<'ctx>,
+    /// The loop exit block (branch here to stop looping)
+    end_bb: BasicBlock<'ctx>,
+}
+
 impl<'ctx> Codegen<'ctx> {
+    /// Set up the common scaffolding for iterating over a list with an index.
+    ///
+    /// Creates idx_alloca, loop/body/end blocks, the index bounds check,
+    /// and loads the current element. Positions the builder at the body block
+    /// after the element load, ready for method-specific logic.
+    ///
+    /// After calling this, the caller should:
+    /// 1. Do method-specific work with `setup.elem_val`
+    /// 2. Increment the index: `self.increment_i64(setup.idx_alloca, 1)`
+    /// 3. Branch back to loop: `self.builder.build_unconditional_branch(setup.loop_bb)`
+    /// 4. Position at end: `self.builder.position_at_end(setup.end_bb)`
+    fn setup_list_iter(
+        &mut self,
+        list_val: &BasicValueEnum<'ctx>,
+        elem_type: &Type,
+        prefix: &str,
+    ) -> Option<ListIterSetup<'ctx>> {
+        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
+        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
+
+        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), &format!("{}_idx", prefix)).unwrap();
+        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+
+        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks(prefix);
+
+        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
+        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
+        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+
+        self.builder.position_at_end(body_bb);
+        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
+        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
+
+        Some(ListIterSetup {
+            data_ptr,
+            list_len,
+            idx_alloca,
+            idx,
+            elem_val,
+            loop_bb,
+            body_bb,
+            end_bb,
+        })
+    }
+
+    /// Complete a simple list iteration loop: increment index and branch back.
+    /// Call this after the method-specific body logic.
+    fn finish_list_iter(&self, setup: &ListIterSetup<'ctx>) {
+        self.increment_i64(setup.idx_alloca, 1);
+        self.builder.build_unconditional_branch(setup.loop_bb).unwrap();
+        self.builder.position_at_end(setup.end_bb);
+    }
+
+    /// Compile a predicate-based early-exit loop (used by any, all, find).
+    ///
+    /// Iterates over the list, evaluates the closure on each element.
+    /// When `match_on_true` is true, the `on_match` block is entered when
+    /// the predicate returns true (like `any` and `find`).
+    /// When `match_on_true` is false, the `on_match` block is entered when
+    /// the predicate returns false (like `all`).
+    ///
+    /// Returns (setup, on_match_bb, next_bb) with builder positioned at on_match_bb.
+    fn setup_predicate_iter(
+        &mut self,
+        list_val: &BasicValueEnum<'ctx>,
+        elem_type: &Type,
+        closure_arg: &CallArg,
+        prefix: &str,
+        match_label: &str,
+        match_on_true: bool,
+    ) -> Option<(ListIterSetup<'ctx>, BasicBlock<'ctx>, BasicBlock<'ctx>)> {
+        let setup = self.setup_list_iter(list_val, elem_type, prefix)?;
+
+        let function = self.current_function();
+        let on_match_bb = self.context.append_basic_block(function, match_label);
+        let next_bb = self.context.append_basic_block(function, &format!("{}_next", prefix));
+
+        let pred_result = self.compile_closure_inline(closure_arg, setup.elem_val, elem_type)?;
+        let pred_bool = self.to_i1(pred_result);
+
+        if match_on_true {
+            self.builder.build_conditional_branch(pred_bool, on_match_bb, next_bb).unwrap();
+        } else {
+            self.builder.build_conditional_branch(pred_bool, next_bb, on_match_bb).unwrap();
+        }
+
+        // Set up the next block: increment and loop back
+        self.builder.position_at_end(next_bb);
+        self.increment_i64(setup.idx_alloca, 1);
+        self.builder.build_unconditional_branch(setup.loop_bb).unwrap();
+
+        // Position at the match block for caller to add match-specific logic
+        self.builder.position_at_end(on_match_bb);
+
+        Some((setup, on_match_bb, next_bb))
+    }
+
     pub(crate) fn compile_list_lit(
         &mut self,
         elements: &[Expr],
@@ -289,10 +410,9 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
+        let (_, list_len) = self.extract_list_fields(list_val)?;
 
         let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         // Allocate result buffer (max size = list_len)
         let elem_size = elem_llvm_ty.size_of().unwrap();
@@ -300,48 +420,36 @@ impl<'ctx> Codegen<'ctx> {
         let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "filter_buf")?
             .into_pointer_value();
 
-        // Index and result count allocas
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "filter_idx").unwrap();
+        // Result count alloca
         let count_alloca = self.builder.build_alloca(self.context.i64_type(), "filter_count").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
         self.builder.build_store(count_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let loop_bb = self.context.append_basic_block(function, "filter_loop");
-        let body_bb = self.context.append_basic_block(function, "filter_body");
-        let store_bb = self.context.append_basic_block(function, "filter_store");
-        let next_bb = self.context.append_basic_block(function, "filter_next");
-        let end_bb = self.context.append_basic_block(function, "filter_end");
+        let (setup, _store_bb, _next_bb) = self.setup_predicate_iter(
+            list_val, elem_type, closure_arg, "filter", "filter_store", true,
+        )?;
 
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        let pred_result = self.compile_closure_inline(closure_arg, elem_val, elem_type)?;
-        let pred_bool = self.to_i1(pred_result);
-        self.builder.build_conditional_branch(pred_bool, store_bb, next_bb).unwrap();
-
-        // Store element
-        self.builder.position_at_end(store_bb);
+        // Store element (we're positioned at store_bb)
         let count = self.builder.build_load(self.context.i64_type(), count_alloca, "c").unwrap().into_int_value();
         let dest_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, result_ptr, &[count], "dp").unwrap() };
-        self.builder.build_store(dest_ptr, elem_val).unwrap();
+        self.builder.build_store(dest_ptr, setup.elem_val).unwrap();
         self.increment_i64(count_alloca, 1);
-        self.builder.build_unconditional_branch(next_bb).unwrap();
+        // Note: setup_predicate_iter already set up the next_bb with increment+loop-back.
+        // We need to rejoin the next_bb flow after storing. But the next_bb is already wired.
+        // We need to branch from store_bb to the increment logic.
+        // Actually, store_bb should branch to the next iteration, not to next_bb
+        // (which already has its own increment). Let's branch directly to increment+loop.
+        // The predicate iter's next_bb already increments and loops. We just need to go there
+        // after the store. But next_bb already has a terminator. We need a merge point.
 
-        // Next
-        self.builder.position_at_end(next_bb);
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        // Actually, let me reconsider - the setup_predicate_iter wired next_bb with
+        // increment + branch to loop. store_bb needs to also increment and branch to loop.
+        // This is slightly different from any/all/find where on_match branches to end.
+        // For filter, we need to go back to looping after the store.
+        self.increment_i64(setup.idx_alloca, 1);
+        self.builder.build_unconditional_branch(setup.loop_bb).unwrap();
 
         // End: build result list
-        self.builder.position_at_end(end_bb);
+        self.builder.position_at_end(setup.end_bb);
         let final_count = self.builder.build_load(self.context.i64_type(), count_alloca, "fc").unwrap();
         let result_list = self.build_list_struct(elem_type, result_ptr, final_count);
         Some(result_list.into())
@@ -355,13 +463,13 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
 
         // Infer the output element type from the closure body
         let out_type = self.infer_closure_return_type(closure_arg, elem_type);
         let out_llvm_ty = self.type_to_llvm_basic(&out_type);
+
+        // We need list_len before setup_list_iter to allocate the buffer
+        let (_, list_len) = self.extract_list_fields(list_val)?;
 
         // Allocate result buffer
         let out_size = out_llvm_ty.size_of().unwrap();
@@ -369,29 +477,14 @@ impl<'ctx> Codegen<'ctx> {
         let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "map_buf")?
             .into_pointer_value();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "map_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        let setup = self.setup_list_iter(list_val, elem_type, "map")?;
 
-        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("map");
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        let mapped = self.compile_closure_inline(closure_arg, elem_val, elem_type)?;
-        let dest_ptr = unsafe { self.builder.build_gep(out_llvm_ty, result_ptr, &[idx], "dp").unwrap() };
+        let mapped = self.compile_closure_inline(closure_arg, setup.elem_val, elem_type)?;
+        let dest_ptr = unsafe { self.builder.build_gep(out_llvm_ty, result_ptr, &[setup.idx], "dp").unwrap() };
         self.builder.build_store(dest_ptr, mapped).unwrap();
 
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        // End
-        self.builder.position_at_end(end_bb);
-        let result_list = self.build_list_struct(&out_type, result_ptr, list_len);
+        self.finish_list_iter(&setup);
+        let result_list = self.build_list_struct(&out_type, result_ptr, setup.list_len);
         Some(result_list.into())
     }
 
@@ -401,44 +494,26 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-
         let sum_alloca = self.builder.build_alloca(self.context.i64_type(), "sum").unwrap();
         self.builder.build_store(sum_alloca, self.context.i64_type().const_zero()).unwrap();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "sum_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
-
-        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("sum");
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
+        let setup = self.setup_list_iter(list_val, elem_type, "sum")?;
 
         let acc = self.builder.build_load(self.context.i64_type(), sum_alloca, "acc").unwrap().into_int_value();
-        let elem_i64 = if elem_val.is_int_value() {
-            let iv = elem_val.into_int_value();
+        let elem_i64 = if setup.elem_val.is_int_value() {
+            let iv = setup.elem_val.into_int_value();
             if iv.get_type().get_bit_width() < 64 {
                 self.builder.build_int_s_extend(iv, self.context.i64_type(), "ext").unwrap()
             } else {
                 iv
             }
         } else {
-            elem_val.into_int_value()
+            setup.elem_val.into_int_value()
         };
         let new_acc = self.builder.build_int_add(acc, elem_i64, "nacc").unwrap();
         self.builder.build_store(sum_alloca, new_acc).unwrap();
 
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
+        self.finish_list_iter(&setup);
         let result = self.builder.build_load(self.context.i64_type(), sum_alloca, "sum_result").unwrap();
         Some(result)
     }
@@ -451,53 +526,24 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let nullable_type = Type::Nullable(Box::new(elem_type.clone()));
         let nullable_llvm_ty = self.type_to_llvm_basic(&nullable_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
-        // Result alloca
+        // Result alloca (initialized to null/zero)
         let result_alloca = self.builder.build_alloca(nullable_llvm_ty, "find_result").unwrap();
         self.builder.build_store(result_alloca, nullable_llvm_ty.into_struct_type().const_zero()).unwrap();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "find_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        let (setup, _found_bb, _next_bb) = self.setup_predicate_iter(
+            list_val, elem_type, closure_arg, "find", "find_found", true,
+        )?;
 
-        let loop_bb = self.context.append_basic_block(function, "find_loop");
-        let body_bb = self.context.append_basic_block(function, "find_body");
-        let found_bb = self.context.append_basic_block(function, "find_found");
-        let next_bb = self.context.append_basic_block(function, "find_next");
-        let end_bb = self.context.append_basic_block(function, "find_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        let pred_result = self.compile_closure_inline(closure_arg, elem_val, elem_type)?;
-        let pred_bool = self.to_i1(pred_result);
-        self.builder.build_conditional_branch(pred_bool, found_bb, next_bb).unwrap();
-
-        // Found: store nullable with tag=1
-        self.builder.position_at_end(found_bb);
-        let wrapped = self.wrap_in_nullable(elem_val, &nullable_type);
+        // Found: store nullable with tag=1 and exit loop
+        let wrapped = self.wrap_in_nullable(setup.elem_val, &nullable_type);
         self.builder.build_store(result_alloca, wrapped).unwrap();
-        self.builder.build_unconditional_branch(end_bb).unwrap();
+        self.builder.build_unconditional_branch(setup.end_bb).unwrap();
 
-        // Next
-        self.builder.position_at_end(next_bb);
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
+        self.builder.position_at_end(setup.end_bb);
         let result = self.builder.build_load(nullable_llvm_ty, result_alloca, "find_val").unwrap();
         Some(result)
     }
@@ -510,47 +556,19 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         let result_alloca = self.builder.build_alloca(self.context.i8_type(), "any_result").unwrap();
         self.builder.build_store(result_alloca, self.context.i8_type().const_zero()).unwrap();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "any_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        let (setup, _found_bb, _next_bb) = self.setup_predicate_iter(
+            list_val, elem_type, closure_arg, "any", "any_found", true,
+        )?;
 
-        let loop_bb = self.context.append_basic_block(function, "any_loop");
-        let body_bb = self.context.append_basic_block(function, "any_body");
-        let found_bb = self.context.append_basic_block(function, "any_found");
-        let next_bb = self.context.append_basic_block(function, "any_next");
-        let end_bb = self.context.append_basic_block(function, "any_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        let pred_result = self.compile_closure_inline(closure_arg, elem_val, elem_type)?;
-        let pred_bool = self.to_i1(pred_result);
-        self.builder.build_conditional_branch(pred_bool, found_bb, next_bb).unwrap();
-
-        self.builder.position_at_end(found_bb);
+        // Found: set result to true and exit loop
         self.builder.build_store(result_alloca, self.context.i8_type().const_int(1, false)).unwrap();
-        self.builder.build_unconditional_branch(end_bb).unwrap();
+        self.builder.build_unconditional_branch(setup.end_bb).unwrap();
 
-        self.builder.position_at_end(next_bb);
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
+        self.builder.position_at_end(setup.end_bb);
         let result = self.builder.build_load(self.context.i8_type(), result_alloca, "any_val").unwrap();
         Some(result)
     }
@@ -563,47 +581,19 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         let result_alloca = self.builder.build_alloca(self.context.i8_type(), "all_result").unwrap();
         self.builder.build_store(result_alloca, self.context.i8_type().const_int(1, false)).unwrap();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "all_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        let (setup, _fail_bb, _next_bb) = self.setup_predicate_iter(
+            list_val, elem_type, closure_arg, "all", "all_fail", false,
+        )?;
 
-        let loop_bb = self.context.append_basic_block(function, "all_loop");
-        let body_bb = self.context.append_basic_block(function, "all_body");
-        let fail_bb = self.context.append_basic_block(function, "all_fail");
-        let next_bb = self.context.append_basic_block(function, "all_next");
-        let end_bb = self.context.append_basic_block(function, "all_end");
-
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        let pred_result = self.compile_closure_inline(closure_arg, elem_val, elem_type)?;
-        let pred_bool = self.to_i1(pred_result);
-        self.builder.build_conditional_branch(pred_bool, next_bb, fail_bb).unwrap();
-
-        self.builder.position_at_end(fail_bb);
+        // Fail: set result to false and exit loop
         self.builder.build_store(result_alloca, self.context.i8_type().const_zero()).unwrap();
-        self.builder.build_unconditional_branch(end_bb).unwrap();
+        self.builder.build_unconditional_branch(setup.end_bb).unwrap();
 
-        self.builder.position_at_end(next_bb);
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
+        self.builder.position_at_end(setup.end_bb);
         let result = self.builder.build_load(self.context.i8_type(), result_alloca, "all_val").unwrap();
         Some(result)
     }
@@ -614,11 +604,11 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
         elem_type: &Type,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let tuple_type = Type::Tuple(vec![Type::Int, elem_type.clone()]);
         let tuple_llvm_ty = self.type_to_llvm_basic(&tuple_type);
+
+        // We need list_len before setup to allocate buffer
+        let (_, list_len) = self.extract_list_fields(list_val)?;
 
         // Allocate result buffer
         let tuple_size = tuple_llvm_ty.size_of().unwrap();
@@ -626,33 +616,19 @@ impl<'ctx> Codegen<'ctx> {
         let result_ptr = self.call_runtime("forge_alloc", &[total.into()], "enum_buf")?
             .into_pointer_value();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "enum_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
-
-        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("enum");
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
+        let setup = self.setup_list_iter(list_val, elem_type, "enum")?;
 
         // Build tuple (idx, elem)
         let tuple_struct_ty = tuple_llvm_ty.into_struct_type();
         let mut tuple_val = tuple_struct_ty.get_undef();
-        tuple_val = self.builder.build_insert_value(tuple_val, idx, 0, "t0").unwrap().into_struct_value();
-        tuple_val = self.builder.build_insert_value(tuple_val, elem_val, 1, "t1").unwrap().into_struct_value();
+        tuple_val = self.builder.build_insert_value(tuple_val, setup.idx, 0, "t0").unwrap().into_struct_value();
+        tuple_val = self.builder.build_insert_value(tuple_val, setup.elem_val, 1, "t1").unwrap().into_struct_value();
 
-        let dest_ptr = unsafe { self.builder.build_gep(tuple_llvm_ty, result_ptr, &[idx], "dp").unwrap() };
+        let dest_ptr = unsafe { self.builder.build_gep(tuple_llvm_ty, result_ptr, &[setup.idx], "dp").unwrap() };
         self.builder.build_store(dest_ptr, tuple_val).unwrap();
 
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
-        let result_list = self.build_list_struct(&tuple_type, result_ptr, list_len);
+        self.finish_list_iter(&setup);
+        let result_list = self.build_list_struct(&tuple_type, result_ptr, setup.list_len);
         Some(result_list.into())
     }
 
@@ -667,7 +643,7 @@ impl<'ctx> Codegen<'ctx> {
         let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
         let string_llvm_ty = self.string_type();
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         // Result string alloca
         let result_alloca = self.builder.build_alloca(string_llvm_ty, "join_result").unwrap();
@@ -741,36 +717,18 @@ impl<'ctx> Codegen<'ctx> {
         if args.len() < 2 { return None; }
         let init_val = self.compile_expr(&args[0].value)?;
         let closure_arg = &args[1];
-
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
-
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
         let acc_type = self.infer_type(&args[0].value);
 
         let acc_alloca = self.builder.build_alloca(init_val.get_type(), "reduce_acc").unwrap();
         self.builder.build_store(acc_alloca, init_val).unwrap();
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "reduce_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        let setup = self.setup_list_iter(list_val, elem_type, "reduce")?;
 
-        let (loop_bb, body_bb, end_bb) = self.setup_loop_blocks("reduce");
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
         let acc_val = self.builder.build_load(init_val.get_type(), acc_alloca, "acc").unwrap();
-
-        let new_acc = self.compile_closure_inline_2(closure_arg, acc_val, &acc_type, elem_val, elem_type)?;
+        let new_acc = self.compile_closure_inline_2(closure_arg, acc_val, &acc_type, setup.elem_val, elem_type)?;
         self.builder.build_store(acc_alloca, new_acc).unwrap();
 
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-
-        self.builder.position_at_end(end_bb);
+        self.finish_list_iter(&setup);
         let result = self.builder.build_load(init_val.get_type(), acc_alloca, "reduce_val").unwrap();
         Some(result)
     }
@@ -816,43 +774,27 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
     ) -> Option<BasicValueEnum<'ctx>> {
         let closure_arg = args.first()?;
-        let (data_ptr, list_len) = self.extract_list_fields(list_val)?;
 
-        let elem_llvm_ty = self.type_to_llvm_basic(elem_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let setup = self.setup_list_iter(list_val, elem_type, "each")?;
 
-        let idx_alloca = self.builder.build_alloca(self.context.i64_type(), "each_idx").unwrap();
-        self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+        self.compile_closure_inline(closure_arg, setup.elem_val, elem_type);
 
-        let loop_bb = self.context.append_basic_block(function, "each_loop");
-        let body_bb = self.context.append_basic_block(function, "each_body");
+        // Create a next block for the increment logic
+        let function = self.current_function();
         let next_bb = self.context.append_basic_block(function, "each_next");
-        let end_bb = self.context.append_basic_block(function, "each_end");
 
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
-        self.builder.position_at_end(loop_bb);
-
-        let idx = self.builder.build_load(self.context.i64_type(), idx_alloca, "i").unwrap().into_int_value();
-        let cond = self.builder.build_int_compare(IntPredicate::SLT, idx, list_len, "cond").unwrap();
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
-
-        self.builder.position_at_end(body_bb);
-        let elem_ptr = unsafe { self.builder.build_gep(elem_llvm_ty, data_ptr, &[idx], "ep").unwrap() };
-        let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
-
-        self.compile_closure_inline(closure_arg, elem_val, elem_type);
-
-        // Ensure we have a terminator before building next branch
+        // Branch to next block if no terminator (closure may have added one)
         let current_bb = self.builder.get_insert_block().unwrap();
         if current_bb.get_terminator().is_none() {
             self.builder.build_unconditional_branch(next_bb).unwrap();
         }
 
+        // Increment and loop back from next_bb
         self.builder.position_at_end(next_bb);
-        self.increment_i64(idx_alloca, 1);
-        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        self.increment_i64(setup.idx_alloca, 1);
+        self.builder.build_unconditional_branch(setup.loop_bb).unwrap();
 
-        self.builder.position_at_end(end_bb);
+        self.builder.position_at_end(setup.end_bb);
         None // each returns void
     }
 
@@ -870,7 +812,7 @@ impl<'ctx> Codegen<'ctx> {
         let map_len = self.builder.build_extract_value(struct_val, 2, "len").ok()?.into_int_value();
 
         let key_llvm_ty = self.type_to_llvm_basic(key_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         let result_alloca = self.builder.build_alloca(self.context.i8_type(), "has_result").unwrap();
         self.builder.build_store(result_alloca, self.context.i8_type().const_zero()).unwrap();
@@ -929,7 +871,7 @@ impl<'ctx> Codegen<'ctx> {
         let val_llvm_ty = self.type_to_llvm_basic(val_type);
         let nullable_type = Type::Nullable(Box::new(val_type.clone()));
         let nullable_llvm_ty = self.type_to_llvm_basic(&nullable_type);
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         let result_alloca = self.builder.build_alloca(nullable_llvm_ty, "get_result").unwrap();
         self.builder.build_store(result_alloca, nullable_llvm_ty.into_struct_type().const_zero()).unwrap();

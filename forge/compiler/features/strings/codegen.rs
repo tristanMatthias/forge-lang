@@ -205,7 +205,7 @@ impl<'ctx> Codegen<'ctx> {
             "is_non_null",
         ).unwrap();
 
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let then_bb = self.context.append_basic_block(function, "nullable_has_val");
         let else_bb = self.context.append_basic_block(function, "nullable_is_null");
         let merge_bb = self.context.append_basic_block(function, "nullable_merge");

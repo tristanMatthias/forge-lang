@@ -21,7 +21,7 @@ impl<'ctx> Codegen<'ctx> {
     /// If no arm matches, loops back to retry.
     pub(crate) fn compile_select(&mut self, arms: &[SelectArm]) {
         // Polling approach: loop over arms, try_receive on each, execute first one that succeeds
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let select_loop = self.context.append_basic_block(function, "select_loop");
         let select_end = self.context.append_basic_block(function, "select_end");
 

@@ -27,7 +27,7 @@ impl<'ctx> Codegen<'ctx> {
         let subject_val = self.compile_expr(subject)?;
         let subject_type = self.infer_type(subject);
 
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let merge_bb = self.context.append_basic_block(function, "match_end");
 
         // For simplicity, implement match as a chain of if-else

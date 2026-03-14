@@ -1,3 +1,4 @@
+use inkwell::basic_block::BasicBlock;
 use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
@@ -10,6 +11,38 @@ use super::super::ranges::types::RangeData;
 use super::types::ForData;
 
 impl<'ctx> Codegen<'ctx> {
+    /// Compile the body of a loop with proper scope, break/continue support,
+    /// and terminator handling. Used by for-range, while, and loop constructs.
+    ///
+    /// - `body`: the block of statements to compile
+    /// - `end_bb`: the block to jump to on `break`
+    /// - `continue_bb`: the block to jump to on `continue` or after the body
+    /// - `break_alloca`: optional alloca for storing a `break <value>` result
+    fn compile_loop_body(
+        &mut self,
+        body: &Block,
+        end_bb: BasicBlock<'ctx>,
+        continue_bb: BasicBlock<'ctx>,
+        break_alloca: Option<inkwell::values::PointerValue<'ctx>>,
+    ) {
+        self.push_scope();
+        self.loop_exit_blocks.push((end_bb, break_alloca));
+        self.loop_continue_blocks.push(continue_bb);
+
+        for stmt in &body.statements {
+            self.compile_statement(stmt);
+        }
+
+        self.pop_scope();
+        self.loop_exit_blocks.pop();
+        self.loop_continue_blocks.pop();
+
+        // Branch to continue block if no terminator (break/continue already jumped)
+        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            self.builder.build_unconditional_branch(continue_bb).unwrap();
+        }
+    }
+
     /// Compile a for loop via the Feature dispatch system.
     pub(crate) fn compile_for_feature(&mut self, fe: &FeatureStmt) {
         feature_stmt!(self, fe, ForData, |data| self.compile_for(&data.pattern, &data.iterable, &data.body));
@@ -37,7 +70,7 @@ impl<'ctx> Codegen<'ctx> {
             let list_val = self.compile_expr(iterable).unwrap();
             let (data_ptr, list_len) = self.extract_list_fields(&list_val).unwrap();
 
-            let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let function = self.current_function();
 
             // Alloca for index
             let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__for_idx");
@@ -46,8 +79,6 @@ impl<'ctx> Codegen<'ctx> {
             let loop_bb = self.context.append_basic_block(function, "for_loop");
             let body_bb = self.context.append_basic_block(function, "for_body");
             let end_bb = self.context.append_basic_block(function, "for_end");
-
-            // Create an increment block for continue to jump to
             let inc_bb = self.context.append_basic_block(function, "for_inc");
 
             self.builder.build_unconditional_branch(loop_bb).unwrap();
@@ -64,11 +95,6 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
 
             self.builder.position_at_end(body_bb);
-            self.push_scope();
-
-            // Push exit and continue blocks for break/continue
-            self.loop_exit_blocks.push((end_bb, None));
-            self.loop_continue_blocks.push(inc_bb);
 
             // Load current element
             let actual_elem_type = elem_type.as_ref();
@@ -78,7 +104,11 @@ impl<'ctx> Codegen<'ctx> {
             };
             let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
 
-            // Bind pattern
+            // Bind pattern inside the loop body scope
+            self.push_scope();
+            self.loop_exit_blocks.push((end_bb, None));
+            self.loop_continue_blocks.push(inc_bb);
+
             match pattern {
                 Pattern::Ident(name, _) => {
                     let alloca = self.create_entry_block_alloca(actual_elem_type, name);
@@ -110,12 +140,11 @@ impl<'ctx> Codegen<'ctx> {
             for stmt in &body.statements {
                 self.compile_statement(stmt);
             }
-            self.pop_scope();
 
+            self.pop_scope();
             self.loop_exit_blocks.pop();
             self.loop_continue_blocks.pop();
 
-            // Branch to increment block if no terminator (break/continue already jumped)
             if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                 self.builder.build_unconditional_branch(inc_bb).unwrap();
             }
@@ -130,7 +159,7 @@ impl<'ctx> Codegen<'ctx> {
             // Treat int/channel as channel ID — iterate by calling forge_channel_receive
             // until we get the "\0CLOSED" sentinel
             let channel_id = self.compile_expr(iterable).unwrap();
-            let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let function = self.current_function();
 
             let loop_bb = self.context.append_basic_block(function, "chan_loop");
             let body_bb = self.context.append_basic_block(function, "chan_body");
@@ -149,7 +178,6 @@ impl<'ctx> Codegen<'ctx> {
                 .unwrap().into_pointer_value();
 
             // Check if result starts with \0 (sentinel for closed)
-            // Load first byte and check if it's 0 (the \0 in \0CLOSED)
             let first_byte = self.builder.build_load(self.context.i8_type(), raw_ptr, "first_byte")
                 .unwrap().into_int_value();
             let is_sentinel = self.builder.build_int_compare(
@@ -158,13 +186,15 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_conditional_branch(is_sentinel, end_bb, body_bb).unwrap();
 
             self.builder.position_at_end(body_bb);
-            self.push_scope();
 
             // Convert raw ptr to ForgeString for the loop variable
             let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
             let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "msg_str").unwrap();
 
-            // Bind the pattern
+            // Bind the pattern inside the scope
+            self.push_scope();
+            self.loop_exit_blocks.push((end_bb, None));
+
             match pattern {
                 Pattern::Ident(name, _) => {
                     if name != "_" {
@@ -176,13 +206,10 @@ impl<'ctx> Codegen<'ctx> {
                 _ => {}
             }
 
-            self.loop_exit_blocks.push((end_bb, None));
-
             for stmt in &body.statements {
                 self.compile_statement(stmt);
             }
             self.pop_scope();
-
             self.loop_exit_blocks.pop();
 
             if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
@@ -194,7 +221,7 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub(crate) fn compile_while(&mut self, condition: &Expr, body: &Block) {
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         let cond_bb = self.context.append_basic_block(function, "while_cond");
         let body_bb = self.context.append_basic_block(function, "while_body");
@@ -208,29 +235,13 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_conditional_branch(cond_bool, body_bb, end_bb).unwrap();
 
         self.builder.position_at_end(body_bb);
-        self.push_scope();
-
-        // Push exit and continue blocks for break/continue
-        self.loop_exit_blocks.push((end_bb, None));
-        self.loop_continue_blocks.push(cond_bb);
-
-        for stmt in &body.statements {
-            self.compile_statement(stmt);
-        }
-        self.pop_scope();
-
-        self.loop_exit_blocks.pop();
-        self.loop_continue_blocks.pop();
-
-        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-            self.builder.build_unconditional_branch(cond_bb).unwrap();
-        }
+        self.compile_loop_body(body, end_bb, cond_bb, None);
 
         self.builder.position_at_end(end_bb);
     }
 
     pub(crate) fn compile_loop(&mut self, body: &Block) {
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         let body_bb = self.context.append_basic_block(function, "loop_body");
         let end_bb = self.context.append_basic_block(function, "loop_end");
@@ -238,26 +249,12 @@ impl<'ctx> Codegen<'ctx> {
         // Create alloca for break value
         let break_alloca = self.builder.build_alloca(self.context.i64_type(), "loop_break_val").unwrap();
 
-        self.loop_exit_blocks.push((end_bb, Some(break_alloca)));
-        self.loop_continue_blocks.push(body_bb);
-
         self.builder.build_unconditional_branch(body_bb).unwrap();
         self.builder.position_at_end(body_bb);
 
-        self.push_scope();
-        for stmt in &body.statements {
-            self.compile_statement(stmt);
-        }
-        self.pop_scope();
-
-        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-            self.builder.build_unconditional_branch(body_bb).unwrap();
-        }
+        self.compile_loop_body(body, end_bb, body_bb, Some(break_alloca));
 
         self.builder.position_at_end(end_bb);
-
-        self.loop_exit_blocks.pop();
-        self.loop_continue_blocks.pop();
     }
 
     /// Compile a for loop over a range: `for i in start..end` or `for i in start..=end`.
@@ -272,7 +269,7 @@ impl<'ctx> Codegen<'ctx> {
         let start_val = self.compile_expr(start).unwrap();
         let end_val = self.compile_expr(end).unwrap();
 
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
         let loop_var_name = match pattern {
             Pattern::Ident(name, _) => name.clone(),
             _ => "__loop_var".to_string(),
@@ -307,11 +304,10 @@ impl<'ctx> Codegen<'ctx> {
 
         self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
 
+        // Compile body: define loop var inside the body scope, then use compile_loop_body pattern
         self.builder.position_at_end(body_bb);
         self.push_scope();
         self.define_var(loop_var_name.clone(), alloca, Type::Int);
-
-        // Push exit and continue blocks for break/continue
         self.loop_exit_blocks.push((end_bb, None));
         self.loop_continue_blocks.push(inc_bb);
 
@@ -319,11 +315,9 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_statement(stmt);
         }
         self.pop_scope();
-
         self.loop_exit_blocks.pop();
         self.loop_continue_blocks.pop();
 
-        // Branch to increment block if no terminator (break/continue already jumped)
         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
             self.builder.build_unconditional_branch(inc_bb).unwrap();
         }

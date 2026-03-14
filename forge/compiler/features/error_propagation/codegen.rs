@@ -53,7 +53,7 @@ impl<'ctx> Codegen<'ctx> {
             let struct_val = val.into_struct_value();
             let is_err = self.extract_tag_is_set(struct_val, "result")?;
 
-            let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let function = self.current_function();
             let ok_bb = self.context.append_basic_block(function, "result_ok");
             let err_bb = self.context.append_basic_block(function, "result_err");
 
@@ -151,7 +151,7 @@ impl<'ctx> Codegen<'ctx> {
             let struct_val = val.into_struct_value();
             let is_err = self.extract_tag_is_set(struct_val, "result")?;
 
-            let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let function = self.current_function();
 
             // Store the result struct to memory BEFORE branching, so both paths can access it
             let result_alloca = self.builder.build_alloca(struct_val.get_type(), "catch_result_tmp").unwrap();

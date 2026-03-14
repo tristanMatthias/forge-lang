@@ -28,7 +28,7 @@ impl<'ctx> Codegen<'ctx> {
             return None;
         };
 
-        let function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let function = self.current_function();
 
         let then_bb = self.context.append_basic_block(function, "then");
         let else_bb = self.context.append_basic_block(function, "else");

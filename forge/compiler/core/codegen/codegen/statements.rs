@@ -32,7 +32,7 @@ impl<'ctx> Codegen<'ctx> {
         } else if ret_ty == Type::Void {
             self.context.void_type().fn_type(&llvm_param_types, false)
         } else {
-            let ret_llvm = self.type_to_llvm(&ret_ty);
+            let ret_llvm = self.type_to_llvm_basic(&ret_ty);
             ret_llvm.fn_type(&llvm_param_types, false)
         };
 
@@ -110,32 +110,13 @@ impl<'ctx> Codegen<'ctx> {
                 self.compile_let_destructure(pattern, value);
             }
             Statement::Mut { name, value, type_ann, .. } => {
-                // Skip global mutables - they are created in compile_program first pass
                 if self.global_mutables.contains_key(name) {
                     return;
                 }
-                let val = self.compile_expr(value);
-                if let Some(val) = val {
-                    let ty = type_ann
-                        .as_ref()
-                        .map(|t| self.type_checker.resolve_type_expr(t))
-                        .unwrap_or_else(|| self.infer_type(value));
-                    let alloca = self.create_entry_block_alloca(&ty, name);
-                    self.builder.build_store(alloca, val).unwrap();
-                    self.define_var(name.clone(), alloca, ty);
-                }
+                self.compile_binding(name, value, type_ann.as_ref());
             }
             Statement::Const { name, value, type_ann, .. } => {
-                let val = self.compile_expr(value);
-                if let Some(val) = val {
-                    let ty = type_ann
-                        .as_ref()
-                        .map(|t| self.type_checker.resolve_type_expr(t))
-                        .unwrap_or_else(|| self.infer_type(value));
-                    let alloca = self.create_entry_block_alloca(&ty, name);
-                    self.builder.build_store(alloca, val).unwrap();
-                    self.define_var(name.clone(), alloca, ty);
-                }
+                self.compile_binding(name, value, type_ann.as_ref());
             }
             Statement::Assign { target, value, .. } => {
                 if let Expr::Ident(name, _) = target {
@@ -192,77 +173,36 @@ impl<'ctx> Codegen<'ctx> {
                     self.builder.build_return(None).unwrap();
                 }
             }
-            Statement::For {
-                pattern,
-                iterable,
-                body,
-                ..
-            } => {
-                self.compile_for(pattern, iterable, body);
-            }
-            Statement::While {
-                condition, body, ..
-            } => {
-                self.compile_while(condition, body);
-            }
-            Statement::Loop { body, .. } => {
-                self.compile_loop(body);
-            }
-            Statement::Break { value, .. } => {
-                self.compile_break(value.as_ref());
-            }
-            Statement::Continue { .. } => {
-                // Would need loop_continue_block tracking; simplified
-            }
-            Statement::EnumDecl { .. } | Statement::TypeDecl { .. } => {
-                // Type declarations handled at type-check time
-            }
-            Statement::Defer { body, .. } => {
-                // DEPRECATED: legacy path, use Statement::Feature with DeferData
-                self.deferred_stmts.push(body.clone());
-            }
-            Statement::Use { .. }
+            Statement::For { pattern, iterable, body, .. } => self.compile_for(pattern, iterable, body),
+            Statement::While { condition, body, .. } => self.compile_while(condition, body),
+            Statement::Loop { body, .. } => self.compile_loop(body),
+            Statement::Break { value, .. } => self.compile_break(value.as_ref()),
+            Statement::Continue { .. }
+            | Statement::EnumDecl { .. }
+            | Statement::TypeDecl { .. }
+            | Statement::Use { .. }
             | Statement::TraitDecl { .. }
-            | Statement::ImplBlock { .. } => {
-                // Traits and impls are compiled during the registration phase
+            | Statement::ImplBlock { .. }
+            | Statement::ComponentBlock(_)
+            | Statement::ComponentTemplateDef(_) => {}
+            Statement::Defer { body, .. } => {
+                self.deferred_stmts.push(body.clone());
             }
             Statement::ExternFn { name, params, return_type, .. } => {
                 self.compile_extern_fn(name, params, return_type.as_ref());
             }
-            Statement::ComponentBlock(_)
-            | Statement::ComponentTemplateDef(_) => {
-                // Component blocks already expanded before codegen
-            }
-            Statement::Select { arms, .. } => {
-                self.compile_select(arms);
-            }
-            Statement::SpecBlock { name, body, .. } => {
-                self.compile_spec_block(name, body);
-            }
-            Statement::GivenBlock { name, body, .. } => {
-                self.compile_given_block(name, body);
-            }
-            Statement::ThenBlock { name, body, span } => {
-                self.compile_then_block(name, body, span);
-            }
-            Statement::ThenShouldFail { name, body, span } => {
-                self.compile_then_should_fail(name, body, span);
-            }
-            Statement::ThenShouldFailWith { name, expected, body, span } => {
-                self.compile_then_should_fail_with(name, expected, body, span);
-            }
-            Statement::ThenWhere { name, table, body, span } => {
-                self.compile_then_where(name, table, body, span);
-            }
-            Statement::SkipBlock { name, .. } => {
-                self.compile_skip_block(name);
-            }
-            Statement::TodoStmt { name, .. } => {
-                self.compile_todo_stmt(name);
-            }
-            Statement::Feature(fe) => {
-                self.compile_feature_stmt(fe);
-            }
+            Statement::Select { arms, .. } => self.compile_select(arms),
+            Statement::SpecBlock { name, body, .. } => self.compile_spec_block(name, body),
+            Statement::GivenBlock { name, body, .. } => self.compile_given_block(name, body),
+            Statement::ThenBlock { name, body, span } => self.compile_then_block(name, body, span),
+            Statement::ThenShouldFail { name, body, span } => self.compile_then_should_fail(name, body, span),
+            Statement::ThenShouldFailWith { name, expected, body, span } =>
+                self.compile_then_should_fail_with(name, expected, body, span),
+            Statement::ThenWhere { name, table, body, span } =>
+                self.compile_then_where(name, table, body, span),
+            Statement::SkipBlock { name, .. } => self.compile_skip_block(name),
+            Statement::TodoStmt { name, .. } => self.compile_todo_stmt(name),
+            Statement::Feature(fe) => self.compile_feature_stmt(fe),
         }
     }
 
@@ -281,6 +221,19 @@ impl<'ctx> Codegen<'ctx> {
             "traits" => self.compile_traits_feature(fe),
             "imports" => self.compile_imports_feature(fe),
             _ => {} // Unknown feature — no-op (feature not yet migrated)
+        }
+    }
+
+    /// Compile a simple variable binding (mut or const) without the extra
+    /// type-refinement logic that `Let` needs.
+    fn compile_binding(&mut self, name: &str, value: &Expr, type_ann: Option<&TypeExpr>) {
+        if let Some(val) = self.compile_expr(value) {
+            let ty = type_ann
+                .map(|t| self.type_checker.resolve_type_expr(t))
+                .unwrap_or_else(|| self.infer_type(value));
+            let alloca = self.create_entry_block_alloca(&ty, name);
+            self.builder.build_store(alloca, val).unwrap();
+            self.define_var(name.to_string(), alloca, ty);
         }
     }
 
@@ -560,6 +513,4 @@ impl<'ctx> Codegen<'ctx> {
             _ => {}
         }
     }
-    // compile_with: extracted to features/
-    // compile_select: extracted to features/
 }
