@@ -13,3 +13,4 @@ mod lang
 mod docs
 mod package
 mod errors
+mod audit

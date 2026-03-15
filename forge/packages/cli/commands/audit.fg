@@ -1,0 +1,12 @@
+/// Audit command — audit dependencies for security issues.
+
+use shared.{forward}
+
+export command audit "Audit dependencies for security issues" {
+    arg package "Specific package to audit"
+    flag verify_log "Verify lockfile hashes against transparency log"
+
+    run {
+        forward("audit")
+    }
+}

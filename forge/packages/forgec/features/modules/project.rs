@@ -1,10 +1,14 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 pub struct ForgeToml {
     pub project: ProjectSection,
     pub build: Option<BuildSection>,
+    pub dependencies: Option<HashMap<String, String>>,
+    #[serde(rename = "dev-dependencies")]
+    pub dev_dependencies: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]

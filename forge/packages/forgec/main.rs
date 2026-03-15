@@ -236,6 +236,19 @@ enum Commands {
         version: Option<String>,
     },
 
+    /// Show dependency tree for the current project
+    Deps {
+        /// Show flat list instead of tree
+        #[arg(long)]
+        flat: bool,
+    },
+
+    /// Authenticate with the package registry
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+
     /// Run feature example tests
     Test {
         /// Feature name or path to test (e.g., "pipe_operator" or "features/pipe_operator/examples/")
@@ -268,6 +281,42 @@ enum Commands {
         /// Number of parallel test jobs (default: sequential)
         #[arg(short, long, default_value = "0")]
         jobs: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthAction {
+    /// Log in to the registry
+    Login {
+        /// Use an existing token instead of browser login
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Log out from the registry
+    Logout,
+    /// Show current authenticated user
+    Whoami,
+    /// Manage auth tokens
+    Token {
+        #[command(subcommand)]
+        action: TokenAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum TokenAction {
+    /// Create a new scoped publish token
+    Create {
+        /// Token scope (package name or org)
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// List active tokens
+    List,
+    /// Revoke a token by ID
+    Revoke {
+        /// Token ID to revoke
+        id: String,
     },
 }
 
@@ -871,10 +920,171 @@ fn run() {
             cmd_test(target, format, filter, fail_fast, no_color, verbose, quiet, jobs)
         }
 
+        Commands::Deps { flat } => cmd_deps(flat),
+
+        Commands::Auth { action } => match action {
+            AuthAction::Login { token } => cmd_auth_login(token),
+            AuthAction::Logout => cmd_auth_logout(),
+            AuthAction::Whoami => cmd_auth_whoami(),
+            AuthAction::Token { action: ta } => match ta {
+                TokenAction::Create { scope } => cmd_auth_token_create(scope),
+                TokenAction::List => cmd_auth_token_list(),
+                TokenAction::Revoke { id } => cmd_auth_token_revoke(id),
+            },
+        },
+
         Commands::Errors { command } => match command {
             ErrorCommands::Diff { before, after } => cmd_errors_diff(before, after),
         },
     }
+}
+
+fn cmd_deps(flat: bool) {
+    use forge::resolver;
+    use forge::features::modules::project::ForgeProject;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    let project = match ForgeProject::load(&cwd) {
+        Ok(p) => p,
+        Err(e) => {
+            fail(CompileError::CliError {
+                message: format!("cannot load project: {}", e),
+                help: Some("run this command from a directory containing forge.toml".to_string()),
+            });
+        }
+    };
+
+    let toml_path = cwd.join("forge.toml");
+    let toml_content = match std::fs::read_to_string(&toml_path) {
+        Ok(c) => c,
+        Err(e) => {
+            fail(CompileError::FileNotFound {
+                path: toml_path.display().to_string(),
+                detail: e.to_string(),
+            });
+        }
+    };
+    let toml_val: toml::Value = match toml::from_str(&toml_content) {
+        Ok(v) => v,
+        Err(e) => {
+            fail(CompileError::CliError {
+                message: format!("invalid forge.toml: {}", e),
+                help: None,
+            });
+        }
+    };
+
+    let direct_deps: std::collections::HashMap<String, String> = toml_val
+        .get("dependencies")
+        .and_then(|d| d.as_table())
+        .map(|t| {
+            t.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if direct_deps.is_empty() {
+        println!("{} v{}", project.config.project.name, project.config.project.version);
+        println!("  (no dependencies)");
+        return;
+    }
+
+    let packages_dir = cwd.join("packages");
+    let local_pkgs = resolver::scan_local_packages(&packages_dir);
+    let available = |name: &str| -> Option<resolver::PackageVersions> {
+        local_pkgs.get(name).cloned()
+    };
+
+    match resolver::resolve(&direct_deps, &available) {
+        Ok(graph) => {
+            if flat {
+                print!("{}", resolver::format_dep_flat(&graph));
+            } else {
+                print!(
+                    "{}",
+                    resolver::format_dep_tree(
+                        &graph,
+                        &project.config.project.name,
+                        &project.config.project.version,
+                    )
+                );
+            }
+        }
+        Err(e) => fail(e),
+    }
+}
+
+// ── Auth commands ─────────────────────────────────────────────────
+
+fn credentials_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".forge").join("auth").join("credentials.toml")
+}
+
+fn cmd_auth_login(token: Option<String>) {
+    let cred_path = credentials_path();
+    if let Some(parent) = cred_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let tok = match token {
+        Some(t) => t,
+        None => {
+            fail(CompileError::CliError {
+                message: "interactive login not yet implemented".to_string(),
+                help: Some("use --token <TOKEN> to authenticate with an API token".to_string()),
+            });
+        }
+    };
+    let content = format!("[auth]\ntoken = \"{}\"\n", tok);
+    match std::fs::write(&cred_path, &content) {
+        Ok(_) => eprintln!("logged in. credentials saved to {}", cred_path.display()),
+        Err(e) => fail(CompileError::CliError {
+            message: format!("failed to save credentials: {}", e),
+            help: None,
+        }),
+    }
+}
+
+fn cmd_auth_logout() {
+    let cred_path = credentials_path();
+    if cred_path.exists() {
+        std::fs::remove_file(&cred_path).ok();
+        eprintln!("logged out.");
+    } else {
+        eprintln!("not logged in.");
+    }
+}
+
+fn cmd_auth_whoami() {
+    let cred_path = credentials_path();
+    match std::fs::read_to_string(&cred_path) {
+        Ok(content) => {
+            if content.contains("token") {
+                println!("authenticated (token stored at {})", cred_path.display());
+            } else {
+                println!("not logged in.");
+            }
+        }
+        Err(_) => println!("not logged in."),
+    }
+}
+
+fn cmd_auth_token_create(scope: Option<String>) {
+    eprintln!("token creation requires registry connection (not yet implemented)");
+    if let Some(s) = scope {
+        eprintln!("  requested scope: {}", s);
+    }
+}
+
+fn cmd_auth_token_list() {
+    eprintln!("token listing requires registry connection (not yet implemented)");
+}
+
+fn cmd_auth_token_revoke(id: String) {
+    eprintln!("token revocation requires registry connection (not yet implemented)");
+    eprintln!("  token id: {}", id);
 }
 
 fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {

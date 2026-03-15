@@ -1,0 +1,45 @@
+/// Authentication commands — log in, manage tokens, check identity.
+
+use shared.{forward}
+
+export command auth "Authenticate with the Forge package registry" {
+    command login "Log in to the registry" {
+        run {
+            forward("auth login")
+        }
+    }
+
+    command logout "Log out from the registry" {
+        run {
+            forward("auth logout")
+        }
+    }
+
+    command token "Manage authentication tokens" {
+        command create "Create a new scoped publish token" {
+            option scope { "Token scope (package name or org)" }
+            run {
+                forward("auth token create")
+            }
+        }
+
+        command list "List active tokens" {
+            run {
+                forward("auth token list")
+            }
+        }
+
+        command revoke "Revoke a token" {
+            arg id "Token ID to revoke"
+            run {
+                forward("auth token revoke")
+            }
+        }
+    }
+
+    command whoami "Show current authenticated user" {
+        run {
+            forward("auth whoami")
+        }
+    }
+}

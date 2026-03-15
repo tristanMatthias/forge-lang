@@ -7,7 +7,7 @@ use @std.process
 mod shared
 mod commands
 
-use commands.{build, run, check, context, test, features, explain, version, why, lang, docs, package, errors}
+use commands.{build, run, check, context, test, features, explain, version, why, lang, docs, package, errors, audit}
 
 cli forge "The Forge programming language" {
     version "0.1.0"
@@ -25,4 +25,5 @@ cli forge "The Forge programming language" {
     docs
     package
     errors
+    audit
 }

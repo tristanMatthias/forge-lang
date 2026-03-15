@@ -22,3 +22,8 @@ pub mod typeck;
 
 pub mod features;
 pub mod semver;
+pub mod resolver;
+pub mod lockfile;
+pub mod capabilities;
+pub mod naming;
+pub mod transparency;
