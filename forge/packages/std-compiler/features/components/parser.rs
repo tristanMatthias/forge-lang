@@ -499,19 +499,20 @@ impl Parser {
                             annotations,
                             span: field_span,
                         });
+                    } else if self.check(&TokenKind::Newline) || self.check(&TokenKind::RBrace) {
+                        // Bare identifier with no value — treat as config with bool true
+                        // This supports scoped component imports: `use commands.{build}` + `build` in body
+                        config.push(ComponentConfig {
+                            key: field_name,
+                            value: Expr::BoolLit(true, field_span),
+                            span: field_span,
+                        });
                     } else {
                         // Config: name value
                         if let Some(value) = self.parse_expr() {
                             config.push(ComponentConfig {
                                 key: field_name,
                                 value,
-                                span: field_span,
-                            });
-                        } else {
-                            // Just an identifier with no value — treat as config with bool true
-                            config.push(ComponentConfig {
-                                key: field_name.clone(),
-                                value: Expr::BoolLit(true, field_span),
                                 span: field_span,
                             });
                         }
