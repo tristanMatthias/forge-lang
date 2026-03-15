@@ -758,6 +758,73 @@ impl Driver {
         Ok(())
     }
 
+    /// Parse and type-check a source file, returning the typed program AST.
+    /// Used by the `context` command to extract exports without codegen.
+    pub fn parse_and_check(&self, source_path: &Path) -> Result<Program, CompileError> {
+        let source = std::fs::read_to_string(source_path)
+            .map_err(|e| CompileError::FileNotFound {
+                path: source_path.display().to_string(),
+                detail: e.to_string(),
+            })?;
+
+        let filename = source_path.to_str().unwrap_or("<unknown>");
+
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize();
+
+        let mut diag_bag = DiagnosticBag::new();
+        for d in lexer.diagnostics() {
+            diag_bag.report(d.clone());
+        }
+
+        self.check_diagnostics(&diag_bag, &source, filename, "lexer")?;
+
+        // Pre-scan tokens for package uses
+        let package_uses = prescan_package_uses(&tokens);
+
+        // Load packages
+        let loaded_packages = self.load_packages_by_uses(&package_uses)?;
+
+        // Build component registry from package metas
+        let component_registry = build_component_registry(&loaded_packages);
+
+        // Parse with component registry
+        let mut parser = if component_registry.is_empty() {
+            Parser::new(tokens)
+        } else {
+            Parser::new_with_components(tokens, component_registry)
+        };
+        let mut program = parser.parse_program();
+
+        for d in parser.diagnostics() {
+            diag_bag.report(d.clone());
+        }
+
+        self.check_diagnostics(&diag_bag, &source, filename, "parser")?;
+
+        // Inject extern fns and exported fns from packages
+        inject_extern_fns(&mut program, &loaded_packages);
+        inject_exported_fns(&mut program, &loaded_packages);
+
+        // Expand all ComponentBlock nodes → regular AST + lifecycle stmts
+        let expansion = expand_components(&mut program, &loaded_packages);
+        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
+
+        // Type check
+        let mut checker = crate::typeck::TypeChecker::new();
+        checker.check_program(&program);
+        for d in &checker.diagnostics {
+            diag_bag.report(d.clone());
+        }
+
+        if diag_bag.has_errors() {
+            self.emit_diagnostics(&diag_bag, &source, filename);
+            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
+        }
+
+        Ok(program)
+    }
+
     pub fn explain_line(&self, source_path: &Path, target_line: u32) -> Result<(), CompileError> {
         let source = std::fs::read_to_string(source_path)
             .map_err(|e| CompileError::FileNotFound {

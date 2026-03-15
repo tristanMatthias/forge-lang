@@ -1,0 +1,7 @@
+extern fn forge_semver_valid(version: string) -> int
+extern fn forge_semver_parse(version: string) -> string
+extern fn forge_semver_compare(a: string, b: string) -> int
+extern fn forge_semver_satisfies(version: string, range: string) -> int
+extern fn forge_semver_max_satisfying(versions_json: string, range: string) -> string
+extern fn forge_semver_bump(version: string, level: string) -> string
+extern fn forge_semver_diff(a: string, b: string) -> string

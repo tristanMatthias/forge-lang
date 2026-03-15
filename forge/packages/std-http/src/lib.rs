@@ -2468,3 +2468,186 @@ fn get_crud_page_size(port: u16) -> Option<i64> {
     let guard = crud_paginate_map();
     guard.as_ref().unwrap().get(&port).copied()
 }
+
+// ---------------------------------------------------------------------------
+// HTTP Client
+// ---------------------------------------------------------------------------
+
+/// Helper: convert a C string pointer to a Rust String.
+fn http_c_str_to_string(ptr: *const c_char) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Helper: convert a Rust String to a leaked C string pointer.
+fn http_string_to_c(s: String) -> *const c_char {
+    CString::new(s)
+        .unwrap_or_else(|_| CString::new("").unwrap())
+        .into_raw() as *const c_char
+}
+
+/// Make an HTTP request.
+/// method: "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"
+/// url: the URL to request
+/// headers_json: JSON object of headers, e.g. {"Content-Type": "application/json"} or empty string for none
+/// body: request body string, or empty string for none
+/// Returns JSON: {"status": 200, "body": "...", "headers": {"content-type": "..."}}
+#[no_mangle]
+pub extern "C" fn forge_http_request(
+    method: *const c_char,
+    url: *const c_char,
+    headers_json: *const c_char,
+    body: *const c_char,
+) -> *const c_char {
+    let method_str = http_c_str_to_string(method);
+    let url_str = http_c_str_to_string(url);
+    let headers_str = http_c_str_to_string(headers_json);
+    let body_str = http_c_str_to_string(body);
+
+    let request = match method_str.to_uppercase().as_str() {
+        "GET" => ureq::get(&url_str),
+        "POST" => ureq::post(&url_str),
+        "PUT" => ureq::put(&url_str),
+        "DELETE" => ureq::delete(&url_str),
+        "PATCH" => ureq::patch(&url_str),
+        "HEAD" => ureq::head(&url_str),
+        _ => return http_string_to_c(format!(r#"{{"status":0,"body":"unsupported method: {}","headers":{{}}}}"#, method_str)),
+    };
+
+    // Add headers
+    let request = if !headers_str.is_empty() {
+        if let Ok(headers) = serde_json::from_str::<serde_json::Value>(&headers_str) {
+            if let Some(obj) = headers.as_object() {
+                let mut req = request;
+                for (key, value) in obj {
+                    if let Some(v) = value.as_str() {
+                        req = req.set(key, v);
+                    }
+                }
+                req
+            } else {
+                request
+            }
+        } else {
+            request
+        }
+    } else {
+        request
+    };
+
+    // Send request
+    let result = if !body_str.is_empty() {
+        request.send_string(&body_str)
+    } else {
+        request.call()
+    };
+
+    match result {
+        Ok(response) => {
+            let status = response.status();
+            // Collect response headers
+            let mut resp_headers = serde_json::Map::new();
+            for name in response.headers_names() {
+                if let Some(value) = response.header(&name) {
+                    resp_headers.insert(name, serde_json::Value::String(value.to_string()));
+                }
+            }
+            let body = response.into_string().unwrap_or_default();
+            let result = serde_json::json!({
+                "status": status,
+                "body": body,
+                "headers": resp_headers,
+            });
+            http_string_to_c(result.to_string())
+        }
+        Err(ureq::Error::Status(status, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            let result = serde_json::json!({
+                "status": status,
+                "body": body,
+                "headers": {},
+            });
+            http_string_to_c(result.to_string())
+        }
+        Err(e) => {
+            let result = serde_json::json!({
+                "status": 0,
+                "body": format!("request failed: {}", e),
+                "headers": {},
+            });
+            http_string_to_c(result.to_string())
+        }
+    }
+}
+
+/// Convenience: HTTP GET, returns just the body string.
+#[no_mangle]
+pub extern "C" fn forge_http_get(url: *const c_char) -> *const c_char {
+    let url_str = http_c_str_to_string(url);
+    match ureq::get(&url_str).call() {
+        Ok(response) => {
+            let body = response.into_string().unwrap_or_default();
+            http_string_to_c(body)
+        }
+        Err(ureq::Error::Status(_, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            http_string_to_c(body)
+        }
+        Err(e) => http_string_to_c(format!("error: {}", e)),
+    }
+}
+
+/// Convenience: HTTP POST with JSON body, returns response body string.
+#[no_mangle]
+pub extern "C" fn forge_http_post(
+    url: *const c_char,
+    body: *const c_char,
+) -> *const c_char {
+    let url_str = http_c_str_to_string(url);
+    let body_str = http_c_str_to_string(body);
+    match ureq::post(&url_str)
+        .set("Content-Type", "application/json")
+        .send_string(&body_str)
+    {
+        Ok(response) => {
+            let body = response.into_string().unwrap_or_default();
+            http_string_to_c(body)
+        }
+        Err(ureq::Error::Status(_, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            http_string_to_c(body)
+        }
+        Err(e) => http_string_to_c(format!("error: {}", e)),
+    }
+}
+
+/// Download a URL to a file. Returns "ok" on success, error message on failure.
+#[no_mangle]
+pub extern "C" fn forge_http_download(
+    url: *const c_char,
+    output_path: *const c_char,
+) -> *const c_char {
+    let url_str = http_c_str_to_string(url);
+    let path_str = http_c_str_to_string(output_path);
+
+    match ureq::get(&url_str).call() {
+        Ok(response) => {
+            let mut reader = response.into_reader();
+            match std::fs::File::create(&path_str) {
+                Ok(mut file) => {
+                    match std::io::copy(&mut reader, &mut file) {
+                        Ok(_) => http_string_to_c("ok".to_string()),
+                        Err(e) => http_string_to_c(format!("write error: {}", e)),
+                    }
+                }
+                Err(e) => http_string_to_c(format!("file create error: {}", e)),
+            }
+        }
+        Err(e) => http_string_to_c(format!("download error: {}", e)),
+    }
+}

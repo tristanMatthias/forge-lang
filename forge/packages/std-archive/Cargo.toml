@@ -1,0 +1,13 @@
+[package]
+name = "forge-archive"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_archive"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+tar = "0.4"
+flate2 = "1"
+serde_json = "1"

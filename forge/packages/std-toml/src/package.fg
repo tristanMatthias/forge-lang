@@ -1,0 +1,7 @@
+extern fn forge_toml_parse(toml_str: string) -> string
+extern fn forge_toml_stringify(json_str: string) -> string
+extern fn forge_toml_get(toml_str: string, key: string) -> string
+extern fn forge_toml_set(toml_str: string, key: string, json_value: string) -> string
+extern fn forge_toml_has(toml_str: string, key: string) -> int
+extern fn forge_toml_keys(toml_str: string, path: string) -> string
+extern fn forge_toml_remove(toml_str: string, key: string) -> string

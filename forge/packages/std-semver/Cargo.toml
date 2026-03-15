@@ -1,14 +1,12 @@
 [package]
-name = "forge-http"
+name = "forge-semver"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "forge_http"
+name = "forge_semver"
 crate-type = ["staticlib"]
 
 [dependencies]
-tiny_http = "0.12"
-tungstenite = "0.24"
-ureq = "2"
+semver = "1"
 serde_json = "1"

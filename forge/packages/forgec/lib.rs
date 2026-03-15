@@ -4,6 +4,7 @@
 /// Feature-specific code belongs in `features/`, not here.
 
 pub mod ansi;
+pub mod context;
 pub mod feature;
 
 pub mod codegen;

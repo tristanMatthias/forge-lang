@@ -1,0 +1,15 @@
+/// Context command — generate machine-readable API surface.
+
+use shared.{forward}
+
+export command context "Generate machine-readable API surface (context.fg)" {
+    arg file "Input source file or project directory"
+    option output {
+        short "o"
+        "Output file (default: stdout)"
+    }
+
+    run {
+        forward("context")
+    }
+}

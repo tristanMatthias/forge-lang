@@ -3,6 +3,7 @@
 mod build
 mod run
 mod check
+mod context
 mod test
 mod features
 mod explain

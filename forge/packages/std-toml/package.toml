@@ -1,0 +1,7 @@
+[package]
+name = "toml"
+namespace = "std"
+version = "0.1.0"
+
+[native]
+library = "forge_toml"

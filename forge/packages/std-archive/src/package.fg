@@ -1,0 +1,4 @@
+extern fn forge_archive_create(dir_path: string, output_path: string) -> string
+extern fn forge_archive_extract(archive_path: string, output_dir: string) -> string
+extern fn forge_archive_list(archive_path: string) -> string
+extern fn forge_archive_create_from_files(files_json: string, base_dir: string, output_path: string) -> string

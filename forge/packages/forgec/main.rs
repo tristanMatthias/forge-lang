@@ -213,6 +213,15 @@ enum Commands {
         site_dir: String,
     },
 
+    /// Generate machine-readable API surface (context.fg)
+    Context {
+        /// Input file or project directory
+        file: Option<PathBuf>,
+        /// Output file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Run feature example tests
     Test {
         /// Feature name or path to test (e.g., "pipe_operator" or "features/pipe_operator/examples/")
@@ -657,6 +666,66 @@ fn cmd_test(
     }
 }
 
+fn cmd_context(file: Option<PathBuf>, output: Option<PathBuf>) {
+    let (is_project, path) = resolve_target(file);
+
+    // For projects, find the main source file
+    let source_path = if is_project {
+        let main_fg = path.join("main.fg");
+        if main_fg.exists() {
+            main_fg
+        } else {
+            // Look for src/main.fg
+            let src_main = path.join("src").join("main.fg");
+            if src_main.exists() {
+                src_main
+            } else {
+                fail(CompileError::CliError {
+                    message: "could not find main.fg in project directory".to_string(),
+                    help: Some("create a main.fg or src/main.fg file".to_string()),
+                });
+            }
+        }
+    } else {
+        path.clone()
+    };
+
+    let driver = Driver::new();
+    let program = match driver.parse_and_check(&source_path) {
+        Ok(p) => p,
+        Err(e) => fail(e),
+    };
+
+    // Derive a package name from the file or directory
+    let package_name = if is_project {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+    } else {
+        source_path
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+    };
+
+    let context_str = forge::context::generate_context(&program, package_name.as_deref());
+
+    match output {
+        Some(out_path) => {
+            if let Err(e) = std::fs::write(&out_path, &context_str) {
+                fail(CompileError::CliError {
+                    message: format!("failed to write context file: {}", e),
+                    help: Some(format!("check write permissions for {}", out_path.display())),
+                });
+            }
+            eprintln!("context written to {}", out_path.display());
+        }
+        None => {
+            print!("{}", context_str);
+        }
+    }
+}
+
 fn cmd_package_new(name: String, component: bool) {
     if let Err(e) = scaffold_package(&name, component) {
         fail(CompileError::CliError {
@@ -717,6 +786,8 @@ fn run() {
         Commands::Package { command } => match command {
             PackageCommands::New { name, component } => cmd_package_new(name, component),
         },
+
+        Commands::Context { file, output } => cmd_context(file, output),
 
         Commands::Features { feature, graph } => cmd_features(feature, graph),
 

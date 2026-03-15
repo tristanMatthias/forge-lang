@@ -1,0 +1,7 @@
+[package]
+name = "semver"
+namespace = "std"
+version = "0.1.0"
+
+[native]
+library = "forge_semver"

@@ -1,0 +1,5 @@
+extern fn forge_crypto_sha256(data: string) -> string
+extern fn forge_crypto_sha256_file(path: string) -> string
+extern fn forge_crypto_sha256_dir(path: string) -> string
+extern fn forge_crypto_hmac_sha256(data: string, key: string) -> string
+extern fn forge_crypto_random_bytes(count: int) -> string

@@ -30,6 +30,10 @@ extern fn forge_http_crud_set_order(port: int, base_path: string, order_field: s
 extern fn forge_http_crud_set_auth(port: int, setting: string)
 extern fn forge_http_crud_set_paginate(port: int, page_size: int)
 extern fn forge_http_crud_nest(port: int, child: string, parent: string, path: string)
+extern fn forge_http_request(method: string, url: string, headers_json: string, body: string) -> string
+extern fn forge_http_get(url: string) -> string
+extern fn forge_http_post(url: string, body: string) -> string
+extern fn forge_http_download(url: string, output_path: string) -> string
 
 component server(name) {
     annotation route public()
