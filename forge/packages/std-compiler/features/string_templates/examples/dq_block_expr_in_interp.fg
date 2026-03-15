@@ -1,0 +1,10 @@
+/// # Block Expression Inside Double-Quote Interpolation
+///
+/// An if/else block inside `${...}` uses braces that must
+/// be tracked correctly by the lexer.
+///
+/// expect: result: 1 done
+
+fn main() {
+  println("result: ${if true { 1 } else { 2 }} done")
+}

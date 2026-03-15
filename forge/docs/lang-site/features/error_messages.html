@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Messages — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html" class="active">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Error Messages <span class="badge badge-stable">stable</span></h1><p>comprehensive error messages with codes and help text</p><p>Comprehensive tests for every compiler error code and diagnostic</p><div class="long-description"><p>Forge's error system produces structured, actionable error messages with unique error codes. Every error includes a code (like F0012 for type mismatch), a clear description of what went wrong, the source location with highlighted code, and a help message suggesting how to fix it.</p><p>Error codes are stable identifiers that can be looked up with `forge explain F0012`. Each code has a detailed explanation with examples of common causes and fixes. This makes errors searchable and referenceable in documentation and team communication.</p><p>The error system covers not just syntax and type errors but also common mistakes from other languages. Writing a semicolon, using `=&gt;` instead of `-&gt;`, or using `var`/`let` from JavaScript all produce targeted error messages that explain the Forge equivalent.</p><p>Every error path in the compiler goes through the structured error rendering system. There are no raw error strings or panics that produce unhelpful messages. This is enforced by design: the `CompileError` type has a fixed set of variants, each with a dedicated rendering function that includes help text.</p></div><h2>Examples</h2><h3>arg_type_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// # Argument type mismatch</span>
+<span class="comment">///</span>
+<span class="comment">/// Passing a string to a function that expects int</span>
+<span class="comment">/// should produce a type mismatch error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> square(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> x * x
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(square(<span class="str">&quot;hello&quot;</span>)))
+}</code></pre><h3>arrow_fn_habit.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using `=&gt;` instead of `-&gt;` (JS/TS habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge closures use `-&gt;`, not `=&gt;`. Catches JavaScript/TypeScript users.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> double = (x) <span class="op">=&gt;</span> x * <span class="num">2</span>
+}</code></pre><h3>chained_undefined.fg</h3><pre class="forge-code"><code><span class="comment">/// # Method call on undefined variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Calling methods on variables that don't exist.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = items.length()
+}</code></pre><h3>class_keyword_habit.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using `class` (OOP habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge doesn't have classes. Use traits and structs instead.</span>
+<span class="comment">///</span>
+
+class Animal {
+    <span class="kw">let</span> name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>)
+}</code></pre><h3>closure_bad_syntax.fg</h3><pre class="forge-code"><code><span class="comment">/// # Invalid closure syntax</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures use `-&gt;` not `=&gt;` for the body.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+    <span class="kw">let</span> doubled = nums.map((x) <span class="op">=&gt;</span> x * <span class="num">2</span>)
+}</code></pre><h3>colon_type_return.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using `:` instead of `-&gt;` for return type (Python/TS habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge uses `-&gt;` for return types, not `:`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>): <span class="builtin">int</span> {
+    <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(add(<span class="num">1</span>, <span class="num">2</span>))
+}</code></pre><h3>const_reassign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Reassigning a const binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Constants cannot be reassigned after declaration.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">const</span> MAX = <span class="num">100</span>
+    MAX = <span class="num">200</span>
+}</code></pre><h3>double_type_error.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple type errors in one file</span>
+<span class="comment">///</span>
+<span class="comment">/// The compiler should report all type errors, not just the first.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x: <span class="builtin">int</span> = <span class="str">&quot;hello&quot;</span>
+    <span class="kw">let</span> y: <span class="builtin">string</span> = <span class="num">42</span>
+}</code></pre><h3>duplicate_param.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wrong args: too many on a one-param function</span>
+<span class="comment">///</span>
+<span class="comment">/// Passing more arguments than a function accepts.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> square(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> x * x
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> r = square(<span class="num">2</span>, <span class="num">3</span>)
+}</code></pre><h3>duplicate_struct_field.fg</h3><pre class="forge-code"><code><span class="comment">/// # Duplicate struct field</span>
+<span class="comment">///</span>
+<span class="comment">/// Specifying the same field twice in a struct literal</span>
+<span class="comment">/// should produce an error.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> p = Point { x: <span class="num">1</span>, x: <span class="num">2</span>, y: <span class="num">3</span> }
+    <span class="builtin">println</span>(<span class="builtin">string</span>(p.x))
+}</code></pre><h3>empty_file.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty main function body</span>
+<span class="comment">///</span>
+<span class="comment">/// A function call on something that doesn't exist.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = nonexistent_function()
+}</code></pre><h3>error_unknown_annotation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: unknown annotation on field emits F0072</span>
+
+<span class="kw">type</span> Bad = {
+    name: <span class="builtin">string</span> @required,
+}
+
+<span class="kw">fn</span> main() {}</code></pre><h3>for_missing_in.fg</h3><pre class="forge-code"><code><span class="comment">/// # For loop missing `in` keyword</span>
+<span class="comment">///</span>
+<span class="comment">/// For loops require the `in` keyword between variable and iterable.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">for</span> i [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>] {
+        <span class="builtin">print</span>(i)
+    }
+}</code></pre><h3>generic_bad_syntax.fg</h3><pre class="forge-code"><code><span class="comment">/// # Trait not found</span>
+<span class="comment">///</span>
+<span class="comment">/// Using a trait that hasn't been defined.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = unknown_fn(<span class="num">42</span>)
+}</code></pre><h3>immutable_assign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Cannot assign to immutable variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Variables declared with `let` are immutable by default.</span>
+<span class="comment">/// Use `mut` if you need to reassign.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="num">10</span>
+    x = <span class="num">20</span>
+}</code></pre><h3>immutable_reassign_fn.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable reassignment in function scope</span>
+<span class="comment">///</span>
+<span class="comment">/// Immutability applies within all scopes, not just main.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> update() {
+    <span class="kw">let</span> name = <span class="str">&quot;alice&quot;</span>
+    name = <span class="str">&quot;bob&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+    update()
+}</code></pre><h3>impl_undefined_type.fg</h3><pre class="forge-code"><code><span class="comment">/// # Impl for undefined type</span>
+<span class="comment">///</span>
+<span class="comment">/// Implementing methods for a type that doesn't exist</span>
+<span class="comment">/// should produce an error.</span>
+<span class="comment">///</span>
+
+impl Nonexistent {
+    <span class="kw">fn</span> hello(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+        <span class="str">&quot;hello&quot;</span>
+    }
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>invalid_number.fg</h3><pre class="forge-code"><code><span class="comment">/// # Invalid numeric literal</span>
+<span class="comment">///</span>
+<span class="comment">/// Numeric literals must be well-formed integers or floats.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="num">3.14.15</span>
+}</code></pre><h3>keyword_as_variable.fg</h3><pre class="forge-code"><code><span class="comment">/// # Keyword used as variable name</span>
+<span class="comment">///</span>
+<span class="comment">/// Reserved keywords cannot be used as identifiers.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> <span class="kw">fn</span> = <span class="num">42</span>
+}</code></pre><h3>match_no_arms.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match with bad arm syntax</span>
+<span class="comment">///</span>
+<span class="comment">/// Match arms need `-&gt;` between pattern and body.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="num">5</span>
+    <span class="kw">match</span> x {
+        <span class="num">5</span> : <span class="builtin">print</span>(<span class="str">&quot;five&quot;</span>)
+    }
+}</code></pre><h3>missing_comma_args.fg</h3><pre class="forge-code"><code><span class="comment">/// # Extra argument to built-in</span>
+<span class="comment">///</span>
+<span class="comment">/// Calling a two-param function with three args.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = add(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>)
+}</code></pre><h3>missing_trait_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # Missing required trait method</span>
+<span class="comment">///</span>
+<span class="comment">/// Implementing a trait without providing all required methods</span>
+<span class="comment">/// should produce an error.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+
+<span class="kw">trait</span> Describable {
+    <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+    <span class="kw">fn</span> summary(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+}
+
+impl Describable <span class="kw">for</span> Point {
+    <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+        <span class="str">&quot;a point&quot;</span>
+    }
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> p = Point { x: <span class="num">1</span>, y: <span class="num">2</span> }
+    <span class="builtin">println</span>(p.describe())
+}</code></pre><h3>multiple_syntax_errors.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple syntax errors in one file</span>
+<span class="comment">///</span>
+<span class="comment">/// The compiler should report all errors, not just stop at the first.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x =
+    <span class="kw">let</span> y =
+}</code></pre><h3>nested_undefined.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined variable in nested scope</span>
+<span class="comment">///</span>
+<span class="comment">/// Variables from inner scopes aren't accessible outside.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">if</span> <span class="kw">true</span> {
+        <span class="kw">let</span> inner = <span class="num">42</span>
+    }
+    <span class="builtin">print</span>(inner)
+}</code></pre><h3>only_comments.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined similar to multiple candidates</span>
+<span class="comment">///</span>
+<span class="comment">/// When multiple variables exist, the suggestion picks the closest.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> counter = <span class="num">0</span>
+    <span class="kw">let</span> country = <span class="str">&quot;US&quot;</span>
+    <span class="builtin">print</span>(counte)
+}</code></pre><h3>python_def_habit.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using `def` instead of `fn` (Python habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge uses `fn`, not `def`. Catches Python users.</span>
+<span class="comment">///</span>
+
+def add(a, b) {
+    <span class="kw">return</span> a + b
+}</code></pre><h3>redefine_builtin.fg</h3><pre class="forge-code"><code><span class="comment">/// # Redefine Builtin</span>
+<span class="comment">///</span>
+<span class="comment">/// Cannot redefine a builtin function like `string`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> <span class="builtin">string</span>(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">return</span> <span class="str">&quot;custom&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(<span class="num">42</span>))
+}</code></pre><h3>return_type_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// # Return type mismatch</span>
+<span class="comment">///</span>
+<span class="comment">/// Returning a string from a function declared to return int</span>
+<span class="comment">/// should produce a type mismatch error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> get() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> <span class="str">&quot;hello&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(get()))
+}</code></pre><h3>semicolon_habit.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using semicolons (C/JS/Rust habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge does not use semicolons. This catches users coming</span>
+<span class="comment">/// from C, JavaScript, Rust, or Java who add them out of habit.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="num">42</span>;
+    <span class="builtin">print</span>(x);
+}</code></pre><h3>string_concat_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type mismatch: string annotated, bool provided</span>
+<span class="comment">///</span>
+<span class="comment">/// A boolean value can't be assigned to a string variable.</span>
+<span class="comment">/// The compiler suggests `string(value)`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> msg: <span class="builtin">string</span> = <span class="kw">true</span>
+}</code></pre><h3>struct_field_typo.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: named struct literal with unknown field emits typo error</span>
+
+<span class="kw">type</span> Point = {
+  x: <span class="builtin">int</span>,
+  y: <span class="builtin">int</span>,
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Point { xx: <span class="num">1</span>, y: <span class="num">2</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(p.x))
+}</code></pre><h3>syntax_double_equals.fg</h3><pre class="forge-code"><code><span class="comment">/// # Assignment with wrong operator in let</span>
+<span class="comment">///</span>
+<span class="comment">/// Using == instead of = in a let binding.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x == <span class="num">42</span>
+}</code></pre><h3>syntax_empty_fn_params.fg</h3><pre class="forge-code"><code><span class="comment">/// # Invalid function parameter syntax</span>
+<span class="comment">///</span>
+<span class="comment">/// Function parameters must have names and types.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> broken(,) {
+    <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+    broken()
+}</code></pre><h3>syntax_fn_missing_body.fg</h3><pre class="forge-code"><code><span class="comment">/// # Function declaration missing body</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions must have a block body after the signature.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span>
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>)
+}</code></pre><h3>syntax_if_no_condition.fg</h3><pre class="forge-code"><code><span class="comment">/// # If statement missing condition</span>
+<span class="comment">///</span>
+<span class="comment">/// If statements require a boolean condition.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">if</span> {
+        <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>)
+    }
+}</code></pre><h3>syntax_let_no_value.fg</h3><pre class="forge-code"><code><span class="comment">/// # Let binding without value</span>
+<span class="comment">///</span>
+<span class="comment">/// Let bindings must have a value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x =
+}</code></pre><h3>syntax_missing_arrow.fg</h3><pre class="forge-code"><code><span class="comment">/// # Function missing return type arrow</span>
+<span class="comment">///</span>
+<span class="comment">/// Return types need `-&gt;` before the type name.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="builtin">int</span> {
+    <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(add(<span class="num">1</span>, <span class="num">2</span>))
+}</code></pre><h3>syntax_missing_brace.fg</h3><pre class="forge-code"><code><span class="comment">/// # Missing closing brace</span>
+<span class="comment">///</span>
+<span class="comment">/// Block bodies must have matching braces.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">if</span> <span class="kw">true</span> {
+        <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>)
+</code></pre><h3>syntax_missing_paren.fg</h3><pre class="forge-code"><code><span class="comment">/// # Missing closing parenthesis</span>
+<span class="comment">///</span>
+<span class="comment">/// Function calls must have matching parentheses.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(<span class="str">&quot;hello&quot;</span>
+}</code></pre><h3>syntax_trailing_comma.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mismatched brackets</span>
+<span class="comment">///</span>
+<span class="comment">/// Using wrong bracket types produces clear errors.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>)
+}</code></pre><h3>syntax_unexpected_token.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unexpected token in expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Expressions must follow valid syntax rules.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = + +
+}</code></pre><h3>table_column_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table column type mismatch (multiple rows)</span>
+<span class="comment">///</span>
+<span class="comment">/// All values in a table column must have the same type.</span>
+<span class="comment">/// Mixing strings and integers in the same column is an error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> data = table {
+        name    | score
+        <span class="str">&quot;alice&quot;</span> | <span class="num">95</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="str">&quot;high&quot;</span>
+        <span class="str">&quot;carol&quot;</span> | <span class="num">88</span>
+    }
+}</code></pre><h3>type_mismatch_bool_int.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type mismatch: annotated bool, given int</span>
+<span class="comment">///</span>
+<span class="comment">/// When a variable has a type annotation, the initializer must match.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x: bool = <span class="num">42</span>
+}</code></pre><h3>type_mismatch_int_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type mismatch: int annotated, string provided</span>
+<span class="comment">///</span>
+<span class="comment">/// When a variable is annotated with a type, the value must match.</span>
+<span class="comment">/// The compiler suggests `int(value)` as a conversion.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x: <span class="builtin">int</span> = <span class="str">&quot;hello&quot;</span>
+}</code></pre><h3>type_mismatch_return.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type mismatch: float annotated, string provided</span>
+<span class="comment">///</span>
+<span class="comment">/// When a variable is annotated as float, a string value is rejected.</span>
+<span class="comment">/// The compiler suggests `float(value)` as a conversion.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x: <span class="builtin">float</span> = <span class="str">&quot;3.14&quot;</span>
+}</code></pre><h3>type_mismatch_string_int.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type mismatch: string annotated, int provided</span>
+<span class="comment">///</span>
+<span class="comment">/// When a variable is annotated as string, an int value is rejected.</span>
+<span class="comment">/// The compiler suggests `string(value)` as a conversion.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x: <span class="builtin">string</span> = <span class="num">42</span>
+}</code></pre><h3>undefined_fn_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Calling a function that doesn't exist</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions must be defined before calling them.</span>
+<span class="comment">/// The compiler suggests similar function names if available.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> calculate(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> x * <span class="num">2</span>
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = calulate(<span class="num">5</span>)
+}</code></pre><h3>undefined_in_expression.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined variable in an expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Variables used in arithmetic must be defined.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = x + <span class="num">10</span>
+}</code></pre><h3>undefined_no_suggestion.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined variable with no close match</span>
+<span class="comment">///</span>
+<span class="comment">/// When no similar variable name exists, no suggestion is given.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">print</span>(xyzzy)
+}</code></pre><h3>undefined_variable.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Using a variable that hasn't been declared produces an error.</span>
+<span class="comment">/// The compiler suggests similar names if one is close.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> count = <span class="num">10</span>
+    <span class="builtin">print</span>(coutn)
+}</code></pre><h3>unexpected_char.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unexpected character in source</span>
+<span class="comment">///</span>
+<span class="comment">/// The lexer rejects characters that aren't valid in Forge syntax.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="num">42</span> @
+}</code></pre><h3>unterminated_dollar_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unterminated dollar-string (shell shorthand)</span>
+<span class="comment">///</span>
+<span class="comment">/// Dollar-quoted strings must have a closing quote.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> output = $<span class="str">&quot;echo hello
+}</span></code></pre><h3>unterminated_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unterminated string literal</span>
+<span class="comment">///</span>
+<span class="comment">/// String literals must be closed with a matching quote.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> x = <span class="str">&quot;hello
+}</span></code></pre><h3>unterminated_template.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unterminated template literal</span>
+<span class="comment">///</span>
+<span class="comment">/// Template strings with `${}` must be closed with a matching backtick.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> name = <span class="str">&quot;world&quot;</span>
+    <span class="kw">let</span> x = `hello ${name}
+}</code></pre><h3>var_keyword_habit.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using `var` instead of `let` or `mut` (JS/Swift habit)</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge uses `let` and `mut`, not `var`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    var x = <span class="num">42</span>
+    <span class="builtin">print</span>(x)
+}</code></pre><h3>wrong_arg_count.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wrong number of arguments</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions must be called with the correct number of arguments.</span>
+<span class="comment">/// The compiler shows the expected signature.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = add(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>)
+}</code></pre><h3>wrong_arg_count_zero.fg</h3><pre class="forge-code"><code><span class="comment">/// # Too few arguments (zero given)</span>
+<span class="comment">///</span>
+<span class="comment">/// Calling a function with no arguments when it expects some.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> greet(name: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    <span class="kw">return</span> <span class="str">&quot;hello &quot;</span> + name
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> msg = greet()
+}</code></pre><h3>wrong_string_quote.fg</h3><pre class="forge-code"><code><span class="comment">/// # Using single quotes for strings</span>
+<span class="comment">///</span>
+<span class="comment">/// Forge uses double quotes for strings, not single quotes.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> name = 'hello'
+}</code></pre></main>
+</div>
+</body>
+</html>

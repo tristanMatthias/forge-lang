@@ -1,0 +1,14 @@
+/// # Map Index Assignment
+///
+/// Assign values to a mutable map using index syntax.
+///
+/// expect: val
+/// expect: 1
+
+fn main() {
+  mut m: map<string, string> = {}
+  m["key"] = "val"
+  let v = m.get("key") ?? "none"
+  println(v)
+  println(m.keys().length)
+}

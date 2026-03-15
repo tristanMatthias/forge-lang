@@ -1,0 +1,9 @@
+/// # Module Not Found
+///
+/// Declaring a module that doesn't exist produces an error.
+///
+/// expect-stderr: cannot find module 'nonexistent'
+
+mod nonexistent
+
+fn main() {}

@@ -1,0 +1,13 @@
+/// # Module Scope Enforcement
+///
+/// Functions from modules are only accessible when explicitly imported.
+/// A non-imported function (even if exported) must not be callable.
+///
+/// expect-error: F0020
+
+mod module_math
+
+fn main() {
+    let x = add(1, 2)
+    println(string(x))
+}

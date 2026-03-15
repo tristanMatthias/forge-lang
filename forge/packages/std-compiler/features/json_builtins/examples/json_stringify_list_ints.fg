@@ -1,0 +1,11 @@
+/// # JSON Stringify List of Ints
+///
+/// Serialize a list<int> to a JSON array string.
+///
+/// expect: [10,20,30]
+
+fn main() {
+  let nums: list<int> = json.parse("[10, 20, 30]")
+  let s = json.stringify(nums)
+  println(s)
+}

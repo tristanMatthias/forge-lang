@@ -1,0 +1,9 @@
+/// # Dollar Sign Without Braces In Double-Quoted String
+///
+/// A lone `$` not followed by `{` should remain literal.
+///
+/// expect: costs $5
+
+fn main() {
+  println("costs $5")
+}

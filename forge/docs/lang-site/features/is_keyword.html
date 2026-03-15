@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Is Keyword — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html" class="active">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Is Keyword <span class="badge badge-stable">stable</span></h1><p>value is Pattern — runtime type and pattern checks</p><p>Inline pattern check: value is Pattern → bool</p><div class="long-description"><p>The `is` keyword tests whether a value matches a pattern or belongs to a type. It returns a boolean and is used in conditions: `if value is int { ... }` or `if shape is Circle { ... }`. This is the lightweight alternative to a full `match` expression when you only care about one case.</p><p>With enums, `is` checks for a specific variant: `if result is Ok { ... }`. Combined with `if let`-style binding, it can extract the associated data: `if result is Ok(value) { ... }`. This handles the common pattern of checking-and-extracting in a single, readable expression.</p><p>The `is` keyword also works with nullable types: `if x is null { ... }` checks for null, and `if x is string { ... }` checks that a nullable value is present and of the expected type. This integrates naturally with Forge's null safety system.</p><p>Compared to `instanceof` in Java or `typeof` in JavaScript, `is` is a pattern matching operation, not just a type check. It can match literal values, types, enum variants, and complex patterns, making it strictly more powerful.</p></div><h2>Syntax</h2><pre class="forge-code"><code>value <span class="kw">is</span> Pattern
+value <span class="kw">is</span> Type</code></pre><h2>Examples</h2><h3>chained_logic.fg</h3><pre class="forge-code"><code>
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = Ok(<span class="num">5</span>)
+  <span class="kw">let</span> b = Err(<span class="str">&quot;no&quot;</span>)
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a <span class="kw">is</span> Ok &amp;&amp; b <span class="kw">is</span> Err))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a <span class="kw">is</span> Err || b <span class="kw">is</span> Err))
+}</code></pre><h3>composition_with_enums.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type Checks with 'is'</span>
+<span class="comment">///</span>
+<span class="comment">/// Using 'is' for enum variant checking</span>
+<span class="comment">/// combined with conditional logic.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape { circle, square, triangle }
+
+<span class="kw">fn</span> describe(s: Shape) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> s <span class="kw">is</span> .circle {
+    <span class="str">&quot;got a circle&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;not a circle&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(describe(Shape.circle))
+  <span class="builtin">println</span>(describe(Shape.square))
+  <span class="builtin">println</span>(describe(Shape.triangle))
+}</code></pre><h3>enum_variant.fg</h3><pre class="forge-code"><code>
+<span class="kw">enum</span> Status { pending, active, done, failed }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> s = Status.active
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s <span class="kw">is</span> .active))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s <span class="kw">is</span> .pending))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s <span class="kw">is</span> .done))
+}</code></pre><h3>if_condition.fg</h3><pre class="forge-code"><code>
+<span class="kw">fn</span> handle(result: Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt;) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> result <span class="kw">is</span> Ok {
+    <span class="str">&quot;success&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;failure&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(handle(Ok(<span class="num">42</span>)))
+  <span class="builtin">println</span>(handle(Err(<span class="str">&quot;no&quot;</span>)))
+}</code></pre><h3>is_enum_variant.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is with Enum Variant Check</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `is .Variant` to check enum state without destructuring.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> State { loading, ready, error(msg: <span class="builtin">string</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> s = State.loading
+
+  <span class="kw">if</span> s <span class="kw">is</span> .loading {
+    <span class="builtin">println</span>(<span class="str">&quot;loading&quot;</span>)
+  }
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s <span class="kw">is</span> .ready))
+
+  <span class="kw">let</span> s2 = State.ready
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s2 <span class="kw">is</span> .ready))
+
+  <span class="kw">let</span> s3 = State.error(msg: <span class="str">&quot;timeout&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s3 <span class="kw">is</span> .error))
+}</code></pre><h3>is_in_condition.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is in Complex Conditions</span>
+<span class="comment">///</span>
+<span class="comment">/// The `is` keyword used in various conditional contexts.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> process(r: Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt;) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> r <span class="kw">is</span> Ok {
+    <span class="str">&quot;ok value&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;fallback&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(process(Ok(<span class="num">10</span>)))
+  <span class="builtin">println</span>(process(Err(<span class="str">&quot;nope&quot;</span>)))
+
+  <span class="kw">mut</span> result: Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; = Err(<span class="str">&quot;pending&quot;</span>)
+  <span class="kw">mut</span> tries = <span class="num">0</span>
+  <span class="kw">while</span> result <span class="kw">is</span> Err {
+    tries = tries + <span class="num">1</span>
+    <span class="kw">if</span> tries &gt;= <span class="num">2</span> {
+      result = Ok(<span class="num">42</span>)
+    }
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done processing&quot;</span>)
+}</code></pre><h3>is_not.fg</h3><pre class="forge-code"><code>
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = Ok(<span class="num">42</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(r <span class="kw">is</span> not Err))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(r <span class="kw">is</span> not Ok))
+}</code></pre><h3>is_not_pattern.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is Not with Enum Variants</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `is not` for negated pattern matching on enum variants.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Status { pending, active, done }
+
+<span class="kw">fn</span> check(s: Status) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> s <span class="kw">is</span> not .done {
+    <span class="str">&quot;not done&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;is done&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(check(Status.pending))
+  <span class="builtin">println</span>(check(Status.active))
+  <span class="builtin">println</span>(check(Status.done))
+}</code></pre><h3>is_null_check.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is Null Check</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `is null` to check nullable values.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> found = nums.find((n) <span class="op">-&gt;</span> n &gt; <span class="num">10</span>)
+
+  <span class="kw">if</span> found <span class="kw">is</span> <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;is null&quot;</span>)
+  } <span class="kw">else</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;has value&quot;</span>)
+  }
+
+  <span class="kw">let</span> found2 = nums.find((n) <span class="op">-&gt;</span> n &gt; <span class="num">1</span>)
+  <span class="kw">if</span> found2 <span class="kw">is</span> <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;is null&quot;</span>)
+  } <span class="kw">else</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;has value&quot;</span>)
+  }
+}</code></pre><h3>is_with_guard.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is Combined with &amp;&amp; and ||</span>
+<span class="comment">///</span>
+<span class="comment">/// The `is` keyword used with logical operators in conditions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = Ok(<span class="num">1</span>)
+  <span class="kw">let</span> b = Ok(<span class="num">2</span>)
+  <span class="kw">let</span> c = Err(<span class="str">&quot;fail&quot;</span>)
+
+  <span class="kw">if</span> a <span class="kw">is</span> Ok &amp;&amp; b <span class="kw">is</span> Ok {
+    <span class="builtin">println</span>(<span class="str">&quot;both ok&quot;</span>)
+  }
+
+  <span class="kw">if</span> a <span class="kw">is</span> Err || c <span class="kw">is</span> Err {
+    <span class="builtin">println</span>(<span class="str">&quot;at least one error&quot;</span>)
+  }
+
+  <span class="kw">if</span> a <span class="kw">is</span> Ok &amp;&amp; c <span class="kw">is</span> Err {
+    <span class="builtin">println</span>(<span class="str">&quot;mixed&quot;</span>)
+  }
+}</code></pre><h3>result_is_check.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: is keyword with Result types</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> might_fail(ok: bool) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> ok {
+    Ok(<span class="num">42</span>)
+  } <span class="kw">else</span> {
+    Err(<span class="str">&quot;failed&quot;</span>)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r1 = might_fail(<span class="kw">true</span>)
+  <span class="kw">if</span> r1 <span class="kw">is</span> Ok {
+    <span class="builtin">println</span>(<span class="str">&quot;got value&quot;</span>)
+  }
+
+  <span class="kw">let</span> r2 = might_fail(<span class="kw">false</span>)
+  <span class="kw">if</span> r2 <span class="kw">is</span> Err {
+    <span class="builtin">println</span>(<span class="str">&quot;got error&quot;</span>)
+  }
+}</code></pre><h3>type_variant_check.fg</h3><pre class="forge-code"><code>
+<span class="kw">fn</span> divide(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0</span> { Err(<span class="str">&quot;division by zero&quot;</span>) } <span class="kw">else</span> { Ok(a / b) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(divide(<span class="num">10</span>, <span class="num">2</span>) <span class="kw">is</span> Ok))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(divide(<span class="num">10</span>, <span class="num">0</span>) <span class="kw">is</span> Ok))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(divide(<span class="num">10</span>, <span class="num">0</span>) <span class="kw">is</span> Err))
+}</code></pre><h3>while_loop.fg</h3><pre class="forge-code"><code>
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> attempts = <span class="num">0</span>
+  <span class="kw">mut</span> result: Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; = Err(<span class="str">&quot;retry&quot;</span>)
+
+  <span class="kw">while</span> result <span class="kw">is</span> Err {
+    attempts = attempts + <span class="num">1</span>
+    <span class="kw">if</span> attempts &gt;= <span class="num">3</span> {
+      result = Ok(<span class="num">42</span>)
+    }
+  }
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(attempts))
+}</code></pre><h2>Tokens</h2><p><span class="tag">is</span> </p><h2>AST Nodes</h2><p><span class="tag">Is</span> </p><h2>Dependencies</h2><ul><li><a href="pattern_matching.html">pattern_matching</a></li></ul></main>
+</div>
+</body>
+</html>

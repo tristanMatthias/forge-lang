@@ -1,0 +1,13 @@
+/// If-else expression inside template interpolation
+///
+/// expect: 5 is positive
+/// expect: -3 is negative
+
+fn classify(n: int) -> string {
+  `${n} is ${if n > 0 { "positive" } else { "negative" }}`
+}
+
+fn main() {
+  println(classify(5))
+  println(classify(-3))
+}

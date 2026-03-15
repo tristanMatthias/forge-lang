@@ -1,0 +1,27 @@
+/// The Forge CLI — written in Forge.
+/// Declarative CLI definition with run handlers per command.
+
+use @std.cli
+use @std.process
+
+mod shared
+mod commands
+
+use commands.{build, run, check, test, features, explain, version, why, lang, docs, package, errors}
+
+cli forge "The Forge programming language" {
+    version "0.1.0"
+
+    build
+    run
+    check
+    test
+    features
+    explain
+    version
+    why
+    lang
+    docs
+    package
+    errors
+}

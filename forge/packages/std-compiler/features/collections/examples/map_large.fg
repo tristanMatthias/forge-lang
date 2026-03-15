@@ -1,0 +1,44 @@
+/// # Large Map
+///
+/// Maps handle 25+ keys correctly.
+///
+/// expect: 25
+/// expect: 1
+/// expect: 13
+/// expect: 25
+
+fn main() {
+  mut m: map<string, int> = {}
+  m["k01"] = 1
+  m["k02"] = 2
+  m["k03"] = 3
+  m["k04"] = 4
+  m["k05"] = 5
+  m["k06"] = 6
+  m["k07"] = 7
+  m["k08"] = 8
+  m["k09"] = 9
+  m["k10"] = 10
+  m["k11"] = 11
+  m["k12"] = 12
+  m["k13"] = 13
+  m["k14"] = 14
+  m["k15"] = 15
+  m["k16"] = 16
+  m["k17"] = 17
+  m["k18"] = 18
+  m["k19"] = 19
+  m["k20"] = 20
+  m["k21"] = 21
+  m["k22"] = 22
+  m["k23"] = 23
+  m["k24"] = 24
+  m["k25"] = 25
+  println(m.keys().length)
+  let first = m.get("k01") ?? 0
+  let last = m.get("k25") ?? 0
+  let mid = m.get("k13") ?? 0
+  println(first)
+  println(mid)
+  println(last)
+}

@@ -1,0 +1,11 @@
+/// # JSON Stringify List of Bools
+///
+/// Serialize a list<bool> to a JSON array string.
+///
+/// expect: [true,false,true]
+
+fn main() {
+  let parsed: list<bool> = json.parse("[true, false, true]")
+  let s = json.stringify(parsed)
+  println(s)
+}

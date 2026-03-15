@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>For Loops — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html" class="active">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>For Loops <span class="badge badge-stable">stable</span></h1><p>for x in collection — iterate lists, ranges, maps, channels</p><p>For-in loops over ranges, lists, maps, and channels</p><div class="long-description"><p>For loops in Forge use the `for...in` syntax to iterate over ranges, lists, maps, and channels. The simplest form is `for i in 0..10 { ... }` which iterates from 0 to 9. Use `0..=10` for an inclusive range that includes 10.</p><p>When iterating over lists, the loop variable takes on each element: `for item in my_list { ... }`. For maps, you can destructure the key-value pair: `for (key, value) in my_map { ... }`. This uniform syntax means you learn one loop construct and use it everywhere.</p><p>For loops can also iterate over channels, which makes them a natural fit for concurrent programming patterns. When used with a channel, `for msg in ch { ... }` will receive and process messages until the channel is closed. This is the idiomatic way to consume a stream of values from a concurrent task.</p><p>Unlike C-style for loops, Forge's `for...in` cannot produce off-by-one errors because you never manually manage an index variable. If you need the index alongside the value, use the `enumerate` method on the collection.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">for</span> x <span class="kw">in</span> collection { body }
+<span class="kw">for</span> x <span class="kw">in</span> start<span class="op">..</span>end { body }</code></pre><h2>Examples</h2><h3>composition_with_ranges.fg</h3><pre class="forge-code"><code><span class="comment">/// # Building Collections with Loops</span>
+<span class="comment">///</span>
+<span class="comment">/// Using for loops with ranges to build and</span>
+<span class="comment">/// transform collections functionally.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> squares = []
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">1..6</span> {
+    squares = squares.push(i * i)
+  }
+
+  <span class="kw">for</span> n <span class="kw">in</span> squares {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+
+  <span class="kw">mut</span> total = <span class="num">0</span>
+  <span class="kw">for</span> n <span class="kw">in</span> squares {
+    total = total + n
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;total: &quot;</span> + <span class="builtin">string</span>(total))
+}</code></pre><h3>deeply_nested_loops.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deeply Nested Loops</span>
+<span class="comment">///</span>
+<span class="comment">/// Adversarial test: for inside while inside for, testing that</span>
+<span class="comment">/// three levels of nesting with mixed loop types work correctly.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..2</span> {
+    <span class="kw">mut</span> j = <span class="num">0</span>
+    <span class="kw">while</span> j &lt; <span class="num">2</span> {
+      <span class="kw">for</span> k <span class="kw">in</span> <span class="num">0..2</span> {
+        <span class="builtin">println</span>(`${i}-${j}-${k}`)
+      }
+      j = j + <span class="num">1</span>
+    }
+  }
+}</code></pre><h3>enumerate.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enumerate</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate with index using enumerate.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> (i, val) <span class="kw">in</span> [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;c&quot;</span>].enumerate() {
+    <span class="builtin">println</span>(`${i}:${val}`)
+  }
+}</code></pre><h3>for_accumulate.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop Accumulation</span>
+<span class="comment">///</span>
+<span class="comment">/// Use a for loop to sum a list, demonstrating mutable accumulator</span>
+<span class="comment">/// pattern with both range and list iteration.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> sum = <span class="num">0</span>
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..10</span> {
+    sum = sum + i
+  }
+  <span class="builtin">println</span>(`range sum: ${sum}`)
+
+  <span class="kw">let</span> values = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
+  <span class="kw">mut</span> list_sum = <span class="num">0</span>
+  <span class="kw">for</span> v <span class="kw">in</span> values {
+    list_sum = list_sum + v
+  }
+  <span class="builtin">println</span>(`list sum: ${list_sum}`)
+}</code></pre><h3>for_break.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Range Break</span>
+<span class="comment">///</span>
+<span class="comment">/// Break out of a range-based for loop early.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..10</span> {
+    <span class="kw">if</span> i == <span class="num">3</span> {
+      break
+    }
+    <span class="builtin">println</span>(i)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>for_continue.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Range Continue</span>
+<span class="comment">///</span>
+<span class="comment">/// Skip even numbers using continue in a range-based for loop.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..6</span> {
+    <span class="kw">if</span> i % <span class="num">2</span> == <span class="num">0</span> {
+      continue
+    }
+    <span class="builtin">println</span>(i)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>for_empty_body.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop Empty Body</span>
+<span class="comment">///</span>
+<span class="comment">/// Adversarial test: for loop with an empty body should compile</span>
+<span class="comment">/// and run without crashing.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..10</span> {
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>for_empty_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Over Empty List</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterating over an empty list should execute the body zero times.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;before&quot;</span>)
+  <span class="kw">let</span> items: list&lt;<span class="builtin">int</span>&gt; = []
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">for</span> item <span class="kw">in</span> items {
+    count = count + <span class="num">1</span>
+  }
+  <span class="builtin">println</span>(`count: ${count}`)
+  <span class="builtin">println</span>(<span class="str">&quot;after&quot;</span>)
+}</code></pre><h3>for_in_function.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop in Function</span>
+<span class="comment">///</span>
+<span class="comment">/// Test for loops inside functions with variable range bounds.</span>
+<span class="comment">/// Also tests empty range (start &gt; end) and zero-length range.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> sum_range(start: <span class="builtin">int</span>, end: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">mut</span> total = <span class="num">0</span>
+  <span class="kw">for</span> i <span class="kw">in</span> start<span class="op">..</span>end {
+    total = total + i
+  }
+  total
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(sum_range(<span class="num">1</span>, <span class="num">11</span>))
+  <span class="builtin">println</span>(sum_range(<span class="num">0</span>, <span class="num">0</span>))
+  <span class="builtin">println</span>(sum_range(<span class="num">5</span>, <span class="num">3</span>))
+}</code></pre><h3>for_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested For Loops</span>
+<span class="comment">///</span>
+<span class="comment">/// A range for loop nested inside a list for loop, composing two</span>
+<span class="comment">/// different iterable types.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> names = [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;c&quot;</span>]
+  <span class="kw">for</span> name <span class="kw">in</span> names {
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..2</span> {
+      <span class="builtin">println</span>(`${name}:${i}`)
+    }
+  }
+}</code></pre><h3>for_nested_variable_bound.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested For with Variable Bound</span>
+<span class="comment">///</span>
+<span class="comment">/// Inner range start depends on outer loop variable.</span>
+<span class="comment">/// Tests dynamic range bounds in nested loops.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> sum = <span class="num">0</span>
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..4</span> {
+    <span class="kw">for</span> j <span class="kw">in</span> i<span class="op">..</span><span class="num">4</span> {
+      sum = sum + <span class="num">1</span>
+    }
+  }
+  <span class="builtin">println</span>(sum)
+}</code></pre><h3>for_range_break.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Range with Break</span>
+<span class="comment">///</span>
+<span class="comment">/// Break out of a range for loop early using loop { break }.</span>
+<span class="comment">/// Since break in range-for is limited, use a loop with manual index.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  loop {
+    <span class="kw">if</span> i &gt;= <span class="num">10</span> {
+      break
+    }
+    <span class="kw">if</span> i == <span class="num">3</span> {
+      break
+    }
+    <span class="builtin">println</span>(i)
+    i = i + <span class="num">1</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>for_range_index_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Range Index Into List</span>
+<span class="comment">///</span>
+<span class="comment">/// Use a range to iterate with indices and access list elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> fruits = [<span class="str">&quot;apple&quot;</span>, <span class="str">&quot;banana&quot;</span>, <span class="str">&quot;cherry&quot;</span>]
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..3</span> {
+    <span class="builtin">println</span>(`${i}: ${fruits[i]}`)
+  }
+}</code></pre><h3>for_single_element.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop Single Element List</span>
+<span class="comment">///</span>
+<span class="comment">/// Adversarial test: iterating over a list with exactly one element.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> items = [<span class="num">42</span>]
+  <span class="kw">for</span> item <span class="kw">in</span> items {
+    <span class="builtin">println</span>(item)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>for_string_accumulate.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop String Building</span>
+<span class="comment">///</span>
+<span class="comment">/// Build a string by concatenating in a for loop.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> s = <span class="str">&quot;&quot;</span>
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..5</span> {
+    s = s + <span class="builtin">string</span>(i)
+  }
+  <span class="builtin">println</span>(s)
+}</code></pre><h3>for_string_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Over String List</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate over a list of strings and build a concatenated result.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>, <span class="str">&quot;!&quot;</span>]
+  <span class="kw">mut</span> result = <span class="str">&quot;&quot;</span>
+  <span class="kw">for</span> word <span class="kw">in</span> words {
+    result = result + word + <span class="str">&quot; &quot;</span>
+  }
+  <span class="builtin">println</span>(result.trim())
+}</code></pre><h3>for_tuple_destructure.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop Tuple Destructuring</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate over a list of tuples with destructuring pattern.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> pairs = [(<span class="num">1</span>, <span class="str">&quot;a&quot;</span>), (<span class="num">2</span>, <span class="str">&quot;b&quot;</span>), (<span class="num">3</span>, <span class="str">&quot;c&quot;</span>)]
+  <span class="kw">for</span> (num, letter) <span class="kw">in</span> pairs {
+    <span class="builtin">println</span>(`${num}:${letter}`)
+  }
+}</code></pre><h3>for_variable_shadowing.fg</h3><pre class="forge-code"><code><span class="comment">/// # For Loop Variable Shadowing</span>
+<span class="comment">///</span>
+<span class="comment">/// Adversarial test: loop variable should shadow outer variable</span>
+<span class="comment">/// of the same name, and outer should be restored after loop.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> i = <span class="num">99</span>
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..3</span> {
+    <span class="builtin">println</span>(i)
+  }
+  <span class="builtin">println</span>(`after: ${i}`)
+}</code></pre><h3>for_with_index.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: For loop with range index</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..5</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(i))
+  }
+}</code></pre><h3>four_deep_nesting.fg</h3><pre class="forge-code"><code><span class="comment">/// # Four Deep Loop Nesting</span>
+<span class="comment">///</span>
+<span class="comment">/// Adversarial test: for/for/while/loop four levels deep.</span>
+<span class="comment">/// Tests that the compiler handles deeply nested basic blocks.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..3</span> {
+    <span class="kw">for</span> j <span class="kw">in</span> <span class="num">0..3</span> {
+      <span class="kw">mut</span> k = <span class="num">0</span>
+      <span class="kw">while</span> k &lt; <span class="num">3</span> {
+        loop {
+          count = count + <span class="num">1</span>
+          break
+        }
+        k = k + <span class="num">1</span>
+      }
+    }
+  }
+  <span class="builtin">println</span>(count)
+}</code></pre><h3>list_comprehension.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: for loop with list building via map and filter</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> doubled = nums.map((n) <span class="op">-&gt;</span> n * <span class="num">2</span>)
+  <span class="builtin">println</span>(doubled.map((n) <span class="op">-&gt;</span> <span class="builtin">string</span>(n)).join(<span class="str">&quot;, &quot;</span>))
+}</code></pre><h3>list_iteration.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Iteration</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate over a list with `for ... in`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">mut</span> total = <span class="num">0</span>
+  <span class="kw">for</span> item <span class="kw">in</span> items {
+    total = total + item
+  }
+  <span class="builtin">println</span>(total)
+}</code></pre><h3>loop_break.fg</h3><pre class="forge-code"><code><span class="comment">/// # Loop with Break</span>
+<span class="comment">///</span>
+<span class="comment">/// Infinite loop with explicit break.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> counter = <span class="num">0</span>
+  loop {
+    counter = counter + <span class="num">1</span>
+    <span class="kw">if</span> counter == <span class="num">5</span> {
+      break
+    }
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(counter))
+}</code></pre><h3>range_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Range Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate over a range with `for ... in start..end`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..3</span> {
+    <span class="builtin">println</span>(i)
+  }
+}</code></pre><h3>return_in_main.fg</h3><pre class="forge-code"><code><span class="comment">/// # Return in Main</span>
+<span class="comment">///</span>
+<span class="comment">/// Using bare `return` inside fn main() should work without</span>
+<span class="comment">/// causing an LLVM verification error (main returns i32, not void).</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">1</span>
+  <span class="kw">if</span> x == <span class="num">99</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;should not print&quot;</span>)
+    <span class="kw">return</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;before return&quot;</span>)
+
+  <span class="kw">if</span> x == <span class="num">2</span> {
+    <span class="kw">return</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;after condition&quot;</span>)
+}</code></pre><h3>struct_lit_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Struct Literal with Calls in Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// Regression test: function calls used inline as struct literal field</span>
+<span class="comment">/// values inside a for loop must compile with correct LLVM types.</span>
+<span class="comment">/// Previously, infer_type could return Unknown for complex expressions,</span>
+<span class="comment">/// causing the struct field to use i64 instead of the actual value type.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> make_name(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    s
+}
+
+<span class="kw">fn</span> make_age(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    n
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> names = [<span class="str">&quot;Alice&quot;</span>, <span class="str">&quot;Bob&quot;</span>]
+    <span class="kw">let</span> ages = [<span class="num">30</span>, <span class="num">25</span>]
+    <span class="kw">mut</span> i = <span class="num">0</span>
+    <span class="kw">for</span> name <span class="kw">in</span> names {
+        <span class="kw">let</span> p = Person { name: make_name(name), age: make_age(ages[i]) }
+        <span class="builtin">println</span>(`${p.name}:${p.age}`)
+        i = i + <span class="num">1</span>
+    }
+}</code></pre><h3>while_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # While Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// Loop while a condition is true.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> n = <span class="num">1</span>
+  <span class="kw">while</span> n &lt; <span class="num">100</span> {
+    n = n * <span class="num">2</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+}</code></pre><h2>Tokens</h2><p><span class="tag">for</span> <span class="tag">in</span> </p><h2>AST Nodes</h2><p><span class="tag">For</span> </p><h2>Dependencies</h2><ul><li><a href="ranges.html">ranges</a></li></ul></main>
+</div>
+</body>
+</html>

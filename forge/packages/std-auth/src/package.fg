@@ -9,49 +9,49 @@ extern fn forge_auth_get_expiry(token: string) -> int
 extern fn forge_auth_refresh_token(token: string) -> string
 extern fn forge_auth_is_valid(token: string) -> int
 
-component auth(__tpl_name) {
+component auth(name) {
     config {
         secret: string = "forge-default-secret"
         expiry: int = 604800
     }
 
-    on startup {
-        forge_auth_init(__tpl_config_secret, __tpl_config_expiry)
+    fn init() {
+        forge_auth_init(self.config.secret, self.config.expiry)
     }
 
-    fn __tpl_name.create_token(user_json: string) -> string {
+    fn create_token(user_json: string) -> string {
         forge_auth_create_token(user_json)
     }
 
-    fn __tpl_name.verify_token(token: string) -> string {
+    fn verify_token(token: string) -> string {
         forge_auth_verify_token(token)
     }
 
-    fn __tpl_name.check_role(token: string, role: string) -> int {
+    fn check_role(token: string, role: string) -> int {
         forge_auth_check_role(token, role)
     }
 
-    fn __tpl_name.hash_password(password: string) -> string {
+    fn hash_password(password: string) -> string {
         forge_auth_hash_password(password)
     }
 
-    fn __tpl_name.verify_password(password: string, hash: string) -> int {
+    fn verify_password(password: string, hash: string) -> int {
         forge_auth_verify_password(password, hash)
     }
 
-    fn __tpl_name.extract_claim(token: string, claim_name: string) -> string {
+    fn extract_claim(token: string, claim_name: string) -> string {
         forge_auth_extract_claim(token, claim_name)
     }
 
-    fn __tpl_name.get_expiry(token: string) -> int {
+    fn get_expiry(token: string) -> int {
         forge_auth_get_expiry(token)
     }
 
-    fn __tpl_name.refresh_token(token: string) -> string {
+    fn refresh_token(token: string) -> string {
         forge_auth_refresh_token(token)
     }
 
-    fn __tpl_name.is_valid(token: string) -> int {
+    fn is_valid(token: string) -> int {
         forge_auth_is_valid(token)
     }
 }

@@ -1,0 +1,16 @@
+/// Errors command — error diagnostic tools.
+
+use shared.{forward}
+
+export command errors "Error diagnostic tools" {
+    command diff "Compare two JSON diagnostic dumps (before/after)" {
+        arg before "Path to the before JSON diagnostics file"
+        arg after "Path to the after JSON diagnostics file"
+
+        run {
+            forward("errors")
+        }
+    }
+
+    run { 0 }
+}

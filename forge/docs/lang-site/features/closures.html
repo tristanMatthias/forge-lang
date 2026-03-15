@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Closures — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html" class="active">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Closures <span class="badge badge-stable">stable</span></h1><p>(params) -&gt; body — first-class closures with scope capture</p><p>First-class anonymous functions with captured environment</p><div class="long-description"><p>Closures are anonymous functions created with the arrow syntax: `(x) -&gt; x * 2`. They capture variables from their surrounding scope and can be passed as arguments, stored in variables, or returned from functions. Closures are the primary way to pass behavior in Forge, used heavily with collection methods like `map`, `filter`, and `each`.</p><p>The syntax is deliberately minimal. A single-parameter closure needs no parentheses around the parameter list: `x -&gt; x + 1`. Multi-parameter closures use parentheses: `(a, b) -&gt; a + b`. For closures with a single parameter, Forge also supports the `it` implicit parameter, so `list.map(it * 2)` is equivalent to `list.map((x) -&gt; x * 2)`.</p><p>Closures infer their parameter and return types from context. When you write `numbers.map((n) -&gt; n.to_string())`, the compiler knows `n` is an `int` because `numbers` is a `list&lt;int&gt;`, and knows the closure returns `string` because `to_string()` does.</p><p>Compared to other languages, Forge closures are closest to Kotlin's lambdas or Swift's closures. The `-&gt;` syntax was chosen over `=&gt;` (JavaScript) to avoid ambiguity with comparison operators and to visually distinguish closures from match arms.</p></div><h2>Syntax</h2><pre class="forge-code"><code>(params) <span class="op">-&gt;</span> expr
+(params) <span class="op">-&gt;</span> { body }</code></pre><h2>Examples</h2><h3>basic_closure.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Closure</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures as arguments to list methods.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+  <span class="kw">let</span> result = nums.map((x) <span class="op">-&gt;</span> x * <span class="num">2</span>).sum()
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>capture.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure with Reduce</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures with multiple parameters in `reduce`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> product = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>].map(it + <span class="num">1</span>).reduce(<span class="num">1</span>, (acc, n) <span class="op">-&gt;</span> acc * n)
+  <span class="builtin">println</span>(product)
+}</code></pre><h3>closure_capture_variable.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Capture in Variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure stored in a variable that captures an outer variable.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">10</span>
+  <span class="kw">let</span> f = (y) <span class="op">-&gt;</span> y + x
+  <span class="builtin">println</span>(<span class="builtin">string</span>(f(<span class="num">5</span>)))
+}</code></pre><h3>closure_if_else_body.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure with If/Else Body</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure body containing if/else expression.</span>
+<span class="comment">/// Regression: `b { a }` in `if a &gt; b { a } else { b }` was</span>
+<span class="comment">/// incorrectly parsed as a struct literal instead of a condition + block.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> max = [<span class="num">3</span>, <span class="num">1</span>, <span class="num">4</span>, <span class="num">1</span>, <span class="num">5</span>].reduce(<span class="num">0</span>, (a, b) <span class="op">-&gt;</span> <span class="kw">if</span> a &gt; b { a } <span class="kw">else</span> { b })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(max))
+}</code></pre><h3>closure_in_struct.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closures with List Methods</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures passed to various list methods including any, find, and all.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]
+
+  <span class="kw">let</span> has_big = nums.any((n) <span class="op">-&gt;</span> n &gt; <span class="num">25</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(has_big))
+
+  <span class="kw">let</span> found = nums.find((n) <span class="op">-&gt;</span> n &gt; <span class="num">25</span>)
+  <span class="kw">if</span> found != <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(found))
+  }
+
+  <span class="kw">let</span> all_small = nums.all((n) <span class="op">-&gt;</span> n &lt; <span class="num">15</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(all_small))
+}</code></pre><h3>closure_map_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Closure with filter to find even numbers</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>]
+  <span class="kw">let</span> evens = nums.filter((n) <span class="op">-&gt;</span> n % <span class="num">2</span> == <span class="num">0</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> evens {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>closure_multiline.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiline Closure Body</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure with a block body containing multiple statements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> process = (x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">let</span> doubled = x * <span class="num">2</span>
+    <span class="kw">let</span> added = doubled + <span class="num">10</span>
+    added
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(process(<span class="num">10</span>)))
+}</code></pre><h3>closure_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Returning a Closure</span>
+<span class="comment">///</span>
+<span class="comment">/// A function that returns a closure, testing higher-order function composition.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> add5 = (y: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { <span class="num">5</span> + y }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add5(<span class="num">10</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add5(<span class="num">20</span>)))
+}</code></pre><h3>closure_no_params.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure with Single Implicit Param</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures using the `it` shorthand for single-parameter usage.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">3</span>, <span class="num">5</span>]
+  <span class="kw">let</span> doubled = nums.map(it * <span class="num">2</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> doubled {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>closure_recursive_map.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure with Nested List Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures used with chained map, filter, and reduce operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+
+  <span class="kw">let</span> result = nums
+    .filter((n) <span class="op">-&gt;</span> n % <span class="num">2</span> == <span class="num">0</span>)
+    .map((n) <span class="op">-&gt;</span> n * <span class="num">3</span>)
+
+  <span class="builtin">println</span>(`elements: ${result.length}`)
+  <span class="builtin">println</span>(`total: ${result.sum()}`)
+}</code></pre><h3>closure_reduce.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Closure with list.map for squaring numbers</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> squared = nums.map((n) <span class="op">-&gt;</span> n * n)
+  <span class="kw">for</span> n <span class="kw">in</span> squared {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>closure_shadowing.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Parameter Shadowing</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure parameters shadow outer variables of the same name.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">10</span>
+  <span class="kw">let</span> shadow = (x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(shadow(<span class="num">99</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>closure_variable_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure stored in variable and called</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures with block bodies and return type annotations work when called via variables.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> greet = (name: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;hello &quot;</span> + name }
+  <span class="builtin">println</span>(greet(<span class="str">&quot;world&quot;</span>))
+}</code></pre><h3>composition_with_pipes.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closures with Pipes and Collections</span>
+<span class="comment">///</span>
+<span class="comment">/// Composing closures with the pipe operator for</span>
+<span class="comment">/// expressive data transformation pipelines.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> numbers = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+
+  <span class="kw">let</span> even_squares = numbers
+    <span class="op">|&gt;</span> filter((x) <span class="op">-&gt;</span> x % <span class="num">2</span> == <span class="num">0</span>)
+    <span class="op">|&gt;</span> map((x) <span class="op">-&gt;</span> x * x)
+
+  <span class="kw">for</span> n <span class="kw">in</span> even_squares {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+
+  <span class="kw">let</span> total = even_squares.reduce(<span class="num">0</span>, (acc, x) <span class="op">-&gt;</span> acc + x)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(total))
+}</code></pre><h3>edge_closure_arrow_no_parens.fg</h3><pre class="forge-code"><code><span class="comment">/// # Single-Param Closure Without Parens</span>
+<span class="comment">///</span>
+<span class="comment">/// `x -&gt; expr` syntax for single parameter closures.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map(x <span class="op">-&gt;</span> x * <span class="num">2</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>edge_closure_boolean_result.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Returning Boolean</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure that returns a boolean used in filter.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">10</span>, <span class="num">3</span>]
+  <span class="kw">let</span> big = nums.any((n) <span class="op">-&gt;</span> n &gt; <span class="num">5</span>)
+  <span class="kw">let</span> all_big = nums.all((n) <span class="op">-&gt;</span> n &gt; <span class="num">5</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(big))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(all_big))
+}</code></pre><h3>edge_closure_capture_outer.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Capturing Outer Variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure that references a variable from the enclosing scope.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> multiplier = <span class="num">3</span>
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map((x) <span class="op">-&gt;</span> x * multiplier).sum()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>edge_closure_capture_threshold.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Capturing Outer Threshold</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure that captures a variable for comparison.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> threshold = <span class="num">5</span>
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">10</span>, <span class="num">3</span>, <span class="num">8</span>, <span class="num">2</span>, <span class="num">7</span>]
+  <span class="kw">let</span> big = nums.filter((n) <span class="op">-&gt;</span> n &gt; threshold)
+  <span class="kw">for</span> n <span class="kw">in</span> big {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>edge_closure_constant.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Returning Constant</span>
+<span class="comment">///</span>
+<span class="comment">/// A closure that ignores its param and returns a constant.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map((x) <span class="op">-&gt;</span> <span class="num">99</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>edge_closure_identity.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Identity Function</span>
+<span class="comment">///</span>
+<span class="comment">/// Identity closure that just returns its argument.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = (x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(id(<span class="num">42</span>)))
+}</code></pre><h3>edge_closure_in_condition.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Result Used In Condition</span>
+<span class="comment">///</span>
+<span class="comment">/// Using closure-based any() result directly in an if condition.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">if</span> nums.any((n) <span class="op">-&gt;</span> n &gt; <span class="num">3</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;found big number&quot;</span>)
+  }
+}</code></pre><h3>edge_closure_nested_calls.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Inside Closure Call</span>
+<span class="comment">///</span>
+<span class="comment">/// A closure that calls another closure variable.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> apply(f: (<span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span>, val: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  f(val)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> double = (x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+  <span class="kw">let</span> result = apply(double, <span class="num">25</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>edge_closure_nested_if_else.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With Nested If-Else</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure body containing nested if-else returning strings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> classify = (n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    <span class="kw">if</span> n &gt; <span class="num">100</span> { <span class="str">&quot;big&quot;</span> } <span class="kw">else</span> { <span class="kw">if</span> n &gt; <span class="num">10</span> { <span class="str">&quot;medium&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;small&quot;</span> } }
+  }
+  <span class="builtin">println</span>(classify(<span class="num">5</span>))
+  <span class="builtin">println</span>(classify(<span class="num">50</span>))
+  <span class="builtin">println</span>(classify(<span class="num">500</span>))
+}</code></pre><h3>edge_closure_no_params.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With No Params</span>
+<span class="comment">///</span>
+<span class="comment">/// Zero-parameter closure `() -&gt; expr` should produce a parse error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> f = () <span class="op">-&gt;</span> <span class="num">42</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(f()))
+}</code></pre><h3>edge_closure_on_empty_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure On Empty List</span>
+<span class="comment">///</span>
+<span class="comment">/// Map/filter on an empty list should produce empty list without crash.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> empty: list&lt;<span class="builtin">int</span>&gt; = []
+  <span class="kw">let</span> result = empty.map((x) <span class="op">-&gt;</span> x * <span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.length))
+}</code></pre><h3>edge_closure_recursive.fg</h3><pre class="forge-code"><code><span class="comment">/// # Recursive Closure</span>
+<span class="comment">///</span>
+<span class="comment">/// A closure cannot reference itself by name since it's not</span>
+<span class="comment">/// yet defined when the closure body is compiled.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> factorial = (n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">if</span> n &lt;= <span class="num">1</span> { <span class="num">1</span> } <span class="kw">else</span> { n * factorial(n - <span class="num">1</span>) }
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(factorial(<span class="num">5</span>)))
+}</code></pre><h3>edge_closure_string_concat.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With String Concatenation</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure that concatenates strings in map.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>]
+  <span class="kw">let</span> result = words.map((w) <span class="op">-&gt;</span> w + <span class="str">&quot;!&quot;</span>)
+  <span class="kw">for</span> w <span class="kw">in</span> result {
+    <span class="builtin">println</span>(w)
+  }
+}</code></pre><h3>edge_closure_string_ops.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With String Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures that do string manipulation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>]
+  <span class="kw">let</span> upper = words.map((w) <span class="op">-&gt;</span> w.upper())
+  <span class="kw">for</span> w <span class="kw">in</span> upper {
+    <span class="builtin">println</span>(w)
+  }
+}</code></pre><h3>edge_closure_template_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With Template String</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure body using template string interpolation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> names = [<span class="str">&quot;Alice&quot;</span>, <span class="str">&quot;Bob&quot;</span>]
+  <span class="kw">let</span> greetings = names.map((name) <span class="op">-&gt;</span> `Hello, ${name}!`)
+  <span class="kw">for</span> g <span class="kw">in</span> greetings {
+    <span class="builtin">println</span>(g)
+  }
+}</code></pre><h3>edge_closure_type_change.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Changing Element Type</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure that maps int to string, changing the list element type.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> strs = nums.map((n) <span class="op">-&gt;</span> <span class="builtin">string</span>(n))
+  <span class="kw">for</span> s <span class="kw">in</span> strs {
+    <span class="builtin">println</span>(s)
+  }
+}</code></pre><h3>empty_list_if_else.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty List in If/Else Branch</span>
+<span class="comment">///</span>
+<span class="comment">/// When an empty list `[]` appears in one branch and a typed list</span>
+<span class="comment">/// in the other, the result should adopt the element type from</span>
+<span class="comment">/// the non-empty branch.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> raw = <span class="str">&quot;hello\nworld&quot;</span>
+  <span class="kw">let</span> items = <span class="kw">if</span> raw == <span class="str">&quot;&quot;</span> { [] } <span class="kw">else</span> { raw.split(<span class="str">&quot;\n&quot;</span>) }
+  <span class="kw">for</span> item <span class="kw">in</span> items {
+    <span class="builtin">println</span>(item)
+  }
+
+  <span class="builtin">println</span>(<span class="str">&quot;---&quot;</span>)
+
+  <span class="comment">// Also test with filter in the else branch</span>
+  <span class="kw">let</span> raw2 = <span class="str">&quot;a\n\nb\n&quot;</span>
+  <span class="kw">let</span> filtered = <span class="kw">if</span> raw2 == <span class="str">&quot;&quot;</span> { [] } <span class="kw">else</span> { raw2.split(<span class="str">&quot;\n&quot;</span>).filter(it != <span class="str">&quot;&quot;</span>) }
+  <span class="kw">for</span> f <span class="kw">in</span> filtered {
+    <span class="builtin">println</span>(f)
+  }
+
+  <span class="builtin">println</span>(<span class="str">&quot;---&quot;</span>)
+
+  <span class="comment">// Reversed: empty list in else branch</span>
+  <span class="kw">let</span> raw3 = <span class="str">&quot;x\ny&quot;</span>
+  <span class="kw">let</span> reversed = <span class="kw">if</span> raw3 != <span class="str">&quot;&quot;</span> { raw3.split(<span class="str">&quot;\n&quot;</span>) } <span class="kw">else</span> { [] }
+  <span class="kw">for</span> r <span class="kw">in</span> reversed {
+    <span class="builtin">println</span>(r)
+  }
+}</code></pre><h3>higher_order.fg</h3><pre class="forge-code"><code><span class="comment">/// # Higher-Order Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// Pass closures to list methods like `map` and `filter`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+  <span class="kw">let</span> result = nums.map(it * <span class="num">2</span>).filter(it &gt; <span class="num">4</span>).sum()
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>it_shorthand.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure with `it`</span>
+<span class="comment">///</span>
+<span class="comment">/// Use the implicit `it` parameter in closures.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+  <span class="kw">let</span> evens = nums.filter(it % <span class="num">2</span> == <span class="num">0</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(evens.length))
+
+  <span class="kw">let</span> doubled = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].map(it * <span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(doubled[<span class="num">0</span>]))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(doubled[<span class="num">1</span>]))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(doubled[<span class="num">2</span>]))
+}</code></pre><h3>list_find_any_all.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: list.find(), list.any(), list.all() with closures</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+
+  <span class="kw">let</span> first_even = nums.find((n) <span class="op">-&gt;</span> n % <span class="num">2</span> == <span class="num">0</span>)
+  <span class="kw">if</span> first_even != <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(first_even))
+  }
+
+  <span class="kw">let</span> has_big = nums.any((n) <span class="op">-&gt;</span> n &gt; <span class="num">3</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(has_big))
+
+  <span class="kw">let</span> all_positive = nums.all((n) <span class="op">-&gt;</span> n &gt; <span class="num">10</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(all_positive))
+}</code></pre><h3>map_struct_field.fg</h3><pre class="forge-code"><code><span class="comment">/// # Map Struct Field</span>
+<span class="comment">///</span>
+<span class="comment">/// Mapping over a list of structs to extract a field, then summing.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> FileInfo = { name: <span class="builtin">string</span>, size: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> files = [
+    FileInfo { name: <span class="str">&quot;a.txt&quot;</span>, size: <span class="num">100</span> },
+    FileInfo { name: <span class="str">&quot;b.txt&quot;</span>, size: <span class="num">200</span> },
+    FileInfo { name: <span class="str">&quot;c.txt&quot;</span>, size: <span class="num">300</span> }
+  ]
+  <span class="kw">let</span> total = files.map((f) <span class="op">-&gt;</span> f.size).sum()
+  <span class="builtin">println</span>(total)
+}</code></pre><h3>reduce.fg</h3><pre class="forge-code"><code><span class="comment">/// # Reduce with Closure</span>
+<span class="comment">///</span>
+<span class="comment">/// Use reduce with an explicit two-parameter closure.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> product = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>].reduce(<span class="num">1</span>, (acc, n) <span class="op">-&gt;</span> acc * n)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(product))
+}</code></pre><h3>stress_chained_filter_map.fg</h3><pre class="forge-code"><code><span class="comment">/// # Stress: Filter Then Map Then Filter</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple alternating filter/map operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+    .filter((n) <span class="op">-&gt;</span> n % <span class="num">2</span> == <span class="num">0</span>)
+    .map((n) <span class="op">-&gt;</span> n * n)
+    .filter((n) <span class="op">-&gt;</span> n &gt; <span class="num">10</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>stress_closure_repeated_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Called Repeatedly</span>
+<span class="comment">///</span>
+<span class="comment">/// Same closure variable called multiple times with different arguments.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> add = (a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { a + b }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add(<span class="num">1</span>, <span class="num">2</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add(<span class="num">10</span>, <span class="num">20</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add(<span class="num">100</span>, <span class="num">200</span>)))
+}</code></pre><h3>stress_closure_returns_closure.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure Returns Closure</span>
+<span class="comment">///</span>
+<span class="comment">/// A closure that returns another closure (higher-order).</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> apply(f: (<span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span>, x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  f(x)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> triple = (x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">3</span> }
+  <span class="kw">let</span> result = apply(triple, <span class="num">5</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>stress_deeply_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deeply Nested Closures</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures nested 5 levels deep via chained map calls.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums
+    .map((a) <span class="op">-&gt;</span> a + <span class="num">1</span>)
+    .map((b) <span class="op">-&gt;</span> b * <span class="num">2</span>)
+    .map((c) <span class="op">-&gt;</span> c + <span class="num">1</span>)
+    .map((d) <span class="op">-&gt;</span> d * <span class="num">2</span>)
+    .map((e) <span class="op">-&gt;</span> e - <span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result[<span class="num">2</span>]))
+}</code></pre><h3>stress_many_params.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure With Many Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure body with complex arithmetic.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> compute = (a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">let</span> x = a * <span class="num">2</span>
+    <span class="kw">let</span> y = b + <span class="num">3</span>
+    <span class="kw">let</span> z = x + y
+    z * <span class="num">2</span> - <span class="num">1</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(compute(<span class="num">5</span>, <span class="num">7</span>)))
+}</code></pre><h3>stress_multiline_in_map.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiline Closure in Map</span>
+<span class="comment">///</span>
+<span class="comment">/// Closure with block body inside a map call.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map((n) <span class="op">-&gt;</span> {
+    <span class="kw">let</span> doubled = n * <span class="num">2</span>
+    <span class="kw">let</span> added = doubled + <span class="num">10</span>
+    added
+  })
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h2>Tokens</h2><p><span class="tag">=&gt;</span> <span class="tag">-&gt;</span> </p><h2>AST Nodes</h2><p><span class="tag">Closure</span> </p><h2>Symbols</h2><p><span class="tag">-&gt;</span> </p><h2>Enables</h2><ul><li><a href="it_parameter.html">it_parameter</a></li></ul></main>
+</div>
+</body>
+</html>

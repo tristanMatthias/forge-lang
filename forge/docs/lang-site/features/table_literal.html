@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Table Literal — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html" class="active">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Table Literal <span class="badge badge-stable">stable</span></h1><p>table { cols | rows } — tabular data literals</p><p>Inline table literals that desugar to List&lt;struct&gt;</p><div class="long-description"><p>Table literals provide a concise syntax for defining tabular data using pipe-delimited columns. Instead of a list of structs or a list of lists, you write the data as a visual table directly in your source code, with `|` separating columns and each row on its own line.</p><p>This syntax is especially useful for test data, configuration tables, and any scenario where data is naturally two-dimensional. The visual alignment of columns makes the data easy to read and verify at a glance, unlike nested data structures that obscure the tabular nature of the data.</p><p>Table literals produce a typed list of records. The first row defines the column names and types, and subsequent rows provide the values. The compiler verifies that every row has the correct number of columns and that values match the declared types.</p><p>This feature is unique to Forge. While languages like Haskell have QuasiQuoters and Ruby has heredocs for embedding structured data, Forge's table literals are first-class syntax with full type checking and compile-time validation.</p></div><h2>Syntax</h2><pre class="forge-code"><code>table { col1 | col2; val1 | val2 }</code></pre><h2>Examples</h2><h3>basic.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic table literal</span>
+<span class="comment">///</span>
+<span class="comment">/// Table literals desugar to List&lt;struct&gt;.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> users = table {
+        name    | age | active
+        <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>  | <span class="kw">true</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="num">25</span>  | <span class="kw">false</span>
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users.length))
+    <span class="builtin">println</span>(users[<span class="num">0</span>].name)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users[<span class="num">1</span>].age))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users[<span class="num">1</span>].active))
+}</code></pre><h3>composition_with_loops.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table Processing</span>
+<span class="comment">///</span>
+<span class="comment">/// Using table literals with loops for</span>
+<span class="comment">/// structured data processing.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> people = table {
+    name      | age
+    <span class="str">&quot;Alice&quot;</span>   | <span class="num">30</span>
+    <span class="str">&quot;Bob&quot;</span>     | <span class="num">25</span>
+    <span class="str">&quot;Charlie&quot;</span> | <span class="num">35</span>
+  }
+
+  <span class="kw">for</span> row <span class="kw">in</span> people {
+    <span class="builtin">println</span>(`${row.name}: ${row.age}`)
+  }
+}</code></pre><h3>expressions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table with expressions in cells</span>
+<span class="comment">///</span>
+<span class="comment">/// Cell values can be any expression, not just literals.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> discount(price: <span class="builtin">float</span>) <span class="op">-&gt;</span> <span class="builtin">float</span> { price * <span class="num">0.8</span> }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> base = <span class="num">100.0</span>
+
+    <span class="kw">let</span> products = table {
+        name     | price      | discounted
+        <span class="str">&quot;Widget&quot;</span> | base       | discount(base)
+        <span class="str">&quot;Gadget&quot;</span> | base * <span class="num">2.0</span> | discount(base * <span class="num">2.0</span>)
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(products[<span class="num">0</span>].price))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(products[<span class="num">0</span>].discounted))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(products[<span class="num">1</span>].discounted))
+}</code></pre><h3>filter_map.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table with filter and map</span>
+<span class="comment">///</span>
+<span class="comment">/// Tables work with list methods since they desugar to List&lt;struct&gt;.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> scores = table {
+        name    | score
+        <span class="str">&quot;alice&quot;</span> | <span class="num">92</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="num">67</span>
+        <span class="str">&quot;carol&quot;</span> | <span class="num">85</span>
+        <span class="str">&quot;dave&quot;</span>  | <span class="num">43</span>
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(scores.length))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(scores[<span class="num">0</span>].score))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(scores[<span class="num">1</span>].score))
+}</code></pre><h3>mixed_types_error.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mixed data types in a column</span>
+<span class="comment">///</span>
+<span class="comment">/// All values in a table column must have the same type.</span>
+<span class="comment">/// The type is inferred from the first row.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> data = table {
+        name    | age
+        <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="str">&quot;twenty&quot;</span>
+    }
+}</code></pre><h3>single_column.fg</h3><pre class="forge-code"><code><span class="comment">/// # Single column table</span>
+<span class="comment">///</span>
+<span class="comment">/// A table with just one column (no pipe separators in rows).</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> names = table {
+        name
+        <span class="str">&quot;alice&quot;</span>
+        <span class="str">&quot;bob&quot;</span>
+        <span class="str">&quot;carol&quot;</span>
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(names.length))
+    <span class="builtin">println</span>(names[<span class="num">0</span>].name)
+}</code></pre><h3>table_access_last.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table Access Last Element</span>
+<span class="comment">///</span>
+<span class="comment">/// Access the last row by computed index.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> users = table {
+    name    | age
+    <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>
+    <span class="str">&quot;bob&quot;</span>   | <span class="num">25</span>
+    <span class="str">&quot;carol&quot;</span> | <span class="num">35</span>
+  }
+
+  <span class="kw">let</span> last_idx = users.length - <span class="num">1</span>
+  <span class="builtin">println</span>(users[last_idx].name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(users[last_idx].age))
+}</code></pre><h3>table_bool_column.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table with Bool Column</span>
+<span class="comment">///</span>
+<span class="comment">/// Table with a column of all boolean values.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> flags = table {
+    name    | enabled
+    <span class="str">&quot;alpha&quot;</span> | <span class="kw">true</span>
+    <span class="str">&quot;beta&quot;</span>  | <span class="kw">false</span>
+    <span class="str">&quot;gamma&quot;</span> | <span class="kw">true</span>
+  }
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(flags[<span class="num">0</span>].enabled))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(flags[<span class="num">1</span>].enabled))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(flags[<span class="num">2</span>].enabled))
+}</code></pre><h3>table_computed_cells.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table with Computed Cell Values</span>
+<span class="comment">///</span>
+<span class="comment">/// Table cells can be arbitrary expressions including string templates.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> items: List&lt;{label: <span class="builtin">string</span>, value: <span class="builtin">int</span>}&gt; = []
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">1..3</span> {
+    items.push({ label: `item-${i}`, value: i })
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  <span class="builtin">println</span>(items[<span class="num">0</span>].label)
+  <span class="builtin">println</span>(items[<span class="num">1</span>].label)
+}</code></pre><h3>table_empty.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty Table</span>
+<span class="comment">///</span>
+<span class="comment">/// Table with headers but no data rows.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> items = table {
+        name | price
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+}</code></pre><h3>table_in_function.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table in Function</span>
+<span class="comment">///</span>
+<span class="comment">/// Table literal created and returned from a function.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> make_users() <span class="op">-&gt;</span> List&lt;{name: <span class="builtin">string</span>, age: <span class="builtin">int</span>}&gt; {
+    table {
+        name    | age
+        <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="num">25</span>
+    }
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> users = make_users()
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users.length))
+    <span class="builtin">println</span>(users[<span class="num">0</span>].name)
+    <span class="builtin">println</span>(users[<span class="num">1</span>].name)
+}</code></pre><h3>table_iteration.fg</h3><pre class="forge-code"><code><span class="comment">/// # Table Iteration</span>
+<span class="comment">///</span>
+<span class="comment">/// Iterate over table rows with a for loop.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> users = table {
+        name    | age
+        <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="num">25</span>
+        <span class="str">&quot;carol&quot;</span> | <span class="num">35</span>
+    }
+
+    <span class="kw">for</span> user <span class="kw">in</span> users {
+        <span class="builtin">println</span>(`${user.name}: ${user.age}`)
+    }
+}</code></pre><h3>table_many_columns.fg</h3><pre class="forge-code"><code><span class="comment">/// # Many Columns Table</span>
+<span class="comment">///</span>
+<span class="comment">/// Table with five columns.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> users = table {
+        name    | age | active | role    | score
+        <span class="str">&quot;alice&quot;</span> | <span class="num">30</span>  | <span class="kw">true</span>   | <span class="str">&quot;admin&quot;</span> | <span class="num">95</span>
+        <span class="str">&quot;bob&quot;</span>   | <span class="num">25</span>  | <span class="kw">false</span>  | <span class="str">&quot;user&quot;</span>  | <span class="num">72</span>
+    }
+
+    <span class="builtin">println</span>(users[<span class="num">0</span>].name)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users[<span class="num">0</span>].age))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(users[<span class="num">0</span>].active))
+    <span class="builtin">println</span>(users[<span class="num">0</span>].role)
+}</code></pre><h3>table_single_row.fg</h3><pre class="forge-code"><code><span class="comment">/// # Single Row Table</span>
+<span class="comment">///</span>
+<span class="comment">/// Table with one data row.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> items = table {
+        name     | price
+        <span class="str">&quot;widget&quot;</span> | <span class="num">99</span>
+    }
+
+    <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+    <span class="builtin">println</span>(items[<span class="num">0</span>].name)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(items[<span class="num">0</span>].price))
+}</code></pre><h2>Tokens</h2><p><span class="tag">table</span> </p><h2>Dependencies</h2><ul><li><a href="types_core.html">types_core</a></li></ul></main>
+</div>
+</body>
+</html>

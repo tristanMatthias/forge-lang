@@ -1,0 +1,14 @@
+/// # Map With Bool Values
+///
+/// Maps can hold bool values with `map<string, bool>`.
+///
+/// expect: true
+/// expect: false
+
+fn main() {
+  let m = {"active": true, "deleted": false}
+  let a = m.get("active") ?? false
+  let d = m.get("deleted") ?? true
+  println(a)
+  println(d)
+}

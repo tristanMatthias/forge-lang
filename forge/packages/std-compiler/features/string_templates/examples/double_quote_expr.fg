@@ -1,0 +1,11 @@
+/// # Double-Quoted Expression Interpolation
+///
+/// Expressions inside `${...}` in double-quoted strings are evaluated.
+///
+/// expect: result: 7
+
+fn main() {
+  let x = 3
+  let y = 4
+  println("result: ${x + y}")
+}

@@ -1,0 +1,11 @@
+/// # JSON Stringify Empty List
+///
+/// Stringify an empty parsed list produces "[]".
+///
+/// expect: []
+
+fn main() {
+  let empty: list<string> = json.parse("[]")
+  let s = json.stringify(empty)
+  println(s)
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Codes — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html" class="active">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Error Codes</h1><p>All Forge compiler error and warning codes.</p><table><thead><tr><th>Code</th><th>Title</th><th>Level</th></tr></thead><tbody><tr id="F0001"><td><a href="#F0001">F0001</a></td><td>Unexpected token</td><td>Error</td></tr><tr id="F0002"><td><a href="#F0002">F0002</a></td><td>Unterminated string literal</td><td>Error</td></tr><tr id="F0003"><td><a href="#F0003">F0003</a></td><td>Unterminated template literal</td><td>Error</td></tr><tr id="F0006"><td><a href="#F0006">F0006</a></td><td>Invalid numeric literal</td><td>Error</td></tr><tr id="F0012"><td><a href="#F0012">F0012</a></td><td>Type mismatch</td><td>Error</td></tr><tr id="F0013"><td><a href="#F0013">F0013</a></td><td>Cannot assign to immutable variable</td><td>Error</td></tr><tr id="F0014"><td><a href="#F0014">F0014</a></td><td>Wrong number of arguments</td><td>Error</td></tr><tr id="F0020"><td><a href="#F0020">F0020</a></td><td>Undefined variable</td><td>Error</td></tr><tr id="F0072"><td><a href="#F0072">F0072</a></td><td>Unknown annotation</td><td>Error</td></tr><tr id="F0073"><td><a href="#F0073">F0073</a></td><td>Annotation target mismatch</td><td>Error</td></tr><tr id="F0074"><td><a href="#F0074">F0074</a></td><td>Provider annotation outside its context</td><td>Error</td></tr><tr id="F0801"><td><a href="#F0801">F0801</a></td><td>Unused variable</td><td>Warning</td></tr><tr id="F9999"><td><a href="#F9999">F9999</a></td><td>Internal compiler error</td><td>Error</td></tr></tbody></table><h2 id="F0001-detail">F0001 &mdash; Unexpected token</h2><p>The parser encountered a token it did not expect at this position.</p><p><strong>Help:</strong> Check for missing punctuation, misspelled keywords, or extra characters.</p><p>This error occurs when the Forge parser encounters a token that doesn't fit
+the expected grammar at the current position.
+
+Common causes:
+- Missing semicolons or closing delimiters
+- Misspelled keywords (e.g., `fucntion` instead of `fn`)
+- Extra characters or symbols in the wrong place
+
+Example:
+```forge
+fn main() {
+  println(&quot;hello&quot;    // &lt;- missing closing parenthesis
+}
+```</p><h2 id="F0002-detail">F0002 &mdash; Unterminated string literal</h2><p>A string literal was opened but never closed.</p><p><strong>Help:</strong> Add a closing quote to terminate the string.</p><p>String literals must be closed with a matching quote character.
+
+Example of the error:
+```forge
+let name = &quot;hello
+```
+
+Fix:
+```forge
+let name = &quot;hello&quot;
+```</p><h2 id="F0003-detail">F0003 &mdash; Unterminated template literal</h2><p>A template literal was opened but never closed.</p><p><strong>Help:</strong> Add a closing backtick to terminate the template literal.</p><p>Template literals (backtick strings) must be closed with a matching backtick.
+
+Example of the error:
+```forge
+let msg = `hello ${name}
+```
+
+Fix:
+```forge
+let msg = `hello ${name}`
+```</p><h2 id="F0006-detail">F0006 &mdash; Invalid numeric literal</h2><p>A numeric literal could not be parsed as a valid number.</p><p><strong>Help:</strong> Check that the number is well-formed (e.g., no double dots, valid digits).</p><p>This error occurs when the lexer encounters a sequence that looks like a number
+but cannot be parsed as a valid integer or float.
+
+Examples:
+```forge
+let x = 12.34.56   // two decimal points
+let y = 99999999999999999999  // overflow
+```</p><h2 id="F0012-detail">F0012 &mdash; Type mismatch</h2><p>The type of an expression does not match what was expected.</p><p><strong>Help:</strong> Check the types in your expression. You may need a conversion function like `string()` or `int()`.</p><p>This error occurs when the compiler expects one type but finds another.
+
+Example:
+```forge
+let port: string = 8080  // int assigned to string
+```
+
+Fix:
+```forge
+let port: string = string(8080)
+```</p><h2 id="F0013-detail">F0013 &mdash; Cannot assign to immutable variable</h2><p>Attempted to assign a new value to an immutable variable.</p><p><strong>Help:</strong> Use `mut` instead of `let` if you need to reassign this variable.</p><p>Variables declared with `let` are immutable by default. To make a variable
+reassignable, use `mut` instead.
+
+Example of the error:
+```forge
+let x = 42
+x = 100  // error: x is immutable
+```
+
+Fix:
+```forge
+mut x = 42
+x = 100  // ok: x is mutable
+```</p><h2 id="F0014-detail">F0014 &mdash; Wrong number of arguments</h2><p>A function was called with the wrong number of arguments.</p><p><strong>Help:</strong> Check the function signature and provide the correct number of arguments.</p><p>This error occurs when a function is called with more or fewer arguments
+than it expects.
+
+Example:
+```forge
+fn add(a: int, b: int) -&gt; int {
+    a + b
+}
+
+fn main() {
+    let result = add(1)  // error: expects 2 arguments, got 1
+}
+```
+
+Fix:
+```forge
+fn main() {
+    let result = add(1, 2)  // correct: 2 arguments
+}
+```</p><h2 id="F0020-detail">F0020 &mdash; Undefined variable</h2><p>A variable was referenced that has not been defined in the current scope.</p><p><strong>Help:</strong> Check for typos in the variable name, or define it before use.</p><p>This error occurs when you use a variable name that hasn't been declared
+in any accessible scope.
+
+Example:
+```forge
+fn main() {
+  println(string(x))  // error: x is not defined
+}
+```
+
+Fix:
+```forge
+fn main() {
+  let x = 42
+  println(string(x))
+}
+```</p><h2 id="F0072-detail">F0072 &mdash; Unknown annotation</h2><p>An annotation was used that is not recognized as a core or provider annotation.</p><p><strong>Help:</strong> Check for typos in the annotation name. Available core annotations: @min, @max, @validate, @pattern, @transform, @default.</p><p>This error occurs when you use an annotation that is not recognized by the compiler.
+
+Example of the error:
+```forge
+type User = {
+  name: string @required,
+}
+```
+
+Fix — use a valid annotation:
+```forge
+type User = {
+  name: string @validate(len &gt; 0),
+}
+```</p><h2 id="F0073-detail">F0073 &mdash; Annotation target mismatch</h2><p>A type-level annotation was used on a field, or vice versa.</p><p><strong>Help:</strong> Move the annotation to the correct position — type-level annotations go before fields, not on them.</p><p>This error occurs when an annotation is used on the wrong target. For example,
+@table is a type-level annotation that belongs at the top of a model block,
+not on individual fields.
+
+Example of the error:
+```forge
+model User {
+  name: string @table(&quot;custom&quot;)  // error: @table is type-level
+}
+```
+
+Fix:
+```forge
+model User {
+  @table(&quot;custom&quot;)
+  name: string
+}
+```</p><h2 id="F0074-detail">F0074 &mdash; Provider annotation outside its context</h2><p>A provider-scoped annotation was used outside its provider context.</p><p><strong>Help:</strong> This annotation is only valid inside a model block. Use `model` instead of `type` for database features.</p><p>This error occurs when a model/provider annotation like @primary, @unique,
+@auto_increment, @hidden, or @owner is used on a plain type declaration
+instead of inside a model block.
+
+Example of the error:
+```forge
+type UserInput = {
+  name: string @primary,  // error: @primary needs a model
+}
+```
+
+Fix:
+```forge
+use @std.model.{model}
+
+model UserInput {
+  name: string @primary
+}
+```</p><h2 id="F0801-detail">F0801 &mdash; Unused variable</h2><p>A variable was declared but never used.</p><p><strong>Help:</strong> Prefix the variable name with `_` to suppress this warning, or remove the variable.</p><p>This warning is emitted when a variable is declared but never referenced.
+Unused variables may indicate dead code or a logic error.
+
+To suppress this warning, prefix the variable name with an underscore:
+```forge
+let _unused = compute_something()
+```</p><h2 id="F9999-detail">F9999 &mdash; Internal compiler error</h2><p>The compiler encountered an unexpected internal error.</p><p><strong>Help:</strong> This is a bug in the Forge compiler. Please report it at https://github.com/forge-lang/forge/issues</p><p>This error indicates a bug in the Forge compiler itself. The compiler
+encountered an unexpected state that it could not recover from.
+
+Please report this error with:
+1. The source file that triggered it
+2. The full error message
+3. Your Forge compiler version (`forge version`)</p></main>
+</div>
+</body>
+</html>

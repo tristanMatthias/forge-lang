@@ -1,0 +1,9 @@
+/// # Empty interpolation in double-quoted string
+///
+/// Empty `${}` should produce a compile error.
+///
+/// expect-error: F0001
+
+fn main() {
+  println("${}")
+}

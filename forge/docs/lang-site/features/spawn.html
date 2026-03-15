@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spawn — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html" class="active">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Spawn <span class="badge badge-stable">stable</span></h1><p>spawn { } — lightweight concurrent task execution</p><p>Concurrent execution with spawn { ... } blocks</p><div class="long-description"><p>The `spawn` keyword launches a concurrent task that executes independently from the spawning code. `spawn { expensive_computation() }` starts the computation and immediately continues with the next line. Tasks run concurrently, and their results can be communicated back through channels.</p><p>Spawn is the primary concurrency primitive in Forge. Rather than managing threads directly, you spawn lightweight tasks and communicate between them using channels. This follows the CSP (Communicating Sequential Processes) model, where shared state is replaced by message passing.</p><p>Spawned tasks share no mutable state with the spawning code. Any data needed by the task is captured at spawn time. This eliminates data races by construction, since there is no shared mutable memory to race on.</p><p>The model is similar to Go's goroutines and Erlang's processes. Tasks are lightweight enough to spawn thousands without performance concerns. Combined with channels and select, spawn provides a complete concurrent programming toolkit.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">spawn</span> { body }</code></pre><h2>Examples</h2><h3>basic_spawn.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Spawn</span>
+<span class="comment">///</span>
+<span class="comment">/// Spawn a concurrent task that sends a value through a channel.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    ch <span class="op">&lt;-</span> <span class="str">&quot;hello from spawn&quot;</span>
+  }
+
+  sleep(<span class="num">50</span>)
+  <span class="kw">let</span> msg = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(msg)
+}</code></pre><h3>composition_with_channels.fg</h3><pre class="forge-code"><code><span class="comment">/// # Concurrent Computation with Spawn</span>
+<span class="comment">///</span>
+<span class="comment">/// Spawning a background task and collecting</span>
+<span class="comment">/// the result via a channel.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    <span class="kw">let</span> answer = <span class="num">6</span> * <span class="num">7</span>
+    ch <span class="op">&lt;-</span> <span class="builtin">string</span>(answer)
+  }
+
+  sleep(<span class="num">50</span>)
+  <span class="kw">let</span> result = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(`result: ${result}`)
+}</code></pre><h3>spawn_capture_multiple.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn Captures Multiple Variables</span>
+<span class="comment">///</span>
+<span class="comment">/// A spawned task captures several outer variables.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> name = <span class="str">&quot;alice&quot;</span>
+  <span class="kw">let</span> age = <span class="num">30</span>
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    ch <span class="op">&lt;-</span> `${name} <span class="kw">is</span> ${age}`
+  }
+
+  sleep(<span class="num">50</span>)
+  <span class="kw">let</span> msg = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(msg)
+}</code></pre><h3>spawn_compute.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn with Computation</span>
+<span class="comment">///</span>
+<span class="comment">/// Spawned task does computation before sending result.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    <span class="kw">mut</span> sum = <span class="num">0</span>
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="num">1..11</span> {
+      sum = sum + i
+    }
+    ch <span class="op">&lt;-</span> <span class="builtin">string</span>(sum)
+  }
+
+  sleep(<span class="num">50</span>)
+  <span class="kw">let</span> result = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>spawn_multiple.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn Multiple Tasks</span>
+<span class="comment">///</span>
+<span class="comment">/// Spawn several tasks that each send a message through separate channels.</span>
+<span class="comment">/// Each channel guarantees ordering.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch1 = channel(<span class="num">1</span>)
+  <span class="kw">let</span> ch2 = channel(<span class="num">1</span>)
+  <span class="kw">let</span> ch3 = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> { ch1 <span class="op">&lt;-</span> <span class="str">&quot;first&quot;</span> }
+  <span class="kw">spawn</span> { ch2 <span class="op">&lt;-</span> <span class="str">&quot;second&quot;</span> }
+  <span class="kw">spawn</span> { ch3 <span class="op">&lt;-</span> <span class="str">&quot;third&quot;</span> }
+
+  sleep(<span class="num">100</span>)
+
+  <span class="builtin">println</span>(<span class="op">&lt;-</span> ch1)
+  <span class="builtin">println</span>(<span class="op">&lt;-</span> ch2)
+  <span class="builtin">println</span>(<span class="op">&lt;-</span> ch3)
+}</code></pre><h3>spawn_sequential_channels.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn with Sequential Channel Reads</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple spawned tasks send to the same channel. Read all results.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch = channel(<span class="num">3</span>)
+
+  <span class="kw">spawn</span> { ch <span class="op">&lt;-</span> <span class="str">&quot;a&quot;</span> }
+  <span class="kw">spawn</span> { ch <span class="op">&lt;-</span> <span class="str">&quot;b&quot;</span> }
+  <span class="kw">spawn</span> { ch <span class="op">&lt;-</span> <span class="str">&quot;c&quot;</span> }
+
+  sleep(<span class="num">100</span>)
+
+  <span class="kw">let</span> m1 = <span class="op">&lt;-</span> ch
+  <span class="kw">let</span> m2 = <span class="op">&lt;-</span> ch
+  <span class="kw">let</span> m3 = <span class="op">&lt;-</span> ch
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">if</span> m1 != <span class="str">&quot;&quot;</span> { count = count + <span class="num">1</span> }
+  <span class="kw">if</span> m2 != <span class="str">&quot;&quot;</span> { count = count + <span class="num">1</span> }
+  <span class="kw">if</span> m3 != <span class="str">&quot;&quot;</span> { count = count + <span class="num">1</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(count))
+}</code></pre><h3>spawn_shared_state.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn with Shared State</span>
+<span class="comment">///</span>
+<span class="comment">/// A spawned task can capture and use variables from the outer scope.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> prefix = <span class="str">&quot;hello&quot;</span>
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    ch <span class="op">&lt;-</span> `${prefix} world`
+  }
+
+  sleep(<span class="num">50</span>)
+  <span class="kw">let</span> msg = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(`result: ${msg}`)
+}</code></pre><h3>spawn_sleep.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spawn with Sleep</span>
+<span class="comment">///</span>
+<span class="comment">/// Spawn concurrent work and wait for it.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.channel
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ch = channel(<span class="num">1</span>)
+
+  <span class="kw">spawn</span> {
+    sleep(<span class="num">50</span>)
+    ch <span class="op">&lt;-</span> <span class="str">&quot;done&quot;</span>
+  }
+
+  <span class="kw">let</span> msg = <span class="op">&lt;-</span> ch
+  <span class="builtin">println</span>(msg)
+}</code></pre><h2>Tokens</h2><p><span class="tag">spawn</span> </p><h2>AST Nodes</h2><p><span class="tag">SpawnBlock</span> </p><h2>Enables</h2><ul><li><a href="channels.html">channels</a></li></ul></main>
+</div>
+</body>
+</html>

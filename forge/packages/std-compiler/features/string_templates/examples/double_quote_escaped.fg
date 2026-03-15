@@ -1,0 +1,9 @@
+/// # Double-Quoted Escaped Interpolation
+///
+/// Escaped `\${...}` remains literal in double-quoted strings.
+///
+/// expect: literal ${not_interpolated}
+
+fn main() {
+  println("literal \${not_interpolated}")
+}

@@ -42,7 +42,7 @@ fn main() {
   let features_dir = fs.join(fs.cwd(), "compiler/features")
 
   println("Running tests...")
-  let test_json = $"./target/release/forge test --json 2>/dev/null"
+  let test_json = $"./target/release/compiler test --json 2>/dev/null"
   let results: list<{feature: string, passed: int, total: int}> = json.parse(test_json)
 
   mut updated = 0

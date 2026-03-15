@@ -1,0 +1,16 @@
+/// Package command — package management.
+
+use shared.{forward}
+
+export command package "Package management commands" {
+    command new "Scaffold a new package" {
+        arg name "Package name (e.g., my-package)"
+        flag with_component "Include component template example"
+
+        run {
+            forward("package")
+        }
+    }
+
+    run { 0 }
+}

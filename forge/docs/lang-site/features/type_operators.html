@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Type Operators — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html" class="active">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Type Operators <span class="badge badge-stable">stable</span></h1><p>without/only/partial — type-level field transformations</p><p>Type-level operators: without, with, only, as partial for deriving types from existing types</p><div class="long-description"><p>Type operators are compile-time transformations that derive new types from existing ones. Forge provides `without`, `only`, `partial`, and `with` for manipulating struct types. For example, `type CreateUser = User without { id }` creates a type with all User fields except `id`.</p><p>The `only` operator selects a subset of fields: `type UserName = User only { name, email }`. The `partial` operator makes all fields optional: `type UserUpdate = User partial`. The `with` operator adds or overrides fields: `type AdminUser = User with { role: string }`.</p><p>These operators are essential for API design, where you often need variations of a base type for different operations (create, update, response). Instead of manually maintaining parallel type definitions that drift out of sync, type operators derive the variations and keep them consistent automatically.</p><p>Type operators compose: `type CreateUser = User without { id } with { password: string }` removes the `id` field and adds a `password` field in a single declaration. This is similar to TypeScript's `Omit`, `Pick`, and `Partial` utility types but with cleaner syntax.</p></div><h2>Syntax</h2><pre class="forge-code"><code>Type without field
+Type only [fields]
+partial Type</code></pre><h2>Examples</h2><h3>as_partial.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: as partial — all fields optional</span>
+
+<span class="kw">type</span> User = { name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+<span class="kw">type</span> UserUpdate = User only {name, email, age} as partial
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> update: UserUpdate = { name: <span class="str">&quot;bob&quot;</span> }
+  <span class="builtin">println</span>(update.name <span class="op">??</span> <span class="str">&quot;none&quot;</span>)
+  <span class="builtin">println</span>(update.email <span class="op">??</span> <span class="str">&quot;none&quot;</span>)
+}</code></pre><h3>chaining.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: chaining type operators</span>
+
+<span class="kw">type</span> User = { id: <span class="builtin">int</span>, name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, password: <span class="builtin">string</span>, role: <span class="builtin">string</span> }
+
+<span class="kw">type</span> UpdateUser = User without {id, password} as partial
+
+<span class="kw">fn</span> takes_update(u: UpdateUser) {
+  <span class="builtin">println</span>(u.email <span class="op">??</span> <span class="str">&quot;none&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  takes_update({ email: <span class="str">&quot;new@test.com&quot;</span> })
+}</code></pre><h3>composition_with_structs.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type Transformations</span>
+<span class="comment">///</span>
+<span class="comment">/// Using only to pick specific fields</span>
+<span class="comment">/// for type-safe struct projections.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span>, email: <span class="builtin">string</span> }
+<span class="kw">type</span> Summary = User only {name, age}
+
+<span class="kw">fn</span> print_summary(u: Summary) {
+  <span class="builtin">println</span>(u.name)
+  <span class="builtin">println</span>(u.age)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> user: Summary = { name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">30</span> }
+  print_summary(user)
+}</code></pre><h3>error_intersection_conflict.fg</h3><pre class="forge-code"><code><span class="kw">type</span> A = { name: <span class="builtin">string</span> @min(<span class="num">1</span>) }
+<span class="kw">type</span> B = { name: <span class="builtin">string</span> @min(<span class="num">5</span>) }
+<span class="kw">type</span> C = A &amp; B</code></pre><h3>intersection.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: type intersection A &amp; B merges fields</span>
+
+<span class="kw">type</span> HasName = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> HasEmail = { email: <span class="builtin">string</span> }
+<span class="kw">type</span> ContactInfo = HasName &amp; HasEmail
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c: ContactInfo = { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span> }
+  <span class="builtin">println</span>(c.name)
+  <span class="builtin">println</span>(c.email)
+}</code></pre><h3>intersection_validate.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: intersection merges annotations from both types</span>
+
+<span class="kw">type</span> HasName = { name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>) }
+<span class="kw">type</span> HasEmail = { email: <span class="builtin">string</span> @validate(email) }
+<span class="kw">type</span> ContactInfo = HasName &amp; HasEmail
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;bad&quot;</span> }, ContactInfo)
+  <span class="kw">match</span> result {
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="builtin">string</span>(e.fields.length))
+    Ok(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+}</code></pre><h3>only.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: only — pick fields from a type</span>
+
+<span class="kw">type</span> User = { id: <span class="builtin">int</span>, name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, password: <span class="builtin">string</span> }
+<span class="kw">type</span> UserPublic = User only {id, name, email}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> u: UserPublic = { id: <span class="num">1</span>, name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span> }
+  <span class="builtin">println</span>(u.name)
+}</code></pre><h3>shorthand_fields.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: shorthand field syntax { name } -&gt; { name: name }</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> name = <span class="str">&quot;alice&quot;</span>
+  <span class="kw">let</span> email = <span class="str">&quot;alice@test.com&quot;</span>
+  <span class="kw">let</span> user = { name, email, age: <span class="num">30</span> }
+  <span class="builtin">println</span>(user.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(user.age))
+}</code></pre><h3>type_only_single.fg</h3><pre class="forge-code"><code><span class="comment">/// # Only with Single Field</span>
+<span class="comment">///</span>
+<span class="comment">/// Pick a single field from a type.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = { id: <span class="builtin">int</span>, name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, password: <span class="builtin">string</span> }
+<span class="kw">type</span> NameOnly = User only {name}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> u: NameOnly = { name: <span class="str">&quot;bob&quot;</span> }
+  <span class="builtin">println</span>(u.name)
+}</code></pre><h3>type_partial_usage.fg</h3><pre class="forge-code"><code><span class="comment">/// # Partial Type in Function</span>
+<span class="comment">///</span>
+<span class="comment">/// Partial type used as a function parameter with some fields omitted.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Config = { host: <span class="builtin">string</span>, port: <span class="builtin">int</span>, debug: bool }
+<span class="kw">type</span> PartialConfig = Config only {host, port, debug} as partial
+
+<span class="kw">fn</span> show_host(c: PartialConfig) {
+  <span class="builtin">println</span>(c.host <span class="op">??</span> <span class="str">&quot;none&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  show_host({ host: <span class="str">&quot;localhost&quot;</span> })
+  show_host({ port: <span class="num">8080</span> })
+}</code></pre><h3>type_with.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: with — add fields to a type</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">float</span>, y: <span class="builtin">float</span> }
+<span class="kw">type</span> Point3D = Point <span class="kw">with</span> { z: <span class="builtin">float</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p: Point3D = { x: <span class="num">1.0</span>, y: <span class="num">2.0</span>, z: <span class="num">3.0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(p.z))
+}</code></pre><h3>type_with_annotation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Type With and Annotations</span>
+<span class="comment">///</span>
+<span class="comment">/// Combine type `with` operator alongside annotated fields.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Base = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Extended = Base <span class="kw">with</span> { active: bool }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> e: Extended = { name: <span class="str">&quot;alice&quot;</span>, active: <span class="kw">true</span> }
+  <span class="builtin">println</span>(e.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(e.active))
+}</code></pre><h3>type_without_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # Without on Type with Many Fields</span>
+<span class="comment">///</span>
+<span class="comment">/// Remove multiple fields from a large type.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = {
+  id: <span class="builtin">int</span>,
+  name: <span class="builtin">string</span>,
+  email: <span class="builtin">string</span>,
+  password: <span class="builtin">string</span>,
+  role: <span class="builtin">string</span>,
+  created_at: <span class="builtin">int</span>,
+  updated_at: <span class="builtin">int</span>,
+}
+
+<span class="kw">type</span> PublicUser = User without {id, password, created_at, updated_at}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> u: PublicUser = { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span>, role: <span class="str">&quot;admin&quot;</span> }
+  <span class="builtin">println</span>(u.name)
+  <span class="builtin">println</span>(u.role)
+}</code></pre><h3>without.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: without — remove fields from a type</span>
+
+<span class="kw">type</span> User = {
+  id: <span class="builtin">int</span>,
+  name: <span class="builtin">string</span>,
+  email: <span class="builtin">string</span>,
+  password: <span class="builtin">string</span>,
+  created_at: <span class="builtin">int</span>,
+}
+
+<span class="kw">type</span> CreateUser = User without {id, created_at}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> input: CreateUser = { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span>, password: <span class="str">&quot;secret123&quot;</span> }
+  <span class="builtin">println</span>(input.name)
+  <span class="builtin">println</span>(input.email)
+}</code></pre><h3>without_with_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: without + with chaining — remove id, add password_confirm</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = { id: <span class="builtin">int</span>, name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, password: <span class="builtin">string</span>, role: <span class="builtin">string</span> }
+<span class="kw">type</span> CreateUser = User without {id} <span class="kw">with</span> {password_confirm: <span class="builtin">string</span>}
+
+<span class="kw">fn</span> takes_create(c: CreateUser) {
+  <span class="builtin">println</span>(c.name)
+  <span class="builtin">println</span>(c.password_confirm)
+}
+
+<span class="kw">fn</span> main() {
+  takes_create({
+    name: <span class="str">&quot;alice&quot;</span>,
+    email: <span class="str">&quot;a@test.com&quot;</span>,
+    password: <span class="str">&quot;secret&quot;</span>,
+    role: <span class="str">&quot;member&quot;</span>,
+    password_confirm: <span class="str">&quot;secret&quot;</span>,
+  })
+}</code></pre><h2>Tokens</h2><p><span class="tag">without</span> <span class="tag">only</span> <span class="tag">partial</span> </p><h2>AST Nodes</h2><p><span class="tag">Without</span> <span class="tag">TypeWith</span> <span class="tag">Only</span> <span class="tag">AsPartial</span> </p></main>
+</div>
+</body>
+</html>

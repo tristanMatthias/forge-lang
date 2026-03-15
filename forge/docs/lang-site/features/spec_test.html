@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spec Test — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html" class="active">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Spec Test <span class="badge badge-stable">stable</span></h1><p>spec/given/then — BDD-style behavior-driven tests</p><p>Test framework: spec, given, then, should_fail, where table, skip, todo (requires use @std.test)</p><div class="long-description"><p>Forge includes a built-in BDD-style testing framework with `spec`, `given`, `then`, and `expect` blocks. Tests are written as structured specifications that read like documentation: `spec &quot;math&quot; { given &quot;addition&quot; { then &quot;1 + 1 = 2&quot; { expect(1 + 1 == 2) } } }`.</p><p>The `spec` block names the feature being tested. Inside it, `given` blocks describe preconditions or scenarios. `then` blocks describe expected behaviors. `expect(condition)` asserts that a condition is true. This three-level structure organizes tests into a readable hierarchy.</p><p>Test output shows the full path of each assertion: `math &gt; addition &gt; 1 + 1 = 2: PASS`. Failed tests show the expected and actual values with source location. The structured output makes it easy to identify exactly which scenario failed and why.</p><p>This approach is inspired by RSpec (Ruby), Jest's describe/it (JavaScript), and Kotest (Kotlin). The benefit over flat test functions is that related tests are grouped by topic, and the test names form readable sentences that serve as living documentation.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">spec</span> <span class="str">&quot;name&quot;</span> { <span class="kw">given</span> <span class="str">&quot;setup&quot;</span> { } <span class="kw">then</span> <span class="str">&quot;test&quot;</span> { } }</code></pre><h2>Examples</h2><h3>basic_spec.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Spec</span>
+<span class="comment">///</span>
+<span class="comment">/// Simple spec with then assertions.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ addition works</span>
+<span class="comment">/// expect-stderr: ✓ multiplication works</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;arithmetic&quot;</span> {
+        <span class="kw">let</span> a = <span class="num">2</span>
+        <span class="kw">let</span> b = <span class="num">3</span>
+
+        <span class="kw">then</span> <span class="str">&quot;addition works&quot;</span> { a + b == <span class="num">5</span> }
+        <span class="kw">then</span> <span class="str">&quot;multiplication works&quot;</span> { a * b == <span class="num">6</span> }
+    }
+}</code></pre><h3>composition_with_closures.fg</h3><pre class="forge-code"><code><span class="comment">/// # Testing Data Transformations</span>
+<span class="comment">///</span>
+<span class="comment">/// BDD-style tests verifying collection</span>
+<span class="comment">/// operations with closures.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ double maps correctly</span>
+<span class="comment">/// expect-stderr: ✓ filter and sum</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;list operations&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;double maps correctly&quot;</span> {
+            <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].map((x) <span class="op">-&gt;</span> x * <span class="num">2</span>)
+            result.sum() == <span class="num">12</span>
+        }
+        <span class="kw">then</span> <span class="str">&quot;filter and sum&quot;</span> {
+            <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>].filter((x) <span class="op">-&gt;</span> x &gt; <span class="num">2</span>)
+            result.sum() == <span class="num">7</span>
+        }
+    }
+}</code></pre><h3>deep_nesting.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deep Nesting</span>
+<span class="comment">///</span>
+<span class="comment">/// Deeply nested given blocks with setup at each level.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ starts at zero</span>
+<span class="comment">/// expect-stderr: ✓ has one item</span>
+<span class="comment">/// expect-stderr: ✓ has two items</span>
+<span class="comment">/// expect-stderr: 3 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;counter&quot;</span> {
+        <span class="kw">given</span> <span class="str">&quot;initial state&quot;</span> {
+            <span class="kw">let</span> count = <span class="num">0</span>
+
+            <span class="kw">then</span> <span class="str">&quot;starts at zero&quot;</span> { count == <span class="num">0</span> }
+
+            <span class="kw">given</span> <span class="str">&quot;after first increment&quot;</span> {
+                <span class="kw">let</span> count = count + <span class="num">1</span>
+
+                <span class="kw">then</span> <span class="str">&quot;has one item&quot;</span> { count == <span class="num">1</span> }
+
+                <span class="kw">given</span> <span class="str">&quot;after second increment&quot;</span> {
+                    <span class="kw">let</span> count = count + <span class="num">1</span>
+
+                    <span class="kw">then</span> <span class="str">&quot;has two items&quot;</span> { count == <span class="num">2</span> }
+                }
+            }
+        }
+    }
+}</code></pre><h3>failing_test.fg</h3><pre class="forge-code"><code><span class="comment">/// # Failing Test</span>
+<span class="comment">///</span>
+<span class="comment">/// Demonstrates test failure output.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ correct assertion</span>
+<span class="comment">/// expect-stderr: ✗ wrong assertion</span>
+<span class="comment">/// expect-stderr: 1 passed</span>
+<span class="comment">/// expect-stderr: 1 failed</span>
+<span class="comment">/// expect-exit: 1</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;assertions&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;correct assertion&quot;</span> { <span class="num">2</span> + <span class="num">2</span> == <span class="num">4</span> }
+        <span class="kw">then</span> <span class="str">&quot;wrong assertion&quot;</span> { <span class="num">2</span> + <span class="num">2</span> == <span class="num">5</span> }
+    }
+}</code></pre><h3>is_assertions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Is Assertions</span>
+<span class="comment">///</span>
+<span class="comment">/// Using the `is` keyword for type/value assertions in tests.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ null check</span>
+<span class="comment">/// expect-stderr: ✓ bool check</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;is keyword&quot;</span> {
+        <span class="kw">given</span> <span class="str">&quot;type checks&quot;</span> {
+            <span class="kw">let</span> x: <span class="builtin">int</span><span class="op">?</span> = <span class="kw">null</span>
+
+            <span class="kw">then</span> <span class="str">&quot;null check&quot;</span> { x <span class="kw">is</span> <span class="kw">null</span> }
+            <span class="kw">then</span> <span class="str">&quot;bool check&quot;</span> { <span class="kw">true</span> <span class="kw">is</span> bool }
+        }
+    }
+}</code></pre><h3>multi_spec.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Specs</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple spec blocks in one file.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ adds correctly</span>
+<span class="comment">/// expect-stderr: ✓ multiplies correctly</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;addition&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;adds correctly&quot;</span> { <span class="num">1</span> + <span class="num">1</span> == <span class="num">2</span> }
+    }
+
+    <span class="kw">spec</span> <span class="str">&quot;multiplication&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;multiplies correctly&quot;</span> { <span class="num">3</span> * <span class="num">4</span> == <span class="num">12</span> }
+    }
+}</code></pre><h3>nested_given.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested Given</span>
+<span class="comment">///</span>
+<span class="comment">/// Given blocks group tests with shared setup.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ sum is five</span>
+<span class="comment">/// expect-stderr: ✓ difference is one</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;math&quot;</span> {
+        <span class="kw">given</span> <span class="str">&quot;two numbers&quot;</span> {
+            <span class="kw">let</span> a = <span class="num">3</span>
+            <span class="kw">let</span> b = <span class="num">2</span>
+
+            <span class="kw">then</span> <span class="str">&quot;sum is five&quot;</span> { a + b == <span class="num">5</span> }
+            <span class="kw">then</span> <span class="str">&quot;difference is one&quot;</span> { a - b == <span class="num">1</span> }
+        }
+    }
+}</code></pre><h3>roughly.fg</h3><pre class="forge-code"><code><span class="comment">/// # Roughly</span>
+<span class="comment">///</span>
+<span class="comment">/// Approximate float comparison with tolerance.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ pi approximation</span>
+<span class="comment">/// expect-stderr: ✓ close enough</span>
+<span class="comment">/// expect-stderr: ✗ too far off</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+<span class="comment">/// expect-stderr: 1 failed</span>
+<span class="comment">/// expect-exit: 1</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;approximate matching&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;pi approximation&quot;</span> {
+            test.roughly(<span class="num">3.14</span>, <span class="num">3.14159</span>, <span class="num">0.01</span>)
+        }
+
+        <span class="kw">then</span> <span class="str">&quot;close enough&quot;</span> {
+            test.roughly(<span class="num">10.0</span>, <span class="num">10.05</span>, <span class="num">0.1</span>)
+        }
+
+        <span class="kw">then</span> <span class="str">&quot;too far off&quot;</span> {
+            test.roughly(<span class="num">1.0</span>, <span class="num">2.0</span>, <span class="num">0.1</span>)
+        }
+    }
+}</code></pre><h3>should_fail.fg</h3><pre class="forge-code"><code><span class="comment">/// # Should Fail</span>
+<span class="comment">///</span>
+<span class="comment">/// Tests that are expected to produce falsy results.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ negative check</span>
+<span class="comment">/// expect-stderr: ✓ overflow check</span>
+<span class="comment">/// expect-stderr: ✗ valid data does not fail</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+<span class="comment">/// expect-stderr: 1 failed</span>
+<span class="comment">/// expect-exit: 1</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;should_fail tests&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;negative check&quot;</span> should_fail {
+            <span class="num">-1</span> &gt; <span class="num">0</span>
+        }
+
+        <span class="kw">then</span> <span class="str">&quot;overflow check&quot;</span> should_fail {
+            <span class="num">999</span> &lt; <span class="num">100</span>
+        }
+
+        <span class="kw">then</span> <span class="str">&quot;valid data does not fail&quot;</span> should_fail {
+            <span class="comment">// This succeeds (1 + 1 == 2 is true), so should_fail makes it fail</span>
+            <span class="num">1</span> + <span class="num">1</span> == <span class="num">2</span>
+        }
+    }
+}</code></pre><h3>skip_todo.fg</h3><pre class="forge-code"><code><span class="comment">/// # Skip and Todo</span>
+<span class="comment">///</span>
+<span class="comment">/// Skip and todo markers for incomplete tests.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ basic check</span>
+<span class="comment">/// expect-stderr: ⊘ not ready yet</span>
+<span class="comment">/// expect-stderr: ○ future feature</span>
+<span class="comment">/// expect-stderr: 1 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;features&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;basic check&quot;</span> { <span class="num">1</span> + <span class="num">1</span> == <span class="num">2</span> }
+        skip <span class="str">&quot;not ready yet&quot;</span> {}
+        todo <span class="str">&quot;future feature&quot;</span>
+    }
+}</code></pre><h3>spec_multiple_then.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spec Multiple Then Assertions</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple then assertions checking different properties of the same value.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ is positive</span>
+<span class="comment">/// expect-stderr: ✓ is even</span>
+<span class="comment">/// expect-stderr: ✓ is less than 100</span>
+<span class="comment">/// expect-stderr: ✓ is greater than 5</span>
+<span class="comment">/// expect-stderr: 4 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;number properties&quot;</span> {
+        <span class="kw">let</span> n = <span class="num">42</span>
+
+        <span class="kw">then</span> <span class="str">&quot;is positive&quot;</span> { n &gt; <span class="num">0</span> }
+        <span class="kw">then</span> <span class="str">&quot;is even&quot;</span> { n % <span class="num">2</span> == <span class="num">0</span> }
+        <span class="kw">then</span> <span class="str">&quot;is less than 100&quot;</span> { n &lt; <span class="num">100</span> }
+        <span class="kw">then</span> <span class="str">&quot;is greater than 5&quot;</span> { n &gt; <span class="num">5</span> }
+    }
+}</code></pre><h3>spec_nested_given.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spec Nested Given Setup</span>
+<span class="comment">///</span>
+<span class="comment">/// Nested given blocks each add setup context.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ list is empty</span>
+<span class="comment">/// expect-stderr: ✓ list has one item</span>
+<span class="comment">/// expect-stderr: ✓ list has two items</span>
+<span class="comment">/// expect-stderr: 3 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;list building&quot;</span> {
+        <span class="kw">given</span> <span class="str">&quot;empty list&quot;</span> {
+            <span class="kw">let</span> items: List&lt;<span class="builtin">int</span>&gt; = []
+
+            <span class="kw">then</span> <span class="str">&quot;list is empty&quot;</span> { items.length == <span class="num">0</span> }
+
+            <span class="kw">given</span> <span class="str">&quot;one item added&quot;</span> {
+                <span class="kw">let</span> items = [<span class="num">1</span>]
+
+                <span class="kw">then</span> <span class="str">&quot;list has one item&quot;</span> { items.length == <span class="num">1</span> }
+
+                <span class="kw">given</span> <span class="str">&quot;second item added&quot;</span> {
+                    <span class="kw">let</span> items = [<span class="num">1</span>, <span class="num">2</span>]
+
+                    <span class="kw">then</span> <span class="str">&quot;list has two items&quot;</span> { items.length == <span class="num">2</span> }
+                }
+            }
+        }
+    }
+}</code></pre><h3>spec_todo_test.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spec Todo Placeholder</span>
+<span class="comment">///</span>
+<span class="comment">/// Todo marks tests that need to be written later.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ implemented test</span>
+<span class="comment">/// expect-stderr: ○ needs error handling</span>
+<span class="comment">/// expect-stderr: ○ needs edge cases</span>
+<span class="comment">/// expect-stderr: 1 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;feature coverage&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;implemented test&quot;</span> { <span class="num">1</span> + <span class="num">1</span> == <span class="num">2</span> }
+        todo <span class="str">&quot;needs error handling&quot;</span>
+        todo <span class="str">&quot;needs edge cases&quot;</span>
+    }
+}</code></pre><h3>spec_with_functions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Spec with Helper Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// Spec using helper functions for computation.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ factorial of 5 is 120</span>
+<span class="comment">/// expect-stderr: ✓ factorial of 0 is 1</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> factorial(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">if</span> n &lt;= <span class="num">1</span> {
+        <span class="num">1</span>
+    } <span class="kw">else</span> {
+        n * factorial(n - <span class="num">1</span>)
+    }
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;factorial&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;factorial of 5 is 120&quot;</span> { factorial(<span class="num">5</span>) == <span class="num">120</span> }
+        <span class="kw">then</span> <span class="str">&quot;factorial of 0 is 1&quot;</span> { factorial(<span class="num">0</span>) == <span class="num">1</span> }
+    }
+}</code></pre><h3>where_table.fg</h3><pre class="forge-code"><code><span class="comment">/// # Where Table</span>
+<span class="comment">///</span>
+<span class="comment">/// Parameterized tests using table literals.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ addition</span>
+<span class="comment">/// expect-stderr: ✓ addition</span>
+<span class="comment">/// expect-stderr: ✓ addition</span>
+<span class="comment">/// expect-stderr: 3 passed</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;parameterized&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;addition&quot;</span> where table {
+            a  | b  | expected
+            <span class="num">1</span>  | <span class="num">2</span>  | <span class="num">3</span>
+            <span class="num">10</span> | <span class="num">20</span> | <span class="num">30</span>
+            <span class="num">0</span>  | <span class="num">0</span>  | <span class="num">0</span>
+        } {
+            a + b == expected
+        }
+    }
+}</code></pre><h3>where_table_fail.fg</h3><pre class="forge-code"><code><span class="comment">/// # Where Table With Failures</span>
+<span class="comment">///</span>
+<span class="comment">/// Parameterized tests with some failing rows.</span>
+<span class="comment">///</span>
+<span class="comment">/// expect-stderr: ✓ comparison</span>
+<span class="comment">/// expect-stderr: ✓ comparison</span>
+<span class="comment">/// expect-stderr: ✗ comparison</span>
+<span class="comment">/// expect-stderr: 2 passed</span>
+<span class="comment">/// expect-stderr: 1 failed</span>
+<span class="comment">/// expect-exit: 1</span>
+
+<span class="kw">use</span> @std.test
+
+<span class="kw">fn</span> main() {
+    <span class="kw">spec</span> <span class="str">&quot;parameterized with failures&quot;</span> {
+        <span class="kw">then</span> <span class="str">&quot;comparison&quot;</span> where table {
+            value | threshold | passes
+            <span class="num">10</span>    | <span class="num">5</span>         | <span class="kw">true</span>
+            <span class="num">3</span>     | <span class="num">1</span>         | <span class="kw">true</span>
+            <span class="num">2</span>     | <span class="num">5</span>         | <span class="kw">true</span>
+        } {
+            value &gt; threshold == passes
+        }
+    }
+}</code></pre><h2>AST Nodes</h2><p><span class="tag">SpecBlock</span> <span class="tag">GivenBlock</span> <span class="tag">ThenBlock</span> <span class="tag">ThenShouldFail</span> <span class="tag">ThenShouldFailWith</span> <span class="tag">ThenWhere</span> <span class="tag">SkipBlock</span> <span class="tag">TodoStmt</span> </p><h2>Dependencies</h2><ul><li><a href="is_keyword.html">is_keyword</a></li><li><a href="table_literal.html">table_literal</a></li></ul></main>
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+/// # Escape Sequences Mixed With Interpolation
+///
+/// Escape sequences like `\n` must work alongside `${...}`.
+///
+/// expect: line1
+/// expect: middle
+/// expect: line3
+
+fn main() {
+  let var = "middle"
+  println("line1\n${var}\nline3")
+}

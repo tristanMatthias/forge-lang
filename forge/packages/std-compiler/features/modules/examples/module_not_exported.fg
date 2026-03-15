@@ -1,0 +1,11 @@
+/// # Symbol Not Exported
+///
+/// Importing a non-exported symbol produces an error.
+///
+/// expect-stderr: symbol `secret` is not exported from module `module_private`
+
+mod module_private
+
+use module_private.{secret}
+
+fn main() {}

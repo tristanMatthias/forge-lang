@@ -1,0 +1,10 @@
+/// # Double-Quoted String With Brace Inside Interpolation
+///
+/// A string literal containing `}` inside `${...}` must not
+/// prematurely close the interpolation.
+///
+/// expect: result: {}
+
+fn main() {
+  println("result: ${"{"+ "}"}")
+}

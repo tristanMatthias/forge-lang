@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipe Operator — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html" class="active">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Pipe Operator <span class="badge badge-stable">stable</span></h1><p>expr |&gt; fn — left-to-right function/method chaining</p><p>Pipe operator for function chaining: a |&gt; f(args) becomes a.f(args), a |&gt; f becomes f(a)</p><div class="long-description"><p>The pipe operator `|&gt;` passes the result of the left expression as the first argument to the right function. It transforms nested function calls into a readable left-to-right chain. Instead of `to_upper(trim(read_file(&quot;input.txt&quot;)))`, you write: `read_file(&quot;input.txt&quot;) |&gt; trim() |&gt; to_upper()`.</p><p>Pipes also work with method calls. `data |&gt; process(config)` is equivalent to `process(data, config)`, and `text |&gt; .trim()` calls the method on the piped value. This makes long transformation pipelines read like a recipe: each step takes the previous result and transforms it further.</p><p>Multi-line pipes are supported for complex chains. The `|&gt;` operator can appear at the start of a continuation line, so you can format pipelines vertically for readability.</p><p>The pipe operator is inspired by Elixir and F#, where it is fundamental to the language's style. In Forge, it pairs especially well with closures and collection methods, enabling a fluent, functional programming style without sacrificing type safety.</p></div><h2>Syntax</h2><pre class="forge-code"><code>expr <span class="op">|&gt;</span> <span class="kw">fn</span>
+expr <span class="op">|&gt;</span> .method(args)</code></pre><h2>Examples</h2><h3>basic_pipe.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Pipe</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `|&gt;` to chain function calls left-to-right.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+    .filter(it &gt; <span class="num">5</span>)
+    .map(it * <span class="num">10</span>)
+    .sum()
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>chained_pipe.fg</h3><pre class="forge-code"><code><span class="comment">/// # Chained Pipes</span>
+<span class="comment">///</span>
+<span class="comment">/// Chain multiple function calls with pipe operator.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+<span class="kw">fn</span> add_one(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x + <span class="num">1</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">5</span> <span class="op">|&gt;</span> double <span class="op">|&gt;</span> add_one
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>composition_with_methods.fg</h3><pre class="forge-code"><code><span class="comment">/// # Data Processing Pipeline</span>
+<span class="comment">///</span>
+<span class="comment">/// Multi-step data transformation using pipes</span>
+<span class="comment">/// with method calls and closures.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;hello world forge&quot;</span>
+    <span class="op">|&gt;</span> split(<span class="str">&quot; &quot;</span>)
+    <span class="op">|&gt;</span> map((w) <span class="op">-&gt;</span> w.upper())
+    <span class="op">|&gt;</span> join(<span class="str">&quot;-&quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>data_pipeline.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Pipe operator for data transformation pipelines</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> names = [<span class="str">&quot;alice&quot;</span>, <span class="str">&quot;bob&quot;</span>, <span class="str">&quot;charlie&quot;</span>]
+  <span class="kw">let</span> result = names
+    <span class="op">|&gt;</span> map((n) <span class="op">-&gt;</span> n.upper())
+    <span class="op">|&gt;</span> join(<span class="str">&quot;, &quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>method_pipe.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe to Method</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe into method calls and string operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;hello,world,forge&quot;</span>
+    <span class="op">|&gt;</span> split(<span class="str">&quot;,&quot;</span>)
+    <span class="op">|&gt;</span> map(x <span class="op">-&gt;</span> x.upper())
+    <span class="op">|&gt;</span> join(<span class="str">&quot; &quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_chain_long.fg</h3><pre class="forge-code"><code><span class="comment">/// # Long Pipe Chain</span>
+<span class="comment">///</span>
+<span class="comment">/// Chain 5+ pipe operations in sequence.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add_one(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x + <span class="num">1</span> }
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+<span class="kw">fn</span> square(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * x }
+<span class="kw">fn</span> subtract_three(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x - <span class="num">3</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">3</span> <span class="op">|&gt;</span> add_one <span class="op">|&gt;</span> double <span class="op">|&gt;</span> add_one <span class="op">|&gt;</span> subtract_three <span class="op">|&gt;</span> add_one <span class="op">|&gt;</span> add_one
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>pipe_chain_with_it.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe Chain With It Parameter</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe operator combined with `it` parameter in filter and map.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+    <span class="op">|&gt;</span> filter(it &gt; <span class="num">2</span>)
+    <span class="op">|&gt;</span> map(it * <span class="num">10</span>)
+    <span class="op">|&gt;</span> filter(it &gt; <span class="num">35</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>pipe_closure_variable.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe Into Closure Variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe operator works with closure variables, not just named functions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> double = (x) <span class="op">-&gt;</span> x * <span class="num">2</span>
+  <span class="kw">let</span> result = <span class="num">5</span> <span class="op">|&gt;</span> double
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_empty_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe From Empty List</span>
+<span class="comment">///</span>
+<span class="comment">/// Piping an empty list through filter and map produces empty list.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+    <span class="op">|&gt;</span> filter(it &gt; <span class="num">100</span>)
+    <span class="op">|&gt;</span> map(it * <span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.length))
+}</code></pre><h3>pipe_filter_map.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Pipe operator chaining filter and map</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>]
+  <span class="kw">let</span> result = nums
+    <span class="op">|&gt;</span> filter((n) <span class="op">-&gt;</span> n % <span class="num">2</span> == <span class="num">0</span>)
+    <span class="op">|&gt;</span> map((n) <span class="op">-&gt;</span> n * n)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>pipe_from_literal.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe From Integer Literal</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe directly from a literal value into a function.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> triple(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">3</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">7</span> <span class="op">|&gt;</span> triple
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>pipe_function.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe to Function</span>
+<span class="comment">///</span>
+<span class="comment">/// `a |&gt; f` calls `f(a)`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  n * <span class="num">2</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">5</span> <span class="op">|&gt;</span> double
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_function_parens.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe with parentheses</span>
+<span class="comment">///</span>
+<span class="comment">/// `a |&gt; f()` is equivalent to `a |&gt; f` — the piped value</span>
+<span class="comment">/// becomes the first argument. Extra args can also be passed.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { a + b }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="num">5</span> <span class="op">|&gt;</span> double())
+  <span class="builtin">println</span>(<span class="num">5</span> <span class="op">|&gt;</span> add(<span class="num">3</span>))
+}</code></pre><h3>pipe_long_chain_10.fg</h3><pre class="forge-code"><code><span class="comment">/// # 10-Step Pipe Chain</span>
+<span class="comment">///</span>
+<span class="comment">/// Stress test: piping through the same function 10 times.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> inc(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x + <span class="num">1</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">0</span> <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc <span class="op">|&gt;</span> inc
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>pipe_method_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe Combined with Method Calls</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe operator mixed with method chaining.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;hello world&quot;</span>
+    <span class="op">|&gt;</span> split(<span class="str">&quot; &quot;</span>)
+    <span class="op">|&gt;</span> map((w) <span class="op">-&gt;</span> w.upper())
+    <span class="op">|&gt;</span> join(<span class="str">&quot;-&quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_multiline.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiline Pipe</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe operator spanning multiple lines with `|&gt;` at the start of line.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { a + b }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="num">10</span>
+    <span class="op">|&gt;</span> double
+    <span class="op">|&gt;</span> add(<span class="num">5</span>)
+    <span class="op">|&gt;</span> double
+    <span class="op">|&gt;</span> add(<span class="num">10</span>)
+    <span class="op">|&gt;</span> double
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>pipe_nested_parens.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe With Parenthesized Expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe from a parenthesized sub-expression.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x * <span class="num">2</span> }
+<span class="kw">fn</span> add_one(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { x + <span class="num">1</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = (<span class="num">3</span> <span class="op">|&gt;</span> double) <span class="op">|&gt;</span> add_one
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>pipe_string_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe To String Method</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe a string into a method call.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;hello world&quot;</span>
+    <span class="op">|&gt;</span> upper()
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_string_split_join.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe String Split Then Join</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe a string through split and join with different separator.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;hello world test&quot;</span>
+    <span class="op">|&gt;</span> split(<span class="str">&quot; &quot;</span>)
+    <span class="op">|&gt;</span> join(<span class="str">&quot;-&quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe_with_closures.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pipe with Closures</span>
+<span class="comment">///</span>
+<span class="comment">/// Pipe into map and filter with closure arguments.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+    <span class="op">|&gt;</span> filter((n) <span class="op">-&gt;</span> n &gt; <span class="num">2</span>)
+    <span class="op">|&gt;</span> map((n) <span class="op">-&gt;</span> n * <span class="num">4</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h2>Tokens</h2><p><span class="tag">|&gt;</span> </p><h2>AST Nodes</h2><p><span class="tag">Pipe</span> </p><h2>Symbols</h2><p><span class="tag">|&gt;</span> </p></main>
+</div>
+</body>
+</html>

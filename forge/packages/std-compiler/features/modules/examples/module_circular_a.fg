@@ -1,0 +1,7 @@
+/// Helper for circular dependency test.
+
+mod module_circular_b
+
+export fn a() -> int {
+    return 1
+}

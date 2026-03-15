@@ -1,0 +1,14 @@
+/// # JSON Parse List with Whitespace
+///
+/// Parse JSON array with extra whitespace around elements.
+///
+/// expect: 3
+/// expect: 1
+/// expect: 3
+
+fn main() {
+  let parsed: list<int> = json.parse("  [  1  ,  2  ,  3  ]  ")
+  println(string(parsed.length))
+  println(string(parsed[0]))
+  println(string(parsed[2]))
+}

@@ -1,0 +1,10 @@
+/// Interpolation of empty string and string conversion
+///
+/// expect: empty: ||
+/// expect: converted: 42
+
+fn main() {
+  println(`empty: |${""}|`)
+  let x = 42
+  println(`converted: ${string(x)}`)
+}

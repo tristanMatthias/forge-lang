@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Propagation — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html" class="active">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Error Propagation <span class="badge badge-stable">stable</span></h1><p>Result types with ? propagation and catch blocks</p><p>Result types with Ok/Err constructors, ? propagation, and catch blocks</p><div class="long-description"><p>Error propagation in Forge uses the `?` operator to bubble errors up the call stack. When a function returns a Result type, appending `?` to the call either unwraps the success value or immediately returns the error to the caller. This eliminates the verbose `if err != nil` checks found in Go and the sprawling try/catch blocks of Java.</p><p>The `?` operator can only be used inside functions that themselves return a Result type. The compiler enforces this rule, so you always know whether a function can fail by looking at its return type. There are no hidden error paths.</p><p>For functions that need to handle errors rather than propagate them, the `catch` pattern provides structured error handling. This gives you the control of try/catch when you need it, while the `?` operator handles the common case of simply passing errors upward.</p><p>This design is directly inspired by Rust's `?` operator and Result type. It provides the same safety guarantees — every error must be explicitly handled or propagated — while keeping the syntax lightweight. Compared to exceptions, it makes error paths visible in type signatures and prevents the &quot;exception from nowhere&quot; problem.</p></div><h2>Syntax</h2><pre class="forge-code"><code>expr<span class="op">?</span>
+catch { body }</code></pre><h2>Examples</h2><h3>catch_different_types.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch Different Types</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions can return different error strings while sharing the same Result type.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> read_file(path: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> path == <span class="str">&quot;valid.txt&quot;</span> { Ok(<span class="str">&quot;file ok&quot;</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;file not found&quot;</span>) }
+}
+
+<span class="kw">fn</span> fetch_url(url: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> url == <span class="str">&quot;good&quot;</span> { Ok(<span class="str">&quot;data&quot;</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;network timeout&quot;</span>) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> f = read_file(<span class="str">&quot;valid.txt&quot;</span>) catch (e) { `caught: ${e}` }
+  <span class="builtin">println</span>(f)
+
+  <span class="kw">let</span> n = fetch_url(<span class="str">&quot;bad&quot;</span>) catch (e) { `caught: ${e}` }
+  <span class="builtin">println</span>(n)
+
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>catch_expression.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch Expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Use catch to handle Result errors inline.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> greet(name: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> name.length == <span class="num">0</span> {
+    Err(<span class="str">&quot;empty name&quot;</span>)
+  } <span class="kw">else</span> {
+    Ok(`hello, ${name}!`)
+  }
+}
+
+<span class="kw">fn</span> divide(a: <span class="builtin">float</span>, b: <span class="builtin">float</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0.0</span> { Err(<span class="str">&quot;division by zero&quot;</span>) } <span class="kw">else</span> { Ok(a / b) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> msg = greet(<span class="str">&quot;world&quot;</span>) catch (e) { `error: ${e}` }
+  <span class="builtin">println</span>(msg)
+
+  <span class="kw">let</span> result = divide(<span class="num">1.0</span>, <span class="num">0.0</span>) catch (e) {
+    <span class="builtin">println</span>(`error: ${e}`)
+    <span class="num">0.0</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>catch_no_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch Without Binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Catch blocks can omit the error binding when</span>
+<span class="comment">/// the error value is not needed.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> risky(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x &gt; <span class="num">0</span> { Ok(x) } <span class="kw">else</span> { Err(<span class="str">&quot;bad&quot;</span>) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = risky(<span class="num">42</span>) catch { <span class="num">0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a))
+
+  <span class="kw">let</span> b = risky(<span class="num">-1</span>) catch { <span class="num">-1</span> }
+  <span class="builtin">println</span>(`recovered: ${<span class="builtin">string</span>(b)}`)
+}</code></pre><h3>catch_re_err.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch Re-Err</span>
+<span class="comment">///</span>
+<span class="comment">/// Catch handler can return a new Err via `return Err(...)`,</span>
+<span class="comment">/// letting the outer catch handle it.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> inner() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  Err(<span class="str">&quot;inner err&quot;</span>)
+}
+
+<span class="kw">fn</span> outer() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = inner() catch (e) { <span class="kw">return</span> Err(<span class="str">&quot;outer err&quot;</span>) }
+  Ok(v)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = outer() catch (e) { <span class="num">0</span> }
+  <span class="builtin">println</span>(`final: ${<span class="builtin">string</span>(r)}`)
+}</code></pre><h3>catch_return.fg</h3><pre class="forge-code"><code><span class="comment">/// Catch with diverging handler (return exits the function).</span>
+
+<span class="kw">type</span> Input = { name: <span class="builtin">string</span> @min(<span class="num">3</span>) }
+
+<span class="kw">fn</span> try_validate() {
+  <span class="kw">let</span> input = validate({ name: <span class="str">&quot;ab&quot;</span> }, Input) catch (e) {
+    <span class="builtin">println</span>(<span class="str">&quot;invalid input&quot;</span>)
+    <span class="kw">return</span>
+  }
+  <span class="builtin">println</span>(input.name)
+}
+
+<span class="kw">fn</span> main() {
+  try_validate()
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>catch_template_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch Template String</span>
+<span class="comment">///</span>
+<span class="comment">/// Catch handler uses a template string that includes</span>
+<span class="comment">/// the error value in a descriptive message.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> risky() <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  Err(<span class="str">&quot;oops&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = risky() catch (e) {
+    `error was: ${e}, recovered <span class="kw">with</span> default`
+  }
+  <span class="builtin">println</span>(r)
+}</code></pre><h3>catch_with_fn_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch With Function Call</span>
+<span class="comment">///</span>
+<span class="comment">/// Catch handler calls a function to compute the recovery value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> risky() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  Err(<span class="str">&quot;nope&quot;</span>)
+}
+
+<span class="kw">fn</span> fallback_fn() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="num">99</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> v = risky() catch (e) {
+    fallback_fn()
+  }
+  <span class="builtin">println</span>(`fallback: ${<span class="builtin">string</span>(v)}`)
+}</code></pre><h3>catch_with_recovery.fg</h3><pre class="forge-code"><code><span class="comment">/// # Catch With Recovery</span>
+<span class="comment">///</span>
+<span class="comment">/// Catch block returns a valid recovery value on error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> divide(a: <span class="builtin">float</span>, b: <span class="builtin">float</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0.0</span> { Err(<span class="str">&quot;division by zero&quot;</span>) } <span class="kw">else</span> { Ok(a / b) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ok = divide(<span class="num">10.0</span>, <span class="num">2.0</span>) catch (e) { <span class="num">-1.0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(ok))
+
+  <span class="kw">let</span> recovered = divide(<span class="num">10.0</span>, <span class="num">0.0</span>) catch (e) { <span class="num">-1.0</span> }
+  <span class="builtin">println</span>(`recovered: ${<span class="builtin">string</span>(recovered)}`)
+}</code></pre><h3>chained_propagation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Chained ? propagation through multiple function calls</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> lookup(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> id == <span class="num">1</span> {
+    Ok(<span class="str">&quot;alice&quot;</span>)
+  } <span class="kw">else</span> {
+    Err(<span class="str">&quot;not found&quot;</span>)
+  }
+}
+
+<span class="kw">fn</span> greet(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> name = lookup(id)<span class="op">?</span>
+  Ok(name.length)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r1 = greet(<span class="num">1</span>) catch (e) { <span class="num">-1</span> }
+  <span class="builtin">println</span>(`ok: ${<span class="builtin">string</span>(r1)}`)
+
+  <span class="kw">let</span> r2 = greet(<span class="num">99</span>) catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>composition_with_matching.fg</h3><pre class="forge-code"><code><span class="comment">/// # Error Handling Pipeline</span>
+<span class="comment">///</span>
+<span class="comment">/// Combining Result types with pattern matching</span>
+<span class="comment">/// for robust error handling chains.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> try_parse(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> input == <span class="str">&quot;21&quot;</span> { Ok(<span class="num">21</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;not a number&quot;</span>) }
+}
+
+<span class="kw">fn</span> parse_and_double(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> try_parse(input) {
+    Ok(n) <span class="op">-&gt;</span> <span class="str">&quot;doubled: &quot;</span> + <span class="builtin">string</span>(n * <span class="num">2</span>)
+    Err(e) <span class="op">-&gt;</span> <span class="str">&quot;error: &quot;</span> + e
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(parse_and_double(<span class="str">&quot;21&quot;</span>))
+  <span class="builtin">println</span>(parse_and_double(<span class="str">&quot;abc&quot;</span>))
+}</code></pre><h3>deep_propagation_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deep Propagation Chain</span>
+<span class="comment">///</span>
+<span class="comment">/// Error propagation through 5 nested function layers.</span>
+<span class="comment">/// The `?` operator should propagate the error all the way up.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> layer1(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x &gt; <span class="num">0</span> { Ok(x) } <span class="kw">else</span> { Err(<span class="str">&quot;bottom&quot;</span>) }
+}
+
+<span class="kw">fn</span> layer2(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = layer1(x)<span class="op">?</span>
+  Ok(v + <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> layer3(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = layer2(x)<span class="op">?</span>
+  Ok(v - <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> layer4(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = layer3(x)<span class="op">?</span>
+  Ok(v * <span class="num">2</span>)
+}
+
+<span class="kw">fn</span> layer5(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = layer4(x)<span class="op">?</span>
+  Ok(v / <span class="num">2</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = layer5(<span class="num">1</span>) catch (e) { <span class="num">-1</span> }
+  <span class="builtin">println</span>(`final: ${<span class="builtin">string</span>(a)}`)
+
+  <span class="kw">let</span> b = layer5(<span class="num">0</span>) catch (e) {
+    <span class="builtin">println</span>(`deep err: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>empty_err_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty Err String</span>
+<span class="comment">///</span>
+<span class="comment">/// Err with an empty string should propagate correctly</span>
+<span class="comment">/// without crashing.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> empty_err() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  Err(<span class="str">&quot;&quot;</span>)
+}
+
+<span class="kw">fn</span> propagate() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> v = empty_err()<span class="op">?</span>
+  Ok(v)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = propagate() catch (e) {
+    <span class="builtin">println</span>(<span class="str">&quot;caught empty&quot;</span>)
+    <span class="num">-1</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>error_propagate_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// # Error Propagate Chain</span>
+<span class="comment">///</span>
+<span class="comment">/// Chain multiple `?` operators to propagate errors through layers.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> parse_number(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> s == <span class="str">&quot;42&quot;</span> { Ok(<span class="num">42</span>) }
+  <span class="kw">else</span> <span class="kw">if</span> s == <span class="str">&quot;10&quot;</span> { Ok(<span class="num">10</span>) }
+  <span class="kw">else</span> { Err(<span class="str">&quot;invalid&quot;</span>) }
+}
+
+<span class="kw">fn</span> halve(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> n % <span class="num">2</span> != <span class="num">0</span> { Err(<span class="str">&quot;odd number&quot;</span>) } <span class="kw">else</span> { Ok(n / <span class="num">2</span>) }
+}
+
+
+<span class="kw">fn</span> parse_and_halve(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> n = parse_number(s)<span class="op">?</span>
+  <span class="kw">let</span> h = halve(n)<span class="op">?</span>
+  Ok(h)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = parse_and_halve(<span class="str">&quot;42&quot;</span>) catch (e) { <span class="num">-1</span> }
+
+  <span class="kw">let</span> b = parse_and_halve(<span class="str">&quot;bad&quot;</span>) catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1</span>
+  }
+
+  <span class="builtin">println</span>(`result: ${<span class="builtin">string</span>(a)}`)
+}</code></pre><h3>multiple_catches_sequence.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Catches in Sequence</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple catch expressions in the same function scope,</span>
+<span class="comment">/// each handling different Results independently.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> op(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x == <span class="num">1</span> { Ok(<span class="num">10</span>) }
+  <span class="kw">else</span> <span class="kw">if</span> x == <span class="num">2</span> { Err(<span class="str">&quot;second&quot;</span>) }
+  <span class="kw">else</span> <span class="kw">if</span> x == <span class="num">3</span> { Err(<span class="str">&quot;third&quot;</span>) }
+  <span class="kw">else</span> { Ok(<span class="num">40</span>) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = op(<span class="num">1</span>) catch (e) {
+    <span class="builtin">println</span>(`a err: ${e}`)
+    <span class="num">-1</span>
+  }
+  <span class="builtin">println</span>(`a: ${<span class="builtin">string</span>(a)}`)
+
+  <span class="kw">let</span> b = op(<span class="num">2</span>) catch (e) {
+    <span class="builtin">println</span>(`b err: ${e}`)
+    <span class="num">-1</span>
+  }
+
+  <span class="kw">let</span> c = op(<span class="num">3</span>) catch (e) {
+    <span class="builtin">println</span>(`c err: ${e}`)
+    <span class="num">-1</span>
+  }
+
+  <span class="kw">let</span> d = op(<span class="num">4</span>) catch (e) {
+    <span class="builtin">println</span>(`d err: ${e}`)
+    <span class="num">-1</span>
+  }
+  <span class="builtin">println</span>(`d: ${<span class="builtin">string</span>(d)}`)
+}</code></pre><h3>multiple_question_marks.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Question Marks</span>
+<span class="comment">///</span>
+<span class="comment">/// Multiple `?` operators in a single function, each can</span>
+<span class="comment">/// short-circuit with a different error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> first(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x &gt; <span class="num">0</span> { Ok(x) } <span class="kw">else</span> { Err(<span class="str">&quot;first fail&quot;</span>) }
+}
+
+<span class="kw">fn</span> second(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x &lt; <span class="num">10</span> { Ok(x * <span class="num">2</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;second fail&quot;</span>) }
+}
+
+<span class="kw">fn</span> third(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x != <span class="num">0</span> { Ok(x + <span class="num">1</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;third fail&quot;</span>) }
+}
+
+<span class="kw">fn</span> combined(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>, c: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = first(a)<span class="op">?</span>
+  <span class="kw">let</span> y = second(b)<span class="op">?</span>
+  <span class="kw">let</span> z = third(c)<span class="op">?</span>
+  Ok(x + y + z)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r1 = combined(<span class="num">1</span>, <span class="num">2</span>, <span class="num">1</span>) catch (e) { <span class="num">-1</span> }
+  <span class="builtin">println</span>(`result: ${<span class="builtin">string</span>(r1)}`)
+
+  <span class="kw">let</span> r2 = combined(<span class="num">1</span>, <span class="num">20</span>, <span class="num">1</span>) catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>ok_err_in_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Ok Err In Match</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern match on Result values using Ok/Err variants.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> divide(a: <span class="builtin">float</span>, b: <span class="builtin">float</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0.0</span> { Err(<span class="str">&quot;division by zero&quot;</span>) } <span class="kw">else</span> { Ok(a / b) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">match</span> divide(<span class="num">10.0</span>, <span class="num">2.0</span>) {
+    Ok(v) <span class="op">-&gt;</span> <span class="builtin">println</span>(`success: ${<span class="builtin">string</span>(v)}`)
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(`failed: ${e}`)
+  }
+
+  <span class="kw">match</span> divide(<span class="num">1.0</span>, <span class="num">0.0</span>) {
+    Ok(v) <span class="op">-&gt;</span> <span class="builtin">println</span>(`success: ${<span class="builtin">string</span>(v)}`)
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(`failed: ${e}`)
+  }
+}</code></pre><h3>ok_err_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # Ok Err Nested</span>
+<span class="comment">///</span>
+<span class="comment">/// Nested function calls with Result propagation through multiple layers.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> layer1(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> id == <span class="num">1</span> { Ok(<span class="str">&quot;hello&quot;</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;not found&quot;</span>) }
+}
+
+<span class="kw">fn</span> layer2(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> s = layer1(id)<span class="op">?</span>
+  Ok(s.length)
+}
+
+<span class="kw">fn</span> layer3(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> n = layer2(id)<span class="op">?</span>
+  Ok(n * <span class="num">4</span> + <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = layer3(<span class="num">1</span>) catch (e) { <span class="num">-1</span> }
+  <span class="builtin">println</span>(`final: ${<span class="builtin">string</span>(a)}`)
+
+  <span class="kw">let</span> b = layer3(<span class="num">99</span>) catch (e) {
+    <span class="builtin">println</span>(`layer3 caught: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>propagate_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Propagate In Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// The `?` operator inside a while loop exits the function</span>
+<span class="comment">/// on the first error encountered.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> check(i: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> i == <span class="num">3</span> { Err(<span class="str">&quot;fail at 3&quot;</span>) } <span class="kw">else</span> { Ok(i) }
+}
+
+<span class="kw">fn</span> sum_until_fail(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">mut</span> total = <span class="num">0</span>
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; n {
+    <span class="kw">let</span> v = check(i)<span class="op">?</span>
+    total = total + v
+    i = i + <span class="num">1</span>
+  }
+  Ok(total)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = sum_until_fail(<span class="num">10</span>) catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>propagate_with_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # Propagate With Method Call</span>
+<span class="comment">///</span>
+<span class="comment">/// Using ? to unwrap a Result, then calling a method on the</span>
+<span class="comment">/// unwrapped value before re-wrapping in Ok.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> get_name(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> id == <span class="num">1</span> { Ok(<span class="str">&quot;hello&quot;</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;empty&quot;</span>) }
+}
+
+<span class="kw">fn</span> upper_name(id: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> name = get_name(id)<span class="op">?</span>
+  Ok(name.upper())
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = upper_name(<span class="num">1</span>) catch (e) { `caught: ${e}` }
+  <span class="builtin">println</span>(a)
+
+  <span class="kw">let</span> b = upper_name(<span class="num">2</span>) catch (e) { `caught: ${e}` }
+  <span class="builtin">println</span>(b)
+}</code></pre><h3>question_mark.fg</h3><pre class="forge-code"><code><span class="comment">/// # Question Mark Operator</span>
+<span class="comment">///</span>
+<span class="comment">/// Propagate errors with `?` and catch them.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> divide(a: <span class="builtin">float</span>, b: <span class="builtin">float</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0.0</span> {
+    Err(<span class="str">&quot;division by zero&quot;</span>)
+  } <span class="kw">else</span> {
+    Ok(a / b)
+  }
+}
+
+<span class="kw">fn</span> compute() <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = divide(<span class="num">10.0</span>, <span class="num">2.0</span>)<span class="op">?</span>
+  Ok(x)
+}
+
+<span class="kw">fn</span> fail() <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = divide(<span class="num">10.0</span>, <span class="num">0.0</span>)<span class="op">?</span>
+  Ok(x)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ok_val = compute() catch (e) { <span class="num">0.0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(ok_val))
+
+  <span class="kw">let</span> fail_val = fail() catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1.0</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(fail_val))
+}</code></pre><h3>result_basics.fg</h3><pre class="forge-code"><code><span class="comment">/// # Result Basics</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `Ok()` and `Err()` to create Result values,</span>
+<span class="comment">/// and `catch` to handle errors.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> divide(a: <span class="builtin">float</span>, b: <span class="builtin">float</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0.0</span> {
+    Err(<span class="str">&quot;division by zero&quot;</span>)
+  } <span class="kw">else</span> {
+    Ok(a / b)
+  }
+}
+
+<span class="kw">fn</span> calculate() <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = divide(<span class="num">10.0</span>, <span class="num">2.0</span>)<span class="op">?</span>
+  <span class="kw">let</span> y = divide(x, <span class="num">0.0</span>)<span class="op">?</span>
+  Ok(y)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = calculate() catch (e) {
+    <span class="builtin">println</span>(`error: ${e}`)
+    <span class="num">0.0</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>result_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Result propagation with ? operator</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> divide(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> b == <span class="num">0</span> {
+    Err(<span class="str">&quot;division by zero&quot;</span>)
+  } <span class="kw">else</span> {
+    Ok(a / b)
+  }
+}
+
+<span class="kw">fn</span> compute() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = divide(<span class="num">84</span>, <span class="num">2</span>)<span class="op">?</span>
+  Ok(x)
+}
+
+<span class="kw">fn</span> bad_compute() <span class="op">-&gt;</span> Result&lt;<span class="builtin">int</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">let</span> x = divide(<span class="num">1</span>, <span class="num">0</span>)<span class="op">?</span>
+  Ok(x)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = compute() catch (e) { <span class="num">-1</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+
+  <span class="kw">let</span> result2 = bad_compute() catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">-1</span>
+  }
+}</code></pre><h3>result_float.fg</h3><pre class="forge-code"><code><span class="comment">/// # Result Float</span>
+<span class="comment">///</span>
+<span class="comment">/// Result type with float Ok values works correctly</span>
+<span class="comment">/// with catch recovery.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> get_pi(yes: bool) <span class="op">-&gt;</span> Result&lt;<span class="builtin">float</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> yes { Ok(<span class="num">3.14</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;no pi&quot;</span>) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = get_pi(<span class="kw">true</span>) catch (e) { <span class="num">0.0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a))
+
+  <span class="kw">let</span> b = get_pi(<span class="kw">false</span>) catch (e) {
+    <span class="builtin">println</span>(`caught: ${e}`)
+    <span class="num">0.0</span>
+  }
+}</code></pre><h3>result_same_ok_err_type.fg</h3><pre class="forge-code"><code><span class="comment">/// # Result Same Ok Err Type</span>
+<span class="comment">///</span>
+<span class="comment">/// Result&lt;string, string&gt; where Ok and Err carry the same type.</span>
+<span class="comment">/// The tag must correctly distinguish Ok from Err.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> ambiguous(x: bool) <span class="op">-&gt;</span> Result&lt;<span class="builtin">string</span>, <span class="builtin">string</span>&gt; {
+  <span class="kw">if</span> x { Ok(<span class="str">&quot;success&quot;</span>) } <span class="kw">else</span> { Err(<span class="str">&quot;failure&quot;</span>) }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = ambiguous(<span class="kw">true</span>) catch (e) { `err: ${e}` }
+  <span class="builtin">println</span>(`ok: ${a}`)
+
+  <span class="kw">let</span> b = ambiguous(<span class="kw">false</span>) catch (e) { `err: ${e}` }
+  <span class="builtin">println</span>(b)
+}</code></pre><h2>Tokens</h2><p><span class="tag">?</span> <span class="tag">ok</span> <span class="tag">err</span> <span class="tag">catch</span> </p><h2>AST Nodes</h2><p><span class="tag">ErrorPropagate</span> <span class="tag">OkExpr</span> <span class="tag">ErrExpr</span> <span class="tag">Catch</span> </p><h2>Dependencies</h2><ul><li><a href="null_safety.html">null_safety</a></li></ul></main>
+</div>
+</body>
+</html>

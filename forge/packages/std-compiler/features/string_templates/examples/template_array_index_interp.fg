@@ -1,0 +1,12 @@
+/// Array indexing inside template interpolation
+///
+/// expect: 0: x
+/// expect: 1: y
+/// expect: 2: z
+
+fn main() {
+  let items = ["x", "y", "z"]
+  for i in 0..3 {
+    println(`${i}: ${items[i]}`)
+  }
+}

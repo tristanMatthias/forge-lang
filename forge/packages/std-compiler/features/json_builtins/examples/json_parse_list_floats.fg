@@ -1,0 +1,17 @@
+/// # JSON Parse List of Floats
+///
+/// Parse a JSON array of floats into a list<float>.
+///
+/// expect: 3
+/// expect: 1.5
+/// expect: 2.7
+/// expect: 3.14
+
+fn main() {
+  let json_str = "[1.5, 2.7, 3.14]"
+  let parsed: list<float> = json.parse(json_str)
+  println(string(parsed.length))
+  println(string(parsed[0]))
+  println(string(parsed[1]))
+  println(string(parsed[2]))
+}

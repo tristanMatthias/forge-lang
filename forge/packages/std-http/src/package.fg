@@ -31,7 +31,7 @@ extern fn forge_http_crud_set_auth(port: int, setting: string)
 extern fn forge_http_crud_set_paginate(port: int, page_size: int)
 extern fn forge_http_crud_nest(port: int, child: string, parent: string, path: string)
 
-component server(__tpl_name) {
+component server(name) {
     annotation route public()
     annotation route auth(roles: string)
     annotation route deprecated(reason: string)
@@ -43,130 +43,130 @@ component server(__tpl_name) {
 
     @syntax("route {method} {path} -> {handler}")
     fn route(method: string, path: string, handler: ptr) {
-        fn __tpl_generated(__m: ptr, __p: ptr, __b: ptr, __params_json: ptr, __response_buf: ptr, __response_buf_len: int) -> int {
-            let __req_params_json = __params_json
-            let req_body = forge_http_ptr_to_str(__b)
-            let req_params = forge_http_ptr_to_str(__params_json)
-            let __tpl_handler_param_0 = req_body
-            let __result = handler
-            let __json = json.stringify(__result)
-            forge_http_write_response(__response_buf, __response_buf_len, __json)
+        fn $generated(_m: ptr, _p: ptr, _b: ptr, _params_json: ptr, _response_buf: ptr, _response_buf_len: int) -> int {
+            let _req_params_json = _params_json
+            let req_body = forge_http_ptr_to_str(_b)
+            let req_params = forge_http_ptr_to_str(_params_json)
+            let $handler_param_0 = req_body
+            let _result = handler
+            let _json = json.stringify(_result)
+            forge_http_write_response(_response_buf, _response_buf_len, _json)
             200
         }
-        forge_http_add_route(__tpl_config_port, method, path, __tpl_generated)
+        forge_http_add_route(self.config.port, method, path, $generated)
     }
 
     @syntax("{method} {path} -> {handler}")
     fn inline_route(method: string, path: string, handler: ptr) {
-        fn __tpl_generated(__m: ptr, __p: ptr, __b: ptr, __params_json: ptr, __response_buf: ptr, __response_buf_len: int) -> int {
-            let __req_params_json = __params_json
-            let req_body = forge_http_ptr_to_str(__b)
-            let req_params = forge_http_ptr_to_str(__params_json)
-            let __tpl_handler_param_0 = req_body
-            let __result = handler
-            let __json = json.stringify(__result)
-            forge_http_write_response(__response_buf, __response_buf_len, __json)
+        fn $generated(_m: ptr, _p: ptr, _b: ptr, _params_json: ptr, _response_buf: ptr, _response_buf_len: int) -> int {
+            let _req_params_json = _params_json
+            let req_body = forge_http_ptr_to_str(_b)
+            let req_params = forge_http_ptr_to_str(_params_json)
+            let $handler_param_0 = req_body
+            let _result = handler
+            let _json = json.stringify(_result)
+            forge_http_write_response(_response_buf, _response_buf_len, _json)
             200
         }
-        forge_http_add_route(__tpl_config_port, method, path, __tpl_generated)
+        forge_http_add_route(self.config.port, method, path, $generated)
     }
 
     @syntax("mount {service} at {path}")
     fn mount_service(service: string, path: string) {
-        forge_http_mount_crud(__tpl_config_port, __tpl_resolve_service(service), path)
+        forge_http_mount_crud(self.config.port, $resolve_service(service), path)
     }
 
-    @syntax("crud {model}")
+    @syntax("crud {...model}")
     fn crud_mount(model: string) {
-        forge_http_mount_crud_auto(__tpl_config_port, model)
+        forge_http_mount_crud_auto(self.config.port, model)
     }
 
     @syntax("use_middleware {name} {handler}")
     fn use_mw(name: string, handler: ptr) {
-        forge_http_add_middleware(__tpl_config_port, name, handler)
+        forge_http_add_middleware(self.config.port, name, handler)
     }
 
     @syntax("use_middleware_after {name} {handler}")
     fn use_mw_after(name: string, handler: ptr) {
-        forge_http_add_middleware_after(__tpl_config_port, name, handler)
+        forge_http_add_middleware_after(self.config.port, name, handler)
     }
 
     @syntax("under {prefix}")
     fn under_start(prefix: string) {
-        forge_http_push_prefix(__tpl_config_port, prefix)
+        forge_http_push_prefix(self.config.port, prefix)
     }
 
     @syntax("end under")
     fn under_end() {
-        forge_http_pop_prefix(__tpl_config_port)
+        forge_http_pop_prefix(self.config.port)
     }
 
     @syntax("static {prefix} from {dir}")
     fn serve_static(prefix: string, dir: string) {
-        forge_http_serve_static(__tpl_config_port, prefix, dir)
+        forge_http_serve_static(self.config.port, prefix, dir)
     }
 
     @syntax("ws {path} -> {handler}")
     fn ws(path: string, handler: ptr) {
-        fn __tpl_generated(client: int) {
+        fn $generated(client: int) {
             handler
         }
-        forge_http_ws_upgrade(__tpl_config_port, path)
-        forge_http_ws_set_handler(__tpl_config_port, path, __tpl_generated)
+        forge_http_ws_upgrade(self.config.port, path)
+        forge_http_ws_set_handler(self.config.port, path, $generated)
     }
 
     @syntax("sse {path} -> {handler}")
     fn sse(path: string, handler: ptr) {
-        fn __tpl_generated(stream: int) {
+        fn $generated(stream: int) {
             handler
         }
-        forge_http_sse_start(__tpl_config_port, path)
-        forge_http_sse_set_handler(__tpl_config_port, path, __tpl_generated)
+        forge_http_sse_start(self.config.port, path)
+        forge_http_sse_set_handler(self.config.port, path, $generated)
     }
 
     @syntax("rate_limit {path_prefix} {max_requests} per {window_seconds}")
     fn rate_limit_rule(path_prefix: string, max_requests: int, window_seconds: int) {
-        forge_http_rate_limit(__tpl_config_port, path_prefix, max_requests, window_seconds)
+        forge_http_rate_limit(self.config.port, path_prefix, max_requests, window_seconds)
     }
 
     @syntax("expose {path} only {fields_json}")
     fn expose_fields(path: string, fields_json: string) {
-        forge_http_crud_expose(__tpl_config_port, path, fields_json)
+        forge_http_crud_expose(self.config.port, path, fields_json)
     }
 
     @syntax("order {path} by {field} {dir}")
     fn set_order(path: string, field: string, dir: string) {
-        forge_http_crud_set_order(__tpl_config_port, path, field, dir)
+        forge_http_crud_set_order(self.config.port, path, field, dir)
     }
 
     @syntax("crud_auth {setting}")
     fn crud_auth_setting(setting: string) {
-        forge_http_crud_set_auth(__tpl_config_port, setting)
+        forge_http_crud_set_auth(self.config.port, setting)
     }
 
     @syntax("crud_paginate {count}")
     fn crud_paginate_setting(count: int) {
-        forge_http_crud_set_paginate(__tpl_config_port, count)
+        forge_http_crud_set_paginate(self.config.port, count)
     }
 
     @syntax("crud_nest {child} under {parent} at {path}")
     fn crud_nest_route(child: string, parent: string, path: string) {
-        forge_http_crud_nest(__tpl_config_port, child, parent, path)
+        forge_http_crud_nest(self.config.port, child, parent, path)
     }
 
     event on_error(status, message)
 
     @syntax("not_found {body}")
     fn set_not_found(body: string) {
-        forge_http_set_not_found_handler(__tpl_config_port, body)
+        forge_http_set_not_found_handler(self.config.port, body)
     }
 
     @syntax("error_page {status_code} {body}")
     fn set_error_page(status_code: int, body: string) {
-        forge_http_set_error_response(__tpl_config_port, status_code, body)
+        forge_http_set_error_response(self.config.port, status_code, body)
     }
 
-    on main_end {
-        forge_http_serve(__tpl_config_port)
+    fn drop() {
+        forge_http_serve(self.config.port)
     }
 }

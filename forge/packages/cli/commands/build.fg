@@ -1,0 +1,32 @@
+/// Build command — compile a Forge source file or project.
+
+use shared.{forward}
+
+export command build "Compile a Forge source file or project" {
+    arg file "Input source file or project directory"
+    flag dev "Debug build (O0, fast compile)"
+    flag release "Release build (O2, optimized)"
+    flag emit_ir "Output LLVM IR"
+    flag emit_ast "Output parsed AST"
+    option output {
+        short "o"
+        "Output binary path"
+    }
+    option error_format {
+        "Error format"
+        default "human"
+    }
+    option max_errors {
+        "Max errors to display"
+        default "20"
+    }
+    flag profile "Show build profiling"
+    option profile_format {
+        "Profile output format"
+        default "human"
+    }
+
+    run {
+        forward("build")
+    }
+}

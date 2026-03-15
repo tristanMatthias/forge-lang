@@ -1,4 +1,0 @@
-use @std.http.{server}
-server :8080 {
-    route GET / -> { status: "Hey" }
-  }

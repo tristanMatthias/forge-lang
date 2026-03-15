@@ -1,0 +1,20 @@
+/// Check command — type-check without compiling.
+
+use shared.{forward}
+
+export command check "Type-check without compiling" {
+    arg file "Input source file"
+    option error_format {
+        "Error format"
+        default "human"
+    }
+    option max_errors {
+        "Max errors to display"
+        default "20"
+    }
+    flag autofix "Automatically apply high-confidence fixes"
+
+    run {
+        forward("check")
+    }
+}

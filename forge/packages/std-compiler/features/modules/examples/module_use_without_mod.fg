@@ -1,0 +1,9 @@
+/// # Use Without Mod
+///
+/// Using a module without declaring it with `mod` produces an error.
+///
+/// expect-stderr: unresolved module: missing (did you forget `mod missing`?)
+
+use missing.{foo}
+
+fn main() {}

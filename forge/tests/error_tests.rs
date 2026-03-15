@@ -8,9 +8,9 @@ fn strip_ansi(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
-/// Run `forge check` on a test file, expect failure, and return stripped stderr
+/// Run `compiler check` on a test file, expect failure, and return stripped stderr
 fn check_error(test_name: &str) -> String {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .arg("check")
         .arg(format!("tests/errors/{}.fg", test_name))
@@ -50,7 +50,7 @@ fn test_missing_paren_error() {
 
 #[test]
 fn test_json_error_output() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["check", "--error-format", "json", "tests/errors/undefined_var.fg"])
         .assert()
@@ -74,7 +74,7 @@ fn test_json_error_output() {
 
 #[test]
 fn test_explain_known_code() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["explain", "F0020"])
         .assert()
@@ -89,7 +89,7 @@ fn test_explain_known_code() {
 
 #[test]
 fn test_explain_unknown_code() {
-    Command::cargo_bin("forge")
+    Command::cargo_bin("compiler")
         .unwrap()
         .args(["explain", "F9998"])
         .assert()
@@ -99,7 +99,7 @@ fn test_explain_unknown_code() {
 
 #[test]
 fn test_explain_f9999() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["explain", "F9999"])
         .assert()
@@ -139,7 +139,7 @@ fn test_unused_variable_warning() {
     // This file has an unused var but no errors, so check should succeed
     // BUT: warnings don't cause failure with check command
     // We need to check stderr for the warning
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["check", "tests/errors/unused_var.fg"])
         .assert()
@@ -153,7 +153,7 @@ fn test_unused_variable_warning() {
 
 #[test]
 fn test_unused_variable_underscore_suppressed() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["check", "tests/errors/unused_var_suppressed.fg"])
         .assert()
@@ -176,7 +176,7 @@ fn test_type_mismatch_suggestion() {
 
 #[test]
 fn test_build_profile_human() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["build", "--profile", "tests/programs/hello.fg"])
         .assert()
@@ -196,7 +196,7 @@ fn test_build_profile_human() {
 
 #[test]
 fn test_build_profile_json() {
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["build", "--profile", "--profile-format", "json", "tests/programs/hello.fg"])
         .assert()
@@ -233,7 +233,7 @@ fn test_error_diff() {
     std::fs::write(&before_path, before).unwrap();
     std::fs::write(&after_path, after).unwrap();
 
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["errors", "diff", before_path.to_str().unwrap(), after_path.to_str().unwrap()])
         .assert()
@@ -259,7 +259,7 @@ fn test_autofix_type_mismatch() {
     let tmp_path = std::env::temp_dir().join("forge_test_autofix.fg");
     std::fs::write(&tmp_path, &source).unwrap();
 
-    let cmd = Command::cargo_bin("forge")
+    let cmd = Command::cargo_bin("compiler")
         .unwrap()
         .args(["check", "--autofix", tmp_path.to_str().unwrap()])
         .assert();
@@ -312,7 +312,7 @@ fn test_runtime_assert_with_location() {
     let tmp_path = std::env::temp_dir().join("forge_test_runtime_assert.fg");
     std::fs::write(&tmp_path, source).unwrap();
 
-    let build_result = Command::cargo_bin("forge")
+    let build_result = Command::cargo_bin("compiler")
         .unwrap()
         .args(["build", "-o", std::env::temp_dir().join("forge_test_runtime_assert").to_str().unwrap(), tmp_path.to_str().unwrap()])
         .assert()

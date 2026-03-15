@@ -1,0 +1,22 @@
+/// # Map With Int Values
+///
+/// Maps can hold int values with `map<string, int>`.
+///
+/// expect: 1
+/// expect: 2
+/// expect: 3
+/// expect: 6
+
+fn main() {
+  mut m: map<string, int> = {}
+  m["a"] = 1
+  m["b"] = 2
+  m["c"] = 3
+  let a = m.get("a") ?? 0
+  let b = m.get("b") ?? 0
+  let c = m.get("c") ?? 0
+  println(a)
+  println(b)
+  println(c)
+  println(a + b + c)
+}

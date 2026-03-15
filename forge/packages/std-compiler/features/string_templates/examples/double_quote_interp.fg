@@ -1,0 +1,11 @@
+/// # Double-Quoted String Interpolation
+///
+/// Double-quoted strings support `${expr}` interpolation,
+/// just like backtick template strings.
+///
+/// expect: hello world
+
+fn main() {
+  let name = "world"
+  println("hello ${name}")
+}

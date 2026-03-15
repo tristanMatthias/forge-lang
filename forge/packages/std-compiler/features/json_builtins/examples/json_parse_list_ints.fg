@@ -1,0 +1,17 @@
+/// # JSON Parse List of Ints
+///
+/// Parse a JSON array of integers into a list<int>.
+///
+/// expect: 3
+/// expect: 10
+/// expect: 20
+/// expect: 30
+
+fn main() {
+  let json_str = "[10, 20, 30]"
+  let parsed: list<int> = json.parse(json_str)
+  println(string(parsed.length))
+  for p in parsed {
+    println(string(p))
+  }
+}

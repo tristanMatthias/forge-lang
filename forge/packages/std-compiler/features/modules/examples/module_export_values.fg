@@ -1,0 +1,15 @@
+/// # Module Export Values
+///
+/// Import multiple functions from a declared module.
+///
+/// expect: 10
+/// expect: 20
+
+mod module_constants
+
+use module_constants.{double}
+
+fn main() {
+    println(double(5))
+    println(double(10))
+}

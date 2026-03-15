@@ -1,0 +1,11 @@
+/// Directory module (like Rust's foo/mod.rs pattern).
+
+mod helpers
+
+export fn greet(name: string) -> string {
+    return "hello " + name
+}
+
+export fn square(n: int) -> int {
+    return n * n
+}

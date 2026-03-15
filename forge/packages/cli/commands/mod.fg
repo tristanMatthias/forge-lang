@@ -1,0 +1,14 @@
+/// CLI command modules.
+
+mod build
+mod run
+mod check
+mod test
+mod features
+mod explain
+mod version
+mod why
+mod lang
+mod docs
+mod package
+mod errors

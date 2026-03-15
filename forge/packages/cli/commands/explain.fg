@@ -1,0 +1,11 @@
+/// Explain command — explain an error code.
+
+use shared.{forward}
+
+export command explain "Explain an error code" {
+    arg code "Error code to explain (e.g., F0020)"
+
+    run {
+        forward("explain")
+    }
+}

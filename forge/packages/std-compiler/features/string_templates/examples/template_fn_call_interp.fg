@@ -1,0 +1,17 @@
+/// Template with function calls inside interpolation
+///
+/// expect: double(5) = 10
+/// expect: 5! = 120
+
+fn double(x: int) -> int {
+  x * 2
+}
+
+fn factorial(n: int) -> int {
+  if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+fn main() {
+  println(`double(5) = ${double(5)}`)
+  println(`5! = ${factorial(5)}`)
+}

@@ -1,0 +1,18 @@
+/// # Map Nonexistent Key
+///
+/// Accessing a nonexistent key returns null, not a crash.
+///
+/// expect: -1
+/// expect: -2
+/// expect: true
+/// expect: false
+
+fn main() {
+  let m = {"a": 1}
+  let v = m["nonexistent"] ?? -1
+  println(v)
+  let v2 = m.get("nope") ?? -2
+  println(v2)
+  println(m.has("a"))
+  println(m.has("nope"))
+}

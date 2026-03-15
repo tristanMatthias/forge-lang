@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>With Expression — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html" class="active">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>With Expression <span class="badge badge-stable">stable</span></h1><p>expr with { field: val } — immutable copy with overrides</p><p>Struct update syntax: expr with { field: value } creates a copy with updated fields</p><div class="long-description"><p>The `with` expression creates a modified copy of an immutable struct. Given `let p = Point { x: 1, y: 2 }`, writing `let q = p with { x: 10 }` creates a new Point where `x` is 10 and `y` is copied from `p`. The original `p` is unchanged.</p><p>This is the idiomatic way to &quot;update&quot; immutable data in Forge. Rather than mutating fields in place, you express transformations as new values derived from old ones. This makes data flow explicit and eliminates bugs caused by unexpected mutation of shared references.</p><p>The `with` expression copies all fields from the original, then applies the overrides. Only the fields you specify are different; everything else is preserved. This is concise even for structs with many fields, since you only mention what changes.</p><p>This feature is equivalent to the spread/rest operator for objects in JavaScript (`{ ...obj, field: newValue }`), Kotlin's `copy()` method on data classes, or Rust's struct update syntax (`Point { x: 10, ..p }`). Forge's `with` keyword reads naturally in English, making the intent immediately clear.</p></div><h2>Syntax</h2><pre class="forge-code"><code>expr <span class="kw">with</span> { field: value }</code></pre><h2>Examples</h2><h3>composition_with_structs.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable Updates with 'with'</span>
+<span class="comment">///</span>
+<span class="comment">/// Creating modified copies of structs without</span>
+<span class="comment">/// mutation, enabling functional data patterns.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> birthday(p: Person) <span class="op">-&gt;</span> Person {
+  p <span class="kw">with</span> { age: p.age + <span class="num">1</span> }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> alice = Person { name: <span class="str">&quot;Alice&quot;</span>, age: <span class="num">30</span> }
+  <span class="kw">let</span> older = birthday(alice)
+  <span class="builtin">println</span>(older.name + <span class="str">&quot; is &quot;</span> + <span class="builtin">string</span>(older.age))
+  <span class="builtin">println</span>(alice.name + <span class="str">&quot; is &quot;</span> + <span class="builtin">string</span>(alice.age))
+}</code></pre><h3>nested_update.fg</h3><pre class="forge-code"><code><span class="comment">/// # With Expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Create updated copies of structs using `with`.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">float</span>, y: <span class="builtin">float</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Point { x: <span class="num">3.0</span>, y: <span class="num">4.0</span> }
+  <span class="kw">let</span> moved = p <span class="kw">with</span> { x: <span class="num">10.0</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(moved.x))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(moved.y))
+}</code></pre><h3>struct_update.fg</h3><pre class="forge-code"><code><span class="comment">/// # Struct Update</span>
+<span class="comment">///</span>
+<span class="comment">/// Create a modified copy of a struct with `with`.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Person { name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">25</span> }
+  <span class="kw">let</span> p2 = p <span class="kw">with</span> { age: <span class="num">30</span> }
+  <span class="builtin">println</span>(p2.name)
+  <span class="builtin">println</span>(p2.age)
+}</code></pre><h3>with_chained.fg</h3><pre class="forge-code"><code><span class="comment">/// # With Chained</span>
+<span class="comment">///</span>
+<span class="comment">/// Apply `with` in sequence to update fields step by step.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Person { name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">25</span> }
+  <span class="kw">let</span> p2 = p <span class="kw">with</span> { name: <span class="str">&quot;bob&quot;</span> }
+  <span class="kw">let</span> p3 = p2 <span class="kw">with</span> { age: <span class="num">30</span> }
+  <span class="builtin">println</span>(p3.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(p3.age))
+}</code></pre><h3>with_computed.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: with expression using computed field values (slug pattern)</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Post = { title: <span class="builtin">string</span>, slug: <span class="builtin">string</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = Post { title: <span class="str">&quot;Hello World&quot;</span>, slug: <span class="str">&quot;&quot;</span> }
+  <span class="kw">let</span> updated = data <span class="kw">with</span> { slug: data.title.lower().replace(<span class="str">&quot; &quot;</span>, <span class="str">&quot;-&quot;</span>) }
+  <span class="builtin">println</span>(updated.slug)
+  <span class="builtin">println</span>(updated.title)
+}</code></pre><h3>with_computed_value.fg</h3><pre class="forge-code"><code><span class="comment">/// # With Computed Value</span>
+<span class="comment">///</span>
+<span class="comment">/// Field values in `with` expressions can be computed from the original.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Person { name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">25</span> }
+  <span class="kw">let</span> older = p <span class="kw">with</span> { age: p.age + <span class="num">1</span> }
+  <span class="builtin">println</span>(older.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(older.age))
+}</code></pre><h3>with_multiple.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: With expression updating multiple fields at once</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = { name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> user = User { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@old.com&quot;</span>, age: <span class="num">25</span> }
+  <span class="kw">let</span> updated = user <span class="kw">with</span> { name: <span class="str">&quot;bob&quot;</span>, email: <span class="str">&quot;bob@new.com&quot;</span>, age: <span class="num">30</span> }
+  <span class="builtin">println</span>(updated.name)
+  <span class="builtin">println</span>(updated.email)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(updated.age))
+}</code></pre><h3>with_multiple_fields.fg</h3><pre class="forge-code"><code><span class="comment">/// # With Multiple Fields</span>
+<span class="comment">///</span>
+<span class="comment">/// Update several fields of a struct at once using `with`.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> User = { name: <span class="builtin">string</span>, email: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> u = User { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span>, age: <span class="num">25</span> }
+  <span class="kw">let</span> u2 = u <span class="kw">with</span> { name: <span class="str">&quot;charlie&quot;</span>, email: <span class="str">&quot;charlie@example.com&quot;</span>, age: <span class="num">35</span> }
+  <span class="builtin">println</span>(u2.name)
+  <span class="builtin">println</span>(u2.email)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(u2.age))
+  <span class="builtin">println</span>(u.name)
+}</code></pre><h3>with_nested_struct.fg</h3><pre class="forge-code"><code><span class="comment">/// # With Nested Struct</span>
+<span class="comment">///</span>
+<span class="comment">/// Using `with` on a struct that contains other struct values.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Config = { label: <span class="builtin">string</span>, value: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Config { label: <span class="str">&quot;original&quot;</span>, value: <span class="num">42</span> }
+  <span class="kw">let</span> c2 = c <span class="kw">with</span> { label: <span class="str">&quot;updated&quot;</span>, value: <span class="num">100</span> }
+  <span class="builtin">println</span>(c2.label)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c2.value))
+}</code></pre><h2>Tokens</h2><p><span class="tag">with</span> </p><h2>AST Nodes</h2><p><span class="tag">With</span> </p></main>
+</div>
+</body>
+</html>

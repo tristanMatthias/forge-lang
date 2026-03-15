@@ -1,0 +1,15 @@
+/// # Module Import
+///
+/// Declare a module with `mod` and import exported functions with `use`.
+///
+/// expect: 7
+/// expect: 30
+
+mod module_math
+
+use module_math.{add, multiply}
+
+fn main() {
+    println(add(3, 4))
+    println(multiply(5, 6))
+}

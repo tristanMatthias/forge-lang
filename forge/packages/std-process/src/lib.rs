@@ -402,6 +402,31 @@ pub extern "C" fn forge_process_exit(code: i64) {
     std::process::exit(code as i32);
 }
 
+/// Execute a command with inherited stdin/stdout/stderr (passthrough).
+/// Returns the exit code directly. No output capture — everything streams through.
+#[no_mangle]
+pub extern "C" fn forge_process_forward(
+    cmd: *const c_char,
+    args_json: *const c_char,
+    opts_json: *const c_char,
+) -> i64 {
+    let cmd_str = cstr(cmd);
+    let args_str = cstr(args_json);
+    let opts_str = cstr(opts_json);
+
+    let mut command = Command::new(&cmd_str);
+    command
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    apply_opts(&mut command, &args_str, &opts_str);
+
+    match command.status() {
+        Ok(status) => status.code().unwrap_or(-1) as i64,
+        Err(_) => -1,
+    }
+}
+
 /// Run a process with stdin piped from the input string. Returns JSON result.
 #[no_mangle]
 pub extern "C" fn forge_process_pipe(

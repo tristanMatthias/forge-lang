@@ -1,0 +1,25 @@
+/// Shared utilities for CLI commands.
+
+use @std.process
+
+export fn core_bin() -> string {
+    let env = forge_process_env_get("FORGE_CORE")
+    if env != "\0NULL" { return env }
+    return "compiler"
+}
+
+export fn forward(cmd: string) -> int {
+    let raw = forge_process_args()
+    let argv: list<string> = json.parse(raw)
+
+    mut args = "["
+    mut i = 1
+    while i < argv.length {
+        if i > 1 { args = args + ", " }
+        args = args + "\"" + argv[i] + "\""
+        i = i + 1
+    }
+    args = args + "]"
+
+    forge_process_forward(core_bin(), args, "{}")
+}

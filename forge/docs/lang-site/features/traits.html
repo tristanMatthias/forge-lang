@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Traits — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html" class="active">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Traits <span class="badge badge-stable">stable</span></h1><p>trait/impl — interfaces and polymorphism</p><p>Trait declarations with default methods, impl blocks, and associated types</p><div class="long-description"><p>Traits define shared interfaces that types can implement. A trait declares a set of method signatures that implementing types must provide: `trait Printable { fn to_display() -&gt; string }`. Types implement traits with `impl` blocks: `impl Printable for Point { fn to_display() -&gt; string { ... } }`.</p><p>Traits enable polymorphism without inheritance. A function that accepts `impl Printable` can work with any type that implements the trait, regardless of the type's other characteristics. This is more flexible than class-based inheritance because a type can implement any number of traits.</p><p>Trait bounds on generic type parameters constrain what operations are available: `fn print_all&lt;T: Printable&gt;(items: list&lt;T&gt;)` ensures every item can be displayed. This catches errors at compile time and provides clear documentation about what a function requires.</p><p>If you are coming from Go, Forge traits are similar to interfaces. From Rust, they work the same way. From Java or C#, think of them as interfaces with no default methods. From TypeScript, they are like structural interfaces but explicitly declared.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">trait</span> Name { <span class="kw">fn</span> method(self) }
+impl Trait <span class="kw">for</span> Type { }</code></pre><h2>Examples</h2><h3>basic_trait.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Trait</span>
+<span class="comment">///</span>
+<span class="comment">/// Define a trait and implement it for a type.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+
+<span class="kw">trait</span> HasLength {
+  <span class="kw">fn</span> length(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+}
+
+impl HasLength <span class="kw">for</span> Point {
+  <span class="kw">fn</span> length(self) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    self.x + self.y
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Point { x: <span class="num">2</span>, y: <span class="num">3</span> }
+  <span class="builtin">println</span>(p.length())
+}</code></pre><h3>composition_with_generics.fg</h3><pre class="forge-code"><code><span class="comment">/// # Polymorphic Trait Methods</span>
+<span class="comment">///</span>
+<span class="comment">/// Using traits for type-safe polymorphic</span>
+<span class="comment">/// behavior across different types.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Animal {
+  <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+}
+
+<span class="kw">type</span> Dog = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Cat = { name: <span class="builtin">string</span> }
+
+impl Animal <span class="kw">for</span> Dog {
+  <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;woof!&quot;</span> }
+}
+
+impl Animal <span class="kw">for</span> Cat {
+  <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;meow!&quot;</span> }
+}
+
+<span class="kw">fn</span> announce&lt;T: Animal&gt;(a: T) {
+  <span class="builtin">println</span>(a.speak())
+}
+
+<span class="kw">fn</span> main() {
+  announce(Dog { name: <span class="str">&quot;Rex&quot;</span> })
+  announce(Cat { name: <span class="str">&quot;Whiskers&quot;</span> })
+}</code></pre><h3>default_methods.fg</h3><pre class="forge-code"><code><span class="comment">/// # Default Trait Methods</span>
+<span class="comment">///</span>
+<span class="comment">/// Traits with default method implementations.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Describable {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> describe_loud(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    self.describe().upper()
+  }
+}
+
+<span class="kw">type</span> Circle = { radius: <span class="builtin">float</span> }
+<span class="kw">type</span> Square = { side: <span class="builtin">float</span> }
+
+impl Describable <span class="kw">for</span> Circle {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `circle r=${self.radius}` }
+}
+
+impl Describable <span class="kw">for</span> Square {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `square s=${self.side}` }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Circle { radius: <span class="num">5.0</span> }
+  <span class="kw">let</span> s = Square { side: <span class="num">3.0</span> }
+  <span class="builtin">println</span>(c.describe())
+  <span class="builtin">println</span>(c.describe_loud())
+  <span class="builtin">println</span>(s.describe())
+  <span class="builtin">println</span>(s.describe_loud())
+}</code></pre><h3>diamond_trait.fg</h3><pre class="forge-code"><code><span class="comment">/// Diamond-like trait pattern: two traits with same method name</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> HasValue {
+  <span class="kw">fn</span> get(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+}
+
+<span class="kw">trait</span> HasName {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+}
+
+<span class="kw">type</span> Entity = { id: <span class="builtin">int</span>, label: <span class="builtin">string</span> }
+
+impl HasValue <span class="kw">for</span> Entity {
+  <span class="kw">fn</span> get(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.id }
+}
+
+impl HasName <span class="kw">for</span> Entity {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { self.label }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> e = Entity { id: <span class="num">10</span>, label: <span class="str">&quot;hello&quot;</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(e.get()))
+  <span class="builtin">println</span>(e.name())
+}</code></pre><h3>empty_trait.fg</h3><pre class="forge-code"><code><span class="comment">/// Empty trait (no methods) - marker trait pattern</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Marker {}
+
+<span class="kw">type</span> Thing = { val: <span class="builtin">int</span> }
+
+impl Marker <span class="kw">for</span> Thing {}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> t = Thing { val: <span class="num">1</span> }
+  <span class="builtin">println</span>(<span class="str">&quot;marked&quot;</span>)
+}</code></pre><h3>impl_many_methods.fg</h3><pre class="forge-code"><code><span class="comment">/// Impl block with many methods (no trait)</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Counter = { n: <span class="builtin">int</span> }
+
+impl Counter {
+  <span class="kw">fn</span> double(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.n * <span class="num">2</span> }
+  <span class="kw">fn</span> triple(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.n * <span class="num">3</span> }
+  <span class="kw">fn</span> quad(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.n * <span class="num">4</span> }
+  <span class="kw">fn</span> half(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.n / <span class="num">2</span> }
+  <span class="kw">fn</span> square(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.n * self.n }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Counter { n: <span class="num">10</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c.double()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c.half()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c.triple()))
+}</code></pre><h3>impl_methods.fg</h3><pre class="forge-code"><code><span class="comment">/// # Impl Methods</span>
+<span class="comment">///</span>
+<span class="comment">/// Add methods to a type with `impl`.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+
+impl Point {
+  <span class="kw">fn</span> add(self, other: Point) <span class="op">-&gt;</span> Point {
+    Point { x: self.x + other.x, y: self.y + other.y }
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = Point { x: <span class="num">1</span>, y: <span class="num">3</span> }
+  <span class="kw">let</span> b = Point { x: <span class="num">2</span>, y: <span class="num">4</span> }
+  <span class="kw">let</span> c = a.add(b)
+  <span class="builtin">println</span>(`(${c.x}, ${c.y})`)
+}</code></pre><h3>impl_return_self.fg</h3><pre class="forge-code"><code><span class="comment">/// Impl method that returns a new instance of the same type</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Counter = { count: <span class="builtin">int</span> }
+
+impl Counter {
+  <span class="kw">fn</span> increment(self) <span class="op">-&gt;</span> Counter {
+    Counter { count: self.count + <span class="num">1</span> }
+  }
+  <span class="kw">fn</span> times(self, n: <span class="builtin">int</span>) <span class="op">-&gt;</span> Counter {
+    Counter { count: self.count * n }
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Counter { count: <span class="num">5</span> }
+  <span class="kw">let</span> c2 = c.times(<span class="num">2</span>)
+  <span class="kw">let</span> c3 = c.times(<span class="num">4</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c2.count))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(c3.count))
+}</code></pre><h3>operator_overload.fg</h3><pre class="forge-code"><code><span class="comment">/// # Operator Overloading</span>
+<span class="comment">///</span>
+<span class="comment">/// Implement Add, Sub, and Display traits for custom types.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Vec2 = { x: <span class="builtin">float</span>, y: <span class="builtin">float</span> }
+
+impl Add <span class="kw">for</span> Vec2 {
+  <span class="kw">type</span> Output = Vec2
+  <span class="kw">fn</span> add(self, rhs: Vec2) <span class="op">-&gt;</span> Vec2 {
+    { x: self.x + rhs.x, y: self.y + rhs.y }
+  }
+}
+
+impl Sub <span class="kw">for</span> Vec2 {
+  <span class="kw">type</span> Output = Vec2
+  <span class="kw">fn</span> sub(self, rhs: Vec2) <span class="op">-&gt;</span> Vec2 {
+    { x: self.x - rhs.x, y: self.y - rhs.y }
+  }
+}
+
+impl Display <span class="kw">for</span> Vec2 {
+  <span class="kw">fn</span> display(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `(${self.x}, ${self.y})`
+  }
+}
+
+impl Eq <span class="kw">for</span> Vec2 {
+  <span class="kw">fn</span> eq(self, other: Vec2) <span class="op">-&gt;</span> bool {
+    self.x == other.x &amp;&amp; self.y == other.y
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = Vec2 { x: <span class="num">1.0</span>, y: <span class="num">2.0</span> }
+  <span class="kw">let</span> b = Vec2 { x: <span class="num">3.0</span>, y: <span class="num">4.0</span> }
+
+  <span class="kw">let</span> c = a + b
+  <span class="builtin">println</span>(c.display())
+
+  <span class="kw">let</span> d = b - a
+  <span class="builtin">println</span>(d.display())
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a == a))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a == b))
+}</code></pre><h3>trait_default_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// Trait default method calling another default method</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Formatter {
+  <span class="kw">fn</span> raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> formatted(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    self.raw().upper()
+  }
+
+  <span class="kw">fn</span> loud(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `[LOUD] ${self.formatted()}`
+  }
+}
+
+<span class="kw">type</span> Message = { text: <span class="builtin">string</span> }
+
+impl Formatter <span class="kw">for</span> Message {
+  <span class="kw">fn</span> raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { self.text }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> m = Message { text: <span class="str">&quot;hello world&quot;</span> }
+  <span class="builtin">println</span>(m.loud())
+}</code></pre><h3>trait_default_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # Trait Default Method</span>
+<span class="comment">///</span>
+<span class="comment">/// Trait with a default method that calls an abstract method.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Startable {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> start(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `[INFO] starting ${self.name()}`
+  }
+}
+
+<span class="kw">type</span> Engine = { horsepower: <span class="builtin">int</span> }
+<span class="kw">type</span> Motor = { voltage: <span class="builtin">int</span> }
+
+impl Startable <span class="kw">for</span> Engine {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;engine&quot;</span> }
+}
+
+impl Startable <span class="kw">for</span> Motor {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;motor&quot;</span> }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> e = Engine { horsepower: <span class="num">200</span> }
+  <span class="kw">let</span> m = Motor { voltage: <span class="num">12</span> }
+  <span class="builtin">println</span>(e.start())
+  <span class="builtin">println</span>(m.start())
+}</code></pre><h3>trait_display.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Trait with default method using self</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Greetable {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> greet(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    <span class="str">&quot;Hello from &quot;</span> + self.name()
+  }
+}
+
+<span class="kw">type</span> Person = { first_name: <span class="builtin">string</span> }
+
+impl Greetable <span class="kw">for</span> Person {
+  <span class="kw">fn</span> name(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { self.first_name }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Person { first_name: <span class="str">&quot;Alice&quot;</span> }
+  <span class="builtin">println</span>(p.greet())
+}</code></pre><h3>trait_five_impls.fg</h3><pre class="forge-code"><code><span class="comment">/// Implement same trait for many different types</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Speak {
+  <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+}
+
+<span class="kw">type</span> Dog = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Cat = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Fish = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Bird = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Snake = { name: <span class="builtin">string</span> }
+
+impl Speak <span class="kw">for</span> Dog { <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;I am a dog&quot;</span> } }
+impl Speak <span class="kw">for</span> Cat { <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;I am a cat&quot;</span> } }
+impl Speak <span class="kw">for</span> Fish { <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;I am a fish&quot;</span> } }
+impl Speak <span class="kw">for</span> Bird { <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;I am a bird&quot;</span> } }
+impl Speak <span class="kw">for</span> Snake { <span class="kw">fn</span> speak(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;I am a snake&quot;</span> } }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(Dog { name: <span class="str">&quot;Rex&quot;</span> }.speak())
+  <span class="builtin">println</span>(Cat { name: <span class="str">&quot;Whiskers&quot;</span> }.speak())
+  <span class="builtin">println</span>(Fish { name: <span class="str">&quot;Nemo&quot;</span> }.speak())
+  <span class="builtin">println</span>(Bird { name: <span class="str">&quot;Tweety&quot;</span> }.speak())
+  <span class="builtin">println</span>(Snake { name: <span class="str">&quot;Slinky&quot;</span> }.speak())
+}</code></pre><h3>trait_many_methods.fg</h3><pre class="forge-code"><code><span class="comment">/// Trait with many methods</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> ManyMethods {
+  <span class="kw">fn</span> m1(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+  <span class="kw">fn</span> m2(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+  <span class="kw">fn</span> m3(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+  <span class="kw">fn</span> m4(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+  <span class="kw">fn</span> m5(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+}
+
+<span class="kw">type</span> Thing = { val: <span class="builtin">int</span> }
+
+impl ManyMethods <span class="kw">for</span> Thing {
+  <span class="kw">fn</span> m1(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.val }
+  <span class="kw">fn</span> m2(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.val * <span class="num">2</span> }
+  <span class="kw">fn</span> m3(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.val * <span class="num">3</span> }
+  <span class="kw">fn</span> m4(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.val * <span class="num">4</span> }
+  <span class="kw">fn</span> m5(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.val * <span class="num">5</span> }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> t = Thing { val: <span class="num">1</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.m1()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.m2()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.m3()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.m4()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.m5()))
+}</code></pre><h3>trait_method_calls_trait.fg</h3><pre class="forge-code"><code><span class="comment">/// Trait method that calls another trait method on self</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Describable {
+  <span class="kw">fn</span> kind(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+  <span class="kw">fn</span> detail(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> info(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `[INFO] ${self.kind()}: ${self.detail()}`
+  }
+
+  <span class="kw">fn</span> warn(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `[WARN] ${self.kind()}: ${self.detail()}`
+  }
+}
+
+<span class="kw">type</span> Engine = { hp: <span class="builtin">int</span> }
+<span class="kw">type</span> Motor = { volts: <span class="builtin">int</span> }
+
+impl Describable <span class="kw">for</span> Engine {
+  <span class="kw">fn</span> kind(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;engine&quot;</span> }
+  <span class="kw">fn</span> detail(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `${self.hp}hp` }
+}
+
+impl Describable <span class="kw">for</span> Motor {
+  <span class="kw">fn</span> kind(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;motor&quot;</span> }
+  <span class="kw">fn</span> detail(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `${self.volts}v` }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> e = Engine { hp: <span class="num">200</span> }
+  <span class="kw">let</span> m = Motor { volts: <span class="num">12</span> }
+  <span class="builtin">println</span>(e.info())
+  <span class="builtin">println</span>(m.warn())
+}</code></pre><h3>trait_method_override.fg</h3><pre class="forge-code"><code><span class="comment">/// # Trait Method Override</span>
+<span class="comment">///</span>
+<span class="comment">/// Override a default trait method with a custom implementation.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Scoreable {
+  <span class="kw">fn</span> base_score(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+
+  <span class="kw">fn</span> total_score(self) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    self.base_score() * <span class="num">2</span>
+  }
+}
+
+<span class="kw">type</span> Player = { score: <span class="builtin">int</span> }
+<span class="kw">type</span> Boss = { score: <span class="builtin">int</span> }
+
+impl Scoreable <span class="kw">for</span> Player {
+  <span class="kw">fn</span> base_score(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.score }
+}
+
+impl Scoreable <span class="kw">for</span> Boss {
+  <span class="kw">fn</span> base_score(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.score }
+
+  <span class="kw">fn</span> total_score(self) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    self.base_score() * <span class="num">10</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Player { score: <span class="num">5</span> }
+  <span class="kw">let</span> b = Boss { score: <span class="num">50</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(p.total_score()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(b.total_score()))
+}</code></pre><h3>trait_multiple_impl.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Types Implementing Same Trait</span>
+<span class="comment">///</span>
+<span class="comment">/// Several types each implementing the same trait.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Area {
+  <span class="kw">fn</span> area(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+}
+
+<span class="kw">type</span> Rect = { w: <span class="builtin">int</span>, h: <span class="builtin">int</span> }
+<span class="kw">type</span> Square = { side: <span class="builtin">int</span> }
+<span class="kw">type</span> Triangle = { base: <span class="builtin">int</span>, height: <span class="builtin">int</span> }
+
+impl Area <span class="kw">for</span> Rect {
+  <span class="kw">fn</span> area(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.w * self.h }
+}
+
+impl Area <span class="kw">for</span> Square {
+  <span class="kw">fn</span> area(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.side * self.side }
+}
+
+impl Area <span class="kw">for</span> Triangle {
+  <span class="kw">fn</span> area(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.base * self.height / <span class="num">2</span> }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = Rect { w: <span class="num">2</span>, h: <span class="num">5</span> }
+  <span class="kw">let</span> s = Square { side: <span class="num">5</span> }
+  <span class="kw">let</span> t = Triangle { base: <span class="num">3</span>, height: <span class="num">4</span> }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(r.area()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(s.area()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(t.area()))
+}</code></pre><h3>trait_partial_override.fg</h3><pre class="forge-code"><code><span class="comment">/// Override only some default methods, keep others</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Formatter {
+  <span class="kw">fn</span> raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+
+  <span class="kw">fn</span> upper_raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    self.raw().upper()
+  }
+
+  <span class="kw">fn</span> prefixed(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `base: ${self.raw()}`
+  }
+}
+
+<span class="kw">type</span> Thing = { text: <span class="builtin">string</span> }
+
+impl Formatter <span class="kw">for</span> Thing {
+  <span class="kw">fn</span> raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { self.text }
+  <span class="kw">fn</span> upper_raw(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;CUSTOM&quot;</span> }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> t = Thing { text: <span class="str">&quot;custom&quot;</span> }
+  <span class="builtin">println</span>(t.upper_raw())
+  <span class="builtin">println</span>(t.prefixed())
+}</code></pre><h3>trait_with_generics.fg</h3><pre class="forge-code"><code><span class="comment">/// # Trait with Generics</span>
+<span class="comment">///</span>
+<span class="comment">/// Trait used with generic type parameters in functions.</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Describable {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+}
+
+<span class="kw">type</span> Cat = { name: <span class="builtin">string</span> }
+<span class="kw">type</span> Dog = { name: <span class="builtin">string</span> }
+
+impl Describable <span class="kw">for</span> Cat {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `cat: ${self.name}` }
+}
+
+impl Describable <span class="kw">for</span> Dog {
+  <span class="kw">fn</span> describe(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { `dog: ${self.name}` }
+}
+
+<span class="kw">fn</span> greet&lt;T: Describable&gt;(animal: T) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  `hello, ${animal.describe()}`
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(greet(Cat { name: <span class="str">&quot;whiskers&quot;</span> }))
+  <span class="builtin">println</span>(greet(Dog { name: <span class="str">&quot;buddy&quot;</span> }))
+  <span class="builtin">println</span>(greet(Cat { name: <span class="str">&quot;luna&quot;</span> }))
+}</code></pre><h3>two_traits_same_type.fg</h3><pre class="forge-code"><code><span class="comment">/// Two different traits implemented on same type, both with default methods</span>
+<span class="comment">///</span>
+
+<span class="kw">trait</span> Printable {
+  <span class="kw">fn</span> text(self) <span class="op">-&gt;</span> <span class="builtin">string</span>
+  <span class="kw">fn</span> loud(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    self.text().upper()
+  }
+}
+
+<span class="kw">trait</span> Measurable {
+  <span class="kw">fn</span> size(self) <span class="op">-&gt;</span> <span class="builtin">int</span>
+  <span class="kw">fn</span> info(self) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    `length: ${self.size()}`
+  }
+}
+
+<span class="kw">type</span> Word = { content: <span class="builtin">string</span> }
+
+impl Printable <span class="kw">for</span> Word {
+  <span class="kw">fn</span> text(self) <span class="op">-&gt;</span> <span class="builtin">string</span> { self.content }
+}
+
+impl Measurable <span class="kw">for</span> Word {
+  <span class="kw">fn</span> size(self) <span class="op">-&gt;</span> <span class="builtin">int</span> { self.content.length }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> w = Word { content: <span class="str">&quot;hello&quot;</span> }
+  <span class="builtin">println</span>(`${w.text()} ${w.loud()}`)
+  <span class="builtin">println</span>(w.info())
+}</code></pre><h2>Tokens</h2><p><span class="tag">trait</span> <span class="tag">impl</span> </p><h2>AST Nodes</h2><p><span class="tag">TraitDecl</span> <span class="tag">ImplBlock</span> <span class="tag">TraitMethod</span> </p><h2>Enables</h2><ul><li><a href="generics.html">generics</a></li></ul></main>
+</div>
+</body>
+</html>

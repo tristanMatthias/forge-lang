@@ -1,0 +1,10 @@
+/// Helper module for module_import test.
+/// This file is imported by module_import.fg, not run directly.
+
+export fn add(a: int, b: int) -> int {
+    return a + b
+}
+
+export fn multiply(a: int, b: int) -> int {
+    return a * b
+}

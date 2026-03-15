@@ -1,32 +1,108 @@
-extern fn forge_cli_setup(name: string, version: string, description: string, schema_json: string)
-extern fn forge_cli_get_string(key: string) -> string
-extern fn forge_cli_get_int(key: string) -> int
+extern fn forge_cli_begin(name: string, description: string, version: string)
+extern fn forge_cli_push_command(name: string, description: string)
+extern fn forge_cli_add_flag(name: string, short_name: string, description: string)
+extern fn forge_cli_add_option(name: string, short_name: string, description: string, default_val: string)
+extern fn forge_cli_add_arg(name: string, description: string, required: int)
+extern fn forge_cli_pop()
+extern fn forge_cli_end()
+extern fn forge_cli_matched_command() -> ptr
+extern fn forge_cli_get(key: string) -> ptr
 extern fn forge_cli_get_bool(key: string) -> int
-extern fn forge_cli_get_command() -> string
+extern fn forge_cli_has(key: string) -> int
+extern fn forge_cli_current_path() -> ptr
+extern fn forge_cli_register_handler(path: string, handler: ptr)
+extern fn forge_cli_dispatch() -> int
+extern fn forge_process_exit(code: int)
+extern fn strlen(s: ptr) -> int
 
-component cli(__tpl_name, schema) {
+component cli(name) {
     config {
-        version: string = "0.0.0"
-        description: string = ""
+        description: string = "" @default
+        version: string = "0.1.0"
     }
 
-    on startup {
-        forge_cli_setup(__tpl_name_str, __tpl_config_version, __tpl_config_description, __tpl_schema_json)
+    fn init() {
+        forge_cli_begin(self.name, self.config.description, self.config.version)
     }
 
-    fn __tpl_name.get(key: string) -> string {
-        forge_cli_get_string(key)
+    on after_children {
+        forge_cli_end()
     }
 
-    fn __tpl_name.get_int(key: string) -> int {
-        forge_cli_get_int(key)
+    fn drop() {
+        let _code: int = forge_cli_dispatch()
+        forge_process_exit(_code)
     }
 
-    fn __tpl_name.get_bool(key: string) -> int {
+    fn command() -> string {
+        let _ptr: ptr = forge_cli_matched_command()
+        let _len: int = strlen(_ptr)
+        forge_string_new(_ptr, _len)
+    }
+
+    fn get(key: string) -> string {
+        let _ptr: ptr = forge_cli_get(key)
+        let _len: int = strlen(_ptr)
+        forge_string_new(_ptr, _len)
+    }
+
+    fn get_bool(key: string) -> int {
         forge_cli_get_bool(key)
     }
 
-    fn __tpl_name.command() -> string {
-        forge_cli_get_command()
+    fn has(key: string) -> int {
+        forge_cli_has(key)
+    }
+}
+
+component command(name) {
+    config {
+        description: string = "" @default
+    }
+
+    fn init() {
+        forge_cli_push_command(self.name, self.config.description)
+    }
+
+    on after_children {
+        let _path_ptr: ptr = forge_cli_current_path()
+        let _path_len: int = strlen(_path_ptr)
+        let _path: string = forge_string_new(_path_ptr, _path_len)
+        forge_cli_register_handler(_path, self.__run)
+        forge_cli_pop()
+    }
+}
+
+component flag(name) {
+    config {
+        short: string = ""
+        description: string = "" @default
+    }
+
+    fn init() {
+        forge_cli_add_flag(self.name, self.config.short, self.config.description)
+    }
+}
+
+component option(name) {
+    config {
+        short: string = ""
+        description: string = "" @default
+        default: string = ""
+    }
+
+    fn init() {
+        forge_cli_add_option(self.name, self.config.short, self.config.description, self.config.default)
+    }
+}
+
+component arg(name) {
+    config {
+        description: string = "" @default
+        required: int = 0
+    }
+
+    fn init() {
+        forge_cli_add_arg(self.name, self.config.description, self.config.required)
     }
 }

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>If/Else — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html" class="active">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>If/Else <span class="badge badge-stable">stable</span></h1><p>if/else — conditional expressions with implicit return</p><p>Conditional expressions with if/else and else-if chaining</p><div class="long-description"><p>In Forge, `if`/`else` are expressions, not statements. This means they produce a value and can be used anywhere an expression is expected. For example: `let status = if score &gt; 90 { &quot;A&quot; } else { &quot;B&quot; }`. The last expression in each branch becomes the value of the entire `if` expression.</p><p>Conditions do not require parentheses. Write `if x &gt; 0 { ... }` rather than `if (x &gt; 0) { ... }`. The `else if` chain works as expected for multiple conditions: `if x &gt; 0 { &quot;positive&quot; } else if x &lt; 0 { &quot;negative&quot; } else { &quot;zero&quot; }`.</p><p>Because `if` is an expression, there is no need for a ternary operator. The expression form is both more readable and more flexible than C-style ternaries. When used as a statement (ignoring the return value), `if` works exactly as you would expect from any other language.</p><p>Type checking ensures that both branches of an `if`/`else` return the same type when the result is used as a value. If you write `let x = if cond { 1 } else { &quot;two&quot; }`, the compiler will report a type mismatch.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">if</span> cond { } <span class="kw">else</span> { }
+<span class="kw">if</span> cond { } <span class="kw">else</span> <span class="kw">if</span> cond { } <span class="kw">else</span> { }</code></pre><h2>Examples</h2><h3>basic_if.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic If/Else</span>
+<span class="comment">///</span>
+<span class="comment">/// Simple conditional with if/else.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> sign(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n &gt; <span class="num">0</span> {
+    <span class="str">&quot;positive&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;zero or negative&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(sign(<span class="num">5</span>))
+  <span class="builtin">println</span>(sign(<span class="num">-3</span>))
+}</code></pre><h3>if_as_expression.fg</h3><pre class="forge-code"><code><span class="comment">/// # If as Expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Using if/else as a value expression in various positions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="kw">if</span> <span class="kw">true</span> { <span class="str">&quot;yes&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;no&quot;</span> }
+  <span class="builtin">println</span>(x)
+
+  <span class="kw">let</span> y = <span class="num">10</span> + <span class="kw">if</span> <span class="kw">true</span> { <span class="num">20</span> } <span class="kw">else</span> { <span class="num">0</span> }
+  <span class="builtin">println</span>(y)
+
+  <span class="kw">let</span> label = `result: ${<span class="kw">if</span> <span class="num">100</span> &gt; <span class="num">50</span> { <span class="str">&quot;big&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;small&quot;</span> }}`
+  <span class="builtin">println</span>(label)
+}</code></pre><h3>if_complex_conditions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Complex Boolean Conditions</span>
+<span class="comment">///</span>
+<span class="comment">/// If with complex &amp;&amp;, || conditions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> check(a: bool, b: bool) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> a &amp;&amp; b {
+    <span class="str">&quot;both&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> a || b {
+    <span class="str">&quot;either&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;neither&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(check(<span class="kw">true</span>, <span class="kw">true</span>))
+  <span class="builtin">println</span>(check(<span class="kw">true</span>, <span class="kw">false</span>))
+  <span class="builtin">println</span>(check(<span class="kw">false</span>, <span class="kw">false</span>))
+}</code></pre><h3>if_in_match_in_if.fg</h3><pre class="forge-code"><code><span class="comment">/// # If Inside Match Inside If</span>
+<span class="comment">///</span>
+<span class="comment">/// Deeply combining if/else with match expressions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="str">&quot;zero&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n &gt; <span class="num">0</span> {
+    <span class="kw">match</span> n % <span class="num">2</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">if</span> n &lt; <span class="num">100</span> { <span class="str">&quot;positive small even&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;positive big even&quot;</span> }
+      _ <span class="op">-&gt;</span> <span class="kw">if</span> n &lt; <span class="num">100</span> { <span class="str">&quot;positive small odd&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;positive big odd&quot;</span> }
+    }
+  } <span class="kw">else</span> {
+    <span class="str">&quot;negative&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">42</span>))
+  <span class="builtin">println</span>(classify(<span class="num">-5</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+}</code></pre><h3>if_mutation.fg</h3><pre class="forge-code"><code><span class="comment">/// # If with Mutation</span>
+<span class="comment">///</span>
+<span class="comment">/// Mutation inside if branches.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> x = <span class="num">10</span>
+  <span class="kw">if</span> <span class="kw">true</span> {
+    x = x + <span class="num">5</span>
+  }
+  <span class="builtin">println</span>(x)
+
+  <span class="kw">mut</span> s = <span class="str">&quot;hello&quot;</span>
+  <span class="kw">if</span> <span class="num">1</span> + <span class="num">1</span> == <span class="num">2</span> {
+    s = s + <span class="str">&quot; world!&quot;</span>
+  }
+  <span class="builtin">println</span>(s)
+}</code></pre><h3>if_only_true.fg</h3><pre class="forge-code"><code><span class="comment">/// # If with False Condition</span>
+<span class="comment">///</span>
+<span class="comment">/// If with constant false goes to else branch.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="kw">if</span> <span class="kw">false</span> { <span class="str">&quot;yes&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;no&quot;</span> }
+  <span class="builtin">println</span>(x)
+
+  <span class="kw">let</span> y = <span class="kw">if</span> <span class="kw">false</span> { <span class="num">42</span> } <span class="kw">else</span> { <span class="num">0</span> }
+  <span class="builtin">println</span>(y)
+}</code></pre><h3>if_without_else.fg</h3><pre class="forge-code"><code><span class="comment">/// # If Without Else</span>
+<span class="comment">///</span>
+<span class="comment">/// If with no else branch — should compile but not return a value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;before&quot;</span>)
+  <span class="kw">if</span> <span class="kw">true</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;inside&quot;</span>)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;after&quot;</span>)
+}</code></pre><h3>stress_elif_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// # Long Else-If Chain</span>
+<span class="comment">///</span>
+<span class="comment">/// Stress test with a long chain of else-if branches.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> name(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="str">&quot;zero&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">1</span> {
+    <span class="str">&quot;one&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">2</span> {
+    <span class="str">&quot;two&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">3</span> {
+    <span class="str">&quot;three&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">4</span> {
+    <span class="str">&quot;four&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">5</span> {
+    <span class="str">&quot;five&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">6</span> {
+    <span class="str">&quot;six&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">7</span> {
+    <span class="str">&quot;seven&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">8</span> {
+    <span class="str">&quot;eight&quot;</span>
+  } <span class="kw">else</span> <span class="kw">if</span> n == <span class="num">9</span> {
+    <span class="str">&quot;nine&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="str">&quot;other&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(name(<span class="num">0</span>))
+  <span class="builtin">println</span>(name(<span class="num">1</span>))
+  <span class="builtin">println</span>(name(<span class="num">5</span>))
+  <span class="builtin">println</span>(name(<span class="num">9</span>))
+  <span class="builtin">println</span>(name(<span class="num">42</span>))
+}</code></pre><h3>stress_nested_if.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deeply Nested If/Else</span>
+<span class="comment">///</span>
+<span class="comment">/// If inside if inside if to stress nesting.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="str">&quot;zero&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="kw">if</span> n &gt; <span class="num">0</span> {
+      <span class="kw">if</span> n &lt; <span class="num">100</span> {
+        <span class="kw">if</span> n % <span class="num">2</span> == <span class="num">0</span> {
+          <span class="str">&quot;small even positive&quot;</span>
+        } <span class="kw">else</span> {
+          <span class="str">&quot;small odd positive&quot;</span>
+        }
+      } <span class="kw">else</span> {
+        <span class="str">&quot;big positive&quot;</span>
+      }
+    } <span class="kw">else</span> {
+      <span class="kw">if</span> n &gt; <span class="num">-100</span> {
+        <span class="kw">if</span> n % <span class="num">2</span> == <span class="num">0</span> {
+          <span class="str">&quot;small even negative&quot;</span>
+        } <span class="kw">else</span> {
+          <span class="str">&quot;small odd negative&quot;</span>
+        }
+      } <span class="kw">else</span> {
+        <span class="kw">if</span> n % <span class="num">2</span> == <span class="num">0</span> {
+          <span class="str">&quot;big even negative&quot;</span>
+        } <span class="kw">else</span> {
+          <span class="str">&quot;big odd negative&quot;</span>
+        }
+      }
+    }
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">42</span>))
+  <span class="builtin">println</span>(classify(<span class="num">-999</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+}</code></pre><h2>Tokens</h2><p><span class="tag">if</span> <span class="tag">else</span> </p><h2>AST Nodes</h2><p><span class="tag">If</span> </p></main>
+</div>
+</body>
+</html>

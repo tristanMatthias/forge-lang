@@ -51,7 +51,7 @@ extern fn forge_model_query_limit(query: string, limit: int) -> string
 extern fn forge_model_query_offset(query: string, offset: int) -> string
 extern fn forge_model_query_exec(query: string) -> string
 
-component model(__tpl_name, schema) {
+component model(name, schema) {
     annotation field primary()
     annotation field auto_increment()
     annotation field unique()
@@ -62,7 +62,7 @@ component model(__tpl_name, schema) {
     annotation type table(name: string)
 
     config {
-        table_name: string = __tpl_name_str
+        table_name: string = self.name
     }
 
     event before_create(record)
@@ -72,260 +72,260 @@ component model(__tpl_name, schema) {
     event before_delete(id: int)
     event after_delete(id: int)
 
-    type __tpl_name = __tpl_schema_visible
+    type Name = SchemaVisible
 
-    on startup {
+    fn init() {
         forge_model_init(":memory:")
-        forge_model_create_table(__tpl_config_table_name, __tpl_schema_json)
+        forge_model_create_table(self.config.table_name, self.schema)
     }
 
-    fn __tpl_name.create(data_json: string) -> int {
-        let __result: ptr = forge_model_insert_json(__tpl_config_table_name, data_json)
-        let __id = forge_json_get_int(__result, 0, "id")
-        forge_model_free_string(__result)
-        __id
+    fn create(data_json: string) -> int {
+        let _result: ptr = forge_model_insert_json(self.config.table_name, data_json)
+        let _id = forge_json_get_int(_result, 0, "id")
+        forge_model_free_string(_result)
+        _id
     }
 
-    fn __tpl_name.last_error() -> string {
-        let __result: ptr = forge_model_last_error()
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn last_error() -> string {
+        let _result: ptr = forge_model_last_error()
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.get(id: int) -> __tpl_name? {
-        let __result: ptr = forge_model_get_by_id(__tpl_config_table_name, id)
-        if forge_json_is_null(__result) == 0 {
-            let __obj: __tpl_name = json.parse(__result)
-            forge_model_free_string(__result)
-            __obj
+    fn get(id: int) -> Name? {
+        let _result: ptr = forge_model_get_by_id(self.config.table_name, id)
+        if forge_json_is_null(_result) == 0 {
+            let _obj: Name = json.parse(_result)
+            forge_model_free_string(_result)
+            _obj
         } else {
-            forge_model_free_string(__result)
+            forge_model_free_string(_result)
             null
         }
     }
 
-    fn __tpl_name.get_internal(id: int) -> __tpl_name {
-        let __result: ptr = forge_model_get_by_id(__tpl_config_table_name, id)
-        let __obj: __tpl_name = json.parse(__result)
-        forge_model_free_string(__result)
-        __obj
+    fn get_internal(id: int) -> Name {
+        let _result: ptr = forge_model_get_by_id(self.config.table_name, id)
+        let _obj: Name = json.parse(_result)
+        forge_model_free_string(_result)
+        _obj
     }
 
-    fn __tpl_name.list() -> List<__tpl_name> {
-        let __result: ptr = forge_model_list_json(__tpl_config_table_name, "{}")
-        let __list: List<__tpl_name> = json.parse(__result)
-        forge_model_free_string(__result)
-        __list
+    fn list() -> List<Name> {
+        let _result: ptr = forge_model_list_json(self.config.table_name, "{}")
+        let _list: List<Name> = json.parse(_result)
+        forge_model_free_string(_result)
+        _list
     }
 
-    fn __tpl_name.find_by(filter_json: string) -> __tpl_name? {
-        let __result: ptr = forge_model_find_by_json(__tpl_config_table_name, filter_json)
-        if forge_json_is_null(__result) == 0 {
-            let __obj: __tpl_name = json.parse(__result)
-            forge_model_free_string(__result)
-            __obj
+    fn find_by(filter_json: string) -> Name? {
+        let _result: ptr = forge_model_find_by_json(self.config.table_name, filter_json)
+        if forge_json_is_null(_result) == 0 {
+            let _obj: Name = json.parse(_result)
+            forge_model_free_string(_result)
+            _obj
         } else {
-            forge_model_free_string(__result)
+            forge_model_free_string(_result)
             null
         }
     }
 
-    fn __tpl_name.where(filter_json: string) -> List<__tpl_name> {
-        let __result: ptr = forge_model_list_json(__tpl_config_table_name, filter_json)
-        let __list: List<__tpl_name> = json.parse(__result)
-        forge_model_free_string(__result)
-        __list
+    fn where(filter_json: string) -> List<Name> {
+        let _result: ptr = forge_model_list_json(self.config.table_name, filter_json)
+        let _list: List<Name> = json.parse(_result)
+        forge_model_free_string(_result)
+        _list
     }
 
-    fn __tpl_name.query(query_json: string) -> List<__tpl_name> {
-        let __result: ptr = forge_model_query_json(__tpl_config_table_name, query_json)
-        let __list: List<__tpl_name> = json.parse(__result)
-        forge_model_free_string(__result)
-        __list
+    fn query(query_json: string) -> List<Name> {
+        let _result: ptr = forge_model_query_json(self.config.table_name, query_json)
+        let _list: List<Name> = json.parse(_result)
+        forge_model_free_string(_result)
+        _list
     }
 
-    fn __tpl_name.build_query() -> string {
-        let __result: ptr = forge_model_query_build(__tpl_config_table_name)
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn build_query() -> string {
+        let _result: ptr = forge_model_query_build(self.config.table_name)
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.add_where(query: string, filter_json: string) -> string {
-        let __result: ptr = forge_model_query_where(query, filter_json)
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn add_where(query: string, filter_json: string) -> string {
+        let _result: ptr = forge_model_query_where(query, filter_json)
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.add_order(query: string, field: string, direction: string) -> string {
-        let __result: ptr = forge_model_query_order(query, field, direction)
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn add_order(query: string, field: string, direction: string) -> string {
+        let _result: ptr = forge_model_query_order(query, field, direction)
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.add_limit(query: string, limit: int) -> string {
-        let __result: ptr = forge_model_query_limit(query, limit)
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn add_limit(query: string, limit: int) -> string {
+        let _result: ptr = forge_model_query_limit(query, limit)
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.add_offset(query: string, offset: int) -> string {
-        let __result: ptr = forge_model_query_offset(query, offset)
-        let __len = strlen(__result)
-        let __s = forge_string_new(__result, __len)
-        forge_model_free_string(__result)
-        __s
+    fn add_offset(query: string, offset: int) -> string {
+        let _result: ptr = forge_model_query_offset(query, offset)
+        let _len = strlen(_result)
+        let _s = forge_string_new(_result, _len)
+        forge_model_free_string(_result)
+        _s
     }
 
-    fn __tpl_name.exec_query(query: string) -> List<__tpl_name> {
-        let __result: ptr = forge_model_query_exec(query)
-        let __list: List<__tpl_name> = json.parse(__result)
-        forge_model_free_string(__result)
-        __list
+    fn exec_query(query: string) -> List<Name> {
+        let _result: ptr = forge_model_query_exec(query)
+        let _list: List<Name> = json.parse(_result)
+        forge_model_free_string(_result)
+        _list
     }
 
-    fn __tpl_name.count() -> int {
-        forge_model_count_json(__tpl_config_table_name, "{}")
+    fn count() -> int {
+        forge_model_count_json(self.config.table_name, "{}")
     }
 
-    fn __tpl_name.update(id: int, changes_json: string) -> __tpl_name {
-        let __result: ptr = forge_model_update_json(__tpl_config_table_name, id, changes_json)
-        let __obj: __tpl_name = json.parse(__result)
-        forge_model_free_string(__result)
-        __obj
+    fn update(id: int, changes_json: string) -> Name {
+        let _result: ptr = forge_model_update_json(self.config.table_name, id, changes_json)
+        let _obj: Name = json.parse(_result)
+        forge_model_free_string(_result)
+        _obj
     }
 
-    fn __tpl_name.delete(id: int) -> int {
-        forge_model_delete_json(__tpl_config_table_name, id)
+    fn delete(id: int) -> int {
+        forge_model_delete_json(self.config.table_name, id)
     }
 
-    fn __tpl_name.count_where(filter_json: string) -> int {
-        forge_model_count_json(__tpl_config_table_name, filter_json)
+    fn count_where(filter_json: string) -> int {
+        forge_model_count_json(self.config.table_name, filter_json)
     }
 
-    fn __tpl_name.sum(column: string) -> float {
-        forge_model_sum_json(__tpl_config_table_name, column, "{}")
+    fn sum(column: string) -> float {
+        forge_model_sum_json(self.config.table_name, column, "{}")
     }
 
-    fn __tpl_name.avg(column: string) -> float {
-        forge_model_avg_json(__tpl_config_table_name, column, "{}")
+    fn avg(column: string) -> float {
+        forge_model_avg_json(self.config.table_name, column, "{}")
     }
 
-    fn __tpl_name.paginate(filter_json: string, page: int, per_page: int, order: string) -> string {
-        forge_model_paginate_json(__tpl_config_table_name, filter_json, page, per_page, order)
+    fn paginate(filter_json: string, page: int, per_page: int, order: string) -> string {
+        forge_model_paginate_json(self.config.table_name, filter_json, page, per_page, order)
     }
 
-    fn __tpl_name.search(search_json: string) -> List<__tpl_name> {
-        let __result: ptr = forge_model_search_json(__tpl_config_table_name, search_json)
-        let __list: List<__tpl_name> = json.parse(__result)
-        forge_model_free_string(__result)
-        __list
+    fn search(search_json: string) -> List<Name> {
+        let _result: ptr = forge_model_search_json(self.config.table_name, search_json)
+        let _list: List<Name> = json.parse(_result)
+        forge_model_free_string(_result)
+        _list
     }
 
-    fn __tpl_name.delete_where(filter_json: string) -> int {
-        forge_model_delete_where(__tpl_config_table_name, filter_json)
+    fn delete_where(filter_json: string) -> int {
+        forge_model_delete_where(self.config.table_name, filter_json)
     }
 
-    fn __tpl_name.upsert(data_json: string) -> __tpl_name {
-        let __result: ptr = forge_model_upsert_json(__tpl_config_table_name, data_json)
-        let __obj: __tpl_name = json.parse(__result)
-        forge_model_free_string(__result)
-        __obj
+    fn upsert(data_json: string) -> Name {
+        let _result: ptr = forge_model_upsert_json(self.config.table_name, data_json)
+        let _obj: Name = json.parse(_result)
+        forge_model_free_string(_result)
+        _obj
     }
 
-    fn __tpl_name.exists(filter_json: string) -> int {
-        forge_model_exists(__tpl_config_table_name, filter_json)
+    fn exists(filter_json: string) -> int {
+        forge_model_exists(self.config.table_name, filter_json)
     }
 
-    fn __tpl_name.update_where(filter_json: string, changes_json: string) -> int {
-        forge_model_update_where(__tpl_config_table_name, filter_json, changes_json)
+    fn update_where(filter_json: string, changes_json: string) -> int {
+        forge_model_update_where(self.config.table_name, filter_json, changes_json)
     }
 
-    fn __tpl_name.insert_batch(data_json: string) -> int {
-        forge_model_insert_batch(__tpl_config_table_name, data_json)
+    fn insert_batch(data_json: string) -> int {
+        forge_model_insert_batch(self.config.table_name, data_json)
     }
 
-    fn __tpl_name.distinct(column: string) -> string {
-        forge_model_distinct(__tpl_config_table_name, column, "{}")
+    fn distinct(column: string) -> string {
+        forge_model_distinct(self.config.table_name, column, "{}")
     }
 
-    fn __tpl_name.min(column: string) -> float {
-        forge_model_min_json(__tpl_config_table_name, column, "{}")
+    fn min(column: string) -> float {
+        forge_model_min_json(self.config.table_name, column, "{}")
     }
 
-    fn __tpl_name.max(column: string) -> float {
-        forge_model_max_json(__tpl_config_table_name, column, "{}")
+    fn max(column: string) -> float {
+        forge_model_max_json(self.config.table_name, column, "{}")
     }
 
-    fn __tpl_name.related(id: int, foreign_key: string, related_table: string) -> ptr {
-        forge_model_get_related(__tpl_config_table_name, id, foreign_key, related_table)
+    fn related(id: int, foreign_key: string, related_table: string) -> ptr {
+        forge_model_get_related(self.config.table_name, id, foreign_key, related_table)
     }
 
-    fn __tpl_name.related_many(id: int, foreign_key: string, related_table: string) -> ptr {
-        forge_model_get_related_many(__tpl_config_table_name, id, foreign_key, related_table)
+    fn related_many(id: int, foreign_key: string, related_table: string) -> ptr {
+        forge_model_get_related_many(self.config.table_name, id, foreign_key, related_table)
     }
 
-    fn __tpl_name.include(id: int, relations_json: string) -> string {
-        forge_model_include_json(__tpl_config_table_name, id, relations_json)
+    fn include(id: int, relations_json: string) -> string {
+        forge_model_include_json(self.config.table_name, id, relations_json)
     }
 
-    fn __tpl_name.create_unvalidated(data_json: string) -> int {
-        let __result: ptr = forge_model_insert_json_no_validate(__tpl_config_table_name, data_json)
-        let __id = forge_json_get_int(__result, 0, "id")
-        forge_model_free_string(__result)
-        __id
+    fn create_unvalidated(data_json: string) -> int {
+        let _result: ptr = forge_model_insert_json_no_validate(self.config.table_name, data_json)
+        let _id = forge_json_get_int(_result, 0, "id")
+        forge_model_free_string(_result)
+        _id
     }
 
-    fn __tpl_name.update_unvalidated(id: int, changes_json: string) -> __tpl_name {
-        let __result: ptr = forge_model_update_json_no_validate(__tpl_config_table_name, id, changes_json)
-        let __obj: __tpl_name = json.parse(__result)
-        forge_model_free_string(__result)
-        __obj
+    fn update_unvalidated(id: int, changes_json: string) -> Name {
+        let _result: ptr = forge_model_update_json_no_validate(self.config.table_name, id, changes_json)
+        let _obj: Name = json.parse(_result)
+        forge_model_free_string(_result)
+        _obj
     }
 
-    fn __tpl_name.check_owner(record_id: int, user_id: int) -> int {
-        forge_model_check_owner(__tpl_config_table_name, record_id, user_id)
+    fn check_owner(record_id: int, user_id: int) -> int {
+        forge_model_check_owner(self.config.table_name, record_id, user_id)
     }
 
-    fn __tpl_name.owner_field() -> string {
-        forge_model_get_owner_field(__tpl_config_table_name)
+    fn owner_field() -> string {
+        forge_model_get_owner_field(self.config.table_name)
     }
 
     extern fn forge_json_get_int(json: string, index: int, field: string) -> int
     extern fn forge_json_array_count(json: string) -> int
 }
 
-component service(__tpl_name, for __tpl_model_ref, schema) {
-    fn __tpl_name.create(data_json: string) -> int {
-        __tpl_model_ref_create(data_json)
+component service(name, for ref, schema) {
+    fn create(data_json: string) -> int {
+        self.ref.create(data_json)
     }
 
-    fn __tpl_name.get(id: int) -> __tpl_model_ref? {
-        __tpl_model_ref_get(id)
+    fn get(id: int) -> Ref? {
+        self.ref.get(id)
     }
 
-    fn __tpl_name.list() -> List<__tpl_model_ref> {
-        __tpl_model_ref_list()
+    fn list() -> List<Ref> {
+        self.ref.list()
     }
 
-    fn __tpl_name.count() -> int {
-        __tpl_model_ref_count()
+    fn count() -> int {
+        self.ref.count()
     }
 
-    fn __tpl_name.update(id: int, changes_json: string) -> __tpl_model_ref {
-        __tpl_model_ref_update(id, changes_json)
+    fn update(id: int, changes_json: string) -> Ref {
+        self.ref.update(id, changes_json)
     }
 
-    fn __tpl_name.delete(id: int) -> int {
-        __tpl_model_ref_delete(id)
+    fn delete(id: int) -> int {
+        self.ref.delete(id)
     }
 }

@@ -1,0 +1,16 @@
+/// # JSON Parse Empty Array
+///
+/// Parse an empty JSON array into list<string> and list<int>.
+/// Should produce zero-length lists without crashing.
+///
+/// expect: 0
+/// expect: 0
+/// expect: done
+
+fn main() {
+  let strs: list<string> = json.parse("[]")
+  println(string(strs.length))
+  let nums: list<int> = json.parse("[]")
+  println(string(nums.length))
+  println("done")
+}

@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Annotations — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html" class="active">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Annotations <span class="badge badge-stable">stable</span></h1><p>@name and @name(args) — metadata annotations on declarations</p><p>Annotation system: @name and @name(args) on component fields, models, and routes</p><div class="long-description"><p>Annotations attach metadata to declarations using the `@name` or `@name(args)` syntax. They appear before functions, types, fields, and other declarations. For example, `@deprecated fn old() { }` marks a function as deprecated, and `@syntax(&quot;pattern&quot;)` configures a component syntax pattern.</p><p>Annotations are the primary extensibility mechanism for Forge's compiler and provider system. Rather than adding keywords for every new concept, Forge uses annotations to layer behavior onto existing syntax. This keeps the core language small while allowing rich, domain-specific features.</p><p>The compiler processes annotations during different compilation phases. Some annotations affect parsing (`@syntax`), some affect type checking (`@deprecated`), and some affect code generation. Provider templates can define custom annotations that control template expansion behavior.</p><p>This design is similar to Java annotations, Python decorators, and C# attributes. The key difference is that Forge annotations integrate with the template system, so providers can define new annotations without compiler changes.</p></div><h2>Syntax</h2><pre class="forge-code"><code>@name
+@name(args)</code></pre><h2>Examples</h2><h3>auth_basic.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Basic auth token create and verify</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.auth.{auth}
+
+auth MyAuth {
+  config {
+    secret: <span class="str">&quot;test-secret-key&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> token = MyAuth.create_token(<span class="str">&quot;{\&quot;id\&quot;:1,\&quot;role\&quot;:\&quot;admin\&quot;}&quot;</span>)
+  <span class="kw">let</span> claims = MyAuth.verify_token(token)
+  <span class="kw">let</span> valid = MyAuth.check_role(token, <span class="str">&quot;admin&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(valid))
+}</code></pre><h3>auth_jwt_config.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Auth component with JWT config — secret and expiry settings</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.auth.{auth}
+
+auth TokenAuth {
+  config {
+    secret: <span class="str">&quot;my-jwt-secret-key&quot;</span>
+    expiry: <span class="num">3600</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Create a token with the configured secret</span>
+  <span class="kw">let</span> token = TokenAuth.create_token(<span class="str">&quot;{\&quot;id\&quot;:42,\&quot;role\&quot;:\&quot;editor\&quot;}&quot;</span>)
+
+  <span class="comment">// Token should be valid</span>
+  <span class="kw">let</span> valid = TokenAuth.is_valid(token)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(valid))
+
+  <span class="comment">// Password hashing with configured auth</span>
+  <span class="kw">let</span> hash = TokenAuth.hash_password(<span class="str">&quot;secret123&quot;</span>)
+  <span class="kw">let</span> pw_ok = TokenAuth.verify_password(<span class="str">&quot;secret123&quot;</span>, hash)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(pw_ok))
+}</code></pre><h3>auth_token_verify.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Auth token create, verify, and extract claims</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.auth.{auth}
+
+auth Auth {
+  config {
+    secret: <span class="str">&quot;verify-test-secret&quot;</span>
+    expiry: <span class="num">7200</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> token = Auth.create_token(<span class="str">&quot;{\&quot;id\&quot;:42,\&quot;role\&quot;:\&quot;admin\&quot;}&quot;</span>)
+
+  <span class="comment">// Extract individual claims</span>
+  <span class="kw">let</span> sub = Auth.extract_claim(token, <span class="str">&quot;sub&quot;</span>)
+  <span class="builtin">println</span>(sub)
+
+  <span class="kw">let</span> role = Auth.extract_claim(token, <span class="str">&quot;role&quot;</span>)
+  <span class="builtin">println</span>(role)
+
+  <span class="comment">// Role checks</span>
+  <span class="kw">let</span> is_admin = Auth.check_role(token, <span class="str">&quot;admin&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_admin))
+
+  <span class="kw">let</span> is_viewer = Auth.check_role(token, <span class="str">&quot;viewer&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_viewer))
+}</code></pre><h3>crud_auth.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: CRUD with auth annotations — model + auth provider integration</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+<span class="kw">use</span> @std.auth.{auth}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  email: <span class="builtin">string</span>
+  role: <span class="builtin">string</span> @default(<span class="str">&quot;user&quot;</span>)
+}
+
+auth AppAuth {
+  config {
+    secret: <span class="str">&quot;test-secret-key&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> admin_id = User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admin_id))
+
+  <span class="kw">let</span> user = User.get_internal(admin_id)
+  <span class="builtin">println</span>(user.role)
+
+  <span class="kw">let</span> token = AppAuth.create_token(<span class="str">&quot;{\&quot;id\&quot;:1,\&quot;role\&quot;:\&quot;admin\&quot;}&quot;</span>)
+  <span class="kw">let</span> is_admin = AppAuth.check_role(token, <span class="str">&quot;admin&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_admin))
+
+  <span class="kw">let</span> is_editor = AppAuth.check_role(token, <span class="str">&quot;editor&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_editor))
+}</code></pre><h3>crud_expose.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: CRUD expose — @hidden fields excluded from model JSON, visible fields accessible</span>
+<span class="comment">/// Tests the field exposure pattern that server `expose` syntax builds on.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Account {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  username: <span class="builtin">string</span>
+  email: <span class="builtin">string</span>
+  password: <span class="builtin">string</span> @hidden
+  api_key: <span class="builtin">string</span> @hidden
+}
+
+<span class="kw">fn</span> main() {
+  Account.create({ username: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span>, password: <span class="str">&quot;pass123&quot;</span>, api_key: <span class="str">&quot;key-abc&quot;</span> })
+  Account.create({ username: <span class="str">&quot;bob&quot;</span>, email: <span class="str">&quot;bob@test.com&quot;</span>, password: <span class="str">&quot;pass456&quot;</span>, api_key: <span class="str">&quot;key-xyz&quot;</span> })
+
+  <span class="comment">// List returns records without hidden fields</span>
+  <span class="kw">let</span> accounts = Account.list()
+  <span class="kw">let</span> first_json = json.stringify(accounts)
+
+  <span class="comment">// Visible fields present</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(first_json.contains(<span class="str">&quot;alice&quot;</span>)))
+  <span class="comment">// Hidden fields absent</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(first_json.contains(<span class="str">&quot;pass123&quot;</span>)))
+
+  <span class="comment">// Individual get also hides fields</span>
+  <span class="kw">let</span> acc = Account.get_internal(<span class="num">1</span>)
+  <span class="kw">let</span> acc_json = json.stringify(acc)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(acc_json.contains(<span class="str">&quot;alice@test.com&quot;</span>)))
+
+  <span class="comment">// Count confirms both records exist</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Account.count()))
+}</code></pre><h3>crud_hooks.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: All six model lifecycle hooks fire during CRUD operations</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+
+  <span class="kw">on</span> before_create(_data) {
+    <span class="builtin">println</span>(<span class="str">&quot;before create&quot;</span>)
+  }
+
+  <span class="kw">on</span> after_create(user) {
+    <span class="builtin">println</span>(<span class="str">&quot;after create: &quot;</span> + user.name)
+  }
+
+  <span class="kw">on</span> before_update(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;before update &quot;</span> + <span class="builtin">string</span>(id))
+  }
+
+  <span class="kw">on</span> after_update(user) {
+    <span class="builtin">println</span>(<span class="str">&quot;after update: &quot;</span> + user.name)
+  }
+
+  <span class="kw">on</span> before_delete(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;before delete &quot;</span> + <span class="builtin">string</span>(id))
+  }
+
+  <span class="kw">on</span> after_delete(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;after delete &quot;</span> + <span class="builtin">string</span>(id))
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.update(id, { name: <span class="str">&quot;alice_updated&quot;</span> })
+  User.delete(id)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>crud_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Nested CRUD — create parent and children, update parent, cascade query</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Author {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  author_id: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> author_id = Author.create({ name: <span class="str">&quot;alice&quot;</span> })
+  Post.create({ title: <span class="str">&quot;First Post&quot;</span>, author_id: author_id })
+  Post.create({ title: <span class="str">&quot;Second Post&quot;</span>, author_id: author_id })
+
+  <span class="comment">// Query children by parent</span>
+  <span class="kw">let</span> posts = Post.where({ author_id: author_id })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(posts.length))
+  <span class="builtin">println</span>(posts[<span class="num">0</span>].title)
+  <span class="builtin">println</span>(posts[<span class="num">1</span>].title)
+
+  <span class="comment">// Update parent, children unaffected</span>
+  Author.update(author_id, { name: <span class="str">&quot;Updated Author&quot;</span> })
+  <span class="kw">let</span> author = Author.get(author_id)
+  <span class="kw">if</span> author != <span class="kw">null</span> {
+    <span class="builtin">println</span>(author.name)
+  }
+
+  <span class="comment">// Delete one child, verify count</span>
+  Post.delete(<span class="num">1</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Post.count_where({ author_id: author_id })))
+
+  <span class="comment">// Delete parent, children still exist (no cascade)</span>
+  Author.delete(author_id)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Author.count()))
+}</code></pre><h3>crud_override.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model CRUD with custom find_by to override default list behavior</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span> @default(<span class="str">&quot;user&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;user&quot;</span> })
+
+  <span class="comment">// Use where filter to get only admins</span>
+  <span class="kw">let</span> admins = User.where({ role: <span class="str">&quot;admin&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admins.length))
+  <span class="builtin">println</span>(admins[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(admins[<span class="num">1</span>].name)
+
+  <span class="comment">// Count with filter</span>
+  <span class="kw">let</span> user_count = User.count_where({ role: <span class="str">&quot;user&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(user_count))
+}</code></pre><h3>crud_pagination.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: CRUD pagination — Model.paginate returns paginated results with metadata</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+<span class="kw">type</span> PageMeta = { total: <span class="builtin">int</span>, current_page: <span class="builtin">int</span>, total_pages: <span class="builtin">int</span> }
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; <span class="num">25</span> {
+    Post.create({ title: `Post ${<span class="builtin">string</span>(i)}` })
+    i = i + <span class="num">1</span>
+  }
+
+  <span class="comment">// Page 1 of 10-per-page</span>
+  <span class="kw">let</span> page1_json = Post.paginate(<span class="str">&quot;{}&quot;</span>, <span class="num">1</span>, <span class="num">10</span>, <span class="str">&quot;id ASC&quot;</span>)
+  <span class="kw">let</span> page1: PageMeta = json.parse(page1_json)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page1.total))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page1.current_page))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page1.total_pages))
+
+  <span class="comment">// Page 2</span>
+  <span class="kw">let</span> page2_json = Post.paginate(<span class="str">&quot;{}&quot;</span>, <span class="num">2</span>, <span class="num">10</span>, <span class="str">&quot;id ASC&quot;</span>)
+  <span class="kw">let</span> page2: PageMeta = json.parse(page2_json)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page2.current_page))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page2.total_pages))
+}</code></pre><h3>error_annotation_type_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 1.5: Annotation on wrong type — compile error</span>
+
+<span class="kw">type</span> Bad = {
+  name: <span class="builtin">int</span> @validate(email),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>)
+}</code></pre><h3>error_default_non_nullable.fg</h3><pre class="forge-code"><code><span class="comment">/// @default on non-nullable field is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @default(<span class="str">&quot;x&quot;</span>) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_default_type_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// @default value type must match field type</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span><span class="op">?</span> @default(<span class="kw">true</span>) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_duplicate_annotation.fg</h3><pre class="forge-code"><code><span class="comment">/// Duplicate annotation is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @min(<span class="num">1</span>) @min(<span class="num">5</span>) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_field_typo.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: unknown field in model query triggers error with suggestion</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  email: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> admins = User.where({ naem: <span class="str">&quot;alice&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admins.length))
+}</code></pre><h3>error_min_max_contradiction.fg</h3><pre class="forge-code"><code><span class="comment">/// @min &gt; @max is an impossible constraint -- compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @min(<span class="num">10</span>) @max(<span class="num">5</span>) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_min_no_args.fg</h3><pre class="forge-code"><code><span class="comment">/// @min with no argument is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @min }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_min_wrong_arg.fg</h3><pre class="forge-code"><code><span class="comment">/// @min with non-integer argument is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @min(<span class="str">&quot;five&quot;</span>) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_pattern_no_args.fg</h3><pre class="forge-code"><code><span class="comment">/// @pattern with no argument is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @pattern }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_provider_annotation_outside_context.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Provider annotation @primary used outside model — compile error</span>
+
+<span class="kw">type</span> UserInput = {
+  name: <span class="builtin">string</span> @primary,
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>)
+}</code></pre><h3>error_target_mismatch.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Type-level annotation @table used on a field — compile error</span>
+
+<span class="kw">type</span> Bad = {
+  name: <span class="builtin">string</span> @table(<span class="str">&quot;custom&quot;</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>)
+}</code></pre><h3>error_unknown_annotation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 1.6: Unknown annotation — compile error</span>
+
+<span class="kw">type</span> Bad = {
+  name: <span class="builtin">string</span> @required,
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>)
+}</code></pre><h3>error_validate_no_args.fg</h3><pre class="forge-code"><code><span class="comment">/// @validate with no argument is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @validate }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>error_validate_not_type.fg</h3><pre class="forge-code"><code><span class="comment">/// validate() second argument must be a type name</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = validate({ name: <span class="str">&quot;a&quot;</span> }, <span class="str">&quot;NotAType&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>error_validate_unknown.fg</h3><pre class="forge-code"><code><span class="comment">/// @validate with unknown validator is a compile error</span>
+
+<span class="kw">type</span> T = { name: <span class="builtin">string</span> @validate(phone) }
+<span class="kw">fn</span> main() { <span class="builtin">println</span>(<span class="str">&quot;unreachable&quot;</span>) }</code></pre><h3>field_annotations.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Field annotations on model</span>
+<span class="comment">/// Annotations are metadata parsed with @name or @name(value) syntax.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>)
+  email: <span class="builtin">string</span> @unique
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span> })
+  <span class="kw">let</span> user = User.get(id)
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="builtin">println</span>(user.name)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>hidden_field.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @hidden annotation excludes field from JSON responses</span>
+<span class="comment">/// The password field should not appear in get/list results.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  password: <span class="builtin">string</span> @hidden
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, password: <span class="str">&quot;secret123&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+
+  <span class="kw">let</span> user = User.get(<span class="num">1</span>)
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="comment">// User should have name but not password in JSON output</span>
+    <span class="kw">let</span> json = json.stringify(user)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(json.contains(<span class="str">&quot;secret123&quot;</span>)))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(json.contains(<span class="str">&quot;alice&quot;</span>)))
+    <span class="builtin">println</span>(<span class="builtin">string</span>(json.contains(<span class="str">&quot;password&quot;</span>)))
+  }
+}</code></pre><h3>inherit_chained.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.6: Chained operators preserve annotations</span>
+
+<span class="kw">type</span> User = {
+  id: <span class="builtin">int</span>,
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  password: <span class="builtin">string</span> @min(<span class="num">8</span>),
+  created_at: <span class="builtin">string</span>,
+}
+
+<span class="kw">type</span> UpdateUser = User without {id, password, created_at} as partial
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span> }, UpdateUser)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Err))
+
+  <span class="kw">let</span> result2 = validate({ email: <span class="str">&quot;bad&quot;</span> }, UpdateUser)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result2 <span class="kw">is</span> Err))
+
+  <span class="kw">let</span> result3 = validate({ name: <span class="str">&quot;alice&quot;</span> }, UpdateUser)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result3 <span class="kw">is</span> Ok))
+}</code></pre><h3>inherit_only.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.2: `only` inherits annotations</span>
+
+<span class="kw">type</span> User = {
+  id: <span class="builtin">int</span>,
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  password: <span class="builtin">string</span> @min(<span class="num">8</span>),
+}
+
+<span class="kw">type</span> UserPublic = User only {name, email}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;bad&quot;</span> }, UserPublic)
+  <span class="kw">match</span> result {
+    Err(e) <span class="op">-&gt;</span> {
+      <span class="builtin">println</span>(<span class="builtin">string</span>(e.fields.length))
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">1</span>].field)
+    }
+    Ok(_) <span class="op">-&gt;</span> {}
+  }
+}</code></pre><h3>inherit_override.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.4: `with` can override annotations on existing fields</span>
+
+<span class="kw">type</span> User = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+}
+
+<span class="kw">type</span> StricterUser = User <span class="kw">with</span> { name: <span class="builtin">string</span> @min(<span class="num">3</span>) @max(<span class="num">50</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;ab&quot;</span> }, StricterUser)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Err))
+}</code></pre><h3>inherit_partial.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.5: `as partial` — validation only on present fields</span>
+
+<span class="kw">type</span> User = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  age: <span class="builtin">int</span> @min(<span class="num">0</span>),
+}
+
+<span class="kw">type</span> UserUpdate = User only {name, email, age} as partial
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;alice&quot;</span> }, UserUpdate)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Ok))
+
+  <span class="kw">let</span> result2 = validate({ email: <span class="str">&quot;bad&quot;</span> }, UserUpdate)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result2 <span class="kw">is</span> Err))
+
+  <span class="kw">let</span> result3 = validate({ name: <span class="kw">null</span>, email: <span class="kw">null</span>, age: <span class="kw">null</span> }, UserUpdate)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result3 <span class="kw">is</span> Ok))
+}</code></pre><h3>inherit_transform.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.7: @transform inherits through operators</span>
+
+<span class="kw">type</span> User = {
+  email: <span class="builtin">string</span> @transform(it.lower().trim()) @validate(email),
+}
+
+<span class="kw">type</span> CreateUser = User <span class="kw">with</span> { name: <span class="builtin">string</span> @min(<span class="num">1</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ email: <span class="str">&quot;  ALICE@TEST.COM  &quot;</span>, name: <span class="str">&quot;alice&quot;</span> }, CreateUser)
+  <span class="kw">match</span> result {
+    Ok(input) <span class="op">-&gt;</span> <span class="builtin">println</span>(input.email)
+    Err(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+}</code></pre><h3>inherit_with.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.3: `with` inherits existing, adds new</span>
+
+<span class="kw">type</span> User = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  password: <span class="builtin">string</span> @min(<span class="num">8</span>),
+}
+
+<span class="kw">type</span> CreateUser = User <span class="kw">with</span> { password_confirm: <span class="builtin">string</span> @min(<span class="num">8</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({
+    name: <span class="str">&quot;&quot;</span>,
+    email: <span class="str">&quot;a@test.com&quot;</span>,
+    password: <span class="str">&quot;secret123&quot;</span>,
+    password_confirm: <span class="str">&quot;x&quot;</span>,
+  }, CreateUser)
+
+  <span class="kw">match</span> result {
+    Err(e) <span class="op">-&gt;</span> {
+      <span class="builtin">println</span>(<span class="builtin">string</span>(e.fields.length))
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">1</span>].field)
+    }
+    Ok(_) <span class="op">-&gt;</span> {}
+  }
+}</code></pre><h3>inherit_without.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 3.1: `without` inherits annotations</span>
+
+<span class="kw">type</span> User = {
+  id: <span class="builtin">int</span>,
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  created_at: <span class="builtin">string</span>,
+}
+
+<span class="kw">type</span> CreateUser = User without {id, created_at}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span> }, CreateUser)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Err))
+
+  <span class="kw">match</span> result {
+    Err(e) <span class="op">-&gt;</span> {
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].rule)
+    }
+    Ok(_) <span class="op">-&gt;</span> {}
+  }
+}</code></pre><h3>model_after_create.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model after_create hook runs after record is inserted</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+
+  <span class="kw">on</span> after_create(user) {
+    <span class="builtin">println</span>(<span class="str">&quot;created: &quot;</span> + user.name)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(id))
+}</code></pre><h3>model_after_delete.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: after_delete hook runs after delete with id</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+
+  <span class="kw">on</span> after_delete(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;deleted id &quot;</span> + <span class="builtin">string</span>(id))
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.delete(id)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>model_after_update.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: after_update hook runs after update with record</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+
+  <span class="kw">on</span> after_update(user) {
+    <span class="builtin">println</span>(<span class="str">&quot;updated: &quot;</span> + user.name)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.update(id, { name: <span class="str">&quot;alice_updated&quot;</span> })
+  <span class="kw">let</span> user = User.get(id)
+  <span class="builtin">println</span>(user.name)
+}</code></pre><h3>model_aggregates.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model aggregate methods sum() and avg()</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Product {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  price: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  Product.create({ name: <span class="str">&quot;A&quot;</span>, price: <span class="num">10</span> })
+  Product.create({ name: <span class="str">&quot;B&quot;</span>, price: <span class="num">20</span> })
+  Product.create({ name: <span class="str">&quot;C&quot;</span>, price: <span class="num">30</span> })
+
+  <span class="kw">let</span> total = Product.sum(<span class="str">&quot;price&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(total))
+
+  <span class="kw">let</span> average = Product.avg(<span class="str">&quot;price&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(average))
+}</code></pre><h3>model_annotation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model-level annotation @table parses without error</span>
+<span class="comment">/// Model-level annotations are stored on the component block.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  @table(<span class="str">&quot;blog_posts&quot;</span>)
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Post.create({ title: <span class="str">&quot;Hello&quot;</span> })
+  <span class="kw">let</span> post = Post.get(<span class="num">1</span>)
+  <span class="kw">if</span> post != <span class="kw">null</span> {
+    <span class="builtin">println</span>(post.title)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Post.count()))
+}</code></pre><h3>model_authorize.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Authorization pattern — before_create hook + @owner for access control</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model AuditLog {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  action: <span class="builtin">string</span>
+  created_by: <span class="builtin">int</span> @owner
+
+  <span class="kw">on</span> before_create(data) {
+    <span class="builtin">println</span>(<span class="str">&quot;authorize check&quot;</span>)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  AuditLog.create({ action: <span class="str">&quot;login&quot;</span>, created_by: <span class="num">1</span> })
+  AuditLog.create({ action: <span class="str">&quot;delete&quot;</span>, created_by: <span class="num">2</span> })
+
+  <span class="comment">// count all logs</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(AuditLog.count()))
+
+  <span class="comment">// get first log</span>
+  <span class="kw">let</span> log = AuditLog.get(<span class="num">1</span>)
+  <span class="builtin">println</span>(log<span class="op">?.</span>action <span class="op">??</span> <span class="str">&quot;not found&quot;</span>)
+
+  <span class="comment">// ownership check: user 1 owns log 1</span>
+  <span class="kw">let</span> owns = AuditLog.check_owner(<span class="num">1</span>, <span class="num">1</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(owns))
+
+  <span class="comment">// ownership check: user 2 does NOT own log 1</span>
+  <span class="kw">let</span> not_owns = AuditLog.check_owner(<span class="num">1</span>, <span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(not_owns))
+}</code></pre><h3>model_batch_insert.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.insert_batch — bulk insert records</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Item {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  category: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> inserted = Item.insert_batch(<span class="str">&quot;[{\&quot;name\&quot;:\&quot;a\&quot;,\&quot;category\&quot;:\&quot;x\&quot;},{\&quot;name\&quot;:\&quot;b\&quot;,\&quot;category\&quot;:\&quot;y\&quot;},{\&quot;name\&quot;:\&quot;c\&quot;,\&quot;category\&quot;:\&quot;x\&quot;}]&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(inserted))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Item.count()))
+}</code></pre><h3>model_before_create.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model before_create hook runs before record is inserted</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+
+  <span class="kw">on</span> before_create(data) {
+    <span class="builtin">println</span>(<span class="str">&quot;before create&quot;</span>)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="kw">let</span> user = User.get(id)
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="builtin">println</span>(user.name)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(id))
+}</code></pre><h3>model_before_delete.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: before_delete hook runs before delete</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+
+  <span class="kw">on</span> before_delete(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;deleting id &quot;</span> + <span class="builtin">string</span>(id))
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.delete(id)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>model_before_update.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: before_update hook runs before update</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+
+  <span class="kw">on</span> before_update(id: <span class="builtin">int</span>) {
+    <span class="builtin">println</span>(<span class="str">&quot;updating user &quot;</span> + <span class="builtin">string</span>(id))
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.update(id, { name: <span class="str">&quot;alice_updated&quot;</span> })
+  <span class="kw">let</span> user = User.get(id)
+  <span class="builtin">println</span>(user.name)
+}</code></pre><h3>model_count_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.count() with filter and aggregate methods</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count_where({ role: <span class="str">&quot;admin&quot;</span> })))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count_where({ role: <span class="str">&quot;member&quot;</span> })))
+}</code></pre><h3>model_count_where.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.count_where returns filtered count</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> admin_count = User.count_where({ role: <span class="str">&quot;admin&quot;</span> })
+  <span class="kw">let</span> member_count = User.count_where({ role: <span class="str">&quot;member&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admin_count))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(member_count))
+}</code></pre><h3>model_default.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @default annotation sets default values for fields</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  status: <span class="builtin">string</span> @default(<span class="str">&quot;draft&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = Post.create({ title: <span class="str">&quot;Hello&quot;</span> })
+  <span class="kw">let</span> post = Post.get(id)
+  <span class="kw">if</span> post != <span class="kw">null</span> {
+    <span class="builtin">println</span>(post.status)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Post.count()))
+}</code></pre><h3>model_default_now.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @default(now) sets current timestamp automatically</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Event {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  created_at: <span class="builtin">string</span> @default(now)
+}
+
+<span class="kw">fn</span> main() {
+  Event.create({ name: <span class="str">&quot;test&quot;</span> })
+  <span class="kw">let</span> event = Event.get(<span class="num">1</span>)
+  <span class="kw">if</span> event != <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(event.id))
+    <span class="comment">// created_at should be non-empty (CURRENT_TIMESTAMP fills it)</span>
+    <span class="builtin">println</span>(<span class="builtin">string</span>(event.created_at.length &gt; <span class="num">0</span>))
+  }
+}</code></pre><h3>model_default_values.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @default annotation provides default values</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  status: <span class="builtin">string</span> @default(<span class="str">&quot;draft&quot;</span>)
+  views: <span class="builtin">int</span> @default(<span class="num">0</span>)
+}
+
+<span class="kw">fn</span> main() {
+  Post.create({ title: <span class="str">&quot;Hello&quot;</span> })
+  <span class="kw">let</span> post = Post.get(<span class="num">1</span>)
+  <span class="kw">if</span> post != <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(post.id))
+    <span class="builtin">println</span>(post.status)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(post.views))
+  }
+}</code></pre><h3>model_delete_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.delete removes record, get returns null</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+
+  User.delete(<span class="num">2</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>model_delete_where.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.delete_where — bulk delete matching records</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Item {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  category: <span class="builtin">string</span>
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Item.create({ category: <span class="str">&quot;a&quot;</span>, name: <span class="str">&quot;one&quot;</span> })
+  Item.create({ category: <span class="str">&quot;b&quot;</span>, name: <span class="str">&quot;two&quot;</span> })
+  Item.create({ category: <span class="str">&quot;a&quot;</span>, name: <span class="str">&quot;three&quot;</span> })
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Item.count()))
+  Item.delete_where({ category: <span class="str">&quot;a&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Item.count()))
+}</code></pre><h3>model_exists.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.exists — check record existence</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.exists({ name: <span class="str">&quot;alice&quot;</span> })))
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.exists({ name: <span class="str">&quot;alice&quot;</span> })))
+}</code></pre><h3>model_find_by.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.find_by — find first record matching filter</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  email: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, email: <span class="str">&quot;bob@test.com&quot;</span> })
+
+  <span class="kw">let</span> found = User.find_by({ email: <span class="str">&quot;alice@test.com&quot;</span> })
+  <span class="kw">if</span> found != <span class="kw">null</span> {
+    <span class="builtin">println</span>(found.name)
+  }
+
+  <span class="kw">let</span> missing = User.find_by({ email: <span class="str">&quot;nobody@test.com&quot;</span> })
+  <span class="kw">if</span> missing != <span class="kw">null</span> {
+    <span class="builtin">println</span>(missing.name)
+  } <span class="kw">else</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;not found&quot;</span>)
+  }
+}</code></pre><h3>model_health.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.health() returns 1 when database is healthy</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Ping {
+  id: <span class="builtin">int</span> @primary @auto_increment
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(forge_model_health()))
+}
+
+extern <span class="kw">fn</span> forge_model_health() <span class="op">-&gt;</span> <span class="builtin">int</span></code></pre><h3>model_hidden_list.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @hidden fields excluded from list results too</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  secret: <span class="builtin">string</span> @hidden
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, secret: <span class="str">&quot;s1&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, secret: <span class="str">&quot;s2&quot;</span> })
+
+  <span class="kw">let</span> users = User.list()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(users.length))
+
+  <span class="comment">// Verify neither user's JSON contains the hidden field</span>
+  <span class="kw">let</span> j1 = json.stringify(users[<span class="num">0</span>])
+  <span class="kw">let</span> j2 = json.stringify(users[<span class="num">1</span>])
+  <span class="builtin">println</span>(<span class="builtin">string</span>(j1.contains(<span class="str">&quot;secret&quot;</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(j2.contains(<span class="str">&quot;secret&quot;</span>)))
+}</code></pre><h3>model_include_relations.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model .include() loads related records via @belongs_to</span>
+<span class="comment">/// The result JSON should contain the nested author with name &quot;alice&quot;</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  author_id: <span class="builtin">int</span> @belongs_to(User)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> uid = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  Post.create({ title: <span class="str">&quot;Post 1&quot;</span>, author_id: uid })
+
+  <span class="comment">// Use .include() to get related author embedded in the result</span>
+  <span class="kw">let</span> result = Post.include(<span class="num">1</span>, <span class="str">&quot;[\&quot;author\&quot;]&quot;</span>)
+
+  <span class="comment">// The result should contain the nested author with name alice</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.contains(<span class="str">&quot;alice&quot;</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.contains(<span class="str">&quot;author&quot;</span>)))
+}</code></pre><h3>model_list_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.list() results can be filtered with list.filter()</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> all = User.list()
+  <span class="kw">let</span> admins = all.filter((u) <span class="op">-&gt;</span> u.role == <span class="str">&quot;admin&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admins.length))
+  <span class="builtin">println</span>(admins[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(admins[<span class="num">1</span>].name)
+}</code></pre><h3>model_list_map.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.list() results can be mapped with list.map()</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span> })
+
+  <span class="kw">let</span> names = User.list().map((u) <span class="op">-&gt;</span> u.name)
+  <span class="builtin">println</span>(names.join(<span class="str">&quot;, &quot;</span>))
+}</code></pre><h3>model_min_max.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.min and Model.max aggregates</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Product {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  price: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  Product.create({ name: <span class="str">&quot;cheap&quot;</span>, price: <span class="num">5</span> })
+  Product.create({ name: <span class="str">&quot;medium&quot;</span>, price: <span class="num">50</span> })
+  Product.create({ name: <span class="str">&quot;expensive&quot;</span>, price: <span class="num">200</span> })
+
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Product.min(<span class="str">&quot;price&quot;</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Product.max(<span class="str">&quot;price&quot;</span>)))
+}</code></pre><h3>model_nested_include.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Nested model .include() across multiple models with @belongs_to</span>
+<span class="comment">/// Each model's include resolves its own relations independently</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  author_id: <span class="builtin">int</span> @belongs_to(User)
+}
+
+model Comment {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  body: <span class="builtin">string</span>
+  post_id: <span class="builtin">int</span> @belongs_to(Post)
+  author_id: <span class="builtin">int</span> @belongs_to(User)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> u1 = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="kw">let</span> u2 = User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  <span class="kw">let</span> p1 = Post.create({ title: <span class="str">&quot;Hello&quot;</span>, author_id: u1 })
+  Comment.create({ body: <span class="str">&quot;Great post!&quot;</span>, post_id: p1, author_id: u2 })
+
+  <span class="comment">// Include author relation on post</span>
+  <span class="kw">let</span> result = Post.include(p1, <span class="str">&quot;[\&quot;author\&quot;]&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.contains(<span class="str">&quot;alice&quot;</span>)))
+
+  <span class="comment">// Include author relation on comment</span>
+  <span class="kw">let</span> cresult = Comment.include(<span class="num">1</span>, <span class="str">&quot;[\&quot;author\&quot;]&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(cresult.contains(<span class="str">&quot;bob&quot;</span>)))
+}</code></pre><h3>model_owner_through.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Ownership check via @belongs_to + @owner on foreign key field</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Team {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+model Document {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  team_id: <span class="builtin">int</span> @belongs_to(Team) @owner
+}
+
+<span class="kw">fn</span> main() {
+  Team.create({ name: <span class="str">&quot;Engineering&quot;</span> })
+  Document.create({ title: <span class="str">&quot;Spec&quot;</span>, team_id: <span class="num">1</span> })
+
+  <span class="comment">// team_id 1 owns document 1</span>
+  <span class="kw">let</span> owns = Document.check_owner(<span class="num">1</span>, <span class="num">1</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(owns))
+
+  <span class="comment">// team_id 99 does not</span>
+  <span class="kw">let</span> not_owns = Document.check_owner(<span class="num">1</span>, <span class="num">99</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(not_owns))
+}</code></pre><h3>model_ownership.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model ownership check via @owner annotation</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  author_id: <span class="builtin">int</span> @owner
+}
+
+<span class="kw">fn</span> main() {
+  Post.create({ title: <span class="str">&quot;Hello&quot;</span>, author_id: <span class="num">42</span> })
+
+  <span class="comment">// Check: user 42 owns post 1</span>
+  <span class="kw">let</span> is_owner = Post.check_owner(<span class="num">1</span>, <span class="num">42</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_owner))
+
+  <span class="comment">// Check: user 99 does NOT own post 1</span>
+  <span class="kw">let</span> not_owner = Post.check_owner(<span class="num">1</span>, <span class="num">99</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(not_owner))
+}</code></pre><h3>model_paginate.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.paginate returns paginated results with metadata</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+<span class="kw">type</span> PageMeta = { total: <span class="builtin">int</span>, current_page: <span class="builtin">int</span>, total_pages: <span class="builtin">int</span> }
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span> })
+  User.create({ name: <span class="str">&quot;eve&quot;</span> })
+
+  <span class="kw">let</span> result_json = User.paginate(<span class="str">&quot;{}&quot;</span>, <span class="num">1</span>, <span class="num">2</span>, <span class="str">&quot;id ASC&quot;</span>)
+  <span class="kw">let</span> page: PageMeta = json.parse(result_json)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page.total))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page.current_page))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(page.total_pages))
+}</code></pre><h3>model_query.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with order and limit</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="comment">// Query with order (descending by name) and limit</span>
+  <span class="kw">let</span> ordered = User.query({ order: <span class="str">&quot;name DESC&quot;</span> })
+  <span class="builtin">println</span>(ordered[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(ordered[<span class="num">1</span>].name)
+  <span class="builtin">println</span>(ordered[<span class="num">2</span>].name)
+}</code></pre><h3>model_query_advanced.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with order, limit, and offset</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  score: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, score: <span class="num">10</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, score: <span class="num">30</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, score: <span class="num">50</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span>, score: <span class="num">20</span> })
+
+  <span class="comment">// Query with order by score descending, limit 2</span>
+  <span class="kw">let</span> top = User.query({ order: <span class="str">&quot;score DESC&quot;</span>, limit: <span class="num">2</span> })
+  <span class="builtin">println</span>(top[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(top[<span class="num">1</span>].name)
+}</code></pre><h3>model_query_builder.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Chained query builder</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;viewer&quot;</span> })
+  User.create({ name: <span class="str">&quot;carol&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> q = User.build_query()
+  <span class="kw">let</span> q = User.add_where(q, <span class="str">&quot;{\&quot;role\&quot;:\&quot;admin\&quot;}&quot;</span>)
+  <span class="kw">let</span> q = User.add_order(q, <span class="str">&quot;name&quot;</span>, <span class="str">&quot;desc&quot;</span>)
+  <span class="kw">let</span> results = User.exec_query(q)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+  <span class="builtin">println</span>(results[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">1</span>].name)
+}</code></pre><h3>model_query_in.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with $in operator</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;guest&quot;</span> })
+  User.create({ name: <span class="str">&quot;carol&quot;</span>, role: <span class="str">&quot;editor&quot;</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> results = User.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;role\&quot;:{\&quot;$in\&quot;:[\&quot;admin\&quot;,\&quot;editor\&quot;]}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+  <span class="builtin">println</span>(results[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">1</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">2</span>].name)
+}</code></pre><h3>model_query_like.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with $like operator</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  User.create({ name: <span class="str">&quot;alex&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span> })
+
+  <span class="kw">let</span> results = User.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;name\&quot;:{\&quot;$like\&quot;:\&quot;al%\&quot;}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+  <span class="builtin">println</span>(results[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">1</span>].name)
+}</code></pre><h3>model_query_limit_offset.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with limit and offset for pagination</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span> })
+
+  <span class="kw">let</span> page2 = User.query({ order: <span class="str">&quot;id ASC&quot;</span>, limit: <span class="num">2</span>, offset: <span class="num">1</span> })
+  <span class="builtin">println</span>(page2[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(page2[<span class="num">1</span>].name)
+}</code></pre><h3>model_query_null.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with $ne operator</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;carol&quot;</span>, role: <span class="str">&quot;editor&quot;</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+
+  <span class="kw">let</span> non_admin = User.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;role\&quot;:{\&quot;$ne\&quot;:\&quot;admin\&quot;}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(non_admin.length))
+  <span class="builtin">println</span>(non_admin[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(non_admin[<span class="num">1</span>].name)
+  <span class="builtin">println</span>(non_admin[<span class="num">2</span>].name)
+}</code></pre><h3>model_query_operators.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with comparison operators ($gt, $lt, $between)</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Product {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  price: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  Product.create({ name: <span class="str">&quot;budget&quot;</span>, price: <span class="num">5</span> })
+  Product.create({ name: <span class="str">&quot;cheap&quot;</span>, price: <span class="num">10</span> })
+  Product.create({ name: <span class="str">&quot;medium&quot;</span>, price: <span class="num">50</span> })
+  Product.create({ name: <span class="str">&quot;expensive&quot;</span>, price: <span class="num">100</span> })
+  Product.create({ name: <span class="str">&quot;luxury&quot;</span>, price: <span class="num">200</span> })
+
+  <span class="comment">// $gt: price &gt; 20 =&gt; medium, expensive, luxury</span>
+  <span class="kw">let</span> above = Product.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;price\&quot;:{\&quot;$gt\&quot;:20}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(above.length))
+
+  <span class="comment">// $lt: price &lt; 20 =&gt; budget, cheap</span>
+  <span class="kw">let</span> below = Product.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;price\&quot;:{\&quot;$lt\&quot;:20}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(below.length))
+
+  <span class="comment">// $between: 10 &lt;= price &lt;= 100 =&gt; cheap, medium, expensive</span>
+  <span class="kw">let</span> mid = Product.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;price\&quot;:{\&quot;$between\&quot;:[10,100]}}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(mid.length))
+}</code></pre><h3>model_query_or.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with $or operator</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;viewer&quot;</span> })
+  User.create({ name: <span class="str">&quot;carol&quot;</span>, role: <span class="str">&quot;editor&quot;</span> })
+  User.create({ name: <span class="str">&quot;dave&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> results = User.query(<span class="str">&quot;{\&quot;where\&quot;:{\&quot;$or\&quot;:[{\&quot;role\&quot;:\&quot;admin\&quot;},{\&quot;role\&quot;:\&quot;editor\&quot;}]}}&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+  <span class="builtin">println</span>(results[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">1</span>].name)
+  <span class="builtin">println</span>(results[<span class="num">2</span>].name)
+}</code></pre><h3>model_query_order.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.query with ORDER BY</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Fruit {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  rank: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  Fruit.create({ name: <span class="str">&quot;banana&quot;</span>, rank: <span class="num">2</span> })
+  Fruit.create({ name: <span class="str">&quot;apple&quot;</span>, rank: <span class="num">3</span> })
+  Fruit.create({ name: <span class="str">&quot;cherry&quot;</span>, rank: <span class="num">1</span> })
+
+  <span class="kw">let</span> sorted = Fruit.query(<span class="str">&quot;{\&quot;order\&quot;:\&quot;rank\&quot;}&quot;</span>)
+  <span class="builtin">println</span>(sorted[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(sorted[<span class="num">1</span>].name)
+  <span class="builtin">println</span>(sorted[<span class="num">2</span>].name)
+}</code></pre><h3>model_relations.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model relations via foreign key fields</span>
+<span class="comment">/// belongs_to: Post.author_id -&gt; User.id</span>
+<span class="comment">/// has_many: User has many Posts via author_id</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  author_id: <span class="builtin">int</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> user_id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  Post.create({ title: <span class="str">&quot;Post 1&quot;</span>, author_id: user_id })
+  Post.create({ title: <span class="str">&quot;Post 2&quot;</span>, author_id: user_id })
+
+  <span class="comment">// belongs_to: get the author of a post</span>
+  <span class="kw">let</span> post = Post.get(<span class="num">1</span>)
+  <span class="kw">if</span> post != <span class="kw">null</span> {
+    <span class="kw">let</span> author = User.get(post.author_id)
+    <span class="kw">if</span> author != <span class="kw">null</span> {
+      <span class="builtin">println</span>(author.name)
+    }
+  }
+
+  <span class="comment">// has_many: get all posts by a user</span>
+  <span class="kw">let</span> posts = Post.where({ author_id: user_id })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(posts.length))
+  <span class="builtin">println</span>(posts[<span class="num">0</span>].title)
+  <span class="builtin">println</span>(posts[<span class="num">1</span>].title)
+}</code></pre><h3>model_search.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.search — full text search across columns</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Article {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  body: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Article.create({ title: <span class="str">&quot;Forge Guide&quot;</span>, body: <span class="str">&quot;Learn the basics&quot;</span> })
+  Article.create({ title: <span class="str">&quot;Rust Tutorial&quot;</span>, body: <span class="str">&quot;Systems programming&quot;</span> })
+  Article.create({ title: <span class="str">&quot;Forge Tips&quot;</span>, body: <span class="str">&quot;Advanced patterns&quot;</span> })
+
+  <span class="kw">let</span> results = Article.search({ columns: [<span class="str">&quot;title&quot;</span>], query: <span class="str">&quot;Forge&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+  <span class="builtin">println</span>(results[<span class="num">0</span>].title)
+  <span class="builtin">println</span>(results[<span class="num">1</span>].title)
+}</code></pre><h3>model_skip_validation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: create_unvalidated bypasses @min validation</span>
+<span class="comment">/// Normal create with empty name returns 0, but create_unvalidated succeeds</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Normal create fails validation</span>
+  <span class="kw">let</span> bad_id = User.create({ name: <span class="str">&quot;&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad_id))
+
+  <span class="comment">// create_unvalidated bypasses @min check</span>
+  <span class="kw">let</span> good_id = User.create_unvalidated({ name: <span class="str">&quot;&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(good_id))
+
+  <span class="comment">// Record was inserted</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>model_table_name.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @table annotation overrides default table name</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  @table(<span class="str">&quot;blog_posts&quot;</span>)
+
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Post.create({ title: <span class="str">&quot;Hello World&quot;</span> })
+  <span class="kw">let</span> post = Post.get(<span class="num">1</span>)
+  <span class="kw">if</span> post != <span class="kw">null</span> {
+    <span class="builtin">println</span>(post.title)
+  }
+}</code></pre><h3>model_unique.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @unique annotation prevents duplicate values</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  email: <span class="builtin">string</span> @unique
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span> })
+  <span class="comment">// Duplicate email fails at SQL level, returns 0</span>
+  <span class="kw">let</span> dup_id = User.create({ name: <span class="str">&quot;bob&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(dup_id))
+}</code></pre><h3>model_update_hidden.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.update() with @hidden fields returns record without hidden fields</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+  password: <span class="builtin">string</span> @hidden
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span>, password: <span class="str">&quot;secret&quot;</span> })
+  <span class="kw">let</span> updated = User.update(id, { name: <span class="str">&quot;alice_updated&quot;</span> })
+  <span class="builtin">println</span>(updated.name)
+  <span class="builtin">println</span>(updated.role)
+}</code></pre><h3>model_update_returns_record.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.update() returns the updated record</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  <span class="kw">let</span> updated = User.update(id, { name: <span class="str">&quot;alice_updated&quot;</span> })
+  <span class="builtin">println</span>(updated.name)
+  <span class="builtin">println</span>(updated.role)
+}</code></pre><h3>model_update_where.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.update_where — bulk update matching records</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  title: <span class="builtin">string</span>
+  status: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Post.create({ title: <span class="str">&quot;Post 1&quot;</span>, status: <span class="str">&quot;draft&quot;</span> })
+  Post.create({ title: <span class="str">&quot;Post 2&quot;</span>, status: <span class="str">&quot;draft&quot;</span> })
+
+  <span class="kw">let</span> posts = Post.list()
+  <span class="builtin">println</span>(posts[<span class="num">0</span>].status)
+  <span class="builtin">println</span>(posts[<span class="num">1</span>].status)
+
+  <span class="kw">let</span> updated = Post.update_where({ status: <span class="str">&quot;draft&quot;</span> }, { status: <span class="str">&quot;published&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(updated))
+
+  <span class="kw">let</span> posts2 = Post.list()
+  <span class="builtin">println</span>(posts2[<span class="num">0</span>].status)
+  <span class="builtin">println</span>(posts2[<span class="num">1</span>].status)
+}</code></pre><h3>model_upsert.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.upsert — insert or replace</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Config {
+  id: <span class="builtin">int</span> @primary
+  value: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Config.upsert({ id: <span class="num">1</span>, value: <span class="str">&quot;alice&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Config.count()))
+  <span class="kw">let</span> c1 = Config.get(<span class="num">1</span>)
+  <span class="kw">if</span> c1 != <span class="kw">null</span> {
+    <span class="builtin">println</span>(c1.value)
+  }
+
+  Config.upsert({ id: <span class="num">1</span>, value: <span class="str">&quot;bob&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Config.count()))
+  <span class="kw">let</span> c2 = Config.get(<span class="num">1</span>)
+  <span class="kw">if</span> c2 != <span class="kw">null</span> {
+    <span class="builtin">println</span>(c2.value)
+  }
+}</code></pre><h3>model_validation_errors.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model validation returns 0 on @min violation</span>
+<span class="comment">/// When creating a user with empty name and @min(1), create returns 0</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Empty name violates @min(1), should return 0 (validation failed)</span>
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(id))
+
+  <span class="comment">// No record was inserted</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>model_where.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.where returns filtered list of records</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  User.create({ name: <span class="str">&quot;charlie&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> admins = User.where({ role: <span class="str">&quot;admin&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admins.length))
+  <span class="builtin">println</span>(admins[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(admins[<span class="num">1</span>].name)
+}</code></pre><h3>model_where_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Model.where — server-side filtering</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Person {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  role: <span class="builtin">string</span>
+}
+
+<span class="kw">fn</span> main() {
+  Person.create({ name: <span class="str">&quot;alice&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+  Person.create({ name: <span class="str">&quot;bob&quot;</span>, role: <span class="str">&quot;member&quot;</span> })
+  Person.create({ name: <span class="str">&quot;carol&quot;</span>, role: <span class="str">&quot;admin&quot;</span> })
+
+  <span class="kw">let</span> all = Person.list()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(all.length))
+
+  <span class="kw">let</span> admins = Person.where({ role: <span class="str">&quot;admin&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(admins.length))
+  <span class="builtin">println</span>(admins[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(admins[<span class="num">1</span>].name)
+}</code></pre><h3>query_chain_pipe.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Query builder with step-by-step chaining</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+    id: <span class="builtin">int</span> @primary @auto_increment
+    title: <span class="builtin">string</span>
+    status: <span class="builtin">string</span> @default(<span class="str">&quot;draft&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> q = Post.build_query()
+    <span class="kw">let</span> q2 = Post.add_where(q, <span class="str">&quot;{\&quot;status\&quot;:\&quot;published\&quot;}&quot;</span>)
+    <span class="kw">let</span> q3 = Post.add_order(q2, <span class="str">&quot;title&quot;</span>, <span class="str">&quot;asc&quot;</span>)
+    <span class="kw">let</span> q4 = Post.add_limit(q3, <span class="num">10</span>)
+    <span class="kw">let</span> results = Post.exec_query(q4)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(results.length))
+}</code></pre><h3>query_chain_pipe2.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Query builder with minimal chain</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Post {
+    id: <span class="builtin">int</span> @primary @auto_increment
+    title: <span class="builtin">string</span>
+    status: <span class="builtin">string</span> @default(<span class="str">&quot;draft&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> results = Post.build_query()
+    <span class="kw">let</span> results2 = Post.add_where(results, <span class="str">&quot;{}&quot;</span>)
+    <span class="kw">let</span> results3 = Post.add_limit(results2, <span class="num">5</span>)
+    <span class="kw">let</span> final_results = Post.exec_query(results3)
+    <span class="builtin">println</span>(<span class="builtin">string</span>(final_results.length))
+}</code></pre><h3>transform_before_validate.fg</h3><pre class="forge-code"><code>
+<span class="kw">type</span> Input = {
+    name: <span class="builtin">string</span> @transform(it.trim()) @min(<span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+    <span class="comment">// After trim, &quot;  &quot; becomes &quot;&quot; which fails @min(1)</span>
+    <span class="kw">let</span> result = validate({ name: <span class="str">&quot;  &quot;</span> }, Input)
+    <span class="builtin">println</span>(result <span class="kw">is</span> Err)
+}</code></pre><h3>transform_lower.fg</h3><pre class="forge-code"><code>
+<span class="kw">type</span> Input = { name: <span class="builtin">string</span> @transform(it.lower()) }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = validate({ name: <span class="str">&quot;ALICE&quot;</span> }, Input)
+    <span class="kw">match</span> result {
+        Ok(v) <span class="op">-&gt;</span> <span class="builtin">println</span>(v.name)
+        Err(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;error&quot;</span>)
+    }
+}</code></pre><h3>validate_basic.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 1.1: Basic validate on type fields</span>
+
+<span class="kw">type</span> ContactForm = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  age: <span class="builtin">int</span> @min(<span class="num">0</span>) @max(<span class="num">150</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> valid: ContactForm = { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span>, age: <span class="num">30</span> }
+  <span class="builtin">println</span>(valid.name)
+
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;bad&quot;</span>, age: <span class="num">-1</span> }, ContactForm)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Err))
+}</code></pre><h3>validate_closure_int.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: closure validator on int field with range check</span>
+
+<span class="kw">type</span> Config = {
+  port: <span class="builtin">int</span> @validate((val) <span class="op">-&gt;</span> {
+    <span class="kw">if</span> val &lt; <span class="num">1024</span> {
+      Err(<span class="str">&quot;port must be 1024-65535&quot;</span>)
+    } <span class="kw">else</span> {
+      <span class="kw">if</span> val &gt; <span class="num">65535</span> {
+        Err(<span class="str">&quot;port must be 1024-65535&quot;</span>)
+      } <span class="kw">else</span> {
+        Ok(val)
+      }
+    }
+  }),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> bad = validate({ port: <span class="num">80</span> }, Config)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad <span class="kw">is</span> Err))
+
+  <span class="kw">match</span> bad {
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(e.fields[<span class="num">0</span>].message)
+    Ok(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+
+  <span class="kw">let</span> good = validate({ port: <span class="num">8080</span> }, Config)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(good <span class="kw">is</span> Ok))
+}</code></pre><h3>validate_custom_closure.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: custom closure validator with Ok/Err return</span>
+
+<span class="kw">type</span> UserInput = {
+  email: <span class="builtin">string</span> @validate((val) <span class="op">-&gt;</span> {
+    <span class="kw">if</span> val == <span class="str">&quot;bad@competitor.com&quot;</span> {
+      Err(<span class="str">&quot;we don't serve competitors&quot;</span>)
+    } <span class="kw">else</span> {
+      Ok(val)
+    }
+  }),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> bad = validate({ email: <span class="str">&quot;bad@competitor.com&quot;</span> }, UserInput)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad <span class="kw">is</span> Err))
+
+  <span class="kw">match</span> bad {
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(e.fields[<span class="num">0</span>].message)
+    Ok(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+
+  <span class="kw">let</span> good = validate({ email: <span class="str">&quot;hello@example.com&quot;</span> }, UserInput)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(good <span class="kw">is</span> Ok))
+}</code></pre><h3>validate_custom_expr.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: custom expression validator</span>
+
+<span class="kw">type</span> Config = {
+  port: <span class="builtin">int</span> @validate(it &gt;= <span class="num">1024</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ port: <span class="num">80</span> }, Config)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result <span class="kw">is</span> Err))
+
+  <span class="kw">let</span> result2 = validate({ port: <span class="num">8080</span> }, Config)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result2 <span class="kw">is</span> Ok))
+}</code></pre><h3>validate_default.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.6: @default provides fallback for optional fields</span>
+
+<span class="kw">type</span> Input = {
+  role: <span class="builtin">string</span><span class="op">?</span> @default(<span class="str">&quot;member&quot;</span>),
+  active: bool<span class="op">?</span> @default(<span class="kw">true</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ role: <span class="kw">null</span>, active: <span class="kw">null</span> }, Input)
+  <span class="kw">match</span> result {
+    Ok(input) <span class="op">-&gt;</span> {
+      <span class="builtin">println</span>(input.role <span class="op">??</span> <span class="str">&quot;none&quot;</span>)
+      <span class="builtin">println</span>(<span class="builtin">string</span>(input.active <span class="op">??</span> <span class="kw">false</span>))
+    }
+    Err(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+}</code></pre><h3>validate_email.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @validate(email) rejects invalid email</span>
+
+<span class="kw">type</span> Input = { email: <span class="builtin">string</span> @validate(email) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ email: <span class="str">&quot;not-an-email&quot;</span> }, Input)
+  <span class="builtin">println</span>(result <span class="kw">is</span> Err)
+}</code></pre><h3>validate_email_ok.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @validate(email) accepts valid email</span>
+
+<span class="kw">type</span> Input = { email: <span class="builtin">string</span> @validate(email) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ email: <span class="str">&quot;alice@test.com&quot;</span> }, Input)
+  <span class="builtin">println</span>(result <span class="kw">is</span> Ok)
+}</code></pre><h3>validate_errors.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 1.2: validate() returns structured errors</span>
+
+<span class="kw">type</span> ContactForm = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+  email: <span class="builtin">string</span> @validate(email),
+  age: <span class="builtin">int</span> @min(<span class="num">0</span>) @max(<span class="num">150</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;not-email&quot;</span>, age: <span class="num">-5</span> }, ContactForm)
+
+  <span class="kw">match</span> result {
+    Ok(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+    Err(e) <span class="op">-&gt;</span> {
+      <span class="builtin">println</span>(<span class="builtin">string</span>(e.fields.length))
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].rule)
+      <span class="builtin">println</span>(e.fields[<span class="num">0</span>].message)
+      <span class="builtin">println</span>(e.fields[<span class="num">1</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">1</span>].rule)
+      <span class="builtin">println</span>(e.fields[<span class="num">2</span>].field)
+      <span class="builtin">println</span>(e.fields[<span class="num">2</span>].rule)
+    }
+  }
+}</code></pre><h3>validate_min_max_int.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.2: @min / @max on numbers (value)</span>
+
+<span class="kw">type</span> Input = { age: <span class="builtin">int</span> @min(<span class="num">0</span>) @max(<span class="num">150</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ age: <span class="num">-1</span> }, Input) <span class="kw">is</span> Err))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ age: <span class="num">25</span> }, Input) <span class="kw">is</span> Ok))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ age: <span class="num">200</span> }, Input) <span class="kw">is</span> Err))
+}</code></pre><h3>validate_min_max_string.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.1: @min / @max on strings (length)</span>
+
+<span class="kw">type</span> Input = { name: <span class="builtin">string</span> @min(<span class="num">2</span>) @max(<span class="num">50</span>) }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ name: <span class="str">&quot;a&quot;</span> }, Input) <span class="kw">is</span> Err))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ name: <span class="str">&quot;al&quot;</span> }, Input) <span class="kw">is</span> Ok))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ name: <span class="str">&quot;a&quot;</span>.repeat(<span class="num">51</span>) }, Input) <span class="kw">is</span> Err))
+}</code></pre><h3>validate_named.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.4: @validate with named validators</span>
+
+<span class="kw">type</span> Input = {
+  email: <span class="builtin">string</span> @validate(email),
+  url: <span class="builtin">string</span> @validate(url),
+  uuid: <span class="builtin">string</span> @validate(uuid),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> bad = { email: <span class="str">&quot;nope&quot;</span>, url: <span class="str">&quot;nope&quot;</span>, uuid: <span class="str">&quot;nope&quot;</span> }
+  <span class="kw">let</span> result = validate(bad, Input)
+  <span class="kw">match</span> result {
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="builtin">string</span>(e.fields.length))
+    Ok(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+}</code></pre><h3>validate_ok.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 1.3: validate() returns typed Ok</span>
+
+<span class="kw">type</span> SignupInput = {
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+  email: <span class="builtin">string</span> @validate(email),
+}
+
+<span class="kw">fn</span> process(input: SignupInput) {
+  <span class="builtin">println</span>(input.name)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> raw = { name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span> }
+  <span class="kw">match</span> validate(raw, SignupInput) {
+    Ok(input) <span class="op">-&gt;</span> process(input)
+    Err(e) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;invalid&quot;</span>)
+  }
+}</code></pre><h3>validate_only_inherits.fg</h3><pre class="forge-code"><code><span class="kw">type</span> User = {
+    id: <span class="builtin">int</span>,
+    name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+    email: <span class="builtin">string</span>,
+}
+<span class="kw">type</span> NameOnly = User only { name }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span> }, NameOnly)
+    <span class="builtin">println</span>(result <span class="kw">is</span> Err)
+}</code></pre><h3>validate_partial.fg</h3><pre class="forge-code"><code><span class="kw">type</span> User = {
+    name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+    email: <span class="builtin">string</span>,
+}
+<span class="kw">type</span> UserUpdate = User as partial
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> r1 = validate({ name: <span class="str">&quot;alice&quot;</span> }, UserUpdate)
+    <span class="builtin">println</span>(r1 <span class="kw">is</span> Ok)
+    <span class="kw">let</span> r2 = validate({ name: <span class="str">&quot;&quot;</span> }, UserUpdate)
+    <span class="builtin">println</span>(r2 <span class="kw">is</span> Err)
+}</code></pre><h3>validate_pattern.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.3: @pattern for regex</span>
+
+<span class="kw">type</span> Input = {
+  slug: <span class="builtin">string</span> @pattern(<span class="str">&quot;^[a-z0-9-]+$&quot;</span>),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ slug: <span class="str">&quot;hello-world&quot;</span> }, Input) <span class="kw">is</span> Ok))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(validate({ slug: <span class="str">&quot;Hello World!&quot;</span> }, Input) <span class="kw">is</span> Err))
+}</code></pre><h3>validate_structural.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 6.3: Structural typing with annotated inline struct params</span>
+
+<span class="kw">fn</span> create_user(input: { name: <span class="builtin">string</span> @min(<span class="num">1</span>), email: <span class="builtin">string</span> @validate(email) }) {
+  <span class="builtin">println</span>(input.name)
+  <span class="builtin">println</span>(input.email)
+}
+
+<span class="kw">fn</span> main() {
+  create_user({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;a@test.com&quot;</span> })
+}</code></pre><h3>validate_transform.fg</h3><pre class="forge-code"><code><span class="comment">/// Test 2.5: @transform runs before validation</span>
+
+<span class="kw">type</span> Input = {
+  email: <span class="builtin">string</span> @transform(it.lower().trim()) @validate(email),
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = validate({ email: <span class="str">&quot;  ALICE@Test.Com  &quot;</span> }, Input)
+  <span class="kw">match</span> result {
+    Ok(input) <span class="op">-&gt;</span> <span class="builtin">println</span>(input.email)
+    Err(_) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;should not reach&quot;</span>)
+  }
+}</code></pre><h3>validate_url.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @validate(url) rejects invalid URL and accepts valid</span>
+
+<span class="kw">type</span> UrlInput = { link: <span class="builtin">string</span> @validate(url) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> bad = validate({ link: <span class="str">&quot;not-a-url&quot;</span> }, UrlInput)
+  <span class="builtin">println</span>(bad <span class="kw">is</span> Err)
+
+  <span class="kw">let</span> good = validate({ link: <span class="str">&quot;https://example.com&quot;</span> }, UrlInput)
+  <span class="builtin">println</span>(good <span class="kw">is</span> Ok)
+}</code></pre><h3>validate_uuid.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @validate(uuid) rejects invalid UUID and accepts valid</span>
+
+<span class="kw">type</span> UuidInput = { id: <span class="builtin">string</span> @validate(uuid) }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> bad = validate({ id: <span class="str">&quot;not-a-uuid&quot;</span> }, UuidInput)
+  <span class="builtin">println</span>(bad <span class="kw">is</span> Err)
+
+  <span class="kw">let</span> good = validate({ id: <span class="str">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span> }, UuidInput)
+  <span class="builtin">println</span>(good <span class="kw">is</span> Ok)
+}</code></pre><h3>validate_with_inherits.fg</h3><pre class="forge-code"><code><span class="kw">type</span> Base = {
+    name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+}
+<span class="kw">type</span> Extended = Base <span class="kw">with</span> { age: <span class="builtin">int</span> @min(<span class="num">0</span>) }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> r1 = validate({ name: <span class="str">&quot;&quot;</span>, age: <span class="num">5</span> }, Extended)
+    <span class="builtin">println</span>(r1 <span class="kw">is</span> Err)
+    <span class="kw">let</span> r2 = validate({ name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">-1</span> }, Extended)
+    <span class="builtin">println</span>(r2 <span class="kw">is</span> Err)
+}</code></pre><h3>validate_without_inherits.fg</h3><pre class="forge-code"><code><span class="kw">type</span> User = {
+    name: <span class="builtin">string</span> @min(<span class="num">1</span>),
+    email: <span class="builtin">string</span>,
+    password: <span class="builtin">string</span>,
+}
+<span class="kw">type</span> CreateUser = User without { password }
+
+<span class="kw">fn</span> main() {
+    <span class="kw">let</span> result = validate({ name: <span class="str">&quot;&quot;</span>, email: <span class="str">&quot;test@test.com&quot;</span> }, CreateUser)
+    <span class="builtin">println</span>(result <span class="kw">is</span> Err)
+}</code></pre><h3>validation_combined.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Combined validation — min, max, unique, email on same model</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">50</span>)
+  email: <span class="builtin">string</span> @unique
+  age: <span class="builtin">int</span> @min(<span class="num">0</span>) @max(<span class="num">150</span>)
+}
+
+<span class="kw">fn</span> main() {
+  User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;alice@test.com&quot;</span>, age: <span class="num">30</span> })
+  <span class="kw">let</span> user = User.get(<span class="num">1</span>)
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="builtin">println</span>(user.name)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>validation_email.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @validate(email) annotation checks email format</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  email: <span class="builtin">string</span> @validate(email)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Invalid email (no @ or .)</span>
+  <span class="kw">let</span> bad_id = User.create({ name: <span class="str">&quot;alice&quot;</span>, email: <span class="str">&quot;not-an-email&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad_id))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+
+  <span class="comment">// Valid email</span>
+  User.create({ name: <span class="str">&quot;bob&quot;</span>, email: <span class="str">&quot;bob@test.com&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>validation_int_range.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @min and @max work on integer fields (value range)</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model Product {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span>
+  price: <span class="builtin">int</span> @min(<span class="num">0</span>) @max(<span class="num">10000</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Negative price violates @min(0)</span>
+  <span class="kw">let</span> bad_id = Product.create({ name: <span class="str">&quot;widget&quot;</span>, price: <span class="num">-5</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad_id))
+
+  <span class="comment">// Valid price</span>
+  Product.create({ name: <span class="str">&quot;gadget&quot;</span>, price: <span class="num">99</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(Product.count()))
+}</code></pre><h3>validation_min_max.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: @min and @max annotations enforce validation on insert</span>
+<span class="comment">/// When validation fails, create returns 0 and no record is inserted.</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="comment">// Empty name violates @min(1)</span>
+  <span class="kw">let</span> bad_id = User.create({ name: <span class="str">&quot;&quot;</span> })
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bad_id))
+
+  <span class="comment">// No record was inserted</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>validation_passes.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Valid data passes validation and inserts successfully</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="kw">let</span> user = User.get(id)
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="builtin">println</span>(user.name)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(User.count()))
+}</code></pre><h3>validation_update.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Validation also runs on update</span>
+<span class="comment">///</span>
+
+<span class="kw">use</span> @std.model.{model}
+
+model User {
+  id: <span class="builtin">int</span> @primary @auto_increment
+  name: <span class="builtin">string</span> @min(<span class="num">1</span>) @max(<span class="num">100</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = User.create({ name: <span class="str">&quot;alice&quot;</span> })
+  <span class="comment">// Try to update with invalid empty name</span>
+  User.update(id, { name: <span class="str">&quot;&quot;</span> })
+  <span class="comment">// Name should still be alice (update was rejected)</span>
+  <span class="kw">let</span> user = User.get(id)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(id))
+  <span class="kw">if</span> user != <span class="kw">null</span> {
+    <span class="builtin">println</span>(user.name)
+  }
+}</code></pre><h2>AST Nodes</h2><p><span class="tag">Annotation</span> </p><h2>Symbols</h2><p><span class="tag">@</span> </p><h2>Dependencies</h2><ul><li><a href="components.html">components</a></li></ul></main>
+</div>
+</body>
+</html>

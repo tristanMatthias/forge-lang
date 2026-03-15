@@ -1,0 +1,11 @@
+/// # Circular Module Dependency
+///
+/// Circular mod declarations are detected and reported.
+///
+/// expect-stderr: circular module dependency
+
+mod module_circular_a
+
+use module_circular_a.{a}
+
+fn main() {}

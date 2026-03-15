@@ -1,0 +1,17 @@
+/// # JSON Roundtrip List
+///
+/// Parse a JSON list, stringify it, then parse again.
+/// Verifies data survives the full roundtrip.
+///
+/// expect: 2
+/// expect: hello
+/// expect: world
+
+fn main() {
+  let original: list<string> = json.parse("[\"hello\", \"world\"]")
+  let s = json.stringify(original)
+  let reparsed: list<string> = json.parse(s)
+  println(string(reparsed.length))
+  println(reparsed[0])
+  println(reparsed[1])
+}

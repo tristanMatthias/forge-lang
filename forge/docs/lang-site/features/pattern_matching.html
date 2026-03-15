@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pattern Matching — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html" class="active">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Pattern Matching <span class="badge badge-stable">stable</span></h1><p>match expr { pattern -&gt; body } — exhaustive pattern matching with guards</p><p>Exhaustive pattern matching with destructuring, guards, and or-patterns</p><div class="long-description"><p>Pattern matching with `match` is one of the most powerful features in Forge. A match expression takes a value and compares it against a series of patterns, executing the arm that matches first. Unlike chains of `if`/`else if`, match is exhaustive: the compiler verifies that every possible case is covered, preventing subtle bugs.</p><p>Patterns can match literal values (`1`, `&quot;hello&quot;`), bind variables (`x`), destructure data structures, and use guards for additional conditions. For example: `match status { &quot;ok&quot; -&gt; handle_ok(), &quot;error&quot; -&gt; handle_err(), _ -&gt; handle_unknown() }`. The underscore `_` is the wildcard pattern that matches anything.</p><p>Guards add conditions to patterns with `if`: `match score { n if n &gt; 90 -&gt; &quot;A&quot;, n if n &gt; 80 -&gt; &quot;B&quot;, _ -&gt; &quot;C&quot; }`. This combines the clarity of pattern matching with the flexibility of arbitrary boolean conditions. Guards are checked after the pattern matches, so you can use bound variables in the guard expression.</p><p>Match works especially well with enums, where each variant becomes a pattern. The compiler ensures every variant is handled, so adding a new variant to an enum immediately highlights every match expression that needs updating. This is the same exhaustiveness guarantee that makes Rust's and Haskell's pattern matching so reliable.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">match</span> expr { pattern <span class="op">-&gt;</span> body, <span class="op">..</span>. }
+<span class="kw">match</span> expr { pattern <span class="kw">if</span> guard <span class="op">-&gt;</span> body }</code></pre><h2>Examples</h2><h3>basic_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Match</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern matching with `match`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">100</span>
+  <span class="kw">let</span> label = <span class="kw">match</span> x {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;zero&quot;</span>
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;big&quot;</span>
+  }
+  <span class="builtin">println</span>(label)
+}</code></pre><h3>composition_with_enums.fg</h3><pre class="forge-code"><code><span class="comment">/// # Pattern Matching with Enums</span>
+<span class="comment">///</span>
+<span class="comment">/// Using match expressions with algebraic data types</span>
+<span class="comment">/// for type-safe exhaustive handling.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape {
+  Circle(radius: <span class="builtin">int</span>)
+  Rectangle(width: <span class="builtin">int</span>, height: <span class="builtin">int</span>)
+  Point
+}
+
+<span class="kw">fn</span> area(shape: Shape) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">match</span> shape {
+    .Circle(r) <span class="op">-&gt;</span> <span class="num">314</span> * r * r / <span class="num">100</span>
+    .Rectangle(w, h) <span class="op">-&gt;</span> w * h
+    .Point <span class="op">-&gt;</span> <span class="num">0</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Shape.Circle(radius: <span class="num">5</span>)
+  <span class="kw">let</span> r = Shape.Rectangle(width: <span class="num">4</span>, height: <span class="num">6</span>)
+  <span class="kw">let</span> p = Shape.Point
+  <span class="builtin">println</span>(<span class="str">&quot;area = &quot;</span> + <span class="builtin">string</span>(area(c)))
+  <span class="builtin">println</span>(<span class="str">&quot;area = &quot;</span> + <span class="builtin">string</span>(area(r)))
+  <span class="builtin">println</span>(<span class="str">&quot;area = &quot;</span> + <span class="builtin">string</span>(area(p)))
+}</code></pre><h3>destructure.fg</h3><pre class="forge-code"><code><span class="comment">/// # Destructuring</span>
+<span class="comment">///</span>
+<span class="comment">/// Destructure structs and tuples in let bindings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> (a, b) = (<span class="num">1</span>, <span class="num">2</span>)
+  <span class="builtin">println</span>(a)
+  <span class="builtin">println</span>(b)
+}</code></pre><h3>edge_enum_guard_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum Guard with Binding Variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern binding variables should be accessible in guard expressions.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape {
+  circle(radius: <span class="builtin">int</span>)
+  point
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> s = Shape.circle(radius: <span class="num">50</span>)
+  <span class="kw">let</span> r = <span class="kw">match</span> s {
+    .circle(r) <span class="kw">if</span> r &gt; <span class="num">10</span> <span class="op">-&gt;</span> <span class="str">&quot;big circle&quot;</span>
+    .circle(r) <span class="op">-&gt;</span> <span class="str">&quot;small circle&quot;</span>
+    .point <span class="op">-&gt;</span> <span class="str">&quot;point&quot;</span>
+  }
+  <span class="builtin">println</span>(r)
+}</code></pre><h3>edge_float_pattern.fg</h3><pre class="forge-code"><code><span class="comment">/// # Float Pattern Matching</span>
+<span class="comment">///</span>
+<span class="comment">/// Float literals can be used as match patterns.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">3.14</span>
+  <span class="kw">let</span> result = <span class="kw">match</span> x {
+    <span class="num">3.14</span> <span class="op">-&gt;</span> <span class="str">&quot;pi&quot;</span>
+    <span class="num">2.71</span> <span class="op">-&gt;</span> <span class="str">&quot;e&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+  <span class="builtin">println</span>(result)
+
+  <span class="kw">let</span> y = <span class="num">1.0</span>
+  <span class="kw">let</span> r2 = <span class="kw">match</span> y {
+    <span class="num">3.14</span> <span class="op">-&gt;</span> <span class="str">&quot;pi&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+  <span class="builtin">println</span>(r2)
+}</code></pre><h3>enum_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum Match</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern match on enum variants.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape {
+  circle(radius: <span class="builtin">float</span>)
+  rectangle(width: <span class="builtin">float</span>, height: <span class="builtin">float</span>)
+}
+
+<span class="kw">fn</span> describe(s: Shape) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    .circle(r) <span class="op">-&gt;</span> `circle <span class="kw">with</span> radius ${r}`
+    .rectangle(w, h) <span class="op">-&gt;</span> `${w}x${h} rectangle`
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Shape.circle(radius: <span class="num">5.0</span>)
+  <span class="kw">let</span> r = Shape.rectangle(width: <span class="num">3.0</span>, height: <span class="num">4.0</span>)
+  <span class="builtin">println</span>(describe(c))
+  <span class="builtin">println</span>(describe(r))
+}</code></pre><h3>enum_mixed_variants.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum Mixed Variants</span>
+<span class="comment">///</span>
+<span class="comment">/// Match enums with both data and data-less variants.</span>
+<span class="comment">/// Regression: bare expression body followed by `.variant` was</span>
+<span class="comment">/// incorrectly parsed as member access instead of a new arm.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> FileKind {
+    code(ext: <span class="builtin">string</span>)
+    config
+    docs
+    other
+}
+
+<span class="kw">fn</span> label(k: FileKind) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+    <span class="kw">match</span> k {
+        .code(ext) <span class="op">-&gt;</span> `code: ${ext}`
+        .config    <span class="op">-&gt;</span> <span class="str">&quot;config&quot;</span>
+        .docs      <span class="op">-&gt;</span> <span class="str">&quot;docs&quot;</span>
+        .other     <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+    }
+}
+
+<span class="kw">fn</span> main() {
+    <span class="builtin">println</span>(label(FileKind.code(ext: <span class="str">&quot;rs&quot;</span>)))
+    <span class="builtin">println</span>(label(FileKind.config))
+    <span class="builtin">println</span>(label(FileKind.docs))
+    <span class="builtin">println</span>(label(FileKind.other))
+}</code></pre><h3>enum_variants.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum Pattern Matching</span>
+<span class="comment">///</span>
+<span class="comment">/// Match on enum variants with data extraction.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape {
+  circle(radius: <span class="builtin">float</span>)
+  rectangle(width: <span class="builtin">float</span>, height: <span class="builtin">float</span>)
+  point
+}
+
+<span class="kw">fn</span> describe(s: Shape) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    .circle(r) <span class="op">-&gt;</span> `circle <span class="kw">with</span> radius ${r}`
+    .rectangle(w, h) <span class="op">-&gt;</span> `${w}x${h} rectangle`
+    .point <span class="op">-&gt;</span> <span class="str">&quot;a point&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(describe(Shape.circle(radius: <span class="num">5.0</span>)))
+  <span class="builtin">println</span>(describe(Shape.rectangle(width: <span class="num">3.0</span>, height: <span class="num">4.0</span>)))
+  <span class="builtin">println</span>(describe(Shape.point))
+}</code></pre><h3>match_as_expression.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match as Expression</span>
+<span class="comment">///</span>
+<span class="comment">/// Match used as a value in let bindings and function returns.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> fizzbuzz(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    _ <span class="kw">if</span> n % <span class="num">15</span> == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;fizzbuzz&quot;</span>
+    _ <span class="kw">if</span> n % <span class="num">3</span> == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;fizz&quot;</span>
+    _ <span class="kw">if</span> n % <span class="num">5</span> == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;buzz&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="builtin">string</span>(n)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> label = <span class="kw">match</span> <span class="num">2</span> {
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    <span class="num">2</span> <span class="op">-&gt;</span> <span class="str">&quot;two&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+  <span class="builtin">println</span>(label)
+
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">15</span>))
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">10</span>))
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">9</span>))
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">7</span>))
+}</code></pre><h3>match_enum_fields.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Match on enum with field extraction</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Shape {
+  Circle(radius: <span class="builtin">int</span>)
+  Rect(w: <span class="builtin">int</span>, h: <span class="builtin">int</span>)
+}
+
+<span class="kw">fn</span> describe(s: Shape) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    .Circle(r) <span class="op">-&gt;</span> <span class="str">&quot;circle with radius &quot;</span> + <span class="builtin">string</span>(r)
+    .Rect(w, h) <span class="op">-&gt;</span> <span class="str">&quot;rect &quot;</span> + <span class="builtin">string</span>(w) + <span class="str">&quot;x&quot;</span> + <span class="builtin">string</span>(h)
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Shape.Circle(radius: <span class="num">5</span>)
+  <span class="kw">let</span> r = Shape.Rect(w: <span class="num">3</span>, h: <span class="num">4</span>)
+  <span class="builtin">println</span>(describe(c))
+  <span class="builtin">println</span>(describe(r))
+}</code></pre><h3>match_exhaustive.fg</h3><pre class="forge-code"><code><span class="comment">/// # Exhaustive Enum Matching</span>
+<span class="comment">///</span>
+<span class="comment">/// Match covering all enum variants ensures complete handling.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Light { red, yellow, green }
+
+<span class="kw">fn</span> action(l: Light) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> l {
+    .red <span class="op">-&gt;</span> <span class="str">&quot;red: stop&quot;</span>
+    .yellow <span class="op">-&gt;</span> <span class="str">&quot;yellow: caution&quot;</span>
+    .green <span class="op">-&gt;</span> <span class="str">&quot;green: go&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(action(Light.red))
+  <span class="builtin">println</span>(action(Light.yellow))
+  <span class="builtin">println</span>(action(Light.green))
+}</code></pre><h3>match_guard.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Match with string comparison</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> access_level(role: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> role {
+    <span class="str">&quot;admin&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;admin access&quot;</span>
+    <span class="str">&quot;member&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;read only&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;unknown&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(access_level(<span class="str">&quot;admin&quot;</span>))
+  <span class="builtin">println</span>(access_level(<span class="str">&quot;member&quot;</span>))
+  <span class="builtin">println</span>(access_level(<span class="str">&quot;guest&quot;</span>))
+}</code></pre><h3>match_guard_complex.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match with Complex Guards</span>
+<span class="comment">///</span>
+<span class="comment">/// Match arms with guard conditions using &amp;&amp; and ||.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    _ <span class="kw">if</span> n &lt; <span class="num">10</span> &amp;&amp; n % <span class="num">2</span> == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;small even&quot;</span>
+    _ <span class="kw">if</span> n &gt;= <span class="num">10</span> &amp;&amp; n &lt; <span class="num">100</span> <span class="op">-&gt;</span> <span class="str">&quot;medium&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;big&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">4</span>))
+  <span class="builtin">println</span>(classify(<span class="num">50</span>))
+  <span class="builtin">println</span>(classify(<span class="num">200</span>))
+}</code></pre><h3>match_nested_patterns.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested Enum Pattern Matching</span>
+<span class="comment">///</span>
+<span class="comment">/// Match on enum variants with multiple data fields for deeply structured data.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Role { admin, member }
+
+<span class="kw">enum</span> User {
+  registered(name: <span class="builtin">string</span>, role: Role)
+  anonymous
+}
+
+<span class="kw">fn</span> describe(u: User) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> u {
+    .registered(name, role) <span class="op">-&gt;</span> <span class="kw">match</span> role {
+      .admin <span class="op">-&gt;</span> `user ${name} <span class="kw">is</span> admin`
+      .member <span class="op">-&gt;</span> `user ${name} <span class="kw">is</span> member`
+    }
+    .anonymous <span class="op">-&gt;</span> <span class="str">&quot;anonymous visitor&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(describe(User.registered(name: <span class="str">&quot;Alice&quot;</span>, role: Role.admin)))
+  <span class="builtin">println</span>(describe(User.registered(name: <span class="str">&quot;Bob&quot;</span>, role: Role.member)))
+  <span class="builtin">println</span>(describe(User.anonymous))
+}</code></pre><h3>match_string_patterns.fg</h3><pre class="forge-code"><code><span class="comment">/// # String Pattern Matching</span>
+<span class="comment">///</span>
+<span class="comment">/// Match on string values with multiple patterns and mutation in arms.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> kind(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    <span class="str">&quot;hello&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;greeting&quot;</span>
+    <span class="str">&quot;hi&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;greeting&quot;</span>
+    <span class="str">&quot;bye&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;farewell&quot;</span>
+    <span class="str">&quot;why&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;question&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(kind(<span class="str">&quot;hello&quot;</span>))
+  <span class="builtin">println</span>(kind(<span class="str">&quot;bye&quot;</span>))
+  <span class="builtin">println</span>(kind(<span class="str">&quot;why&quot;</span>))
+  <span class="builtin">println</span>(kind(<span class="str">&quot;xyz&quot;</span>))
+
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">let</span> words = [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;a&quot;</span>, <span class="str">&quot;c&quot;</span>]
+  <span class="kw">for</span> w <span class="kw">in</span> words {
+    <span class="kw">match</span> w {
+      <span class="str">&quot;a&quot;</span> <span class="op">-&gt;</span> count = count + <span class="num">2</span>
+      <span class="str">&quot;b&quot;</span> <span class="op">-&gt;</span> count = count + <span class="num">1</span>
+      _ <span class="op">-&gt;</span> count = count + <span class="num">1</span>
+    }
+  }
+  <span class="builtin">println</span>(`count: ${count}`)
+}</code></pre><h3>match_wildcard.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wildcard in Various Positions</span>
+<span class="comment">///</span>
+<span class="comment">/// The `_` wildcard used as catch-all in different match contexts.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> describe_num(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other number&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> describe_str(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    <span class="str">&quot;hello&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;hello greeting&quot;</span>
+    <span class="str">&quot;bye&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;bye greeting&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;unknown word&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(describe_num(<span class="num">1</span>))
+  <span class="builtin">println</span>(describe_num(<span class="num">42</span>))
+  <span class="builtin">println</span>(describe_str(<span class="str">&quot;hello&quot;</span>))
+  <span class="builtin">println</span>(describe_str(<span class="str">&quot;xyz&quot;</span>))
+}</code></pre><h3>stress_empty_string_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match on Empty String</span>
+<span class="comment">///</span>
+<span class="comment">/// Match with empty string literal pattern.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> check(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    <span class="str">&quot;&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;empty&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;not empty&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(check(<span class="str">&quot;&quot;</span>))
+  <span class="builtin">println</span>(check(<span class="str">&quot;hello&quot;</span>))
+}</code></pre><h3>stress_enum_wildcard_fallthrough.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum Match with Wildcard Fallthrough</span>
+<span class="comment">///</span>
+<span class="comment">/// Match on enum using wildcard to catch multiple variants.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Color { red, green, blue }
+
+<span class="kw">fn</span> check(c: Color) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> c {
+    .red <span class="op">-&gt;</span> <span class="str">&quot;red&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;not red&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(check(Color.red))
+  <span class="builtin">println</span>(check(Color.green))
+  <span class="builtin">println</span>(check(Color.blue))
+}</code></pre><h3>stress_guard_chains.fg</h3><pre class="forge-code"><code><span class="comment">/// # Complex Guard Chains</span>
+<span class="comment">///</span>
+<span class="comment">/// Match with many guarded wildcards testing complex boolean conditions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    _ <span class="kw">if</span> n == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;zero&quot;</span>
+    _ <span class="kw">if</span> n &lt; <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;negative&quot;</span>
+    _ <span class="kw">if</span> n &gt;= <span class="num">13</span> &amp;&amp; n &lt;= <span class="num">19</span> <span class="op">-&gt;</span> <span class="str">&quot;teen&quot;</span>
+    _ <span class="kw">if</span> n &gt; <span class="num">0</span> &amp;&amp; n &lt; <span class="num">13</span> <span class="op">-&gt;</span> <span class="str">&quot;small positive&quot;</span>
+    _ <span class="kw">if</span> n &gt;= <span class="num">20</span> &amp;&amp; n % <span class="num">2</span> == <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;large even&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;large odd&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">15</span>))
+  <span class="builtin">println</span>(classify(<span class="num">7</span>))
+  <span class="builtin">println</span>(classify(<span class="num">-5</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+  <span class="builtin">println</span>(classify(<span class="num">100</span>))
+  <span class="builtin">println</span>(classify(<span class="num">99</span>))
+}</code></pre><h3>stress_ident_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Identifier Pattern Binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Using an identifier pattern to capture the entire matched value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> show_int(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;zero&quot;</span>
+    val <span class="op">-&gt;</span> `got ${val}`
+  }
+}
+
+<span class="kw">fn</span> show_str(s: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> s {
+    <span class="str">&quot;bye&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;farewell&quot;</span>
+    other <span class="op">-&gt;</span> `got ${other}`
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(show_int(<span class="num">42</span>))
+  <span class="builtin">println</span>(show_str(<span class="str">&quot;hello&quot;</span>))
+}</code></pre><h3>stress_many_arms.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match with Many Arms</span>
+<span class="comment">///</span>
+<span class="comment">/// Test match with 20+ arms to stress the if-else chain codegen.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> name(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;zero&quot;</span>
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    <span class="num">2</span> <span class="op">-&gt;</span> <span class="str">&quot;two&quot;</span>
+    <span class="num">3</span> <span class="op">-&gt;</span> <span class="str">&quot;three&quot;</span>
+    <span class="num">4</span> <span class="op">-&gt;</span> <span class="str">&quot;four&quot;</span>
+    <span class="num">5</span> <span class="op">-&gt;</span> <span class="str">&quot;five&quot;</span>
+    <span class="num">6</span> <span class="op">-&gt;</span> <span class="str">&quot;six&quot;</span>
+    <span class="num">7</span> <span class="op">-&gt;</span> <span class="str">&quot;seven&quot;</span>
+    <span class="num">8</span> <span class="op">-&gt;</span> <span class="str">&quot;eight&quot;</span>
+    <span class="num">9</span> <span class="op">-&gt;</span> <span class="str">&quot;nine&quot;</span>
+    <span class="num">10</span> <span class="op">-&gt;</span> <span class="str">&quot;ten&quot;</span>
+    <span class="num">11</span> <span class="op">-&gt;</span> <span class="str">&quot;eleven&quot;</span>
+    <span class="num">12</span> <span class="op">-&gt;</span> <span class="str">&quot;twelve&quot;</span>
+    <span class="num">13</span> <span class="op">-&gt;</span> <span class="str">&quot;thirteen&quot;</span>
+    <span class="num">14</span> <span class="op">-&gt;</span> <span class="str">&quot;fourteen&quot;</span>
+    <span class="num">15</span> <span class="op">-&gt;</span> <span class="str">&quot;fifteen&quot;</span>
+    <span class="num">16</span> <span class="op">-&gt;</span> <span class="str">&quot;sixteen&quot;</span>
+    <span class="num">17</span> <span class="op">-&gt;</span> <span class="str">&quot;seventeen&quot;</span>
+    <span class="num">18</span> <span class="op">-&gt;</span> <span class="str">&quot;eighteen&quot;</span>
+    <span class="num">19</span> <span class="op">-&gt;</span> <span class="str">&quot;nineteen&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(name(<span class="num">0</span>))
+  <span class="builtin">println</span>(name(<span class="num">5</span>))
+  <span class="builtin">println</span>(name(<span class="num">15</span>))
+  <span class="builtin">println</span>(name(<span class="num">19</span>))
+  <span class="builtin">println</span>(name(<span class="num">100</span>))
+}</code></pre><h3>stress_match_bool.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match on Booleans</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern match on boolean values.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> to_word(b: bool) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> b {
+    <span class="kw">true</span> <span class="op">-&gt;</span> <span class="str">&quot;yes&quot;</span>
+    <span class="kw">false</span> <span class="op">-&gt;</span> <span class="str">&quot;no&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(to_word(<span class="kw">true</span>))
+  <span class="builtin">println</span>(to_word(<span class="kw">false</span>))
+}</code></pre><h3>stress_match_expr_positions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match in Expression Positions</span>
+<span class="comment">///</span>
+<span class="comment">/// Match used inside function calls, string templates, and arithmetic.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> tag(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;hello&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;world&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> double(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">match</span> n {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="num">0</span>
+    _ <span class="op">-&gt;</span> n * <span class="num">2</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(`result: ${tag(<span class="num">1</span>)}`)
+
+  <span class="kw">let</span> x = double(<span class="num">10</span>) + <span class="kw">match</span> <span class="num">5</span> {
+    <span class="num">5</span> <span class="op">-&gt;</span> <span class="num">10</span>
+    _ <span class="op">-&gt;</span> <span class="num">0</span>
+  }
+  <span class="builtin">println</span>(x)
+
+  <span class="kw">let</span> label = <span class="str">&quot;label is &quot;</span> + <span class="kw">match</span> <span class="num">999</span> {
+    _ <span class="kw">if</span> <span class="num">999</span> &gt; <span class="num">100</span> <span class="op">-&gt;</span> <span class="str">&quot;big&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;small&quot;</span>
+  }
+  <span class="builtin">println</span>(label)
+}</code></pre><h3>stress_match_if_combo.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match + If Combination</span>
+<span class="comment">///</span>
+<span class="comment">/// Combining match expressions with if/else inside arms and vice versa.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="str">&quot;zero&quot;</span>
+  } <span class="kw">else</span> {
+    <span class="kw">match</span> n % <span class="num">2</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">if</span> n &gt; <span class="num">50</span> { <span class="str">&quot;big even&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;small even&quot;</span> }
+      _ <span class="op">-&gt;</span> <span class="kw">if</span> n &gt; <span class="num">50</span> { <span class="str">&quot;big odd&quot;</span> } <span class="kw">else</span> { <span class="str">&quot;small odd&quot;</span> }
+    }
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">100</span>))
+  <span class="builtin">println</span>(classify(<span class="num">3</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+}</code></pre><h3>stress_match_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match Inside Loops</span>
+<span class="comment">///</span>
+<span class="comment">/// Match used in for loops with mutation and accumulation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">100</span>, <span class="num">200</span>, <span class="num">3</span>, <span class="num">150</span>, <span class="num">7</span>, <span class="num">1</span>]
+  <span class="kw">mut</span> total = <span class="num">0</span>
+  <span class="kw">mut</span> categories = <span class="str">&quot;&quot;</span>
+
+  <span class="kw">for</span> n <span class="kw">in</span> nums {
+    total = total + <span class="kw">match</span> n {
+      _ <span class="kw">if</span> n &gt;= <span class="num">100</span> <span class="op">-&gt;</span> n
+      _ <span class="op">-&gt;</span> <span class="num">0</span>
+    }
+    <span class="kw">let</span> cat = <span class="kw">match</span> n {
+      _ <span class="kw">if</span> n &gt;= <span class="num">100</span> <span class="op">-&gt;</span> <span class="str">&quot;big&quot;</span>
+      _ <span class="op">-&gt;</span> <span class="str">&quot;small&quot;</span>
+    }
+    <span class="kw">if</span> categories == <span class="str">&quot;&quot;</span> {
+      categories = cat
+    } <span class="kw">else</span> {
+      categories = categories + <span class="str">&quot; &quot;</span> + cat
+    }
+  }
+  <span class="builtin">println</span>(`total: ${total}`)
+  <span class="builtin">println</span>(`categories: ${categories}`)
+}</code></pre><h3>stress_match_negative.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match on Zero and Negative</span>
+<span class="comment">///</span>
+<span class="comment">/// Test matching with zero and the boundary between match and wildcard.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> label(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;zero&quot;</span>
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(label(<span class="num">0</span>))
+  <span class="builtin">println</span>(label(<span class="num">1</span>))
+  <span class="builtin">println</span>(label(<span class="num">2</span>))
+  <span class="builtin">println</span>(label(<span class="num">-1</span>))
+}</code></pre><h3>stress_match_on_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match on Function Call Result</span>
+<span class="comment">///</span>
+<span class="comment">/// Match directly on the result of a function call.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { a + b }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> r = <span class="kw">match</span> add(<span class="num">10</span>, <span class="num">20</span>) {
+    <span class="num">30</span> <span class="op">-&gt;</span> <span class="str">&quot;correct&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;wrong&quot;</span>
+  }
+  <span class="builtin">println</span>(r)
+
+  <span class="kw">let</span> parity = <span class="kw">match</span> add(<span class="num">3</span>, <span class="num">5</span>) % <span class="num">2</span> {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;even&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;odd&quot;</span>
+  }
+  <span class="builtin">println</span>(parity)
+}</code></pre><h3>stress_match_return_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match Returning Match</span>
+<span class="comment">///</span>
+<span class="comment">/// The result of one match is immediately matched again.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> fizzbuzz(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> <span class="kw">match</span> n % <span class="num">3</span> {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">match</span> n % <span class="num">5</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;fizzbuzz&quot;</span>
+      _ <span class="op">-&gt;</span> <span class="str">&quot;fizz&quot;</span>
+    }
+    _ <span class="op">-&gt;</span> <span class="kw">match</span> n % <span class="num">5</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="str">&quot;buzz&quot;</span>
+      _ <span class="op">-&gt;</span> <span class="builtin">string</span>(n)
+    }
+  } {
+    <span class="str">&quot;fizzbuzz&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;fizzbuzz&quot;</span>
+    <span class="str">&quot;fizz&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;fizz&quot;</span>
+    <span class="str">&quot;buzz&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;buzz&quot;</span>
+    other <span class="op">-&gt;</span> other
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">15</span>))
+  <span class="builtin">println</span>(fizzbuzz(<span class="num">7</span>))
+}</code></pre><h3>stress_nested_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deeply Nested Match</span>
+<span class="comment">///</span>
+<span class="comment">/// Match inside match inside match to stress the pattern matcher.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">match</span> <span class="num">0</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">match</span> <span class="str">&quot;z&quot;</span> {
+        <span class="str">&quot;z&quot;</span> <span class="op">-&gt;</span> <span class="str">&quot;deep: zero neutral&quot;</span>
+        _ <span class="op">-&gt;</span> <span class="str">&quot;unreachable&quot;</span>
+      }
+      _ <span class="op">-&gt;</span> <span class="str">&quot;unreachable&quot;</span>
+    }
+    _ <span class="op">-&gt;</span> <span class="kw">match</span> n % <span class="num">2</span> {
+      <span class="num">0</span> <span class="op">-&gt;</span> <span class="kw">match</span> n {
+        _ <span class="kw">if</span> n &lt; <span class="num">10</span> <span class="op">-&gt;</span> <span class="str">&quot;deep: small even positive&quot;</span>
+        _ <span class="op">-&gt;</span> <span class="str">&quot;deep: big even positive&quot;</span>
+      }
+      _ <span class="op">-&gt;</span> <span class="kw">match</span> n {
+        _ <span class="kw">if</span> n &gt; <span class="num">50</span> <span class="op">-&gt;</span> <span class="str">&quot;deep: big odd positive&quot;</span>
+        _ <span class="op">-&gt;</span> <span class="str">&quot;deep: small odd positive&quot;</span>
+      }
+    }
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">4</span>))
+  <span class="builtin">println</span>(classify(<span class="num">99</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+}</code></pre><h3>stress_single_arm.fg</h3><pre class="forge-code"><code><span class="comment">/// # Match with Single Arm</span>
+<span class="comment">///</span>
+<span class="comment">/// Match with only a wildcard arm.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="kw">match</span> <span class="num">42</span> {
+    _ <span class="op">-&gt;</span> <span class="str">&quot;always&quot;</span>
+  }
+  <span class="builtin">println</span>(x)
+}</code></pre><h3>string_match.fg</h3><pre class="forge-code"><code><span class="comment">/// # String Match</span>
+<span class="comment">///</span>
+<span class="comment">/// Pattern match on string values.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> ext = <span class="str">&quot;fg&quot;</span>
+  <span class="kw">match</span> ext {
+    <span class="str">&quot;fg&quot;</span> <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;forge file&quot;</span>)
+    <span class="str">&quot;rs&quot;</span> <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;rust file&quot;</span>)
+    _ <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="str">&quot;other&quot;</span>)
+  }
+
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">let</span> items = [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;c&quot;</span>]
+  <span class="kw">for</span> item <span class="kw">in</span> items {
+    <span class="kw">match</span> item {
+      <span class="str">&quot;a&quot;</span> <span class="op">-&gt;</span> count = count + <span class="num">1</span>
+      <span class="str">&quot;b&quot;</span> <span class="op">-&gt;</span> count = count + <span class="num">10</span>
+      _ <span class="op">-&gt;</span> count = count + <span class="num">100</span>
+    }
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(count))
+}</code></pre><h3>wildcard.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wildcard Pattern</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `_` as a catch-all in match expressions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> describe(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">match</span> n {
+    <span class="num">1</span> <span class="op">-&gt;</span> <span class="str">&quot;one&quot;</span>
+    <span class="num">2</span> <span class="op">-&gt;</span> <span class="str">&quot;two&quot;</span>
+    _ <span class="op">-&gt;</span> <span class="str">&quot;other&quot;</span>
+  }
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(describe(<span class="num">1</span>))
+  <span class="builtin">println</span>(describe(<span class="num">99</span>))
+}</code></pre><h2>Tokens</h2><p><span class="tag">match</span> <span class="tag">-&gt;</span> <span class="tag">_</span> </p><h2>AST Nodes</h2><p><span class="tag">Match</span> <span class="tag">MatchArm</span> <span class="tag">Pattern</span> </p><h2>Enables</h2><ul><li><a href="null_safety.html">null_safety</a></li></ul></main>
+</div>
+</body>
+</html>

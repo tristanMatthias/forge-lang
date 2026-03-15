@@ -1,0 +1,14 @@
+/// # Module Scope — Imported Functions Work
+///
+/// Explicitly imported functions are callable.
+///
+/// expect: 5
+/// expect: 6
+
+mod module_math
+use module_math.{add, multiply}
+
+fn main() {
+    println(string(add(2, 3)))
+    println(string(multiply(2, 3)))
+}

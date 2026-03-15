@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSON Builtins — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html" class="active">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>JSON Builtins <span class="badge badge-stable">stable</span></h1><p>json.parse/stringify — JSON serialization/deserialization</p><p>Built-in json.parse(), json.stringify(), and json.parse_list() intrinsics</p><div class="long-description"><p>Forge provides built-in JSON functions: `json.parse(str)` converts a JSON string into a Forge value, and `json.stringify(value)` converts a Forge value into a JSON string. These functions handle the full JSON specification including nested objects, arrays, numbers, strings, booleans, and null.</p><p>`json.parse()` returns a dynamic value that can be accessed with field notation and indexing. The parsed structure maps JSON objects to Forge maps, JSON arrays to lists, and JSON primitives to their Forge equivalents (int, float, string, bool, null).</p><p>`json.stringify()` serializes any Forge value to its JSON representation. Structs become JSON objects with field names as keys. Lists become JSON arrays. This round-trips cleanly with `json.parse()`, so `json.parse(json.stringify(value))` preserves the structure.</p><p>These built-in functions avoid the need for an external JSON library in the vast majority of use cases. They are implemented as intrinsics for maximum performance, with the serialization and deserialization happening in optimized native code.</p></div><h2>Syntax</h2><pre class="forge-code"><code>json.parse(str)
+json.stringify(val)</code></pre><h2>Examples</h2><h3>json_all_types.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON All Types Mixed</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify a struct with string, int, float, bool fields.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = { name: <span class="str">&quot;test&quot;</span>, count: <span class="num">42</span>, ratio: <span class="num">3.14</span>, active: <span class="kw">true</span> }
+  <span class="builtin">println</span>(json.stringify(data))
+}</code></pre><h3>json_array_parse.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Parse Multiple Fields</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse JSON with multiple field types including bool.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;forge\&quot;,\&quot;active\&quot;:true,\&quot;version\&quot;:3}&quot;</span>
+  <span class="kw">let</span> data: {name: <span class="builtin">string</span>, active: bool, version: <span class="builtin">int</span>} = json.parse(json_str)
+  <span class="builtin">println</span>(data.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(data.active))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(data.version))
+}</code></pre><h3>json_empty_object.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty JSON Object</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify an empty-ish struct and parse back.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = { name: <span class="str">&quot;&quot;</span> }
+  <span class="kw">let</span> result = json.stringify(data)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>json_multiple_nulls.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Multiple Null Fields</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify struct where multiple fields are null — all should be omitted.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a: <span class="builtin">int</span><span class="op">?</span> = <span class="kw">null</span>
+  <span class="kw">let</span> b: <span class="builtin">string</span><span class="op">?</span> = <span class="kw">null</span>
+  <span class="kw">let</span> c: bool<span class="op">?</span> = <span class="kw">null</span>
+  <span class="kw">let</span> data = { name: <span class="str">&quot;only&quot;</span>, a: a, b: b, c: c }
+  <span class="builtin">println</span>(json.stringify(data))
+}</code></pre><h3>json_nested_parse.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Nested Parse</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse JSON with nested object fields.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;alice\&quot;,\&quot;age\&quot;:30}&quot;</span>
+  <span class="kw">let</span> person: {name: <span class="builtin">string</span>, age: <span class="builtin">int</span>} = json.parse(json_str)
+  <span class="builtin">println</span>(person.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(person.age))
+
+  <span class="kw">let</span> addr_str = <span class="str">&quot;{\&quot;city\&quot;:\&quot;NYC\&quot;,\&quot;zip\&quot;:10001}&quot;</span>
+  <span class="kw">let</span> addr: {city: <span class="builtin">string</span>, zip: <span class="builtin">int</span>} = json.parse(addr_str)
+  <span class="builtin">println</span>(addr.city)
+}</code></pre><h3>json_null_handling.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Null Handling</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify structs with nullable fields — null fields are omitted from output.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> age: <span class="builtin">int</span><span class="op">?</span> = <span class="kw">null</span>
+  <span class="kw">let</span> data1 = { name: <span class="str">&quot;alice&quot;</span>, age: age }
+  <span class="builtin">println</span>(json.stringify(data1))
+
+  <span class="kw">let</span> score: <span class="builtin">string</span><span class="op">?</span> = <span class="kw">null</span>
+  <span class="kw">let</span> data2 = { name: <span class="str">&quot;bob&quot;</span>, score: score }
+  <span class="builtin">println</span>(json.stringify(data2))
+}</code></pre><h3>json_parse.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Parse</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse a JSON string into a value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data: {name: <span class="builtin">string</span>} = json.parse(<span class="str">&quot;{\&quot;name\&quot;: \&quot;hello\&quot;}&quot;</span>)
+  <span class="builtin">println</span>(data.name)
+}</code></pre><h3>json_parse_bool_fields.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Parse Bool Fields</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse JSON with both true and false boolean fields.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;yes\&quot;:true,\&quot;no\&quot;:false}&quot;</span>
+  <span class="kw">let</span> data: {yes: bool, no: bool} = json.parse(json_str)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(data.yes))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(data.no))
+}</code></pre><h3>json_parse_list.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Parse List of Structs</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse a JSON array into a list of typed structs.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;[{\&quot;name\&quot;:\&quot;alice\&quot;,\&quot;age\&quot;:30},{\&quot;name\&quot;:\&quot;bob\&quot;,\&quot;age\&quot;:25}]&quot;</span>
+  <span class="kw">let</span> people: List&lt;{name: <span class="builtin">string</span>, age: <span class="builtin">int</span>}&gt; = json.parse(json_str)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(people.length))
+  <span class="builtin">println</span>(people[<span class="num">0</span>].name)
+  <span class="builtin">println</span>(people[<span class="num">1</span>].name)
+}</code></pre><h3>json_parse_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Parse Nested Struct</span>
+<span class="comment">///</span>
+<span class="comment">/// json.parse with a nested struct type should correctly parse nested objects.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Address = { city: <span class="builtin">string</span> }
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, address: Address }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;Alice\&quot;,\&quot;address\&quot;:{\&quot;city\&quot;:\&quot;NYC\&quot;}}&quot;</span>
+  <span class="kw">let</span> person: Person = json.parse(json_str)
+  <span class="builtin">println</span>(person.name)
+  <span class="builtin">println</span>(person.address.city)
+}</code></pre><h3>json_parse_struct.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: json.parse with type annotation parses JSON into typed struct</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;alice\&quot;,\&quot;age\&quot;:30}&quot;</span>
+  <span class="kw">let</span> person: Person = json.parse(json_str)
+  <span class="builtin">println</span>(person.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(person.age))
+}</code></pre><h3>json_roundtrip.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Roundtrip</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse JSON string into a typed struct and access fields.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;alice\&quot;,\&quot;age\&quot;:30}&quot;</span>
+  <span class="kw">let</span> user: {name: <span class="builtin">string</span>, age: <span class="builtin">int</span>} = json.parse(json_str)
+  <span class="builtin">println</span>(user.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(user.age))
+}</code></pre><h3>json_roundtrip_verify.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Roundtrip Verify</span>
+<span class="comment">///</span>
+<span class="comment">/// Parse JSON, stringify it back, and verify the result matches.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> original = <span class="str">&quot;{\&quot;name\&quot;:\&quot;forge\&quot;,\&quot;version\&quot;:42}&quot;</span>
+  <span class="kw">let</span> parsed: {name: <span class="builtin">string</span>, version: <span class="builtin">int</span>} = json.parse(original)
+  <span class="kw">let</span> back = json.stringify(parsed)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(back == original))
+  <span class="builtin">println</span>(parsed.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(parsed.version))
+}</code></pre><h3>json_special_chars.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON with Special Characters</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify and parse strings containing special characters.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data1 = { msg: <span class="str">&quot;hello world&quot;</span> }
+  <span class="kw">let</span> json1 = json.stringify(data1)
+  <span class="kw">let</span> back1: {msg: <span class="builtin">string</span>} = json.parse(json1)
+  <span class="builtin">println</span>(back1.msg)
+
+  <span class="kw">let</span> data2 = { msg: <span class="str">&quot;tabs\there&quot;</span> }
+  <span class="kw">let</span> json2 = json.stringify(data2)
+  <span class="kw">let</span> back2: {msg: <span class="builtin">string</span>} = json.parse(json2)
+  <span class="builtin">println</span>(back2.msg)
+}</code></pre><h3>json_stringify.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Stringify</span>
+<span class="comment">///</span>
+<span class="comment">/// Convert values to JSON strings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = { name: <span class="str">&quot;forge&quot;</span>, version: <span class="num">1</span> }
+  <span class="kw">let</span> json_str = json.stringify(data)
+  <span class="builtin">println</span>(json_str)
+}</code></pre><h3>json_stringify_bool.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: json.stringify outputs true/false for booleans</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Flags = { active: bool, deleted: bool }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> f: Flags = { active: <span class="kw">true</span>, deleted: <span class="kw">false</span> }
+  <span class="builtin">println</span>(json.stringify(f))
+}</code></pre><h3>json_stringify_list_of_structs.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Stringify List of Structs</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify a struct containing a list of ints.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = { items: [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>], label: <span class="str">&quot;batch&quot;</span> }
+  <span class="builtin">println</span>(json.stringify(data))
+}</code></pre><h3>json_stringify_nested.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: json.stringify handles nested structs and lists</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> UserData = { name: <span class="builtin">string</span>, scores: List&lt;<span class="builtin">int</span>&gt; }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data: UserData = { name: <span class="str">&quot;alice&quot;</span>, scores: [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>] }
+  <span class="builtin">println</span>(json.stringify(data))
+}</code></pre><h3>json_stringify_roundtrip.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: JSON stringify then parse roundtrip</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> json_str = <span class="str">&quot;{\&quot;name\&quot;:\&quot;alice\&quot;,\&quot;age\&quot;:30}&quot;</span>
+  <span class="kw">let</span> parsed: {name: <span class="builtin">string</span>, age: <span class="builtin">int</span>} = json.parse(json_str)
+  <span class="builtin">println</span>(parsed.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(parsed.age))
+}</code></pre><h3>json_stringify_single_field.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Stringify Single Field</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify a struct with just one field.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> data = { x: <span class="num">99</span> }
+  <span class="builtin">println</span>(json.stringify(data))
+}</code></pre><h3>json_stringify_struct.fg</h3><pre class="forge-code"><code><span class="comment">/// # JSON Stringify Struct</span>
+<span class="comment">///</span>
+<span class="comment">/// Stringify a named type alias struct to JSON.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span>, label: <span class="builtin">string</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p: Point = { x: <span class="num">10</span>, y: <span class="num">20</span>, label: <span class="str">&quot;origin&quot;</span> }
+  <span class="builtin">println</span>(json.stringify(p))
+}</code></pre></main>
+</div>
+</body>
+</html>

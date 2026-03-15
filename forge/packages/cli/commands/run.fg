@@ -1,0 +1,14 @@
+/// Run command — compile and run a Forge source file or project.
+
+use shared.{forward}
+
+export command run "Compile and run a Forge source file or project" {
+    arg file "Input source file or project directory"
+    flag dev "Debug build (O0)"
+    flag no_jit "Disable JIT execution"
+    flag profile "Show build profiling"
+
+    run {
+        forward("run")
+    }
+}

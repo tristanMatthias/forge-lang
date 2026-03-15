@@ -1,0 +1,8 @@
+/// Inline nested template: a template string inside another template's interpolation
+///
+/// expect: outer: [inner: hello] done
+
+fn main() {
+  let name = "hello"
+  println(`outer: [${`inner: ${name}`}] done`)
+}

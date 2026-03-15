@@ -1,0 +1,11 @@
+/// Why command — explain how types are derived on a specific line.
+
+use shared.{forward}
+
+export command why "Explain how types are derived on a specific line" {
+    arg file_line "File and line (e.g., file.fg:5)"
+
+    run {
+        forward("why")
+    }
+}

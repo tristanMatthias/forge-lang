@@ -1,0 +1,15 @@
+/// String method calls and starts_with/contains inside interpolation
+///
+/// expect: flag starts with --: true
+/// expect: upper: HELLO
+/// expect: has ell: true
+/// expect: length: 5
+
+fn main() {
+  let flag = "--dev"
+  println(`flag starts with --: ${flag.starts_with("--")}`)
+  let s = "hello"
+  println(`upper: ${s.upper()}`)
+  println(`has ell: ${s.contains("ell")}`)
+  println(`length: ${s.length}`)
+}

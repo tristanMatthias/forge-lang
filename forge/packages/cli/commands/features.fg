@@ -1,0 +1,12 @@
+/// Features command — list language features.
+
+use shared.{forward}
+
+export command features "List language features" {
+    arg feature "Show a specific feature by id"
+    flag graph "Show the dependency graph"
+
+    run {
+        forward("features")
+    }
+}

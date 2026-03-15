@@ -1,0 +1,15 @@
+/// # Directory Module
+///
+/// Import from a directory module (utils/mod.fg pattern, like Rust).
+///
+/// expect: hello world
+/// expect: 25
+
+mod utils
+
+use utils.{greet, square}
+
+fn main() {
+    println(greet("world"))
+    println(square(5))
+}

@@ -1,0 +1,7 @@
+/// Version command — print version info.
+
+export command version "Print version info" {
+    run {
+        println("forge 0.1.0")
+    }
+}

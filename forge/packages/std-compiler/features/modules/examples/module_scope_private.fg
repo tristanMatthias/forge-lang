@@ -1,0 +1,11 @@
+/// # Module Scope — Private Functions Inaccessible
+///
+/// Non-exported functions cannot be called even if the module is declared.
+///
+/// expect-error: F0020
+
+mod module_private
+
+fn main() {
+    let x = secret()
+}

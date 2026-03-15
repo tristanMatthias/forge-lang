@@ -1,0 +1,21 @@
+/// Docs command — project documentation.
+
+use shared.{forward}
+
+export command docs "Project documentation" {
+    arg query "Symbol to look up"
+    flag symbols "Show symbol/type reference"
+    flag short "Show just the one-liner"
+    option search "Search project docs"
+    flag llm "Compact LLM-friendly output"
+    flag validate "Validate documentation coverage"
+    flag site "Generate a static documentation website"
+    option site_dir {
+        "Output directory for --site"
+        default "docs/project-site"
+    }
+
+    run {
+        forward("docs")
+    }
+}

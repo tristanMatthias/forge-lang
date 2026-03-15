@@ -1,0 +1,17 @@
+/// # JSON Parse List of Bools
+///
+/// Parse a JSON array of booleans into a list<bool>.
+///
+/// expect: 3
+/// expect: true
+/// expect: false
+/// expect: true
+
+fn main() {
+  let json_str = "[true, false, true]"
+  let parsed: list<bool> = json.parse(json_str)
+  println(string(parsed.length))
+  println(string(parsed[0]))
+  println(string(parsed[1]))
+  println(string(parsed[2]))
+}

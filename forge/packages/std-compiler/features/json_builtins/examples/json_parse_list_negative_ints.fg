@@ -1,0 +1,18 @@
+/// # JSON Parse Negative Integers
+///
+/// Parse a JSON array with negative integers.
+///
+/// expect: 4
+/// expect: -1
+/// expect: 0
+/// expect: -100
+/// expect: 42
+
+fn main() {
+  let parsed: list<int> = json.parse("[-1, 0, -100, 42]")
+  println(string(parsed.length))
+  println(string(parsed[0]))
+  println(string(parsed[1]))
+  println(string(parsed[2]))
+  println(string(parsed[3]))
+}

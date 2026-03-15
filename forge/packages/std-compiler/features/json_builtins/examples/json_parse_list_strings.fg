@@ -1,0 +1,16 @@
+/// # JSON Parse List of Strings
+///
+/// Parse a JSON array of strings into a list<string>.
+///
+/// expect: 2
+/// expect: hello
+/// expect: world
+
+fn main() {
+  let json_str = "[\"hello\", \"world\"]"
+  let parsed: list<string> = json.parse(json_str)
+  println(string(parsed.length))
+  for p in parsed {
+    println(p)
+  }
+}

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tagged Templates — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html" class="active">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Tagged Templates <span class="badge badge-stable">stable</span></h1><p>tag&quot;...&quot; — tagged template literal processing</p><p>Tagged template literals: tag`template ${expr}` desugars to calling tag with separated parts and values as JSON</p><div class="long-description"><p>Tagged templates let you process template literals through a function before they are assembled into a string. A tagged template is a function call followed by a template literal: `sql&quot;SELECT * FROM ${table} WHERE id = ${id}&quot;`. The tag function receives the string parts and interpolated values separately, enabling safe, structured processing.</p><p>The primary use case is safe SQL query construction, where interpolated values must be parameterized to prevent injection attacks. The `sql` tag can build a parameterized query with `$1`, `$2` placeholders and a separate values array. HTML escaping, URL encoding, and regex construction are other natural applications.</p><p>Tag functions receive an array of string fragments and an array of interpolated values, giving them full control over how the pieces are assembled. This is strictly more powerful than simple string interpolation, since the tag can validate, transform, or reject the interpolated values.</p><p>Tagged templates originate in JavaScript (ES2015) and work similarly in Forge. The key difference is that Forge's version is fully typed: the compiler knows the return type of the tag function and type-checks the interpolated expressions.</p></div><h2>Syntax</h2><pre class="forge-code"><code>tag<span class="str">&quot;template </span><span class="op">${</span>expr<span class="op">}</span><span class="str">&quot;</span>
+tag`template`</code></pre><h2>Examples</h2><h3>basic.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: basic tagged template literal — tag function receives JSON with parts and values</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> name = <span class="str">&quot;world&quot;</span>
+  <span class="kw">let</span> lang = <span class="str">&quot;forge&quot;</span>
+  <span class="kw">let</span> result = identity`hello ${name} and ${lang}`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>closure_tag.fg</h3><pre class="forge-code"><code><span class="comment">/// # Closure as tagged template tag</span>
+<span class="comment">///</span>
+<span class="comment">/// Closures stored in variables can be used as template tags.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> tag = (input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+  <span class="builtin">println</span>(tag`hello ${<span class="num">42</span>}`)
+}</code></pre><h3>error_bad_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Invalid expression in interpolation</span>
+<span class="comment">///</span>
+<span class="comment">/// Syntax errors inside `${}` produce clear errors with correct source positions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> tag(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(tag`value: ${<span class="num">1</span> +}`)
+}</code></pre><h3>error_bool_tag.fg</h3><pre class="forge-code"><code><span class="comment">/// # Boolean used as template tag</span>
+<span class="comment">///</span>
+<span class="comment">/// A boolean variable cannot be used as a template tag.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> flag = <span class="kw">true</span>
+  <span class="kw">let</span> result = flag`hello`
+}</code></pre><h3>error_enum_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Enum interpolation in tagged template</span>
+<span class="comment">///</span>
+<span class="comment">/// Enum values must be converted to strings before interpolation.</span>
+<span class="comment">///</span>
+
+<span class="kw">enum</span> Color { Red, Blue, Green }
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> c = Color.Red
+  <span class="builtin">println</span>(identity`color: ${c}`)
+}</code></pre><h3>error_list_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// # List interpolation in tagged template</span>
+<span class="comment">///</span>
+<span class="comment">/// Lists cannot be directly interpolated in tagged templates.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="builtin">println</span>(identity`items: ${items}`)
+}</code></pre><h3>error_nonfn_tag.fg</h3><pre class="forge-code"><code><span class="comment">/// # Non-function used as template tag</span>
+<span class="comment">///</span>
+<span class="comment">/// A variable that is not a function cannot be used as a template tag.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">42</span>
+  <span class="kw">let</span> result = x`hello`
+}</code></pre><h3>error_nullable_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nullable interpolation in tagged template</span>
+<span class="comment">///</span>
+<span class="comment">/// Nullable values must be unwrapped before interpolation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x: <span class="builtin">string</span><span class="op">?</span> = <span class="kw">null</span>
+  <span class="builtin">println</span>(identity`val: ${x}`)
+}</code></pre><h3>error_struct_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Struct interpolation in tagged template</span>
+<span class="comment">///</span>
+<span class="comment">/// Structs can't be directly interpolated — use json.stringify() first.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p: Point = { x: <span class="num">1</span>, y: <span class="num">2</span> }
+  <span class="builtin">println</span>(identity`point: ${p}`)
+}</code></pre><h3>error_undefined_tag.fg</h3><pre class="forge-code"><code><span class="comment">/// # Undefined tag function</span>
+<span class="comment">///</span>
+<span class="comment">/// Using a tagged template with a function that doesn't exist.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = nonexistent`hello ${<span class="num">42</span>}`
+}</code></pre><h3>error_unterminated.fg</h3><pre class="forge-code"><code><span class="comment">/// # Unterminated tagged template</span>
+<span class="comment">///</span>
+<span class="comment">/// A tagged template missing its closing backtick.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> tag(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { input }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = tag`hello
+}</code></pre><h3>error_wrong_args.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tag function with wrong number of arguments</span>
+<span class="comment">///</span>
+<span class="comment">/// Tagged template functions must take exactly 1 argument (the JSON string).</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> bad_tag(a: <span class="builtin">string</span>, b: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { a + b }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = bad_tag`hello`
+}</code></pre><h3>error_wrong_param_type.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tag function with wrong parameter type</span>
+<span class="comment">///</span>
+<span class="comment">/// Tag functions must take a string parameter (the JSON input).</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> bad_tag(input: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> { <span class="str">&quot;nope&quot;</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(bad_tag`hello`)
+}</code></pre><h3>escape.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: tagged template correctly escapes special characters in values</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> val = <span class="str">&quot;hello \&quot;world\&quot;&quot;</span>
+  <span class="builtin">println</span>(identity`value: ${val}`)
+}</code></pre><h3>expressions.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: tagged template with complex expressions (math, function calls)</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">40</span>
+  <span class="kw">let</span> s = <span class="str">&quot;hello&quot;</span>
+  <span class="kw">let</span> result = identity`result: ${x + <span class="num">2</span>} len: ${s.length}`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>no_interpolation.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: tagged template with no interpolation — just static text</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = identity`SELECT * FROM users`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>pipe.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: tagged template result can be used in expressions</span>
+
+<span class="kw">fn</span> get_json(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">42</span>
+  <span class="kw">let</span> json = get_json`${x}`
+  <span class="builtin">println</span>(json.length)
+}</code></pre><h3>return_bool.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tag function returning bool</span>
+<span class="comment">///</span>
+<span class="comment">/// Tag functions can return any type — here a bool used in a condition.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> always_true(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> bool { <span class="kw">true</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">if</span> always_true`test ${<span class="num">42</span>}` {
+    <span class="builtin">println</span>(<span class="str">&quot;yes&quot;</span>)
+  } <span class="kw">else</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;no&quot;</span>)
+  }
+}</code></pre><h3>return_int.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tag function returning non-string type</span>
+<span class="comment">///</span>
+<span class="comment">/// Tag functions can return any type, not just strings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> count_parts(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="num">42</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = count_parts`hello ${<span class="num">1</span>} world`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>tagged_adjacent_interp.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with adjacent interpolations (no literal between)</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(identity`${<span class="str">&quot;hello&quot;</span>}${<span class="str">&quot;world&quot;</span>}`)
+}</code></pre><h3>tagged_bool_float_interp.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with bool and float interpolations</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(identity`active: ${<span class="kw">true</span>} score: ${<span class="num">3.14</span>}`)
+}</code></pre><h3>tagged_chained.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tagged Template Chained</span>
+<span class="comment">///</span>
+<span class="comment">/// Result of a tagged template used in further string operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">42</span>
+  <span class="kw">let</span> result = identity`value: ${x}`
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.contains(<span class="str">&quot;42&quot;</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.length))
+}</code></pre><h3>tagged_complex_expr.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tagged Template with Complex Expressions</span>
+<span class="comment">///</span>
+<span class="comment">/// Tagged template with arithmetic and method calls in interpolation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> a = <span class="num">10</span>
+  <span class="kw">let</span> b = <span class="num">5</span>
+  <span class="kw">let</span> s = <span class="str">&quot;hello&quot;</span>
+  <span class="kw">let</span> result = identity`sum: ${a + b} upper: ${s.upper()}`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>tagged_concat_result.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Concatenating tagged template result with other strings</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = <span class="str">&quot;[&quot;</span> + identity`hello ${<span class="str">&quot;world&quot;</span>}` + <span class="str">&quot;]&quot;</span>
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>tagged_empty_template.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with empty string — no interpolations, no text</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(identity``)
+}</code></pre><h3>tagged_in_condition.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with bool return used in if condition</span>
+
+<span class="kw">fn</span> check(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> bool {
+  <span class="kw">true</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">if</span> check`test ${<span class="str">&quot;value&quot;</span>}` {
+    <span class="builtin">println</span>(<span class="str">&quot;tag returned true&quot;</span>)
+  } <span class="kw">else</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;tag returned false&quot;</span>)
+  }
+}</code></pre><h3>tagged_in_function.fg</h3><pre class="forge-code"><code><span class="comment">/// # Tagged Template in Function</span>
+<span class="comment">///</span>
+<span class="comment">/// Tagged template used inside a function and returned.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> wrap(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="str">&quot;[WRAP] &quot;</span> + input
+}
+
+<span class="kw">fn</span> greet(name: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  wrap`hello ${name}`
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = greet(<span class="str">&quot;forge&quot;</span>)
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>tagged_many_values.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with many interpolated values</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(identity`${<span class="num">1</span>}-${<span class="num">2</span>}-${<span class="num">3</span>}-${<span class="num">4</span>}-${<span class="num">5</span>}`)
+}</code></pre><h3>tagged_method_on_result.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Calling string methods on tagged template result</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = identity`hello ${<span class="num">42</span>} world`
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.contains(<span class="str">&quot;42&quot;</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result.length))
+}</code></pre><h3>tagged_newline_value.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with string value containing newline</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> msg = <span class="str">&quot;line1\nline2&quot;</span>
+  <span class="builtin">println</span>(identity`msg: ${msg}`)
+}</code></pre><h3>tagged_only_interp.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template with only interpolation, no static text</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(identity`${<span class="num">42</span>}`)
+}</code></pre><h3>tagged_special_chars_in_value.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Tagged template where interpolated value contains JSON special chars</span>
+
+<span class="kw">fn</span> identity(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> v = <span class="str">&quot;has \&quot;quotes\&quot; and \\backslash&quot;</span>
+  <span class="builtin">println</span>(identity`val: ${v}`)
+}</code></pre><h3>transform.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: tagged template where tag function wraps output</span>
+
+<span class="kw">fn</span> wrap(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="str">&quot;[TAGGED] &quot;</span> + input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> name = <span class="str">&quot;world&quot;</span>
+  <span class="builtin">println</span>(wrap`hi ${name}`)
+}</code></pre><h3>typed_tag.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: typed tagged template — tag&lt;Type&gt;`template` overrides return type</span>
+
+<span class="kw">fn</span> sql(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> id = <span class="num">42</span>
+  <span class="kw">let</span> result = sql&lt;<span class="builtin">string</span>&gt;`SELECT * FROM posts WHERE id = ${id}`
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>typed_tag_generic.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: typed tagged template with generic type param — sql&lt;list&lt;string&gt;&gt;`...`</span>
+
+<span class="kw">fn</span> sql(input: <span class="builtin">string</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  input
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = sql&lt;list&lt;<span class="builtin">string</span>&gt;&gt;`SELECT name FROM users`
+  <span class="builtin">println</span>(result)
+}</code></pre><h2>Tokens</h2><p><span class="tag">tag`...`</span> </p><h2>AST Nodes</h2><p><span class="tag">TaggedTemplate</span> </p><h2>Dependencies</h2><ul><li><a href="string_templates.html">string_templates</a></li></ul></main>
+</div>
+</body>
+</html>

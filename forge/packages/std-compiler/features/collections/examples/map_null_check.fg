@@ -1,0 +1,18 @@
+/// # Map Null Check
+///
+/// Map index on nonexistent key returns null; null comparison works.
+///
+/// expect: null
+/// expect: has value
+
+fn main() {
+  let m = {"a": 1}
+  let missing = m["b"]
+  if missing == null {
+    println("null")
+  }
+  let present = m["a"]
+  if present != null {
+    println("has value")
+  }
+}

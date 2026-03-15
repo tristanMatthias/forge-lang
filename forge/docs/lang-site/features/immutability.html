@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immutability — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html" class="active">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Immutability <span class="badge badge-stable">stable</span></h1><p>immutable by default — let (frozen), mut (mutable), const (compile-time)</p><p>Variable bindings with let (immutable), mut (mutable), and const (compile-time constant)</p><div class="long-description"><p>Forge is immutable by default. Variables declared with `let` cannot be reassigned after initialization. This is not a convention or a lint rule; it is enforced by the compiler. Attempting to assign to a `let` binding produces error F0013 with a clear message explaining the immutability constraint.</p><p>Mutable bindings require the explicit `mut` keyword: `mut counter = 0`. This makes every mutation point visible in the code. When reading a function, you can immediately see which values might change by scanning for `mut` declarations. This is especially valuable in larger codebases where understanding data flow is critical.</p><p>Constants declared with `const` are even stricter: their values must be known at compile time, and they are inlined at every usage site. Use `const` for configuration values, mathematical constants, and fixed strings.</p><p>The immutable-by-default philosophy extends beyond variables to data structures. Structs created with `let` have immutable fields. The `with` expression creates modified copies rather than mutating in place. This approach eliminates shared mutable state, the root cause of countless bugs in imperative programs.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">let</span> x = <span class="num">1</span>
+<span class="kw">mut</span> y = <span class="num">2</span>
+<span class="kw">const</span> Z = <span class="num">3</span></code></pre><h2>Examples</h2><h3>const_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Const Binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Compile-time constant with `const`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">const</span> MAX = <span class="num">100</span>
+  <span class="builtin">println</span>(MAX)
+}</code></pre><h3>const_declaration.fg</h3><pre class="forge-code"><code><span class="comment">/// # Const Declarations</span>
+<span class="comment">///</span>
+<span class="comment">/// Const values used in expressions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">const</span> PI_APPROX = <span class="num">314</span>
+  <span class="kw">const</span> MULTIPLIER = <span class="num">2</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(PI_APPROX))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(PI_APPROX * MULTIPLIER + PI_APPROX * <span class="num">4</span>))
+}</code></pre><h3>const_reassign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Const Cannot Be Reassigned</span>
+<span class="comment">///</span>
+<span class="comment">/// Attempting to reassign a const binding produces an error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">const</span> X = <span class="num">42</span>
+  X = <span class="num">99</span>
+}</code></pre><h3>destructure.fg</h3><pre class="forge-code"><code><span class="comment">/// # Let Destructuring</span>
+<span class="comment">///</span>
+<span class="comment">/// Destructure tuples and structs with let.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> (name, age) = (<span class="str">&quot;hello&quot;</span>, <span class="num">42</span>)
+  <span class="builtin">println</span>(name)
+  <span class="builtin">println</span>(age)
+}</code></pre><h3>fn_param_immutable.fg</h3><pre class="forge-code"><code><span class="comment">/// # Function Parameter Reassignment</span>
+<span class="comment">///</span>
+<span class="comment">/// Function parameters are immutable; reassigning them is an error.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  x = x * <span class="num">2</span>
+  <span class="kw">return</span> x
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(double(<span class="num">5</span>)))
+}</code></pre><h3>global_mut.fg</h3><pre class="forge-code"><code><span class="comment">/// # Global Mutable Variable</span>
+<span class="comment">///</span>
+<span class="comment">/// Top-level mut variable modified across function calls.</span>
+<span class="comment">///</span>
+
+<span class="kw">mut</span> counter = <span class="num">0</span>
+
+<span class="kw">fn</span> increment() {
+  counter = counter + <span class="num">1</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(counter))
+  increment()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(counter))
+  increment()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(counter))
+}</code></pre><h3>immutable_field_access.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable Field Access</span>
+<span class="comment">///</span>
+<span class="comment">/// Accessing fields of an immutable struct binding.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Person = { name: <span class="builtin">string</span>, age: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Person { name: <span class="str">&quot;alice&quot;</span>, age: <span class="num">30</span> }
+  <span class="builtin">println</span>(p.name)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(p.age))
+}</code></pre><h3>immutable_field_mutation.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable Field Mutation</span>
+<span class="comment">///</span>
+<span class="comment">/// Cannot assign to a field of an immutable struct variable.</span>
+<span class="comment">///</span>
+
+<span class="kw">type</span> Point = { x: <span class="builtin">int</span>, y: <span class="builtin">int</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> p = Point { x: <span class="num">1</span>, y: <span class="num">2</span> }
+  p.x = <span class="num">10</span>
+}</code></pre><h3>immutable_function_param.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable Function Parameters</span>
+<span class="comment">///</span>
+<span class="comment">/// Function parameters are immutable by default.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add_one(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  x = x + <span class="num">1</span>
+  x
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add_one(<span class="num">5</span>)))
+}</code></pre><h3>immutable_let_reassign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Immutable Let Reassign Error</span>
+<span class="comment">///</span>
+<span class="comment">/// Cannot reassign a let-bound variable.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">10</span>
+  x = <span class="num">20</span>
+}</code></pre><h3>let_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Let Binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Immutable variable binding with `let`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">42</span>
+  <span class="builtin">println</span>(x)
+}</code></pre><h3>let_shadowing.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: Let binding shadowing</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="str">&quot;hello&quot;</span>
+  <span class="builtin">println</span>(x)
+  <span class="kw">let</span> x = x.length
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>mut_binding.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mutable Binding</span>
+<span class="comment">///</span>
+<span class="comment">/// Mutable variable with `mut`. Can be reassigned.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> x = <span class="num">5</span>
+  x = <span class="num">10</span>
+  <span class="builtin">println</span>(x)
+}</code></pre><h3>mut_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mutable Variable in Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// A mut variable accumulated across loop iterations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> sum = <span class="num">0</span>
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; <span class="num">100</span> {
+    sum = sum + <span class="num">1</span>
+    i = i + <span class="num">1</span>
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(sum))
+}</code></pre><h3>mut_in_nested_scope.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mutable Variable Modified in Nested Scope</span>
+<span class="comment">///</span>
+<span class="comment">/// A mut variable can be modified from within a nested block.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> x = <span class="num">10</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+  {
+    x = <span class="num">20</span>
+    <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>mut_reassign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mut Variable Reassign</span>
+<span class="comment">///</span>
+<span class="comment">/// Mutable variables can be reassigned multiple times.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> x = <span class="num">1</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+  x = <span class="num">2</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+  x = <span class="num">3</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>reassignment_types.fg</h3><pre class="forge-code"><code><span class="comment">/// # Variable Reassignment</span>
+<span class="comment">///</span>
+<span class="comment">/// Mutable variables can be reassigned, let bindings cannot.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> counter = <span class="num">0</span>
+  counter = counter + <span class="num">1</span>
+  counter = counter + <span class="num">1</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(counter))
+
+  <span class="kw">const</span> MAX = <span class="num">100</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(MAX))
+}</code></pre><h3>shadow_let_with_mut.fg</h3><pre class="forge-code"><code><span class="comment">/// # Shadow Let With Mut</span>
+<span class="comment">///</span>
+<span class="comment">/// A let binding can be shadowed by a mut binding in the same scope.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="num">10</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+  <span class="kw">mut</span> x = <span class="num">20</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(x))
+}</code></pre><h3>shadow_mut_with_let_reassign.fg</h3><pre class="forge-code"><code><span class="comment">/// # Shadow Mut With Let Then Reassign</span>
+<span class="comment">///</span>
+<span class="comment">/// A mut variable shadowed by let becomes immutable; reassignment fails.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> x = <span class="num">10</span>
+  <span class="kw">let</span> x = <span class="num">20</span>
+  x = <span class="num">30</span>
+}</code></pre><h2>Tokens</h2><p><span class="tag">let</span> <span class="tag">mut</span> <span class="tag">const</span> </p><h2>AST Nodes</h2><p><span class="tag">Let</span> <span class="tag">Mut</span> <span class="tag">Const</span> <span class="tag">LetDestructure</span> </p></main>
+</div>
+</body>
+</html>

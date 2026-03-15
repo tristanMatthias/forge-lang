@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collections — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html" class="active">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Collections <span class="badge badge-stable">stable</span></h1><p>list and map literals with type-safe operations</p><p>List and map literal expressions with type inference</p><div class="long-description"><p>Forge provides two built-in collection types: `list&lt;T&gt;` and `map&lt;K, V&gt;`. Lists are ordered, indexed sequences created with square brackets: `let nums = [1, 2, 3]`. Maps are key-value stores created with curly braces: `let ages = { &quot;Alice&quot;: 30, &quot;Bob&quot;: 25 }`.</p><p>Lists support a rich set of methods: `push`, `pop`, `map`, `filter`, `reduce`, `each`, `length`, `contains`, `sorted`, `join`, and more. Chaining these methods with closures is the idiomatic way to transform data: `numbers.filter((n) -&gt; n &gt; 0).map((n) -&gt; n * 2)`. Lists are generic, so `list&lt;int&gt;`, `list&lt;string&gt;`, and `list&lt;list&lt;int&gt;&gt;` are all valid types.</p><p>Maps support `get`, `set`, `keys`, `values`, `contains`, and `length`. Map access uses bracket notation: `ages[&quot;Alice&quot;]`. When a key might not exist, use the null-safe access `ages[&quot;Charlie&quot;]?` combined with `??` to provide a default.</p><p>Both collections are mutable when declared with `mut`. Immutable collections cannot have elements added or removed, making them safe to share across function boundaries without defensive copying.</p></div><h2>Syntax</h2><pre class="forge-code"><code>[<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+{ key: value }</code></pre><h2>Examples</h2><h3>list_any_all.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Any and All</span>
+<span class="comment">///</span>
+<span class="comment">/// Check if any/all elements satisfy a predicate.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">2</span>, <span class="num">4</span>, <span class="num">6</span>, <span class="num">8</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.any((x) <span class="op">-&gt;</span> x &gt; <span class="num">5</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.any((x) <span class="op">-&gt;</span> x &gt; <span class="num">10</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.all((x) <span class="op">-&gt;</span> x &gt; <span class="num">0</span>)))
+}</code></pre><h3>list_basic.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic List Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Create a list, check length, access elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.length))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums[<span class="num">0</span>]))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums[<span class="num">2</span>]))
+}</code></pre><h3>list_chain_operations.fg</h3><pre class="forge-code"><code><span class="comment">/// # Chained List Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Chain multiple list operations: filter, map, reduce.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>]
+  <span class="kw">let</span> result = nums
+    .filter((x) <span class="op">-&gt;</span> x &gt; <span class="num">2</span>)
+    .map((x) <span class="op">-&gt;</span> x * <span class="num">2</span>)
+    .reduce(<span class="num">0</span>, (acc, x) <span class="op">-&gt;</span> acc + x)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>list_empty.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty List</span>
+<span class="comment">///</span>
+<span class="comment">/// Create an empty list and push to it.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> items: List&lt;<span class="builtin">string</span>&gt; = []
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  items.push(<span class="str">&quot;hello&quot;</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  <span class="builtin">println</span>(items[<span class="num">0</span>])
+}</code></pre><h3>list_enumerate.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Enumerate</span>
+<span class="comment">///</span>
+<span class="comment">/// Enumerate a list to get index-value tuples.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> items = [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;c&quot;</span>]
+  <span class="kw">let</span> pairs = items.enumerate()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(pairs.length))
+}</code></pre><h3>list_find.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Find</span>
+<span class="comment">///</span>
+<span class="comment">/// Find the first element matching a predicate.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>, <span class="num">50</span>]
+  <span class="kw">let</span> found = nums.find((x) <span class="op">-&gt;</span> x &gt; <span class="num">25</span>)
+  <span class="kw">if</span> found != <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;found&quot;</span>)
+    <span class="kw">let</span> val = found!
+    <span class="builtin">println</span>(<span class="builtin">string</span>(val))
+  }
+}</code></pre><h3>list_join.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Join</span>
+<span class="comment">///</span>
+<span class="comment">/// Join a list of strings with a separator.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;a&quot;</span>, <span class="str">&quot;b&quot;</span>, <span class="str">&quot;c&quot;</span>]
+  <span class="builtin">println</span>(words.join(<span class="str">&quot;-&quot;</span>))
+}</code></pre><h3>list_map_filter.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Map and Filter</span>
+<span class="comment">///</span>
+<span class="comment">/// Chain map and filter on a list.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> doubled = nums.map((x) <span class="op">-&gt;</span> x * <span class="num">2</span>)
+  <span class="kw">let</span> big = doubled.filter((x) <span class="op">-&gt;</span> x &gt; <span class="num">3</span>)
+  big.each((x) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="builtin">string</span>(x)))
+}</code></pre><h3>list_of_strings.fg</h3><pre class="forge-code"><code><span class="comment">/// # List of Strings</span>
+<span class="comment">///</span>
+<span class="comment">/// Operations on a list of strings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>, <span class="str">&quot;foo&quot;</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(words.length))
+  <span class="kw">let</span> upper = words.map((w) <span class="op">-&gt;</span> w.upper())
+  <span class="builtin">println</span>(upper[<span class="num">0</span>])
+  <span class="builtin">println</span>(words.join(<span class="str">&quot;-&quot;</span>))
+}</code></pre><h3>list_push.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Push</span>
+<span class="comment">///</span>
+<span class="comment">/// Push items onto a mutable list.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> items = [<span class="num">10</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  items.push(<span class="num">20</span>)
+  items.push(<span class="num">30</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items[<span class="num">2</span>]))
+}</code></pre><h3>list_push_many.fg</h3><pre class="forge-code"><code><span class="comment">/// # Push Many Items</span>
+<span class="comment">///</span>
+<span class="comment">/// Push many items onto a list to stress the reallocation.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> items: List&lt;<span class="builtin">int</span>&gt; = []
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..10</span> {
+    items.push(i)
+  }
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items.length))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items[<span class="num">0</span>]))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(items[<span class="num">9</span>]))
+}</code></pre><h3>list_reduce.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Reduce</span>
+<span class="comment">///</span>
+<span class="comment">/// Reduce a list to a single value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> total = nums.reduce(<span class="num">0</span>, (acc, x) <span class="op">-&gt;</span> acc + x)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(total))
+}</code></pre><h3>list_single_element.fg</h3><pre class="forge-code"><code><span class="comment">/// # Single Element List</span>
+<span class="comment">///</span>
+<span class="comment">/// List with one element - test edge case.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">42</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.length))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums[<span class="num">0</span>]))
+}</code></pre><h3>list_sorted.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Sorted</span>
+<span class="comment">///</span>
+<span class="comment">/// Sort a list of integers.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">5</span>, <span class="num">3</span>, <span class="num">8</span>, <span class="num">1</span>, <span class="num">2</span>]
+  <span class="kw">let</span> s = nums.sorted()
+  s.each((x) <span class="op">-&gt;</span> <span class="builtin">println</span>(<span class="builtin">string</span>(x)))
+}</code></pre><h3>list_sum.fg</h3><pre class="forge-code"><code><span class="comment">/// # List Sum</span>
+<span class="comment">///</span>
+<span class="comment">/// Sum a list of integers.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>, <span class="num">40</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.sum()))
+}</code></pre><h3>map_basic.fg</h3><pre class="forge-code"><code><span class="comment">/// # Basic Map Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Create a map, get values (nullable), get keys.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> m = {<span class="str">&quot;a&quot;</span>: <span class="num">42</span>, <span class="str">&quot;b&quot;</span>: <span class="num">99</span>}
+  <span class="kw">let</span> val = m.get(<span class="str">&quot;a&quot;</span>)
+  <span class="kw">if</span> val != <span class="kw">null</span> {
+    <span class="kw">let</span> v = val!
+    <span class="builtin">println</span>(<span class="builtin">string</span>(v))
+  }
+  <span class="kw">let</span> missing = m.get(<span class="str">&quot;c&quot;</span>)
+  <span class="kw">if</span> missing == <span class="kw">null</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;null&quot;</span>)
+  }
+  <span class="kw">let</span> k = m.keys()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(k.length))
+}</code></pre><h3>map_has_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # Map Has Method</span>
+<span class="comment">///</span>
+<span class="comment">/// The `has` method checks if a key exists in a map.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> m = {<span class="str">&quot;a&quot;</span>: <span class="num">1</span>, <span class="str">&quot;b&quot;</span>: <span class="num">2</span>}
+  <span class="builtin">println</span>(m.has(<span class="str">&quot;a&quot;</span>))
+  <span class="builtin">println</span>(m.has(<span class="str">&quot;c&quot;</span>))
+}</code></pre><h3>map_keys.fg</h3><pre class="forge-code"><code><span class="comment">/// # Map Keys</span>
+<span class="comment">///</span>
+<span class="comment">/// Get the keys of a map as a list.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> m = {<span class="str">&quot;x&quot;</span>: <span class="num">1</span>, <span class="str">&quot;y&quot;</span>: <span class="num">2</span>}
+  <span class="kw">let</span> k = m.keys()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(k.length))
+}</code></pre><h2>AST Nodes</h2><p><span class="tag">ListLit</span> <span class="tag">MapLit</span> </p></main>
+</div>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Defer — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html" class="active">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Defer <span class="badge badge-stable">stable</span></h1><p>defer expr — execute when scope exits, LIFO order</p><p>Deferred execution of expressions before function return, executed in reverse order</p><div class="long-description"><p>The `defer` statement schedules an expression to execute when the enclosing scope exits, regardless of whether the exit is normal or due to an error. This is the primary mechanism for resource cleanup in Forge: `let f = open(path); defer close(f)`. No matter how the function returns, the file will be closed.</p><p>Deferred expressions execute in LIFO (last-in, first-out) order. If you defer A then defer B, B executes first, then A. This matches the natural pattern of resource acquisition: resources acquired later should be released first.</p><p>Defer eliminates the need for finally blocks, destructors, or RAII patterns for resource management. It keeps the cleanup code next to the acquisition code, rather than at the bottom of a try/finally block potentially hundreds of lines away. This locality makes it easy to verify that every resource is properly cleaned up.</p><p>The concept comes from Go, where `defer` is used extensively. Forge's implementation works the same way, executing deferred expressions before every return point in the function, including early returns and error propagation with `?`.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">defer</span> expr</code></pre><h2>Examples</h2><h3>basic_defer.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer</span>
+<span class="comment">///</span>
+<span class="comment">/// `defer` runs an expression when the function returns.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;hello&quot;</span>)
+}</code></pre><h3>composition_with_closures.fg</h3><pre class="forge-code"><code><span class="comment">/// # Resource Cleanup with Defer</span>
+<span class="comment">///</span>
+<span class="comment">/// Using defer for guaranteed cleanup in</span>
+<span class="comment">/// functions that return values.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> compute() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup complete&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;working...&quot;</span>)
+  <span class="num">42</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = compute()
+  <span class="builtin">println</span>(<span class="str">&quot;result: &quot;</span> + <span class="builtin">string</span>(result))
+}</code></pre><h3>defer_cleanup.fg</h3><pre class="forge-code"><code><span class="comment">/// Test: defer for cleanup pattern (resource management)</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup a&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup b&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;working&quot;</span>)
+}</code></pre><h3>defer_conditional_return.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with Conditional No-Return Path</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer runs when function exits through the normal path.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> maybe_return(early: bool) {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;always runs&quot;</span>)
+  <span class="kw">if</span> early {
+    <span class="builtin">println</span>(<span class="str">&quot;early path&quot;</span>)
+    <span class="kw">return</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;late path&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  maybe_return(<span class="kw">false</span>)
+}</code></pre><h3>defer_early_return_value.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with Early Return Value</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer runs before function returns a value.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> compute() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup&quot;</span>)
+  <span class="kw">return</span> <span class="num">42</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = compute()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>defer_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer in Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer inside a loop body registers at function scope.</span>
+<span class="comment">/// The deferred expression runs once when the function exits.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;main defer&quot;</span>)
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..3</span> {
+    <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;loop defer&quot;</span>)
+    <span class="builtin">println</span>(`body ${i}`)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;after loop&quot;</span>)
+}</code></pre><h3>defer_many.fg</h3><pre class="forge-code"><code><span class="comment">/// # Many Defers</span>
+<span class="comment">///</span>
+<span class="comment">/// Five defers in reverse order.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;1&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;2&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;3&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;4&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;5&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;work&quot;</span>)
+}</code></pre><h3>defer_multiple_functions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer in Multiple Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// Each function has its own defer stack.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> func_b() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;b-defer&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;b-start&quot;</span>)
+}
+
+<span class="kw">fn</span> func_a() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;a-defer&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;a-start&quot;</span>)
+  func_b()
+}
+
+<span class="kw">fn</span> main() {
+  func_a()
+}</code></pre><h3>defer_nested_functions.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer in Nested Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// Each function's defers run when that function returns,</span>
+<span class="comment">/// in reverse order within the function.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> inner() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;inner defer&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;inner start&quot;</span>)
+}
+
+<span class="kw">fn</span> outer() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;outer defer&quot;</span>)
+  inner()
+}
+
+<span class="kw">fn</span> main() {
+  outer()
+}</code></pre><h3>defer_return_in_if.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer Fires on Return Inside If</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer must execute even when return is inside an if block.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> test(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;cleanup&quot;</span>)
+  <span class="kw">if</span> x &gt; <span class="num">0</span> {
+    <span class="kw">return</span> <span class="str">&quot;positive&quot;</span>
+  }
+  <span class="kw">return</span> <span class="str">&quot;non-positive&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(test(<span class="num">5</span>))
+}</code></pre><h3>defer_with_if.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with Conditional</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer inside an if block still runs at function exit.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> x = <span class="kw">true</span>
+  <span class="kw">if</span> x {
+    <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;conditional defer&quot;</span>)
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;work&quot;</span>)
+}</code></pre><h3>defer_with_return.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with Return</span>
+<span class="comment">///</span>
+<span class="comment">/// Deferred statements run before an explicit return.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> early_return() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;deferred&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;inside&quot;</span>)
+  <span class="kw">return</span>
+}
+
+<span class="kw">fn</span> main() {
+  early_return()
+}</code></pre><h3>defer_with_string_template.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with String Template</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer captures variable by reference — sees final value in template string.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> count = <span class="num">0</span>
+  <span class="kw">defer</span> <span class="builtin">println</span>(`count: ${count}`)
+  <span class="kw">for</span> i <span class="kw">in</span> <span class="num">0..10</span> {
+    count = count + <span class="num">1</span>
+  }
+  <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+}</code></pre><h3>defer_with_variables.fg</h3><pre class="forge-code"><code><span class="comment">/// # Defer with Variables</span>
+<span class="comment">///</span>
+<span class="comment">/// Defer captures the variable reference, not the value at declaration time.</span>
+<span class="comment">/// The deferred println sees the final value of the variable.</span>
+<span class="comment">///</span>
+
+<span class="kw">mut</span> x = <span class="num">0</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(`x <span class="kw">is</span> ${x}`)
+  x = <span class="num">42</span>
+  <span class="builtin">println</span>(<span class="str">&quot;working&quot;</span>)
+}</code></pre><h3>multiple_defer.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Defers</span>
+<span class="comment">///</span>
+<span class="comment">/// Deferred statements run in reverse order at scope exit.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> example() {
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;deferred 1&quot;</span>)
+  <span class="kw">defer</span> <span class="builtin">println</span>(<span class="str">&quot;deferred 2&quot;</span>)
+  <span class="builtin">println</span>(<span class="str">&quot;first&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  example()
+}</code></pre><h2>Tokens</h2><p><span class="tag">defer</span> </p><h2>AST Nodes</h2><p><span class="tag">Defer</span> </p></main>
+</div>
+</body>
+</html>

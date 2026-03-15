@@ -1,0 +1,16 @@
+/// # String Substring
+///
+/// Extract a substring by start and end index.
+///
+/// expect: llo
+/// expect: he
+/// expect: hello
+/// expect:
+
+fn main() {
+    let s = "hello"
+    println(s.substring(2, 5))
+    println(s.substring(0, 2))
+    println(s.substring(0, 100))
+    println(s.substring(5, 5))
+}

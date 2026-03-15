@@ -1,0 +1,19 @@
+/// # JSON Parse Malformed Into List
+///
+/// Parsing malformed JSON into a list should produce an empty list,
+/// not crash or segfault.
+///
+/// expect: 0
+/// expect: 0
+/// expect: 0
+/// expect: survived
+
+fn main() {
+  let a: list<string> = json.parse("not json")
+  println(string(a.length))
+  let b: list<int> = json.parse("null")
+  println(string(b.length))
+  let c: list<string> = json.parse("")
+  println(string(c.length))
+  println("survived")
+}

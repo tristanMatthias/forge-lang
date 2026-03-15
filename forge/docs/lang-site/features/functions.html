@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Functions — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html" class="active">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>Functions <span class="badge badge-stable">stable</span></h1><p>fn declarations with type inference and implicit return</p><p>Function declarations with parameters, return types, and return statements</p><div class="long-description"><p>Functions are declared with `fn`, followed by the function name, parameters in parentheses, and an optional return type. The body is a block expression, and the last expression in the block is the implicit return value. For example: `fn double(x: int) -&gt; int { x * 2 }`.</p><p>Parameter types are required, but return types can usually be inferred. If a function returns nothing, the return type is `void`. Functions are first-class values: you can pass them as arguments, store them in variables, and return them from other functions.</p><p>Forge functions support early return with the `return` keyword, but idiomatic Forge prefers implicit returns via the last expression. This keeps functions concise and encourages a functional style. Functions can call themselves recursively, and the compiler handles tail calls efficiently where possible.</p><p>Unlike languages that distinguish between functions and methods at the syntax level, Forge treats all callables uniformly. Methods on types are just functions that receive the type as their first argument, accessed through dot notation.</p></div><h2>Syntax</h2><pre class="forge-code"><code><span class="kw">fn</span> name(params) <span class="op">-&gt;</span> <span class="kw">type</span> { body }
+<span class="kw">fn</span> name(params) { body }</code></pre><h2>Examples</h2><h3>call_chain.fg</h3><pre class="forge-code"><code><span class="comment">/// # Chain of Function Calls</span>
+<span class="comment">///</span>
+<span class="comment">/// Each function calls the next in a chain.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> a(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { <span class="kw">return</span> b(x + <span class="num">1</span>) }
+<span class="kw">fn</span> b(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { <span class="kw">return</span> c(x + <span class="num">2</span>) }
+<span class="kw">fn</span> c(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { <span class="kw">return</span> d(x + <span class="num">3</span>) }
+<span class="kw">fn</span> d(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> { <span class="kw">return</span> x + <span class="num">4</span> }
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(a(<span class="num">5</span>)))
+}</code></pre><h3>deep_recursion.fg</h3><pre class="forge-code"><code><span class="comment">/// # Deep Recursion</span>
+<span class="comment">///</span>
+<span class="comment">/// A function that recurses 1000 levels deep.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> countdown(n: <span class="builtin">int</span>) {
+  <span class="kw">if</span> n &lt;= <span class="num">0</span> {
+    <span class="builtin">println</span>(<span class="str">&quot;done&quot;</span>)
+    <span class="kw">return</span>
+  }
+  countdown(n - <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  countdown(<span class="num">1000</span>)
+}</code></pre><h3>early_return_in_loop.fg</h3><pre class="forge-code"><code><span class="comment">/// # Early Return From Loop</span>
+<span class="comment">///</span>
+<span class="comment">/// A function that returns early from within a loop.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> search(target: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; <span class="num">10</span> {
+    <span class="kw">if</span> i == target {
+      <span class="kw">return</span> <span class="str">&quot;found&quot;</span>
+    }
+    i = i + <span class="num">1</span>
+  }
+  <span class="kw">return</span> <span class="str">&quot;not found&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(search(<span class="num">5</span>))
+}</code></pre><h3>empty_function.fg</h3><pre class="forge-code"><code><span class="comment">/// # Empty Function Body</span>
+<span class="comment">///</span>
+<span class="comment">/// A function with an empty body compiles and runs fine.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> noop() {
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;before&quot;</span>)
+  noop()
+  <span class="builtin">println</span>(<span class="str">&quot;after&quot;</span>)
+}</code></pre><h3>forward_reference.fg</h3><pre class="forge-code"><code><span class="comment">/// # Forward Function Reference</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions can be called before they are defined in the source.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  greet()
+}
+
+<span class="kw">fn</span> greet() {
+  <span class="builtin">println</span>(<span class="str">&quot;hello from greet&quot;</span>)
+}</code></pre><h3>many_parameters.fg</h3><pre class="forge-code"><code><span class="comment">/// # Function With Many Parameters</span>
+<span class="comment">///</span>
+<span class="comment">/// A function accepting 10 parameters.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> sum10(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>, c: <span class="builtin">int</span>, d: <span class="builtin">int</span>, e: <span class="builtin">int</span>, f: <span class="builtin">int</span>, g: <span class="builtin">int</span>, h: <span class="builtin">int</span>, i: <span class="builtin">int</span>, j: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> a + b + c + d + e + f + g + h + i + j
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(sum10(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>)))
+}</code></pre><h3>multiple_return_paths.fg</h3><pre class="forge-code"><code><span class="comment">/// # Multiple Return Paths</span>
+<span class="comment">///</span>
+<span class="comment">/// Function with multiple return statements in different branches.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> classify(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">string</span> {
+  <span class="kw">if</span> n &lt; <span class="num">0</span> {
+    <span class="kw">return</span> <span class="str">&quot;negative&quot;</span>
+  }
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="kw">return</span> <span class="str">&quot;zero&quot;</span>
+  }
+  <span class="kw">return</span> <span class="str">&quot;positive&quot;</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(classify(<span class="num">-5</span>))
+  <span class="builtin">println</span>(classify(<span class="num">0</span>))
+  <span class="builtin">println</span>(classify(<span class="num">7</span>))
+}</code></pre><h3>mutual_recursion.fg</h3><pre class="forge-code"><code><span class="comment">/// # Mutually Recursive Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// is_even and is_odd call each other recursively.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> is_even(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> bool {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="kw">return</span> <span class="kw">true</span>
+  }
+  <span class="kw">return</span> is_odd(n - <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> is_odd(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> bool {
+  <span class="kw">if</span> n == <span class="num">0</span> {
+    <span class="kw">return</span> <span class="kw">false</span>
+  }
+  <span class="kw">return</span> is_even(n - <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_even(<span class="num">4</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_even(<span class="num">3</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_odd(<span class="num">5</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(is_odd(<span class="num">6</span>)))
+}</code></pre><h3>nested_calls.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested Function Calls</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions called as arguments to other functions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> double(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> x * <span class="num">2</span>
+}
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add(double(<span class="num">5</span>), double(<span class="num">10</span>))))
+}</code></pre><h3>nested_fn_not_visible.fg</h3><pre class="forge-code"><code><span class="comment">/// # Nested Function Not Visible</span>
+<span class="comment">///</span>
+<span class="comment">/// Functions defined inside other functions are not accessible.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> outer() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">fn</span> inner() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+    <span class="kw">return</span> <span class="num">42</span>
+  }
+  <span class="kw">return</span> inner()
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(outer()))
+}</code></pre><h3>param_name_collision.fg</h3><pre class="forge-code"><code><span class="comment">/// # Parameter Name Collision Across Functions</span>
+<span class="comment">///</span>
+<span class="comment">/// Different functions can use the same parameter names without interference.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> foo(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> x
+}
+
+<span class="kw">fn</span> bar(x: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> x * <span class="num">2</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(foo(<span class="num">10</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(bar(<span class="num">10</span>)))
+}</code></pre><h3>recursive_factorial.fg</h3><pre class="forge-code"><code><span class="comment">/// # Recursive Factorial</span>
+<span class="comment">///</span>
+<span class="comment">/// Classic recursive factorial function.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> factorial(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">if</span> n &lt;= <span class="num">1</span> {
+    <span class="kw">return</span> <span class="num">1</span>
+  }
+  <span class="kw">return</span> n * factorial(n - <span class="num">1</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; <span class="num">6</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(factorial(i)))
+    i = i + <span class="num">1</span>
+  }
+}</code></pre><h3>recursive_fibonacci.fg</h3><pre class="forge-code"><code><span class="comment">/// # Recursive Fibonacci</span>
+<span class="comment">///</span>
+<span class="comment">/// Classic recursive fibonacci function.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> fib(n: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">if</span> n &lt;= <span class="num">0</span> {
+    <span class="kw">return</span> <span class="num">0</span>
+  }
+  <span class="kw">if</span> n == <span class="num">1</span> {
+    <span class="kw">return</span> <span class="num">1</span>
+  }
+  <span class="kw">return</span> fib(n - <span class="num">1</span>) + fib(n - <span class="num">2</span>)
+}
+
+<span class="kw">fn</span> main() {
+  <span class="kw">mut</span> i = <span class="num">0</span>
+  <span class="kw">while</span> i &lt; <span class="num">7</span> {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(fib(i)))
+    i = i + <span class="num">1</span>
+  }
+}</code></pre><h3>return_from_main.fg</h3><pre class="forge-code"><code><span class="comment">/// # Return From Main</span>
+<span class="comment">///</span>
+<span class="comment">/// Early return from main skips subsequent statements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="str">&quot;before&quot;</span>)
+  <span class="kw">return</span>
+  <span class="builtin">println</span>(<span class="str">&quot;after&quot;</span>)
+}</code></pre><h3>shadow_function_name.fg</h3><pre class="forge-code"><code><span class="comment">/// # Variable Shadows Function Name</span>
+<span class="comment">///</span>
+<span class="comment">/// A variable binding shadows a function of the same name.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> foo() <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> <span class="num">42</span>
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(foo()))
+  <span class="kw">let</span> foo = <span class="num">99</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(foo))
+}</code></pre><h3>void_multi_call.fg</h3><pre class="forge-code"><code><span class="comment">/// # Void Function Called Multiple Times</span>
+<span class="comment">///</span>
+<span class="comment">/// A void function called several times in sequence.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> tick() {
+  <span class="builtin">println</span>(<span class="str">&quot;tick&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  tick()
+  tick()
+  tick()
+}</code></pre><h3>wrong_arg_count_too_many.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wrong Argument Count (Too Many)</span>
+<span class="comment">///</span>
+<span class="comment">/// Calling a function with more arguments than it accepts.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> add(a: <span class="builtin">int</span>, b: <span class="builtin">int</span>) <span class="op">-&gt;</span> <span class="builtin">int</span> {
+  <span class="kw">return</span> a + b
+}
+
+<span class="kw">fn</span> main() {
+  <span class="builtin">println</span>(<span class="builtin">string</span>(add(<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>)))
+}</code></pre><h3>wrong_arg_count_zero.fg</h3><pre class="forge-code"><code><span class="comment">/// # Wrong Argument Count (Zero-Arg Function)</span>
+<span class="comment">///</span>
+<span class="comment">/// Calling a zero-argument function with arguments.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> greet() {
+  <span class="builtin">println</span>(<span class="str">&quot;hi&quot;</span>)
+}
+
+<span class="kw">fn</span> main() {
+  greet(<span class="num">42</span>)
+}</code></pre><h2>Tokens</h2><p><span class="tag">fn</span> <span class="tag">return</span> </p><h2>AST Nodes</h2><p><span class="tag">FnDecl</span> <span class="tag">Return</span> </p><h2>Symbols</h2><p><span class="tag">fn</span> </p></main>
+</div>
+</body>
+</html>

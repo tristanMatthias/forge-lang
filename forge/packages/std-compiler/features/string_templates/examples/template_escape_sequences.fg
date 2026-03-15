@@ -1,0 +1,17 @@
+/// Escape sequences in template literals: \n, \t, \\, \`, \$
+///
+/// expect: line1
+/// expect: line2
+/// expect: col1	col2
+/// expect: back\slash
+/// expect: tick: `
+/// expect: literal: ${x}
+
+fn main() {
+  println(`line1\nline2`)
+  println(`col1\tcol2`)
+  println(`back\\slash`)
+  println(`tick: \``)
+  let x = 42
+  println(`literal: \${x}`)
+}

@@ -1,0 +1,25 @@
+/// Test command — run module example tests.
+
+use shared.{forward}
+
+export command test "Run module example tests" {
+    arg target "Module name or path to test"
+    option format {
+        "Output format"
+        default "human"
+    }
+    option filter "Only run tests matching this string"
+    flag fail_fast "Stop on first failure"
+    flag no_color "Disable colored output"
+    flag verbose "Show passing test expressions"
+    flag quiet "Only show failures and summary"
+    option jobs {
+        short "j"
+        "Parallel test jobs"
+        default "0"
+    }
+
+    run {
+        forward("test")
+    }
+}

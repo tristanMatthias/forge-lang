@@ -1,0 +1,11 @@
+/// # JSON Stringify List of Strings
+///
+/// Serialize a list<string> to a JSON array string.
+///
+/// expect: ["hello","world"]
+
+fn main() {
+  let words: list<string> = json.parse("[\"hello\", \"world\"]")
+  let s = json.stringify(words)
+  println(s)
+}

@@ -9,7 +9,7 @@ extern fn forge_worker_stop(name: string)
 extern fn forge_sleep(ms: int)
 extern fn strlen(s: ptr) -> int
 
-component queue(__tpl_name, schema) {
+component queue(name, schema) {
     config {
         retries: int = 3
         buffer_size: int = 1000
@@ -18,39 +18,39 @@ component queue(__tpl_name, schema) {
     event message(msg: string)
     event error(err: string)
 
-    on startup {
-        forge_queue_create(__tpl_name_str)
+    fn init() {
+        forge_queue_create(self.name)
     }
 
-    fn __tpl_name.send(data: string) {
-        forge_queue_send(__tpl_name_str, data)
+    fn send(data: string) {
+        forge_queue_send(self.name, data)
     }
 
-    fn __tpl_name.receive() -> string {
-        let __ptr: ptr = forge_queue_receive(__tpl_name_str)
-        let __len: int = strlen(__ptr)
-        forge_string_new(__ptr, __len)
+    fn receive() -> string {
+        let _ptr: ptr = forge_queue_receive(self.name)
+        let _len: int = strlen(_ptr)
+        forge_string_new(_ptr, _len)
     }
 
-    fn __tpl_name.depth() -> int {
-        forge_queue_depth(__tpl_name_str)
+    fn depth() -> int {
+        forge_queue_depth(self.name)
     }
 
-    fn __tpl_name.drain() {
-        forge_queue_drain(__tpl_name_str)
+    fn drain() {
+        forge_queue_drain(self.name)
     }
 }
 
-component worker(__tpl_name, schema) {
-    on startup {
-        forge_worker_create(__tpl_name_str, __tpl_model_ref_str)
+component worker(name, schema) {
+    fn init() {
+        forge_worker_create(self.name, self.ref)
     }
 
-    fn __tpl_name.start() {
-        forge_worker_start(__tpl_name_str, __tpl_name_on_message)
+    fn start() {
+        forge_worker_start(self.name, self.on_message)
     }
 
-    fn __tpl_name.stop() {
-        forge_worker_stop(__tpl_name_str)
+    fn stop() {
+        forge_worker_stop(self.name)
     }
 }

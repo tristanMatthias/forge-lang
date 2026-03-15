@@ -1,0 +1,12 @@
+/// # Function Call With String Arg Inside Interpolation
+///
+/// A function call with a double-quoted string argument inside
+/// `${...}` in a double-quoted string must parse correctly.
+///
+/// expect: got: hello
+
+fn identity(s: string) -> string { s }
+
+fn main() {
+  println("got: ${identity("hello")}")
+}

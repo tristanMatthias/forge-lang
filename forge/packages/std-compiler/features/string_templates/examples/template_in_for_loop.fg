@@ -1,0 +1,12 @@
+/// Template interpolation inside for loops
+///
+/// expect: item: a
+/// expect: item: b
+/// expect: item: c
+
+fn main() {
+  let items = ["a", "b", "c"]
+  for item in items {
+    println(`item: ${item}`)
+  }
+}

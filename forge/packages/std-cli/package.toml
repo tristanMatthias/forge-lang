@@ -10,3 +10,19 @@ library = "forge_cli"
 [components.cli]
 kind = "block"
 context = "top_level"
+
+[components.command]
+kind = "block"
+context = "top_level"
+
+[components.flag]
+kind = "block"
+context = "top_level"
+
+[components.option]
+kind = "block"
+context = "top_level"
+
+[components.arg]
+kind = "block"
+context = "top_level"

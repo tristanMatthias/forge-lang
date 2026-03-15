@@ -1,0 +1,52 @@
+/// # JSON Parse List Operations
+///
+/// Parsed lists should work with map, filter, reduce, any, all, find, join.
+///
+/// expect: 2
+/// expect: 4
+/// expect: 6
+/// expect: 8
+/// expect: 10
+/// expect: 12
+/// expect: 2
+/// expect: 4
+/// expect: 6
+/// expect: 21
+/// expect: true
+/// expect: true
+/// expect: false
+/// expect: 4
+/// expect: hello, world, foo
+
+fn main() {
+  let nums: list<int> = json.parse("[1, 2, 3, 4, 5, 6]")
+
+  let doubled = nums.map((x) -> x * 2)
+  for d in doubled {
+    println(string(d))
+  }
+
+  let evens = nums.filter((x) -> x % 2 == 0)
+  for e in evens {
+    println(string(e))
+  }
+
+  let sum = nums.reduce(0, (acc, x) -> acc + x)
+  println(string(sum))
+
+  let has_big = nums.any((x) -> x > 3)
+  println(string(has_big))
+
+  let all_pos = nums.all((x) -> x > 0)
+  println(string(all_pos))
+
+  let all_big = nums.all((x) -> x > 3)
+  println(string(all_big))
+
+  let found = nums.find((x) -> x > 3)
+  println(string(found))
+
+  let words: list<string> = json.parse("[\"hello\", \"world\", \"foo\"]")
+  let joined = words.join(", ")
+  println(joined)
+}

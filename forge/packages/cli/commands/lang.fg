@@ -1,0 +1,24 @@
+/// Lang command — explore the Forge language.
+
+use shared.{forward}
+
+export command lang "Explore the Forge language" {
+    arg query "Feature, type, symbol, or error code"
+    flag all "Show everything"
+    flag symbols "Show symbol/token reference"
+    flag llm "Compact LLM-friendly language spec"
+    flag short "Show just the one-liner"
+    flag grammar "Show BNF-style grammar"
+    flag cheatsheet "Show printable cheatsheet"
+    option search "Search language docs"
+    flag validate "Validate documentation coverage"
+    flag site "Generate a static documentation website"
+    option site_dir {
+        "Output directory for --site"
+        default "docs/lang-site"
+    }
+
+    run {
+        forward("lang")
+    }
+}

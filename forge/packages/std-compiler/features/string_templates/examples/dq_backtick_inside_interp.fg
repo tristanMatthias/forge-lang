@@ -1,0 +1,11 @@
+/// # Backtick Template Inside Double-Quote Interpolation
+///
+/// A backtick template string with its own `${...}` nested
+/// inside a double-quoted interpolation.
+///
+/// expect: outer inner 42 end
+
+fn main() {
+  let x = 42
+  println("outer ${`inner ${x}`} end")
+}

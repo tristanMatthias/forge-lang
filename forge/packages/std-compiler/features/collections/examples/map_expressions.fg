@@ -1,0 +1,18 @@
+/// # Map Values In Expressions
+///
+/// Map values can be used in arithmetic and comparison expressions.
+///
+/// expect: 30
+/// expect: 200
+/// expect: false
+/// expect: true
+
+fn main() {
+  let m = {"x": 10, "y": 20}
+  let x = m.get("x") ?? 0
+  let y = m.get("y") ?? 0
+  println(x + y)
+  println(x * y)
+  println(x > y)
+  println(x == 10)
+}

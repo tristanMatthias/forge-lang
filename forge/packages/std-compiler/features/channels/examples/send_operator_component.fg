@@ -1,0 +1,11 @@
+/// expect-check: pass
+/// Verifies that <- operator works as .send() on component instances
+/// orders <- data desugars to orders.send(data)
+
+use @std.queue.{queue}
+
+queue orders
+
+fn main() {
+    orders <- "test message"
+}

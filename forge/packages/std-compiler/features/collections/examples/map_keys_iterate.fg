@@ -1,0 +1,22 @@
+/// # Map Keys Iteration
+///
+/// Iterate over map keys and access corresponding values.
+///
+/// expect: a
+/// expect: b
+/// expect: c
+/// expect: 60
+
+fn main() {
+  let m = {"a": 10, "b": 20, "c": 30}
+  let keys = m.keys()
+  for k in keys {
+    println(k)
+  }
+  mut total = 0
+  for k in keys {
+    let v = m.get(k) ?? 0
+    total = total + v
+  }
+  println(total)
+}

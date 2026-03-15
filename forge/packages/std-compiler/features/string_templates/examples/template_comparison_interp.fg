@@ -1,0 +1,17 @@
+/// Comparison and logical operators inside template interpolation
+///
+/// expect: 5 > 3: true
+/// expect: 5 < 3: false
+/// expect: 5 == 5: true
+/// expect: 5 != 3: true
+/// expect: both: false
+
+fn main() {
+  let a = 5
+  let b = 3
+  println(`${a} > ${b}: ${a > b}`)
+  println(`${a} < ${b}: ${a < b}`)
+  println(`${a} == ${a}: ${a == a}`)
+  println(`${a} != ${b}: ${a != b}`)
+  println(`both: ${a > 10 && b > 10}`)
+}

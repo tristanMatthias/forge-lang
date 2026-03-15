@@ -1,0 +1,17 @@
+/// # Nested Modules
+///
+/// Import from a nested module (utils declares mod helpers).
+/// Access nested exports via dotted path: utils.helpers.{triple}
+///
+/// expect: 15
+/// expect: 25
+
+mod utils
+
+use utils.helpers.{triple}
+use utils.{square}
+
+fn main() {
+    println(triple(5))
+    println(square(5))
+}

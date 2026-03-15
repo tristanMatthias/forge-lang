@@ -1,0 +1,16 @@
+/// # Map Key Overwrite
+///
+/// Overwriting a key replaces the value without duplicating the key.
+///
+/// expect: third
+/// expect: 1
+
+fn main() {
+  mut m: map<string, string> = {}
+  m["key"] = "first"
+  m["key"] = "second"
+  m["key"] = "third"
+  let v = m.get("key") ?? "none"
+  println(v)
+  println(m.keys().length)
+}

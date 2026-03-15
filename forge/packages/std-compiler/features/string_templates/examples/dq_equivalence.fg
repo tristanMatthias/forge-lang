@@ -1,0 +1,20 @@
+/// # Double-Quote And Backtick Equivalence
+///
+/// `"hello ${name}"` must produce the same result as `` `hello ${name}` ``.
+///
+/// expect: hello world
+/// expect: hello world
+/// expect: MATCH
+
+fn main() {
+  let name = "world"
+  let dq = "hello ${name}"
+  let bt = `hello ${name}`
+  println(dq)
+  println(bt)
+  if dq == bt {
+    println("MATCH")
+  } else {
+    println("MISMATCH")
+  }
+}

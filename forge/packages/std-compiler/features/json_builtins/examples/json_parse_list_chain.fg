@@ -1,0 +1,15 @@
+/// # JSON Parse List Chain Operations
+///
+/// Parse a list and chain filter + map operations.
+///
+/// expect: 20
+/// expect: 40
+/// expect: 60
+
+fn main() {
+  let nums: list<int> = json.parse("[1, 2, 3, 4, 5, 6]")
+  let result = nums.filter((x) -> x % 2 == 0).map((x) -> x * 10)
+  for r in result {
+    println(string(r))
+  }
+}

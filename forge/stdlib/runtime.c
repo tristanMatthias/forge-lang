@@ -201,6 +201,17 @@ int8_t forge_string_ends_with(ForgeString s, ForgeString suffix) {
     return memcmp(s.ptr + s.len - suffix.len, suffix.ptr, suffix.len) == 0 ? 1 : 0;
 }
 
+ForgeString forge_string_substring(ForgeString s, int64_t start, int64_t end) {
+    if (start < 0) start = 0;
+    if (end > s.len) end = s.len;
+    if (start >= end) return forge_string_new("", 0);
+    int64_t new_len = end - start;
+    char* buf = (char*)forge_alloc(new_len + 1);
+    memcpy(buf, s.ptr + start, new_len);
+    buf[new_len] = '\0';
+    return (ForgeString){ .ptr = buf, .len = new_len };
+}
+
 ForgeString forge_string_replace(ForgeString s, ForgeString find, ForgeString replace) {
     if (find.len == 0) return forge_string_new(s.ptr, s.len);
 
@@ -590,6 +601,137 @@ int8_t forge_json_get_bool(const char* json, int64_t index, const char* field) {
     if (*val == 't') return 1;  // "true"
     if (*val == '1') return 1;
     return 0;
+}
+
+// Count all elements (strings, numbers, bools, objects, arrays) in a JSON array
+int64_t forge_json_array_count_elements(const char* json) {
+    if (!json) return 0;
+    const char* p = json_skip_ws(json);
+    if (*p != '[') return 0;
+    p = json_skip_ws(p + 1);
+    if (*p == ']') return 0;
+
+    int64_t count = 0;
+    int depth = 0;
+    while (*p) {
+        p = json_skip_ws(p);
+        if (*p == ']' && depth == 0) break;
+        if (depth == 0) count++;
+        // Skip this element
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') { if (*p == '\\') p++; p++; }
+            p++; // closing quote
+        } else if (*p == '{' || *p == '[') {
+            char open = *p;
+            char close = (open == '{') ? '}' : ']';
+            depth = 1; p++;
+            while (*p && depth > 0) {
+                if (*p == open) depth++;
+                else if (*p == close) depth--;
+                else if (*p == '"') { p++; while (*p && *p != '"') { if (*p == '\\') p++; p++; } }
+                p++;
+            }
+        } else {
+            // number, bool, null
+            while (*p && *p != ',' && *p != ']') p++;
+        }
+        p = json_skip_ws(p);
+        if (*p == ',') p++;
+    }
+    return count;
+}
+
+// Find the i-th element in a JSON array, return pointer to value start
+static const char* json_find_element(const char* json, int64_t index) {
+    if (!json) return NULL;
+    const char* p = json_skip_ws(json);
+    if (*p != '[') return NULL;
+    p = json_skip_ws(p + 1);
+
+    int64_t count = 0;
+    while (*p) {
+        p = json_skip_ws(p);
+        if (*p == ']') return NULL;
+        if (count == index) return p;
+        // Skip this element
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') { if (*p == '\\') p++; p++; }
+            p++;
+        } else if (*p == '{' || *p == '[') {
+            char open = *p;
+            char close = (open == '{') ? '}' : ']';
+            int depth = 1; p++;
+            while (*p && depth > 0) {
+                if (*p == open) depth++;
+                else if (*p == close) depth--;
+                else if (*p == '"') { p++; while (*p && *p != '"') { if (*p == '\\') p++; p++; } }
+                p++;
+            }
+        } else {
+            while (*p && *p != ',' && *p != ']') p++;
+        }
+        count++;
+        p = json_skip_ws(p);
+        if (*p == ',') p++;
+    }
+    return NULL;
+}
+
+// Get the i-th string element from a JSON array
+ForgeString forge_json_array_get_string(const char* json, int64_t index) {
+    const char* val = json_find_element(json, index);
+    if (!val || *val != '"') return forge_string_new("", 0);
+
+    val++; // skip opening quote
+    const char* start = val;
+    const char* p = start;
+    int64_t len = 0;
+    while (*p && *p != '"') {
+        if (*p == '\\') { p++; }
+        len++;
+        p++;
+    }
+    char* buf = (char*)forge_alloc(len + 1);
+    int64_t j = 0;
+    p = start;
+    while (*p && *p != '"') {
+        if (*p == '\\') {
+            p++;
+            if (*p == 'n') buf[j++] = '\n';
+            else if (*p == 't') buf[j++] = '\t';
+            else buf[j++] = *p;
+        } else {
+            buf[j++] = *p;
+        }
+        p++;
+    }
+    buf[j] = '\0';
+    return (ForgeString){ .ptr = buf, .len = j };
+}
+
+// Get the i-th int element from a JSON array
+int64_t forge_json_array_get_int(const char* json, int64_t index) {
+    const char* val = json_find_element(json, index);
+    if (!val) return 0;
+    return strtoll(val, NULL, 10);
+}
+
+// Get the i-th bool element from a JSON array
+int8_t forge_json_array_get_bool(const char* json, int64_t index) {
+    const char* val = json_find_element(json, index);
+    if (!val) return 0;
+    if (*val == 't') return 1;
+    if (*val == '1') return 1;
+    return 0;
+}
+
+// Get the i-th float element from a JSON array
+double forge_json_array_get_float(const char* json, int64_t index) {
+    const char* val = json_find_element(json, index);
+    if (!val) return 0.0;
+    return strtod(val, NULL);
 }
 
 // Serialize a struct to JSON - helper for HTTP responses

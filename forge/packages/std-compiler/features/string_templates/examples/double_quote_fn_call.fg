@@ -1,0 +1,13 @@
+/// # Double-Quoted Function Call Interpolation
+///
+/// Function calls inside `${...}` in double-quoted strings work.
+///
+/// expect: greeting: hi there
+
+fn greet() -> string {
+  "hi there"
+}
+
+fn main() {
+  println("greeting: ${greet()}")
+}

@@ -1,0 +1,12 @@
+/// Struct field access inside template interpolation
+///
+/// expect: point: (10, 20)
+/// expect: sum: 30
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: 10, y: 20 }
+  println(`point: (${p.x}, ${p.y})`)
+  println(`sum: ${p.x + p.y}`)
+}

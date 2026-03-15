@@ -668,5 +668,14 @@ fn main() {
     let qlk = query_like("ali%")
     println(qlk)
 
+    // ---- Double-quoted string interpolation ----
+    let interp_name = "forge"
+    println("hello ${interp_name}")
+    println("sum: ${2 + 3}")
+    let a_val = "x"
+    let b_val = "y"
+    println("${a_val} and ${b_val}")
+    println("literal \${escaped}")
+
     println("--- ALL TESTS PASSED ---")
 }

@@ -1,0 +1,17 @@
+/// # Map Literal Indexing
+///
+/// Map literals created with `{key: value}` syntax support index access.
+///
+/// expect: 10
+/// expect: 20
+/// expect: 30
+
+fn main() {
+  let m = {"x": 10, "y": 20, "z": 30}
+  let x = m["x"] ?? 0
+  let y = m["y"] ?? 0
+  let z = m["z"] ?? 0
+  println(x)
+  println(y)
+  println(z)
+}

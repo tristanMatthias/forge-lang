@@ -1,0 +1,17 @@
+/// # Nested Maps
+///
+/// Maps can contain other maps as values.
+///
+/// expect: hello
+
+fn main() {
+  mut outer: map<string, map<string, string>> = {}
+  let inner = {"x": "hello", "y": "world"}
+  outer["first"] = inner
+  let got = outer.get("first")
+  if got != null {
+    let inner_map = got!
+    let x = inner_map.get("x") ?? "none"
+    println(x)
+  }
+}

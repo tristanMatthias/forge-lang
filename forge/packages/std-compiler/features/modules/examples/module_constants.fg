@@ -1,0 +1,7 @@
+/// Helper module for module_export_values test.
+
+export let PI = 3
+
+export fn double(n: int) -> int {
+    return n * 2
+}

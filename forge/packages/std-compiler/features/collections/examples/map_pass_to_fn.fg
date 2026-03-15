@@ -1,0 +1,22 @@
+/// # Pass Map To Function
+///
+/// Maps can be passed to and returned from functions.
+///
+/// expect: 42
+/// expect: 3
+
+fn get_val(m: map<string, int>, key: string) -> int? {
+  m.get(key)
+}
+
+fn make_map() -> map<string, int> {
+  {"a": 1, "b": 2, "c": 3}
+}
+
+fn main() {
+  let m = {"x": 42}
+  let v = get_val(m, "x") ?? 0
+  println(v)
+  let m2 = make_map()
+  println(m2.keys().length)
+}

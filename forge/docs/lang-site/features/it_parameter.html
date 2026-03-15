@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>It Parameter — Forge</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="layout">
+<nav><div class="logo"><a href="../index.html">Forge</a></div><input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)"><div class="section-title">Types</div><ul><li class="nav-item" data-name="int"><a href="../types/int.html">int</a></li><li class="nav-item" data-name="float"><a href="../types/float.html">float</a></li><li class="nav-item" data-name="string"><a href="../types/string.html">string</a></li><li class="nav-item" data-name="bool"><a href="../types/bool.html">bool</a></li><li class="nav-item" data-name="list"><a href="../types/list.html">list</a></li><li class="nav-item" data-name="map"><a href="../types/map.html">map</a></li><li class="nav-item" data-name="json"><a href="../types/json.html">json</a></li></ul><div class="section-title">Core Language</div><ul><li class="nav-item" data-name="variables"><a href="../features/variables.html">Variables</a></li><li class="nav-item" data-name="functions"><a href="../features/functions.html">Functions</a></li><li class="nav-item" data-name="closures"><a href="../features/closures.html">Closures</a></li><li class="nav-item" data-name="if_else"><a href="../features/if_else.html">If/Else</a></li><li class="nav-item" data-name="for_loops"><a href="../features/for_loops.html">For Loops</a></li><li class="nav-item" data-name="while_loops"><a href="../features/while_loops.html">While Loops</a></li><li class="nav-item" data-name="operators"><a href="../features/operators.html">Operators</a></li><li class="nav-item" data-name="pattern_matching"><a href="../features/pattern_matching.html">Pattern Matching</a></li><li class="nav-item" data-name="ranges"><a href="../features/ranges.html">Ranges</a></li><li class="nav-item" data-name="enums"><a href="../features/enums.html">Enums</a></li><li class="nav-item" data-name="structs"><a href="../features/structs.html">Structs</a></li><li class="nav-item" data-name="tuples"><a href="../features/tuples.html">Tuples</a></li><li class="nav-item" data-name="collections"><a href="../features/collections.html">Collections</a></li><li class="nav-item" data-name="strings"><a href="../features/strings.html">Strings</a></li><li class="nav-item" data-name="generics"><a href="../features/generics.html">Generics</a></li><li class="nav-item" data-name="traits"><a href="../features/traits.html">Traits</a></li><li class="nav-item" data-name="imports"><a href="../features/imports.html">Imports</a></li><li class="nav-item" data-name="immutability"><a href="../features/immutability.html">Immutability</a></li><li class="nav-item" data-name="type_operators"><a href="../features/type_operators.html">Type Operators</a></li></ul><div class="section-title">Forge Features</div><ul><li class="nav-item" data-name="pipe_operator"><a href="../features/pipe_operator.html">Pipe Operator</a></li><li class="nav-item" data-name="null_safety"><a href="../features/null_safety.html">Null Safety</a></li><li class="nav-item" data-name="error_propagation"><a href="../features/error_propagation.html">Error Propagation</a></li><li class="nav-item" data-name="defer"><a href="../features/defer.html">Defer</a></li><li class="nav-item" data-name="is_keyword"><a href="../features/is_keyword.html">Is Keyword</a></li><li class="nav-item" data-name="with_expression"><a href="../features/with_expression.html">With Expression</a></li><li class="nav-item" data-name="it_parameter"><a href="../features/it_parameter.html" class="active">It Parameter</a></li><li class="nav-item" data-name="table_literal"><a href="../features/table_literal.html">Table Literal</a></li><li class="nav-item" data-name="shorthand_fields"><a href="../features/shorthand_fields.html">Shorthand Fields</a></li><li class="nav-item" data-name="tagged_templates"><a href="../features/tagged_templates.html">Tagged Templates</a></li><li class="nav-item" data-name="durations"><a href="../features/durations.html">Duration Literals</a></li><li class="nav-item" data-name="datetime"><a href="../features/datetime.html">Datetime</a></li></ul><div class="section-title">Concurrency</div><ul><li class="nav-item" data-name="spawn"><a href="../features/spawn.html">Spawn</a></li><li class="nav-item" data-name="channels"><a href="../features/channels.html">Channels</a></li><li class="nav-item" data-name="select_syntax"><a href="../features/select_syntax.html">Select Syntax</a></li><li class="nav-item" data-name="shell_shorthand"><a href="../features/shell_shorthand.html">Shell Shorthand</a></li></ul><div class="section-title">Testing</div><ul><li class="nav-item" data-name="spec_test"><a href="../features/spec_test.html">Spec Test</a></li></ul><div class="section-title">Component System</div><ul><li class="nav-item" data-name="components"><a href="../features/components.html">Components</a></li><li class="nav-item" data-name="component_config"><a href="../features/component_config.html">Component Config</a></li><li class="nav-item" data-name="component_events"><a href="../features/component_events.html">Component Events</a></li><li class="nav-item" data-name="component_syntax"><a href="../features/component_syntax.html">Component Syntax</a></li><li class="nav-item" data-name="annotations"><a href="../features/annotations.html">Annotations</a></li></ul><div class="section-title">Internals</div><ul><li class="nav-item" data-name="string_templates"><a href="../features/string_templates.html">String Templates</a></li><li class="nav-item" data-name="json_builtins"><a href="../features/json_builtins.html">JSON Builtins</a></li><li class="nav-item" data-name="error_messages"><a href="../features/error_messages.html">Error Messages</a></li><li class="nav-item" data-name="extern_ffi"><a href="../features/extern_ffi.html">Extern FFI</a></li><li class="nav-item" data-name="c_abi_trampolines"><a href="../features/c_abi_trampolines.html">C ABI Trampolines</a></li><li class="nav-item" data-name="parallel"><a href="../features/parallel.html">Parallel</a></li><li class="nav-item" data-name="process_uptime"><a href="../features/process_uptime.html">Process Uptime</a></li><li class="nav-item" data-name="query_helpers"><a href="../features/query_helpers.html">Query Helpers</a></li><li class="nav-item" data-name="validation"><a href="../features/validation.html">Validation</a></li></ul><div class="section-title">Reference</div><ul><li class="nav-item" data-name="errors"><a href="../errors/index.html">Error Codes</a></li><li class="nav-item" data-name="spec"><a href="../spec.html">Full Spec</a></li><li class="nav-item" data-name="cheatsheet"><a href="../cheatsheet.html">Cheatsheet</a></li></ul><script>
+function filterNav(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(function(li) {
+        var name = li.getAttribute('data-name');
+        li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+</script></nav>
+<main><h1>It Parameter <span class="badge badge-stable">stable</span></h1><p>it — implicit single parameter in closures</p><p>Implicit `it` parameter in single-argument closures: list.map(it * 2)</p><div class="long-description"><p>The `it` keyword is an implicit parameter available inside single-argument closures. Instead of writing `list.map((x) -&gt; x * 2)`, you can write `list.map(it * 2)`. The `it` variable automatically refers to the single argument passed to the closure.</p><p>This syntactic sugar reduces noise in common patterns. Collection operations like `map`, `filter`, `each`, and `reduce` frequently take simple closures where naming the parameter adds no clarity. `numbers.filter(it &gt; 0)` is clearer than `numbers.filter((n) -&gt; n &gt; 0)` because the intent is immediately obvious.</p><p>The `it` parameter is only available in single-argument closure contexts. If a closure takes multiple arguments, you must name them explicitly. This restriction prevents ambiguity and ensures `it` always has a clear, unambiguous meaning.</p><p>Kotlin popularized this pattern, and it works the same way in Forge. Groovy also uses `it` as an implicit closure parameter. The feature is purely syntactic sugar; every use of `it` has an equivalent explicit closure form.</p></div><h2>Syntax</h2><pre class="forge-code"><code>.method(it * <span class="num">2</span>)</code></pre><h2>Examples</h2><h3>composition_with_pipes.fg</h3><pre class="forge-code"><code><span class="comment">/// # Concise Pipelines with 'it'</span>
+<span class="comment">///</span>
+<span class="comment">/// Using the implicit 'it' parameter for</span>
+<span class="comment">/// ultra-concise data transformation chains.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>]
+
+  <span class="kw">let</span> evens = nums.filter(it % <span class="num">2</span> == <span class="num">0</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(evens.sum()))
+
+  <span class="kw">let</span> squared = evens.map(it * it)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(squared.sum()))
+}</code></pre><h3>it_as_variable.fg</h3><pre class="forge-code"><code><span class="comment">/// # It As Variable Name</span>
+<span class="comment">///</span>
+<span class="comment">/// `it` can be used as a regular variable name with `let`.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> it = <span class="num">42</span>
+  <span class="builtin">println</span>(it)
+}</code></pre><h3>it_basic.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Parameter</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` as an implicit closure parameter.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> result = nums.filter(it &gt; <span class="num">2</span>).map(it * <span class="num">2</span>).sum()
+  <span class="builtin">println</span>(result)
+}</code></pre><h3>it_boolean_and.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With Boolean And</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` with `&amp;&amp;` for compound filter conditions.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+  <span class="kw">let</span> result = nums.filter(it &gt; <span class="num">3</span> &amp;&amp; it &lt; <span class="num">8</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>it_chained_ops.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Parameter in Chained Operations</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` in multiple chained list operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+    .filter(it &gt; <span class="num">3</span>)
+    .map(it * <span class="num">2</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>it_equals_zero.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Equals Zero</span>
+<span class="comment">///</span>
+<span class="comment">/// Filter with `it == 0` to find zero elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">0</span>, <span class="num">1</span>, <span class="num">0</span>, <span class="num">2</span>, <span class="num">0</span>]
+  <span class="kw">let</span> zeros = nums.filter(it == <span class="num">0</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(zeros.length))
+}</code></pre><h3>it_filter_map.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Parameter in Filter and Map</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` as implicit parameter in collection methods.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>]
+
+  <span class="kw">let</span> result = nums.filter(it &gt; <span class="num">5</span>).map(it * <span class="num">10</span>).sum()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result / <span class="num">10</span>))
+
+  <span class="kw">let</span> has_big = nums.any(it &gt; <span class="num">9</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(has_big))
+
+  <span class="kw">let</span> all_pos = nums.all(it &gt; <span class="num">0</span>)
+  <span class="builtin">println</span>(<span class="builtin">string</span>(all_pos))
+}</code></pre><h3>it_find.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Parameter in Find</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` in find expressions with null coalescing.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> found = nums.find(it &gt; <span class="num">100</span>) <span class="op">??</span> <span class="num">0</span>
+  <span class="builtin">println</span>(<span class="builtin">string</span>(found))
+}</code></pre><h3>it_in_any_all.fg</h3><pre class="forge-code"><code><span class="comment">/// # It In Any and All</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` with any() and all() list methods.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.any(it == <span class="num">3</span>)))
+  <span class="builtin">println</span>(<span class="builtin">string</span>(nums.all(it &gt; <span class="num">3</span>)))
+}</code></pre><h3>it_modulo.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With Modulo</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` with modulo operator for filtering.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>, <span class="num">6</span>, <span class="num">7</span>, <span class="num">8</span>, <span class="num">9</span>, <span class="num">10</span>].filter(it % <span class="num">3</span> == <span class="num">0</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>it_negative.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With Unary Negation</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `-it` to negate list elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map(-it)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h3>it_squared.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Squared</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it * it` to square elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>]
+  <span class="kw">let</span> result = nums.map(it * it).sum()
+  <span class="builtin">println</span>(<span class="builtin">string</span>(result))
+}</code></pre><h3>it_string_concat.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With String Concatenation</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it + &quot;!&quot;` to append to string elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>]
+  <span class="kw">let</span> result = words.map(it + <span class="str">&quot;!&quot;</span>)
+  <span class="kw">for</span> w <span class="kw">in</span> result {
+    <span class="builtin">println</span>(w)
+  }
+}</code></pre><h3>it_string_length.fg</h3><pre class="forge-code"><code><span class="comment">/// # It String Length</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it.length` to get lengths of strings.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hi&quot;</span>, <span class="str">&quot;hello&quot;</span>, <span class="str">&quot;hey&quot;</span>]
+  <span class="kw">let</span> lengths = words.map(it.length)
+  <span class="kw">for</span> l <span class="kw">in</span> lengths {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(l))
+  }
+}</code></pre><h3>it_string_method.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With String Method</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` to call methods on list elements.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> words = [<span class="str">&quot;hello&quot;</span>, <span class="str">&quot;world&quot;</span>, <span class="str">&quot;forge&quot;</span>]
+  <span class="kw">let</span> upper = words.map(it.upper())
+  <span class="kw">for</span> w <span class="kw">in</span> upper {
+    <span class="builtin">println</span>(w)
+  }
+}</code></pre><h3>it_template_string.fg</h3><pre class="forge-code"><code><span class="comment">/// # It Parameter in Template String</span>
+<span class="comment">///</span>
+<span class="comment">/// Using `it` inside a template string in map.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+  <span class="kw">let</span> result = nums.map(`${it}!`)
+  <span class="kw">for</span> r <span class="kw">in</span> result {
+    <span class="builtin">println</span>(r)
+  }
+}</code></pre><h3>it_with_arithmetic.fg</h3><pre class="forge-code"><code><span class="comment">/// # It With Complex Arithmetic</span>
+<span class="comment">///</span>
+<span class="comment">/// Use `it` with multiple arithmetic operations.</span>
+<span class="comment">///</span>
+
+<span class="kw">fn</span> main() {
+  <span class="kw">let</span> result = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>].map(it * <span class="num">3</span> + <span class="num">2</span>)
+  <span class="kw">for</span> n <span class="kw">in</span> result {
+    <span class="builtin">println</span>(<span class="builtin">string</span>(n))
+  }
+}</code></pre><h2>Tokens</h2><p><span class="tag">it</span> </p><h2>Dependencies</h2><ul><li><a href="closures.html">closures</a></li></ul></main>
+</div>
+</body>
+</html>

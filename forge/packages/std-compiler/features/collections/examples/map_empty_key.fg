@@ -1,0 +1,14 @@
+/// # Map Empty String Key
+///
+/// Empty strings work as map keys.
+///
+/// expect: empty_key_val
+/// expect: true
+
+fn main() {
+  mut m: map<string, string> = {}
+  m[""] = "empty_key_val"
+  let v = m.get("") ?? "none"
+  println(v)
+  println(m.has(""))
+}
