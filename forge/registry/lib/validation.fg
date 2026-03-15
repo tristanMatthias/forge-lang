@@ -1,0 +1,24 @@
+/// Validation Helpers
+///
+/// Package name and version validation rules.
+///
+/// Functions defined in main.fg:
+///
+///   is_valid_package_name(name: string) -> bool
+///     Rules:
+///     - Must not be empty
+///     - Must be <= 64 characters
+///     - Must start with a letter or underscore
+///     Returns false if any rule fails.
+///
+///   is_valid_version(version: string) -> bool
+///     Rules:
+///     - Must not be empty
+///     - Must contain at least one dot (basic semver check)
+///     Returns false if any rule fails.
+///
+/// Future validation could include:
+///   - Full semver parsing (MAJOR.MINOR.PATCH)
+///   - Package name character whitelist (alphanumeric, dash, underscore)
+///   - Reserved name checking (std, forge, core, etc.)
+///   - Version ordering / comparison

@@ -6,6 +6,16 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Package capabilities declaration from [capabilities] in package.toml
+#[derive(Debug, Clone, Default)]
+pub struct PackageCapabilities {
+    pub network: bool,
+    pub filesystem: bool,
+    pub compile_time_codegen: bool,
+    pub native: bool,
+    pub ffi: bool,
+}
+
 /// Information about a loaded package
 #[derive(Debug, Clone)]
 pub struct PackageInfo {
@@ -13,6 +23,8 @@ pub struct PackageInfo {
     pub name: String,
     /// Package namespace (e.g., "std")
     pub namespace: String,
+    /// Package version (e.g., "0.1.0")
+    pub version: String,
     /// Native library name (e.g., "forge_model")
     pub native_lib: String,
     /// Extern fn declarations from package.fg
@@ -27,26 +39,87 @@ pub struct PackageInfo {
     pub dylib_path: PathBuf,
     /// Component metadata from package.toml
     pub component_metas: Vec<ComponentMeta>,
+
+    // --- v2 manifest fields (all optional for backward compatibility) ---
+
+    /// Short description of the package
+    pub description: Option<String>,
+    /// License identifier (e.g., "MIT", "Apache-2.0")
+    pub license: Option<String>,
+    /// Author list
+    pub authors: Option<Vec<String>>,
+    /// Repository URL
+    pub repository: Option<String>,
+    /// Documentation URL
+    pub documentation: Option<String>,
+    /// Searchable keywords
+    pub keywords: Option<Vec<String>>,
+    /// Minimum Forge compiler version required (semver range)
+    pub forge_version: Option<String>,
+    /// Whether native compilation is explicitly enabled
+    pub native_enabled: Option<bool>,
+    /// Target triples the native library supports
+    pub native_targets: Option<Vec<String>>,
+    /// Declared capabilities
+    pub capabilities: PackageCapabilities,
+    /// Runtime dependencies (package name/ref -> version range)
+    pub dependencies: HashMap<String, String>,
+    /// Dev-only dependencies
+    pub dev_dependencies: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PackageToml {
     package: PackageMeta,
     native: Option<NativeMeta>,
+    capabilities: Option<CapabilitiesToml>,
+    dependencies: Option<HashMap<String, String>>,
+    #[serde(rename = "dev-dependencies")]
+    dev_dependencies: Option<HashMap<String, String>>,
     components: Option<HashMap<String, ComponentToml>>,
+    #[allow(dead_code)]
+    context: Option<ContextToml>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PackageMeta {
     name: String,
     namespace: String,
-    #[allow(dead_code)]
     version: String,
+    description: Option<String>,
+    license: Option<String>,
+    authors: Option<Vec<String>>,
+    repository: Option<String>,
+    documentation: Option<String>,
+    keywords: Option<Vec<String>>,
+    forge_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct NativeMeta {
     library: String,
+    enabled: Option<bool>,
+    targets: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CapabilitiesToml {
+    #[serde(default)]
+    network: bool,
+    #[serde(default)]
+    filesystem: bool,
+    #[serde(default)]
+    compile_time_codegen: bool,
+    #[serde(default)]
+    native: bool,
+    #[serde(default)]
+    ffi: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContextToml {
+    #[allow(dead_code)]
+    exports: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,9 +215,22 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
         release_dir.join(format!("lib{}.so", native_lib))
     };
 
+    // Build capabilities from [capabilities] section
+    let capabilities = match config.capabilities {
+        Some(cap) => PackageCapabilities {
+            network: cap.network,
+            filesystem: cap.filesystem,
+            compile_time_codegen: cap.compile_time_codegen,
+            native: cap.native,
+            ffi: cap.ffi,
+        },
+        None => PackageCapabilities::default(),
+    };
+
     Ok(PackageInfo {
         name: config.package.name,
         namespace: config.package.namespace,
+        version: config.package.version,
         native_lib,
         extern_fns: extern_fns.0,
         exported_fns: extern_fns.1,
@@ -152,6 +238,18 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
         lib_path,
         dylib_path,
         component_metas,
+        description: config.package.description,
+        license: config.package.license,
+        authors: config.package.authors,
+        repository: config.package.repository,
+        documentation: config.package.documentation,
+        keywords: config.package.keywords,
+        forge_version: config.package.forge_version,
+        native_enabled: config.native.as_ref().and_then(|n| n.enabled),
+        native_targets: config.native.as_ref().and_then(|n| n.targets.clone()),
+        capabilities,
+        dependencies: config.dependencies.unwrap_or_default(),
+        dev_dependencies: config.dev_dependencies.unwrap_or_default(),
     })
 }
 

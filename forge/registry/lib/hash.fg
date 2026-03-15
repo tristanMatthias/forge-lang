@@ -1,0 +1,27 @@
+/// Hash Helpers
+///
+/// Content hashing using @std.crypto for integrity verification
+/// and password storage.
+///
+/// Functions defined in main.fg:
+///
+///   hash_content(content: string) -> string
+///     Computes SHA-256 hash of arbitrary content.
+///     Used for transparency log content_hash entries.
+///     Wraps: forge_crypto_sha256(content)
+///
+///   hash_password(password: string) -> string
+///     Computes HMAC-SHA256 of password with a fixed salt.
+///     Used for user password storage (never store plaintext).
+///     Wraps: forge_crypto_hmac_sha256(password, "forge-registry-salt-v1")
+///
+///   generate_token() -> string
+///     Generates 32 random bytes as a hex string for API tokens.
+///     Wraps: forge_crypto_random_bytes(32)
+///
+/// Available @std.crypto extern fns:
+///   forge_crypto_sha256(data: string) -> string
+///   forge_crypto_sha256_file(path: string) -> string
+///   forge_crypto_sha256_dir(path: string) -> string
+///   forge_crypto_hmac_sha256(data: string, key: string) -> string
+///   forge_crypto_random_bytes(count: int) -> string

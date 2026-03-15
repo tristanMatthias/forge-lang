@@ -21,3 +21,4 @@ pub mod test_runner;
 pub mod typeck;
 
 pub mod features;
+pub mod semver;

@@ -1,0 +1,47 @@
+/// Storage Layer
+///
+/// File-based storage at ./data/ with the following layout:
+///
+///   data/
+///   ├── packages/
+///   │   └── {name}/
+///   │       ├── meta.json              — Package-level metadata
+///   │       └── versions/
+///   │           └── {version}/
+///   │               ├── manifest.json  — package.toml converted to JSON
+///   │               ├── context.fg     — API surface file
+///   │               └── source.tar.gz  — Source archive (future)
+///   ├── auth/
+///   │   ├── users.json                 — User accounts
+///   │   └── tokens.json                — API tokens (hashed)
+///   └── transparency-log.json          — Append-only publish log
+///
+/// All storage functions are defined in main.fg as top-level helpers:
+///
+///   Directory/path helpers:
+///     package_dir(name) -> string
+///     package_meta_path(name) -> string
+///     version_dir(name, version) -> string
+///     version_manifest_path(name, version) -> string
+///     version_context_path(name, version) -> string
+///
+///   Existence checks:
+///     package_exists(name) -> bool
+///     version_exists(name, version) -> bool
+///
+///   Read helpers:
+///     read_package_meta(name) -> string
+///     read_version_manifest(name, version) -> string
+///     read_version_context(name, version) -> string
+///     list_versions(name) -> string
+///
+///   Write helpers:
+///     append_to_log(entry: string)
+///     ensure_data_dirs()
+///
+///   Auth storage:
+///     read_users() -> string
+///     write_users(data: string)
+///     read_tokens() -> string
+///     write_tokens(data: string)
+///     find_user(username: string) -> string?

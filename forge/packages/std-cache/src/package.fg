@@ -1,0 +1,14 @@
+extern fn forge_cache_init() -> string
+extern fn forge_cache_store_artifact(name: string, version: string, path: string, artifact_type: string) -> string
+extern fn forge_cache_get_artifact(name: string, version: string, artifact_type: string) -> string
+extern fn forge_cache_store_source(name: string, version: string, archive_path: string) -> string
+extern fn forge_cache_get_source(name: string, version: string) -> string
+extern fn forge_cache_store_context(name: string, version: string, content: string) -> int
+extern fn forge_cache_get_context(name: string, version: string) -> string
+extern fn forge_cache_index_set(name: string, version: string, manifest_json: string) -> int
+extern fn forge_cache_index_get(name: string, version: string) -> string
+extern fn forge_cache_verify(name: string, version: string, expected_hash: string) -> int
+extern fn forge_cache_status() -> string
+extern fn forge_cache_gc(aggressive: int) -> string
+extern fn forge_cache_clear() -> int
+extern fn forge_cache_has(name: string, version: string) -> int

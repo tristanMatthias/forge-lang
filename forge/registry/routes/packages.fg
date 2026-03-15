@@ -1,0 +1,15 @@
+/// Package Routes
+///
+/// GET /v1/packages          — List all packages
+/// GET /v1/packages/{name}   — Get package metadata
+/// GET /v1/search?q=<query>  — Search packages
+///
+/// Handlers are defined in main.fg:
+///   handle_list_packages()   — Reads all data/packages/*/meta.json
+///   handle_get_package()     — Reads data/packages/{name}/meta.json
+///   handle_search_packages() — Filters packages by query match on name/description/keywords
+///
+/// Response format:
+///   List:   {"packages": [{name, description, keywords, latest_version, created_at}, ...]}
+///   Single: {name, description, keywords, latest_version, created_at}
+///   Search: {"packages": [...], "query": "..."}

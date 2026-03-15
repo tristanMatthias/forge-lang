@@ -1,0 +1,23 @@
+/// Publish Routes
+///
+/// POST /v1/packages                  — Publish new package (first version)
+/// POST /v1/packages/{name}/versions  — Publish new version
+///
+/// Handlers are defined in main.fg:
+///   handle_publish_package(body: PublishRequest)       — Creates package + first version
+///   handle_publish_version(body: PublishVersionRequest) — Adds version to existing package
+///
+/// PublishRequest body:
+///   {name, version, description, keywords, manifest, context, source_hash}
+///
+/// PublishVersionRequest body:
+///   {version, description, manifest, context, source_hash}
+///
+/// Both handlers:
+///   1. Validate name/version format
+///   2. Create directory structure under data/packages/
+///   3. Write manifest.json and context.fg
+///   4. Compute content hash via forge_crypto_sha256
+///   5. Append to data/transparency-log.json
+///
+/// Response: {"ok": true, "package": "...", "version": "...", "content_hash": "..."}

@@ -1,0 +1,590 @@
+/// Forge Package Registry API
+///
+/// A file-based package registry serving the Forge ecosystem.
+/// Storage: ./data/ directory with JSON metadata files.
+
+use @std.http.{server}
+use @std.fs
+use @std.crypto
+
+// ── Configuration ─────────────────────────────────────────────────
+
+let DATA_DIR = "data"
+let PACKAGES_DIR = "data/packages"
+let AUTH_DIR = "data/auth"
+let LOG_FILE = "data/transparency-log.json"
+
+// ── Initialization ────────────────────────────────────────────────
+
+fn ensure_data_dirs() {
+    if !forge_fs_exists(DATA_DIR) {
+        forge_fs_mkdir(DATA_DIR, true)
+    }
+    if !forge_fs_exists(PACKAGES_DIR) {
+        forge_fs_mkdir(PACKAGES_DIR, true)
+    }
+    if !forge_fs_exists(AUTH_DIR) {
+        forge_fs_mkdir(AUTH_DIR, true)
+    }
+    if !forge_fs_exists(LOG_FILE) {
+        forge_fs_write(LOG_FILE, "[]")
+    }
+    if !forge_fs_exists(forge_fs_join(AUTH_DIR, "users.json")) {
+        forge_fs_write(forge_fs_join(AUTH_DIR, "users.json"), "[]")
+    }
+    if !forge_fs_exists(forge_fs_join(AUTH_DIR, "tokens.json")) {
+        forge_fs_write(forge_fs_join(AUTH_DIR, "tokens.json"), "[]")
+    }
+}
+
+fn main() {
+    ensure_data_dirs()
+    println("Forge Registry initialized — data directory ready")
+}
+
+// ── Validation Helpers ────────────────────────────────────────────
+
+fn is_valid_package_name(name: string) -> bool {
+    if name.length() == 0 {
+        return false
+    }
+    if name.length() > 64 {
+        return false
+    }
+    // Must start with a letter
+    let first = name.substring(0, 1)
+    if first.lower() == first.upper() {
+        // Not a letter (digits and symbols have lower() == upper())
+        if first != "_" {
+            return false
+        }
+    }
+    true
+}
+
+fn is_valid_version(version: string) -> bool {
+    if version.length() == 0 {
+        return false
+    }
+    // Basic check: must contain at least one dot
+    version.contains(".")
+}
+
+// ── Storage Helpers ───────────────────────────────────────────────
+
+fn package_dir(name: string) -> string {
+    forge_fs_join(PACKAGES_DIR, name)
+}
+
+fn package_meta_path(name: string) -> string {
+    forge_fs_join(package_dir(name), "meta.json")
+}
+
+fn version_dir(name: string, version: string) -> string {
+    forge_fs_join(forge_fs_join(package_dir(name), "versions"), version)
+}
+
+fn version_manifest_path(name: string, version: string) -> string {
+    forge_fs_join(version_dir(name, version), "manifest.json")
+}
+
+fn version_context_path(name: string, version: string) -> string {
+    forge_fs_join(version_dir(name, version), "context.fg")
+}
+
+fn package_exists(name: string) -> bool {
+    forge_fs_exists(package_meta_path(name))
+}
+
+fn version_exists(name: string, version: string) -> bool {
+    forge_fs_exists(version_manifest_path(name, version))
+}
+
+fn read_package_meta(name: string) -> string {
+    forge_fs_read(package_meta_path(name))
+}
+
+fn read_version_manifest(name: string, version: string) -> string {
+    forge_fs_read(version_manifest_path(name, version))
+}
+
+fn read_version_context(name: string, version: string) -> string {
+    forge_fs_read(version_context_path(name, version))
+}
+
+fn list_versions(name: string) -> string {
+    let versions_path = forge_fs_join(package_dir(name), "versions")
+    if !forge_fs_exists(versions_path) {
+        return "[]"
+    }
+    forge_fs_list(versions_path)
+}
+
+fn append_to_log(entry: string) {
+    let log = forge_fs_read(LOG_FILE)
+    // Parse existing log, append entry, write back
+    // log is a JSON array string like "[...]"
+    if log == "[]" {
+        forge_fs_write(LOG_FILE, `[${entry}]`)
+    } else {
+        // Remove trailing ']', append comma + entry + ']'
+        let without_close = log.substring(0, log.length() - 1)
+        forge_fs_write(LOG_FILE, `${without_close},${entry}]`)
+    }
+}
+
+// ── Hash Helpers ──────────────────────────────────────────────────
+
+fn hash_content(content: string) -> string {
+    forge_crypto_sha256(content)
+}
+
+fn hash_password(password: string) -> string {
+    // Use HMAC with a fixed salt for password hashing
+    forge_crypto_hmac_sha256(password, "forge-registry-salt-v1")
+}
+
+fn generate_token() -> string {
+    forge_crypto_random_bytes(32)
+}
+
+// ── Auth Helpers ──────────────────────────────────────────────────
+
+fn read_users() -> string {
+    forge_fs_read(forge_fs_join(AUTH_DIR, "users.json"))
+}
+
+fn write_users(data: string) {
+    forge_fs_write(forge_fs_join(AUTH_DIR, "users.json"), data)
+}
+
+fn read_tokens() -> string {
+    forge_fs_read(forge_fs_join(AUTH_DIR, "tokens.json"))
+}
+
+fn write_tokens(data: string) {
+    forge_fs_write(forge_fs_join(AUTH_DIR, "tokens.json"), data)
+}
+
+fn find_user(username: string) -> string? {
+    let users = read_users()
+    // Simple linear search through the JSON array
+    // Users format: [{"username":"...","password_hash":"...","created_at":"..."},...]
+    // We parse and iterate
+    if users == "[]" {
+        return null
+    }
+    // Return the raw users JSON for the caller to search
+    // (Forge doesn't have list-of-struct iteration on raw JSON yet,
+    //  so we use string matching as a pragmatic approach)
+    if users.contains(`"username":"${username}"`) {
+        username
+    } else {
+        null
+    }
+}
+
+// ── Route Handlers: Packages ──────────────────────────────────────
+
+fn handle_list_packages() -> string {
+    // List all packages, optionally filtered by query
+    // req_params contains query params as JSON
+    if !forge_fs_exists(PACKAGES_DIR) {
+        return `{"packages":[]}`
+    }
+
+    let dirs_json = forge_fs_list(PACKAGES_DIR)
+    // dirs_json is a JSON array of directory names like ["graphql","http-client"]
+    // Read meta.json for each and build result array
+
+    if dirs_json == "[]" {
+        return `{"packages":[]}`
+    }
+
+    let dirs: List<string> = json.parse(dirs_json)
+    mut result = "["
+    mut first = true
+
+    for dir in dirs {
+        let meta_path = package_meta_path(dir)
+        if forge_fs_exists(meta_path) {
+            let meta = forge_fs_read(meta_path)
+            if first {
+                result = result + meta
+                first = false
+            } else {
+                result = result + "," + meta
+            }
+        }
+    }
+
+    result = result + "]"
+    `{"packages":${result}}`
+}
+
+fn handle_get_package() -> string {
+    // Path params available via req_params (JSON string)
+    let params: {name: string} = json.parse(req_params)
+    let name = params.name
+
+    if !package_exists(name) {
+        return `{"error":"package not found","name":"${name}"}`
+    }
+
+    read_package_meta(name)
+}
+
+// ── Route Handlers: Versions ──────────────────────────────────────
+
+fn handle_list_versions() -> string {
+    let params: {name: string} = json.parse(req_params)
+    let name = params.name
+
+    if !package_exists(name) {
+        return `{"error":"package not found","name":"${name}"}`
+    }
+
+    let versions_json = list_versions(name)
+    `{"package":"${name}","versions":${versions_json}}`
+}
+
+fn handle_get_version() -> string {
+    let params: {name: string, version: string} = json.parse(req_params)
+    let name = params.name
+    let version = params.version
+
+    if !package_exists(name) {
+        return `{"error":"package not found","name":"${name}"}`
+    }
+    if !version_exists(name, version) {
+        return `{"error":"version not found","package":"${name}","version":"${version}"}`
+    }
+
+    read_version_manifest(name, version)
+}
+
+// ── Route Handlers: Context ───────────────────────────────────────
+
+fn handle_get_context() -> string {
+    let params: {name: string, version: string} = json.parse(req_params)
+    let name = params.name
+    let version = params.version
+
+    if !package_exists(name) {
+        return `{"error":"package not found","name":"${name}"}`
+    }
+    if !version_exists(name, version) {
+        return `{"error":"version not found","package":"${name}","version":"${version}"}`
+    }
+
+    let ctx_path = version_context_path(name, version)
+    if !forge_fs_exists(ctx_path) {
+        return `{"error":"context not found","package":"${name}","version":"${version}"}`
+    }
+
+    let content = forge_fs_read(ctx_path)
+    `{"package":"${name}","version":"${version}","context":${json.stringify(content)}}`
+}
+
+// ── Route Handlers: Publish ───────────────────────────────────────
+
+type PublishRequest = {
+    name: string,
+    version: string,
+    description: string,
+    keywords: string,
+    manifest: string,
+    context: string,
+    source_hash: string
+}
+
+fn handle_publish_package(body: PublishRequest) -> string {
+    let name = body.name
+    let version = body.version
+
+    // Validate package name
+    if !is_valid_package_name(name) {
+        return `{"error":"invalid package name","name":"${name}"}`
+    }
+
+    // Validate version
+    if !is_valid_version(version) {
+        return `{"error":"invalid version","version":"${version}"}`
+    }
+
+    // Check if package already exists
+    if package_exists(name) {
+        return `{"error":"package already exists","name":"${name}"}`
+    }
+
+    // Create package directory structure
+    let pkg_dir = package_dir(name)
+    forge_fs_mkdir(pkg_dir, true)
+    let ver_dir = version_dir(name, version)
+    forge_fs_mkdir(ver_dir, true)
+
+    // Write package metadata
+    let meta = `{"name":"${name}","description":"${body.description}","keywords":"${body.keywords}","latest_version":"${version}","created_at":"now"}`
+    forge_fs_write(package_meta_path(name), meta)
+
+    // Write version manifest
+    forge_fs_write(version_manifest_path(name, version), body.manifest)
+
+    // Write context file
+    forge_fs_write(version_context_path(name, version), body.context)
+
+    // Compute content hash for transparency log
+    let content_hash = hash_content(body.manifest + body.context)
+
+    // Append to transparency log
+    let log_entry = `{"action":"publish","package":"${name}","version":"${version}","source_hash":"${body.source_hash}","content_hash":"${content_hash}","timestamp":"now"}`
+    append_to_log(log_entry)
+
+    `{"ok":true,"package":"${name}","version":"${version}","content_hash":"${content_hash}"}`
+}
+
+type PublishVersionRequest = {
+    version: string,
+    description: string,
+    manifest: string,
+    context: string,
+    source_hash: string
+}
+
+fn handle_publish_version(body: PublishVersionRequest) -> string {
+    let params: {name: string} = json.parse(req_params)
+    let name = params.name
+
+    let version = body.version
+
+    // Validate
+    if !is_valid_version(version) {
+        return `{"error":"invalid version","version":"${version}"}`
+    }
+
+    if !package_exists(name) {
+        return `{"error":"package not found","name":"${name}"}`
+    }
+
+    if version_exists(name, version) {
+        return `{"error":"version already exists","package":"${name}","version":"${version}"}`
+    }
+
+    // Create version directory
+    let ver_dir = version_dir(name, version)
+    forge_fs_mkdir(ver_dir, true)
+
+    // Write version files
+    forge_fs_write(version_manifest_path(name, version), body.manifest)
+    forge_fs_write(version_context_path(name, version), body.context)
+
+    // Update package metadata with latest version
+    let old_meta = read_package_meta(name)
+    let meta_obj: {name: string, description: string, keywords: string, latest_version: string, created_at: string} = json.parse(old_meta)
+    let new_desc = if body.description.length() > 0 { body.description } else { meta_obj.description }
+    let updated_meta = `{"name":"${name}","description":"${new_desc}","keywords":"${meta_obj.keywords}","latest_version":"${version}","created_at":"${meta_obj.created_at}"}`
+    forge_fs_write(package_meta_path(name), updated_meta)
+
+    // Compute hash and log
+    let content_hash = hash_content(body.manifest + body.context)
+    let log_entry = `{"action":"publish_version","package":"${name}","version":"${version}","source_hash":"${body.source_hash}","content_hash":"${content_hash}","timestamp":"now"}`
+    append_to_log(log_entry)
+
+    `{"ok":true,"package":"${name}","version":"${version}","content_hash":"${content_hash}"}`
+}
+
+// ── Route Handlers: Auth ──────────────────────────────────────────
+
+type RegisterRequest = {
+    username: string,
+    password: string,
+    email: string
+}
+
+fn handle_register(body: RegisterRequest) -> string {
+    let username = body.username
+    let password = body.password
+    let email = body.email
+
+    // Validate
+    if username.length() < 3 {
+        return `{"error":"username must be at least 3 characters"}`
+    }
+    if password.length() < 8 {
+        return `{"error":"password must be at least 8 characters"}`
+    }
+
+    // Check if user exists
+    let existing = find_user(username)
+    if existing != null {
+        return `{"error":"username already taken","username":"${username}"}`
+    }
+
+    // Hash password
+    let pw_hash = hash_password(password)
+
+    // Add user to users.json
+    let users = read_users()
+    let new_user = `{"username":"${username}","email":"${email}","password_hash":"${pw_hash}","created_at":"now"}`
+
+    if users == "[]" {
+        write_users(`[${new_user}]`)
+    } else {
+        let without_close = users.substring(0, users.length() - 1)
+        write_users(`${without_close},${new_user}]`)
+    }
+
+    `{"ok":true,"username":"${username}"}`
+}
+
+type TokenRequest = {
+    username: string,
+    password: string
+}
+
+fn handle_create_token(body: TokenRequest) -> string {
+    let username = body.username
+    let password = body.password
+
+    // Check user exists
+    let existing = find_user(username)
+    if existing == null {
+        return `{"error":"invalid credentials"}`
+    }
+
+    // Verify password by checking if hash matches
+    let pw_hash = hash_password(password)
+    let users = read_users()
+
+    // Check that the stored hash matches
+    if !users.contains(`"password_hash":"${pw_hash}"`) {
+        return `{"error":"invalid credentials"}`
+    }
+
+    // Generate token
+    let token = generate_token()
+    let token_hash = hash_content(token)
+
+    // Store token
+    let tokens = read_tokens()
+    let new_token = `{"username":"${username}","token_hash":"${token_hash}","created_at":"now"}`
+
+    if tokens == "[]" {
+        write_tokens(`[${new_token}]`)
+    } else {
+        let without_close = tokens.substring(0, tokens.length() - 1)
+        write_tokens(`${without_close},${new_token}]`)
+    }
+
+    `{"ok":true,"token":"${token}","username":"${username}"}`
+}
+
+// ── Route Handlers: Search ────────────────────────────────────────
+
+fn handle_search_packages() -> string {
+    // Search by query string in req_params
+    // The query param 'q' is extracted from the URL query string
+    let q_params: {q: string} = json.parse(req_params)
+    let query = q_params.q
+
+    if !forge_fs_exists(PACKAGES_DIR) {
+        return `{"packages":[],"query":"${query}"}`
+    }
+
+    let dirs_json = forge_fs_list(PACKAGES_DIR)
+    if dirs_json == "[]" {
+        return `{"packages":[],"query":"${query}"}`
+    }
+
+    let dirs: List<string> = json.parse(dirs_json)
+    mut result = "["
+    mut first = true
+
+    for dir in dirs {
+        let meta_path = package_meta_path(dir)
+        if forge_fs_exists(meta_path) {
+            let meta = forge_fs_read(meta_path)
+            // Match query against package name, description, and keywords
+            let lower_meta = meta.lower()
+            let lower_query = query.lower()
+            if lower_meta.contains(lower_query) {
+                if first {
+                    result = result + meta
+                    first = false
+                } else {
+                    result = result + "," + meta
+                }
+            }
+        }
+    }
+
+    result = result + "]"
+    `{"packages":${result},"query":"${query}"}`
+}
+
+// ── Route Handlers: Transparency Log ──────────────────────────────
+
+fn handle_get_log() -> string {
+    let log = forge_fs_read(LOG_FILE)
+    `{"log":${log}}`
+}
+
+// ── Server ────────────────────────────────────────────────────────
+
+server :8080 {
+    // Rate limiting for publish endpoints
+    rate_limit "/v1" 100 per 60
+
+    // Error responses
+    not_found "{\"error\":\"not found\"}"
+    error_page 500 "{\"error\":\"internal server error\"}"
+
+    // ── Package routes ────────────────────────────────────────────
+
+    // Search packages (with query param)
+    route GET /v1/search -> handle_search_packages
+
+    // List all packages
+    route GET /v1/packages -> handle_list_packages
+
+    // Get single package metadata
+    route GET /v1/packages/{name} -> handle_get_package
+
+    // List versions for a package
+    route GET /v1/packages/{name}/versions -> handle_list_versions
+
+    // Get specific version metadata
+    route GET /v1/packages/{name}/{version} -> handle_get_version
+
+    // Get context file for a version
+    route GET /v1/packages/{name}/{version}/context -> handle_get_context
+
+    // ── Publish routes ────────────────────────────────────────────
+
+    // Publish new package (first version)
+    route POST /v1/packages -> (body: PublishRequest) {
+        handle_publish_package(body)
+    }
+
+    // Publish new version of existing package
+    route POST /v1/packages/{name}/versions -> (body: PublishVersionRequest) {
+        handle_publish_version(body)
+    }
+
+    // ── Auth routes ───────────────────────────────────────────────
+
+    // Register new user
+    route POST /v1/auth/register -> (body: RegisterRequest) {
+        handle_register(body)
+    }
+
+    // Create auth token (login)
+    route POST /v1/auth/token -> (body: TokenRequest) {
+        handle_create_token(body)
+    }
+
+    // ── Admin routes ──────────────────────────────────────────────
+
+    // View transparency log
+    route GET /v1/log -> handle_get_log
+}

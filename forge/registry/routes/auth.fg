@@ -1,0 +1,23 @@
+/// Auth Routes
+///
+/// POST /v1/auth/register — Register a new user account
+/// POST /v1/auth/token    — Authenticate and receive an API token
+///
+/// Handlers are defined in main.fg:
+///   handle_register(body: RegisterRequest)    — Creates user in data/auth/users.json
+///   handle_create_token(body: TokenRequest)   — Verifies credentials, issues token
+///
+/// RegisterRequest body:
+///   {username, password, email}
+///   - username must be >= 3 characters
+///   - password must be >= 8 characters
+///   - Password hashed via forge_crypto_hmac_sha256
+///
+/// TokenRequest body:
+///   {username, password}
+///   - Verifies password hash matches stored hash
+///   - Generates random token via forge_crypto_random_bytes
+///   - Stores token hash (not raw token) in data/auth/tokens.json
+///
+/// Response (register): {"ok": true, "username": "..."}
+/// Response (token):    {"ok": true, "token": "...", "username": "..."}

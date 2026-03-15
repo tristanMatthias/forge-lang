@@ -222,6 +222,20 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Check API compatibility between two context files
+    SemverCheck {
+        /// Old version context file
+        old: PathBuf,
+        /// New version context file
+        new: PathBuf,
+        /// Old version string (for bump validation, e.g., "1.0.0")
+        #[arg(long)]
+        old_version: Option<String>,
+        /// Proposed new version (validates against minimum bump)
+        #[arg(long)]
+        version: Option<String>,
+    },
+
     /// Run feature example tests
     Test {
         /// Feature name or path to test (e.g., "pipe_operator" or "features/pipe_operator/examples/")
@@ -666,6 +680,58 @@ fn cmd_test(
     }
 }
 
+fn cmd_semver_check(old: PathBuf, new: PathBuf, old_version: Option<String>, version: Option<String>) {
+    let old_content = match std::fs::read_to_string(&old) {
+        Ok(s) => s,
+        Err(e) => fail(CompileError::FileNotFound {
+            path: old.display().to_string(),
+            detail: e.to_string(),
+        }),
+    };
+    let new_content = match std::fs::read_to_string(&new) {
+        Ok(s) => s,
+        Err(e) => fail(CompileError::FileNotFound {
+            path: new.display().to_string(),
+            detail: e.to_string(),
+        }),
+    };
+
+    let old_items = forge::semver::parse_context(&old_content);
+    let new_items = forge::semver::parse_context(&new_content);
+    let changes = forge::semver::diff_api(&old_items, &new_items);
+    let bump = forge::semver::compute_minimum_bump(&changes);
+    let report = forge::semver::format_diff_report(&changes, &bump);
+
+    print!("{}", report);
+
+    // If --version is provided, validate the proposed bump
+    if let Some(proposed) = version {
+        let old_ver = old_version.unwrap_or_else(|| {
+            fail(CompileError::CliError {
+                message: "--version requires --old-version to validate the bump".to_string(),
+                help: Some("usage: forgec semver-check old.fg new.fg --old-version 1.0.0 --version 1.1.0".to_string()),
+            });
+        });
+
+        match forge::semver::validate_version_bump(&old_ver, &proposed, bump) {
+            Ok(()) => {
+                eprintln!("version {} -> {} satisfies minimum {} bump", old_ver, proposed, bump);
+            }
+            Err(reason) => {
+                fail(CompileError::VersionBelowMinimum {
+                    attempted: proposed,
+                    minimum: match bump {
+                        forge::semver::BumpLevel::Major => "major".to_string(),
+                        forge::semver::BumpLevel::Minor => "minor".to_string(),
+                        forge::semver::BumpLevel::Patch => "patch".to_string(),
+                    },
+                    reason,
+                });
+            }
+        }
+    }
+}
+
 fn cmd_context(file: Option<PathBuf>, output: Option<PathBuf>) {
     let (is_project, path) = resolve_target(file);
 
@@ -786,6 +852,8 @@ fn run() {
         Commands::Package { command } => match command {
             PackageCommands::New { name, component } => cmd_package_new(name, component),
         },
+
+        Commands::SemverCheck { old, new, old_version, version } => cmd_semver_check(old, new, old_version, version),
 
         Commands::Context { file, output } => cmd_context(file, output),
 

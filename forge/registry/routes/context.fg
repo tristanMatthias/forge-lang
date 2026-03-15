@@ -1,0 +1,12 @@
+/// Context Routes
+///
+/// GET /v1/packages/{name}/{version}/context — Get Forge context file
+///
+/// Handler defined in main.fg:
+///   handle_get_context() — Reads data/packages/{name}/versions/{version}/context.fg
+///
+/// The context file is the API surface of a package version — the .fg source
+/// that consumers use to understand what the package exports (extern fns,
+/// component templates, types, etc.)
+///
+/// Response: {"package": "...", "version": "...", "context": "<file contents>"}

@@ -1,0 +1,12 @@
+/// Version Routes
+///
+/// GET /v1/packages/{name}/versions          — List all versions
+/// GET /v1/packages/{name}/{version}         — Get version manifest
+///
+/// Handlers are defined in main.fg:
+///   handle_list_versions()  — Lists directories under data/packages/{name}/versions/
+///   handle_get_version()    — Reads data/packages/{name}/versions/{version}/manifest.json
+///
+/// Response format:
+///   List:   {"package": "...", "versions": ["1.0.0", "1.1.0", ...]}
+///   Single: <manifest.json contents — the package.toml converted to JSON>
