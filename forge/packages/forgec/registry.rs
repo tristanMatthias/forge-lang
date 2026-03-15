@@ -324,10 +324,10 @@ impl FeatureRegistry {
         }
 
         println!();
-        println!("  Source: packages/std-compiler/features/{}/mod.rs", f.id);
+        println!("  Source: packages/forgec/features/{}/mod.rs", f.id);
 
         // List example files
-        let examples_dir = std::path::PathBuf::from(format!("packages/std-compiler/features/{}/examples", f.id));
+        let examples_dir = std::path::PathBuf::from(format!("packages/forgec/features/{}/examples", f.id));
         if examples_dir.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&examples_dir) {
                 let mut files: Vec<_> = entries

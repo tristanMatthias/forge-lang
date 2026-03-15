@@ -8,7 +8,7 @@ use crate::parser::ast::{ComponentBlockDecl, ComponentTemplateDef, Expr, Program
 use crate::parser::{ComponentMeta, Parser};
 use crate::package::{self, PackageInfo};
 use crate::features::modules::types::{ExportedSymbol, ResolvedImport};
-use crate::features::modules::resolver::{collect_exports, resolve_mod_tree, resolve_use_statements};
+use crate::features::modules::resolver::{resolve_mod_tree, resolve_all_imports};
 use crate::features::modules::project::ForgeProject;
 
 use inkwell::context::Context;
@@ -136,77 +136,13 @@ impl Driver {
 
         // 5. Resolve module tree from `mod` declarations (Rust-style)
         let mut seen = std::collections::HashSet::new();
-        let local_modules = resolve_mod_tree(&program, source_path, "", &mut seen, &component_registry)?;
+        let mut local_modules = resolve_mod_tree(&program, source_path, "", &mut seen, &component_registry)?;
 
-        // Resolve which symbols are imported from local modules
-        let mut module_exports: HashMap<String, Vec<ExportedSymbol>> = HashMap::new();
-        for (module_path, _file_path, _source, mod_program) in &local_modules {
-            let exports = collect_exports(mod_program);
-            module_exports.insert(module_path.clone(), exports);
-        }
+        // 6. Resolve all module imports (exports, bubbling, sub-module deps, main program injection)
+        let import_result = resolve_all_imports(&mut program, &mut local_modules)?;
 
-        // Bubble sub-module exports up to parent modules.
-        // E.g., exports from "commands.build" become available via "commands".
-        // This allows `use commands.{build}` to find exports from commands/build.fg.
-        let paths: Vec<String> = module_exports.keys().cloned().collect();
-        for path in &paths {
-            if let Some(dot_pos) = path.rfind('.') {
-                let parent = &path[..dot_pos];
-                if let Some(child_exports) = module_exports.get(path).cloned() {
-                    module_exports.entry(parent.to_string())
-                        .or_default()
-                        .extend(child_exports);
-                }
-            }
-        }
-        let local_imports = resolve_use_statements(&program, &module_exports)
-            .map_err(|e| CompileError::CliError { message: e, help: None })?;
-
-        // Inject only explicitly imported functions into the main program.
-        // Module functions are NOT globally accessible — they must be imported via `use`.
-        for imp in &local_imports {
-            if let ExportedSymbol::Function { name, params, return_type, .. } = &imp.symbol {
-                // Find the function body in the module tree
-                for (_module_name, _file_path, _source, mod_program) in &local_modules {
-                    for stmt in &mod_program.statements {
-                        let found = match stmt {
-                            Statement::FnDecl { name: fn_name, body, span, type_params, .. } if fn_name == name => {
-                                Some((type_params.clone(), body.clone(), *span))
-                            }
-                            Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
-                                use crate::feature_data;
-                                use crate::features::functions::types::FnDeclData;
-                                if let Some(data) = feature_data!(fe, FnDeclData) {
-                                    if &data.name == name {
-                                        Some((data.type_params.clone(), data.body.clone(), fe.span))
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            }
-                            _ => None,
-                        };
-                        if let Some((type_params, body, span)) = found {
-                            program.statements.insert(0, Statement::FnDecl {
-                                name: imp.local_name.clone(),
-                                type_params,
-                                params: params.clone(),
-                                return_type: return_type.clone(),
-                                body,
-                                exported: false,
-                                span,
-                            });
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 6. Inject explicitly imported component blocks into parent component bodies
-        inject_imported_components(&mut program, &local_imports);
+        // 7. Inject explicitly imported component blocks into parent component bodies
+        inject_imported_components(&mut program, &import_result.main_imports);
 
         // 7. Inject extern fns and exported fns from packages
         inject_extern_fns(&mut program, &loaded_packages);
@@ -287,7 +223,7 @@ impl Driver {
             checker.env.namespaces.insert(type_name.clone());
         }
         // Register imported symbols so the type checker knows about them
-        for imp in &local_imports {
+        for imp in &import_result.main_imports {
             match &imp.symbol {
                 ExportedSymbol::Function { params, return_type, .. } => {
                     let param_types: Vec<crate::typeck::types::Type> = params.iter()
@@ -306,7 +242,7 @@ impl Driver {
                 ExportedSymbol::Value { type_ann, value, .. } => {
                     let ty = type_ann.as_ref()
                         .map(|t| checker.resolve_type_expr(t))
-                        .unwrap_or_else(|| checker.infer_type(value));
+                        .unwrap_or_else(|| checker.infer_type(&value));
                     checker.env.define(imp.local_name.clone(), ty, false);
                 }
                 ExportedSymbol::ComponentBlock { .. } => {
@@ -367,7 +303,7 @@ impl Driver {
         }
 
         // Inject import aliases for local imports (maps local_name → mangled_name)
-        codegen.inject_imports(&local_imports);
+        codegen.inject_imports(&import_result.main_imports);
 
         codegen.compile_program(&program);
         bp.add("codegen", t.elapsed());

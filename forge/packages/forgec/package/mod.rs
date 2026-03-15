@@ -168,6 +168,159 @@ pub fn find_package(packages_base: &Path, namespace: &str, name: &str) -> Option
     }
 }
 
+/// Scaffold a new package directory with boilerplate files.
+pub fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {
+    let lib_name = format!("forge_{}", name.replace('-', "_"));
+    let dir = PathBuf::from(name);
+
+    if dir.exists() {
+        return Err(format!("directory '{}' already exists", name));
+    }
+
+    std::fs::create_dir_all(dir.join("src"))
+        .map_err(|e| format!("failed to create directory: {}", e))?;
+    std::fs::create_dir_all(dir.join("native/src"))
+        .map_err(|e| format!("failed to create directory: {}", e))?;
+
+    // package.toml
+    let mut toml = format!(
+        "[package]\nname = \"{name}\"\nnamespace = \"community\"\nversion = \"0.1.0\"\n\
+         description = \"TODO: describe your package\"\n\n[native]\nlibrary = \"{lib_name}\"\n"
+    );
+
+    if with_component {
+        let comp_name = name.replace('-', "_");
+        toml.push_str(&format!(
+            "\n[components.{comp_name}]\nkind = \"block\"\ncontext = \"top_level\"\n"
+        ));
+    }
+
+    std::fs::write(dir.join("package.toml"), toml)
+        .map_err(|e| format!("failed to write package.toml: {}", e))?;
+
+    // src/package.fg
+    let package_fg = if with_component {
+        let comp_name = name.replace('-', "_");
+        format!(
+            "extern fn {lib_name}_init(name: string) -> int\n\
+             extern fn {lib_name}_exec(name: string, data: string) -> ptr\n\
+             extern fn strlen(s: ptr) -> int\n\n\
+             component {comp_name}($name, schema) {{\n\
+             \x20   on startup {{\n\
+             \x20       {lib_name}_init($name_str)\n\
+             \x20   }}\n\n\
+             \x20   fn $name.exec(data: string) -> string {{\n\
+             \x20       let _ptr: ptr = {lib_name}_exec($name_str, data)\n\
+             \x20       let _len: int = strlen(_ptr)\n\
+             \x20       forge_string_new(_ptr, _len)\n\
+             \x20   }}\n}}\n"
+        )
+    } else {
+        format!(
+            "extern fn {lib_name}_hello(name: string) -> ptr\n\
+             extern fn strlen(s: ptr) -> int\n"
+        )
+    };
+
+    std::fs::write(dir.join("src/package.fg"), package_fg)
+        .map_err(|e| format!("failed to write package.fg: {}", e))?;
+
+    // native/Cargo.toml
+    let cargo_toml = format!(
+        "[package]\nname = \"{lib_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+         [lib]\nname = \"{lib_name}\"\ncrate-type = [\"staticlib\"]\n"
+    );
+    std::fs::write(dir.join("native/Cargo.toml"), cargo_toml)
+        .map_err(|e| format!("failed to write Cargo.toml: {}", e))?;
+
+    // native/src/lib.rs
+    let lib_rs = if with_component {
+        format!(
+            "use std::collections::HashMap;\n\
+             use std::ffi::{{CStr, CString}};\n\
+             use std::os::raw::c_char;\n\
+             use std::sync::{{LazyLock, Mutex}};\n\n\
+             static INSTANCES: LazyLock<Mutex<HashMap<String, i64>>> =\n\
+             \x20   LazyLock::new(|| Mutex::new(HashMap::new()));\n\n\
+             #[no_mangle]\n\
+             pub extern \"C\" fn {lib_name}_init(name: *const c_char) -> i64 {{\n\
+             \x20   let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap().to_string();\n\
+             \x20   let mut instances = INSTANCES.lock().unwrap();\n\
+             \x20   let id = instances.len() as i64 + 1;\n\
+             \x20   instances.insert(name, id);\n\
+             \x20   id\n}}\n\n\
+             #[no_mangle]\n\
+             pub extern \"C\" fn {lib_name}_exec(name: *const c_char, data: *const c_char) -> *const c_char {{\n\
+             \x20   let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap();\n\
+             \x20   let data = unsafe {{ CStr::from_ptr(data) }}.to_str().unwrap();\n\
+             \x20   let result = format!(\"{{}}:{{}}\", name, data);\n\
+             \x20   CString::new(result).unwrap().into_raw()\n}}\n"
+        )
+    } else {
+        format!(
+            "use std::ffi::{{CStr, CString}};\n\
+             use std::os::raw::c_char;\n\n\
+             #[no_mangle]\n\
+             pub extern \"C\" fn {lib_name}_hello(name: *const c_char) -> *const c_char {{\n\
+             \x20   let name = unsafe {{ CStr::from_ptr(name) }}.to_str().unwrap();\n\
+             \x20   let greeting = format!(\"hello from {name}, {{}}!\", name);\n\
+             \x20   CString::new(greeting).unwrap().into_raw()\n}}\n"
+        )
+    };
+
+    std::fs::write(dir.join("native/src/lib.rs"), lib_rs)
+        .map_err(|e| format!("failed to write lib.rs: {}", e))?;
+
+    // example.fg
+    let example = if with_component {
+        let kw_name = name.replace('-', "_");
+        format!(
+            "use @community.{kw_name}.{{{kw_name}}}\n\n\
+             {kw_name} demo {{}}\n\n\
+             fn main() {{\n\
+             \x20   let result = demo.exec(\"test data\")\n\
+             \x20   println(result)\n}}\n"
+        )
+    } else {
+        format!(
+            "// TODO: Add use statement once package is installed\n\
+             // use @community.{}.{{}}\n\n\
+             fn main() {{\n\
+             \x20   println(\"{} works!\")\n}}\n",
+            name.replace('-', "_"),
+            name
+        )
+    };
+
+    std::fs::write(dir.join("example.fg"), example)
+        .map_err(|e| format!("failed to write example.fg: {}", e))?;
+
+    // README.md
+    let readme = format!(
+        "# {name}\n\nForge package.\n\n## Build\n\n```bash\ncd native && cargo build --release\n```\n"
+    );
+    std::fs::write(dir.join("README.md"), readme)
+        .map_err(|e| format!("failed to write README.md: {}", e))?;
+
+    println!("Created package '{}'", name);
+    println!();
+    println!("  {}/", name);
+    println!("  \u{251c}\u{2500}\u{2500} package.toml");
+    println!("  \u{251c}\u{2500}\u{2500} src/");
+    println!("  \u{2502}   \u{2514}\u{2500}\u{2500} package.fg");
+    println!("  \u{251c}\u{2500}\u{2500} native/");
+    println!("  \u{2502}   \u{251c}\u{2500}\u{2500} Cargo.toml");
+    println!("  \u{2502}   \u{2514}\u{2500}\u{2500} src/");
+    println!("  \u{2502}       \u{2514}\u{2500}\u{2500} lib.rs");
+    println!("  \u{251c}\u{2500}\u{2500} example.fg");
+    println!("  \u{2514}\u{2500}\u{2500} README.md");
+    println!();
+    println!("Next steps:");
+    println!("  cd {}/native && cargo build --release", name);
+
+    Ok(())
+}
+
 /// Parse a package.fg file and extract ExternFn statements, exported FnDecls, and ComponentTemplateDefs.
 /// Returns an error if the package.fg has syntax errors — never silently ignores them.
 fn parse_package_fg(source: &str) -> Result<(Vec<Statement>, Vec<Statement>, Vec<ComponentTemplateDef>), String> {

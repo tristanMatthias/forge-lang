@@ -16,8 +16,8 @@
 5. [Traits and Interfaces](#5-traits-and-interfaces)
 6. [Models and Persistence](#6-models-and-persistence)
 7. [Services](#7-services)
-8. [Package System](#8-provider-system)
-9. [Standard Packages](#9-standard-providers)
+8. [Package System](#8-package-system)
+9. [Standard Packages](#9-standard-packages)
 10. [Concurrency and Parallelism](#10-concurrency-and-parallelism)
 11. [Error Handling](#11-error-handling)
 12. [Module System](#12-module-system)
@@ -510,7 +510,7 @@ match s {
 }
 
 // Inline enums in models (no separate declaration needed)
-// (when using @std.model provider)
+// (when using @std.model package)
 // status: enum(pending, active, done, failed)
 ```
 
@@ -1088,7 +1088,7 @@ tokio = { version = "1", features = ["full"] }
 
 [interface]
 types = "types.forge"     # type definitions file
-schema = "provider.wit"   # interface definition
+schema = "package.wit"   # interface definition
 ```
 
 ### 7.5 Package Syntax Registration
@@ -1176,7 +1176,7 @@ pub extern "C" fn forge_http_server_start(server: *mut Server) {
 Packages expose their interface through a `.wit`-inspired definition file:
 
 ```wit
-// provider.wit for @std/http
+// package.wit for @std/http
 interface http-package {
   record server-config {
     port: u16,
@@ -2040,10 +2040,10 @@ forge run                     # Build and run
 forge test                    # Run tests
 forge repl                    # Interactive REPL
 
-forge add <package>          # Add a provider
-forge remove <package>       # Remove a provider
+forge add <package>          # Add a package
+forge remove <package>       # Remove a package
 forge packages list          # List installed packages
-forge packages search <q>    # Search provider registry
+forge packages search <q>    # Search package registry
 
 forge migrate create          # Generate migration from model changes
 forge migrate run             # Apply pending migrations
@@ -2051,7 +2051,7 @@ forge migrate rollback        # Rollback last migration
 forge migrate preview         # Preview SQL
 
 forge context                 # Output LLM-friendly project context
-forge context --packages     # Include all provider specs
+forge context --packages     # Include all package specs
 forge context --compact       # Minimal context for small windows
 
 forge fmt                     # Format source code
@@ -2200,7 +2200,7 @@ forge context
 # LANGUAGE SPEC (core keywords, syntax, types):
 # [compact spec ~5k tokens]
 #
-# PROVIDERS:
+# PACKAGES:
 # @std/http v0.1.0: server, route, middleware, mount
 #   [keyword syntax and examples ~1k tokens]
 # @std/sql v0.1.0: sql{}
@@ -2818,6 +2818,7 @@ let api_key = secret("API_KEY")                    // from environment
 
 let db_password = vault("production/db-password") {
   provider: "aws-ssm"                              // or "hashicorp-vault", "1password"
+
   cache: 5m
   rotate: 30d
 }
@@ -3027,7 +3028,7 @@ Deliverables:
 **Goal:** Community can build and share packages.
 
 Deliverables:
-- Package SDK for Go, Python, C provider authors
+- Package SDK for Go, Python, C package authors
 - Public package registry with search
 - `@std/ws`, `@std/cron`, `@std/ai`, `@std/auth` packages
 - Edge/WASI compilation target

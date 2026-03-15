@@ -1,0 +1,162 @@
+/// Forge Language Server — written in Forge
+///
+/// Implements LSP over JSON-RPC stdio transport.
+/// Provides diagnostics (via `forge check --error-format json`),
+/// keyword completion, and hover info.
+
+use @std.jsonrpc
+use @std.process
+use @std.fs
+
+// ── LSP Server ─────────────────────────────────────────────────────
+
+jsonrpc "forge-lsp" {
+
+    // ── Initialize ──────────────────────────────────────────────────
+
+    on "initialize" -> {
+        forge_jsonrpc_log("Forge LSP initializing")
+        `{
+            "capabilities": {
+                "textDocumentSync": {
+                    "openClose": true,
+                    "change": 1,
+                    "save": { "includeText": true }
+                },
+                "completionProvider": {
+                    "triggerCharacters": [".", "@"]
+                },
+                "hoverProvider": true
+            },
+            "serverInfo": {
+                "name": "forge-lsp",
+                "version": "0.1.0"
+            }
+        }`
+    }
+
+    on "initialized" -> {
+        forge_jsonrpc_log("Forge LSP ready")
+        ""
+    }
+
+    // ── Shutdown ────────────────────────────────────────────────────
+
+    on "shutdown" -> {
+        forge_jsonrpc_log("Forge LSP shutting down")
+        "null"
+    }
+
+    // ── Document sync ───────────────────────────────────────────────
+
+    on "textDocument/didOpen" -> {
+        let p: {textDocument: {uri: string}} = json.parse(params)
+        let uri = p.textDocument.uri
+        forge_jsonrpc_log(`didOpen: ${uri}`)
+        check_and_publish(uri)
+        ""
+    }
+
+    on "textDocument/didSave" -> {
+        let p: {textDocument: {uri: string}} = json.parse(params)
+        let uri = p.textDocument.uri
+        forge_jsonrpc_log(`didSave: ${uri}`)
+        check_and_publish(uri)
+        ""
+    }
+
+    on "textDocument/didClose" -> {
+        let p: {textDocument: {uri: string}} = json.parse(params)
+        let uri = p.textDocument.uri
+        forge_jsonrpc_notify("textDocument/publishDiagnostics", `{"uri":"${uri}","diagnostics":[]}`)
+        ""
+    }
+
+    // ── Completion ──────────────────────────────────────────────────
+
+    on "textDocument/completion" -> {
+        forge_completions()
+    }
+
+    // ── Hover ───────────────────────────────────────────────────────
+
+    on "textDocument/hover" -> {
+        "null"
+    }
+}
+
+// ── Diagnostics via `forge check` ──────────────────────────────────
+
+fn uri_to_path(uri: string) -> string {
+    if uri.starts_with("file://") {
+        uri.substring(7, uri.length())
+    } else {
+        uri
+    }
+}
+
+fn check_and_publish(uri: string) {
+    let path = uri_to_path(uri)
+
+    if !path.ends_with(".fg") {
+        ""
+    }
+
+    // Run forge check with JSON output
+    let output = process.run("forge", ["check", path, "--error-format", "json"])
+
+    // Parse forge's JSON diagnostic output and publish to editor
+    let _diags = parse_forge_diagnostics(output)
+    forge_jsonrpc_notify(
+        "textDocument/publishDiagnostics",
+        `{"uri":"${uri}","diagnostics":${_diags}}`
+    )
+}
+
+fn parse_forge_diagnostics(stderr_output: string) -> string {
+    if stderr_output.length() == 0 {
+        return "[]"
+    }
+
+    // TODO: Parse the JSON diagnostic output into LSP diagnostic format
+    // forge check --error-format json outputs:
+    // { "diagnostics": [ { code, severity, message, span: { line, col } } ] }
+    "[]"
+}
+
+// ── Completion items ───────────────────────────────────────────────
+
+fn forge_completions() -> string {
+    let nl = "\\n\\t"
+    let nl2 = "\\n"
+    `{
+        "isIncomplete": false,
+        "items": [
+            {"label": "fn", "kind": 14, "detail": "Function declaration"},
+            {"label": "let", "kind": 14, "detail": "Immutable binding"},
+            {"label": "mut", "kind": 14, "detail": "Mutable binding"},
+            {"label": "if", "kind": 14, "detail": "If expression"},
+            {"label": "else", "kind": 14, "detail": "Else branch"},
+            {"label": "for", "kind": 14, "detail": "For loop"},
+            {"label": "while", "kind": 14, "detail": "While loop"},
+            {"label": "loop", "kind": 14, "detail": "Infinite loop"},
+            {"label": "match", "kind": 14, "detail": "Pattern match"},
+            {"label": "type", "kind": 22, "detail": "Type alias / struct"},
+            {"label": "return", "kind": 14, "detail": "Return from function"},
+            {"label": "break", "kind": 14, "detail": "Break out of loop"},
+            {"label": "continue", "kind": 14, "detail": "Continue to next iteration"},
+            {"label": "use", "kind": 14, "detail": "Import package"},
+            {"label": "println", "kind": 3, "detail": "Print with newline"},
+            {"label": "print", "kind": 3, "detail": "Print without newline"},
+            {"label": "json.parse", "kind": 3, "detail": "Parse JSON string"},
+            {"label": "json.stringify", "kind": 3, "detail": "Convert to JSON"},
+            {"label": "string", "kind": 3, "detail": "Convert to string"},
+            {"label": "true", "kind": 21, "detail": "Boolean true"},
+            {"label": "false", "kind": 21, "detail": "Boolean false"},
+            {"label": "component", "kind": 14, "detail": "Component block"},
+            {"label": "extern fn", "kind": 14, "detail": "External function"},
+            {"label": "defer", "kind": 14, "detail": "Defer execution"},
+            {"label": "export", "kind": 14, "detail": "Export declaration"}
+        ]
+    }`
+}

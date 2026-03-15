@@ -1,0 +1,12 @@
+[package]
+name = "jsonrpc"
+namespace = "std"
+version = "0.1.0"
+description = "JSON-RPC 2.0 over stdio"
+
+[native]
+library = "forge_jsonrpc"
+
+[components.jsonrpc]
+kind = "block"
+context = "top_level"

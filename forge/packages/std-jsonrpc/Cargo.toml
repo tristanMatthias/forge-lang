@@ -1,0 +1,11 @@
+[package]
+name = "forge-jsonrpc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_jsonrpc"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+serde_json = "1"

@@ -10,3 +10,4 @@ extern fn forge_process_pipe(input: string, cmd: string, args_json: string) -> s
 extern fn forge_process_args() -> string
 extern fn forge_process_exit(code: int)
 extern fn forge_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn forge_process_self_dir() -> ptr

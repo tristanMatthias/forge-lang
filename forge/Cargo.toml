@@ -5,11 +5,11 @@ edition = "2021"
 description = "The Forge programming language compiler"
 
 [lib]
-path = "packages/std-compiler/lib.rs"
+path = "packages/forgec/lib.rs"
 
 [[bin]]
-name = "compiler"
-path = "packages/std-compiler/main.rs"
+name = "forgec"
+path = "packages/forgec/main.rs"
 
 [dependencies]
 inkwell = { version = "0.5", features = ["llvm18-0"] }

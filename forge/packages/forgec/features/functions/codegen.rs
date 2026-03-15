@@ -183,7 +183,16 @@ impl<'ctx> Codegen<'ctx> {
                 };
                 let compiled_args = self.compile_call_args_with_types(args, func, &param_types)?;
                 let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
-                return result.try_as_basic_value().left();
+                let val = result.try_as_basic_value().left();
+                // Auto-wrap ptr → ForgeString for extern fns declared with `-> string`
+                if let Some(v) = val {
+                    if v.is_pointer_value() {
+                        if let Some(Type::String) = self.fn_return_types.get(name.as_str()) {
+                            return self.wrap_ptr_as_string(v.into_pointer_value());
+                        }
+                    }
+                }
+                return val;
             }
 
             // Check if this is a generic function that needs monomorphization

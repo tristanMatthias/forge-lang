@@ -466,3 +466,19 @@ pub extern "C" fn forge_process_pipe(
         Err(e) => to_c(&result_json("", &format!("spawn error: {}", e), -1)),
     }
 }
+
+/// Return the directory containing the current executable.
+/// Used by the CLI to find sibling binaries (e.g., `forgec` next to `forge`).
+#[no_mangle]
+pub extern "C" fn forge_process_self_dir() -> *mut c_char {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if let Some(dir) = exe.parent() {
+                to_c(&dir.to_string_lossy())
+            } else {
+                to_c(".")
+            }
+        }
+        Err(_) => to_c("."),
+    }
+}

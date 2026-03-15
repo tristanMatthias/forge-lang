@@ -326,3 +326,167 @@ pub fn resolve_use_statements(
 
     Ok(imports)
 }
+
+/// Result of resolving all module imports for a program and its sub-modules.
+pub struct ModuleImportResult {
+    /// Imports resolved for the main program.
+    pub main_imports: Vec<ResolvedImport>,
+}
+
+/// Resolve all module imports: collect exports, bubble them up, resolve imports
+/// for the main program and all sub-modules, and inject imported function bodies
+/// into sub-module programs so exported components are self-contained.
+///
+/// This is the single entry point the driver calls for module import resolution.
+pub fn resolve_all_imports(
+    program: &mut Program,
+    local_modules: &mut [(String, PathBuf, String, Program)],
+) -> Result<ModuleImportResult, CompileError> {
+    // 1. Collect exports from each module
+    let mut module_exports: HashMap<String, Vec<ExportedSymbol>> = HashMap::new();
+    for (module_path, _file_path, _source, mod_program) in local_modules.iter() {
+        let exports = collect_exports(mod_program);
+        module_exports.insert(module_path.clone(), exports);
+    }
+
+    // 2. Bubble sub-module exports up to parent modules.
+    //    E.g., exports from "commands.build" become available via "commands".
+    let paths: Vec<String> = module_exports.keys().cloned().collect();
+    for path in &paths {
+        if let Some(dot_pos) = path.rfind('.') {
+            let parent = &path[..dot_pos];
+            if let Some(child_exports) = module_exports.get(path).cloned() {
+                module_exports.entry(parent.to_string())
+                    .or_default()
+                    .extend(child_exports);
+            }
+        }
+    }
+
+    // 3. Resolve imports for each sub-module and inject function bodies.
+    //    Track per-module imports so we can carry transitive deps when component
+    //    blocks from sub-modules are placed into the main program.
+    //
+    //    Snapshot module statements first for lookup during injection.
+    let module_stmts: Vec<Vec<Statement>> = local_modules.iter()
+        .map(|(_, _, _, prog)| prog.statements.clone())
+        .collect();
+
+    let mut sub_module_imports: HashMap<String, Vec<ResolvedImport>> = HashMap::new();
+    for (module_path, _file_path, _source, mod_program) in local_modules.iter_mut() {
+        let mod_imports = resolve_use_statements(mod_program, &module_exports).unwrap_or_default();
+        inject_imports_into_program(mod_program, &mod_imports, &module_stmts);
+        sub_module_imports.insert(module_path.clone(), mod_imports);
+    }
+
+    // 4. Resolve the main program's own imports
+    let main_imports = resolve_use_statements(program, &module_exports)
+        .map_err(|e| CompileError::CliError { message: e, help: None })?;
+
+    // 5. Inject imported functions into the main program
+    inject_imports_into_program(program, &main_imports, &module_stmts);
+
+    // 6. Inject transitive dependencies: when the main program imports a component
+    //    block from a sub-module, that component's body may reference functions the
+    //    sub-module imported. Also inject all exported functions from the source
+    //    modules of those imports (to cover intra-module calls like forward→core_bin).
+    let mut transitive_imports = Vec::new();
+    let mut seen_transitive: HashSet<String> = HashSet::new();
+    let mut injected_modules: HashSet<String> = HashSet::new();
+    for imp in &main_imports {
+        if let ExportedSymbol::ComponentBlock { .. } = &imp.symbol {
+            // Find which module this component came from
+            for (mod_path, mod_imports) in &sub_module_imports {
+                if imp.mangled_name.starts_with(&mod_path.replace('.', "_")) {
+                    // Inject all of this sub-module's imports (deduplicated)
+                    for mod_imp in mod_imports {
+                        if let ExportedSymbol::Function { .. } = &mod_imp.symbol {
+                            if seen_transitive.insert(mod_imp.local_name.clone()) {
+                                transitive_imports.push(mod_imp.clone());
+                            }
+                            // Also inject all exports from the source module of each import
+                            // to handle intra-module deps (e.g. forward calls core_bin)
+                            let source_mod = mod_imp.mangled_name
+                                .rsplit_once('_')
+                                .map(|(prefix, _)| prefix.replace('_', "."))
+                                .unwrap_or_default();
+                            if !source_mod.is_empty() {
+                                injected_modules.insert(source_mod);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // For each source module identified, inject ALL its exported functions
+    for mod_path in &injected_modules {
+        if let Some(exports) = module_exports.get(mod_path) {
+            for sym in exports {
+                if let ExportedSymbol::Function { name, .. } = sym {
+                    // Check if already in transitive_imports to avoid duplicates
+                    let already = transitive_imports.iter().any(|i| i.local_name == *name);
+                    if !already {
+                        transitive_imports.push(ResolvedImport {
+                            local_name: name.clone(),
+                            mangled_name: format!("{}_{}", mod_path.replace('.', "_"), name),
+                            symbol: sym.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if !transitive_imports.is_empty() {
+        inject_imports_into_program(program, &transitive_imports, &module_stmts);
+    }
+
+    Ok(ModuleImportResult { main_imports })
+}
+
+/// Inject imported function bodies from modules into a program's AST.
+fn inject_imports_into_program(
+    program: &mut Program,
+    imports: &[ResolvedImport],
+    module_stmts: &[Vec<Statement>],
+) {
+    for imp in imports {
+        if let ExportedSymbol::Function { name, params, return_type, .. } = &imp.symbol {
+            'outer: for stmts in module_stmts {
+                for stmt in stmts {
+                    let found = match stmt {
+                        Statement::FnDecl { name: fn_name, body, span, type_params, .. } if fn_name == name => {
+                            Some((type_params.clone(), body.clone(), *span))
+                        }
+                        Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                            use crate::feature_data;
+                            use crate::features::functions::types::FnDeclData;
+                            if let Some(data) = feature_data!(fe, FnDeclData) {
+                                if &data.name == name {
+                                    Some((data.type_params.clone(), data.body.clone(), fe.span))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some((type_params, body, span)) = found {
+                        program.statements.insert(0, Statement::FnDecl {
+                            name: imp.local_name.clone(),
+                            type_params,
+                            params: params.clone(),
+                            return_type: return_type.clone(),
+                            body,
+                            exported: false,
+                            span,
+                        });
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+}

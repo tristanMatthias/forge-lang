@@ -1,0 +1,57 @@
+extern fn forge_jsonrpc_init()
+extern fn forge_jsonrpc_on(method: string, handler: ptr)
+extern fn forge_jsonrpc_respond(id: string, result_json: string)
+extern fn forge_jsonrpc_error(id: string, code: int, message: string)
+extern fn forge_jsonrpc_notify(method: string, params_json: string)
+extern fn forge_jsonrpc_log(message: string)
+extern fn forge_jsonrpc_serve()
+extern fn forge_jsonrpc_set_id(id_ptr: ptr)
+extern fn strlen(s: ptr) -> int
+
+component jsonrpc(name) {
+    config {
+        description: string = "" @default
+    }
+
+    fn init() {
+        forge_jsonrpc_init()
+    }
+
+    @syntax("on {method} -> {handler}")
+    fn on_method(method: string, handler: ptr) {
+        fn $generated(params_ptr: ptr, id_ptr: ptr) {
+            let _params_len: int = strlen(params_ptr)
+            let params: string = forge_string_new(params_ptr, _params_len)
+            let _id_len: int = strlen(id_ptr)
+            let _id: string = forge_string_new(id_ptr, _id_len)
+            let $handler_param_0 = params
+            let _result: string = handler
+            if _id.length() > 0 {
+                if _result.length() > 0 {
+                    forge_jsonrpc_respond(_id, _result)
+                }
+            }
+        }
+        forge_jsonrpc_on(method, $generated)
+    }
+
+    fn respond(id: string, result_json: string) {
+        forge_jsonrpc_respond(id, result_json)
+    }
+
+    fn error(id: string, code: int, message: string) {
+        forge_jsonrpc_error(id, code, message)
+    }
+
+    fn notify(method: string, params_json: string) {
+        forge_jsonrpc_notify(method, params_json)
+    }
+
+    fn log(message: string) {
+        forge_jsonrpc_log(message)
+    }
+
+    fn drop() {
+        forge_jsonrpc_serve()
+    }
+}

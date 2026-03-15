@@ -152,7 +152,7 @@ pub fn find_modules_dir() -> Option<PathBuf> {
 
     // Check common subdirectory patterns
     for subdir in &["features", "modules", "src/features", "src/modules",
-                     "packages/std-compiler/features"] {
+                     "packages/forgec/features"] {
         let candidate = cwd.join(subdir);
         if candidate.is_dir() && has_modules(&candidate) {
             return Some(candidate);

@@ -4,8 +4,12 @@ use @std.process
 
 export fn core_bin() -> string {
     let env = forge_process_env_get("FORGE_CORE")
-    if env != "\0NULL" { return env }
-    return "compiler"
+    if env.length > 0 { return env }
+
+    let _dir_ptr: ptr = forge_process_self_dir()
+    let _dir_len: int = strlen(_dir_ptr)
+    let dir: string = forge_string_new(_dir_ptr, _dir_len)
+    return dir + "/forgec"
 }
 
 export fn forward(cmd: string) -> int {
