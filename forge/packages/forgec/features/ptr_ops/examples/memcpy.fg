@@ -1,0 +1,21 @@
+/// # Copy memory between pointers
+/// expect: Hello
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+extern fn memcpy(dest: ptr, src: ptr, n: int) -> ptr
+
+fn main() {
+  let src = malloc(5)
+  defer free(src)
+  src[0] = 72
+  src[1] = 101
+  src[2] = 108
+  src[3] = 108
+  src[4] = 111
+
+  let dest = malloc(5)
+  defer free(dest)
+  memcpy(dest, src, 5)
+
+  println(string.from_ptr(dest, 5))
+}

@@ -1,0 +1,23 @@
+/// # Pointer comparison
+/// expect: true
+/// expect: false
+/// expect: true
+/// expect: true
+/// expect: false
+/// expect: true
+extern fn malloc(size: int) -> ptr
+
+fn main() {
+  let a = malloc(16)
+  let b = malloc(16)
+  let c = a + 4
+
+  println(string(a == a))
+  println(string(a == b))
+  println(string(a != b))
+  println(string(c == a + 4))
+  println(string(a == null))
+
+  let n: ptr = null
+  println(string(n == null))
+}

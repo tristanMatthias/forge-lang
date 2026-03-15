@@ -47,6 +47,9 @@ impl<'ctx> Codegen<'ctx> {
         let ann_type = data.type_ann.as_ref().map(|t| self.type_checker.resolve_type_expr(t));
         let val = if matches!(&ann_type, Some(Type::Map(_, _))) && matches!(&data.value, Expr::Block(b) if b.statements.is_empty()) {
             self.compile_map_lit(&[])
+        } else if matches!(&ann_type, Some(Type::Ptr)) && matches!(&data.value, Expr::NullLit(_)) {
+            // let n: ptr = null → null pointer
+            Some(self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into())
         } else {
             self.compile_expr(&data.value)
         };

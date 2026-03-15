@@ -266,6 +266,10 @@ impl<'ctx> Codegen<'ctx> {
                 }];
                 self.compile_map_get(&obj_val, key_type, val_type, &args)
             }
+            Type::Ptr => {
+                let ptr_val = obj_val.into_pointer_value();
+                self.compile_ptr_index_read(ptr_val, index)
+            }
             _ => None,
         }
     }

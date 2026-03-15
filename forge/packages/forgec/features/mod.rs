@@ -61,3 +61,4 @@ pub mod operators;
 pub mod collections;
 pub mod validation;
 pub mod strings;
+pub mod ptr_ops;

@@ -1,0 +1,21 @@
+/// # String round-trip via ptr
+/// expect: hello
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  let msg = "hello"
+  let p = ptr.from_string(msg)
+  let buf = malloc(5)
+  defer free(buf)
+
+  // Copy bytes manually
+  buf[0] = p[0]
+  buf[1] = p[1]
+  buf[2] = p[2]
+  buf[3] = p[3]
+  buf[4] = p[4]
+
+  let result = string.from_ptr(buf, 5)
+  println(result)
+}

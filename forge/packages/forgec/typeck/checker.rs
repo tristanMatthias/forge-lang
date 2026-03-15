@@ -500,6 +500,11 @@ impl TypeChecker {
                 let left_type = self.check_expr(left);
                 let right_type = self.check_expr(right);
 
+                // Check for ptr operations first
+                if let Some(ptr_result) = self.check_ptr_binary(&left_type, op, &right_type) {
+                    return ptr_result;
+                }
+
                 match op {
                     BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
                         if left_type == Type::Float || right_type == Type::Float {
@@ -528,6 +533,16 @@ impl TypeChecker {
             }
 
             Expr::Call { callee, args, span, .. } => {
+                // Check for ptr bridge calls early, before check_expr(callee)
+                // which would fail for `ptr.from_string()` since `ptr` isn't a variable
+                if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
+                    if let Expr::Ident(name, _) = object.as_ref() {
+                        let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                        if let Some(result) = self.check_ptr_bridge_call(name, field, &arg_exprs) {
+                            return result;
+                        }
+                    }
+                }
                 let callee_type = self.check_expr(callee);
                 let arg_types: Vec<Type> = args.iter().map(|arg| self.check_expr(&arg.value)).collect();
 
@@ -676,6 +691,13 @@ impl TypeChecker {
                                 _ => Type::Unknown,
                             }
                         } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
+                            // Check for ptr bridge calls: string.from_ptr(...), ptr.from_string(...)
+                            if let Expr::Ident(name, _) = object.as_ref() {
+                                let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                                if let Some(result) = self.check_ptr_bridge_call(name, field, &arg_exprs) {
+                                    return result;
+                                }
+                            }
                             // Method call: object.method(args)
                             let obj_type = self.check_expr(object);
                             let effective_type = match &obj_type {
@@ -775,11 +797,12 @@ impl TypeChecker {
                 }
             }
 
-            Expr::Index { object, .. } => {
+            Expr::Index { object, index, .. } => {
                 let obj_type = self.check_expr(object);
                 match &obj_type {
                     Type::List(inner) => *inner.clone(),
                     Type::String => Type::String,
+                    Type::Ptr => self.check_ptr_index(index),
                     _ => Type::Unknown,
                 }
             }
@@ -1104,6 +1127,8 @@ impl TypeChecker {
             (Type::Map(_, _), Type::Void) => true,
             // ptr and string are interchangeable at FFI boundary
             (Type::Ptr, Type::String) | (Type::String, Type::Ptr) => true,
+            // ptr accepts null (null literal is Nullable(Unknown))
+            (Type::Ptr, Type::Nullable(_)) => true,
             // Function types are compatible with ptr (function pointers at FFI boundary)
             (Type::Ptr, Type::Function { .. }) | (Type::Function { .. }, Type::Ptr) => true,
             _ => false,

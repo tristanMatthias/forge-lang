@@ -1,0 +1,11 @@
+/// # Pointer subtraction (distance)
+/// expect: 42
+extern fn malloc(size: int) -> ptr
+
+fn main() {
+  let buf = malloc(100)
+  let end = buf + 42
+
+  let distance = end - buf
+  println(string(distance))
+}

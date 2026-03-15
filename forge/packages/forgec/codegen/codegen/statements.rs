@@ -169,7 +169,12 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     }
                 } else if let Expr::Index { object, index, .. } = target {
-                    self.compile_map_index_assign(object, index, value);
+                    let obj_type = self.infer_type(object);
+                    if obj_type == Type::Ptr {
+                        self.compile_ptr_index_write(object, index, value);
+                    } else {
+                        self.compile_map_index_assign(object, index, value);
+                    }
                 }
             }
             Statement::Expr(expr) => {

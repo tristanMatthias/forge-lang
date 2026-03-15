@@ -51,6 +51,36 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Pointer operations: ptr + int, ptr - ptr, ptr == ptr, ptr != ptr, ptr == null
+        if left_type == Type::Ptr || right_type == Type::Ptr {
+            match op {
+                BinaryOp::Add if left_type == Type::Ptr && right_type == Type::Int => {
+                    return self.compile_ptr_add(lhs, rhs);
+                }
+                BinaryOp::Sub if left_type == Type::Ptr && right_type == Type::Ptr => {
+                    return self.compile_ptr_sub(lhs, rhs);
+                }
+                BinaryOp::Eq | BinaryOp::NotEq if left_type == Type::Ptr && right_type == Type::Ptr => {
+                    return self.compile_ptr_compare(lhs, &op, rhs);
+                }
+                BinaryOp::Eq | BinaryOp::NotEq => {
+                    // ptr == null or null == ptr: coerce null side to null pointer
+                    let (ptr_side, null_side) = if left_type == Type::Ptr {
+                        (lhs, rhs)
+                    } else {
+                        (rhs, lhs)
+                    };
+                    let null_ptr: BasicValueEnum<'ctx> = if null_side.is_pointer_value() {
+                        null_side
+                    } else {
+                        self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into()
+                    };
+                    return self.compile_ptr_compare(ptr_side, &op, null_ptr);
+                }
+                _ => {}
+            }
+        }
+
         // Float operations - check both inferred types AND actual LLVM values
         if left_type == Type::Float || right_type == Type::Float
             || lhs.is_float_value() || rhs.is_float_value()

@@ -130,6 +130,16 @@ impl<'ctx> Codegen<'ctx> {
                         "forge_channel_tick_create not declared",
                     );
                 }
+                // string.from_ptr(ptr, len) → forge_string_new
+                if obj_name == "string" && field == "from_ptr" {
+                    let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                    return self.compile_string_from_ptr(&arg_exprs);
+                }
+                // ptr.from_string(s) → extract ptr from string struct
+                if obj_name == "ptr" && field == "from_string" {
+                    let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                    return self.compile_ptr_from_string(&arg_exprs);
+                }
             }
         }
 

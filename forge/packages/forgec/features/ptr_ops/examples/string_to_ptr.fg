@@ -1,0 +1,9 @@
+/// # string to ptr conversion
+/// expect: Hello
+extern fn write(fd: int, buf: ptr, count: int) -> int
+
+fn main() {
+  let msg = "Hello\n"
+  let p = ptr.from_string(msg)
+  write(1, p, msg.length())
+}

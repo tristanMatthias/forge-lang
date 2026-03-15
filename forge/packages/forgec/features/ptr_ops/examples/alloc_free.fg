@@ -1,0 +1,10 @@
+/// # Allocate and free
+/// expect: true
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  let buf = malloc(1024)
+  println(string(buf != null))
+  free(buf)
+}

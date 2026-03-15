@@ -191,6 +191,15 @@ impl<'ctx> Codegen<'ctx> {
             Expr::Binary { left, op, right, .. } => {
                 let lt = self.infer_type(left);
                 let rt = self.infer_type(right);
+                // Ptr operations
+                match (&lt, op, &rt) {
+                    (Type::Ptr, BinaryOp::Add, Type::Int) => return Type::Ptr,
+                    (Type::Ptr, BinaryOp::Sub, Type::Ptr) => return Type::Int,
+                    (Type::Ptr, BinaryOp::Eq | BinaryOp::NotEq, Type::Ptr) => return Type::Bool,
+                    (Type::Ptr, BinaryOp::Eq | BinaryOp::NotEq, _) => return Type::Bool,
+                    (_, BinaryOp::Eq | BinaryOp::NotEq, Type::Ptr) => return Type::Bool,
+                    _ => {}
+                }
                 match op {
                     BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
                         if lt == Type::Float || rt == Type::Float {
@@ -282,6 +291,14 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     }
                 } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
+                    // ptr bridge calls
+                    if let Expr::Ident(name, _) = object.as_ref() {
+                        match (name.as_str(), field.as_str()) {
+                            ("string", "from_ptr") => return Type::String,
+                            ("ptr", "from_string") => return Type::Ptr,
+                            _ => {}
+                        }
+                    }
                     // json.stringify/parse intrinsics
                     if let Expr::Ident(name, _) = object.as_ref() {
                         if name == "json" {

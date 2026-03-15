@@ -1,0 +1,16 @@
+/// # Write and read bytes
+/// expect: 72
+/// expect: 105
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  let buf = malloc(16)
+  defer free(buf)
+
+  buf[0] = 72
+  buf[1] = 105
+
+  println(string(buf[0]))
+  println(string(buf[1]))
+}
