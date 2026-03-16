@@ -15,6 +15,32 @@ impl TypeChecker {
     pub(crate) fn check_for(&mut self, pattern: &Pattern, iterable: &Expr, body: &Block) {
         let iter_type = self.check_expr(iterable);
         self.env.push_scope();
+        // Map iteration: for (k, v) in map yields key and value types directly
+        if let Type::Map(key_type, val_type) = &iter_type {
+            if let Pattern::Tuple(pats, _) = pattern {
+                if pats.len() >= 1 {
+                    if let Pattern::Ident(name, _) = &pats[0] {
+                        if name != "_" {
+                            self.env.define(name.clone(), *key_type.clone(), false);
+                        }
+                    }
+                }
+                if pats.len() >= 2 {
+                    if let Pattern::Ident(name, _) = &pats[1] {
+                        if name != "_" {
+                            self.env.define(name.clone(), *val_type.clone(), false);
+                        }
+                    }
+                }
+            } else if let Pattern::Ident(name, _) = pattern {
+                // Single ident iterating over map — give it key type
+                self.env.define(name.clone(), *key_type.clone(), false);
+            }
+            self.check_block(body);
+            self.env.pop_scope_silent();
+            return;
+        }
+
         let elem_type = match &iter_type {
             Type::Range(inner) => *inner.clone(),
             Type::List(inner) => *inner.clone(),

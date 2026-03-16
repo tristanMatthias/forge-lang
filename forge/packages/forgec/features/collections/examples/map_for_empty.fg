@@ -1,0 +1,13 @@
+/// # Empty Map Iteration
+///
+/// Iterating over an empty map should do nothing.
+///
+/// expect: done
+
+fn main() {
+  let m: map<string, int> = {}
+  for (k, v) in m {
+    println(`${k}: ${string(v)}`)
+  }
+  println("done")
+}

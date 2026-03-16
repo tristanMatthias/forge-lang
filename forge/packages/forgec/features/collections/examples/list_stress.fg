@@ -1,0 +1,16 @@
+/// Test: Stress test list operations — push many elements
+///
+/// expect: 100
+/// expect: 99
+
+fn main() {
+  mut items: List<int> = []
+
+  mut i = 0
+  while i < 100 {
+    items.push(i)
+    i = i + 1
+  }
+  println(string(items.length))
+  println(string(items[99]))
+}

@@ -568,6 +568,7 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
                 "push" | "each" => Type::Void,
+                "pop" => Type::Nullable(inner.clone()),
                 "length" => Type::Int,
                 "sorted" => Type::List(inner.clone()),
                 _ => Type::Unknown,

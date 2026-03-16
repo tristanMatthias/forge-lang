@@ -45,10 +45,11 @@ impl TypeChecker {
     /// Check a method call on a list type and return the result type.
     pub(crate) fn check_list_method_call(&mut self, inner: &Type, method: &str, span: Span) -> Type {
         match method {
-            "push" | "each" | "sorted" | "reverse" | "flat" | "dedup"
+            "push" | "pop" | "each" | "sorted" | "reverse" | "flat" | "dedup"
             | "take" | "skip" | "chunks" | "windows" => {
                 match method {
                     "push" | "each" => Type::Void,
+                    "pop" => Type::Nullable(Box::new(inner.clone())),
                     "sorted" | "reverse" | "flat" | "dedup"
                     | "take" | "skip" => Type::List(Box::new(inner.clone())),
                     "chunks" | "windows" => Type::List(Box::new(Type::List(Box::new(inner.clone())))),
@@ -70,7 +71,7 @@ impl TypeChecker {
                 }
             }
             _ => {
-                let known = ["push", "filter", "map", "find", "reduce", "sum",
+                let known = ["push", "pop", "filter", "map", "find", "reduce", "sum",
                     "join", "each", "sorted", "contains", "any", "all",
                     "enumerate", "length", "clone", "reverse", "flat",
                     "dedup", "take", "skip", "chunks", "windows", "find_map"];

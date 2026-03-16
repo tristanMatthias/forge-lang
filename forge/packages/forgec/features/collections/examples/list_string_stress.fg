@@ -1,0 +1,15 @@
+/// Test: List of strings — stress string copy semantics in collections
+///
+/// expect: 50
+/// expect: item_0
+/// expect: item_49
+
+fn main() {
+  mut items: List<string> = []
+  for i in 0..50 {
+    items.push(`item_${i}`)
+  }
+  println(string(items.length))
+  println(items[0])
+  println(items[49])
+}

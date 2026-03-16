@@ -1,0 +1,17 @@
+/// Test: Map with string keys and values — stress string hashing and storage
+///
+/// expect: world
+/// expect: true
+/// expect: 3
+
+fn main() {
+  mut m: map<string, string> = {}
+  m["hello"] = "world"
+  m["foo"] = "bar"
+  m["baz"] = "qux"
+  let v = m.get("hello") ?? "none"
+  println(v)
+  let f = m.get("foo") ?? "none"
+  println(string(f == "bar"))
+  println(string(m.keys().length))
+}

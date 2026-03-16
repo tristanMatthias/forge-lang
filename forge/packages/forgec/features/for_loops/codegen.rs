@@ -149,6 +149,108 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_unconditional_branch(loop_bb).unwrap();
 
             self.builder.position_at_end(end_bb);
+        } else if let Type::Map(ref key_type, ref val_type) = iter_type {
+            // Map iteration: for (k, v) in map
+            let map_val = self.compile_expr(iterable).unwrap();
+            let struct_val = map_val.into_struct_value();
+            let keys_ptr = self.builder.build_extract_value(struct_val, 0, "keys").unwrap().into_pointer_value();
+            let vals_ptr = self.builder.build_extract_value(struct_val, 1, "vals").unwrap().into_pointer_value();
+            let map_len = self.builder.build_extract_value(struct_val, 2, "len").unwrap().into_int_value();
+
+            let key_llvm_ty = self.type_to_llvm_basic(key_type);
+            let val_llvm_ty = self.type_to_llvm_basic(val_type);
+
+            let function = self.current_function();
+
+            // Alloca for index
+            let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__map_for_idx");
+            self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+
+            let loop_bb = self.context.append_basic_block(function, "map_for_loop");
+            let body_bb = self.context.append_basic_block(function, "map_for_body");
+            let end_bb = self.context.append_basic_block(function, "map_for_end");
+            let inc_bb = self.context.append_basic_block(function, "map_for_inc");
+
+            self.builder.build_unconditional_branch(loop_bb).unwrap();
+            self.builder.position_at_end(loop_bb);
+
+            let current_idx = self.builder
+                .build_load(self.context.i64_type(), idx_alloca, "idx")
+                .unwrap()
+                .into_int_value();
+
+            let cond = self.builder
+                .build_int_compare(IntPredicate::SLT, current_idx, map_len, "map_for_cond")
+                .unwrap();
+            self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+
+            self.builder.position_at_end(body_bb);
+
+            // Load current key and value
+            let key_ptr = unsafe {
+                self.builder.build_gep(key_llvm_ty, keys_ptr, &[current_idx], "key_ptr").unwrap()
+            };
+            let key_val = self.builder.build_load(key_llvm_ty, key_ptr, "key").unwrap();
+
+            let val_ptr = unsafe {
+                self.builder.build_gep(val_llvm_ty, vals_ptr, &[current_idx], "val_ptr").unwrap()
+            };
+            let val_val = self.builder.build_load(val_llvm_ty, val_ptr, "val").unwrap();
+
+            // Bind pattern inside the loop body scope
+            self.push_scope();
+            self.loop_exit_blocks.push((end_bb, None));
+            self.loop_continue_blocks.push(inc_bb);
+
+            match pattern {
+                Pattern::Tuple(elems, _) => {
+                    // Destructure (key, value) pattern
+                    if elems.len() >= 1 {
+                        if let Pattern::Ident(name, _) = &elems[0] {
+                            if name != "_" {
+                                let alloca = self.create_entry_block_alloca(key_type, name);
+                                self.builder.build_store(alloca, key_val).unwrap();
+                                self.define_var(name.clone(), alloca, *key_type.clone());
+                            }
+                        }
+                    }
+                    if elems.len() >= 2 {
+                        if let Pattern::Ident(name, _) = &elems[1] {
+                            if name != "_" {
+                                let alloca = self.create_entry_block_alloca(val_type, name);
+                                self.builder.build_store(alloca, val_val).unwrap();
+                                self.define_var(name.clone(), alloca, *val_type.clone());
+                            }
+                        }
+                    }
+                }
+                Pattern::Ident(name, _) => {
+                    // Single ident — bind the key
+                    let alloca = self.create_entry_block_alloca(key_type, name);
+                    self.builder.build_store(alloca, key_val).unwrap();
+                    self.define_var(name.clone(), alloca, *key_type.clone());
+                }
+                _ => {}
+            }
+
+            for stmt in &body.statements {
+                self.compile_statement(stmt);
+            }
+
+            self.pop_scope();
+            self.loop_exit_blocks.pop();
+            self.loop_continue_blocks.pop();
+
+            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                self.builder.build_unconditional_branch(inc_bb).unwrap();
+            }
+
+            // Increment block: bump index and jump back to condition
+            self.builder.position_at_end(inc_bb);
+            self.increment_i64(idx_alloca, 1);
+            self.builder.build_unconditional_branch(loop_bb).unwrap();
+
+            self.builder.position_at_end(end_bb);
         } else if iter_type == Type::Int || matches!(iter_type, Type::Channel(_)) {
             // Treat int/channel as channel ID — iterate by calling forge_channel_receive
             // until we get the "\0CLOSED" sentinel
