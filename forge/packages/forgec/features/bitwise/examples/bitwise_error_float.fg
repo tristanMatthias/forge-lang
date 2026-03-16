@@ -1,0 +1,5 @@
+/// # Bitwise error on float
+/// Bitwise operators require int operands; using float should error.
+/// expect-error: F0012
+
+let x = 1.5 & 2

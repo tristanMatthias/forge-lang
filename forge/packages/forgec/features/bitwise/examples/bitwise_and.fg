@@ -1,0 +1,9 @@
+/// # Bitwise AND
+/// Tests the `&` operator on integers.
+/// expect: 1
+/// expect: 0
+/// expect: 12
+
+println(5 & 3)
+println(0 & 255)
+println(12 & 15)

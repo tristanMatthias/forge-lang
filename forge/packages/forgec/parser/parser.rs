@@ -1579,7 +1579,7 @@ impl Parser {
                 if self.check(&TokenKind::Lt) {
                     self.advance();
                     self.skip_newlines();
-                    let args = self.parse_delimited_until(&TokenKind::Gt, |p| p.parse_type_expr())?;
+                    let args = self.parse_generic_type_args()?;
                     Some(TypeExpr::Generic { name, args })
                 } else {
                     Some(TypeExpr::Named(name))
@@ -1717,6 +1717,33 @@ impl Parser {
 
     /// Parse a list of items between delimiters, with optional commas.
     /// Skips newlines between items. The opening delimiter should already be consumed.
+    /// Parse generic type arguments: `T, U, ...>` handling the `>>` ambiguity.
+    /// When parsing `map<string, map<string, string>>`, the `>>` is lexed as ShiftRight.
+    /// This method splits it into two `>` closes.
+    fn parse_generic_type_args(&mut self) -> Option<Vec<TypeExpr>> {
+        let mut args = Vec::new();
+        while !self.check(&TokenKind::Gt) && !self.check(&TokenKind::ShiftRight) && !self.is_at_end() {
+            self.skip_newlines();
+            if self.check(&TokenKind::Gt) || self.check(&TokenKind::ShiftRight) {
+                break;
+            }
+            args.push(self.parse_type_expr()?);
+            self.skip_newlines();
+            if self.check(&TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        if self.check(&TokenKind::ShiftRight) {
+            // Split >> into > + >: consume the ShiftRight and replace it with a single Gt
+            let span = self.tokens[self.pos].span;
+            self.tokens[self.pos] = Token::new(TokenKind::Gt, Span::new(span.start + 1, span.end, span.line, span.col + 1));
+            // Don't advance — the remaining `>` stays for the outer context
+        } else {
+            self.expect(&TokenKind::Gt)?;
+        }
+        Some(args)
+    }
+
     pub(crate) fn parse_delimited_until<T, F>(
         &mut self,
         close: &TokenKind,

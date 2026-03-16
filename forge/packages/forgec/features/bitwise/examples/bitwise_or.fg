@@ -1,0 +1,9 @@
+/// # Bitwise OR
+/// Tests the `|` operator on integers.
+/// expect: 7
+/// expect: 255
+/// expect: 15
+
+println(5 | 3)
+println(0 | 255)
+println(12 | 7)

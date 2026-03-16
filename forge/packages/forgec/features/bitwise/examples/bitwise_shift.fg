@@ -1,0 +1,11 @@
+/// # Bitwise Shift
+/// Tests `<<` (left shift) and `>>` (right shift) operators.
+/// expect: 16
+/// expect: 4
+/// expect: 256
+/// expect: -4
+
+println(1 << 4)
+println(16 >> 2)
+println(1 << 8)
+println(-8 >> 1)

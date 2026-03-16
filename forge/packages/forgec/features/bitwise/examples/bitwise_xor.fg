@@ -1,0 +1,9 @@
+/// # Bitwise XOR
+/// Tests the `^` operator on integers.
+/// expect: 6
+/// expect: 255
+/// expect: 0
+
+println(5 ^ 3)
+println(0 ^ 255)
+println(42 ^ 42)

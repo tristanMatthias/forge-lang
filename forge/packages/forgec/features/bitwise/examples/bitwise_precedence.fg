@@ -1,0 +1,14 @@
+/// # Bitwise Precedence
+/// Verifies precedence: shifts bind tighter than AND, AND tighter than XOR, XOR tighter than OR.
+/// expect: 7
+/// expect: 6
+/// expect: 3
+
+// ^ has lower precedence than &: 5 ^ 3 & 6 means 5 ^ (3 & 6) = 5 ^ 2 = 7
+println(5 ^ 3 & 6)
+
+// & has lower precedence than <<: 7 & 3 << 1 means 7 & (3 << 1) = 7 & 6 = 6
+println(7 & 3 << 1)
+
+// | has lower precedence than &: 1 | 2 & 3 means 1 | (2 & 3) = 1 | 2 = 3
+println(1 | 2 & 3)
