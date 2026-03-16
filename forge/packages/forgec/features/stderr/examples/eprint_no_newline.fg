@@ -1,0 +1,11 @@
+/// # Stderr no newline
+///
+/// eprint() prints to stderr without a trailing newline.
+///
+/// expect-stderr: ab
+
+fn main() {
+  eprint("a")
+  eprint("b")
+  eprintln("")
+}

@@ -1,0 +1,7 @@
+/// # Read Nonexistent File
+/// Reading a file that does not exist returns an empty string.
+/// expect: true
+fn main() {
+    let content = read_file("/tmp/forge_test_nonexistent_99999.txt")
+    println(content == "")
+}

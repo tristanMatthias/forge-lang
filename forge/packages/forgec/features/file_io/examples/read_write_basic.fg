@@ -1,0 +1,9 @@
+/// # Read and Write Basic
+/// Write a file, read it back, verify content matches.
+/// expect: hello forge
+fn main() {
+    let path = "/tmp/forge_test_read_write_basic.txt"
+    write_file(path, "hello forge")
+    let content = read_file(path)
+    println(content)
+}

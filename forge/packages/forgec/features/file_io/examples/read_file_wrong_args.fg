@@ -1,0 +1,7 @@
+/// # Read File Wrong Argument Count
+/// Calling read_file with wrong number of arguments.
+/// expect-error: F0014
+fn main() {
+    let content = read_file("a", "b")
+    println(content)
+}

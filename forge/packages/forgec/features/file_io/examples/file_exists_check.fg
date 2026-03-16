@@ -1,0 +1,10 @@
+/// # File Exists Check
+/// Check existence of a file that exists and one that does not.
+/// expect: true
+/// expect: false
+fn main() {
+    let path = "/tmp/forge_test_exists_check.txt"
+    write_file(path, "exists")
+    println(file_exists(path))
+    println(file_exists("/tmp/forge_test_nonexistent_12345.txt"))
+}

@@ -1,0 +1,9 @@
+/// # Stderr basic
+///
+/// eprintln() prints to stderr with a newline.
+///
+/// expect-stderr: hello stderr
+
+fn main() {
+  eprintln("hello stderr")
+}

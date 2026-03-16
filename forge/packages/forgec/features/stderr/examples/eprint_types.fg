@@ -1,0 +1,13 @@
+/// # Stderr with various types
+///
+/// eprintln() auto-stringifies ints, bools, and floats.
+///
+/// expect-stderr: 42
+/// expect-stderr: true
+/// expect-stderr: 3.14
+
+fn main() {
+  eprintln(42)
+  eprintln(true)
+  eprintln(3.14)
+}

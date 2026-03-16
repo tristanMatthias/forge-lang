@@ -1,0 +1,10 @@
+/// # Write Overwrite
+/// Write a file, overwrite it, read back to verify latest content.
+/// expect: second
+fn main() {
+    let path = "/tmp/forge_test_write_overwrite.txt"
+    write_file(path, "first")
+    write_file(path, "second")
+    let content = read_file(path)
+    println(content)
+}
