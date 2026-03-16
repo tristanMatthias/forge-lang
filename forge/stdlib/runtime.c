@@ -3,6 +3,31 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <signal.h>
+
+// ---- Signal handlers ----
+
+static void forge_signal_handler(int signum) {
+    const char* name;
+    switch (signum) {
+        case SIGSEGV: name = "segmentation fault"; break;
+        case SIGABRT: name = "abort"; break;
+        case SIGBUS:  name = "bus error"; break;
+        default:      name = "unknown signal"; break;
+    }
+    // Use write() instead of fprintf to be async-signal-safe
+    const char* prefix = "forge: fatal error — ";
+    write(STDERR_FILENO, prefix, strlen(prefix));
+    write(STDERR_FILENO, name, strlen(name));
+    write(STDERR_FILENO, "\n", 1);
+    _exit(128 + signum);
+}
+
+__attribute__((constructor)) static void forge_install_signal_handlers(void) {
+    signal(SIGSEGV, forge_signal_handler);
+    signal(SIGABRT, forge_signal_handler);
+    signal(SIGBUS, forge_signal_handler);
+}
 
 // ---- Reference counting ----
 
@@ -32,6 +57,15 @@ void* forge_alloc(int64_t size) {
     return (void*)((char*)obj + sizeof(int64_t));
 }
 
+// ---- String allocation (plain malloc, no refcount header) ----
+// ForgeString .ptr fields must be compatible with C free() and Rust CString::from_raw.
+// forge_alloc adds an 8-byte refcount header which breaks C interop, so string
+// buffers use plain malloc instead.
+
+static void* forge_string_alloc(int64_t size) {
+    return malloc(size);
+}
+
 // ---- String operations ----
 
 typedef struct {
@@ -40,7 +74,7 @@ typedef struct {
 } ForgeString;
 
 ForgeString forge_string_new(const char* data, int64_t len) {
-    char* buf = (char*)forge_alloc(len + 1);
+    char* buf = (char*)forge_string_alloc(len + 1);
     memcpy(buf, data, len);
     buf[len] = '\0';
     return (ForgeString){ .ptr = buf, .len = len };
@@ -48,7 +82,7 @@ ForgeString forge_string_new(const char* data, int64_t len) {
 
 ForgeString forge_string_concat(ForgeString a, ForgeString b) {
     int64_t new_len = a.len + b.len;
-    char* buf = (char*)forge_alloc(new_len + 1);
+    char* buf = (char*)forge_string_alloc(new_len + 1);
     memcpy(buf, a.ptr, a.len);
     memcpy(buf + a.len, b.ptr, b.len);
     buf[new_len] = '\0';
@@ -139,7 +173,7 @@ int64_t forge_string_length(ForgeString s) {
 }
 
 ForgeString forge_string_upper(ForgeString s) {
-    char* buf = (char*)forge_alloc(s.len + 1);
+    char* buf = (char*)forge_string_alloc(s.len + 1);
     for (int64_t i = 0; i < s.len; i++) {
         buf[i] = (s.ptr[i] >= 'a' && s.ptr[i] <= 'z') ? s.ptr[i] - 32 : s.ptr[i];
     }
@@ -148,7 +182,7 @@ ForgeString forge_string_upper(ForgeString s) {
 }
 
 ForgeString forge_string_lower(ForgeString s) {
-    char* buf = (char*)forge_alloc(s.len + 1);
+    char* buf = (char*)forge_string_alloc(s.len + 1);
     for (int64_t i = 0; i < s.len; i++) {
         buf[i] = (s.ptr[i] >= 'A' && s.ptr[i] <= 'Z') ? s.ptr[i] + 32 : s.ptr[i];
     }
@@ -181,7 +215,7 @@ ForgeString forge_string_repeat(ForgeString s, int64_t count) {
         return forge_string_new("", 0);
     }
     int64_t new_len = s.len * count;
-    char* buf = (char*)forge_alloc(new_len + 1);
+    char* buf = (char*)forge_string_alloc(new_len + 1);
     for (int64_t i = 0; i < count; i++) {
         memcpy(buf + i * s.len, s.ptr, s.len);
     }
@@ -206,7 +240,7 @@ ForgeString forge_string_substring(ForgeString s, int64_t start, int64_t end) {
     if (end > s.len) end = s.len;
     if (start >= end) return forge_string_new("", 0);
     int64_t new_len = end - start;
-    char* buf = (char*)forge_alloc(new_len + 1);
+    char* buf = (char*)forge_string_alloc(new_len + 1);
     memcpy(buf, s.ptr + start, new_len);
     buf[new_len] = '\0';
     return (ForgeString){ .ptr = buf, .len = new_len };
@@ -226,7 +260,7 @@ ForgeString forge_string_replace(ForgeString s, ForgeString find, ForgeString re
     if (count == 0) return forge_string_new(s.ptr, s.len);
 
     int64_t new_len = s.len + count * (replace.len - find.len);
-    char* buf = (char*)forge_alloc(new_len + 1);
+    char* buf = (char*)forge_string_alloc(new_len + 1);
     int64_t j = 0;
     for (int64_t i = 0; i < s.len; ) {
         if (i <= s.len - find.len && memcmp(s.ptr + i, find.ptr, find.len) == 0) {
@@ -276,7 +310,7 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
 
 int64_t forge_string_split(ForgeString s, ForgeString sep, void** out_data) {
     if (sep.len == 0) {
-        ForgeString* arr = (ForgeString*)forge_alloc(sizeof(ForgeString));
+        ForgeString* arr = (ForgeString*)malloc(sizeof(ForgeString));
         arr[0] = s;
         *out_data = arr;
         return 1;
@@ -289,7 +323,7 @@ int64_t forge_string_split(ForgeString s, ForgeString sep, void** out_data) {
             i += sep.len - 1;
         }
     }
-    ForgeString* arr = (ForgeString*)forge_alloc(count * sizeof(ForgeString));
+    ForgeString* arr = (ForgeString*)malloc(count * sizeof(ForgeString));
     int64_t part = 0;
     int64_t start = 0;
     for (int64_t i = 0; i <= s.len - sep.len; i++) {
@@ -322,7 +356,7 @@ ForgeString forge_list_to_json(ForgeString* data, int64_t len) {
         if (i < len - 1) total++; // comma
     }
 
-    char* buf = (char*)forge_alloc(total + 1);
+    char* buf = (char*)forge_string_alloc(total + 1);
     int64_t pos = 0;
     buf[pos++] = '[';
     for (int64_t i = 0; i < len; i++) {
@@ -343,7 +377,7 @@ ForgeString forge_list_to_json(ForgeString* data, int64_t len) {
 ForgeString forge_list_int_to_json(int64_t* data, int64_t len) {
     // Each int64 can be up to 20 digits + sign + comma
     int64_t buf_cap = 2 + len * 22;
-    char* buf = (char*)forge_alloc(buf_cap);
+    char* buf = (char*)forge_string_alloc(buf_cap);
     int64_t pos = 0;
     buf[pos++] = '[';
     for (int64_t i = 0; i < len; i++) {
@@ -556,7 +590,7 @@ ForgeString forge_json_get_string(const char* json, int64_t index, const char* f
             p++;
         }
         // Build unescaped string
-        char* buf = (char*)forge_alloc(len + 1);
+        char* buf = (char*)forge_string_alloc(len + 1);
         int64_t j = 0;
         p = start;
         while (*p && *p != '"') {
@@ -595,7 +629,7 @@ const char* forge_json_get_object(const char* json, int64_t index, const char* f
             p++;
         }
         int64_t len = p - val;
-        char* buf = (char*)forge_alloc(len + 1);
+        char* buf = (char*)malloc(len + 1);
         memcpy(buf, val, len);
         buf[len] = '\0';
         return buf;
@@ -711,7 +745,7 @@ ForgeString forge_json_array_get_string(const char* json, int64_t index) {
         len++;
         p++;
     }
-    char* buf = (char*)forge_alloc(len + 1);
+    char* buf = (char*)forge_string_alloc(len + 1);
     int64_t j = 0;
     p = start;
     while (*p && *p != '"') {
