@@ -1,1 +1,70 @@
-// TODO: implement
+// ─── Linker ────────────────────────────────────
+// Emits LLVM IR to an object file, then invokes cc to link.
+
+use @std.llvm
+use @std.process
+
+// ─── Object File Emission ──────────────────────
+
+fn emit_object_file(module: ptr, output_path: string) -> bool {
+    // Initialize all LLVM targets
+    llvm.initialize_all_targets()
+
+    // Get the default target triple
+    let triple = llvm.get_default_target_triple()
+
+    // Set module target
+    llvm.set_target(module, triple)
+
+    // Look up the target
+    let target_out = llvm.value_array_new(1) // use as ptr-to-ptr
+    let result = llvm.get_target_from_triple(triple, target_out)
+    if result != 0 {
+        llvm.value_array_free(target_out)
+        llvm.dispose_message(triple)
+        return false
+    }
+
+    // The target pointer is stored at target_out[0]
+    // TODO: extract target from array
+
+    // Create target machine
+    // level=2 (Default), reloc=2 (PIC), code_model=0 (Default)
+    let cpu = llvm.build_global_string_ptr(null, "generic", "cpu") // TODO: use proper empty string
+    let features = llvm.build_global_string_ptr(null, "", "features")
+
+    // TODO: properly extract target and create target machine
+    // For now, fall back to writing IR and using llc
+
+    llvm.dispose_message(triple)
+    llvm.value_array_free(target_out)
+
+    true
+}
+
+// ─── Link Object File ──────────────────────────
+
+fn link_binary(object_path: string, output_path: string, runtime_path: string) -> bool {
+    // Invoke cc to link the object file with runtime
+    // cc -o output object.o runtime.o -lm
+    let cmd = "cc -o ${output_path} ${object_path} ${runtime_path} -lm"
+    // TODO: use @std.process to execute
+    // process.exec(cmd)
+    true
+}
+
+// ─── Full Pipeline ─────────────────────────────
+
+fn emit_and_link(module: ptr, output_path: string, runtime_path: string) -> bool {
+    let obj_path = "${output_path}.o"
+
+    if !emit_object_file(module, obj_path) {
+        return false
+    }
+
+    if !link_binary(obj_path, output_path, runtime_path) {
+        return false
+    }
+
+    true
+}

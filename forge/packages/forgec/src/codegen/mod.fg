@@ -1,1 +1,340 @@
-// TODO: implement
+// ─── Code Generator ────────────────────────────
+// Walks the AST and emits LLVM IR using @std.llvm.
+// Feature-specific codegen is dispatched via the registry.
+
+use core.token.Span
+use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr}
+use core.types.Type
+use core.registry.REGISTRY
+use codegen.types.{TypeMapper, type_mapper_new}
+use codegen.runtime.{RuntimeFns, declare_runtime}
+use @std.llvm
+
+// ─── Variable Slot ─────────────────────────────
+
+type VarSlot = {
+    alloca: ptr,
+    var_type: Type,
+}
+
+// ─── Codegen State ─────────────────────────────
+
+type Codegen = {
+    ctx: ptr,
+    module: ptr,
+    builder: ptr,
+    types: TypeMapper,
+    runtime: RuntimeFns,
+    // Variable storage: name → alloca pointer + type
+    mut vars: Map<string, VarSlot>,
+    // Current function being compiled
+    mut current_fn: ptr?,
+    // Named functions: name → LLVM function value
+    mut functions: Map<string, ptr>,
+}
+
+fn codegen_new(module_name: string) -> Codegen {
+    let ctx = llvm.context_create()
+    let module = llvm.module_create(module_name, ctx)
+    let builder = llvm.create_builder(ctx)
+    let types = type_mapper_new(ctx)
+    let runtime = declare_runtime(module, ctx)
+
+    Codegen {
+        ctx, module, builder, types, runtime,
+        vars: {},
+        current_fn: null,
+        functions: {},
+    }
+}
+
+// ─── Codegen Methods ───────────────────────────
+
+impl Codegen {
+
+    fn emit_program(self, program: Program) {
+        // First pass: declare all functions
+        for stmt in program.statements {
+            self.declare_top_level(stmt)
+        }
+
+        // Second pass: emit all function bodies + top-level code
+        // Collect top-level statements for main()
+        mut main_stmts: List<Statement> = []
+
+        for stmt in program.statements {
+            match stmt {
+                .Feature(fe) -> {
+                    if fe.data.kind_name == "FnDecl" {
+                        self.emit_feature_stmt(fe)
+                    } else {
+                        main_stmts = main_stmts.push(stmt)
+                    }
+                }
+                _ -> {
+                    main_stmts = main_stmts.push(stmt)
+                }
+            }
+        }
+
+        // Create main() for top-level statements
+        if main_stmts.length > 0 {
+            self.emit_main(main_stmts)
+        }
+    }
+
+    fn declare_top_level(self, stmt: Statement) {
+        match stmt {
+            .Feature(fe) -> {
+                if fe.data.kind_name == "FnDecl" {
+                    // TODO: declare function from feature side table
+                }
+            }
+            _ -> {}
+        }
+    }
+
+    fn emit_main(self, stmts: List<Statement>) {
+        // Create main() -> i32
+        let params = llvm.type_array_new(0)
+        let main_type = llvm.function_type(self.types.i32_type, params, 0, 0)
+        llvm.type_array_free(params)
+        let main_fn = llvm.add_function(self.module, "main", main_type)
+        self.current_fn = main_fn
+
+        let entry = llvm.append_basic_block(self.ctx, main_fn, "entry")
+        llvm.position_at_end(self.builder, entry)
+
+        for stmt in stmts {
+            self.emit_statement(stmt)
+        }
+
+        // return 0
+        let zero = llvm.const_int(self.types.i32_type, 0, 0)
+        llvm.build_ret(self.builder, zero)
+    }
+
+    // ─── Statement Emission ────────────────────
+
+    fn emit_statement(self, stmt: Statement) {
+        match stmt {
+            .Expr(expr) -> {
+                self.emit_expr(expr)
+            }
+            .Assign(target, value, _) -> {
+                self.emit_assign(target, value)
+            }
+            .Return(value, _) -> {
+                if value != null {
+                    let val = self.emit_expr(value!)
+                    llvm.build_ret(self.builder, val)
+                } else {
+                    llvm.build_ret_void(self.builder)
+                }
+            }
+            .Feature(fe) -> {
+                self.emit_feature_stmt(fe)
+            }
+        }
+    }
+
+    fn emit_assign(self, target: Expr, value: Expr) {
+        let val = self.emit_expr(value)
+        match target {
+            .Ident(name, _) -> {
+                if self.vars.has(name) {
+                    let slot = self.vars[name]
+                    llvm.build_store(self.builder, val, slot.alloca)
+                }
+            }
+            _ -> {} // TODO: member assign, index assign
+        }
+    }
+
+    fn emit_feature_stmt(self, fe: FeatureStmt) {
+        let feature_id = fe.data.feature
+        if REGISTRY.emit_stmt.has(feature_id) {
+            let handler = REGISTRY.emit_stmt[feature_id]
+            // TODO: call handler
+        }
+    }
+
+    // ─── Expression Emission ───────────────────
+
+    fn emit_expr(self, expr: Expr) -> ptr {
+        match expr {
+            .IntLit(value, _) -> {
+                llvm.const_int(self.types.i64_type, value, 0)
+            }
+            .FloatLit(value, _) -> {
+                llvm.const_real(self.types.f64_type, value)
+            }
+            .StringLit(value, _) -> {
+                // Create global string + ForgeString struct
+                let raw = llvm.build_global_string_ptr(self.builder, value, "str")
+                // TODO: build ForgeString { ptr, len }
+                raw
+            }
+            .BoolLit(value, _) -> {
+                let v = if value { 1 } else { 0 }
+                llvm.const_int(self.types.i1_type, v, 0)
+            }
+            .NullLit(_) -> {
+                llvm.const_null(self.types.ptr_type)
+            }
+            .Ident(name, _) -> {
+                if self.vars.has(name) {
+                    let slot = self.vars[name]
+                    let llvm_ty = self.types.to_llvm(slot.var_type)
+                    llvm.build_load(self.builder, llvm_ty, slot.alloca, name)
+                } else if self.functions.has(name) {
+                    self.functions[name]
+                } else {
+                    llvm.const_int(self.types.i64_type, 0, 0) // placeholder
+                }
+            }
+            .Binary(left, op, right, _) -> {
+                self.emit_binary(left, op, right)
+            }
+            .Unary(op, operand, _) -> {
+                self.emit_unary(op, operand)
+            }
+            .Call(callee, args, _) -> {
+                self.emit_call(callee, args)
+            }
+            .MemberAccess(_, _, _) -> {
+                // TODO: struct field access via GEP
+                llvm.const_int(self.types.i64_type, 0, 0)
+            }
+            .Index(_, _, _) -> {
+                // TODO: list/map index access
+                llvm.const_int(self.types.i64_type, 0, 0)
+            }
+            .Block(block) -> {
+                self.emit_block(block)
+            }
+            .Feature(fe) -> {
+                let feature_id = fe.data.feature
+                if REGISTRY.emit_expr.has(feature_id) {
+                    let handler = REGISTRY.emit_expr[feature_id]
+                    // TODO: call handler
+                }
+                llvm.const_int(self.types.i64_type, 0, 0)
+            }
+        }
+    }
+
+    fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
+        let lhs = self.emit_expr(left)
+        let rhs = self.emit_expr(right)
+
+        match op {
+            .Add -> llvm.build_add(self.builder, lhs, rhs, "add")
+            .Sub -> llvm.build_sub(self.builder, lhs, rhs, "sub")
+            .Mul -> llvm.build_mul(self.builder, lhs, rhs, "mul")
+            .Div -> llvm.build_sdiv(self.builder, lhs, rhs, "div")
+            .Mod -> llvm.build_srem(self.builder, lhs, rhs, "mod")
+            .Eq -> llvm.build_icmp(self.builder, 32, lhs, rhs, "eq")     // 32 = LLVMIntEQ
+            .NotEq -> llvm.build_icmp(self.builder, 33, lhs, rhs, "ne")  // 33 = LLVMIntNE
+            .Lt -> llvm.build_icmp(self.builder, 40, lhs, rhs, "lt")     // 40 = LLVMIntSLT
+            .LtEq -> llvm.build_icmp(self.builder, 41, lhs, rhs, "le")   // 41 = LLVMIntSLE
+            .Gt -> llvm.build_icmp(self.builder, 38, lhs, rhs, "gt")     // 38 = LLVMIntSGT
+            .GtEq -> llvm.build_icmp(self.builder, 39, lhs, rhs, "ge")   // 39 = LLVMIntSGE
+            .BitAnd -> llvm.build_and(self.builder, lhs, rhs, "bitand")
+            .BitOr -> llvm.build_or(self.builder, lhs, rhs, "bitor")
+            .BitXor -> llvm.build_xor(self.builder, lhs, rhs, "bitxor")
+            .Shl -> llvm.build_shl(self.builder, lhs, rhs, "shl")
+            .Shr -> llvm.build_ashr(self.builder, lhs, rhs, "shr")
+            .And -> llvm.build_and(self.builder, lhs, rhs, "and")   // logical and = bitwise on i1
+            .Or -> llvm.build_or(self.builder, lhs, rhs, "or")
+            .Pipe -> rhs // TODO: proper pipe implementation
+        }
+    }
+
+    fn emit_unary(self, op: UnaryOp, operand: Expr) -> ptr {
+        let val = self.emit_expr(operand)
+        match op {
+            .Neg -> {
+                let zero = llvm.const_int(self.types.i64_type, 0, 0)
+                llvm.build_sub(self.builder, zero, val, "neg")
+            }
+            .Not -> llvm.build_not(self.builder, val, "not")
+            .BitNot -> llvm.build_not(self.builder, val, "bitnot")
+        }
+    }
+
+    fn emit_call(self, callee: Expr, args: List<Expr>) -> ptr {
+        // Emit all arguments
+        let arg_arr = llvm.value_array_new(args.length)
+        mut i = 0
+        for arg in args {
+            let val = self.emit_expr(arg)
+            llvm.value_array_set(arg_arr, i, val)
+            i = i + 1
+        }
+
+        // Resolve callee
+        match callee {
+            .Ident(name, _) -> {
+                // Look up function in our table or runtime
+                let fn_val = if self.functions.has(name) {
+                    self.functions[name]
+                } else {
+                    // Try to find in module (runtime functions)
+                    // TODO: proper function lookup
+                    null
+                }
+
+                if fn_val != null {
+                    // TODO: need function type for call2
+                    // For now, return placeholder
+                    llvm.value_array_free(arg_arr)
+                    llvm.const_int(self.types.i64_type, 0, 0)
+                } else {
+                    llvm.value_array_free(arg_arr)
+                    llvm.const_int(self.types.i64_type, 0, 0)
+                }
+            }
+            _ -> {
+                llvm.value_array_free(arg_arr)
+                llvm.const_int(self.types.i64_type, 0, 0)
+            }
+        }
+    }
+
+    fn emit_block(self, block: Block) -> ptr {
+        mut last_val = llvm.const_int(self.types.i64_type, 0, 0)
+        for stmt in block.statements {
+            match stmt {
+                .Expr(expr) -> { last_val = self.emit_expr(expr) }
+                _ -> { self.emit_statement(stmt) }
+            }
+        }
+        last_val
+    }
+
+    // ─── Variable Definition ───────────────────
+
+    fn define_var(self, name: string, ty: Type, value: ptr) {
+        let llvm_ty = self.types.to_llvm(ty)
+        let alloca = llvm.build_alloca(self.builder, llvm_ty, name)
+        llvm.build_store(self.builder, value, alloca)
+        self.vars[name] = VarSlot { alloca, var_type: ty }
+    }
+
+    // ─── Finalization ──────────────────────────
+
+    fn verify(self) -> bool {
+        llvm.verify_module(self.module) == 0
+    }
+
+    fn print_ir(self) -> ptr {
+        llvm.module_print(self.module)
+    }
+
+    fn dispose(self) {
+        llvm.dispose_builder(self.builder)
+        llvm.module_dispose(self.module)
+        llvm.context_dispose(self.ctx)
+    }
+}

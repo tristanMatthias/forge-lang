@@ -1,1 +1,114 @@
-// TODO: implement
+// ─── Driver ────────────────────────────────────
+// Orchestrates the compilation pipeline:
+// Source → Lexer → Parser → Checker → Codegen → Linker
+
+use core.ast.Program
+use core.error.{render_all, bag_error_count}
+use lexer.mod.{Lexer, lexer_new}
+use parser.mod.{Parser, parser_new}
+use checker.mod.{TypeChecker, type_checker_new}
+use codegen.mod.{Codegen, codegen_new}
+
+// ─── Compilation Options ───────────────────────
+
+type CompileOptions = {
+    input_path: string,
+    output_path: string?,
+    check_only: bool,
+    emit_ir: bool,
+}
+
+// ─── Pipeline ──────────────────────────────────
+
+fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
+    // Phase 1: Lex
+    mut lexer = lexer_new(source)
+    let tokens = lexer.tokenize()
+
+    // Check for lexer errors
+    if lexer.diagnostics.length > 0 {
+        for d in lexer.diagnostics {
+            eprint(render_diagnostic(d, source, filename))
+        }
+        // Continue even with lex errors (best-effort)
+    }
+
+    // Phase 2: Parse
+    mut parser = parser_new(tokens)
+    let program = parser.parse_program()
+
+    // Check for parse errors
+    if parser.diagnostics.length > 0 {
+        for d in parser.diagnostics {
+            eprint(render_diagnostic(d, source, filename))
+        }
+        return false
+    }
+
+    // Phase 3: Type Check
+    mut checker = type_checker_new()
+    checker.check_program(program)
+
+    if checker.diagnostics.has_errors {
+        let output = render_all(checker.diagnostics, source, filename)
+        eprintln(output)
+        return false
+    }
+
+    // If check-only, stop here
+    if opts.check_only {
+        return true
+    }
+
+    // Phase 4: Codegen
+    let module_name = filename
+    mut cg = codegen_new(module_name)
+    cg.emit_program(program)
+
+    // Verify module
+    if !cg.verify() {
+        eprintln("error: LLVM module verification failed")
+        if opts.emit_ir {
+            let ir = cg.print_ir()
+            // TODO: print IR for debugging
+        }
+        cg.dispose()
+        return false
+    }
+
+    if opts.emit_ir {
+        let ir = cg.print_ir()
+        // TODO: print IR
+    }
+
+    // Phase 5: Emit + Link
+    let output = opts.output_path ?? "a.out"
+    // TODO: emit_and_link(cg.module, output, runtime_path)
+
+    cg.dispose()
+    true
+}
+
+// ─── Convenience Entry Points ──────────────────
+
+fn compile_file(path: string, output: string?) -> bool {
+    // TODO: read file using @std.fs
+    // let source = fs.read(path)
+    let source = "" // placeholder
+    compile(source, path, CompileOptions {
+        input_path: path,
+        output_path: output,
+        check_only: false,
+        emit_ir: false,
+    })
+}
+
+fn check_file(path: string) -> bool {
+    let source = "" // placeholder
+    compile(source, path, CompileOptions {
+        input_path: path,
+        output_path: null,
+        check_only: true,
+        emit_ir: false,
+    })
+}

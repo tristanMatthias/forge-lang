@@ -1,1 +1,111 @@
-// TODO: implement
+// ─── Runtime Function Declarations ─────────────
+// Declares extern runtime functions from stdlib/runtime.c
+// that compiled Forge programs link against.
+
+use @std.llvm
+
+// ─── Runtime Declarations ──────────────────────
+
+type RuntimeFns = {
+    // Print functions
+    forge_print: ptr,
+    forge_println: ptr,
+    forge_eprint: ptr,
+    forge_eprintln: ptr,
+    // String functions
+    forge_string_new: ptr,
+    forge_string_concat: ptr,
+    forge_string_eq: ptr,
+    forge_string_len: ptr,
+    // Int/float conversion
+    forge_int_to_string: ptr,
+    forge_float_to_string: ptr,
+    forge_bool_to_string: ptr,
+    // Memory
+    forge_alloc: ptr,
+    forge_free: ptr,
+}
+
+fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
+    let ptr_ty = llvm.pointer_type(ctx)
+    let i64_ty = llvm.int64_type(ctx)
+    let i1_ty = llvm.int1_type(ctx)
+    let void_ty = llvm.void_type(ctx)
+
+    // ForgeString = { ptr, i64 } — passed as two args or by pointer
+    let str_fields = llvm.type_array_new(2)
+    llvm.type_array_set(str_fields, 0, ptr_ty)
+    llvm.type_array_set(str_fields, 1, i64_ty)
+    let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
+    llvm.type_array_free(str_fields)
+
+    // Helper: make function type
+    fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
+        let arr = llvm.type_array_new(params.length)
+        mut i = 0
+        for p in params {
+            llvm.type_array_set(arr, i, p)
+            i = i + 1
+        }
+        let ft = llvm.function_type(ret, arr, params.length, 0)
+        llvm.type_array_free(arr)
+        ft
+    }
+
+    // forge_print(ForgeString) -> void
+    let print_ty = make_fn_type(void_ty, [ptr_ty, i64_ty])
+    let forge_print = llvm.add_function(module, "forge_print", print_ty)
+
+    // forge_println(ForgeString) -> void
+    let forge_println = llvm.add_function(module, "forge_println", print_ty)
+
+    // forge_eprint(ForgeString) -> void
+    let forge_eprint = llvm.add_function(module, "forge_eprint", print_ty)
+
+    // forge_eprintln(ForgeString) -> void
+    let forge_eprintln = llvm.add_function(module, "forge_eprintln", print_ty)
+
+    // forge_string_new(ptr, i64) -> ForgeString
+    let string_new_ty = make_fn_type(string_ty, [ptr_ty, i64_ty])
+    let forge_string_new = llvm.add_function(module, "forge_string_new", string_new_ty)
+
+    // forge_string_concat(ForgeString, ForgeString) -> ForgeString
+    let string_concat_ty = make_fn_type(string_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])
+    let forge_string_concat = llvm.add_function(module, "forge_string_concat", string_concat_ty)
+
+    // forge_string_eq(ForgeString, ForgeString) -> bool
+    let string_eq_ty = make_fn_type(i1_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])
+    let forge_string_eq = llvm.add_function(module, "forge_string_eq", string_eq_ty)
+
+    // forge_string_len(ForgeString) -> i64
+    let string_len_ty = make_fn_type(i64_ty, [ptr_ty, i64_ty])
+    let forge_string_len = llvm.add_function(module, "forge_string_len", string_len_ty)
+
+    // forge_int_to_string(i64) -> ForgeString
+    let int_to_str_ty = make_fn_type(string_ty, [i64_ty])
+    let forge_int_to_string = llvm.add_function(module, "forge_int_to_string", int_to_str_ty)
+
+    // forge_float_to_string(f64) -> ForgeString
+    let f64_ty = llvm.double_type(ctx)
+    let float_to_str_ty = make_fn_type(string_ty, [f64_ty])
+    let forge_float_to_string = llvm.add_function(module, "forge_float_to_string", float_to_str_ty)
+
+    // forge_bool_to_string(i1) -> ForgeString
+    let bool_to_str_ty = make_fn_type(string_ty, [i1_ty])
+    let forge_bool_to_string = llvm.add_function(module, "forge_bool_to_string", bool_to_str_ty)
+
+    // forge_alloc(i64) -> ptr
+    let alloc_ty = make_fn_type(ptr_ty, [i64_ty])
+    let forge_alloc = llvm.add_function(module, "forge_alloc", alloc_ty)
+
+    // forge_free(ptr) -> void
+    let free_ty = make_fn_type(void_ty, [ptr_ty])
+    let forge_free = llvm.add_function(module, "forge_free", free_ty)
+
+    RuntimeFns {
+        forge_print, forge_println, forge_eprint, forge_eprintln,
+        forge_string_new, forge_string_concat, forge_string_eq, forge_string_len,
+        forge_int_to_string, forge_float_to_string, forge_bool_to_string,
+        forge_alloc, forge_free,
+    }
+}

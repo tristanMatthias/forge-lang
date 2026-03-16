@@ -1,1 +1,71 @@
-// TODO: implement
+// ─── If/Else Feature ──────────────────────────
+// Handles: if/else expressions.
+// Side table stores IfExprData keyed by node_id (as string).
+//
+// Note: if/else is an EXPRESSION in Forge, not a statement. It produces
+// a value. Currently, the if/else parsing is handled inline in the
+// expression parser (parser/expressions.fg) because it's a prefix
+// expression. This feature module declares the side table and data types
+// so that the expression parser can store data here, and registers the
+// feature for check/emit dispatch.
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_node_id}
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser}
+
+// ─── Side Table ──────────────────────────────────
+
+mut IF_EXPRS: Map<string, IfExprData> = {}
+
+// ─── Data Types ──────────────────────────────────
+
+type IfExprData = {
+    condition: Expr,
+    then_block: Block,
+    else_block: Block?,
+    span: Span,
+}
+
+// ─── Lookup Helper ───────────────────────────────
+
+fn get_if_expr(node_id: int) -> IfExprData? {
+    let key = "${node_id}"
+    if IF_EXPRS.has(key) {
+        IF_EXPRS[key]
+    } else {
+        null
+    }
+}
+
+// ─── Construction Helper ─────────────────────────
+// Called by the expression parser when it encounters an `if` token.
+
+fn make_if_expr(condition: Expr, then_block: Block, else_block: Block?, span: Span) -> Expr {
+    let id = next_node_id()
+    let key = "${id}"
+    IF_EXPRS[key] = IfExprData {
+        condition,
+        then_block,
+        else_block,
+        span,
+    }
+    feature_expr("if_else", "if_expr", id, span)
+}
+
+// ─── Registration ────────────────────────────────
+// No parse_tokens because if/else is parsed as a prefix expression
+// inside expressions.fg, not as a statement keyword.
+
+register_feature(FeatureRegistration {
+    id: "if_else",
+    name: "If/Else Expressions",
+    status: "wip",
+    parse_tokens: [],
+    parse_handlers: [],
+    check_stmt: null,
+    check_expr: null,
+    emit_stmt: null,
+    emit_expr: null,
+    top_level: null,
+})

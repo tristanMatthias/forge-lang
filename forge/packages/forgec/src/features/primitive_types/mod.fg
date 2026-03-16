@@ -1,1 +1,66 @@
-// TODO: implement
+// ─── Primitive Types Feature ──────────────────
+// Handles: int, float, bool, string, void, ptr types.
+//
+// Primitive types require no special parse handling — type names like
+// `int`, `float`, `bool`, `string`, `void`, and `ptr` are parsed as
+// TypeExpr.Named nodes by the parser's parse_type_expr() method.
+//
+// This feature module defines the canonical type info for primitives
+// and provides helpers for the type checker to resolve TypeExpr.Named
+// nodes into concrete types.
+
+use core.registry.{register_feature, FeatureRegistration}
+
+// ─── Primitive Type Names ────────────────────────
+
+let PRIMITIVE_TYPES: List<string> = ["int", "float", "bool", "string", "void", "ptr"]
+
+fn is_primitive_type(name: string) -> bool {
+    name == "int" ||
+    name == "float" ||
+    name == "bool" ||
+    name == "string" ||
+    name == "void" ||
+    name == "ptr"
+}
+
+// ─── Type Size Info ──────────────────────────────
+// Returns the size in bytes for a primitive type, or -1 if unknown.
+
+fn primitive_size(name: string) -> int {
+    match name {
+        "int" -> 8
+        "float" -> 8
+        "bool" -> 1
+        "string" -> 16   // ForgeString: ptr + len
+        "void" -> 0
+        "ptr" -> 8
+        _ -> -1
+    }
+}
+
+// ─── Type Compatibility ──────────────────────────
+// Checks if a value of type `from` can be implicitly converted to `to`.
+
+fn primitive_coercible(from: string, to: string) -> bool {
+    if from == to { return true }
+    // int -> float is allowed implicitly
+    if from == "int" && to == "float" { return true }
+    false
+}
+
+// ─── Registration ────────────────────────────────
+// No parse handlers — types are resolved during type checking.
+
+register_feature(FeatureRegistration {
+    id: "primitive_types",
+    name: "Primitive Types",
+    status: "wip",
+    parse_tokens: [],
+    parse_handlers: [],
+    check_stmt: null,
+    check_expr: null,
+    emit_stmt: null,
+    emit_expr: null,
+    top_level: null,
+})

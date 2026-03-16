@@ -1,1 +1,75 @@
-// TODO: implement
+// ─── Type → LLVM Type Mapping ──────────────────
+// Converts Forge Type enum values to LLVM type pointers.
+
+use core.types.Type
+use @std.llvm
+
+// ─── Type Mapper ───────────────────────────────
+
+type TypeMapper = {
+    ctx: ptr,
+    // Cached LLVM types
+    i1_type: ptr,
+    i8_type: ptr,
+    i32_type: ptr,
+    i64_type: ptr,
+    f64_type: ptr,
+    void_type: ptr,
+    ptr_type: ptr,
+    // ForgeString = { ptr, i64 } — pointer + length
+    string_type: ptr,
+}
+
+fn type_mapper_new(ctx: ptr) -> TypeMapper {
+    let i1 = llvm.int1_type(ctx)
+    let i8 = llvm.int8_type(ctx)
+    let i32 = llvm.int32_type(ctx)
+    let i64 = llvm.int64_type(ctx)
+    let f64 = llvm.double_type(ctx)
+    let void = llvm.void_type(ctx)
+    let ptr = llvm.pointer_type(ctx)
+
+    // ForgeString struct: { i8*, i64 }
+    let str_fields = llvm.type_array_new(2)
+    llvm.type_array_set(str_fields, 0, ptr)
+    llvm.type_array_set(str_fields, 1, i64)
+    let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
+    llvm.type_array_free(str_fields)
+
+    TypeMapper {
+        ctx,
+        i1_type: i1,
+        i8_type: i8,
+        i32_type: i32,
+        i64_type: i64,
+        f64_type: f64,
+        void_type: void,
+        ptr_type: ptr,
+        string_type: string_ty,
+    }
+}
+
+impl TypeMapper {
+    fn to_llvm(self, ty: Type) -> ptr {
+        match ty {
+            .Int -> self.i64_type
+            .Float -> self.f64_type
+            .Bool -> self.i1_type
+            .String -> self.string_type
+            .Void -> self.void_type
+            .Ptr -> self.ptr_type
+            .Never -> self.void_type
+            .Nullable(inner) -> self.ptr_type // nullable = pointer
+            .ListType(_) -> self.ptr_type // list = pointer to runtime struct
+            .MapType(_, _) -> self.ptr_type
+            .Function(_, _) -> self.ptr_type // function pointer
+            .Result(_, _) -> self.ptr_type
+            .Channel(_) -> self.ptr_type
+            _ -> self.i64_type // fallback
+        }
+    }
+
+    fn is_aggregate(self, ty: Type) -> bool {
+        ty is .String || ty is .Struct(_, _)
+    }
+}

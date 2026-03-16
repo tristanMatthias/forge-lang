@@ -1,1 +1,612 @@
-// TODO: implement
+// ─── Parser ────────────────────────────────────
+// Parses a token stream into an AST.
+// Statement dispatch uses the feature registry; expression parsing
+// uses precedence climbing defined in expressions.fg.
+//
+// Phase 1 supports: variables, functions, operators, if_else, printing, primitive_types.
+// All other features add themselves via register_feature() — zero core changes.
+
+use core.token.{Token, TokenKind, Span, TemplatePart}
+use core.ast.{
+    Program, Statement, Expr, Block, BinOp, UnaryOp,
+    FeatureStmt, FeatureExpr, NodeRef,
+    feature_stmt, feature_expr,
+}
+use core.types.Type
+use core.error.{Diagnostic, error, E_SYNTAX}
+use core.registry.REGISTRY
+
+// ─── Param Type ────────────────────────────────
+
+type Param = {
+    name: string,
+    type_ann: TypeExpr?,
+    default_value: Expr?,
+    span: Span,
+    mutable: bool,
+}
+
+// ─── Type Expressions ──────────────────────────
+
+enum TypeExpr {
+    Named(name: string, span: Span)
+    Generic(name: string, args: List<TypeExpr>, span: Span)
+    Nullable(inner: TypeExpr, span: Span)
+    Function(params: List<TypeExpr>, return_type: TypeExpr, span: Span)
+    Tuple(elements: List<TypeExpr>, span: Span)
+    Struct(fields: List<TypeField>, span: Span)
+}
+
+type TypeField = {
+    name: string,
+    type_expr: TypeExpr,
+    mutable: bool,
+}
+
+// ─── Parser State ──────────────────────────────
+
+type Parser = {
+    tokens: List<Token>,
+    mut pos: int,
+    mut diagnostics: List<Diagnostic>,
+}
+
+fn parser_new(tokens: List<Token>) -> Parser {
+    Parser {
+        tokens,
+        pos: 0,
+        diagnostics: [],
+    }
+}
+
+// ─── Parser Methods ────────────────────────────
+
+impl Parser {
+
+    // ─── Token Navigation ──────────────────────
+
+    fn is_at_end(self) -> bool {
+        self.pos >= self.tokens.length || self.peek().kind is .Eof
+    }
+
+    fn peek(self) -> Token {
+        if self.pos < self.tokens.length {
+            self.tokens[self.pos]
+        } else {
+            Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+        }
+    }
+
+    fn peek_at(self, offset: int) -> Token {
+        let idx = self.pos + offset
+        if idx < self.tokens.length {
+            self.tokens[idx]
+        } else {
+            Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+        }
+    }
+
+    fn advance(self) -> Token {
+        let tok = self.peek()
+        if self.pos < self.tokens.length {
+            self.pos = self.pos + 1
+        }
+        tok
+    }
+
+    fn check(self, kind: TokenKind) -> bool {
+        self.peek().kind == kind
+    }
+
+    fn expect(self, kind: TokenKind) -> Token? {
+        if self.check(kind) {
+            self.advance()
+        } else {
+            self.error("expected ${kind}, got ${self.peek().kind}")
+            null
+        }
+    }
+
+    fn expect_ident(self) -> string? {
+        match self.peek().kind {
+            .Ident(name) -> {
+                self.advance()
+                name
+            }
+            // Allow some keywords as identifiers
+            .Is -> { self.advance(); "is" }
+            .Table -> { self.advance(); "table" }
+            .Underscore -> { self.advance(); "_" }
+            _ -> {
+                self.error("expected identifier, got ${self.peek().kind}")
+                null
+            }
+        }
+    }
+
+    fn skip_newlines(self) {
+        for self.check(.Newline) {
+            self.advance()
+        }
+    }
+
+    fn current_span(self) -> Span {
+        self.peek().span
+    }
+
+    fn error(self, message: string) {
+        self.diagnostics = self.diagnostics.push(
+            error(E_SYNTAX, message, self.current_span())
+        )
+    }
+
+    // ─── Peek Helpers ──────────────────────────
+
+    fn peek_at_meaningful(self, n: int) -> Token {
+        // Peek at the nth non-newline token
+        mut count = 0
+        mut offset = 0
+        for self.pos + offset < self.tokens.length {
+            let tok = self.tokens[self.pos + offset]
+            if !(tok.kind is .Newline) {
+                if count == n {
+                    return tok
+                }
+                count = count + 1
+            }
+            offset = offset + 1
+        }
+        Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+    }
+
+    fn next_meaningful_is(self, kind: TokenKind) -> bool {
+        self.peek_at_meaningful(0).kind == kind
+    }
+
+    // ─── Program Parsing ───────────────────────
+
+    fn parse_program(self) -> Program {
+        mut statements: List<Statement> = []
+        self.skip_newlines()
+
+        for !self.is_at_end() {
+            let stmt = self.parse_statement()
+            if stmt != null {
+                statements = statements.push(stmt!)
+            }
+            self.skip_newlines()
+        }
+
+        Program { statements }
+    }
+
+    // ─── Statement Parsing ─────────────────────
+    // Check registry first, then fall back to built-in structural statements.
+
+    fn parse_statement(self) -> Statement? {
+        self.skip_newlines()
+        if self.is_at_end() { return null }
+
+        let tok = self.peek()
+
+        // Check feature registry for this token kind
+        let token_key = self.token_kind_key(tok.kind)
+        if REGISTRY.parse_stmt.has(token_key) {
+            let handler = REGISTRY.parse_stmt[token_key]
+            // TODO: handler receives parser ptr, returns Statement ptr
+            // For now, fall through to built-in parsing
+        }
+
+        // Built-in structural statements
+        match tok.kind {
+            .Return -> self.parse_return()
+            _ -> self.parse_expr_or_assign()
+        }
+    }
+
+    fn parse_return(self) -> Statement? {
+        let start = self.advance().span // consume 'return'
+
+        // Check if there's a value (not at end of statement)
+        if self.is_at_end() || self.check(.Newline) || self.check(.RBrace) {
+            return Statement.Return(null, start)
+        }
+
+        let value = self.parse_expr()
+        Statement.Return(value, start)
+    }
+
+    fn parse_expr_or_assign(self) -> Statement? {
+        let expr = self.parse_expr()
+        if expr == null { return null }
+
+        // Check for assignment: expr = value
+        if self.check(.Eq) {
+            self.advance() // consume =
+            let value = self.parse_expr()
+            if value == null {
+                self.error("expected expression after '='")
+                return null
+            }
+            return Statement.Assign(expr!, value!, expr!.span())
+        }
+
+        // Check for channel send: expr <- value
+        if self.check(.LeftArrow) {
+            self.advance()
+            let value = self.parse_expr()
+            if value == null {
+                self.error("expected expression after '<-'")
+                return null
+            }
+            // Channel send wraps as an expression statement
+            // TODO: create FeatureExpr for channel send
+            return Statement.Expr(expr!)
+        }
+
+        Statement.Expr(expr!)
+    }
+
+    // ─── Block Parsing ─────────────────────────
+
+    fn parse_block(self) -> Block? {
+        let start = self.current_span()
+        if self.expect(.LBrace) == null { return null }
+
+        self.skip_newlines()
+        mut statements: List<Statement> = []
+
+        for !self.check(.RBrace) && !self.is_at_end() {
+            let stmt = self.parse_statement()
+            if stmt != null {
+                statements = statements.push(stmt!)
+            }
+            self.skip_newlines()
+        }
+
+        if self.expect(.RBrace) == null { return null }
+
+        Block {
+            statements,
+            span: Span {
+                start: start.start,
+                end: self.peek_at(-1).span.end,
+                line: start.line,
+                col: start.col,
+            },
+        }
+    }
+
+    // Parse a block or wrap a single statement in a block
+    fn parse_block_or_stmt(self) -> Block? {
+        if self.check(.LBrace) {
+            self.parse_block()
+        } else {
+            let start = self.current_span()
+            let stmt = self.parse_statement()
+            if stmt == null { return null }
+            Block {
+                statements: [stmt!],
+                span: start,
+            }
+        }
+    }
+
+    // ─── Type Expression Parsing ───────────────
+
+    fn parse_type_expr(self) -> TypeExpr? {
+        let ty = self.parse_primary_type()
+        if ty == null { return null }
+
+        // Check for nullable modifier: Type?
+        if self.check(.Question) {
+            let span = self.advance().span
+            return TypeExpr.Nullable(ty!, span)
+        }
+
+        ty
+    }
+
+    fn parse_primary_type(self) -> TypeExpr? {
+        let tok = self.peek()
+
+        match tok.kind {
+            .Ident(name) -> {
+                let start = self.advance().span
+                // Check for generic: Name<A, B>
+                if self.check(.Lt) {
+                    let args = self.parse_type_args()
+                    if args != null {
+                        return TypeExpr.Generic(name, args!, start)
+                    }
+                }
+                TypeExpr.Named(name, start)
+            }
+            // Primitive type keywords
+            .Ident("int") -> { let s = self.advance().span; TypeExpr.Named("int", s) }
+            .Ident("float") -> { let s = self.advance().span; TypeExpr.Named("float", s) }
+            .Ident("bool") -> { let s = self.advance().span; TypeExpr.Named("bool", s) }
+            .Ident("string") -> { let s = self.advance().span; TypeExpr.Named("string", s) }
+            .Ident("ptr") -> { let s = self.advance().span; TypeExpr.Named("ptr", s) }
+
+            // fn(A, B) -> R
+            .Fn -> {
+                self.parse_function_type()
+            }
+
+            // (A, B) — tuple or parenthesized
+            .LParen -> {
+                self.parse_tuple_or_paren_type()
+            }
+
+            // { name: Type, ... } — struct type
+            .LBrace -> {
+                self.parse_struct_type()
+            }
+
+            _ -> {
+                self.error("expected type, got ${tok.kind}")
+                null
+            }
+        }
+    }
+
+    fn parse_type_args(self) -> List<TypeExpr>? {
+        if self.expect(.Lt) == null { return null }
+        mut args: List<TypeExpr> = []
+
+        for !self.check(.Gt) && !self.is_at_end() {
+            self.skip_newlines()
+            let ty = self.parse_type_expr()
+            if ty != null {
+                args = args.push(ty!)
+            }
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        // Handle >> as > >
+        if self.check(.ShiftRight) {
+            // Split >> into two > tokens — consume one
+            // TODO: proper token splitting
+            self.advance()
+        } else {
+            if self.expect(.Gt) == null { return null }
+        }
+
+        args
+    }
+
+    fn parse_function_type(self) -> TypeExpr? {
+        let start = self.advance().span // consume 'fn'
+        if self.expect(.LParen) == null { return null }
+
+        mut params: List<TypeExpr> = []
+        for !self.check(.RParen) && !self.is_at_end() {
+            self.skip_newlines()
+            let ty = self.parse_type_expr()
+            if ty != null {
+                params = params.push(ty!)
+            }
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+        if self.expect(.RParen) == null { return null }
+
+        // -> ReturnType
+        let ret = if self.check(.Arrow) {
+            self.advance()
+            self.parse_type_expr()
+        } else {
+            TypeExpr.Named("void", start)
+        }
+
+        if ret == null { return null }
+        TypeExpr.Function(params, ret!, start)
+    }
+
+    fn parse_tuple_or_paren_type(self) -> TypeExpr? {
+        let start = self.advance().span // consume (
+
+        if self.check(.RParen) {
+            self.advance()
+            return TypeExpr.Tuple([], start)
+        }
+
+        let first = self.parse_type_expr()
+        if first == null { return null }
+
+        if self.check(.Comma) {
+            // Tuple type
+            self.advance()
+            mut elements: List<TypeExpr> = [first!]
+            for !self.check(.RParen) && !self.is_at_end() {
+                self.skip_newlines()
+                let ty = self.parse_type_expr()
+                if ty != null {
+                    elements = elements.push(ty!)
+                }
+                if self.check(.Comma) {
+                    self.advance()
+                }
+            }
+            if self.expect(.RParen) == null { return null }
+
+            // Check for -> ReturnType (function type)
+            if self.check(.Arrow) {
+                self.advance()
+                let ret = self.parse_type_expr()
+                if ret == null { return null }
+                return TypeExpr.Function(elements, ret!, start)
+            }
+
+            return TypeExpr.Tuple(elements, start)
+        }
+
+        if self.expect(.RParen) == null { return null }
+
+        // Check for -> ReturnType (single-param function type)
+        if self.check(.Arrow) {
+            self.advance()
+            let ret = self.parse_type_expr()
+            if ret == null { return null }
+            return TypeExpr.Function([first!], ret!, start)
+        }
+
+        // Parenthesized type
+        first
+    }
+
+    fn parse_struct_type(self) -> TypeExpr? {
+        let start = self.advance().span // consume {
+        mut fields: List<TypeField> = []
+
+        for !self.check(.RBrace) && !self.is_at_end() {
+            self.skip_newlines()
+            let mutable = if self.check(.Mut) { self.advance(); true } else { false }
+            let name = self.expect_ident()
+            if name == null { return null }
+            if self.expect(.Colon) == null { return null }
+            let ty = self.parse_type_expr()
+            if ty == null { return null }
+            fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
+            self.skip_newlines()
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        if self.expect(.RBrace) == null { return null }
+        TypeExpr.Struct(fields, start)
+    }
+
+    // ─── Parameter Parsing ─────────────────────
+
+    fn parse_params(self) -> List<Param>? {
+        if self.expect(.LParen) == null { return null }
+        mut params: List<Param> = []
+
+        for !self.check(.RParen) && !self.is_at_end() {
+            self.skip_newlines()
+            let param = self.parse_param()
+            if param != null {
+                params = params.push(param!)
+            }
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        if self.expect(.RParen) == null { return null }
+        params
+    }
+
+    fn parse_param(self) -> Param? {
+        let start = self.current_span()
+        let mutable = if self.check(.Mut) { self.advance(); true } else { false }
+        let name = self.expect_ident()
+        if name == null { return null }
+
+        // Optional type annotation: : Type
+        let type_ann = if self.check(.Colon) {
+            self.advance()
+            self.parse_type_expr()
+        } else {
+            null
+        }
+
+        // Optional default value: = expr
+        let default_value = if self.check(.Eq) {
+            self.advance()
+            self.parse_expr()
+        } else {
+            null
+        }
+
+        Param { name: name!, type_ann, default_value, span: start, mutable }
+    }
+
+    // ─── Type Parameters ───────────────────────
+
+    fn parse_type_params(self) -> List<string> {
+        if !self.check(.Lt) { return [] }
+        self.advance() // consume <
+
+        mut params: List<string> = []
+        for !self.check(.Gt) && !self.is_at_end() {
+            self.skip_newlines()
+            let name = self.expect_ident()
+            if name != null {
+                params = params.push(name!)
+            }
+            // TODO: bounds (T: Clone)
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        if self.expect(.Gt) == null { return params }
+        params
+    }
+
+    // ─── Delimited List Helper ─────────────────
+
+    fn parse_delimited(self, close: TokenKind) -> List<Expr> {
+        mut items: List<Expr> = []
+
+        for !self.check(close) && !self.is_at_end() {
+            self.skip_newlines()
+            let item = self.parse_expr()
+            if item != null {
+                items = items.push(item!)
+            }
+            self.skip_newlines()
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        items
+    }
+
+    // ─── Token Kind Key ────────────────────────
+    // Convert a TokenKind to a string key for registry lookup.
+
+    fn token_kind_key(self, kind: TokenKind) -> string {
+        match kind {
+            .Let -> "let"
+            .Mut -> "mut"
+            .Const -> "const"
+            .Fn -> "fn"
+            .Export -> "export"
+            .Enum -> "enum"
+            .TypeKw -> "type"
+            .Use -> "use"
+            .Mod -> "mod"
+            .Trait -> "trait"
+            .Impl -> "impl"
+            .For -> "for"
+            .While -> "while"
+            .Loop -> "loop"
+            .Break -> "break"
+            .Continue -> "continue"
+            .Defer -> "defer"
+            .Spawn -> "spawn"
+            .Select -> "select"
+            .Component -> "component"
+            .If -> "if"
+            .Match -> "match"
+            _ -> ""
+        }
+    }
+
+    // ─── Expression Parsing (delegated) ────────
+    // See expressions.fg for the full precedence climbing implementation.
+    // These are the entry points called by statement parsing.
+
+    fn parse_expr(self) -> Expr? {
+        self.parse_pipe_expr()
+    }
+}

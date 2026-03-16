@@ -1,1 +1,700 @@
-// TODO: implement
+// ─── Expression Parser ─────────────────────────
+// Precedence-climbing expression parsing.
+// Lowest precedence at top, highest at bottom.
+//
+// Precedence levels (lowest → highest):
+//  1. Pipe:          |>
+//  2. Or:            ||
+//  3. And:           &&
+//  4. Equality:      ==  !=
+//  5. Comparison:    <  <=  >  >=
+//  6. Bitwise Or:    |
+//  7. Bitwise Xor:   ^
+//  8. Bitwise And:   &
+//  9. Bitwise Shift: <<  >>
+// 10. Addition:      +  -
+// 11. Multiplication: *  /  %
+// 12. Unary:         !  -  ~
+// 13. Postfix:       ()  .  []  ?  !
+
+use core.token.{Token, TokenKind, Span, TemplatePart}
+use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
+use core.error.E_SYNTAX
+
+// ─── Precedence Levels ─────────────────────────
+
+impl Parser {
+
+    // Level 1: Pipe |>
+    fn parse_pipe_expr(self) -> Expr? {
+        let left = self.parse_or_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Pipe) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_or_expr()
+            if right == null { return null }
+            let span = Span {
+                start: result.span().start,
+                end: right!.span().end,
+                line: result.span().line,
+                col: result.span().col,
+            }
+            result = Expr.Binary(result, .Pipe, right!, span)
+        }
+        result
+    }
+
+    // Level 2: Logical Or ||
+    fn parse_or_expr(self) -> Expr? {
+        let left = self.parse_and_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Or) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_and_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, .Or, right!, span)
+        }
+        result
+    }
+
+    // Level 3: Logical And &&
+    fn parse_and_expr(self) -> Expr? {
+        let left = self.parse_equality_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.And) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_equality_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, .And, right!, span)
+        }
+        result
+    }
+
+    // Level 4: Equality == !=
+    fn parse_equality_expr(self) -> Expr? {
+        let left = self.parse_comparison_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.EqEq) || self.check(.NotEq) {
+            let op = if self.check(.EqEq) { BinOp.Eq } else { BinOp.NotEq }
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_comparison_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, op, right!, span)
+        }
+        result
+    }
+
+    // Level 5: Comparison < <= > >=
+    fn parse_comparison_expr(self) -> Expr? {
+        let left = self.parse_bitwise_or_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Lt) || self.check(.LtEq) || self.check(.Gt) || self.check(.GtEq) {
+            let op = match self.peek().kind {
+                .Lt -> BinOp.Lt
+                .LtEq -> BinOp.LtEq
+                .Gt -> BinOp.Gt
+                .GtEq -> BinOp.GtEq
+                _ -> BinOp.Lt // unreachable
+            }
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_bitwise_or_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, op, right!, span)
+        }
+        result
+    }
+
+    // Level 6: Bitwise Or |
+    fn parse_bitwise_or_expr(self) -> Expr? {
+        let left = self.parse_bitwise_xor_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Bar) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_bitwise_xor_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, .BitOr, right!, span)
+        }
+        result
+    }
+
+    // Level 7: Bitwise Xor ^
+    fn parse_bitwise_xor_expr(self) -> Expr? {
+        let left = self.parse_bitwise_and_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Caret) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_bitwise_and_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, .BitXor, right!, span)
+        }
+        result
+    }
+
+    // Level 8: Bitwise And &
+    fn parse_bitwise_and_expr(self) -> Expr? {
+        let left = self.parse_shift_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Ampersand) {
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_shift_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, .BitAnd, right!, span)
+        }
+        result
+    }
+
+    // Level 9: Bitwise Shift << >>
+    fn parse_shift_expr(self) -> Expr? {
+        let left = self.parse_addition_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.ShiftLeft) || self.check(.ShiftRight) {
+            let op = if self.check(.ShiftLeft) { BinOp.Shl } else { BinOp.Shr }
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_addition_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, op, right!, span)
+        }
+        result
+    }
+
+    // Level 10: Addition + -
+    fn parse_addition_expr(self) -> Expr? {
+        let left = self.parse_multiplication_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Plus) || self.check(.Minus) {
+            let op = if self.check(.Plus) { BinOp.Add } else { BinOp.Sub }
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_multiplication_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, op, right!, span)
+        }
+        result
+    }
+
+    // Level 11: Multiplication * / %
+    fn parse_multiplication_expr(self) -> Expr? {
+        let left = self.parse_unary_expr()
+        if left == null { return null }
+
+        mut result = left!
+        for self.check(.Star) || self.check(.Slash) || self.check(.Percent) {
+            let op = match self.peek().kind {
+                .Star -> BinOp.Mul
+                .Slash -> BinOp.Div
+                .Percent -> BinOp.Mod
+                _ -> BinOp.Mul // unreachable
+            }
+            self.advance()
+            self.skip_newlines()
+            let right = self.parse_unary_expr()
+            if right == null { return null }
+            let span = self.merge_spans(result.span(), right!.span())
+            result = Expr.Binary(result, op, right!, span)
+        }
+        result
+    }
+
+    // Level 12: Unary prefix ! - ~
+    fn parse_unary_expr(self) -> Expr? {
+        if self.check(.Not) {
+            let start = self.advance().span
+            let operand = self.parse_unary_expr() // right-associative
+            if operand == null { return null }
+            let span = self.merge_spans(start, operand!.span())
+            return Expr.Unary(.Not, operand!, span)
+        }
+
+        if self.check(.Minus) {
+            let start = self.advance().span
+            let operand = self.parse_unary_expr()
+            if operand == null { return null }
+            let span = self.merge_spans(start, operand!.span())
+            return Expr.Unary(.Neg, operand!, span)
+        }
+
+        if self.check(.Tilde) {
+            let start = self.advance().span
+            let operand = self.parse_unary_expr()
+            if operand == null { return null }
+            let span = self.merge_spans(start, operand!.span())
+            return Expr.Unary(.BitNot, operand!, span)
+        }
+
+        self.parse_postfix_expr()
+    }
+
+    // Level 13: Postfix () . [] ? !
+    fn parse_postfix_expr(self) -> Expr? {
+        let expr = self.parse_primary_expr()
+        if expr == null { return null }
+
+        mut result = expr!
+
+        for !self.is_at_end() {
+            // Function call: expr(args...)
+            if self.check(.LParen) {
+                self.advance()
+                let args = self.parse_call_args()
+                let close = self.expect(.RParen)
+                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                result = Expr.Call(result, args, span)
+                continue
+            }
+
+            // Member access: expr.field
+            if self.check(.Dot) {
+                self.advance()
+                // Numeric tuple access: expr.0
+                match self.peek().kind {
+                    .IntLiteral(n) -> {
+                        let field_span = self.advance().span
+                        let span = self.merge_spans(result.span(), field_span)
+                        result = Expr.Index(result, Expr.IntLit(n, field_span), span)
+                        continue
+                    }
+                    _ -> {}
+                }
+                let field = self.expect_ident()
+                if field == null { return null }
+                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                result = Expr.MemberAccess(result, field!, span)
+                continue
+            }
+
+            // Cross-newline dot chaining: allow .field after newline
+            if self.check(.Newline) {
+                let next = self.peek_at_meaningful(0)
+                if next.kind is .Dot {
+                    self.skip_newlines()
+                    continue
+                }
+            }
+
+            // Index access: expr[index]
+            if self.check(.LBracket) {
+                self.advance()
+                let index = self.parse_expr()
+                if index == null { return null }
+                if self.expect(.RBracket) == null { return null }
+                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                result = Expr.Index(result, index!, span)
+                continue
+            }
+
+            break
+        }
+
+        result
+    }
+
+    // ─── Call Arguments ────────────────────────
+
+    fn parse_call_args(self) -> List<Expr> {
+        mut args: List<Expr> = []
+
+        for !self.check(.RParen) && !self.is_at_end() {
+            self.skip_newlines()
+            let arg = self.parse_expr()
+            if arg != null {
+                args = args.push(arg!)
+            }
+            self.skip_newlines()
+            if self.check(.Comma) {
+                self.advance()
+            }
+        }
+
+        args
+    }
+
+    // ─── Primary Expressions ───────────────────
+
+    fn parse_primary_expr(self) -> Expr? {
+        let tok = self.peek()
+
+        match tok.kind {
+            // Literals
+            .IntLiteral(value) -> {
+                let span = self.advance().span
+                Expr.IntLit(value, span)
+            }
+            .FloatLiteral(value) -> {
+                let span = self.advance().span
+                Expr.FloatLit(value, span)
+            }
+            .StringLiteral(value) -> {
+                let span = self.advance().span
+                Expr.StringLit(value, span)
+            }
+            .BoolLiteral(value) -> {
+                let span = self.advance().span
+                Expr.BoolLit(value, span)
+            }
+            .NullLiteral -> {
+                let span = self.advance().span
+                Expr.NullLit(span)
+            }
+
+            // Template literals — convert to string concat or keep as-is
+            .TemplateLiteral(parts) -> {
+                let span = self.advance().span
+                // For now, treat as string lit with interpolation placeholder
+                // TODO: expand template parts into concat expressions
+                Expr.StringLit("(template)", span)
+            }
+
+            // Identifier
+            .Ident(name) -> {
+                let span = self.advance().span
+
+                // Check for single-param closure: x -> expr
+                if self.check(.Arrow) {
+                    self.advance()
+                    self.skip_newlines()
+                    let body = self.parse_expr()
+                    if body == null { return null }
+                    // TODO: create closure FeatureExpr
+                    return body
+                }
+
+                Expr.Ident(name, span)
+            }
+
+            // Parenthesized expression or tuple
+            .LParen -> {
+                self.parse_paren_expr()
+            }
+
+            // Block expression { ... }
+            .LBrace -> {
+                self.parse_block_expr()
+            }
+
+            // List literal [ ... ]
+            .LBracket -> {
+                self.parse_list_literal()
+            }
+
+            // Dot-prefixed enum variant: .Variant
+            .Dot -> {
+                self.parse_dot_variant()
+            }
+
+            // If expression (will be registered by if_else feature)
+            .If -> {
+                self.parse_if_expr()
+            }
+
+            // Match expression (will be registered by pattern_matching feature)
+            .Match -> {
+                self.parse_match_expr()
+            }
+
+            _ -> {
+                self.error("unexpected token: ${tok.kind}")
+                self.advance() // skip the bad token
+                null
+            }
+        }
+    }
+
+    // ─── Parenthesized / Tuple ─────────────────
+
+    fn parse_paren_expr(self) -> Expr? {
+        let start = self.advance().span // consume (
+
+        // Empty parens: ()
+        if self.check(.RParen) {
+            self.advance()
+            return Expr.NullLit(start) // unit/void
+        }
+
+        self.skip_newlines()
+        let first = self.parse_expr()
+        if first == null { return null }
+        self.skip_newlines()
+
+        // Check for tuple: (a, b, ...)
+        if self.check(.Comma) {
+            // TODO: create tuple expression
+            self.advance()
+            for !self.check(.RParen) && !self.is_at_end() {
+                self.skip_newlines()
+                self.parse_expr() // consume but don't collect for now
+                self.skip_newlines()
+                if self.check(.Comma) { self.advance() }
+            }
+            self.expect(.RParen)
+            return first // TODO: return Tuple expr
+        }
+
+        self.skip_newlines()
+        if self.expect(.RParen) == null { return null }
+        first // parenthesized expression
+    }
+
+    // ─── Block Expression ──────────────────────
+
+    fn parse_block_expr(self) -> Expr? {
+        // Disambiguate: struct literal { field: value } vs block { stmts }
+        // Look ahead to determine which
+        if self.is_struct_literal() {
+            return self.parse_struct_literal()
+        }
+
+        let block = self.parse_block()
+        if block == null { return null }
+        Expr.Block(block!)
+    }
+
+    fn is_struct_literal(self) -> bool {
+        // { ident: ...} or { ident, ...} or { "string": ... } (map)
+        let tok1 = self.peek_at(1) // first token after {
+
+        // Skip newlines
+        mut offset = 1
+        for self.peek_at(offset).kind is .Newline {
+            offset = offset + 1
+        }
+
+        let after_brace = self.peek_at(offset)
+
+        // { ident: ... } — struct literal
+        match after_brace.kind {
+            .Ident(_) -> {
+                let after_ident = self.peek_at(offset + 1)
+                after_ident.kind is .Colon || after_ident.kind is .Comma || after_ident.kind is .RBrace
+            }
+            // { "string": ... } — map literal
+            .StringLiteral(_) -> {
+                let after_str = self.peek_at(offset + 1)
+                after_str.kind is .Colon
+            }
+            _ -> false
+        }
+    }
+
+    fn parse_struct_literal(self) -> Expr? {
+        let start = self.advance().span // consume {
+        // For now, parse as a block expression placeholder
+        // TODO: proper struct literal parsing with field: value pairs
+        mut fields: List<Expr> = []
+
+        for !self.check(.RBrace) && !self.is_at_end() {
+            self.skip_newlines()
+
+            // field: value or field (shorthand)
+            match self.peek().kind {
+                .Ident(name) -> {
+                    let name_span = self.advance().span
+                    if self.check(.Colon) {
+                        self.advance()
+                        let value = self.parse_expr()
+                        // Store as key-value pair somehow
+                    }
+                    // shorthand: just the name
+                }
+                .StringLiteral(key) -> {
+                    // Map literal
+                    self.advance()
+                    if self.expect(.Colon) == null { return null }
+                    let value = self.parse_expr()
+                }
+                _ -> { break }
+            }
+
+            self.skip_newlines()
+            if self.check(.Comma) { self.advance() }
+        }
+
+        self.expect(.RBrace)
+        // Return a placeholder block for now
+        Expr.Block(Block { statements: [], span: start })
+    }
+
+    // ─── List Literal ──────────────────────────
+
+    fn parse_list_literal(self) -> Expr? {
+        let start = self.advance().span // consume [
+        let items = self.parse_delimited(.RBracket)
+        if self.expect(.RBracket) == null { return null }
+
+        // TODO: create proper list literal FeatureExpr
+        // For now, wrap in a block
+        Expr.Block(Block { statements: [], span: start })
+    }
+
+    // ─── Dot Variant ───────────────────────────
+
+    fn parse_dot_variant(self) -> Expr? {
+        let start = self.advance().span // consume .
+        let name = self.expect_ident()
+        if name == null { return null }
+
+        // .Variant(args) — enum constructor with args
+        if self.check(.LParen) {
+            self.advance()
+            let args = self.parse_call_args()
+            self.expect(.RParen)
+            let span = self.merge_spans(start, self.peek_at(-1).span)
+            // TODO: proper contextual enum variant FeatureExpr
+            return Expr.Ident(".${name!}", span)
+        }
+
+        // .Variant — simple enum variant
+        Expr.Ident(".${name!}", start)
+    }
+
+    // ─── If Expression ─────────────────────────
+    // Basic if/else parsing. Will be overridden by if_else feature.
+
+    fn parse_if_expr(self) -> Expr? {
+        let start = self.advance().span // consume 'if'
+        self.skip_newlines()
+
+        let condition = self.parse_expr()
+        if condition == null { return null }
+
+        self.skip_newlines()
+        let then_block = self.parse_block()
+        if then_block == null { return null }
+
+        // Optional else
+        self.skip_newlines()
+        let else_block = if self.check(.Else) {
+            self.advance()
+            self.skip_newlines()
+            if self.check(.If) {
+                // else if — wrap in block with single if expr
+                let elif = self.parse_if_expr()
+                if elif != null {
+                    Block { statements: [Statement.Expr(elif!)], span: elif!.span() }
+                } else { null }
+            } else {
+                self.parse_block()
+            }
+        } else { null }
+
+        // TODO: create proper if FeatureExpr via registry
+        // For now, return the then block as the expression
+        Expr.Block(then_block!)
+    }
+
+    // ─── Match Expression ──────────────────────
+    // Basic match parsing. Will be overridden by pattern_matching feature.
+
+    fn parse_match_expr(self) -> Expr? {
+        let start = self.advance().span // consume 'match'
+        self.skip_newlines()
+
+        let scrutinee = self.parse_expr()
+        if scrutinee == null { return null }
+
+        self.skip_newlines()
+        if self.expect(.LBrace) == null { return null }
+
+        // Parse match arms: pattern -> expr
+        self.skip_newlines()
+        for !self.check(.RBrace) && !self.is_at_end() {
+            self.skip_newlines()
+
+            // Parse pattern (simplified: just an expression for now)
+            let pattern = self.parse_expr()
+
+            // Expect ->
+            self.skip_newlines()
+            if self.check(.Arrow) {
+                self.advance()
+            }
+
+            self.skip_newlines()
+
+            // Parse body
+            if self.check(.LBrace) {
+                self.parse_block()
+            } else {
+                self.parse_expr()
+            }
+
+            self.skip_newlines()
+        }
+
+        self.expect(.RBrace)
+
+        // TODO: create proper match FeatureExpr
+        Expr.Block(Block { statements: [], span: start })
+    }
+
+    // ─── Span Helper ───────────────────────────
+
+    fn merge_spans(self, a: Span, b: Span) -> Span {
+        Span {
+            start: a.start,
+            end: b.end,
+            line: a.line,
+            col: a.col,
+        }
+    }
+}
+
+// ─── Expr Span Access ──────────────────────────
+// Helper to get span from any Expr variant.
+
+impl Expr {
+    fn span(self) -> Span {
+        match self {
+            .IntLit(_, span) -> span
+            .FloatLit(_, span) -> span
+            .StringLit(_, span) -> span
+            .BoolLit(_, span) -> span
+            .NullLit(span) -> span
+            .Ident(_, span) -> span
+            .Binary(_, _, _, span) -> span
+            .Unary(_, _, span) -> span
+            .Call(_, _, span) -> span
+            .MemberAccess(_, _, span) -> span
+            .Index(_, _, span) -> span
+            .Block(block) -> block.span
+            .Feature(fe) -> fe.data.node_span
+        }
+    }
+}

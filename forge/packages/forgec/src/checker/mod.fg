@@ -1,1 +1,327 @@
-// TODO: implement
+// ─── Type Checker ──────────────────────────────
+// Walks the AST and verifies type correctness.
+// Uses the feature registry to dispatch feature-specific checking.
+
+use core.token.Span
+use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr}
+use core.types.{Type, type_is_numeric, type_to_string}
+use core.error.{Diagnostic, DiagnosticBag, new_diagnostic_bag, error, error_with_help, E_TYPE_MISMATCH, E_UNDEFINED_VAR, E_IMMUTABLE_ASSIGN, E_WRONG_ARG_COUNT}
+use core.registry.REGISTRY
+use checker.env.{TypeEnv, type_env_new}
+
+// ─── Type Checker State ────────────────────────
+
+type TypeChecker = {
+    mut env: TypeEnv,
+    mut diagnostics: DiagnosticBag,
+    // Type annotations on expressions (for codegen to read)
+    mut expr_types: Map<string, Type>,
+}
+
+fn type_checker_new() -> TypeChecker {
+    TypeChecker {
+        env: type_env_new(),
+        diagnostics: new_diagnostic_bag(),
+        expr_types: {},
+    }
+}
+
+// ─── Type Checker Methods ──────────────────────
+
+impl TypeChecker {
+
+    fn check_program(self, program: Program) {
+        // First pass: register top-level declarations
+        for stmt in program.statements {
+            self.register_top_level(stmt)
+        }
+
+        // Second pass: check all statements
+        for stmt in program.statements {
+            self.check_statement(stmt)
+        }
+    }
+
+    fn register_top_level(self, stmt: Statement) {
+        match stmt {
+            .Feature(fe) -> {
+                let feature_id = fe.data.feature
+                if REGISTRY.top_level.has(feature_id) {
+                    let handler = REGISTRY.top_level[feature_id]
+                    // TODO: call handler with self and node
+                }
+            }
+            _ -> {}
+        }
+    }
+
+    fn check_statement(self, stmt: Statement) {
+        match stmt {
+            .Expr(expr) -> {
+                self.infer_expr(expr)
+            }
+            .Assign(target, value, span) -> {
+                self.check_assign(target, value, span)
+            }
+            .Return(value, span) -> {
+                self.check_return(value, span)
+            }
+            .Feature(fe) -> {
+                let feature_id = fe.data.feature
+                if REGISTRY.check_stmt.has(feature_id) {
+                    let handler = REGISTRY.check_stmt[feature_id]
+                    // TODO: call handler
+                }
+            }
+        }
+    }
+
+    fn check_assign(self, target: Expr, value: Expr, span: Span) {
+        let target_type = self.infer_expr(target)
+        let value_type = self.infer_expr(value)
+
+        // Check target is mutable
+        match target {
+            .Ident(name, _) -> {
+                if !self.env.is_mutable(name) {
+                    self.diagnostics.diagnostics = self.diagnostics.diagnostics.push(
+                        error_with_help(
+                            E_IMMUTABLE_ASSIGN,
+                            "cannot assign to immutable variable '${name}'",
+                            span,
+                            "declare with 'mut' to make it mutable"
+                        )
+                    )
+                    self.diagnostics.has_errors = true
+                }
+            }
+            _ -> {}
+        }
+
+        self.expect_assignable(target_type, value_type, span)
+    }
+
+    fn check_return(self, value: Expr?, span: Span) {
+        let expected = self.env.current_return_type()
+        if value != null {
+            let actual = self.infer_expr(value!)
+            if expected != null {
+                self.expect_assignable(expected!, actual, span)
+            }
+        }
+    }
+
+    // ─── Expression Type Inference ─────────────
+
+    fn infer_expr(self, expr: Expr) -> Type {
+        match expr {
+            .IntLit(_, _) -> Type.Int
+            .FloatLit(_, _) -> Type.Float
+            .StringLit(_, _) -> Type.String
+            .BoolLit(_, _) -> Type.Bool
+            .NullLit(_) -> Type.Void
+
+            .Ident(name, span) -> {
+                let sym = self.env.lookup(name)
+                if sym != null {
+                    sym!.sym_type
+                } else {
+                    // Check for built-in functions
+                    if name == "print" || name == "println" || name == "eprint" || name == "eprintln" {
+                        Type.Function([Type.String], Type.Void)
+                    } else if name == "int" || name == "float" || name == "string" || name == "bool" {
+                        Type.Function([Type.Unknown], Type.Unknown)
+                    } else {
+                        self.diagnostics.diagnostics = self.diagnostics.diagnostics.push(
+                            error(E_UNDEFINED_VAR, "undefined variable '${name}'", span)
+                        )
+                        self.diagnostics.has_errors = true
+                        Type.Error
+                    }
+                }
+            }
+
+            .Binary(left, op, right, span) -> {
+                self.infer_binary(left, op, right, span)
+            }
+
+            .Unary(op, operand, span) -> {
+                self.infer_unary(op, operand, span)
+            }
+
+            .Call(callee, args, span) -> {
+                self.infer_call(callee, args, span)
+            }
+
+            .MemberAccess(object, field, span) -> {
+                let obj_type = self.infer_expr(object)
+                // TODO: resolve field type from struct/enum
+                Type.Unknown
+            }
+
+            .Index(object, index, span) -> {
+                let obj_type = self.infer_expr(object)
+                let idx_type = self.infer_expr(index)
+                // TODO: resolve element type from list/map
+                Type.Unknown
+            }
+
+            .Block(block) -> {
+                self.check_block(block)
+            }
+
+            .Feature(fe) -> {
+                let feature_id = fe.data.feature
+                if REGISTRY.check_expr.has(feature_id) {
+                    let handler = REGISTRY.check_expr[feature_id]
+                    // TODO: call handler, return type
+                }
+                Type.Unknown
+            }
+        }
+    }
+
+    fn infer_binary(self, left: Expr, op: BinOp, right: Expr, span: Span) -> Type {
+        let left_type = self.infer_expr(left)
+        let right_type = self.infer_expr(right)
+
+        match op {
+            // Arithmetic: both numeric, result matches
+            .Add -> {
+                if left_type is .String || right_type is .String {
+                    Type.String // string concatenation
+                } else if type_is_numeric(left_type) && type_is_numeric(right_type) {
+                    if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int }
+                } else {
+                    self.type_error("cannot add ${type_to_string(left_type)} and ${type_to_string(right_type)}", span)
+                    Type.Error
+                }
+            }
+            .Sub -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
+            .Mul -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
+            .Div -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
+            .Mod -> Type.Int
+
+            // Comparison: result is bool
+            .Eq -> Type.Bool
+            .NotEq -> Type.Bool
+            .Lt -> Type.Bool
+            .LtEq -> Type.Bool
+            .Gt -> Type.Bool
+            .GtEq -> Type.Bool
+
+            // Logical: result is bool
+            .And -> Type.Bool
+            .Or -> Type.Bool
+
+            // Bitwise: result is int
+            .BitAnd -> Type.Int
+            .BitOr -> Type.Int
+            .BitXor -> Type.Int
+            .Shl -> Type.Int
+            .Shr -> Type.Int
+
+            // Pipe: result is return type of right
+            .Pipe -> right_type
+        }
+    }
+
+    fn infer_unary(self, op: UnaryOp, operand: Expr, span: Span) -> Type {
+        let operand_type = self.infer_expr(operand)
+        match op {
+            .Neg -> operand_type // -x preserves type (int or float)
+            .Not -> Type.Bool
+            .BitNot -> Type.Int
+        }
+    }
+
+    fn infer_call(self, callee: Expr, args: List<Expr>, span: Span) -> Type {
+        let callee_type = self.infer_expr(callee)
+
+        // Infer all argument types
+        for arg in args {
+            self.infer_expr(arg)
+        }
+
+        match callee_type {
+            .Function(param_types, return_type) -> {
+                // Check arg count
+                if args.length != param_types.length {
+                    // Allow varargs for print/println
+                    match callee {
+                        .Ident(name, _) -> {
+                            if name != "print" && name != "println" && name != "eprint" && name != "eprintln" {
+                                self.diagnostics.diagnostics = self.diagnostics.diagnostics.push(
+                                    error(E_WRONG_ARG_COUNT,
+                                        "expected ${param_types.length} arguments, got ${args.length}",
+                                        span)
+                                )
+                                self.diagnostics.has_errors = true
+                            }
+                        }
+                        _ -> {}
+                    }
+                }
+                return_type
+            }
+            _ -> {
+                // If callee is unknown, return unknown (don't error yet)
+                if callee_type is .Unknown || callee_type is .Error {
+                    Type.Unknown
+                } else {
+                    self.type_error("${type_to_string(callee_type)} is not callable", span)
+                    Type.Error
+                }
+            }
+        }
+    }
+
+    fn check_block(self, block: Block) -> Type {
+        self.env.push_scope()
+        mut last_type = Type.Void
+
+        for stmt in block.statements {
+            self.check_statement(stmt)
+            // Track last expression type for block return
+            match stmt {
+                .Expr(expr) -> { last_type = self.infer_expr(expr) }
+                _ -> { last_type = Type.Void }
+            }
+        }
+
+        self.env.pop_scope()
+        last_type
+    }
+
+    // ─── Type Compatibility ────────────────────
+
+    fn expect_assignable(self, expected: Type, actual: Type, span: Span) {
+        if expected is .Unknown || actual is .Unknown { return }
+        if expected is .Error || actual is .Error { return }
+        if expected == actual { return }
+
+        // Int can be promoted to Float
+        if expected is .Float && actual is .Int { return }
+
+        // Nullable accepts the inner type
+        match expected {
+            .Nullable(inner) -> {
+                if inner == actual { return }
+                if actual is .Void { return } // null assignable to T?
+            }
+            _ -> {}
+        }
+
+        self.type_error(
+            "type mismatch: expected ${type_to_string(expected)}, got ${type_to_string(actual)}",
+            span
+        )
+    }
+
+    fn type_error(self, message: string, span: Span) {
+        self.diagnostics.diagnostics = self.diagnostics.diagnostics.push(
+            error(E_TYPE_MISMATCH, message, span)
+        )
+        self.diagnostics.has_errors = true
+    }
+}

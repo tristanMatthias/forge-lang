@@ -1,9 +1,9 @@
 // Phase 1 features for self-hosted compiler
 // Each feature handles its own parsing, checking, and codegen
 
-// use features.variables
-// use features.functions
-// use features.operators
-// use features.if_else
-// use features.printing
-// use features.primitive_types
+use features.variables
+use features.functions
+use features.operators
+use features.if_else
+use features.printing
+use features.primitive_types

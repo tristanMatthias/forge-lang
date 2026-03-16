@@ -1,1 +1,41 @@
-// TODO: implement
+// ─── Printing Feature ─────────────────────────
+// Handles: print and println built-in functions.
+//
+// print/println are NOT special syntax — they are ordinary function calls
+// that get resolved during type checking and emitted as calls to runtime
+// functions during codegen. No parse handler is needed because
+// `print("hello")` and `println(x)` parse as normal Expr.Call nodes
+// with Expr.Ident("print") / Expr.Ident("println") as the callee.
+//
+// This feature module registers print/println as known built-in symbols
+// so that the type checker does not report them as undefined, and so
+// that codegen knows to emit the appropriate runtime calls.
+
+use core.registry.{register_feature, FeatureRegistration}
+
+// ─── Built-in Function Names ─────────────────────
+// Used by the checker to recognize these as valid call targets.
+
+let PRINT_BUILTINS: List<string> = ["print", "println"]
+
+fn is_print_builtin(name: string) -> bool {
+    name == "print" || name == "println"
+}
+
+// ─── Registration ────────────────────────────────
+// No parse handlers — print/println are regular function calls.
+// Check and emit handlers will be added when the checker/codegen
+// phases are implemented.
+
+register_feature(FeatureRegistration {
+    id: "printing",
+    name: "Print Functions",
+    status: "wip",
+    parse_tokens: [],
+    parse_handlers: [],
+    check_stmt: null,
+    check_expr: null,
+    emit_stmt: null,
+    emit_expr: null,
+    top_level: null,
+})
