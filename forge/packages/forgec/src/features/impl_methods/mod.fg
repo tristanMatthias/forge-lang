@@ -1,0 +1,219 @@
+// ─── Impl Methods Feature ──────────────────────
+// Handles: impl blocks with methods on types.
+// impl TypeName { fn method(self, ...) -> ... { ... } }
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Table ─────────────────────────────────
+
+mut IMPL_BLOCKS: Map<string, ImplBlockData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type ImplMethod = {
+    name: string,
+    params: List<Param>,
+    return_type: TypeExpr?,
+    body: Block,
+    span: Span,
+}
+
+type ImplBlockData = {
+    trait_name: string?,
+    type_name: string,
+    type_params: List<string>,
+    methods: List<ImplMethod>,
+    span: Span,
+}
+
+fn get_impl_block(id: int) -> ImplBlockData? {
+    let key = "${id}"
+    if IMPL_BLOCKS.has(key) { IMPL_BLOCKS[key] } else { null }
+}
+
+// ─── Parse ──────────────────────────────────────
+// impl TypeName { fn method(...) { ... } }
+// impl Trait for TypeName { fn method(...) { ... } }
+
+fn parse_impl(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'impl'
+
+    let first_name = p.expect_ident()
+    if first_name == null {
+        p.error("expected type name after 'impl'")
+        return null
+    }
+
+    // Check for "impl Trait for Type"
+    mut trait_name: string? = null
+    mut type_name = first_name!
+
+    if p.check(.For) {
+        p.advance()
+        trait_name = first_name!
+        let tn = p.expect_ident()
+        if tn == null {
+            p.error("expected type name after 'for'")
+            return null
+        }
+        type_name = tn!
+    }
+
+    let type_params = p.parse_type_params()
+
+    if p.expect(.LBrace) == null { return null }
+    p.skip_newlines()
+
+    // Parse methods
+    mut methods: List<ImplMethod> = []
+    for !p.check(.RBrace) && !p.is_at_end() {
+        p.skip_newlines()
+        if p.check(.Fn) {
+            let method = parse_impl_method(p)
+            if method != null {
+                methods = methods.push(method!)
+            }
+        } else {
+            p.error("expected 'fn' in impl block")
+            p.advance()
+        }
+        p.skip_newlines()
+    }
+
+    if p.expect(.RBrace) == null { return null }
+
+    let id = next_node_id()
+    IMPL_BLOCKS["${id}"] = ImplBlockData {
+        trait_name, type_name, type_params, methods, span: start,
+    }
+
+    feature_stmt("impl_methods", "impl_block", id, start)
+}
+
+fn parse_impl_method(p: Parser) -> ImplMethod? {
+    let start = p.advance().span // consume 'fn'
+
+    let name = p.expect_ident()
+    if name == null {
+        p.error("expected method name")
+        return null
+    }
+
+    let params = p.parse_params()
+    if params == null { return null }
+
+    let return_type = if p.check(.Arrow) {
+        p.advance()
+        p.parse_type_expr()
+    } else { null }
+
+    let body = p.parse_block()
+    if body == null {
+        p.error("expected method body")
+        return null
+    }
+
+    ImplMethod { name: name!, params: params!, return_type, body: body!, span: start }
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_impl(tc: TypeChecker, node: NodeRef) {
+    let d = get_impl_block(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Register each method as type_name.method_name in the environment
+    for method in data.methods {
+        let method_name = "${data.type_name}.${method.name}"
+
+        mut param_types: List<Type> = []
+        for param in method.params {
+            // self param gets the type being impl'd
+            if param.name == "self" {
+                param_types = param_types.push(Type.Unknown) // TODO: look up type
+            } else {
+                param_types = param_types.push(Type.Unknown)
+            }
+        }
+
+        let ret = Type.Void // TODO: resolve return type
+        tc.env.define(method_name, Type.Function(param_types, ret), false)
+
+        // Check method body
+        tc.env.push_scope()
+        tc.env.push_return_type(ret)
+        mut i = 0
+        for param in method.params {
+            tc.env.define(param.name, param_types[i], param.mutable)
+            i = i + 1
+        }
+        tc.check_block(method.body)
+        tc.env.pop_return_type()
+        tc.env.pop_scope()
+    }
+}
+
+fn top_level_impl(tc: TypeChecker, node: NodeRef) {
+    check_impl(tc, node)
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_impl(cg: Codegen, node: NodeRef) {
+    let d = get_impl_block(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Emit each method as a standalone function named type_name.method_name
+    for method in data.methods {
+        let fn_name = "${data.type_name}.${method.name}"
+
+        let param_arr = llvm.type_array_new(method.params.length)
+        mut i = 0
+        for param in method.params {
+            llvm.type_array_set(param_arr, i, cg.types.i64_type) // TODO: actual types
+            i = i + 1
+        }
+        let ret_ty = cg.types.i64_type // TODO: actual return type
+        let fn_type = llvm.function_type(ret_ty, param_arr, method.params.length, 0)
+        llvm.type_array_free(param_arr)
+
+        let fn_val = llvm.add_function(cg.module, fn_name, fn_type)
+        cg.functions[fn_name] = fn_val
+        cg.current_fn = fn_val
+
+        let entry = llvm.append_basic_block(cg.ctx, fn_val, "entry")
+        llvm.position_at_end(cg.builder, entry)
+
+        i = 0
+        for param in method.params {
+            let param_val = llvm.get_param(fn_val, i)
+            cg.define_var(param.name, Type.Int, param_val)
+            i = i + 1
+        }
+
+        let result = cg.emit_block(method.body)
+        llvm.build_ret(cg.builder, result)
+    }
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "impl_methods",
+    name: "Impl Blocks & Methods",
+    status: "wip",
+    parsers: { "impl": parse_impl },
+    check_stmt: check_impl,
+    check_expr: null,
+    emit_stmt: emit_impl,
+    emit_expr: null,
+    top_level: top_level_impl,
+})

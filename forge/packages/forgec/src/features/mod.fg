@@ -13,3 +13,7 @@ use features.primitive_types
 // Phase 2a
 use features.enums
 use features.pattern_matching
+
+// Phase 2b
+use features.structs
+use features.impl_methods

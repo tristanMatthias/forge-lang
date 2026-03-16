@@ -1,0 +1,177 @@
+// ─── Structs Feature ───────────────────────────
+// Handles: type declarations (named structs), struct literals,
+// field access. Struct layout is { field1, field2, ... } in LLVM.
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, FeatureExpr, feature_stmt, feature_expr, next_node_id}
+use core.types.{Type, StructField}
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr, TypeField}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Tables ────────────────────────────────
+
+mut TYPE_DECLS: Map<string, TypeDeclData> = {}
+mut STRUCT_LITS: Map<string, StructLitData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type TypeDeclData = {
+    name: string,
+    type_params: List<string>,
+    value: TypeExpr,
+    exported: bool,
+    span: Span,
+}
+
+type StructLitField = {
+    name: string,
+    value: Expr,
+}
+
+type StructLitData = {
+    type_name: string?,
+    fields: List<StructLitField>,
+    span: Span,
+}
+
+fn get_type_decl(id: int) -> TypeDeclData? {
+    let key = "${id}"
+    if TYPE_DECLS.has(key) { TYPE_DECLS[key] } else { null }
+}
+
+fn get_struct_lit(id: int) -> StructLitData? {
+    let key = "${id}"
+    if STRUCT_LITS.has(key) { STRUCT_LITS[key] } else { null }
+}
+
+// ─── Parse: Type Declaration ────────────────────
+// type Name = { field: Type, ... }
+// type Name<T> = { field: T, ... }
+
+fn parse_type_decl(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'type'
+
+    let name = p.expect_ident()
+    if name == null {
+        p.error("expected type name after 'type'")
+        return null
+    }
+
+    let type_params = p.parse_type_params()
+
+    if p.expect(.Eq) == null {
+        p.error("expected '=' in type declaration")
+        return null
+    }
+
+    let value = p.parse_type_expr()
+    if value == null {
+        p.error("expected type expression after '='")
+        return null
+    }
+
+    let id = next_node_id()
+    TYPE_DECLS["${id}"] = TypeDeclData {
+        name: name!, type_params, value: value!, exported: false, span: start,
+    }
+
+    feature_stmt("structs", "type_decl", id, start)
+}
+
+// ─── Struct Literal Construction ────────────────
+// Called by expression parser when it detects { ident: expr, ... }
+
+fn make_struct_lit(type_name: string?, fields: List<StructLitField>, span: Span) -> Expr {
+    let id = next_node_id()
+    STRUCT_LITS["${id}"] = StructLitData { type_name, fields, span }
+    feature_expr("structs", "struct_lit", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_type_decl(tc: TypeChecker, node: NodeRef) {
+    let d = get_type_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Resolve struct type from TypeExpr
+    match data.value {
+        .Struct(fields, _) -> {
+            mut struct_fields: List<StructField> = []
+            for f in fields {
+                // TODO: resolve field type from type_ann
+                struct_fields = struct_fields.push(StructField {
+                    name: f.name, field_type: Type.Unknown,
+                })
+            }
+            let ty = Type.Struct(data.name, struct_fields)
+            tc.env.define(data.name, ty, false)
+        }
+        _ -> {
+            // Type alias (not a struct)
+            tc.env.define(data.name, Type.Unknown, false)
+        }
+    }
+}
+
+fn check_struct_lit(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_struct_lit(node.node_id)
+    if d == null { return Type.Unknown }
+    let data = d!
+
+    // Infer field types
+    mut fields: List<StructField> = []
+    for f in data.fields {
+        let ft = tc.infer_expr(f.value)
+        fields = fields.push(StructField { name: f.name, field_type: ft })
+    }
+
+    Type.Struct(data.type_name, fields)
+}
+
+fn top_level_type(tc: TypeChecker, node: NodeRef) {
+    check_type_decl(tc, node)
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_type_decl(cg: Codegen, node: NodeRef) {
+    // Type declarations don't emit code — they define LLVM struct types
+}
+
+fn emit_struct_lit(cg: Codegen, node: NodeRef) -> ptr {
+    let d = get_struct_lit(node.node_id)
+    if d == null { return llvm.const_int(cg.types.i64_type, 0, 0) }
+    let data = d!
+
+    // Build LLVM struct value with insert_value
+    // Start with undef, insert each field
+    // TODO: look up actual struct LLVM type
+    let struct_ty = cg.types.i64_type // placeholder
+    mut val = llvm.get_undef(struct_ty)
+
+    mut i = 0
+    for f in data.fields {
+        let field_val = cg.emit_expr(f.value)
+        val = llvm.build_insert_value(cg.builder, val, field_val, i, f.name)
+        i = i + 1
+    }
+
+    val
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "structs",
+    name: "Struct Types",
+    status: "wip",
+    parsers: { "type": parse_type_decl },
+    check_stmt: check_type_decl,
+    check_expr: check_struct_lit,
+    emit_stmt: emit_type_decl,
+    emit_expr: emit_struct_lit,
+    top_level: top_level_type,
+})

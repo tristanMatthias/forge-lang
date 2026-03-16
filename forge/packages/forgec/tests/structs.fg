@@ -1,0 +1,30 @@
+// ─── structs.fg ────────────────────────────────
+// Tests type declarations, struct literals, field access, impl methods.
+//
+// Expected output:
+//   Alice is 30
+//   7
+
+type Point = {
+    x: int,
+    y: int,
+}
+
+type Person = {
+    name: string,
+    age: int,
+}
+
+impl Point {
+    fn manhattan(self) -> int {
+        self.x + self.y
+    }
+}
+
+fn main() {
+    let p = Person { name: "Alice", age: 30 }
+    println("${p.name} is ${string(p.age)}")
+
+    let pt = Point { x: 3, y: 4 }
+    println(string(pt.manhattan()))
+}
