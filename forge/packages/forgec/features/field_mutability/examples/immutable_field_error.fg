@@ -1,0 +1,10 @@
+/// # Immutable field write error
+/// Writing to a non-mut field should produce F0031
+/// expect-error: F0031
+
+type Counter = { mut count: int, name: string }
+
+fn main() {
+  let c = Counter { count: 0, name: "visits" }
+  c.name = "other"
+}

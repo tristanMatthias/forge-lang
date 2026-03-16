@@ -1,0 +1,14 @@
+/// # All fields mutable
+/// All mut fields can be written
+/// expect: 100
+/// expect: 200
+
+type Cursor = { mut x: int, mut y: int }
+
+fn main() {
+  let c = Cursor { x: 0, y: 0 }
+  c.x = 100
+  c.y = 200
+  println(string(c.x))
+  println(string(c.y))
+}

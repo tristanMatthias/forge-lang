@@ -174,7 +174,7 @@ fn format_type_expr(ty: &TypeExpr) -> String {
             } else {
                 let field_strs: Vec<String> = fields
                     .iter()
-                    .map(|(name, ty, _)| format!("{}: {}", name, format_type_expr(ty)))
+                    .map(|f| format!("{}: {}", f.name, format_type_expr(&f.type_expr)))
                     .collect();
                 format!("{{ {} }}", field_strs.join(", "))
             }
@@ -185,7 +185,7 @@ fn format_type_expr(ty: &TypeExpr) -> String {
         TypeExpr::TypeWith { base, fields } => {
             let field_strs: Vec<String> = fields
                 .iter()
-                .map(|(name, ty, _)| format!("{}: {}", name, format_type_expr(ty)))
+                .map(|f| format!("{}: {}", f.name, format_type_expr(&f.type_expr)))
                 .collect();
             format!("{} with {{ {} }}", format_type_expr(base), field_strs.join(", "))
         }
@@ -334,8 +334,8 @@ fn format_type_decl(name: &str, value: &TypeExpr) -> String {
                 format!("export type {} = {{}}", name)
             } else {
                 let mut s = format!("export type {} = {{\n", name);
-                for (fname, fty, _) in fields {
-                    s.push_str(&format!("    {}: {}\n", fname, format_type_expr(fty)));
+                for f in fields {
+                    s.push_str(&format!("    {}: {}\n", f.name, format_type_expr(&f.type_expr)));
                 }
                 s.push('}');
                 s

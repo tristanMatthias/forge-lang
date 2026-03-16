@@ -13,6 +13,9 @@ pub struct TypeChecker {
     /// Package-declared annotations: (annotation_name, target, component_name)
     /// Populated from component template `annotation <target> <name>(...)` declarations.
     pub package_annotations: Vec<(String, String, String)>,
+    /// Per-field mutability registry: (type_name, field_name) → mutable
+    /// Fields not in this map default to immutable.
+    pub mutable_fields: std::collections::HashSet<(String, String)>,
 }
 
 impl TypeChecker {
@@ -22,6 +25,7 @@ impl TypeChecker {
             diagnostics: Vec::new(),
             current_fn_return_type: None,
             package_annotations: Vec::new(),
+            mutable_fields: std::collections::HashSet::new(),
         }
     }
 
@@ -251,8 +255,11 @@ impl TypeChecker {
                         }
                     }
                 }
-                // Check field assignment on immutable variable: p.x = val
+                // Check field assignment: per-field mutability (F0031) and variable mutability (F0013)
                 if let Expr::MemberAccess { object, .. } = target {
+                    // Check per-field mutability first
+                    self.check_field_mutability(target, *span);
+
                     // Walk through nested member accesses to find the root variable
                     let mut root = object.as_ref();
                     while let Expr::MemberAccess { object: inner, .. } = root {
@@ -261,11 +268,23 @@ impl TypeChecker {
                     if let Expr::Ident(name, _) = root {
                         if let Some(info) = self.env.lookup_and_mark_used(name) {
                             if !info.mutable {
-                                self.diagnostics.push(Diagnostic::error(
-                                    "F0013",
-                                    format!("cannot assign to field of immutable variable '{}'", name),
-                                    *span,
-                                ));
+                                // Only emit F0013 for old-style types without mut annotations
+                                // For types with field mutability, the per-field check handles it
+                                let obj_type = self.env.lookup(name).map(|i| i.ty.clone()).unwrap_or(Type::Unknown);
+                                let type_name = match &obj_type {
+                                    Type::Struct { name: Some(n), .. } => Some(n.clone()),
+                                    _ => None,
+                                };
+                                let has_mutability_info = type_name.as_ref()
+                                    .map(|tn| self.mutable_fields.iter().any(|(t, _)| t == tn))
+                                    .unwrap_or(false);
+                                if !has_mutability_info {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        "F0013",
+                                        format!("cannot assign to field of immutable variable '{}'", name),
+                                        *span,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -989,7 +1008,7 @@ impl TypeChecker {
                 name: None,
                 fields: fields
                     .iter()
-                    .map(|(name, ty, _annotations)| (name.clone(), self.resolve_type_expr(ty)))
+                    .map(|f| (f.name.clone(), self.resolve_type_expr(&f.type_expr)))
                     .collect(),
             },
             TypeExpr::Without { base, fields } => {
@@ -1010,13 +1029,13 @@ impl TypeChecker {
                 match base_ty {
                     Type::Struct { name, fields: base_fields } => {
                         let mut result_fields = base_fields;
-                        for (n, ty, _annotations) in new_fields {
-                            let resolved = self.resolve_type_expr(ty);
+                        for f in new_fields {
+                            let resolved = self.resolve_type_expr(&f.type_expr);
                             // Check if this field already exists — if so, replace it
-                            if let Some(pos) = result_fields.iter().position(|(fname, _)| fname == n) {
-                                result_fields[pos] = (n.clone(), resolved);
+                            if let Some(pos) = result_fields.iter().position(|(fname, _)| fname == &f.name) {
+                                result_fields[pos] = (f.name.clone(), resolved);
                             } else {
-                                result_fields.push((n.clone(), resolved));
+                                result_fields.push((f.name.clone(), resolved));
                             }
                         }
                         Type::Struct {
@@ -1373,11 +1392,11 @@ pub fn type_expr_references_name(expr: &TypeExpr, name: &str) -> bool {
             params.iter().any(|p| type_expr_references_name(p, name))
                 || type_expr_references_name(return_type, name)
         }
-        TypeExpr::Struct { fields } => fields.iter().any(|(_, ty, _)| type_expr_references_name(ty, name)),
+        TypeExpr::Struct { fields } => fields.iter().any(|f| type_expr_references_name(&f.type_expr, name)),
         TypeExpr::Without { base, .. } => type_expr_references_name(base, name),
         TypeExpr::TypeWith { base, fields } => {
             type_expr_references_name(base, name)
-                || fields.iter().any(|(_, ty, _)| type_expr_references_name(ty, name))
+                || fields.iter().any(|f| type_expr_references_name(&f.type_expr, name))
         }
         TypeExpr::Only { base, .. } => type_expr_references_name(base, name),
         TypeExpr::AsPartial(inner) => type_expr_references_name(inner, name),

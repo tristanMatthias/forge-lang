@@ -27,6 +27,16 @@ impl TypeChecker {
             if self.is_partial_type_expr(&data.value) {
                 self.env.partial_types.insert(data.name.clone());
             }
+
+            // Register per-field mutability from StructFieldDef
+            if let TypeExpr::Struct { fields } = &data.value {
+                for field in fields {
+                    if field.mutable {
+                        self.mutable_fields.insert((data.name.clone(), field.name.clone()));
+                    }
+                }
+            }
+
             let ty = self.resolve_type_expr(&data.value);
             let ty = match ty {
                 Type::Struct { fields, .. } => Type::Struct {

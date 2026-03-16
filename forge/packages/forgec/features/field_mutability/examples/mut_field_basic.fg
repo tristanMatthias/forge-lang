@@ -1,0 +1,11 @@
+/// # Mutable fields — basic
+/// Only mut fields can be written after construction
+/// expect: 5
+
+type Counter = { mut count: int, name: string }
+
+fn main() {
+  let c = Counter { count: 0, name: "visits" }
+  c.count = 5
+  println(string(c.count))
+}

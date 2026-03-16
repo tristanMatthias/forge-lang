@@ -100,7 +100,7 @@ impl<'ctx> Codegen<'ctx> {
             }
             Type::Struct { name: None, fields } => {
                 TypeExpr::Struct {
-                    fields: fields.iter().map(|(fname, fty)| (fname.clone(), self.type_to_type_expr(fty), Vec::new())).collect(),
+                    fields: fields.iter().map(|(fname, fty)| StructFieldDef { name: fname.clone(), type_expr: self.type_to_type_expr(fty), annotations: Vec::new(), mutable: false }).collect(),
                 }
             }
             Type::List(inner) => TypeExpr::Generic {

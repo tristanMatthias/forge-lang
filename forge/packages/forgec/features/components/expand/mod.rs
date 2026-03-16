@@ -455,13 +455,13 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
             return_type: Box::new(substitute_type_expr(return_type, ctx)),
         },
         TypeExpr::Struct { fields } => TypeExpr::Struct {
-            fields: fields.iter().map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone())).collect(),
+            fields: fields.iter().map(|f| StructFieldDef { name: f.name.clone(), type_expr: substitute_type_expr(&f.type_expr, ctx), annotations: f.annotations.clone(), mutable: f.mutable }).collect(),
         },
         TypeExpr::Without  { base, fields } => TypeExpr::Without  { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
         TypeExpr::Only     { base, fields } => TypeExpr::Only     { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
         TypeExpr::TypeWith { base, fields } => TypeExpr::TypeWith {
             base: Box::new(substitute_type_expr(base, ctx)),
-            fields: fields.iter().map(|(n, t, a)| (n.clone(), substitute_type_expr(t, ctx), a.clone())).collect(),
+            fields: fields.iter().map(|f| StructFieldDef { name: f.name.clone(), type_expr: substitute_type_expr(&f.type_expr, ctx), annotations: f.annotations.clone(), mutable: f.mutable }).collect(),
         },
         TypeExpr::Intersection(left, right) => TypeExpr::Intersection(
             Box::new(substitute_type_expr(left, ctx)),
@@ -563,11 +563,11 @@ fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionC
 fn map_schema_fields(
     schema: &[ComponentSchemaField],
     visible_only: bool,
-) -> Vec<(String, TypeExpr, Vec<Annotation>)> {
+) -> Vec<StructFieldDef> {
     schema
         .iter()
         .filter(|f| !visible_only || !f.annotations.iter().any(|a| a.name == "hidden"))
-        .map(|f| (f.name.clone(), f.type_ann.clone(), Vec::new()))
+        .map(|f| StructFieldDef { name: f.name.clone(), type_expr: f.type_ann.clone(), annotations: Vec::new(), mutable: false })
         .collect()
 }
 
@@ -1701,15 +1701,15 @@ impl ComponentExpander {
         if result.type_decl.is_none() && !result.component_methods.is_empty() {
             let kind = capitalize_first(&ctx.component_kind);
             // Build struct fields: __name + config fields
-            let mut fields: Vec<(String, TypeExpr, Vec<Annotation>)> = vec![
-                ("__name".to_string(), TypeExpr::Named("string".to_string()), vec![]),
+            let mut fields: Vec<StructFieldDef> = vec![
+                StructFieldDef { name: "__name".to_string(), type_expr: TypeExpr::Named("string".to_string()), annotations: vec![], mutable: false },
             ];
             for entry in &template.config_schema {
-                fields.push((entry.key.clone(), entry.type_ann.clone(), vec![]));
+                fields.push(StructFieldDef { name: entry.key.clone(), type_expr: entry.type_ann.clone(), annotations: vec![], mutable: false });
             }
             for item in &template.body {
                 if let ComponentTemplateItem::FieldDecl { name, type_ann, .. } = item {
-                    fields.push((name.clone(), type_ann.clone(), vec![]));
+                    fields.push(StructFieldDef { name: name.clone(), type_expr: type_ann.clone(), annotations: vec![], mutable: false });
                 }
             }
             result.component_type = Some((kind, TypeExpr::Struct { fields }));

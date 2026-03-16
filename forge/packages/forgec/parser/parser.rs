@@ -1462,13 +1462,14 @@ impl Parser {
                     self.advance();
                     self.skip_newlines();
                     let fields = self.parse_delimited_until(&TokenKind::RBrace, |p| {
+                        let mutable = if p.check(&TokenKind::Mut) { p.advance(); p.skip_newlines(); true } else { false };
                         let name = p.expect_ident()?;
                         p.skip_newlines();
                         p.expect(&TokenKind::Colon)?;
                         p.skip_newlines();
-                        let field_ty = p.parse_type_expr()?;
+                        let type_expr = p.parse_type_expr()?;
                         let annotations = p.parse_type_field_annotations();
-                        Some((name, field_ty, annotations))
+                        Some(StructFieldDef { name, type_expr, annotations, mutable })
                     })?;
                     ty = TypeExpr::TypeWith {
                         base: Box::new(ty),
@@ -1626,17 +1627,25 @@ impl Parser {
                 })
             }
             TokenKind::LBrace => {
-                // Struct type: { name: string @min(1), age: int }
+                // Struct type: { mut name: string @min(1), age: int }
                 self.advance();
                 self.skip_newlines();
                 let fields = self.parse_delimited_until(&TokenKind::RBrace, |p| {
+                    // Check for `mut` keyword before field name
+                    let mutable = if p.check(&TokenKind::Mut) {
+                        p.advance();
+                        p.skip_newlines();
+                        true
+                    } else {
+                        false
+                    };
                     let name = p.expect_ident()?;
                     p.skip_newlines();
                     p.expect(&TokenKind::Colon)?;
                     p.skip_newlines();
-                    let ty = p.parse_type_expr()?;
+                    let type_expr = p.parse_type_expr()?;
                     let annotations = p.parse_type_field_annotations();
-                    Some((name, ty, annotations))
+                    Some(StructFieldDef { name, type_expr, annotations, mutable })
                 })?;
                 Some(TypeExpr::Struct { fields })
             }

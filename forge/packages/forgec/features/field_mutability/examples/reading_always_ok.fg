@@ -1,0 +1,12 @@
+/// # Reading is always allowed
+/// Both mut and immutable fields can be read
+/// expect: alice
+/// expect: 0
+
+type User = { name: string, mut login_count: int }
+
+fn main() {
+  let u = User { name: "alice", login_count: 0 }
+  println(u.name)
+  println(string(u.login_count))
+}

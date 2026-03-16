@@ -1,0 +1,21 @@
+/// # Method reading mut field
+/// Methods can read mut and immutable fields on self
+/// expect: visits
+/// expect: 0
+
+type Counter = { mut count: int, name: string }
+
+impl Counter {
+  fn value(self) -> int {
+    self.count
+  }
+  fn display_name(self) -> string {
+    self.name
+  }
+}
+
+fn main() {
+  let c = Counter { count: 0, name: "visits" }
+  println(c.display_name())
+  println(string(c.value()))
+}

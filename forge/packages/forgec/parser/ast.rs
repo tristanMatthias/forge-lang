@@ -534,6 +534,15 @@ pub enum TemplatePart {
     Expr(Box<Expr>),
 }
 
+/// A field in a struct type declaration: `mut name: string @min(1)`
+#[derive(Debug, Clone)]
+pub struct StructFieldDef {
+    pub name: String,
+    pub type_expr: TypeExpr,
+    pub annotations: Vec<Annotation>,
+    pub mutable: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum TypeExpr {
     Named(String),
@@ -549,7 +558,7 @@ pub enum TypeExpr {
         return_type: Box<TypeExpr>,
     },
     Struct {
-        fields: Vec<(String, TypeExpr, Vec<Annotation>)>,
+        fields: Vec<StructFieldDef>,
     },
     /// Type without fields: `User without {id, name}`
     Without {
@@ -559,7 +568,7 @@ pub enum TypeExpr {
     /// Type with additional fields: `User with { age: int @min(1) }`
     TypeWith {
         base: Box<TypeExpr>,
-        fields: Vec<(String, TypeExpr, Vec<Annotation>)>,
+        fields: Vec<StructFieldDef>,
     },
     /// Type with only specified fields: `User only {id, name}`
     Only {

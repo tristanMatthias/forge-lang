@@ -20,10 +20,12 @@ impl TypeChecker {
         match type_expr {
             TypeExpr::Struct { fields } => {
                 let mut result = Vec::new();
-                for (field_name, field_type, anns) in fields {
-                    if anns.is_empty() { continue; }
+                for field in fields {
+                    if field.annotations.is_empty() { continue; }
+                    let field_name = &field.name;
+                    let anns = &field.annotations;
 
-                    let resolved_type = self.resolve_type_expr(field_type);
+                    let resolved_type = self.resolve_type_expr(&field.type_expr);
                     let base_type = match &resolved_type {
                         Type::Nullable(inner) => inner.as_ref(),
                         other => other,
@@ -152,9 +154,9 @@ impl TypeChecker {
                                 } else if let Some(Expr::IntLit(n, _)) = ann.args.first() {
                                     // Track for contradiction check
                                     if ann_name == "min" {
-                                        min_val = Some((*n, ann.span));
+                                        min_val = Some((n.clone(), ann.span));
                                     } else {
-                                        max_val = Some((*n, ann.span));
+                                        max_val = Some((n.clone(), ann.span));
                                     }
                                 }
                             }
@@ -283,13 +285,13 @@ impl TypeChecker {
             TypeExpr::TypeWith { base, fields: new_fields } => {
                 let mut result = self.extract_type_annotations(base);
                 // Add/override annotations from new fields
-                for (name, _, anns) in new_fields {
-                    if !anns.is_empty() {
-                        let resolved = TypeEnv::resolve_annotations(anns);
-                        if let Some(pos) = result.iter().position(|(n, _)| n == name) {
-                            result[pos] = (name.clone(), resolved);
+                for f in new_fields {
+                    if !f.annotations.is_empty() {
+                        let resolved = TypeEnv::resolve_annotations(&f.annotations);
+                        if let Some(pos) = result.iter().position(|(n, _)| n == &f.name) {
+                            result[pos] = (f.name.clone(), resolved);
                         } else {
-                            result.push((name.clone(), resolved));
+                            result.push((f.name.clone(), resolved));
                         }
                     }
                 }
