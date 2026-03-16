@@ -339,8 +339,20 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             if let Some(val) = self.compile_expr(&arg.value) {
-                // Type-match: if param expects different type, convert
-                if i < param_count {
+                // Check if param expects a trait type — wrap in fat pointer
+                if let Some(Type::DynTrait(ref trait_name)) = param_types.get(i) {
+                    let concrete_type = self.infer_type(&arg.value);
+                    if !matches!(concrete_type, Type::DynTrait(_)) {
+                        if let Some(fat) = self.build_trait_fat_pointer(val, &concrete_type, trait_name) {
+                            compiled.push(fat.into());
+                        } else {
+                            compiled.push(val.into());
+                        }
+                    } else {
+                        compiled.push(val.into());
+                    }
+                } else if i < param_count {
+                    // Type-match: if param expects different type, convert
                     let param_type = function.get_nth_param(i as u32).unwrap().get_type();
                     let val = self.coerce_value(val, param_type);
                     compiled.push(val.into());
