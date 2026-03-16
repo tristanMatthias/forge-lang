@@ -1,0 +1,341 @@
+// ─── Pattern Matching Feature ──────────────────
+// Handles: match expressions with patterns.
+// Patterns: wildcard (_), ident binding, literals, .Variant(fields),
+//           tuple, struct, or-patterns (a | b), guards (if cond).
+// Compiles to if-else chains with tag checks for enum patterns.
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.Parser
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Table ─────────────────────────────────
+
+mut MATCH_EXPRS: Map<string, MatchData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+enum Pattern {
+    Wildcard(span: Span)
+    Ident(name: string, span: Span)
+    Literal(expr: Expr)
+    EnumVariant(variant: string, fields: List<Pattern>, span: Span)
+    Tuple(elements: List<Pattern>, span: Span)
+    Or(alternatives: List<Pattern>, span: Span)
+}
+
+type MatchArm = {
+    pattern: Pattern,
+    guard: Expr?,
+    body: Expr,
+    span: Span,
+}
+
+type MatchData = {
+    subject: Expr,
+    arms: List<MatchArm>,
+    span: Span,
+}
+
+fn get_match_data(id: int) -> MatchData? {
+    let key = "${id}"
+    if MATCH_EXPRS.has(key) { MATCH_EXPRS[key] } else { null }
+}
+
+// ─── Construction Helper ────────────────────────
+// Called by the expression parser when it encounters `match`.
+
+fn make_match_expr(subject: Expr, arms: List<MatchArm>, span: Span) -> Expr {
+    let id = next_node_id()
+    MATCH_EXPRS["${id}"] = MatchData { subject, arms, span }
+    feature_expr("pattern_matching", "match_expr", id, span)
+}
+
+// ─── Parse: Match Expression ────────────────────
+// Called from the expression parser (parse_match_expr in expressions.fg).
+// This provides the full pattern-aware parsing.
+
+fn parse_match(p: Parser) -> Expr? {
+    let start = p.advance().span // consume 'match'
+    p.skip_newlines()
+
+    let subject = p.parse_expr()
+    if subject == null { return null }
+
+    p.skip_newlines()
+    if p.expect(.LBrace) == null { return null }
+    p.skip_newlines()
+
+    mut arms: List<MatchArm> = []
+
+    for !p.check(.RBrace) && !p.is_at_end() {
+        p.skip_newlines()
+        let arm = parse_match_arm(p)
+        if arm != null {
+            arms = arms.push(arm!)
+        }
+        p.skip_newlines()
+    }
+
+    if p.expect(.RBrace) == null { return null }
+
+    make_match_expr(subject!, arms, start)
+}
+
+fn parse_match_arm(p: Parser) -> MatchArm? {
+    let start = p.current_span()
+
+    let pattern = parse_pattern(p)
+    if pattern == null { return null }
+
+    // Optional guard: if condition
+    let guard = if p.check(.If) {
+        p.advance()
+        p.parse_expr()
+    } else { null }
+
+    // Expect -> body
+    p.skip_newlines()
+    if p.expect(.Arrow) == null {
+        p.error("expected '->' in match arm")
+        return null
+    }
+    p.skip_newlines()
+
+    // Body: block or expression
+    let body = if p.check(.LBrace) {
+        let block = p.parse_block()
+        if block != null { Expr.Block(block!) } else { null }
+    } else {
+        p.parse_expr()
+    }
+
+    if body == null { return null }
+
+    MatchArm { pattern: pattern!, guard, body: body!, span: start }
+}
+
+// ─── Pattern Parsing ────────────────────────────
+
+fn parse_pattern(p: Parser) -> Pattern? {
+    let first = parse_simple_pattern(p)
+    if first == null { return null }
+
+    // Check for or-pattern: pattern | pattern
+    if p.check(.Bar) {
+        mut alternatives: List<Pattern> = [first!]
+        for p.check(.Bar) {
+            p.advance()
+            p.skip_newlines()
+            let next = parse_simple_pattern(p)
+            if next != null {
+                alternatives = alternatives.push(next!)
+            }
+        }
+        return Pattern.Or(alternatives, first!.span())
+    }
+
+    first
+}
+
+fn parse_simple_pattern(p: Parser) -> Pattern? {
+    let tok = p.peek()
+
+    match tok.kind {
+        // Wildcard: _
+        .Underscore -> {
+            let span = p.advance().span
+            Pattern.Wildcard(span)
+        }
+
+        // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
+        .Dot -> {
+            let start = p.advance().span
+            let name = p.expect_ident()
+            if name == null { return null }
+
+            // Optional sub-patterns: .Variant(p1, p2)
+            if p.check(.LParen) {
+                p.advance()
+                mut fields: List<Pattern> = []
+                for !p.check(.RParen) && !p.is_at_end() {
+                    p.skip_newlines()
+                    let sub = parse_pattern(p)
+                    if sub != null {
+                        fields = fields.push(sub!)
+                    }
+                    p.skip_newlines()
+                    if p.check(.Comma) { p.advance() }
+                }
+                p.expect(.RParen)
+                Pattern.EnumVariant(name!, fields, start)
+            } else {
+                // Simple variant: .Variant (no fields)
+                Pattern.EnumVariant(name!, [], start)
+            }
+        }
+
+        // Literal patterns: int, float, string, bool, null
+        .IntLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.IntLit(value, span))
+        }
+        .FloatLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.FloatLit(value, span))
+        }
+        .StringLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.StringLit(value, span))
+        }
+        .BoolLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.BoolLit(value, span))
+        }
+        .NullLiteral -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.NullLit(span))
+        }
+
+        // Identifier binding or tuple pattern
+        .Ident(name) -> {
+            let span = p.advance().span
+            Pattern.Ident(name, span)
+        }
+
+        // Tuple pattern: (p1, p2, ...)
+        .LParen -> {
+            let start = p.advance().span
+            mut elements: List<Pattern> = []
+            for !p.check(.RParen) && !p.is_at_end() {
+                p.skip_newlines()
+                let sub = parse_pattern(p)
+                if sub != null {
+                    elements = elements.push(sub!)
+                }
+                p.skip_newlines()
+                if p.check(.Comma) { p.advance() }
+            }
+            p.expect(.RParen)
+            Pattern.Tuple(elements, start)
+        }
+
+        _ -> {
+            p.error("expected pattern")
+            null
+        }
+    }
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_match(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_match_data(node.node_id)
+    if d == null { return Type.Void }
+    let data = d!
+
+    let subject_type = tc.infer_expr(data.subject)
+    mut result_type = Type.Unknown
+
+    for arm in data.arms {
+        tc.env.push_scope()
+
+        // Bind pattern variables
+        bind_pattern_vars(tc, arm.pattern, subject_type)
+
+        // Check guard if present
+        if arm.guard != null {
+            tc.infer_expr(arm.guard!)
+        }
+
+        // Check body
+        let arm_type = tc.infer_expr(arm.body)
+        if result_type is .Unknown {
+            result_type = arm_type
+        }
+
+        tc.env.pop_scope()
+    }
+
+    result_type
+}
+
+fn bind_pattern_vars(tc: TypeChecker, pat: Pattern, ty: Type) {
+    match pat {
+        .Wildcard(_) -> {} // binds nothing
+        .Ident(name, _) -> {
+            tc.env.define(name, ty, false)
+        }
+        .Literal(_) -> {} // binds nothing
+        .EnumVariant(_, fields, _) -> {
+            // TODO: resolve variant field types from subject type
+            for field in fields {
+                bind_pattern_vars(tc, field, Type.Unknown)
+            }
+        }
+        .Tuple(elements, _) -> {
+            for elem in elements {
+                bind_pattern_vars(tc, elem, Type.Unknown)
+            }
+        }
+        .Or(alternatives, _) -> {
+            // Bind from first alternative (all should bind same names)
+            if alternatives.length > 0 {
+                bind_pattern_vars(tc, alternatives[0], ty)
+            }
+        }
+    }
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
+    let d = get_match_data(node.node_id)
+    if d == null { return llvm.const_int(cg.types.i64_type, 0, 0) }
+    let data = d!
+
+    // Emit subject
+    let subject_val = cg.emit_expr(data.subject)
+
+    // For now, compile as if-else chain
+    // TODO: proper tag-based dispatch for enum patterns, phi merging
+
+    // Simple fallback: evaluate first arm's body
+    if data.arms.length > 0 {
+        return cg.emit_expr(data.arms[0].body)
+    }
+
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Pattern Span Access ────────────────────────
+
+impl Pattern {
+    fn span(self) -> Span {
+        match self {
+            .Wildcard(span) -> span
+            .Ident(_, span) -> span
+            .Literal(expr) -> expr.span()
+            .EnumVariant(_, _, span) -> span
+            .Tuple(_, span) -> span
+            .Or(_, span) -> span
+        }
+    }
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "pattern_matching",
+    name: "Pattern Matching",
+    status: "wip",
+    parsers: {},  // match is parsed inline in expression parser
+    check_stmt: null,
+    check_expr: check_match,
+    emit_stmt: null,
+    emit_expr: emit_match,
+    top_level: null,
+})

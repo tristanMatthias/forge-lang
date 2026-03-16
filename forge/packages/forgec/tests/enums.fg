@@ -1,0 +1,39 @@
+// ─── enums.fg ──────────────────────────────────
+// Tests enum declarations and pattern matching.
+//
+// Expected output:
+//   circle area: 75
+//   rect area: 24
+//   unknown
+
+enum Shape {
+    Circle(radius: int)
+    Rect(w: int, h: int)
+    Point
+}
+
+fn area(s: Shape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Rect(w, h) -> w * h
+        .Point -> 0
+    }
+}
+
+fn describe(s: Shape) -> string {
+    match s {
+        .Circle(_) -> "circle"
+        .Rect(_, _) -> "rect"
+        _ -> "unknown"
+    }
+}
+
+fn main() {
+    let c = Shape.Circle(5)
+    let r = Shape.Rect(4, 6)
+    let p = Shape.Point
+
+    println("${describe(c)} area: ${string(area(c))}")
+    println("${describe(r)} area: ${string(area(r))}")
+    println(describe(p))
+}

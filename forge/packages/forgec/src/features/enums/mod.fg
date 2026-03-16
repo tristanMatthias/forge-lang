@@ -1,0 +1,190 @@
+// ─── Enums Feature ─────────────────────────────
+// Handles: enum declarations and enum variant construction.
+// Tagged union representation: { tag: i8, payload: [fields] }
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, feature_expr, next_node_id}
+use core.types.{Type, EnumVariantType, StructField}
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Tables ────────────────────────────────
+
+mut ENUM_DECLS: Map<string, EnumDeclData> = {}
+mut ENUM_CONSTRUCTS: Map<string, EnumConstructData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type EnumVariant = {
+    name: string,
+    fields: List<EnumVariantField>,
+    span: Span,
+}
+
+type EnumVariantField = {
+    name: string,
+    type_ann: TypeExpr?,
+}
+
+type EnumDeclData = {
+    name: string,
+    variants: List<EnumVariant>,
+    exported: bool,
+    span: Span,
+}
+
+type EnumConstructData = {
+    enum_name: string,
+    variant_name: string,
+    args: List<Expr>,
+    span: Span,
+}
+
+fn get_enum_decl(id: int) -> EnumDeclData? {
+    let key = "${id}"
+    if ENUM_DECLS.has(key) { ENUM_DECLS[key] } else { null }
+}
+
+fn get_enum_construct(id: int) -> EnumConstructData? {
+    let key = "${id}"
+    if ENUM_CONSTRUCTS.has(key) { ENUM_CONSTRUCTS[key] } else { null }
+}
+
+// ─── Parse: Enum Declaration ────────────────────
+
+fn parse_enum(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'enum'
+
+    let name = p.expect_ident()
+    if name == null {
+        p.error("expected enum name after 'enum'")
+        return null
+    }
+
+    if p.expect(.LBrace) == null { return null }
+    p.skip_newlines()
+
+    mut variants: List<EnumVariant> = []
+
+    for !p.check(.RBrace) && !p.is_at_end() {
+        p.skip_newlines()
+        let variant = parse_enum_variant(p)
+        if variant != null {
+            variants = variants.push(variant!)
+        }
+        p.skip_newlines()
+        if p.check(.Comma) { p.advance() }
+        p.skip_newlines()
+    }
+
+    if p.expect(.RBrace) == null { return null }
+
+    let id = next_node_id()
+    ENUM_DECLS["${id}"] = EnumDeclData {
+        name: name!, variants, exported: false, span: start,
+    }
+
+    feature_stmt("enums", "enum_decl", id, start)
+}
+
+fn parse_enum_variant(p: Parser) -> EnumVariant? {
+    let start = p.current_span()
+    let name = p.expect_ident()
+    if name == null { return null }
+
+    // Optional fields: Variant(field1: Type, field2: Type)
+    mut fields: List<EnumVariantField> = []
+    if p.check(.LParen) {
+        p.advance()
+        mut field_idx = 0
+        for !p.check(.RParen) && !p.is_at_end() {
+            p.skip_newlines()
+            // Check for named field: name: Type
+            // or positional: just Type
+            let field_name_or_type = p.expect_ident()
+            if field_name_or_type == null { break }
+
+            if p.check(.Colon) {
+                // Named field: name: Type
+                p.advance()
+                let type_ann = p.parse_type_expr()
+                fields = fields.push(EnumVariantField {
+                    name: field_name_or_type!, type_ann,
+                })
+            } else {
+                // Positional: treat as type name, use index as field name
+                fields = fields.push(EnumVariantField {
+                    name: "${field_idx}",
+                    type_ann: TypeExpr.Named(field_name_or_type!, start),
+                })
+            }
+
+            field_idx = field_idx + 1
+            p.skip_newlines()
+            if p.check(.Comma) { p.advance() }
+        }
+        if p.expect(.RParen) == null { return null }
+    }
+
+    EnumVariant { name: name!, fields, span: start }
+}
+
+// ─── Construction Helper ────────────────────────
+// Called when the expression parser sees .Variant(args)
+
+fn make_enum_construct(enum_name: string, variant_name: string, args: List<Expr>, span: Span) -> Expr {
+    let id = next_node_id()
+    ENUM_CONSTRUCTS["${id}"] = EnumConstructData {
+        enum_name, variant_name, args, span,
+    }
+    feature_expr("enums", "enum_construct", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_enum(tc: TypeChecker, node: NodeRef) {
+    let d = get_enum_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Build Type::Enum and register in environment
+    mut variant_types: List<EnumVariantType> = []
+    for v in data.variants {
+        mut fields: List<StructField> = []
+        for f in v.fields {
+            // TODO: resolve field type from type_ann
+            fields = fields.push(StructField { name: f.name, field_type: Type.Unknown })
+        }
+        variant_types = variant_types.push(EnumVariantType { name: v.name, fields })
+    }
+
+    let enum_type = Type.Enum(data.name, variant_types)
+    tc.env.define(data.name, enum_type, false)
+}
+
+fn top_level_enum(tc: TypeChecker, node: NodeRef) {
+    check_enum(tc, node)
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_enum_decl(cg: Codegen, node: NodeRef) {
+    // Enum declarations don't emit code directly — they define types
+    // that are used by variant constructors and match expressions.
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "enums",
+    name: "Enum Declarations",
+    status: "wip",
+    parsers: { "enum": parse_enum },
+    check_stmt: check_enum,
+    check_expr: null,
+    emit_stmt: emit_enum_decl,
+    emit_expr: null,
+    top_level: top_level_enum,
+})

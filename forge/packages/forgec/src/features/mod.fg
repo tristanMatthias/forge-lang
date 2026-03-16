@@ -1,9 +1,15 @@
-// Phase 1 features for self-hosted compiler
-// Each feature handles its own parsing, checking, and codegen
+// Features for the self-hosted compiler.
+// Each feature handles its own parsing, checking, and codegen.
+// Adding a feature = 1 directory + 1 line here.
 
+// Phase 1
 use features.variables
 use features.functions
 use features.operators
 use features.if_else
 use features.printing
 use features.primitive_types
+
+// Phase 2a
+use features.enums
+use features.pattern_matching
