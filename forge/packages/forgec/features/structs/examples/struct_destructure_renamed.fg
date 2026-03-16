@@ -1,0 +1,13 @@
+/// # Struct destructure with renamed fields
+/// Bind struct fields to different local variable names
+/// expect: 10
+/// expect: 20
+
+type Point = { x: int, y: int }
+
+fn main() {
+  let p = Point { x: 10, y: 20 }
+  let { x: px, y: py } = p
+  println(px)
+  println(py)
+}

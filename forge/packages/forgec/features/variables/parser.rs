@@ -172,9 +172,18 @@ impl Parser {
             if self.check(&TokenKind::RBrace) {
                 break;
             }
-            let name = self.expect_ident()?;
+            let field_name = self.expect_ident()?;
             let span = self.tokens[self.pos.saturating_sub(1)].span;
-            fields.push((name.clone(), Pattern::Ident(name, span)));
+            // Check for renaming: { field_name: local_name }
+            if self.check(&TokenKind::Colon) {
+                self.advance(); // consume ':'
+                self.skip_newlines();
+                let local_name = self.expect_ident()?;
+                let local_span = self.tokens[self.pos.saturating_sub(1)].span;
+                fields.push((field_name, Pattern::Ident(local_name, local_span)));
+            } else {
+                fields.push((field_name.clone(), Pattern::Ident(field_name, span)));
+            }
             self.skip_newlines();
             if !self.check(&TokenKind::Comma) {
                 break;
