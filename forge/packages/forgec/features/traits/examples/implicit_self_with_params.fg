@@ -1,0 +1,16 @@
+/// # Implicit self with other parameters
+/// Methods can have params alongside implicit self
+/// expect: 15
+
+type Adder = { base: int }
+
+impl Adder {
+  fn add(n: int) -> int {
+    self.base + n
+  }
+}
+
+fn main() {
+  let a = Adder { base: 10 }
+  println(string(a.add(5)))
+}

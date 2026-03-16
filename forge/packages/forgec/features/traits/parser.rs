@@ -47,8 +47,24 @@ impl Parser {
             let mname = self.expect_ident()?;
             self.skip_newlines();
             self.expect(&TokenKind::LParen)?;
-            let params = self.parse_params()?;
+            let parsed_params = self.parse_params()?;
             self.skip_newlines();
+
+            // Inject implicit `self` if not present
+            let has_self = parsed_params.iter().any(|p| p.name == "self");
+            let params = if has_self {
+                parsed_params
+            } else {
+                let mut new_params = vec![Param {
+                    name: "self".to_string(),
+                    type_ann: None,
+                    default: None,
+                    span: mspan,
+                    mutable: false,
+                }];
+                new_params.extend(parsed_params);
+                new_params
+            };
 
             let return_type = self.parse_optional_return_type()?;
             self.skip_newlines();
@@ -135,6 +151,26 @@ impl Parser {
                 associated_types.push((aname, atype));
             } else if self.check(&TokenKind::Fn) {
                 let method = self.parse_fn_decl(false)?;
+                // Inject implicit `self` as first param if not already present
+                let method = if let Statement::FnDecl { name, type_params, params, return_type, body, exported, span } = method {
+                    let has_self = params.iter().any(|p| p.name == "self");
+                    let params = if has_self {
+                        params
+                    } else {
+                        let mut new_params = vec![Param {
+                            name: "self".to_string(),
+                            type_ann: None,
+                            default: None,
+                            span,
+                            mutable: false,
+                        }];
+                        new_params.extend(params);
+                        new_params
+                    };
+                    Statement::FnDecl { name, type_params, params, return_type, body, exported, span }
+                } else {
+                    method
+                };
                 methods.push(method);
             } else {
                 self.error("expected fn or type in impl block");

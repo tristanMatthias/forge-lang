@@ -1,0 +1,23 @@
+/// # Implicit self in impl methods
+/// self is available without declaring it as a parameter
+/// expect: 42
+/// expect: hello
+
+type Box = { val: int }
+type Named = { name: string }
+
+impl Box {
+  fn get() -> int { self.val }
+}
+
+impl Named {
+  fn greet() -> string { self.name }
+}
+
+fn main() {
+  let b = Box { val: 42 }
+  println(string(b.get()))
+
+  let n = Named { name: "hello" }
+  println(n.greet())
+}
