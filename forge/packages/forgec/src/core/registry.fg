@@ -1,17 +1,43 @@
 // ─── Feature Registry ──────────────────────────
-// Metadata registry for compiler features. Each phase (parse, check, emit)
-// owns its own typed dispatch maps in its own module.
+// Single registry for all compiler features. Features call register_feature()
+// once with a FeatureRegistration struct containing typed handlers for every
+// phase: parse, check, emit.
 //
-// This module stores only feature metadata and the parse dispatch map.
-// The parse map uses Map<string, fn(Parser) -> Statement?> — fully typed,
-// no ptr casts. Checker and codegen dispatch maps live in their own modules
-// to avoid circular imports.
+// Dispatch maps are populated by register_feature() and read by the
+// parser, checker, and codegen via the global REGISTRY.
 
 use core.token.Span
 use core.ast.{Statement, Expr, NodeRef}
 use core.types.Type
+use parser.mod.Parser
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
 
-// ─── Feature Metadata ────────────────────────────
+// ─── Handler Types ─────────────────────────────
+
+type ParseHandler = fn(Parser) -> Statement?
+type CheckStmtHandler = fn(TypeChecker, NodeRef)
+type CheckExprHandler = fn(TypeChecker, NodeRef) -> Type
+type EmitStmtHandler = fn(Codegen, NodeRef)
+type EmitExprHandler = fn(Codegen, NodeRef) -> ptr
+type TopLevelHandler = fn(TypeChecker, NodeRef)
+
+// ─── Registry ──────────────────────────────────
+
+type FeatureRegistry = {
+    // Metadata
+    mut features: List<FeatureMeta>,
+    // Parser: token_kind_string → parse handler
+    mut parse_stmt: Map<string, ParseHandler>,
+    // Checker: feature_id → check handler
+    mut check_stmt: Map<string, CheckStmtHandler>,
+    mut check_expr: Map<string, CheckExprHandler>,
+    // Codegen: feature_id → emit handler
+    mut emit_stmt: Map<string, EmitStmtHandler>,
+    mut emit_expr: Map<string, EmitExprHandler>,
+    // Top-level: feature_id → first-pass registration handler
+    mut top_level: Map<string, TopLevelHandler>,
+}
 
 type FeatureMeta = {
     id: string,
@@ -19,9 +45,46 @@ type FeatureMeta = {
     status: string,
 }
 
-// Global metadata list
-mut FEATURES: List<FeatureMeta> = []
+mut REGISTRY = FeatureRegistry {
+    features: [],
+    parse_stmt: {},
+    check_stmt: {},
+    check_expr: {},
+    emit_stmt: {},
+    emit_expr: {},
+    top_level: {},
+}
 
-fn register_feature_meta(id: string, name: string, status: string) {
-    FEATURES = FEATURES.push(FeatureMeta { id, name, status })
+// ─── Registration ──────────────────────────────
+
+type FeatureRegistration = {
+    id: string,
+    name: string,
+    status: string,
+    // Parser: map of token keys to parse handlers
+    parsers: Map<string, ParseHandler>,
+    // Checker
+    check_stmt: CheckStmtHandler?,
+    check_expr: CheckExprHandler?,
+    // Codegen
+    emit_stmt: EmitStmtHandler?,
+    emit_expr: EmitExprHandler?,
+    // Top-level first pass
+    top_level: TopLevelHandler?,
+}
+
+fn register_feature(reg: FeatureRegistration) {
+    REGISTRY.features = REGISTRY.features.push(FeatureMeta {
+        id: reg.id, name: reg.name, status: reg.status,
+    })
+
+    for token in reg.parsers.keys() {
+        REGISTRY.parse_stmt[token] = reg.parsers[token]
+    }
+
+    if reg.check_stmt != null { REGISTRY.check_stmt[reg.id] = reg.check_stmt! }
+    if reg.check_expr != null { REGISTRY.check_expr[reg.id] = reg.check_expr! }
+    if reg.emit_stmt != null  { REGISTRY.emit_stmt[reg.id] = reg.emit_stmt! }
+    if reg.emit_expr != null  { REGISTRY.emit_expr[reg.id] = reg.emit_expr! }
+    if reg.top_level != null  { REGISTRY.top_level[reg.id] = reg.top_level! }
 }

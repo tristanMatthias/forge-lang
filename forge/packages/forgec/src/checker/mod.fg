@@ -6,26 +6,8 @@ use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use core.types.{Type, type_is_numeric, type_to_string}
 use core.error.{Diagnostic, DiagnosticBag, new_diagnostic_bag, error, error_with_help, E_TYPE_MISMATCH, E_UNDEFINED_VAR, E_IMMUTABLE_ASSIGN, E_WRONG_ARG_COUNT}
+use core.registry.REGISTRY
 use checker.env.{TypeEnv, type_env_new}
-
-// ─── Check Dispatch Maps ─────────────────────────
-// Features register typed check handlers here.
-
-mut CHECK_STMT_HANDLERS: Map<string, fn(TypeChecker, NodeRef)> = {}
-mut CHECK_EXPR_HANDLERS: Map<string, fn(TypeChecker, NodeRef) -> Type> = {}
-mut TOP_LEVEL_HANDLERS: Map<string, fn(TypeChecker, NodeRef)> = {}
-
-fn register_check_stmt(feature_id: string, handler: fn(TypeChecker, NodeRef)) {
-    CHECK_STMT_HANDLERS[feature_id] = handler
-}
-
-fn register_check_expr(feature_id: string, handler: fn(TypeChecker, NodeRef) -> Type) {
-    CHECK_EXPR_HANDLERS[feature_id] = handler
-}
-
-fn register_top_level(feature_id: string, handler: fn(TypeChecker, NodeRef)) {
-    TOP_LEVEL_HANDLERS[feature_id] = handler
-}
 
 // ─── Type Checker State ────────────────────────
 
@@ -64,8 +46,8 @@ impl TypeChecker {
         match stmt {
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if TOP_LEVEL_HANDLERS.has(feature_id) {
-                    let handler = TOP_LEVEL_HANDLERS[feature_id]
+                if REGISTRY.top_level.has(feature_id) {
+                    let handler = REGISTRY.top_level[feature_id]
                     handler(self, fe.data)
                 }
             }
@@ -86,8 +68,8 @@ impl TypeChecker {
             }
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if CHECK_STMT_HANDLERS.has(feature_id) {
-                    let handler = CHECK_STMT_HANDLERS[feature_id]
+                if REGISTRY.check_stmt.has(feature_id) {
+                    let handler = REGISTRY.check_stmt[feature_id]
                     handler(self, fe.data)
                 }
             }
@@ -190,8 +172,8 @@ impl TypeChecker {
 
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if CHECK_EXPR_HANDLERS.has(feature_id) {
-                    let handler = CHECK_EXPR_HANDLERS[feature_id]
+                if REGISTRY.check_expr.has(feature_id) {
+                    let handler = REGISTRY.check_expr[feature_id]
                     return handler(self, fe.data)
                 }
                 Type.Unknown

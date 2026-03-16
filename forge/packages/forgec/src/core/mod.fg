@@ -15,6 +15,5 @@ export use core.types
 // Error system: Diagnostic, Severity, error codes, render_diagnostic
 export use core.error
 
-// Feature registry: FEATURES, register_feature_meta
-// Note: dispatch maps live in their respective modules (parser, checker, codegen)
+// Feature registry: REGISTRY, register_feature, FeatureRegistration
 export use core.registry

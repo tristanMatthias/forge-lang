@@ -1,18 +1,17 @@
 // ─── Operators Feature ─────────────────────────
 // Operators (arithmetic, comparison, logical, bitwise) are built into the
-// expression parser's precedence climbing algorithm in parser/expressions.fg.
-// They produce core AST nodes (Expr.Binary, Expr.Unary) directly — no
-// feature-specific side table or parse handler is needed.
-//
-// This feature module exists for registry completeness: it declares that
-// operators are a recognized feature, but registers no parse handlers.
-// Type checking and codegen for operators are handled by the core
-// expression pipeline.
+// expression parser's precedence climbing in parser/expressions.fg.
+// They produce core Expr.Binary/Expr.Unary nodes directly — no
+// feature-specific parse handlers needed.
 
-use core.registry.register_feature_meta
+use core.registry.{register_feature, FeatureRegistration}
 
-// ─── Registration ────────────────────────────────
-// Operators produce core Expr.Binary/Expr.Unary nodes directly in
-// the expression parser's precedence climbing — no separate handlers needed.
-
-register_feature_meta("operators", "Arithmetic & Comparison Operators", "wip")
+register_feature(FeatureRegistration {
+    id: "operators",
+    name: "Arithmetic & Comparison Operators",
+    status: "wip",
+    parsers: {},
+    check_stmt: null, check_expr: null,
+    emit_stmt: null, emit_expr: null,
+    top_level: null,
+})

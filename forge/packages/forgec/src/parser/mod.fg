@@ -14,17 +14,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-
-// ─── Parse Dispatch Map ────────────────────────
-// Features register their parse handlers here. Fully typed:
-// Map<string, fn(Parser) -> Statement?>
-// Token kind string (e.g. "let", "fn") → parse function.
-
-mut PARSE_HANDLERS: Map<string, fn(Parser) -> Statement?> = {}
-
-fn register_parse_handler(token_key: string, handler: fn(Parser) -> Statement?) {
-    PARSE_HANDLERS[token_key] = handler
-}
+use core.registry.REGISTRY
 
 // ─── Param Type ────────────────────────────────
 
@@ -199,10 +189,10 @@ impl Parser {
 
         let tok = self.peek()
 
-        // Check feature parse handlers for this token kind
+        // Check feature registry for this token kind
         let token_key = self.token_kind_key(tok.kind)
-        if token_key != "" && PARSE_HANDLERS.has(token_key) {
-            let handler = PARSE_HANDLERS[token_key]
+        if token_key != "" && REGISTRY.parse_stmt.has(token_key) {
+            let handler = REGISTRY.parse_stmt[token_key]
             return handler(self)
         }
 

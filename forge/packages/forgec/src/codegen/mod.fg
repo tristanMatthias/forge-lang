@@ -5,23 +5,10 @@
 use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use core.types.Type
+use core.registry.REGISTRY
 use codegen.types.{TypeMapper, type_mapper_new}
 use codegen.runtime.{RuntimeFns, declare_runtime}
 use @std.llvm
-
-// ─── Emit Dispatch Maps ──────────────────────────
-// Features register typed emit handlers here.
-
-mut EMIT_STMT_HANDLERS: Map<string, fn(Codegen, NodeRef)> = {}
-mut EMIT_EXPR_HANDLERS: Map<string, fn(Codegen, NodeRef) -> ptr> = {}
-
-fn register_emit_stmt(feature_id: string, handler: fn(Codegen, NodeRef)) {
-    EMIT_STMT_HANDLERS[feature_id] = handler
-}
-
-fn register_emit_expr(feature_id: string, handler: fn(Codegen, NodeRef) -> ptr) {
-    EMIT_EXPR_HANDLERS[feature_id] = handler
-}
 
 // ─── Variable Slot ─────────────────────────────
 
@@ -166,8 +153,8 @@ impl Codegen {
 
     fn emit_feature_stmt(self, fe: FeatureStmt) {
         let feature_id = fe.data.feature
-        if EMIT_STMT_HANDLERS.has(feature_id) {
-            let handler = EMIT_STMT_HANDLERS[feature_id]
+        if REGISTRY.emit_stmt.has(feature_id) {
+            let handler = REGISTRY.emit_stmt[feature_id]
             handler(self, fe.data)
         }
     }
@@ -228,8 +215,8 @@ impl Codegen {
             }
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if EMIT_EXPR_HANDLERS.has(feature_id) {
-                    let handler = EMIT_EXPR_HANDLERS[feature_id]
+                if REGISTRY.emit_expr.has(feature_id) {
+                    let handler = REGISTRY.emit_expr[feature_id]
                     return handler(self, fe.data)
                 }
                 llvm.const_int(self.types.i64_type, 0, 0)

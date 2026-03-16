@@ -5,10 +5,10 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.register_feature_meta
-use parser.mod.{Parser, Param, TypeExpr, register_parse_handler}
-use checker.mod.{TypeChecker, register_check_stmt, register_top_level}
-use codegen.mod.{Codegen, register_emit_stmt}
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
 use features.variables.{parse_var_binding, VarKind}
 
 // ─── Side Table ──────────────────────────────────
@@ -176,9 +176,14 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature_meta("functions", "Function Declarations", "wip")
-register_parse_handler("fn", parse_fn)
-register_parse_handler("export", parse_export)
-register_check_stmt("functions", check_fn)
-register_top_level("functions", top_level_fn)
-register_emit_stmt("functions", emit_fn)
+register_feature(FeatureRegistration {
+    id: "functions",
+    name: "Function Declarations",
+    status: "wip",
+    parsers: { "fn": parse_fn, "export": parse_export },
+    check_stmt: check_fn,
+    check_expr: null,
+    emit_stmt: emit_fn,
+    emit_expr: null,
+    top_level: top_level_fn,
+})

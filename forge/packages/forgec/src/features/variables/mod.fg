@@ -5,10 +5,10 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.register_feature_meta
-use parser.mod.{Parser, Param, TypeExpr, register_parse_handler}
-use checker.mod.{TypeChecker, register_check_stmt, register_top_level}
-use codegen.mod.{Codegen, register_emit_stmt}
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
 
 // ─── Side Table ──────────────────────────────────
 
@@ -111,10 +111,14 @@ fn emit_var(cg: Codegen, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature_meta("variables", "Variable Declarations", "wip")
-register_parse_handler("let", parse_let)
-register_parse_handler("mut", parse_mut)
-register_parse_handler("const", parse_const)
-register_check_stmt("variables", check_var)
-register_top_level("variables", top_level_var)
-register_emit_stmt("variables", emit_var)
+register_feature(FeatureRegistration {
+    id: "variables",
+    name: "Variable Declarations",
+    status: "wip",
+    parsers: { "let": parse_let, "mut": parse_mut, "const": parse_const },
+    check_stmt: check_var,
+    check_expr: null,
+    emit_stmt: emit_var,
+    emit_expr: null,
+    top_level: top_level_var,
+})
