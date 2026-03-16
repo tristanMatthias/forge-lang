@@ -1,0 +1,14 @@
+/// # Export Types Across Modules
+///
+/// Types and enums can be exported and imported across modules.
+///
+/// expect: hello
+/// expect: 42
+
+mod module_types
+use module_types.{Token, format_token}
+
+fn main() {
+  println(format_token(Token.Ident(value: "hello")))
+  println(format_token(Token.Num(value: 42)))
+}

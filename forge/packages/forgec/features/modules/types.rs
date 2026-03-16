@@ -1,4 +1,4 @@
-use crate::parser::ast::{ComponentBlockDecl, Expr, Param, TypeExpr};
+use crate::parser::ast::{ComponentBlockDecl, Expr, Param, Statement, TypeExpr};
 
 /// Describes an exported symbol from a module
 #[derive(Debug, Clone)]
@@ -16,6 +16,16 @@ pub enum ExportedSymbol {
     ComponentBlock {
         name: String,
         decl: ComponentBlockDecl,
+    },
+    /// An exported type declaration (struct or type alias)
+    TypeDecl {
+        name: String,
+        stmt: Statement,
+    },
+    /// An exported enum declaration
+    EnumDecl {
+        name: String,
+        stmt: Statement,
     },
 }
 

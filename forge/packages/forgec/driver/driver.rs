@@ -248,6 +248,9 @@ impl Driver {
                 ExportedSymbol::ComponentBlock { .. } => {
                     // Already injected into AST; expansion handles type registration
                 }
+                ExportedSymbol::TypeDecl { .. } | ExportedSymbol::EnumDecl { .. } => {
+                    // Type/enum declarations are injected into the AST by the resolver
+                }
             }
         }
         register_package_annotations(&mut checker, &loaded_packages);

@@ -63,6 +63,28 @@ pub fn collect_exports(program: &Program) -> Vec<ExportedSymbol> {
                             }
                         }
                     }
+                    "structs" => {
+                        use crate::features::structs::types::TypeDeclData;
+                        if let Some(data) = feature_data!(fe, TypeDeclData) {
+                            if data.exported {
+                                exports.push(ExportedSymbol::TypeDecl {
+                                    name: data.name.clone(),
+                                    stmt: Statement::Feature(fe.clone()),
+                                });
+                            }
+                        }
+                    }
+                    "enums" => {
+                        use crate::features::enums::types::EnumDeclData;
+                        if let Some(data) = feature_data!(fe, EnumDeclData) {
+                            if data.exported {
+                                exports.push(ExportedSymbol::EnumDecl {
+                                    name: data.name.clone(),
+                                    stmt: Statement::Feature(fe.clone()),
+                                });
+                            }
+                        }
+                    }
                     "variables" => {
                         use crate::features::variables::types::VarDeclData;
                         if let Some(data) = feature_data!(fe, VarDeclData) {
@@ -281,6 +303,8 @@ pub fn resolve_use_statements(
                         ExportedSymbol::Function { name, .. } => name == item_name,
                         ExportedSymbol::Value { name, .. } => name == item_name,
                         ExportedSymbol::ComponentBlock { name, .. } => name == item_name,
+                        ExportedSymbol::TypeDecl { name, .. } => name == item_name,
+                        ExportedSymbol::EnumDecl { name, .. } => name == item_name,
                     })
                     .ok_or_else(|| {
                         format!(
@@ -305,6 +329,8 @@ pub fn resolve_use_statements(
                         ExportedSymbol::Function { name, .. } => name == &item.name,
                         ExportedSymbol::Value { name, .. } => name == &item.name,
                         ExportedSymbol::ComponentBlock { name, .. } => name == &item.name,
+                        ExportedSymbol::TypeDecl { name, .. } => name == &item.name,
+                        ExportedSymbol::EnumDecl { name, .. } => name == &item.name,
                     })
                     .ok_or_else(|| {
                         format!(
@@ -451,6 +477,12 @@ fn inject_imports_into_program(
     module_stmts: &[Vec<Statement>],
 ) {
     for imp in imports {
+        // Inject type/enum declarations directly into the program
+        if let ExportedSymbol::TypeDecl { stmt, .. } | ExportedSymbol::EnumDecl { stmt, .. } = &imp.symbol {
+            program.statements.insert(0, stmt.clone());
+            continue;
+        }
+
         if let ExportedSymbol::Function { name, params, return_type, .. } = &imp.symbol {
             'outer: for stmts in module_stmts {
                 for stmt in stmts {

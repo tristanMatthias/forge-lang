@@ -40,6 +40,10 @@ impl<'ctx> Codegen<'ctx> {
                 Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
                     self.compile_module_functions_feature(fe, &prefix);
                 }
+                Statement::Feature(fe) if fe.feature_id == "structs" || fe.feature_id == "enums" => {
+                    // Type/enum declarations are handled by the type checker during
+                    // check_program above — no extra codegen needed for module compilation
+                }
                 Statement::Feature(fe) if fe.feature_id == "variables" => {
                     use crate::feature_data;
                     use crate::features::variables::types::VarDeclData;
@@ -72,6 +76,10 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 ExportedSymbol::ComponentBlock { .. } => {
                     // Component blocks are injected into the AST by the driver,
+                    // not handled by codegen import injection.
+                }
+                ExportedSymbol::TypeDecl { .. } | ExportedSymbol::EnumDecl { .. } => {
+                    // Type/enum declarations are injected into the AST by the resolver,
                     // not handled by codegen import injection.
                 }
             }

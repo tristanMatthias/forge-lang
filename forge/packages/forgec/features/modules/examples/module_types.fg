@@ -1,0 +1,16 @@
+/// Helper module for module_export_type test.
+/// Exports an enum and a function that uses it.
+
+export enum Token {
+  Ident(value: string),
+  Num(value: int),
+  Eof,
+}
+
+export fn format_token(t: Token) -> string {
+  match t {
+    .Ident(value) -> value
+    .Num(value) -> string(value)
+    .Eof -> "EOF"
+  }
+}
