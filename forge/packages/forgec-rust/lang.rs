@@ -1812,9 +1812,9 @@ pub fn show_llm_compact() {
 /// Read the quickstart example from tests/programs/quickstart.fg,
 /// stripping doc comments and expect lines.
 fn read_quickstart_example() -> Option<String> {
-    // Look for quickstart.fg relative to features dir (which is in packages/forgec/features/)
+    // Look for quickstart.fg relative to features dir (which is in packages/forgec-rust/features/)
     let features_dir = find_features_dir()?;
-    // features_dir is packages/forgec/features/, go up 3 levels to forge root
+    // features_dir is packages/forgec-rust/features/, go up 3 levels to forge root
     let forge_root = features_dir.parent()?.parent()?.parent()?;
     let quickstart = forge_root.join("tests").join("programs").join("quickstart.fg");
     if !quickstart.exists() {
