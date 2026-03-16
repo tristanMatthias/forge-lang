@@ -6,7 +6,7 @@
 /// expect: caught: network timeout
 /// expect: done
 
-fn read_file(path: string) -> Result<string, string> {
+fn load_file(path: string) -> Result<string, string> {
   if path == "valid.txt" { Ok("file ok") } else { Err("file not found") }
 }
 
@@ -15,7 +15,7 @@ fn fetch_url(url: string) -> Result<string, string> {
 }
 
 fn main() {
-  let f = read_file("valid.txt") catch (e) { `caught: ${e}` }
+  let f = load_file("valid.txt") catch (e) { `caught: ${e}` }
   println(f)
 
   let n = fetch_url("bad") catch (e) { `caught: ${e}` }

@@ -148,6 +148,46 @@ void forge_println_bool(int8_t value) {
     printf("%s\n", value ? "true" : "false");
 }
 
+// ---- Stderr ----
+
+void forge_eprint_string(ForgeString s) {
+    fwrite(s.ptr, 1, s.len, stderr);
+}
+
+void forge_eprint_int(int64_t value) {
+    fprintf(stderr, "%lld", (long long)value);
+}
+
+void forge_eprint_float(double value) {
+    char buf[64];
+    fmt_float(buf, sizeof(buf), value);
+    fputs(buf, stderr);
+}
+
+void forge_eprint_bool(int8_t value) {
+    fprintf(stderr, "%s", value ? "true" : "false");
+}
+
+void forge_eprintln_string(ForgeString s) {
+    fwrite(s.ptr, 1, s.len, stderr);
+    fputc('\n', stderr);
+}
+
+void forge_eprintln_int(int64_t value) {
+    fprintf(stderr, "%lld\n", (long long)value);
+}
+
+void forge_eprintln_float(double value) {
+    char buf[64];
+    fmt_float(buf, sizeof(buf), value);
+    fputs(buf, stderr);
+    fputc('\n', stderr);
+}
+
+void forge_eprintln_bool(int8_t value) {
+    fprintf(stderr, "%s\n", value ? "true" : "false");
+}
+
 // ---- Conversion ----
 
 ForgeString forge_int_to_string(int64_t value) {
@@ -1373,6 +1413,65 @@ ForgeString forge_query_between(int64_t low, int64_t high) {
     char buf[128];
     int len = snprintf(buf, sizeof(buf), "{\"$gte\":%lld,\"$lte\":%lld}", (long long)low, (long long)high);
     return forge_string_new(buf, len);
+}
+
+// ---- File I/O ----
+
+ForgeString forge_read_file(ForgeString path) {
+    // Null-terminate path for fopen
+    char* cpath = (char*)malloc(path.len + 1);
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+
+    FILE* f = fopen(cpath, "rb");
+    free(cpath);
+    if (!f) {
+        return forge_string_new("", 0);
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0) {
+        fclose(f);
+        return forge_string_new("", 0);
+    }
+
+    char* buf = (char*)malloc(size + 1);
+    size_t read = fread(buf, 1, size, f);
+    fclose(f);
+    buf[read] = '\0';
+
+    ForgeString result = forge_string_new(buf, (int64_t)read);
+    free(buf);
+    return result;
+}
+
+int8_t forge_write_file(ForgeString path, ForgeString content) {
+    char* cpath = (char*)malloc(path.len + 1);
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+
+    FILE* f = fopen(cpath, "wb");
+    free(cpath);
+    if (!f) {
+        return 0;
+    }
+
+    size_t written = fwrite(content.ptr, 1, content.len, f);
+    fclose(f);
+    return (written == (size_t)content.len) ? 1 : 0;
+}
+
+int8_t forge_file_exists(ForgeString path) {
+    char* cpath = (char*)malloc(path.len + 1);
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+
+    int result = access(cpath, F_OK);
+    free(cpath);
+    return (result == 0) ? 1 : 0;
 }
 
 ForgeString forge_query_like(ForgeString pattern) {
