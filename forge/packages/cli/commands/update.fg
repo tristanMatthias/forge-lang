@@ -1,11 +1,54 @@
-/// Update command — update package dependencies.
+/// Update command — update package dependencies to latest compatible versions.
 
-use shared.{forward}
+use @std.toml
+use @std.process
+use shared.{argv, cwd}
+use registry.client.{resolve}
+use registry.installer.{parse_spec, install}
+use registry.manifest.{read_deps}
 
 export command update "Update package dependencies" {
     arg package "Package to update (or omit for all)"
 
     run {
-        forward("update")
+        let args = argv()
+        let dir = cwd()
+        let toml_path = dir + "/forge.toml"
+
+        // If a specific package was given, update just that one
+        let specific = if args.length > 2 { args[2] } else { "" }
+
+        if specific.length > 0 {
+            let parsed = parse_spec(specific)
+            println(`  updating ${parsed.name}...`)
+            let latest = resolve(parsed.name, "*")
+            if latest.length == 0 {
+                println(`  ✗ ${parsed.name} not found in registry`)
+                forge_process_exit(1)
+            }
+            let ok = install(parsed.name, latest, dir)
+            if !ok { forge_process_exit(1) }
+        } else {
+            // Update all dependencies
+            let deps_json = read_deps(toml_path)
+            if deps_json == "{}" {
+                println("  no dependencies to update")
+                return 0
+            }
+            let deps: map<string, string> = json.parse(deps_json)
+            mut updated = 0
+            for name in deps.keys() {
+                let current_range = deps.get(name)
+                let latest = resolve(name, "*")
+                if latest.length == 0 {
+                    println(`  ~ ${name} — registry unreachable, skipping`)
+                } else {
+                    let ok = install(name, latest, dir)
+                    if ok { updated = updated + 1 }
+                }
+            }
+            println(`  updated ${string(updated)} package(s)`)
+        }
+        0
     }
 }

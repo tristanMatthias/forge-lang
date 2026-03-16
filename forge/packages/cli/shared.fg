@@ -1,6 +1,7 @@
 /// Shared utilities for CLI commands.
 
 use @std.process
+use @std.fs
 
 export fn core_bin() -> string {
     let env = forge_process_env_get("FORGE_CORE")
@@ -26,4 +27,34 @@ export fn forward(cmd: string) -> int {
     args = args + "]"
 
     forge_process_forward(core_bin(), args, "{}")
+}
+
+/// Raw argv as a list. argv[0] = binary, argv[1] = command, argv[2+] = args.
+export fn argv() -> list<string> {
+    json.parse(forge_process_args())
+}
+
+/// Current working directory.
+export fn cwd() -> string {
+    forge_fs_cwd()
+}
+
+/// Find a named option (--key value) in argv, or return "".
+export fn find_option(args: list<string>, key: string) -> string {
+    let flag = "--" + key
+    mut i = 0
+    while i < args.length {
+        if args[i] == flag && i + 1 < args.length { return args[i + 1] }
+        i = i + 1
+    }
+    ""
+}
+
+/// Check whether a flag (--key) is present in argv.
+export fn has_flag(args: list<string>, key: string) -> bool {
+    mut found = false
+    for a in args {
+        if a == "--" + key { found = true }
+    }
+    found
 }

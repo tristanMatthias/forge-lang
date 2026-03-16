@@ -1,0 +1,47 @@
+/// Search command — find packages in the registry.
+
+use @std.process
+use shared.{argv}
+use registry.client.{search, SearchResult}
+
+export command search "Search for packages in the registry" {
+    arg query "Search query"
+
+    run {
+        let args = argv()
+        let query = if args.length > 2 { args[2] } else { "" }
+
+        if query.length == 0 {
+            println("error: no search query")
+            println("usage: forge search <query>")
+            forge_process_exit(1)
+        }
+
+        println(`  searching for "${query}"...`)
+        println("")
+
+        let results = search(query)
+
+        if results.length == 0 {
+            println("  no packages found")
+            return 0
+        }
+
+        for r in results {
+            let filled = r.quality
+            let bar = "█".repeat(filled) + "░".repeat(10 - filled)
+            let score = string(r.quality)
+            let caps = if r.capabilities.length > 0 {
+                "  capabilities: [" + r.capabilities.join(", ") + "]"
+            } else {
+                ""
+            }
+            println(`  ${r.name} v${r.version}                    ${bar} ${score}/10`)
+            println(`    "${r.description}"`)
+            if caps.length > 0 { println(caps) }
+            println(`    downloads: ${string(r.downloads)}`)
+            println("")
+        }
+        0
+    }
+}

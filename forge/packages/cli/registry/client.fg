@@ -1,0 +1,112 @@
+/// Registry HTTP client — talks to https://registry.forgelang.org/v1
+/// Uses @std.http loaded at CLI root (main.fg).
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+export fn registry_base() -> string { "https://registry.forgelang.org/v1" }
+
+export fn auth_header(token: string) -> string {
+    if token.length > 0 {
+        `{"Authorization": "Bearer ${token}"}`
+    } else {
+        "{}"
+    }
+}
+
+export fn json_header(token: string) -> string {
+    if token.length > 0 {
+        `{"Authorization": "Bearer ${token}", "Content-Type": "application/json"}`
+    } else {
+        `{"Content-Type": "application/json"}`
+    }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export fn search(query: string) -> list<SearchResult> {
+    let body = forge_http_get(registry_base() + `/packages?q=${query}&limit=20`)
+    if body.length == 0 { [] } else { json.parse(body) }
+}
+
+// ── Metadata ──────────────────────────────────────────────────────────────────
+
+export fn fetch_versions(name: string) -> list<string> {
+    let body = forge_http_get(registry_base() + `/packages/${name}/versions`)
+    if body.length == 0 { [] } else { json.parse(body) }
+}
+
+export fn fetch_version(name: string, version: string) -> string {
+    forge_http_get(registry_base() + `/packages/${name}/${version}`)
+}
+
+export fn fetch_context(name: string, version: string) -> string {
+    forge_http_get(registry_base() + `/packages/${name}/${version}/context`)
+}
+
+// ── Version resolution ────────────────────────────────────────────────────────
+
+export fn resolve(name: string, range: string) -> string {
+    let versions = fetch_versions(name)
+    if versions.length == 0 {
+        ""
+    } else {
+        let actual_range = if range == "*" || range.length == 0 { "*" } else { range }
+        forge_semver_max_satisfying(json.stringify(versions), actual_range)
+    }
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+export fn download_artifact(name: string, version: string, platform: string, dest: string) -> string {
+    let url = registry_base() + `/packages/${name}/${version}/artifact/${platform}`
+    forge_http_download(url, dest)
+}
+
+// ── Publish ───────────────────────────────────────────────────────────────────
+
+export fn publish_version(
+    name: string,
+    version: string,
+    content_hash: string,
+    archive_path: string,
+    token: string
+) -> string {
+    let body = json.stringify({ name: name, version: version, content_hash: content_hash })
+    let raw = forge_http_request("POST", registry_base() + `/packages/${name}/versions`, json_header(token), body)
+    let resp: Resp = json.parse(raw)
+    if resp.status == 200 || resp.status == 201 {
+        ""
+    } else {
+        `registry error ${string(resp.status)}: ${resp.body}`
+    }
+}
+
+// ── Yank ──────────────────────────────────────────────────────────────────────
+
+export fn yank_version(name: string, version: string, reason: string, token: string) -> string {
+    let body = json.stringify({ reason: reason })
+    let raw = forge_http_request("POST", registry_base() + `/packages/${name}/${version}/yank`, json_header(token), body)
+    let resp: Resp = json.parse(raw)
+    if resp.status == 200 {
+        ""
+    } else {
+        `registry error ${string(resp.status)}: ${resp.body}`
+    }
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export fn whoami(token: string) -> string {
+    if token.length == 0 {
+        ""
+    } else {
+        let raw = forge_http_request("GET", registry_base() + "/auth/me", auth_header(token), "")
+        let resp: Resp = json.parse(raw)
+        if resp.status != 200 {
+            ""
+        } else {
+            let user: { username: string, email: string } = json.parse(resp.body)
+            user.username
+        }
+    }
+}

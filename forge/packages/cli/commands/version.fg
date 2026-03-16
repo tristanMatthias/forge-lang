@@ -3,5 +3,6 @@
 export command version "Print version info" {
     run {
         println("forge 0.1.0")
+        0
     }
 }

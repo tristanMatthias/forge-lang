@@ -1,11 +1,29 @@
-/// Add command — add a package dependency.
+/// Add command — resolve and install a package dependency from the registry.
 
-use shared.{forward}
+use @std.process
+use shared.{argv, cwd}
+use registry.installer.{parse_spec, install}
+use registry.manifest.{add_dep}
+use registry.lockfile.{upsert}
 
 export command add "Add a package dependency" {
     arg package "Package to add (e.g., graphql, graphql@^1.0, @std/http)"
+    flag dev "Add as dev dependency"
 
     run {
-        forward("add")
+        let args = argv()
+        // args = [binary, "add", "graphql@^1.0", ...]
+        let spec = if args.length > 2 { args[2] } else { "" }
+
+        if spec.length == 0 {
+            println("error: no package specified")
+            println("usage: forge add <package>[@version]")
+            forge_process_exit(1)
+        }
+
+        let parsed = parse_spec(spec)
+        let ok = install(parsed.name, parsed.range, cwd())
+        if !ok { forge_process_exit(1) }
+        0
     }
 }

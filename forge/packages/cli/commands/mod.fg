@@ -14,3 +14,10 @@ mod docs
 mod package
 mod errors
 mod audit
+mod add
+mod remove
+mod update
+mod auth
+mod publish
+mod deps
+mod search

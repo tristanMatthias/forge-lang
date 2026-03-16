@@ -1,0 +1,52 @@
+/// forge.toml reading and writing — preserves comments and formatting.
+
+// Uses @std.fs and @std.toml loaded at CLI root (main.fg)
+
+/// Read the [dependencies] table as JSON. Returns "{}" if missing.
+export fn read_deps(forge_toml_path: string) -> string {
+    if !forge_fs_exists(forge_toml_path) { return "{}" }
+    let content = forge_fs_read(forge_toml_path)
+    let deps = forge_toml_get(content, "dependencies")
+    if deps.length == 0 { "{}" } else { deps }
+}
+
+/// Add or update a dependency in forge.toml.
+export fn add_dep(forge_toml_path: string, name: string, range: string) -> bool {
+    if !forge_fs_exists(forge_toml_path) { return false }
+    let content = forge_fs_read(forge_toml_path)
+    let updated = forge_toml_set(content, `dependencies."${name}"`, `"${range}"`)
+    forge_fs_write(forge_toml_path, updated)
+    true
+}
+
+/// Remove a dependency from forge.toml.
+export fn remove_dep(forge_toml_path: string, name: string) -> bool {
+    if !forge_fs_exists(forge_toml_path) { return false }
+    let content = forge_fs_read(forge_toml_path)
+    let updated = forge_toml_remove(content, `dependencies."${name}"`)
+    forge_fs_write(forge_toml_path, updated)
+    true
+}
+
+/// Add a capability approval to [capabilities.approved].
+export fn approve_capability(forge_toml_path: string, package: string, cap: string) -> bool {
+    if !forge_fs_exists(forge_toml_path) { return false }
+    let content = forge_fs_read(forge_toml_path)
+    let key = `capabilities.approved."${package}.${cap}"`
+    let updated = forge_toml_set(content, key, "true")
+    forge_fs_write(forge_toml_path, updated)
+    true
+}
+
+/// Read the project name from forge.toml.
+export fn project_name(forge_toml_path: string) -> string {
+    if !forge_fs_exists(forge_toml_path) { return "" }
+    forge_toml_get(forge_fs_read(forge_toml_path), "project.name")
+}
+
+/// Read the project version from forge.toml.
+export fn project_version(forge_toml_path: string) -> string {
+    if !forge_fs_exists(forge_toml_path) { return "0.1.0" }
+    let v = forge_toml_get(forge_fs_read(forge_toml_path), "project.version")
+    if v.length == 0 { "0.1.0" } else { v }
+}

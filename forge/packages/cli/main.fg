@@ -1,13 +1,45 @@
 /// The Forge CLI — written in Forge.
 /// Declarative CLI definition with run handlers per command.
 
+/// The Forge CLI — written in Forge.
+/// Declarative CLI definition with run handlers per command.
+
 use @std.cli
 use @std.process
+use @std.fs
+use @std.toml
+use @std.http
+use @std.cache
+use @std.crypto
+use @std.semver
 
 mod shared
+mod registry
 mod commands
 
-use commands.{build, run, check, context, test, features, explain, version, why, lang, docs, package, errors, audit}
+/// Types used by registry sub-modules — defined here so injected functions
+/// can reference them in main program scope (types don't cross module boundaries).
+type LockedPkg = {
+    name: string,
+    version: string,
+    source: string,
+    hash: string,
+    artifact_hash: string,
+    capabilities: list<string>,
+    dependencies: list<string>
+}
+type Resp = { status: int, body: string }
+type SearchResult = {
+    name: string,
+    version: string,
+    description: string,
+    capabilities: list<string>,
+    downloads: int,
+    quality: int
+}
+type PkgSpec = { name: string, range: string }
+
+use commands.{build, run, check, context, test, features, explain, version, why, lang, docs, package, errors, audit, add, remove, update, auth, publish, deps, search}
 
 cli forge "The Forge programming language" {
     version "0.1.0"
@@ -26,4 +58,11 @@ cli forge "The Forge programming language" {
     package
     errors
     audit
+    add
+    remove
+    update
+    auth
+    publish
+    deps
+    search
 }

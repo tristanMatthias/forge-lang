@@ -1,0 +1,27 @@
+/// Credential management — ~/.forge/auth/credentials.toml
+/// Uses @std.fs, @std.toml, @std.process loaded at CLI root (main.fg).
+
+export fn load_token() -> string {
+    let home = forge_process_env_get("HOME")
+    let path = home + "/.forge/auth/credentials.toml"
+    if !forge_fs_exists(path) { return "" }
+    let content = forge_fs_read(path)
+    if content.length == 0 { return "" }
+    forge_toml_get(content, "auth.token")
+}
+
+export fn save_token(token: string) -> bool {
+    let home = forge_process_env_get("HOME")
+    let dir = home + "/.forge/auth"
+    forge_fs_mkdir(dir, true)
+    let content = `[auth]\ntoken = "${token}"\n`
+    forge_fs_write(dir + "/credentials.toml", content)
+    true
+}
+
+export fn clear_token() -> bool {
+    let home = forge_process_env_get("HOME")
+    let path = home + "/.forge/auth/credentials.toml"
+    if forge_fs_exists(path) { forge_fs_remove(path) }
+    true
+}

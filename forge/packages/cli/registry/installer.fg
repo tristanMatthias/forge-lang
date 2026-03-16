@@ -1,0 +1,163 @@
+/// Package installer — resolve, download, verify, cache, and record deps.
+/// Uses @std.fs, @std.cache, @std.crypto, @std.process, @std.semver, @std.toml
+/// loaded at CLI root (main.fg).
+
+use registry.client.{resolve, fetch_version, download_artifact, fetch_context}
+use registry.manifest.{add_dep}
+use registry.lockfile.{upsert}
+
+// ── Spec parsing ─────────────────────────────────────────────────────────────
+
+type PkgSpec = { name: string, range: string }
+
+/// Parse "graphql@^1.0" or "@std/http@>=0.1" into name + version range.
+export fn parse_spec(spec: string) -> PkgSpec {
+    let parts = spec.split("@")
+    if spec.starts_with("@") {
+        // scoped: "@std/http" or "@std/http@>=0.1"
+        if parts.length > 2 {
+            PkgSpec { name: "@" + parts[1], range: parts[2] }
+        } else {
+            PkgSpec { name: spec, range: "*" }
+        }
+    } else {
+        // plain: "graphql" or "graphql@^1.0"
+        if parts.length > 1 {
+            PkgSpec { name: parts[0], range: parts[1] }
+        } else {
+            PkgSpec { name: spec, range: "*" }
+        }
+    }
+}
+
+// ── Platform detection ───────────────────────────────────────────────────────
+
+export fn detect_platform() -> string {
+    let env = forge_process_env_get("FORGE_PLATFORM")
+    if env.length > 0 { return env }
+    let out = forge_process_run("uname", "[\"-sm\"]", "{}")
+    let result: { stdout: string, stderr: string, code: int } = json.parse(out)
+    let uname = result.stdout.trim().lower()
+    if uname.contains("darwin") && uname.contains("arm64") {
+        "aarch64-apple-darwin"
+    } else if uname.contains("darwin") {
+        "x86_64-apple-darwin"
+    } else if uname.contains("linux") && uname.contains("aarch64") {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    }
+}
+
+// ── Core install ─────────────────────────────────────────────────────────────
+
+/// Install a single package: resolve → download → verify → cache → update forge.toml/lock.
+export fn install(name: string, range: string, project_dir: string) -> bool {
+    println(`  resolving ${name}...`)
+
+    let version = resolve(name, range)
+    if version.length == 0 {
+        println(`  ✗ no version of ${name} satisfies "${range}"`)
+        return false
+    }
+
+    let meta_json = fetch_version(name, version)
+    if meta_json.length == 0 {
+        println(`  ✗ registry returned no metadata for ${name} v${version}`)
+        return false
+    }
+
+    let meta: {
+        version: string,
+        hash: string,
+        artifact_hash: string,
+        capabilities: list<string>,
+        dependencies: list<string>
+    } = json.parse(meta_json)
+
+    if meta.capabilities.length > 0 {
+        let caps = meta.capabilities.join(", ")
+        println(`  ${name} v${version} requires capabilities: [${caps}]`)
+        println("  (auto-accepted — run `forge allow` to review)")
+    }
+
+    if forge_cache_has(name, version) == 1 {
+        println(`  ✓ ${name} v${version} (cached)`)
+    } else {
+        let plat = detect_platform()
+        let tmp = `/tmp/forge-${name}-${version}.a`
+
+        let dl = download_artifact(name, version, plat, tmp)
+        if dl != "ok" {
+            println(`  ✗ download failed: ${dl}`)
+            return false
+        }
+
+        if meta.artifact_hash.length > 0 {
+            let actual = forge_crypto_sha256_file(tmp)
+            if actual != meta.artifact_hash {
+                forge_fs_remove(tmp)
+                println(`  ✗ hash mismatch for ${name} v${version}`)
+                println(`    expected: ${meta.artifact_hash}`)
+                println(`    got:      ${actual}`)
+                return false
+            }
+        }
+
+        forge_cache_store_artifact(name, version, tmp, "native")
+        forge_cache_index_set(name, version, meta_json)
+        forge_fs_remove(tmp)
+
+        let ctx = fetch_context(name, version)
+        if ctx.length > 0 { forge_cache_store_context(name, version, ctx) }
+
+        println(`  ✓ ${name} v${version}`)
+    }
+
+    // Update forge.toml
+    let toml_path = project_dir + "/forge.toml"
+    let record_range = if range == "*" || range.length == 0 {
+        "^" + version
+    } else {
+        range
+    }
+    add_dep(toml_path, name, record_range)
+
+    // Update forge.lock
+    let lock_path = project_dir + "/forge.lock"
+    upsert(lock_path, LockedPkg {
+        name: name,
+        version: version,
+        source: "registry",
+        hash: meta.hash,
+        artifact_hash: meta.artifact_hash,
+        capabilities: meta.capabilities,
+        dependencies: meta.dependencies
+    })
+
+    true
+}
+
+/// Install all deps listed in forge.toml that are not yet cached.
+export fn install_all(project_dir: string) -> bool {
+    let toml_path = project_dir + "/forge.toml"
+    if !forge_fs_exists(toml_path) {
+        println("  no forge.toml found")
+        return false
+    }
+    let content = forge_fs_read(toml_path)
+    let deps_json = forge_toml_get(content, "dependencies")
+    if deps_json.length == 0 {
+        println("  no dependencies declared")
+        return true
+    }
+    let deps: map<string, string> = json.parse(deps_json)
+    mut all_ok = true
+    for name in deps.keys() {
+        let range_val = deps.get(name)
+        let r = if range_val == null { "*" } else { string(range_val) }
+        let ok = install(name, r, project_dir)
+        if !ok { all_ok = false }
+    }
+    all_ok
+}

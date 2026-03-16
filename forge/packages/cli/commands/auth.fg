@@ -1,45 +1,99 @@
 /// Authentication commands — log in, manage tokens, check identity.
 
-use shared.{forward}
+use @std.process
+use shared.{argv, find_option}
+use registry.auth.{load_token, save_token, clear_token}
+use registry.client.{whoami}
 
 export command auth "Authenticate with the Forge package registry" {
+    run { 0 }
+
     command login "Log in to the registry" {
+        option token { "Registry auth token" }
         run {
-            forward("auth login")
+            let args = argv()
+            let tok = find_option(args, "token")
+
+            if tok.length == 0 {
+                println("Paste your registry token (from https://registry.forgelang.org/tokens):")
+                // For now, read from --token flag only
+                println("error: --token is required")
+                println("  forge auth login --token <your-token>")
+                forge_process_exit(1)
+            }
+
+            // Verify the token works
+            let user = whoami(tok)
+            if user.length == 0 {
+                println("error: token is invalid or registry is unreachable")
+                forge_process_exit(1)
+            }
+
+            let ok = save_token(tok)
+            if ok {
+                println(`  ✓ logged in as ${user}`)
+            } else {
+                println("error: could not save credentials")
+                forge_process_exit(1)
+            }
+            0
         }
     }
 
     command logout "Log out from the registry" {
         run {
-            forward("auth logout")
+            let ok = clear_token()
+            if ok {
+                println("  ✓ logged out")
+            } else {
+                println("  (no credentials stored)")
+            }
+            0
         }
     }
 
+    command whoami "Show current authenticated user" {
+        run {
+            let tok = load_token()
+            if tok.length == 0 {
+                println("  not logged in — run `forge auth login`")
+                forge_process_exit(1)
+            }
+            let user = whoami(tok)
+            if user.length == 0 {
+                println("  token is stored but registry is unreachable")
+            } else {
+                println(`  logged in as: ${user}`)
+            }
+            0
+        }
+    }
+
+    // Token management — these require registry API support
     command token "Manage authentication tokens" {
+        run { 0 }
+
         command create "Create a new scoped publish token" {
             option scope { "Token scope (package name or org)" }
             run {
-                forward("auth token create")
+                println("  token management requires registry API support (coming soon)")
+                0
             }
         }
 
         command list "List active tokens" {
             run {
-                forward("auth token list")
+                println("  token management requires registry API support (coming soon)")
+                0
             }
         }
 
         command revoke "Revoke a token" {
             arg id "Token ID to revoke"
             run {
-                forward("auth token revoke")
+                println("  token management requires registry API support (coming soon)")
+                0
             }
-        }
-    }
-
-    command whoami "Show current authenticated user" {
-        run {
-            forward("auth whoami")
         }
     }
 }
