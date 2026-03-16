@@ -242,9 +242,22 @@ enum Commands {
 
     /// Show dependency tree for the current project
     Deps {
+        #[command(subcommand)]
+        action: Option<DepsAction>,
+
         /// Show flat list instead of tree
         #[arg(long)]
         flat: bool,
+    },
+
+    /// Show package metadata
+    Info {
+        /// Package name to look up
+        package: String,
+
+        /// Also show exported API surface (reads context.fg if present)
+        #[arg(long)]
+        context: bool,
     },
 
     /// Authenticate with the package registry
@@ -295,6 +308,24 @@ enum Commands {
         /// Fix issues automatically where possible
         #[arg(long)]
         fix: bool,
+    },
+
+    /// Yank a published version (marks as not recommended)
+    Yank {
+        /// Package specifier: name@version (e.g., graphql@3.1.0)
+        package_version: String,
+        /// Reason for yanking
+        #[arg(long)]
+        reason: Option<String>,
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+    },
+
+    /// Manage the local package cache
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
     },
 
     /// Allow a capability for a package
@@ -384,6 +415,21 @@ enum TokenAction {
 }
 
 #[derive(Subcommand)]
+enum DepsAction {
+    /// Show why a package is in your project (dependency chain)
+    Explain {
+        /// Package name to explain
+        package: String,
+    },
+    /// Show all capabilities across the dependency tree
+    Capabilities,
+    /// Show the dependency tree (same as default)
+    Tree,
+    /// Show outdated dependencies
+    Outdated,
+}
+
+#[derive(Subcommand)]
 enum ErrorCommands {
     /// Compare two JSON diagnostic dumps (before/after)
     Diff {
@@ -405,6 +451,22 @@ enum PackageCommands {
         #[arg(long)]
         component: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum CacheAction {
+    /// Show cache size breakdown by tier
+    Status,
+    /// Evict source archives and context files (keep compilation artifacts)
+    Gc {
+        /// Evict everything not used by current project (including git repos)
+        #[arg(long)]
+        aggressive: bool,
+    },
+    /// Wipe the entire cache (requires confirmation)
+    Clear,
+    /// Download all deps for current project (offline work)
+    Prefetch,
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -636,12 +698,21 @@ fn cmd_explain(code: String) {
 }
 
 fn cmd_why(file_line: String) {
-    // Parse file:line
+    // If the argument contains ':' and the part after ':' looks like a line number,
+    // treat as file:line for type inference. Otherwise treat as a package name.
     let parts: Vec<&str> = file_line.rsplitn(2, ':').collect();
+    let looks_like_file_line = parts.len() == 2 && parts[0].parse::<u32>().is_ok();
+
+    if !looks_like_file_line && !file_line.contains('/') && !file_line.ends_with(".fg") {
+        // Treat as package name — delegate to deps explain
+        cmd_deps_explain(file_line);
+        return;
+    }
+
     if parts.len() != 2 {
         fail(CompileError::CliError {
-            message: format!("invalid format '{}' — expected file.fg:LINE", file_line),
-            help: Some("example: compiler why main.fg:5".to_string()),
+            message: format!("invalid format '{}' — expected file.fg:LINE or a package name", file_line),
+            help: Some("examples: compiler why main.fg:5  OR  compiler why graphql".to_string()),
         });
     }
     let line: u32 = match parts[0].parse() {
@@ -985,15 +1056,30 @@ fn run() {
             cmd_test(target, format, filter, fail_fast, no_color, verbose, quiet, jobs)
         }
 
-        Commands::Deps { flat } => cmd_deps(flat),
+        Commands::Deps { action, flat } => match action {
+            None | Some(DepsAction::Tree) => cmd_deps(flat),
+            Some(DepsAction::Explain { package }) => cmd_deps_explain(package),
+            Some(DepsAction::Capabilities) => cmd_deps_capabilities(),
+            Some(DepsAction::Outdated) => cmd_deps_outdated(),
+        },
+
+        Commands::Info { package, context } => cmd_info(package, context),
 
         Commands::Add { packages, dev } => cmd_add(packages, dev),
         Commands::Remove { packages } => cmd_remove(packages),
         Commands::Update { packages } => cmd_update(packages),
         Commands::Publish { dry_run, registry, token } => cmd_publish(dry_run, registry, token),
         Commands::Audit { fix } => cmd_audit(fix),
+        Commands::Yank { package_version, reason, registry } => cmd_yank(package_version, reason, registry),
         Commands::Allow { package, capability } => cmd_allow(package, capability),
         Commands::Quality { path } => cmd_quality(path),
+
+        Commands::Cache { action } => match action {
+            CacheAction::Status => cmd_cache_status(),
+            CacheAction::Gc { aggressive } => cmd_cache_gc(aggressive),
+            CacheAction::Clear => cmd_cache_clear(),
+            CacheAction::Prefetch => cmd_cache_prefetch(),
+        },
 
         Commands::Auth { action } => match action {
             AuthAction::Login { token } => cmd_auth_login(token),
@@ -1083,6 +1169,19 @@ fn cmd_deps(flat: bool) {
                         &project.config.project.version,
                     )
                 );
+            }
+
+            // Warn if any resolved dependency is yanked
+            let mut yanked_found = false;
+            for dep in graph.packages.values() {
+                if forge::publish::is_yanked(&dep.name, &dep.version) {
+                    if !yanked_found {
+                        eprintln!();
+                        eprintln!("warning: the following dependencies are yanked:");
+                        yanked_found = true;
+                    }
+                    eprintln!("  {}@{} — yanked, consider upgrading or replacing", dep.name, dep.version);
+                }
             }
         }
         Err(e) => fail(e),
@@ -1261,6 +1360,28 @@ fn cmd_audit(_fix: bool) {
     }
 }
 
+fn cmd_yank(package_version: String, reason: Option<String>, registry: Option<String>) {
+    // Parse "graphql@3.1.0" into name + version
+    let (name, version) = match package_version.split_once('@') {
+        Some((n, v)) => (n.to_string(), v.to_string()),
+        None => {
+            fail(CompileError::CliError {
+                message: format!("invalid package specifier '{}' — expected name@version", package_version),
+                help: Some("example: forge yank graphql@3.1.0".to_string()),
+            });
+        }
+    };
+
+    let registry_url = registry.as_deref().unwrap_or("https://registry.forgelang.org");
+    if let Err(e) = forge::publish::yank_local(&name, &version, reason.as_deref(), registry_url) {
+        fail(CompileError::CliError {
+            message: format!("yank failed: {}", e),
+            help: None,
+        });
+    }
+    eprintln!("{}@{} marked as yanked.", name, version);
+}
+
 fn cmd_allow(package: String, capability: String) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     if let Err(e) = forge::audit::allow_capability(&cwd, &package, &capability) {
@@ -1293,5 +1414,77 @@ fn cmd_quality(path: Option<PathBuf>) {
 
 fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {
     forge::package::scaffold_package(name, with_component)
+}
+
+// ── Deps subcommand stubs ──────────────────────────────────────────
+
+fn cmd_deps_explain(package: String) {
+    eprintln!("dependency explain for '{}' requires registry connection (not yet implemented)", package);
+}
+
+fn cmd_deps_capabilities() {
+    eprintln!("dependency capabilities listing requires registry connection (not yet implemented)");
+}
+
+fn cmd_deps_outdated() {
+    eprintln!("outdated dependency check requires registry connection (not yet implemented)");
+}
+
+fn cmd_info(package: String, _context: bool) {
+    eprintln!("package info for '{}' requires registry connection (not yet implemented)", package);
+}
+
+// ── Cache commands ─────────────────────────────────────────────────
+
+fn cmd_cache_status() {
+    forge::cache::ensure_cache_dirs();
+    print!("{}", forge::cache::cache_status());
+}
+
+fn cmd_cache_gc(aggressive: bool) {
+    let cwd = std::env::current_dir().ok();
+    let project_dir = cwd.as_deref();
+    match forge::cache::cache_gc(aggressive, project_dir) {
+        Ok(output) => print!("{}", output),
+        Err(e) => fail(CompileError::CliError {
+            message: format!("cache gc failed: {}", e),
+            help: None,
+        }),
+    }
+}
+
+fn cmd_cache_clear() {
+    // Confirmation prompt
+    eprint!("  This will delete all cached artifacts. Continue? [y/N] ");
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        fail(CompileError::CliError {
+            message: "failed to read confirmation input".to_string(),
+            help: None,
+        });
+    }
+    let trimmed = input.trim().to_lowercase();
+    if trimmed != "y" && trimmed != "yes" {
+        eprintln!("  aborted.");
+        return;
+    }
+    match forge::cache::cache_clear() {
+        Ok(output) => print!("{}", output),
+        Err(e) => fail(CompileError::CliError {
+            message: format!("cache clear failed: {}", e),
+            help: None,
+        }),
+    }
+}
+
+fn cmd_cache_prefetch() {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match forge::cache::cache_prefetch(&cwd) {
+        Ok(output) => print!("{}", output),
+        Err(e) => fail(CompileError::CliError {
+            message: format!("prefetch failed: {}", e),
+            help: Some("run this command from a directory containing forge.lock".to_string()),
+        }),
+    }
 }
 

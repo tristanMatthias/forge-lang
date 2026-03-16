@@ -33,6 +33,7 @@ pub mod pkg_commands;
 pub mod publish;
 pub mod escalation;
 pub mod audit;
+pub mod cache;
 pub mod quality;
 pub mod artifacts;
 pub mod bitcode_cache;
