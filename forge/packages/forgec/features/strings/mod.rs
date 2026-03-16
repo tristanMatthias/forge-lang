@@ -6,8 +6,8 @@ crate::forge_feature! {
     enables: [],
     tokens: [],
     ast_nodes: [],
-    description: "String methods: length, upper, lower, trim, contains, split, starts_with, ends_with, replace, parse_int, repeat",
-    syntax: ["\"hello\"", "s.length()", "s.split(sep)"],
+    description: "String methods: length, upper, lower, trim, contains, split, starts_with, ends_with, replace, parse_int, repeat, char_at, byte_at, bytes, chars, char_code",
+    syntax: ["\"hello\"", "s.length()", "s.split(sep)", "s.char_at(i)", "char_code(s)"],
     short: "UTF-8 strings with built-in methods",
     symbols: [],
     long_description: "\
@@ -31,6 +31,7 @@ characters are simply strings of length one.",
 }
 
 crate::builtin_namespace_method! { namespace: "string", method: "from_ptr", feature: "strings", ret: String }
+crate::builtin_fn! { name: "char_code", feature: "strings", params: [String], ret: Int, variadic: false }
 
 // Runtime function declarations
 crate::runtime_fn! { name: "forge_string_new", feature: "strings", params: [Ptr, I64], ret: ForgeString }
@@ -51,6 +52,11 @@ crate::runtime_fn! { name: "forge_string_parse_float", feature: "strings", param
 crate::runtime_fn! { name: "forge_string_repeat", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_substring", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_eq", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_string_char_at", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_byte_at", feature: "strings", params: [ForgeString, I64], ret: I64 }
+crate::runtime_fn! { name: "forge_string_bytes", feature: "strings", params: [ForgeString, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_string_chars", feature: "strings", params: [ForgeString, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_char_code", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "strlen", feature: "strings", params: [Ptr], ret: I64, conditional: true }
 
 pub mod checker;

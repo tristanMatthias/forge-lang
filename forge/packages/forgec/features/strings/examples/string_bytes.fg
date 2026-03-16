@@ -1,0 +1,13 @@
+/// expect: 3
+/// expect: 65
+/// expect: 66
+/// expect: 67
+
+fn main() {
+  let s = "ABC"
+  let b = s.bytes()
+  println(string(b.length()))
+  println(string(b[0]))
+  println(string(b[1]))
+  println(string(b[2]))
+}

@@ -174,6 +174,13 @@ impl<'ctx> Codegen<'ctx> {
                         _ => None,
                     },
                     "process_uptime" => self.compile_process_uptime(),
+                    "strings" => match name.as_str() {
+                        "char_code" => {
+                            let val = self.compile_expr(&args.first()?.value)?;
+                            self.call_runtime("forge_char_code", &[val.into()], "char_code")
+                        }
+                        _ => None,
+                    },
                     "validation" => self.compile_validate(args),
                     "query_helpers" => match name.as_str() {
                         "query_gt" => self.compile_query_int1(args, "forge_query_gt"),

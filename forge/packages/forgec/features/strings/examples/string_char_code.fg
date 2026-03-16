@@ -1,0 +1,11 @@
+/// expect: 97
+/// expect: 65
+/// expect: 48
+/// expect: 32
+
+fn main() {
+  println(string(char_code("a")))
+  println(string(char_code("A")))
+  println(string(char_code("0")))
+  println(string(char_code(" ")))
+}

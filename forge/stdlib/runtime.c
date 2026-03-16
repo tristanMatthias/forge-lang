@@ -306,6 +306,86 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
 
+// ---- String byte/char access ----
+
+// Shared bounds check helper — prints error and exits if index is out of range
+static void forge_string_bounds_check(ForgeString s, int64_t index, const char* method) {
+    if (index < 0 || index >= s.len) {
+        fprintf(stderr, "error: %s index %lld out of bounds for string of length %lld\n",
+                method, (long long)index, (long long)s.len);
+        fprintf(stderr, "  hint: valid indices are 0..%lld\n", (long long)(s.len - 1));
+        exit(1);
+    }
+}
+
+ForgeString forge_string_char_at(ForgeString s, int64_t index) {
+    forge_string_bounds_check(s, index, "char_at");
+    unsigned char c = (unsigned char)s.ptr[index];
+    // ASCII byte — single-byte character
+    if (c < 0x80) {
+        return forge_string_new(s.ptr + index, 1);
+    }
+    // UTF-8 multi-byte: determine sequence length from leading byte
+    int64_t seq_len = 1;
+    if ((c & 0xE0) == 0xC0) seq_len = 2;
+    else if ((c & 0xF0) == 0xE0) seq_len = 3;
+    else if ((c & 0xF8) == 0xF0) seq_len = 4;
+    // Clamp to remaining string length
+    if (index + seq_len > s.len) seq_len = s.len - index;
+    return forge_string_new(s.ptr + index, seq_len);
+}
+
+int64_t forge_string_byte_at(ForgeString s, int64_t index) {
+    forge_string_bounds_check(s, index, "byte_at");
+    return (int64_t)(unsigned char)s.ptr[index];
+}
+
+int64_t forge_string_bytes(ForgeString s, void** out_data) {
+    int64_t* arr = (int64_t*)malloc(s.len * sizeof(int64_t));
+    for (int64_t i = 0; i < s.len; i++) {
+        arr[i] = (int64_t)(unsigned char)s.ptr[i];
+    }
+    *out_data = arr;
+    return s.len;
+}
+
+int64_t forge_string_chars(ForgeString s, void** out_data) {
+    // Worst case: every byte is a character
+    ForgeString* arr = (ForgeString*)malloc(s.len * sizeof(ForgeString));
+    int64_t count = 0;
+    for (int64_t i = 0; i < s.len; ) {
+        unsigned char c = (unsigned char)s.ptr[i];
+        int64_t seq_len = 1;
+        if (c < 0x80) seq_len = 1;
+        else if ((c & 0xE0) == 0xC0) seq_len = 2;
+        else if ((c & 0xF0) == 0xE0) seq_len = 3;
+        else if ((c & 0xF8) == 0xF0) seq_len = 4;
+        if (i + seq_len > s.len) seq_len = s.len - i;
+        arr[count] = forge_string_new(s.ptr + i, seq_len);
+        count++;
+        i += seq_len;
+    }
+    *out_data = arr;
+    return count;
+}
+
+int64_t forge_char_code(ForgeString s) {
+    if (s.len == 0) return 0;
+    unsigned char c = (unsigned char)s.ptr[0];
+    if (c < 0x80) return (int64_t)c;
+    // Decode UTF-8 code point
+    int64_t cp = 0;
+    int64_t seq_len = 1;
+    if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; seq_len = 2; }
+    else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; seq_len = 3; }
+    else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; seq_len = 4; }
+    else return (int64_t)c;
+    for (int64_t i = 1; i < seq_len && i < s.len; i++) {
+        cp = (cp << 6) | ((unsigned char)s.ptr[i] & 0x3F);
+    }
+    return cp;
+}
+
 // ---- String split ----
 
 int64_t forge_string_split(ForgeString s, ForgeString sep, void** out_data) {

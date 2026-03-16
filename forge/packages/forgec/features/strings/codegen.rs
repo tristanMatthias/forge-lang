@@ -47,6 +47,16 @@ impl<'ctx> Codegen<'ctx> {
                 let end_val = self.compile_expr(&args.get(1)?.value)?;
                 self.call_runtime("forge_string_substring", &[obj_val.into(), start_val.into(), end_val.into()], "substring")
             }
+            "char_at" => {
+                let index_val = self.compile_expr(&args.first()?.value)?;
+                self.call_runtime("forge_string_char_at", &[obj_val.into(), index_val.into()], "char_at")
+            }
+            "byte_at" => {
+                let index_val = self.compile_expr(&args.first()?.value)?;
+                self.call_runtime("forge_string_byte_at", &[obj_val.into(), index_val.into()], "byte_at")
+            }
+            "bytes" => self.compile_string_to_int_list(&obj_val, "forge_string_bytes"),
+            "chars" => self.compile_string_to_string_list(&obj_val, "forge_string_chars"),
             _ => None,
         }
     }
@@ -93,6 +103,84 @@ impl<'ctx> Codegen<'ctx> {
         result_list = self.builder.build_insert_value(result_list, data_ptr, 0, "sp").unwrap().into_struct_value();
         result_list = self.builder.build_insert_value(result_list, count, 1, "sl").unwrap().into_struct_value();
         Some(result_list.into())
+    }
+
+    /// string.bytes() -> list<int> or string.chars() -> list<string>
+    /// Shared helper for runtime functions with signature: i64 fn(ForgeString, void**)
+    fn compile_string_to_int_list(
+        &mut self,
+        obj_val: &BasicValueEnum<'ctx>,
+        runtime_fn: &str,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let string_type = self.string_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.context.i64_type();
+
+        let func = self.module.get_function(runtime_fn).unwrap_or_else(|| {
+            let ft = i64_type.fn_type(
+                &[string_type.into(), ptr_type.into()],
+                false,
+            );
+            self.module.add_function(runtime_fn, ft, None)
+        });
+
+        let out_ptr = self.builder.build_alloca(ptr_type, "out_ptr").unwrap();
+        let count = self.builder
+            .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
+            .unwrap()
+            .try_as_basic_value()
+            .left()?
+            .into_int_value();
+
+        let data_ptr = self.builder
+            .build_load(ptr_type, out_ptr, "data")
+            .unwrap()
+            .into_pointer_value();
+
+        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::Int)));
+        let list_struct_type = list_type.into_struct_type();
+        let mut result = list_struct_type.get_undef();
+        result = self.builder.build_insert_value(result, data_ptr, 0, "lp").unwrap().into_struct_value();
+        result = self.builder.build_insert_value(result, count, 1, "ll").unwrap().into_struct_value();
+        Some(result.into())
+    }
+
+    fn compile_string_to_string_list(
+        &mut self,
+        obj_val: &BasicValueEnum<'ctx>,
+        runtime_fn: &str,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let string_type = self.string_type();
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.context.i64_type();
+
+        let func = self.module.get_function(runtime_fn).unwrap_or_else(|| {
+            let ft = i64_type.fn_type(
+                &[string_type.into(), ptr_type.into()],
+                false,
+            );
+            self.module.add_function(runtime_fn, ft, None)
+        });
+
+        let out_ptr = self.builder.build_alloca(ptr_type, "out_ptr").unwrap();
+        let count = self.builder
+            .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
+            .unwrap()
+            .try_as_basic_value()
+            .left()?
+            .into_int_value();
+
+        let data_ptr = self.builder
+            .build_load(ptr_type, out_ptr, "data")
+            .unwrap()
+            .into_pointer_value();
+
+        let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::String)));
+        let list_struct_type = list_type.into_struct_type();
+        let mut result = list_struct_type.get_undef();
+        result = self.builder.build_insert_value(result, data_ptr, 0, "lp").unwrap().into_struct_value();
+        result = self.builder.build_insert_value(result, count, 1, "ll").unwrap().into_struct_value();
+        Some(result.into())
     }
 
     /// Check if an LLVM struct type matches the ForgeString layout: {ptr, i64}

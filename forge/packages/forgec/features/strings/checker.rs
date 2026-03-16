@@ -8,14 +8,16 @@ impl TypeChecker {
     /// Emits an error diagnostic for undefined string methods.
     pub(crate) fn check_string_method_call(&mut self, method: &str, span: Span) -> Type {
         match method {
-            "upper" | "lower" | "trim" | "replace" | "repeat" | "substring" => Type::String,
+            "upper" | "lower" | "trim" | "replace" | "repeat" | "substring" | "char_at" => Type::String,
             "contains" | "starts_with" | "ends_with" => Type::Bool,
-            "parse_int" => Type::Int,
-            "split" => Type::List(Box::new(Type::String)),
+            "parse_int" | "byte_at" => Type::Int,
+            "split" | "chars" => Type::List(Box::new(Type::String)),
+            "bytes" => Type::List(Box::new(Type::Int)),
             "length" => Type::Int,
             _ => {
                 let known = ["upper", "lower", "trim", "contains", "split",
-                    "starts_with", "ends_with", "replace", "parse_int", "repeat", "length", "substring"];
+                    "starts_with", "ends_with", "replace", "parse_int", "repeat", "length", "substring",
+                    "char_at", "byte_at", "bytes", "chars"];
                 let mut diag = Diagnostic::error(
                     "F0020",
                     format!("string has no method '{}'", method),

@@ -432,6 +432,84 @@ impl<'ctx> Codegen<'ctx> {
         None // push returns void
     }
 
+    /// Compile list.pop() - removes and returns the last element as nullable
+    pub(crate) fn compile_list_pop(
+        &mut self,
+        list_expr: &Expr,
+        list_val: &BasicValueEnum<'ctx>,
+        list_type: &Type,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let elem_type = match list_type {
+            Type::List(inner) => inner.as_ref().clone(),
+            _ => return None,
+        };
+
+        let nullable_type = Type::Nullable(Box::new(elem_type.clone()));
+        let nullable_llvm_ty = self.type_to_llvm_basic(&nullable_type);
+        let elem_llvm_ty = self.type_to_llvm_basic(&elem_type);
+
+        let (data_ptr, old_len) = self.extract_list_fields(list_val)?;
+
+        let current_fn = self.builder.get_insert_block()?.get_parent()?;
+        let empty_bb = self.context.append_basic_block(current_fn, "pop_empty");
+        let nonempty_bb = self.context.append_basic_block(current_fn, "pop_nonempty");
+        let merge_bb = self.context.append_basic_block(current_fn, "pop_merge");
+
+        // Result alloca
+        let result_alloca = self.builder.build_alloca(nullable_llvm_ty, "pop_result").unwrap();
+        self.builder.build_store(result_alloca, nullable_llvm_ty.into_struct_type().const_zero()).unwrap();
+
+        // Check if empty
+        let is_empty = self.builder.build_int_compare(
+            inkwell::IntPredicate::EQ,
+            old_len,
+            self.context.i64_type().const_zero(),
+            "is_empty",
+        ).unwrap();
+        self.builder.build_conditional_branch(is_empty, empty_bb, nonempty_bb).unwrap();
+
+        // Empty: result stays null (tag=0), jump to merge
+        self.builder.position_at_end(empty_bb);
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+        // Non-empty: get last element, shrink list, wrap in nullable
+        self.builder.position_at_end(nonempty_bb);
+
+        // new_len = old_len - 1
+        let new_len = self.builder.build_int_sub(
+            old_len,
+            self.context.i64_type().const_int(1, false),
+            "new_len",
+        ).unwrap();
+
+        // Load element at index new_len (the last element)
+        let last_ptr = unsafe {
+            self.builder.build_gep(elem_llvm_ty, data_ptr, &[new_len], "last_ptr").unwrap()
+        };
+        let last_val = self.builder.build_load(elem_llvm_ty, last_ptr, "last_val").unwrap();
+
+        // Wrap in nullable (tag=1)
+        let wrapped = self.wrap_in_nullable(last_val, &nullable_type);
+        self.builder.build_store(result_alloca, wrapped).unwrap();
+
+        // Build new list struct with shortened length (reuse same data ptr)
+        let new_list = self.build_list_struct(&elem_type, data_ptr, new_len);
+
+        // Update the mutable variable
+        if let Expr::Ident(name, _) = list_expr {
+            if let Some((ptr, _)) = self.lookup_var(name) {
+                self.builder.build_store(ptr, new_list).unwrap();
+            }
+        }
+
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+        // Merge: load result
+        self.builder.position_at_end(merge_bb);
+        let result = self.builder.build_load(nullable_llvm_ty, result_alloca, "pop_val").unwrap();
+        Some(result)
+    }
+
     /// list.filter(closure) -> new list
     pub(crate) fn compile_list_filter(
         &mut self,
@@ -1095,6 +1173,7 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         match method {
             "push" => self.compile_list_push(object, obj_val, obj_type, args),
+            "pop" => self.compile_list_pop(object, obj_val, obj_type),
             "clone" => Some(*obj_val),
             "filter" => self.compile_list_filter(obj_val, inner, args),
             "map" => self.compile_list_map(obj_val, inner, args),
@@ -1107,6 +1186,14 @@ impl<'ctx> Codegen<'ctx> {
             "reduce" => self.compile_list_reduce(obj_val, inner, args),
             "sorted" => self.compile_list_sorted(obj_val, inner),
             "each" => self.compile_list_each(obj_val, inner, args),
+            "length" => {
+                if obj_val.is_struct_value() {
+                    let struct_val = obj_val.into_struct_value();
+                    self.builder.build_extract_value(struct_val, 1, "list_length").ok()
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }

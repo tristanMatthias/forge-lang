@@ -1,0 +1,13 @@
+/// expect: 3
+/// expect: a
+/// expect: b
+/// expect: c
+
+fn main() {
+  let s = "abc"
+  let c = s.chars()
+  println(string(c.length()))
+  println(c[0])
+  println(c[1])
+  println(c[2])
+}
