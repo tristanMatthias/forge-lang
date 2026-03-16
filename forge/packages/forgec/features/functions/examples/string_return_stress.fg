@@ -1,0 +1,30 @@
+/// Test: Functions returning strings — stress return value allocation
+///
+/// expect: hello world
+/// expect: aaa
+/// expect: nested result
+
+fn greet(name: string) -> string {
+  return `hello ${name}`
+}
+
+fn repeat_char(c: string, n: int) -> string {
+  mut result = ""
+  mut i = 0
+  while i < n {
+    result = result + c
+    i = i + 1
+  }
+  return result
+}
+
+fn nested_call() -> string {
+  let inner = greet("nested")
+  return inner.replace("hello", "").trim() + " result"
+}
+
+fn main() {
+  println(greet("world"))
+  println(repeat_char("a", 3))
+  println(nested_call())
+}

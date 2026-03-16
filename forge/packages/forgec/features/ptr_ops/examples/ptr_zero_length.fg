@@ -1,0 +1,11 @@
+/// # Zero-length string from ptr
+/// expect:
+/// expect: 0
+
+fn main() {
+  let empty = ""
+  let p = ptr.from_string(empty)
+  let recovered = string.from_ptr(p, 0)
+  println(recovered)
+  println(string(recovered.length))
+}

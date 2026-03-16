@@ -1,0 +1,13 @@
+/// # Octal Literals
+///
+/// Octal integer literals with 0o prefix.
+///
+/// expect: 511
+/// expect: 0
+/// expect: 493
+
+fn main() {
+  println(0o777)
+  println(0o0)
+  println(0o755)
+}

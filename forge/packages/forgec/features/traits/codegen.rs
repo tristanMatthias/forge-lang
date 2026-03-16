@@ -31,16 +31,31 @@ impl<'ctx> Codegen<'ctx> {
             for (method_name, method_info) in &impl_info.methods {
                 let mangled = format!("{}_{}", type_name, method_name);
 
+                // Check if this type has any mut fields — if so, pass self by pointer
+                let has_mut_fields = self.type_checker.mutable_fields.iter()
+                    .any(|(tn, _)| tn == type_name);
+
                 let mut resolved_params = Vec::new();
                 for p in &method_info.params {
                     if p.name == "self" {
-                        resolved_params.push(Param {
-                            name: "self".to_string(),
-                            type_ann: Some(self.type_to_type_expr(&self_type)),
-                            default: None,
-                            span: p.span,
-                            mutable: p.mutable,
-                        });
+                        if has_mut_fields {
+                            // Pass self as pointer so mutations are visible to caller
+                            resolved_params.push(Param {
+                                name: "self".to_string(),
+                                type_ann: Some(TypeExpr::Named("ptr".to_string())),
+                                default: None,
+                                span: p.span,
+                                mutable: true,
+                            });
+                        } else {
+                            resolved_params.push(Param {
+                                name: "self".to_string(),
+                                type_ann: Some(self.type_to_type_expr(&self_type)),
+                                default: None,
+                                span: p.span,
+                                mutable: p.mutable,
+                            });
+                        }
                     } else {
                         let mut param = p.clone();
                         if let Some(ref type_ann) = p.type_ann {

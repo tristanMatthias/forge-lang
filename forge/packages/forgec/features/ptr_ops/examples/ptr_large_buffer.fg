@@ -1,0 +1,18 @@
+/// # Large buffer allocation and string conversion
+/// expect: 1000
+/// expect: true
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  let buf = malloc(1000)
+  defer free(buf)
+
+  for i in 0..1000 {
+    buf[i] = 65
+  }
+
+  let s = string.from_ptr(buf, 1000)
+  println(string(s.length))
+  println(string(s.starts_with("AAAA")))
+}

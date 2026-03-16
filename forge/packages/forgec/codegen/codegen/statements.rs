@@ -324,6 +324,24 @@ impl<'ctx> Codegen<'ctx> {
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or(Type::Unknown);
+
+            // For mut-self methods: self is passed as ptr, resolve actual struct type
+            if param.name == "self" && param.mutable && ty == Type::Ptr {
+                // Incoming value is a pointer to the caller's struct alloca
+                // Use it directly — field access/mutation goes through this pointer
+                let self_ptr = param_val.into_pointer_value();
+                // Resolve the struct type from the mangled method name (TypeName_method)
+                let struct_type = name.find('_')
+                    .and_then(|idx| {
+                        let tn = &name[..idx];
+                        let resolved = self.resolve_named_type(tn);
+                        if matches!(resolved, Type::Unknown | Type::Error) { None } else { Some(resolved) }
+                    })
+                    .unwrap_or(ty.clone());
+                self.define_var("self".to_string(), self_ptr, struct_type);
+                continue;
+            }
+
             let alloca = self.create_entry_block_alloca(&ty, &param.name);
             self.builder.build_store(alloca, param_val).unwrap();
             self.define_var(param.name.clone(), alloca, ty);

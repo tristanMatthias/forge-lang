@@ -1,0 +1,11 @@
+/// List Slice Open Start
+/// expect: 1
+/// expect: 2
+/// expect: 3
+fn main() {
+  let nums = [1, 2, 3, 4, 5]
+  let slice = nums[..3]
+  for n in slice {
+    println(string(n))
+  }
+}

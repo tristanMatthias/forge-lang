@@ -1,0 +1,13 @@
+/// Test: Building strings in a loop — stress repeated allocation
+///
+/// expect: 10
+/// expect: 0123456789
+
+fn main() {
+  mut result = ""
+  for i in 0..10 {
+    result = result + string(i)
+  }
+  println(string(result.length))
+  println(result)
+}

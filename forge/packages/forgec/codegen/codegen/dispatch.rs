@@ -180,7 +180,31 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     }
 
-                    // Look up trait method impl
+                    // Check if type has mut fields — if so, pass pointer instead of value
+                    let has_mut_fields = self.type_checker.mutable_fields.iter()
+                        .any(|(tn, _)| tn == &type_name);
+                    if has_mut_fields {
+                        // Get the alloca pointer for the object variable
+                        if let Expr::Ident(var_name, _) = object {
+                            if let Some((ptr, _)) = self.lookup_var(var_name) {
+                                let mut call_args: Vec<BasicMetadataValueEnum> = vec![ptr.into()];
+                                for arg in args {
+                                    if let Some(val) = self.compile_expr(&arg.value) {
+                                        call_args.push(val.into());
+                                    }
+                                }
+                                let mangled = self.find_impl_method(&type_name, method);
+                                if let Some(mangled) = mangled {
+                                    if let Some(func) = self.functions.get(&mangled).copied() {
+                                        let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
+                                        return result.try_as_basic_value().left();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Look up trait method impl (value-based dispatch)
                     if let Some(result) = self.call_impl_method(&type_name, method, obj_val, args) {
                         return Some(result);
                     }

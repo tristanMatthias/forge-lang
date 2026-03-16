@@ -1,0 +1,11 @@
+/// # Hex in Expression
+///
+/// Hex literals work in arithmetic expressions.
+///
+/// expect: 256
+/// expect: 512
+
+fn main() {
+  println(0xFF + 1)
+  println(0x100 * 2)
+}

@@ -1,0 +1,9 @@
+/// # Invalid Hex Digit
+///
+/// Using invalid hex digits produces a clear error.
+///
+/// expect-error: F0006
+
+fn main() {
+  let x = 0xZZ
+}

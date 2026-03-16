@@ -1,0 +1,13 @@
+/// # Hex Literals
+///
+/// Hexadecimal integer literals with 0x prefix.
+///
+/// expect: 255
+/// expect: 0
+/// expect: 57005
+
+fn main() {
+  println(0xFF)
+  println(0x0)
+  println(0xDEAD)
+}

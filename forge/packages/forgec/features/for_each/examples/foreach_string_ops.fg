@@ -1,0 +1,12 @@
+/// Test: For-each over list of strings with operations
+///
+/// expect: HELLO
+/// expect: WORLD
+/// expect: FOO
+
+fn main() {
+  let words = ["hello", "world", "foo"]
+  for word in words {
+    println(word.upper())
+  }
+}

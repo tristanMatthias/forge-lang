@@ -1,0 +1,13 @@
+/// # Underscore Separators
+///
+/// Underscores can be used in any numeric literal for readability.
+///
+/// expect: 1000000
+/// expect: 65535
+/// expect: 240
+
+fn main() {
+  println(1_000_000)
+  println(0xFF_FF)
+  println(0b1111_0000)
+}

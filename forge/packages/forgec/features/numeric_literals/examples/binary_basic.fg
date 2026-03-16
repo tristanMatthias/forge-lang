@@ -1,0 +1,13 @@
+/// # Binary Literals
+///
+/// Binary integer literals with 0b prefix.
+///
+/// expect: 10
+/// expect: 0
+/// expect: 255
+
+fn main() {
+  println(0b1010)
+  println(0b0)
+  println(0b11111111)
+}

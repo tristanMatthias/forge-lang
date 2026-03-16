@@ -1,0 +1,20 @@
+/// # Round-trip many strings through ptr — stress string/ptr interop
+/// expect: test_0
+/// expect: test_49
+/// expect: 50
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  mut results: List<string> = []
+  for i in 0..50 {
+    let s = `test_${i}`
+    let p = ptr.from_string(s)
+    let len = s.length
+    let recovered = string.from_ptr(p, len)
+    results.push(recovered)
+  }
+  println(results[0])
+  println(results[49])
+  println(string(results.length))
+}

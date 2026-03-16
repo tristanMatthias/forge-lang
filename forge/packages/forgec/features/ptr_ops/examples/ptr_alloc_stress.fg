@@ -1,0 +1,15 @@
+/// # Allocate and free many times — stress allocator
+/// expect: 100
+extern fn malloc(size: int) -> ptr
+extern fn free(p: ptr)
+
+fn main() {
+  mut count = 0
+  for i in 0..100 {
+    let buf = malloc(256)
+    buf[0] = i
+    free(buf)
+    count = count + 1
+  }
+  println(string(count))
+}

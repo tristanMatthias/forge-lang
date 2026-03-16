@@ -1,0 +1,14 @@
+/// Test: Reassigning string variables many times — stress allocator
+///
+/// expect: final
+/// expect: 5
+
+fn main() {
+  mut s = "initial"
+  s = "second"
+  s = "third"
+  s = "fourth"
+  s = "final"
+  println(s)
+  println(string(s.length))
+}
