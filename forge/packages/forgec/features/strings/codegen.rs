@@ -57,6 +57,14 @@ impl<'ctx> Codegen<'ctx> {
             }
             "bytes" => self.compile_string_to_int_list(&obj_val, "forge_string_bytes"),
             "chars" => self.compile_string_to_string_list(&obj_val, "forge_string_chars"),
+            "index_of" => {
+                let arg_val = self.compile_expr(&args.first()?.value)?;
+                self.call_runtime("forge_string_index_of", &[obj_val.into(), arg_val.into()], "index_of")
+            }
+            "last_index_of" => {
+                let arg_val = self.compile_expr(&args.first()?.value)?;
+                self.call_runtime("forge_string_last_index_of", &[obj_val.into(), arg_val.into()], "last_index_of")
+            }
             _ => None,
         }
     }

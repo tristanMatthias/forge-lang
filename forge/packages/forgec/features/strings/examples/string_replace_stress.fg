@@ -1,0 +1,19 @@
+/// Test: Chained replace operations — stress memory with many intermediate strings
+///
+/// expect: xyz
+/// expect: bbb
+/// expect: hello world
+
+fn main() {
+  // Replace every character one by one
+  let s = "abc".replace("a", "x").replace("b", "y").replace("c", "z")
+  println(s)
+
+  // Replace same char multiple times
+  let s2 = "aaa".replace("a", "b")
+  println(s2)
+
+  // Replace with longer string (grows allocation)
+  let s3 = "h w".replace("h", "hello").replace("w", "world")
+  println(s3)
+}

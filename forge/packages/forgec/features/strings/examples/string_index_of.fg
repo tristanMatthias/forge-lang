@@ -1,0 +1,14 @@
+/// # String index_of
+/// Find first occurrence of a substring
+/// expect: 2
+/// expect: 6
+/// expect: 0
+/// expect: -1
+
+fn main() {
+  let s = "hello world"
+  println(s.index_of("ll"))
+  println(s.index_of("world"))
+  println(s.index_of("h"))
+  println(s.index_of("xyz"))
+}

@@ -10,14 +10,14 @@ impl TypeChecker {
         match method {
             "upper" | "lower" | "trim" | "replace" | "repeat" | "substring" | "char_at" => Type::String,
             "contains" | "starts_with" | "ends_with" => Type::Bool,
-            "parse_int" | "byte_at" => Type::Int,
+            "parse_int" | "byte_at" | "index_of" | "last_index_of" => Type::Int,
             "split" | "chars" => Type::List(Box::new(Type::String)),
             "bytes" => Type::List(Box::new(Type::Int)),
             "length" => Type::Int,
             _ => {
                 let known = ["upper", "lower", "trim", "contains", "split",
                     "starts_with", "ends_with", "replace", "parse_int", "repeat", "length", "substring",
-                    "char_at", "byte_at", "bytes", "chars"];
+                    "char_at", "byte_at", "bytes", "chars", "index_of", "last_index_of"];
                 let mut diag = Diagnostic::error(
                     "F0020",
                     format!("string has no method '{}'", method),

@@ -1,0 +1,21 @@
+/// Test: String template interpolation with many segments
+///
+/// expect: a=1 b=2 c=3 d=4 e=5
+/// expect: nested: hello world
+/// expect: empty: <>
+
+fn main() {
+  let a = 1
+  let b = 2
+  let c = 3
+  let d = 4
+  let e = 5
+  println(`a=${a} b=${b} c=${c} d=${d} e=${e}`)
+
+  let inner = "hello"
+  let outer = `${inner} world`
+  println(`nested: ${outer}`)
+
+  let empty = ""
+  println(`empty: <${empty}>`)
+}

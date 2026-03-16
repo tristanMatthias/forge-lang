@@ -1,0 +1,16 @@
+/// Test: Long chains of string methods — stress intermediate allocations
+///
+/// expect: HELLO WORLD
+/// expect: true
+/// expect: 5
+
+fn main() {
+  let s = "  hello world  ".trim().upper()
+  println(s)
+
+  let check = "abcdef".upper().lower().contains("abc")
+  println(string(check))
+
+  let parts = "a,b,c,d,e".split(",")
+  println(string(parts.length))
+}

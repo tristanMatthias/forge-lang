@@ -1,0 +1,17 @@
+/// Test: String repeat edge cases
+///
+/// expect:
+/// expect: x
+/// expect: 500
+
+fn main() {
+  // Repeat 0 times = empty
+  println("hello".repeat(0))
+
+  // Repeat 1 time = identity
+  println("x".repeat(1))
+
+  // Large repeat
+  let big = "x".repeat(500)
+  println(string(big.length))
+}

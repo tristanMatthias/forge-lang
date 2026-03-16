@@ -1,0 +1,15 @@
+/// Test: Stress test string concatenation — many small concats to stress allocator
+///
+/// expect: 100
+/// expect: true
+
+fn main() {
+  mut s = "a"
+  mut i = 0
+  while i < 99 {
+    s = s + "a"
+    i = i + 1
+  }
+  println(string(s.length))
+  println(string(s.starts_with("aaaa")))
+}

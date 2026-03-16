@@ -1,0 +1,22 @@
+/// Test: Substring boundary conditions
+///
+/// expect: hello
+/// expect:
+/// expect: h
+/// expect: o
+
+fn main() {
+  let s = "hello"
+
+  // Full string
+  println(s.substring(0, 5))
+
+  // Zero-length substring
+  println(s.substring(2, 2))
+
+  // First char only
+  println(s.substring(0, 1))
+
+  // Last char only
+  println(s.substring(4, 5))
+}

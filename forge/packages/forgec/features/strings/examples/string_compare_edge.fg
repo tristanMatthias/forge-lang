@@ -1,0 +1,28 @@
+/// Test: String comparison edge cases
+///
+/// expect: true
+/// expect: false
+/// expect: true
+/// expect: true
+/// expect: false
+
+fn main() {
+  // Empty strings are equal
+  println(string("" == ""))
+
+  // Empty vs non-empty
+  println(string("" == "a"))
+
+  // Same content different construction
+  let a = "hel" + "lo"
+  let b = "hello"
+  println(string(a == b))
+
+  // Case sensitivity
+  println(string("Hello" != "hello"))
+
+  // Same reference comparison
+  let x = "test"
+  let y = x
+  println(string(x != y))
+}

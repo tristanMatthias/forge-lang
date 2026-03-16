@@ -1,0 +1,10 @@
+/// String Slice Range
+/// expect: ello
+/// expect: hel
+/// expect: lo world
+fn main() {
+  let greeting = "hello world"
+  println(greeting[1..5])
+  println(greeting[..3])
+  println(greeting[3..])
+}

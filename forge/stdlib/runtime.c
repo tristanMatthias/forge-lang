@@ -246,6 +246,24 @@ ForgeString forge_string_substring(ForgeString s, int64_t start, int64_t end) {
     return (ForgeString){ .ptr = buf, .len = new_len };
 }
 
+int64_t forge_string_index_of(ForgeString s, ForgeString sub) {
+    if (sub.len == 0) return 0;
+    if (sub.len > s.len) return -1;
+    for (int64_t i = 0; i <= s.len - sub.len; i++) {
+        if (memcmp(s.ptr + i, sub.ptr, sub.len) == 0) return i;
+    }
+    return -1;
+}
+
+int64_t forge_string_last_index_of(ForgeString s, ForgeString sub) {
+    if (sub.len == 0) return s.len;
+    if (sub.len > s.len) return -1;
+    for (int64_t i = s.len - sub.len; i >= 0; i--) {
+        if (memcmp(s.ptr + i, sub.ptr, sub.len) == 0) return i;
+    }
+    return -1;
+}
+
 ForgeString forge_string_replace(ForgeString s, ForgeString find, ForgeString replace) {
     if (find.len == 0) return forge_string_new(s.ptr, s.len);
 

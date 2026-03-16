@@ -1,0 +1,17 @@
+/// Test: Strings stored in lists — tests string copy semantics
+///
+/// expect: 3
+/// expect: hello
+/// expect: world
+/// expect: foo
+
+fn main() {
+  mut items: List<string> = []
+  items.push("hello")
+  items.push("world")
+  items.push("foo")
+  println(string(items.length))
+  println(items[0])
+  println(items[1])
+  println(items[2])
+}

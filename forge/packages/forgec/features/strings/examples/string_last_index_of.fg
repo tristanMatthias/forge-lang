@@ -1,0 +1,11 @@
+/// # String last_index_of
+/// Find last occurrence of a substring
+/// expect: 3
+/// expect: 2
+/// expect: -1
+
+fn main() {
+  println("abcabc".last_index_of("abc"))
+  println("aaa".last_index_of("a"))
+  println("hello".last_index_of("xyz"))
+}

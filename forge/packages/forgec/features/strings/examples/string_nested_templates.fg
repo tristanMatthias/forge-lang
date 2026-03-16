@@ -1,0 +1,16 @@
+/// Test: Nested string template interpolation
+///
+/// expect: result: HELLO WORLD!
+/// expect: x=1, y=2, sum=3
+
+fn main() {
+  let name = "world"
+  let greeting = `hello ${name}`
+  let final_msg = `result: ${greeting.upper()}!`
+  println(final_msg)
+
+  let x = 1
+  let y = 2
+  let sum = x + y
+  println(`x=${x}, y=${y}, sum=${sum}`)
+}

@@ -6,8 +6,8 @@ crate::forge_feature! {
     enables: [],
     tokens: [],
     ast_nodes: [],
-    description: "String methods: length, upper, lower, trim, contains, split, starts_with, ends_with, replace, parse_int, repeat, char_at, byte_at, bytes, chars, char_code",
-    syntax: ["\"hello\"", "s.length()", "s.split(sep)", "s.char_at(i)", "char_code(s)"],
+    description: "String methods: length, upper, lower, trim, contains, split, starts_with, ends_with, replace, parse_int, repeat, char_at, byte_at, bytes, chars, char_code, index_of, last_index_of",
+    syntax: ["\"hello\"", "s.length()", "s.split(sep)", "s.char_at(i)", "s.index_of(sub)", "char_code(s)"],
     short: "UTF-8 strings with built-in methods",
     symbols: [],
     long_description: "\
@@ -56,6 +56,8 @@ crate::runtime_fn! { name: "forge_string_char_at", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_string_byte_at", feature: "strings", params: [ForgeString, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_string_bytes", feature: "strings", params: [ForgeString, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_string_chars", feature: "strings", params: [ForgeString, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_string_index_of", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_string_last_index_of", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_char_code", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "strlen", feature: "strings", params: [Ptr], ret: I64, conditional: true }
 
