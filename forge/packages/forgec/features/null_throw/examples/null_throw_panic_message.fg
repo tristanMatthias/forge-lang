@@ -1,0 +1,16 @@
+/// # Null Throw Panic Message
+///
+/// Tests that the panic output includes the error name from the throw
+/// expression when a null value triggers the panic path.
+///
+/// expect-stderr: user_not_found
+/// expect-exit: 1
+
+fn lookup(id: int) -> string? {
+  null
+}
+
+fn main() {
+  let user = lookup(999) ?? throw .user_not_found
+  println(user)
+}

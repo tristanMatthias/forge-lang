@@ -1,0 +1,14 @@
+/// # Comments
+///
+/// Line comments with // and doc comments with ///.
+///
+/// expect: hello
+
+// This is a line comment — ignored by the compiler
+
+/// This is a doc comment — attaches to the next item
+fn main() {
+  // Comments can appear anywhere in a line
+  let x = 42  // even after code
+  println("hello")
+}

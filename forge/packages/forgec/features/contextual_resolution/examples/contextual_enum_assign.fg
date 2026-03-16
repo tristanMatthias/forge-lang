@@ -1,0 +1,12 @@
+/// # Contextual Enum Assignment
+///
+/// .variant resolves from enum context in typed assignments.
+///
+/// expect: true
+
+enum Status { active, pending, done }
+
+fn main() {
+  let s: Status = .active
+  println(string(s is .active))
+}

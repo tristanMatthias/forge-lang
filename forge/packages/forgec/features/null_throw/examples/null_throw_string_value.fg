@@ -1,0 +1,21 @@
+/// # Null Throw String Value
+///
+/// Tests ?? throw with nullable strings, verifying that present string
+/// values pass through correctly and can be used in templates.
+///
+/// expect: greeting: hello world
+/// expect: done
+
+fn greeting(excited: bool) -> string? {
+  if excited {
+    "hello world"
+  } else {
+    null
+  }
+}
+
+fn main() {
+  let msg = greeting(true) ?? throw .no_greeting
+  println(`greeting: ${msg}`)
+  println("done")
+}

@@ -1,0 +1,18 @@
+/// # Match Table Basic
+///
+/// Match table returns a struct with named columns.
+///
+/// expect: ✓ active
+
+enum Status { active, pending, done }
+
+fn main() {
+  let s = Status.active
+  let result = match s table {
+    pattern  | label      | emoji
+    .active  | "active"   | "✓"
+    .pending | "pending"  | "◐"
+    .done    | "complete" | "●"
+  }
+  println(`${result.emoji} ${result.label}`)
+}

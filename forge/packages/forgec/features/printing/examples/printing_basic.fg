@@ -1,0 +1,11 @@
+/// # Printing
+///
+/// println() prints with a newline, print() without.
+///
+/// expect: Hello, world!
+/// expect: The answer is 42
+
+fn main() {
+  println("Hello, world!")
+  println(`The answer is ${string(42)}`)
+}

@@ -1,0 +1,27 @@
+/// # Contextual Function Argument
+///
+/// .variant used directly as a function argument resolves
+/// to the correct enum type from the parameter's type annotation.
+///
+/// expect: active
+/// expect: idle
+/// expect: true
+
+enum Switch { active, idle }
+
+fn label(s: Switch) -> string {
+  match s {
+    .active -> "active"
+    .idle -> "idle"
+  }
+}
+
+fn is_active(s: Switch) -> bool {
+  s is .active
+}
+
+fn main() {
+  println(label(.active))
+  println(label(.idle))
+  println(string(is_active(.active)))
+}

@@ -1,0 +1,24 @@
+/// # Contextual Enum With Fields
+///
+/// Enum variants with fields require explicit qualification
+/// because contextual .variant only resolves no-arg variants.
+/// This test verifies no-arg variants resolve contextually
+/// even when the same enum has variants with fields.
+///
+/// expect: none
+/// expect: has value: 42
+
+enum Maybe { none, some(value: int) }
+
+fn describe(m: Maybe) -> string {
+  match m {
+    .none -> "none"
+    .some(v) -> `has value: ${v}`
+  }
+}
+
+fn main() {
+  let x: Maybe = .none
+  println(describe(x))
+  println(describe(Maybe.some(value: 42)))
+}

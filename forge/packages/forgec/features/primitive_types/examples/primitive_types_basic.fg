@@ -1,0 +1,20 @@
+/// # Primitive Types
+///
+/// Forge's built-in types: int, float, string, bool.
+///
+/// expect: 42
+/// expect: 3.14
+/// expect: hello
+/// expect: true
+
+fn main() {
+  let i = 42
+  let f = 3.14
+  let s = "hello"
+  let b = true
+
+  println(string(i))
+  println(string(f))
+  println(s)
+  println(string(b))
+}

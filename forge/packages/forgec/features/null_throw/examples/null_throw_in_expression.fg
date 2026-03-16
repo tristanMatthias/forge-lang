@@ -1,0 +1,15 @@
+/// # Null Throw In Expression
+///
+/// Tests using the result of ?? throw in subsequent expressions.
+///
+/// expect: 52
+
+fn get_base() -> int? {
+  42
+}
+
+fn main() {
+  let base = get_base() ?? throw .no_base
+  let result = base + 10
+  println(string(result))
+}

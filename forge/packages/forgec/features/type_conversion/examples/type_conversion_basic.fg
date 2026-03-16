@@ -1,0 +1,26 @@
+/// # Type Conversion
+///
+/// Explicit conversion between types with string(), int(), float().
+///
+/// expect: 42
+/// expect: 3.14
+/// expect: 3
+/// expect: 42.0
+
+fn main() {
+  // string → int
+  let n = int("42")
+  println(string(n))
+
+  // string → float
+  let f = float("3.14")
+  println(string(f))
+
+  // float → int (truncates)
+  let i = int(3.9)
+  println(string(i))
+
+  // int → float
+  let g = float(42)
+  println(string(g))
+}

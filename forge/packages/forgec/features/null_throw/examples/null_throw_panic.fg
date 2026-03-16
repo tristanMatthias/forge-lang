@@ -1,0 +1,15 @@
+/// # Null Throw Triggers
+///
+/// ?? throw panics on null value.
+///
+/// expect-stderr: not_found
+/// expect-exit: 1
+
+fn find_user(name: string) -> string? {
+  null
+}
+
+fn main() {
+  let user = find_user("bob") ?? throw .not_found
+  println(user)
+}

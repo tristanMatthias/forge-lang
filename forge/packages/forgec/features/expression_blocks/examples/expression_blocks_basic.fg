@@ -1,0 +1,20 @@
+/// # Expression Blocks
+///
+/// Blocks are expressions — the last value is the return value.
+///
+/// expect: big
+/// expect: 30
+
+fn classify(n: int) -> string {
+  if n > 10 { "big" } else { "small" }
+}
+
+fn add_ten(n: int) -> int {
+  let extra = 10
+  n + extra
+}
+
+fn main() {
+  println(classify(42))
+  println(string(add_ten(20)))
+}

@@ -1,0 +1,31 @@
+/// # Null Throw Non-Null Values
+///
+/// Verifies that ?? throw passes through non-null values of multiple types
+/// without panicking: int, float, and bool.
+///
+/// expect: 42
+/// expect: 3.14
+/// expect: true
+
+fn maybe_int(x: bool) -> int? {
+  if x { 42 } else { null }
+}
+
+fn maybe_float(x: bool) -> float? {
+  if x { 3.14 } else { null }
+}
+
+fn maybe_bool(x: bool) -> bool? {
+  if x { true } else { null }
+}
+
+fn main() {
+  let a = maybe_int(true) ?? throw .int_missing
+  println(string(a))
+
+  let b = maybe_float(true) ?? throw .float_missing
+  println(string(b))
+
+  let c = maybe_bool(true) ?? throw .bool_missing
+  println(string(c))
+}

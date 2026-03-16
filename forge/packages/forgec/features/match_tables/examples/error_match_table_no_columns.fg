@@ -1,0 +1,17 @@
+/// # Error: Match Table No Value Columns
+///
+/// A match table with only the pattern header and no value columns
+/// should produce a syntax error.
+///
+/// expect-error: F0001
+
+enum Dir { up, down }
+
+fn main() {
+  let d = Dir.up
+  let r = match d table {
+    pattern
+    .up
+    .down
+  }
+}

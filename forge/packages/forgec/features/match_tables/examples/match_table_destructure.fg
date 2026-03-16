@@ -1,0 +1,19 @@
+/// # Match Table Destructure
+///
+/// Match table result can be destructured.
+///
+/// expect: 404
+/// expect: not found
+
+enum AppError { not_found, unauthorized }
+
+fn main() {
+  let err = AppError.not_found
+  let {status, body} = match err table {
+    pattern       | status | body
+    .not_found    | 404    | "not found"
+    .unauthorized | 401    | "unauthorized"
+  }
+  println(string(status))
+  println(body)
+}

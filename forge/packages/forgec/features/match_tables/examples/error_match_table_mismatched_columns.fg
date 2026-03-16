@@ -1,0 +1,18 @@
+/// # Error: Match Table Mismatched Columns
+///
+/// A row with fewer values than the header declares should produce
+/// a syntax error because the parser expects a `|` separator for
+/// each column.
+///
+/// expect-error: F0001
+
+enum Color { red, blue }
+
+fn main() {
+  let c = Color.red
+  let r = match c table {
+    pattern | name  | hex
+    .red    | "red"
+    .blue   | "blue" | "#0000FF"
+  }
+}

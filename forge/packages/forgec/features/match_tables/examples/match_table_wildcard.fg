@@ -1,0 +1,33 @@
+/// # Match Table Wildcard
+///
+/// The `_` wildcard pattern acts as a catch-all row in a match table,
+/// capturing any value not matched by preceding rows.
+///
+/// expect: known
+/// expect: 200
+/// expect: fallback
+/// expect: 0
+
+enum Code { ok, not_found, teapot }
+
+fn main() {
+  let c1 = Code.ok
+  let r1 = match c1 table {
+    pattern     | label      | value
+    .ok         | "known"    | 200
+    .not_found  | "missing"  | 404
+    _           | "fallback" | 0
+  }
+  println(r1.label)
+  println(string(r1.value))
+
+  let c2 = Code.teapot
+  let r2 = match c2 table {
+    pattern     | label      | value
+    .ok         | "known"    | 200
+    .not_found  | "missing"  | 404
+    _           | "fallback" | 0
+  }
+  println(r2.label)
+  println(string(r2.value))
+}

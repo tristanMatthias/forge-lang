@@ -1,0 +1,26 @@
+/// # Match Table Many Columns
+///
+/// Match table with four value columns to test wider tables.
+///
+/// expect: Mercury is rocky, position 1 with 0 moons
+/// expect: Jupiter is gas, position 5 with 95 moons
+
+enum Planet { mercury, jupiter }
+
+fn main() {
+  let p1 = Planet.mercury
+  let r1 = match p1 table {
+    pattern  | name      | kind    | pos | moons
+    .mercury | "Mercury" | "rocky" | 1   | 0
+    .jupiter | "Jupiter" | "gas"   | 5   | 95
+  }
+  println(`${r1.name} is ${r1.kind}, position ${string(r1.pos)} with ${string(r1.moons)} moons`)
+
+  let p2 = Planet.jupiter
+  let r2 = match p2 table {
+    pattern  | name      | kind    | pos | moons
+    .mercury | "Mercury" | "rocky" | 1   | 0
+    .jupiter | "Jupiter" | "gas"   | 5   | 95
+  }
+  println(`${r2.name} is ${r2.kind}, position ${string(r2.pos)} with ${string(r2.moons)} moons`)
+}

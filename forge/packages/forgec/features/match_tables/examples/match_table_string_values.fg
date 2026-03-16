@@ -1,0 +1,26 @@
+/// # Match Table String Values
+///
+/// Match table where all value columns are strings.
+///
+/// expect: Bob says hello in English
+/// expect: Bob dice hola in Spanish
+
+enum Lang { en, es }
+
+fn main() {
+  let name = "Bob"
+
+  let r1 = match Lang.en table {
+    pattern | greeting | language
+    .en     | "hello"  | "English"
+    .es     | "hola"   | "Spanish"
+  }
+  println(`${name} says ${r1.greeting} in ${r1.language}`)
+
+  let r2 = match Lang.es table {
+    pattern | greeting | language
+    .en     | "hello"  | "English"
+    .es     | "hola"   | "Spanish"
+  }
+  println(`${name} dice ${r2.greeting} in ${r2.language}`)
+}

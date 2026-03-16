@@ -1,0 +1,24 @@
+/// # Contextual Match Arms
+///
+/// .variant syntax resolves correctly in match arm patterns,
+/// including multiple branches and nested match expressions.
+///
+/// expect: go
+/// expect: caution
+/// expect: stop
+
+enum Light { red, yellow, green }
+
+fn action(l: Light) -> string {
+  match l {
+    .green -> "go"
+    .yellow -> "caution"
+    .red -> "stop"
+  }
+}
+
+fn main() {
+  println(action(Light.green))
+  println(action(Light.yellow))
+  println(action(Light.red))
+}

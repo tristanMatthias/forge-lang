@@ -1,0 +1,28 @@
+/// # Null Throw Chained Usage
+///
+/// Tests that the unwrapped result of ?? throw can be used in subsequent
+/// operations, including as arguments to functions and in string templates.
+///
+/// expect: hello ALICE
+/// expect: length is 5
+
+fn find_name() -> string? {
+  "alice"
+}
+
+fn upper(s: string) -> string {
+  "ALICE"
+}
+
+fn len(s: string) -> int {
+  5
+}
+
+fn main() {
+  let name = find_name() ?? throw .no_name
+  let loud = upper(name)
+  println(`hello ${loud}`)
+
+  let n = len(name)
+  println(`length is ${string(n)}`)
+}

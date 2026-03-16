@@ -1,0 +1,23 @@
+/// # Match Table Integer Patterns
+///
+/// Match table with integer literal patterns instead of enum variants.
+///
+/// expect: none
+/// expect: single
+/// expect: many
+
+fn describe(n: int) -> string {
+  let result = match n table {
+    pattern | label
+    0       | "none"
+    1       | "single"
+    _       | "many"
+  }
+  result.label
+}
+
+fn main() {
+  println(describe(0))
+  println(describe(1))
+  println(describe(99))
+}

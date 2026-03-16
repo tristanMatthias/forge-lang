@@ -1,0 +1,19 @@
+/// # Contextual Variable Assignment
+///
+/// .variant resolves in typed let bindings, reassignments,
+/// and across multiple variables of the same enum type.
+///
+/// expect: true
+/// expect: false
+/// expect: true
+
+enum Mode { read, write, execute }
+
+fn main() {
+  let a: Mode = .read
+  let b: Mode = .write
+  let c: Mode = .execute
+  println(string(a is .read))
+  println(string(b is .execute))
+  println(string(c is .execute))
+}

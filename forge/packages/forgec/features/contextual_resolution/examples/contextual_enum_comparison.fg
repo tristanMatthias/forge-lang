@@ -1,0 +1,16 @@
+/// # Contextual Enum Comparison
+///
+/// .variant works in match arms (regression test).
+///
+/// expect: is red
+
+enum Color { red, green, blue }
+
+fn main() {
+  let c = Color.red
+  match c {
+    .red -> println("is red")
+    .green -> println("is green")
+    .blue -> println("is blue")
+  }
+}

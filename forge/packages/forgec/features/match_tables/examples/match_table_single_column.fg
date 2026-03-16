@@ -1,0 +1,28 @@
+/// # Match Table Single Column
+///
+/// Edge case: match table with only one value column.
+///
+/// expect: warm
+/// expect: cold
+
+enum Season { summer, winter, spring }
+
+fn main() {
+  let s1 = Season.summer
+  let r1 = match s1 table {
+    pattern | temp
+    .summer | "warm"
+    .winter | "cold"
+    _       | "mild"
+  }
+  println(r1.temp)
+
+  let s2 = Season.winter
+  let r2 = match s2 table {
+    pattern | temp
+    .summer | "warm"
+    .winter | "cold"
+    _       | "mild"
+  }
+  println(r2.temp)
+}

@@ -1,0 +1,18 @@
+/// # Null Throw Basic
+///
+/// ?? throw converts null to panic, passes through present values.
+///
+/// expect: found alice
+
+fn find_user(name: string) -> string? {
+  if name == "alice" {
+    name
+  } else {
+    null
+  }
+}
+
+fn main() {
+  let user = find_user("alice") ?? throw .not_found
+  println(`found ${user}`)
+}
