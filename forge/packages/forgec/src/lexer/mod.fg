@@ -308,19 +308,16 @@ impl Lexer {
         if self.peek()! == "0" && self.peek_at(1) != null {
             let next = self.peek_at(1)!
             if next == "x" || next == "X" {
-                self.advance() // 0
-                self.advance() // x
-                return self.lex_hex(start_pos, start_line, start_col)
+                self.advance(); self.advance()
+                return self.lex_radix(start_pos, start_line, start_col, 16, "x")
             }
             if next == "b" || next == "B" {
-                self.advance()
-                self.advance()
-                return self.lex_binary(start_pos, start_line, start_col)
+                self.advance(); self.advance()
+                return self.lex_radix(start_pos, start_line, start_col, 2, "b")
             }
             if next == "o" || next == "O" {
-                self.advance()
-                self.advance()
-                return self.lex_octal(start_pos, start_line, start_col)
+                self.advance(); self.advance()
+                return self.lex_radix(start_pos, start_line, start_col, 8, "o")
             }
         }
 
@@ -395,11 +392,17 @@ impl Lexer {
         Token { kind: .IntLiteral(value), span }
     }
 
-    fn lex_hex(self, start_pos: int, start_line: int, start_col: int) -> Token {
+    fn lex_radix(self, start_pos: int, start_line: int, start_col: int, radix: int, prefix: string) -> Token {
         mut text = ""
         for !self.is_at_end() {
             let ch = self.peek()!
-            if is_hex_digit(ch) {
+            let valid = match radix {
+                16 -> is_hex_digit(ch)
+                2 -> ch == "0" || ch == "1"
+                8 -> ch >= "0" && ch <= "7"
+                _ -> false
+            }
+            if valid {
                 text = text + self.advance()
             } else if ch == "_" {
                 self.advance()
@@ -409,113 +412,95 @@ impl Lexer {
         }
         if text.length == 0 {
             let span = self.make_span(start_pos, start_line, start_col)
-            self.add_error(E_BAD_NUMBER, "expected hex digits after 0x", span)
+            self.add_error(E_BAD_NUMBER, "expected digits after 0${prefix}", span)
             return Token { kind: .IntLiteral(0), span }
         }
         Token {
-            kind: .IntLiteral(parse_int_radix(text, 16)),
-            span: self.make_span(start_pos, start_line, start_col),
-        }
-    }
-
-    fn lex_binary(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        mut text = ""
-        for !self.is_at_end() {
-            let ch = self.peek()!
-            if ch == "0" || ch == "1" {
-                text = text + self.advance()
-            } else if ch == "_" {
-                self.advance()
-            } else {
-                break
-            }
-        }
-        if text.length == 0 {
-            let span = self.make_span(start_pos, start_line, start_col)
-            self.add_error(E_BAD_NUMBER, "expected binary digits after 0b", span)
-            return Token { kind: .IntLiteral(0), span }
-        }
-        Token {
-            kind: .IntLiteral(parse_int_radix(text, 2)),
-            span: self.make_span(start_pos, start_line, start_col),
-        }
-    }
-
-    fn lex_octal(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        mut text = ""
-        for !self.is_at_end() {
-            let ch = self.peek()!
-            if ch >= "0" && ch <= "7" {
-                text = text + self.advance()
-            } else if ch == "_" {
-                self.advance()
-            } else {
-                break
-            }
-        }
-        if text.length == 0 {
-            let span = self.make_span(start_pos, start_line, start_col)
-            self.add_error(E_BAD_NUMBER, "expected octal digits after 0o", span)
-            return Token { kind: .IntLiteral(0), span }
-        }
-        Token {
-            kind: .IntLiteral(parse_int_radix(text, 8)),
+            kind: .IntLiteral(parse_int_radix(text, radix)),
             span: self.make_span(start_pos, start_line, start_col),
         }
     }
 
     // ─── Strings ───────────────────────────────
 
-    fn lex_string(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        // Opening " already consumed
+    // Generic string/template lexer. All 4 variants (string, template,
+    // dollar string, dollar template) share this core loop.
+    // - close_ch: closing delimiter ("\"" or "`")
+    // - escapes: "full" (all \n\t etc), "limited" (only \\ and close), "none"
+    // - is_dollar: true for $"/$` variants (DollarString token kind)
+    // - is_template: true for `/`` variants (always TemplateLiteral)
+    fn lex_string_generic(self, start_pos: int, start_line: int, start_col: int,
+                          close_ch: string, escapes: string, is_dollar: bool, is_template: bool) -> Token {
         mut text = ""
         mut parts: List<TemplatePart> = []
-        mut has_interpolation = false
+        mut has_interpolation = is_template
 
         for !self.is_at_end() {
             let ch = self.peek()!
 
-            if ch == "\"" {
-                self.advance() // consume closing "
+            // Closing delimiter
+            if ch == close_ch {
+                self.advance()
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                }
+                let span = self.make_span(start_pos, start_line, start_col)
+                if is_dollar {
+                    return Token { kind: .DollarString(parts), span }
+                }
                 if has_interpolation {
-                    if text.length > 0 {
-                        parts = parts.push(TemplatePart.Literal(text))
-                    }
-                    return Token {
-                        kind: .TemplateLiteral(parts),
-                        span: self.make_span(start_pos, start_line, start_col),
-                    }
+                    return Token { kind: .TemplateLiteral(parts), span }
                 }
-                return Token {
-                    kind: .StringLiteral(text),
-                    span: self.make_span(start_pos, start_line, start_col),
+                return Token { kind: .StringLiteral(text), span }
+            }
+
+            // Escape handling
+            if ch == "\\" && escapes != "none" {
+                if escapes == "full" {
+                    self.advance()
+                    if !self.is_at_end() {
+                        let escaped = self.advance()
+                        match escaped {
+                            "n" -> { text = text + "\n" }
+                            "t" -> { text = text + "\t" }
+                            "\\" -> { text = text + "\\" }
+                            "$" -> { text = text + "$" }
+                            _ -> {
+                                // Also handle close_ch as escape target
+                                if escaped == close_ch {
+                                    text = text + close_ch
+                                } else {
+                                    text = text + escaped
+                                }
+                            }
+                        }
+                    }
+                    continue
+                }
+                if escapes == "limited" {
+                    // Only \close and \\ are escapes
+                    if self.peek_at(1) == close_ch {
+                        self.advance()
+                        text = text + self.advance()
+                        continue
+                    }
+                    if self.peek_at(1) == "\\" {
+                        self.advance()
+                        text = text + self.advance()
+                        continue
+                    }
                 }
             }
 
-            if ch == "\\" {
-                self.advance() // consume backslash
-                if !self.is_at_end() {
-                    let escaped = self.advance()
-                    match escaped {
-                        "n" -> { text = text + "\n" }
-                        "t" -> { text = text + "\t" }
-                        "\\" -> { text = text + "\\" }
-                        "\"" -> { text = text + "\"" }
-                        "$" -> { text = text + "$" }
-                        _ -> { text = text + escaped }
-                    }
-                }
-                continue
-            }
-
+            // Interpolation: ${...}
             if ch == "$" && self.peek_at(1) == "{" {
                 has_interpolation = true
                 if text.length > 0 {
                     parts = parts.push(TemplatePart.Literal(text))
                     text = ""
                 }
-                self.advance() // consume $
-                self.advance() // consume {
+                self.advance()
+                self.advance()
                 let expr_span = self.current_span()
                 let expr_text = self.capture_interpolation_expr()
                 parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
@@ -525,162 +510,32 @@ impl Lexer {
             text = text + self.advance()
         }
 
-        // Unterminated string
+        // Unterminated
         let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_UNTERMINATED_STRING, "unterminated string literal", span)
-        Token { kind: .StringLiteral(text), span }
-    }
-
-    fn lex_template(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        // Opening ` already consumed
-        mut text = ""
-        mut parts: List<TemplatePart> = []
-
-        for !self.is_at_end() {
-            let ch = self.peek()!
-
-            if ch == "`" {
-                self.advance()
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                }
-                return Token {
-                    kind: .TemplateLiteral(parts),
-                    span: self.make_span(start_pos, start_line, start_col),
-                }
-            }
-
-            if ch == "\\" {
-                self.advance()
-                if !self.is_at_end() {
-                    let escaped = self.advance()
-                    match escaped {
-                        "n" -> { text = text + "\n" }
-                        "t" -> { text = text + "\t" }
-                        "\\" -> { text = text + "\\" }
-                        "`" -> { text = text + "`" }
-                        _ -> { text = text + escaped }
-                    }
-                }
-                continue
-            }
-
-            if ch == "$" && self.peek_at(1) == "{" {
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                    text = ""
-                }
-                self.advance() // $
-                self.advance() // {
-                let expr_span = self.current_span()
-                let expr_text = self.capture_interpolation_expr()
-                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
-                continue
-            }
-
-            text = text + self.advance()
-        }
-
-        let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated template literal", span)
+        let err_code = if close_ch == "\"" { E_UNTERMINATED_STRING } else { E_UNTERMINATED_TEMPLATE }
+        self.add_error(err_code, "unterminated string literal", span)
         if text.length > 0 {
             parts = parts.push(TemplatePart.Literal(text))
         }
-        Token { kind: .TemplateLiteral(parts), span }
+        if is_dollar { return Token { kind: .DollarString(parts), span } }
+        if has_interpolation { return Token { kind: .TemplateLiteral(parts), span } }
+        Token { kind: .StringLiteral(text), span }
     }
 
-    fn lex_dollar_string(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        // $" already consumed — limited escapes
-        mut text = ""
-        mut parts: List<TemplatePart> = []
-
-        for !self.is_at_end() {
-            let ch = self.peek()!
-
-            if ch == "\"" {
-                self.advance()
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                }
-                return Token {
-                    kind: .DollarString(parts),
-                    span: self.make_span(start_pos, start_line, start_col),
-                }
-            }
-
-            // Only \" and \\ escapes in dollar strings
-            if ch == "\\" {
-                if self.peek_at(1) == "\"" {
-                    self.advance()
-                    text = text + self.advance()
-                    continue
-                }
-                if self.peek_at(1) == "\\" {
-                    self.advance()
-                    text = text + self.advance()
-                    continue
-                }
-            }
-
-            if ch == "$" && self.peek_at(1) == "{" {
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                    text = ""
-                }
-                self.advance()
-                self.advance()
-                let expr_span = self.current_span()
-                let expr_text = self.capture_interpolation_expr()
-                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
-                continue
-            }
-
-            text = text + self.advance()
-        }
-
-        let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_UNTERMINATED_STRING, "unterminated dollar string", span)
-        Token { kind: .DollarString(parts), span }
+    fn lex_string(self, sp: int, sl: int, sc: int) -> Token {
+        self.lex_string_generic(sp, sl, sc, "\"", "full", false, false)
     }
 
-    fn lex_dollar_template(self, start_pos: int, start_line: int, start_col: int) -> Token {
-        // $` already consumed — no escapes
-        mut text = ""
-        mut parts: List<TemplatePart> = []
+    fn lex_template(self, sp: int, sl: int, sc: int) -> Token {
+        self.lex_string_generic(sp, sl, sc, "`", "full", false, true)
+    }
 
-        for !self.is_at_end() {
-            let ch = self.peek()!
+    fn lex_dollar_string(self, sp: int, sl: int, sc: int) -> Token {
+        self.lex_string_generic(sp, sl, sc, "\"", "limited", true, false)
+    }
 
-            if ch == "`" {
-                self.advance()
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                }
-                return Token {
-                    kind: .DollarString(parts),
-                    span: self.make_span(start_pos, start_line, start_col),
-                }
-            }
-
-            if ch == "$" && self.peek_at(1) == "{" {
-                if text.length > 0 {
-                    parts = parts.push(TemplatePart.Literal(text))
-                    text = ""
-                }
-                self.advance()
-                self.advance()
-                let expr_span = self.current_span()
-                let expr_text = self.capture_interpolation_expr()
-                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
-                continue
-            }
-
-            text = text + self.advance()
-        }
-
-        let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated dollar template", span)
-        Token { kind: .DollarString(parts), span }
+    fn lex_dollar_template(self, sp: int, sl: int, sc: int) -> Token {
+        self.lex_string_generic(sp, sl, sc, "`", "none", true, false)
     }
 
     // ─── Interpolation Capture ─────────────────
