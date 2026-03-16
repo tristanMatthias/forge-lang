@@ -415,7 +415,22 @@ fn collect_child(
     let killed_by_signal = (status & 0x7f) != 0;
     if killed_by_signal {
         let sig = status & 0x7f;
-        return make_error_result(fg_file, module, format!("child killed by signal {} (crash)", sig));
+        let sig_name = match sig {
+            4  => "illegal instruction (SIGILL)",
+            6  => "abort (SIGABRT)",
+            7  => "bus error (SIGBUS)",
+            8  => "floating point exception (SIGFPE)",
+            9  => "killed (SIGKILL)",
+            10 => "bus error (SIGBUS)",
+            11 => "segmentation fault (SIGSEGV)",
+            _  => "",
+        };
+        let msg = if sig_name.is_empty() {
+            format!("child killed by signal {}", sig)
+        } else {
+            format!("child killed by signal {} — {}", sig, sig_name)
+        };
+        return make_error_result(fg_file, module, msg);
     }
 
     let exit_code = (status >> 8) & 0xff;
