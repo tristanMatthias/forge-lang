@@ -1,0 +1,92 @@
+// ─── For Loops Feature ─────────────────────────
+// for item in iterable { body }
+// for i in 0..10 { body }
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.Parser
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+mut FOR_DATA: Map<string, ForData> = {}
+
+type ForData = {
+    var_name: string,
+    iterable: Expr,
+    body: Block,
+    span: Span,
+}
+
+fn get_for(id: int) -> ForData? {
+    let key = "${id}"
+    if FOR_DATA.has(key) { FOR_DATA[key] } else { null }
+}
+
+fn parse_for(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'for'
+    p.skip_newlines()
+
+    let var_name = p.expect_ident()
+    if var_name == null {
+        p.error("expected variable name after 'for'")
+        return null
+    }
+
+    if p.expect(.In) == null {
+        p.error("expected 'in' after for variable")
+        return null
+    }
+
+    p.skip_newlines()
+    let iterable = p.parse_expr()
+    if iterable == null { return null }
+
+    p.skip_newlines()
+    let body = p.parse_block()
+    if body == null { return null }
+
+    let id = next_node_id()
+    FOR_DATA["${id}"] = ForData { var_name: var_name!, iterable: iterable!, body: body!, span: start }
+    feature_stmt("for_loops", "for", id, start)
+}
+
+fn check_for(tc: TypeChecker, node: NodeRef) {
+    let d = get_for(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    let iter_type = tc.infer_expr(data.iterable)
+
+    tc.env.push_scope()
+    // Bind loop variable — element type depends on iterable
+    let elem_type = match iter_type {
+        .ListType(elem) -> elem
+        .Range(elem) -> elem
+        _ -> Type.Unknown
+    }
+    tc.env.define(data.var_name, elem_type, false)
+    tc.check_block(data.body)
+    tc.env.pop_scope()
+}
+
+fn emit_for(cg: Codegen, node: NodeRef) {
+    // TODO: for-in codegen depends on iterable type
+    // Range: emit counter loop
+    // List: emit index loop with length check
+    let d = get_for(node.node_id)
+    if d == null { return }
+    // Placeholder: just emit body once
+    cg.emit_block(d!.body)
+}
+
+register_feature(FeatureRegistration {
+    id: "for_loops",
+    name: "For-In Loops",
+    status: "wip",
+    parsers: { "for": parse_for },
+    check_stmt: check_for, check_expr: null,
+    emit_stmt: emit_for, emit_expr: null,
+    top_level: null,
+})

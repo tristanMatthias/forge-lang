@@ -17,3 +17,8 @@ use features.pattern_matching
 // Phase 2b
 use features.structs
 use features.impl_methods
+
+// Phase 2c
+use features.while_loops
+use features.for_loops
+use features.ranges

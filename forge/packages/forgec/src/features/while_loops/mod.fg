@@ -1,0 +1,78 @@
+// ─── While Loops Feature ───────────────────────
+// while condition { body }
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.Parser
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+mut WHILE_DATA: Map<string, WhileData> = {}
+
+type WhileData = {
+    condition: Expr,
+    body: Block,
+    span: Span,
+}
+
+fn get_while(id: int) -> WhileData? {
+    let key = "${id}"
+    if WHILE_DATA.has(key) { WHILE_DATA[key] } else { null }
+}
+
+fn parse_while(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'while'
+    p.skip_newlines()
+
+    let condition = p.parse_expr()
+    if condition == null { return null }
+
+    p.skip_newlines()
+    let body = p.parse_block()
+    if body == null { return null }
+
+    let id = next_node_id()
+    WHILE_DATA["${id}"] = WhileData { condition: condition!, body: body!, span: start }
+    feature_stmt("while_loops", "while", id, start)
+}
+
+fn check_while(tc: TypeChecker, node: NodeRef) {
+    let d = get_while(node.node_id)
+    if d == null { return }
+    tc.infer_expr(d!.condition)
+    tc.check_block(d!.body)
+}
+
+fn emit_while(cg: Codegen, node: NodeRef) {
+    let d = get_while(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    let fn_val = cg.current_fn!
+    let cond_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.cond")
+    let body_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.body")
+    let end_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.end")
+
+    llvm.build_br(cg.builder, cond_bb)
+    llvm.position_at_end(cg.builder, cond_bb)
+    let cond = cg.emit_expr(data.condition)
+    llvm.build_cond_br(cg.builder, cond, body_bb, end_bb)
+
+    llvm.position_at_end(cg.builder, body_bb)
+    cg.emit_block(data.body)
+    llvm.build_br(cg.builder, cond_bb)
+
+    llvm.position_at_end(cg.builder, end_bb)
+}
+
+register_feature(FeatureRegistration {
+    id: "while_loops",
+    name: "While Loops",
+    status: "wip",
+    parsers: { "while": parse_while },
+    check_stmt: check_while, check_expr: null,
+    emit_stmt: emit_while, emit_expr: null,
+    top_level: null,
+})

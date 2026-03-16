@@ -1,0 +1,56 @@
+// ─── Ranges Feature ────────────────────────────
+// 0..10 (exclusive), 0..=10 (inclusive)
+// Produces Range(Int) type, iterable in for loops.
+
+use core.token.{TokenKind, Span}
+use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+mut RANGE_DATA: Map<string, RangeData> = {}
+
+type RangeData = {
+    start_expr: Expr,
+    end_expr: Expr,
+    inclusive: bool,
+    span: Span,
+}
+
+fn get_range(id: int) -> RangeData? {
+    let key = "${id}"
+    if RANGE_DATA.has(key) { RANGE_DATA[key] } else { null }
+}
+
+// Called by expression parser when it sees `expr..expr` or `expr..=expr`
+fn make_range(start_expr: Expr, end_expr: Expr, inclusive: bool, span: Span) -> Expr {
+    let id = next_node_id()
+    RANGE_DATA["${id}"] = RangeData { start_expr, end_expr, inclusive, span }
+    feature_expr("ranges", "range", id, span)
+}
+
+fn check_range(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_range(node.node_id)
+    if d == null { return Type.Unknown }
+    let start_ty = tc.infer_expr(d!.start_expr)
+    let end_ty = tc.infer_expr(d!.end_expr)
+    Type.Range(start_ty)
+}
+
+fn emit_range(cg: Codegen, node: NodeRef) -> ptr {
+    // Ranges are consumed by for loops, not emitted as standalone values
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+register_feature(FeatureRegistration {
+    id: "ranges",
+    name: "Range Expressions",
+    status: "wip",
+    parsers: {},  // .. and ..= parsed in expression parser
+    check_stmt: null,
+    check_expr: check_range,
+    emit_stmt: null,
+    emit_expr: emit_range,
+    top_level: null,
+})
