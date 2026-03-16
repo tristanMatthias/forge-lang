@@ -77,6 +77,15 @@ impl<'ctx> Codegen<'ctx> {
                                 .into(),
                         )
                     }
+                    UnaryOp::BitNot => {
+                        let int_val = val.into_int_value();
+                        Some(
+                            self.builder
+                                .build_not(int_val, "bitnot")
+                                .unwrap()
+                                .into(),
+                        )
+                    }
                 }
             }
 

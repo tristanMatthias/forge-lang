@@ -72,3 +72,7 @@ pub mod printing;
 pub mod expression_blocks;
 pub mod slicing;
 pub mod numeric_literals;
+pub mod bitwise;
+pub mod fn_types;
+pub mod file_io;
+pub mod stderr;

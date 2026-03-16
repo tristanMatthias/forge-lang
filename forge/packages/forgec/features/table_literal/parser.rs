@@ -42,7 +42,7 @@ impl Parser {
         columns.push(self.expect_ident()?);
 
         // Remaining columns separated by `|` (tokenized as Ampersand)
-        while self.check(&TokenKind::Ampersand) {
+        while self.check(&TokenKind::Bar) {
             self.advance(); // consume `|`
             columns.push(self.expect_ident()?);
         }
@@ -58,7 +58,7 @@ impl Parser {
         values.push(self.parse_table_cell()?);
 
         // Remaining values separated by `|` (tokenized as Ampersand)
-        while self.check(&TokenKind::Ampersand) {
+        while self.check(&TokenKind::Bar) {
             self.advance(); // consume `|`
             values.push(self.parse_table_cell()?);
         }
@@ -78,8 +78,8 @@ impl Parser {
     }
 
     /// Parse a single table cell expression.
-    /// parse_expr() naturally stops at `|` (Ampersand) since it's not a valid operator.
+    /// Uses parse_bitwise_xor() so `|` (Bar) is treated as a cell delimiter, not bitwise OR.
     fn parse_table_cell(&mut self) -> Option<Expr> {
-        self.parse_expr()
+        self.parse_bitwise_xor()
     }
 }

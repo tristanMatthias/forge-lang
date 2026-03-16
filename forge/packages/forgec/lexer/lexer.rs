@@ -163,9 +163,17 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     TokenKind::Or
                 } else {
-                    // standalone | used in patterns and union types
-                    TokenKind::Ampersand // reuse for now — we'll handle in parser
+                    // standalone | used in tables, union types, and bitwise OR
+                    TokenKind::Bar
                 }
+            }
+            '^' => {
+                self.advance();
+                TokenKind::Caret
+            }
+            '~' => {
+                self.advance();
+                TokenKind::Tilde
             }
             '-' => {
                 self.advance();
@@ -202,6 +210,9 @@ impl<'a> Lexer<'a> {
                 } else if self.peek() == Some('-') {
                     self.advance();
                     TokenKind::LeftArrow
+                } else if self.peek() == Some('<') {
+                    self.advance();
+                    TokenKind::ShiftLeft
                 } else {
                     TokenKind::Lt
                 }
@@ -211,6 +222,9 @@ impl<'a> Lexer<'a> {
                 if self.peek() == Some('=') {
                     self.advance();
                     TokenKind::GtEq
+                } else if self.peek() == Some('>') {
+                    self.advance();
+                    TokenKind::ShiftRight
                 } else {
                     TokenKind::Gt
                 }

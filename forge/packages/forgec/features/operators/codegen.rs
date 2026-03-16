@@ -184,6 +184,11 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_or(lhs_bool, rhs_bool, "or").unwrap();
                     Some(self.builder.build_int_z_extend(result, self.context.i8_type(), "or_ext").unwrap().into())
                 }
+                BinaryOp::BitAnd => Some(self.builder.build_and(lhs_i, rhs_i, "bitand").unwrap().into()),
+                BinaryOp::BitOr => Some(self.builder.build_or(lhs_i, rhs_i, "bitor").unwrap().into()),
+                BinaryOp::BitXor => Some(self.builder.build_xor(lhs_i, rhs_i, "bitxor").unwrap().into()),
+                BinaryOp::Shl => Some(self.builder.build_left_shift(lhs_i, rhs_i, "shl").unwrap().into()),
+                BinaryOp::Shr => Some(self.builder.build_right_shift(lhs_i, rhs_i, true, "shr").unwrap().into()),
             };
         }
 

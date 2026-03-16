@@ -251,12 +251,16 @@ impl<'ctx> Codegen<'ctx> {
                             Type::Int
                         }
                     }
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                        Type::Int
+                    }
                     _ => Type::Bool,
                 }
             }
             Expr::Unary { op, operand, .. } => match op {
                 UnaryOp::Not => Type::Bool,
                 UnaryOp::Neg => self.infer_type(operand),
+                UnaryOp::BitNot => Type::Int,
             },
             Expr::Call { callee, args, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {

@@ -82,6 +82,11 @@ pub enum TokenKind {
     DotDot,
     DotDotEq,
     Ampersand,
+    Bar,        // standalone |
+    Caret,      // ^
+    Tilde,      // ~
+    ShiftLeft,  // <<
+    ShiftRight, // >>
 
     // Delimiters
     LParen,

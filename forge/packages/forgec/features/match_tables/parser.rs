@@ -24,7 +24,7 @@ impl Parser {
         }
 
         let mut columns = Vec::new();
-        while self.check(&TokenKind::Ampersand) {
+        while self.check(&TokenKind::Bar) {
             self.advance(); // |
             self.skip_newlines();
             let col_name = self.expect_ident()?;
@@ -43,7 +43,7 @@ impl Parser {
             let pattern = self.parse_pattern()?;
             let mut values = Vec::new();
             for _ in 0..columns.len() {
-                self.expect(&TokenKind::Ampersand)?;
+                self.expect(&TokenKind::Bar)?;
                 self.skip_newlines();
                 // Parse a single expression (but not pipe, which is our delimiter)
                 let val = self.parse_unary()?;
