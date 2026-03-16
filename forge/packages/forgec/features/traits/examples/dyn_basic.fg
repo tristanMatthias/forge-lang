@@ -1,23 +1,23 @@
 /// # Dynamic Dispatch
 ///
-/// Basic dyn Trait — call a trait method via vtable on a concrete type.
+/// Trait name as type — call a trait method via vtable on a concrete type.
 ///
 /// expect: hello
 
 type Greeter = { name: string }
 
 trait Greet {
-  fn greet(self) -> string
+  fn greet() -> string
 }
 
 impl Greet for Greeter {
-  fn greet(self) -> string {
+  fn greet() -> string {
     "hello"
   }
 }
 
 fn main() {
   let g = Greeter { name: "world" }
-  let d: dyn Greet = g
+  let d: Greet = g
   println(d.greet())
 }

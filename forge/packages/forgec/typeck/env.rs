@@ -235,6 +235,9 @@ impl TypeEnv {
                     ty.clone()
                 } else if let Some(ty) = self.enum_types.get(name) {
                     ty.clone()
+                } else if self.trait_methods.contains_key(name) || self.trait_all_methods.contains_key(name) {
+                    // Trait name used as a type → dynamic dispatch (trait object)
+                    Type::DynTrait(name.to_string())
                 } else {
                     Type::Error
                 }

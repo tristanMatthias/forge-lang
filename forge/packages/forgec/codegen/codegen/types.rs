@@ -35,7 +35,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Returns the number of i64 slots needed to store a value of the given type.
     pub(crate) fn type_i64_slots(&self, ty: &Type) -> usize {
         match ty {
-            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error | Type::Channel(_) => 1,
+            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error | Type::Channel(_) | Type::DynTrait(_) => 1,
             Type::String => 2, // {ptr, i64} = 16 bytes
             Type::Nullable(inner) => 1 + self.type_i64_slots(inner), // {i8, inner}
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
@@ -171,6 +171,11 @@ impl<'ctx> Codegen<'ctx> {
                         false,
                     )
                     .into()
+            }
+            Type::DynTrait(_) => {
+                // Fat pointer: { data_ptr, vtable_ptr }
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false).into()
             }
             _ => self.context.i64_type().into(),
         }

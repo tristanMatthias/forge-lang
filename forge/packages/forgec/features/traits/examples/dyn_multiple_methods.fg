@@ -1,4 +1,4 @@
-/// # Dynamic Dispatch with Multiple Methods
+/// # Trait Types with Multiple Methods
 ///
 /// Trait with multiple methods dispatched dynamically.
 ///
@@ -9,27 +9,27 @@ type Cat = { name: string }
 type Dog = { name: string }
 
 trait Animal {
-  fn name(self) -> string
-  fn speak(self) -> string
+  fn animal_name() -> string
+  fn speak() -> string
 }
 
 impl Animal for Cat {
-  fn name(self) -> string { self.name }
-  fn speak(self) -> string { "meow" }
+  fn animal_name() -> string { self.name }
+  fn speak() -> string { "meow" }
 }
 
 impl Animal for Dog {
-  fn name(self) -> string { self.name }
-  fn speak(self) -> string { "woof" }
+  fn animal_name() -> string { self.name }
+  fn speak() -> string { "woof" }
 }
 
-fn describe(a: dyn Animal) {
-  println(`${a.name()} says ${a.speak()}`)
+fn describe(a: Animal) {
+  println("${a.animal_name()} says ${a.speak()}")
 }
 
 fn main() {
-  let c: dyn Animal = Cat { name: "Cat" }
-  let d: dyn Animal = Dog { name: "Dog" }
+  let c: Animal = Cat { name: "Cat" }
+  let d: Animal = Dog { name: "Dog" }
   describe(c)
   describe(d)
 }

@@ -126,6 +126,14 @@ impl<'ctx> Codegen<'ctx> {
                     } else {
                         val
                     };
+                    // If target type is DynTrait, wrap in fat pointer
+                    let val = if let Type::DynTrait(ref trait_name) = ty {
+                        let concrete_type = self.infer_type(value);
+                        self.build_trait_fat_pointer(val, &concrete_type, trait_name)
+                            .unwrap_or(val)
+                    } else {
+                        val
+                    };
                     let alloca = self.create_entry_block_alloca(&ty, name);
                     self.builder.build_store(alloca, val).unwrap();
                     self.define_var(name.clone(), alloca, ty);

@@ -215,6 +215,7 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         self.compile_all_impl_methods();
+        self.generate_vtables();
 
         // Declare helper functions (snprintf, route helpers, etc.)
         self.declare_package_functions();

@@ -157,6 +157,7 @@ impl<'ctx> Codegen<'ctx> {
             Type::String => self.compile_string_method(obj_val, method, args),
             Type::List(inner) => self.dispatch_list_method(object, &obj_val, &obj_type, inner, method, args),
             Type::Map(key_type, val_type) => self.dispatch_map_method(&obj_val, key_type, val_type, method, args),
+            Type::DynTrait(trait_name) => self.dispatch_dyn_trait_method(obj_val, trait_name, method, args),
             _ => {
                 // Handle channel method calls (channel is represented as int)
                 if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {

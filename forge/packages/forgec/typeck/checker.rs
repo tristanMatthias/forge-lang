@@ -1241,6 +1241,17 @@ impl TypeChecker {
             (Type::Ptr, Type::Nullable(_)) => true,
             // Function types are compatible with ptr (function pointers at FFI boundary)
             (Type::Ptr, Type::Function { .. }) | (Type::Function { .. }, Type::Ptr) => true,
+            // DynTrait accepts any type that implements the trait
+            (Type::DynTrait(trait_name), actual) => {
+                if let Some(type_name) = self.type_name_for_trait_check(actual) {
+                    self.env.type_traits.get(&type_name)
+                        .map_or(false, |traits| traits.contains(trait_name))
+                } else {
+                    false
+                }
+            }
+            // DynTrait matches DynTrait of the same name
+            (a, b) if a == b => true,
             _ => false,
         }
     }

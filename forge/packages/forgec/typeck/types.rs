@@ -29,6 +29,8 @@ pub enum Type {
     Result(Box<Type>, Box<Type>),
     Range(Box<Type>),
     Channel(Box<Type>),
+    /// Dynamic trait object: stores trait name, dispatched via vtable
+    DynTrait(String),
 
     TypeVar(u32),
     Unknown,
@@ -147,6 +149,7 @@ impl std::fmt::Display for Type {
             Type::Result(ok, err) => write!(f, "Result<{}, {}>", ok, err),
             Type::Range(inner) => write!(f, "Range<{}>", inner),
             Type::Channel(inner) => write!(f, "channel<{}>", inner),
+            Type::DynTrait(name) => write!(f, "dyn {}", name),
             Type::TypeVar(id) => write!(f, "T{}", id),
             Type::Unknown => write!(f, "unknown"),
             Type::Error => write!(f, "<error>"),
