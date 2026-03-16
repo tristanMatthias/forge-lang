@@ -1,0 +1,25 @@
+/// # Recursive Enum - Nested
+///
+/// Nested recursive enum construction and pattern matching.
+///
+/// expect: ((1 + 2) + (3 + 4))
+
+enum Expr {
+  Num(value: int)
+  Add(left: Expr, right: Expr)
+}
+
+fn show(e: Expr) -> string {
+  match e {
+    .Num(v) -> string(v)
+    .Add(l, r) -> `(${show(l)} + ${show(r)})`
+  }
+}
+
+fn main() {
+  let e = Expr.Add(
+    left: Expr.Add(left: Expr.Num(value: 1), right: Expr.Num(value: 2)),
+    right: Expr.Add(left: Expr.Num(value: 3), right: Expr.Num(value: 4))
+  )
+  println(show(e))
+}

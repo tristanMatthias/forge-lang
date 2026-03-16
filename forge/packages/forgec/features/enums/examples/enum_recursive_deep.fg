@@ -1,0 +1,34 @@
+/// # Recursive Enum - Deep Nesting
+///
+/// Deeply nested recursive enum tree evaluation.
+///
+/// expect: 15
+
+enum Expr {
+  Val(n: int)
+  Add(left: Expr, right: Expr)
+}
+
+fn eval(e: Expr) -> int {
+  match e {
+    .Val(n) -> n
+    .Add(l, r) -> eval(l) + eval(r)
+  }
+}
+
+fn main() {
+  let e = Expr.Add(
+    left: Expr.Add(
+      left: Expr.Val(n: 1),
+      right: Expr.Val(n: 2)
+    ),
+    right: Expr.Add(
+      left: Expr.Add(
+        left: Expr.Val(n: 3),
+        right: Expr.Val(n: 4)
+      ),
+      right: Expr.Val(n: 5)
+    )
+  )
+  println(string(eval(e)))
+}

@@ -43,8 +43,16 @@ impl<'ctx> Codegen<'ctx> {
             ).unwrap();
 
             // Build a struct type for this variant's fields
+            // Boxed fields are stored as i64 (pointer-sized) instead of the recursive type
             let variant_field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = variant.fields.iter()
-                .map(|(_, ty)| self.type_to_llvm_basic(ty))
+                .enumerate()
+                .map(|(i, (_, ty))| {
+                    if variant.boxed_fields.contains(&i) {
+                        self.context.i64_type().into()
+                    } else {
+                        self.type_to_llvm_basic(ty)
+                    }
+                })
                 .collect();
             let variant_struct_type = self.context.struct_type(&variant_field_types, false);
 
@@ -59,8 +67,23 @@ impl<'ctx> Codegen<'ctx> {
             let mut variant_val = variant_struct_type.get_undef();
             for (i, arg) in args.iter().enumerate() {
                 if let Some(val) = self.compile_expr(&arg.value) {
+                    let stored_val = if variant.boxed_fields.contains(&i) {
+                        // Box: heap-allocate the value and store pointer as i64
+                        let val_ty = val.get_type();
+                        let val_size = val_ty.size_of().unwrap();
+                        let heap_ptr = self.call_runtime(
+                            "forge_alloc", &[val_size.into()], "boxed_field"
+                        ).unwrap().into_pointer_value();
+                        self.builder.build_store(heap_ptr, val).unwrap();
+                        // Convert pointer to i64 for storage in the i64-slot union
+                        self.builder.build_ptr_to_int(
+                            heap_ptr, self.context.i64_type(), "boxed_ptr_int"
+                        ).unwrap().into()
+                    } else {
+                        val
+                    };
                     variant_val = self.builder
-                        .build_insert_value(variant_val, val, i as u32, "vfield")
+                        .build_insert_value(variant_val, stored_val, i as u32, "vfield")
                         .unwrap()
                         .into_struct_value();
                 }

@@ -39,6 +39,8 @@ pub enum Type {
 pub struct EnumVariantType {
     pub name: String,
     pub fields: Vec<(String, Type)>,
+    /// Field indices that are heap-allocated (boxed) due to self-referencing.
+    pub boxed_fields: Vec<usize>,
 }
 
 impl Type {

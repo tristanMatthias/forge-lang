@@ -94,20 +94,34 @@ impl TypeChecker {
             } => {
                 let variant_types: Vec<EnumVariantType> = variants
                     .iter()
-                    .map(|v| EnumVariantType {
-                        name: v.name.clone(),
-                        fields: v
+                    .map(|v| {
+                        let mut boxed_fields = Vec::new();
+                        let fields: Vec<(String, Type)> = v
                             .fields
                             .iter()
-                            .map(|f| {
-                                let ty = f
-                                    .type_ann
-                                    .as_ref()
-                                    .map(|t| self.resolve_type_expr(t))
-                                    .unwrap_or(Type::Unknown);
+                            .enumerate()
+                            .map(|(i, f)| {
+                                let is_self_ref = f.type_ann.as_ref()
+                                    .map(|t| type_expr_references_name(t, name))
+                                    .unwrap_or(false);
+                                let ty = if is_self_ref {
+                                    boxed_fields.push(i);
+                                    // Use a stub enum type to avoid infinite recursion
+                                    Type::Enum { name: name.clone(), variants: vec![] }
+                                } else {
+                                    f.type_ann
+                                        .as_ref()
+                                        .map(|t| self.resolve_type_expr(t))
+                                        .unwrap_or(Type::Unknown)
+                                };
                                 (f.name.clone(), ty)
                             })
-                            .collect(),
+                            .collect();
+                        EnumVariantType {
+                            name: v.name.clone(),
+                            fields,
+                            boxed_fields,
+                        }
                     })
                     .collect();
                 let enum_type = Type::Enum {
@@ -551,6 +565,41 @@ impl TypeChecker {
 
                 match &callee_type {
                     Type::Function { params, return_type } => {
+                        // ── Bidirectional type inference for closures ──
+                        // If any param is Unknown (untyped closure param), infer it
+                        // from the actual arg type at this call site.
+                        let has_unknown = params.iter().any(|p| *p == Type::Unknown);
+                        let resolved_params: Vec<Type> = if has_unknown {
+                            params.iter().enumerate().map(|(i, p)| {
+                                if *p == Type::Unknown {
+                                    if i < arg_types.len() && arg_types[i] != Type::Unknown {
+                                        arg_types[i].clone()
+                                    } else {
+                                        Type::Int // fallback for truly unknown
+                                    }
+                                } else {
+                                    p.clone()
+                                }
+                            }).collect()
+                        } else {
+                            params.clone()
+                        };
+
+                        // If we inferred types, update the variable's stored type
+                        // and persist in inferred_closure_types (survives scope pops)
+                        if has_unknown {
+                            if let Expr::Ident(fn_name, _) = callee.as_ref() {
+                                let new_type = Type::Function {
+                                    params: resolved_params.clone(),
+                                    return_type: return_type.clone(),
+                                };
+                                self.env.update_type(fn_name, new_type.clone());
+                                self.env.inferred_closure_types.insert(fn_name.clone(), new_type);
+                            }
+                        }
+
+                        let params = &resolved_params;
+
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
                             let is_variadic = crate::registry::BuiltinFnRegistry::is_variadic(fn_name);
@@ -1267,6 +1316,32 @@ impl TypeChecker {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Check if a TypeExpr references a given type name (for detecting self-referential enums).
+pub fn type_expr_references_name(expr: &TypeExpr, name: &str) -> bool {
+    match expr {
+        TypeExpr::Named(n) => n == name,
+        TypeExpr::Generic { name: _, args } => args.iter().any(|a| type_expr_references_name(a, name)),
+        TypeExpr::Nullable(inner) => type_expr_references_name(inner, name),
+        TypeExpr::Union(variants) => variants.iter().any(|v| type_expr_references_name(v, name)),
+        TypeExpr::Tuple(elems) => elems.iter().any(|e| type_expr_references_name(e, name)),
+        TypeExpr::Function { params, return_type } => {
+            params.iter().any(|p| type_expr_references_name(p, name))
+                || type_expr_references_name(return_type, name)
+        }
+        TypeExpr::Struct { fields } => fields.iter().any(|(_, ty, _)| type_expr_references_name(ty, name)),
+        TypeExpr::Without { base, .. } => type_expr_references_name(base, name),
+        TypeExpr::TypeWith { base, fields } => {
+            type_expr_references_name(base, name)
+                || fields.iter().any(|(_, ty, _)| type_expr_references_name(ty, name))
+        }
+        TypeExpr::Only { base, .. } => type_expr_references_name(base, name),
+        TypeExpr::AsPartial(inner) => type_expr_references_name(inner, name),
+        TypeExpr::Intersection(a, b) => {
+            type_expr_references_name(a, name) || type_expr_references_name(b, name)
         }
     }
 }

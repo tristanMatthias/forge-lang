@@ -18,20 +18,33 @@ impl TypeChecker {
             let variant_types: Vec<EnumVariantType> = data
                 .variants
                 .iter()
-                .map(|v| EnumVariantType {
-                    name: v.name.clone(),
-                    fields: v
+                .map(|v| {
+                    let mut boxed_fields = Vec::new();
+                    let fields: Vec<(String, Type)> = v
                         .fields
                         .iter()
-                        .map(|f| {
-                            let ty = f
-                                .type_ann
-                                .as_ref()
-                                .map(|t| self.resolve_type_expr(t))
-                                .unwrap_or(Type::Unknown);
+                        .enumerate()
+                        .map(|(i, f)| {
+                            let is_self_ref = f.type_ann.as_ref()
+                                .map(|t| crate::typeck::checker::type_expr_references_name(t, &data.name))
+                                .unwrap_or(false);
+                            let ty = if is_self_ref {
+                                boxed_fields.push(i);
+                                Type::Enum { name: data.name.clone(), variants: vec![] }
+                            } else {
+                                f.type_ann
+                                    .as_ref()
+                                    .map(|t| self.resolve_type_expr(t))
+                                    .unwrap_or(Type::Unknown)
+                            };
                             (f.name.clone(), ty)
                         })
-                        .collect(),
+                        .collect();
+                    EnumVariantType {
+                        name: v.name.clone(),
+                        fields,
+                        boxed_fields,
+                    }
                 })
                 .collect();
             let enum_type = Type::Enum {

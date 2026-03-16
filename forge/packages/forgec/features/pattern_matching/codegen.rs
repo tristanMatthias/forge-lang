@@ -266,8 +266,16 @@ impl<'ctx> Codegen<'ctx> {
                             ).unwrap();
 
                             // Build variant struct type from field types
+                            // Boxed fields are stored as i64 (pointer) in the union
                             let variant_field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = v.fields.iter()
-                                .map(|(_, ty)| self.type_to_llvm_basic(ty))
+                                .enumerate()
+                                .map(|(i, (_, ty))| {
+                                    if v.boxed_fields.contains(&i) {
+                                        self.context.i64_type().into()
+                                    } else {
+                                        self.type_to_llvm_basic(ty)
+                                    }
+                                })
                                 .collect();
                             let variant_struct_type = self.context.struct_type(&variant_field_types, false);
 
@@ -290,9 +298,29 @@ impl<'ctx> Codegen<'ctx> {
                                         i as u32,
                                         name,
                                     ).unwrap();
-                                    let alloca = self.create_entry_block_alloca(field_type, name);
-                                    self.builder.build_store(alloca, field_val).unwrap();
-                                    self.define_var(name.clone(), alloca, field_type.clone());
+
+                                    // Unbox: if field is boxed, convert i64 -> pointer and load the value
+                                    let (final_val, final_type) = if v.boxed_fields.contains(&i) {
+                                        // The field_type for boxed fields is a stub Enum with empty variants.
+                                        // We need the full enum type from the subject_type.
+                                        let full_type = subject_type.clone();
+                                        let full_llvm_ty = self.type_to_llvm_basic(&full_type);
+                                        let heap_ptr = self.builder.build_int_to_ptr(
+                                            field_val.into_int_value(),
+                                            self.context.ptr_type(inkwell::AddressSpace::default()),
+                                            "unboxed_ptr",
+                                        ).unwrap();
+                                        let loaded = self.builder.build_load(
+                                            full_llvm_ty, heap_ptr, "unboxed_val"
+                                        ).unwrap();
+                                        (loaded, full_type)
+                                    } else {
+                                        (field_val, field_type.clone())
+                                    };
+
+                                    let alloca = self.create_entry_block_alloca(&final_type, name);
+                                    self.builder.build_store(alloca, final_val).unwrap();
+                                    self.define_var(name.clone(), alloca, final_type);
                                 }
                             }
                         }

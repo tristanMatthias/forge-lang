@@ -41,7 +41,20 @@ impl<'ctx> Codegen<'ctx> {
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
             Type::Tuple(elems) => elems.iter().map(|e| self.type_i64_slots(e)).sum(),
             Type::Struct { fields, .. } => fields.iter().map(|(_, t)| self.type_i64_slots(t)).sum(),
-            Type::Enum { .. } => 3, // tag + max variant payload (conservative)
+            Type::Enum { variants, .. } => {
+                // tag (1 slot) + max variant payload
+                // Boxed (self-referential) fields count as 1 slot (pointer)
+                let max_payload = variants.iter().map(|v| {
+                    v.fields.iter().enumerate().map(|(i, (_, ty))| {
+                        if v.boxed_fields.contains(&i) {
+                            1 // pointer-sized
+                        } else {
+                            self.type_i64_slots(ty)
+                        }
+                    }).sum::<usize>()
+                }).max().unwrap_or(0).max(1);
+                1 + max_payload
+            }
             Type::Function { .. } => 1, // function pointer
             Type::Result(ok, err) => {
                 let ok_s = self.type_i64_slots(ok);
@@ -138,8 +151,15 @@ impl<'ctx> Codegen<'ctx> {
             Type::Enum { variants, .. } => {
                 // Tagged union using i64 slots for type-safe union storage.
                 // Compute max i64 slots needed across all variants' fields.
+                // Boxed (self-referential) fields count as 1 slot (pointer).
                 let max_slots = variants.iter().map(|v| {
-                    v.fields.iter().map(|(_, ty)| self.type_i64_slots(ty)).sum::<usize>()
+                    v.fields.iter().enumerate().map(|(i, (_, ty))| {
+                        if v.boxed_fields.contains(&i) {
+                            1 // pointer-sized
+                        } else {
+                            self.type_i64_slots(ty)
+                        }
+                    }).sum::<usize>()
                 }).max().unwrap_or(0).max(1);
                 let mut field_types: Vec<BasicTypeEnum<'ctx>> = vec![self.context.i8_type().into()];
                 for _ in 0..max_slots {
@@ -338,11 +358,11 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
+                            "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" => Type::String,
                             "contains" | "starts_with" | "ends_with" => Type::Bool,
-                            "length" => Type::Int,
-                            "parse_int" => Type::Int,
-                            "split" => Type::List(Box::new(Type::String)),
+                            "length" | "parse_int" | "byte_at" => Type::Int,
+                            "split" | "chars" => Type::List(Box::new(Type::String)),
+                            "bytes" => Type::List(Box::new(Type::Int)),
                             _ => Type::Unknown,
                         },
                         Type::List(inner) => match field.as_str() {
@@ -369,6 +389,7 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
                             "push" => Type::Void,
+                            "pop" => Type::Nullable(inner.clone()),
                             "length" => Type::Int,
                             "sorted" => Type::List(inner.clone()),
                             "each" => Type::Void,
@@ -512,10 +533,11 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" | "trim" | "replace" | "repeat" => Type::String,
+                "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" => Type::String,
                 "contains" | "starts_with" | "ends_with" => Type::Bool,
-                "length" | "parse_int" => Type::Int,
-                "split" => Type::List(Box::new(Type::String)),
+                "length" | "parse_int" | "byte_at" => Type::Int,
+                "split" | "chars" => Type::List(Box::new(Type::String)),
+                "bytes" => Type::List(Box::new(Type::Int)),
                 _ => Type::Unknown,
             },
             Type::List(inner) => match method {
