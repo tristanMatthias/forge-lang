@@ -1,0 +1,15 @@
+/// # Map For-In Iteration
+///
+/// Iterate over map entries using `for (key, value) in map`.
+/// This is the idiomatic way to iterate maps in Forge.
+///
+/// expect: alice: 95
+/// expect: bob: 87
+/// expect: carol: 92
+
+fn main() {
+  let scores = {"alice": 95, "bob": 87, "carol": 92}
+  for (name, score) in scores {
+    println(`${name}: ${string(score)}`)
+  }
+}

@@ -1,0 +1,14 @@
+/// # Map For-In Iteration — Accumulate Values
+///
+/// Iterate over a map and accumulate the values.
+///
+/// expect: 274
+
+fn main() {
+  let scores = {"alice": 95, "bob": 87, "carol": 92}
+  mut total = 0
+  for (_, score) in scores {
+    total = total + score
+  }
+  println(total)
+}

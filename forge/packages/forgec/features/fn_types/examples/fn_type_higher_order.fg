@@ -1,0 +1,16 @@
+/// # Higher-Order Function Types
+///
+/// A function that takes a function and returns a function.
+///
+/// expect: 12
+
+fn compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
+  (x: int) -> f(g(x))
+}
+
+fn main() {
+  let double = (x: int) -> x * 2
+  let add_one = (x: int) -> x + 1
+  let double_then_add = compose(add_one, double)
+  println(string(double_then_add(5)))
+}

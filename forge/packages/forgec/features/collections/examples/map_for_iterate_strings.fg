@@ -1,0 +1,14 @@
+/// # Map For-In Iteration — String Values
+///
+/// Iterate over a map with string values.
+///
+/// expect: name: Alice
+/// expect: city: Portland
+/// expect: lang: Forge
+
+fn main() {
+  let info = {"name": "Alice", "city": "Portland", "lang": "Forge"}
+  for (key, value) in info {
+    println(`${key}: ${value}`)
+  }
+}

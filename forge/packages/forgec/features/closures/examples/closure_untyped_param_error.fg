@@ -1,0 +1,12 @@
+/// # Closure called with conflicting types
+///
+/// After inference, the closure param type is locked to the first call's type.
+/// A second call with a different type gives a type mismatch error.
+///
+/// expect-error: F0012
+
+fn main() {
+  let add = (x) -> x + 1
+  add(5)
+  add("oops")
+}

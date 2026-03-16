@@ -1,0 +1,22 @@
+/// # List Pop — Strings
+///
+/// Pop works with string lists, returning null when empty.
+///
+/// expect: cherry
+/// expect: banana
+/// expect: 1
+/// expect: none
+
+fn main() {
+  mut items = ["apple", "banana", "cherry"]
+  let last = items.pop() ?? "none"
+  println(last)
+
+  let second = items.pop() ?? "none"
+  println(second)
+
+  println(string(items.length))
+  items.pop()
+  let empty_pop = items.pop() ?? "none"
+  println(empty_pop)
+}

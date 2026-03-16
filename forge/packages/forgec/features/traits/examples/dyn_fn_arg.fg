@@ -1,0 +1,27 @@
+/// # Dyn Trait as Function Argument
+///
+/// Pass a dyn Trait object to a function and call its methods.
+///
+/// expect: area: 50
+
+type Rect = { w: int, h: int }
+
+trait Shape {
+  fn area(self) -> int
+}
+
+impl Shape for Rect {
+  fn area(self) -> int {
+    self.w * self.h
+  }
+}
+
+fn print_area(s: dyn Shape) {
+  println(`area: ${string(s.area())}`)
+}
+
+fn main() {
+  let r = Rect { w: 5, h: 10 }
+  let d: dyn Shape = r
+  print_area(d)
+}

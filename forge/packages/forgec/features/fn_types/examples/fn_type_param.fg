@@ -1,0 +1,13 @@
+/// # Function Type as Parameter
+///
+/// Pass a closure to a function that accepts a function type parameter.
+///
+/// expect: 42
+
+fn apply(f: fn(int) -> int, x: int) -> int {
+  f(x)
+}
+
+fn main() {
+  println(string(apply((x: int) -> x * 2, 21)))
+}

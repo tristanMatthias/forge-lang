@@ -1,0 +1,35 @@
+/// # Dynamic Dispatch with Multiple Methods
+///
+/// Trait with multiple methods dispatched dynamically.
+///
+/// expect: Cat says meow
+/// expect: Dog says woof
+
+type Cat = { name: string }
+type Dog = { name: string }
+
+trait Animal {
+  fn name(self) -> string
+  fn speak(self) -> string
+}
+
+impl Animal for Cat {
+  fn name(self) -> string { self.name }
+  fn speak(self) -> string { "meow" }
+}
+
+impl Animal for Dog {
+  fn name(self) -> string { self.name }
+  fn speak(self) -> string { "woof" }
+}
+
+fn describe(a: dyn Animal) {
+  println(`${a.name()} says ${a.speak()}`)
+}
+
+fn main() {
+  let c: dyn Animal = Cat { name: "Cat" }
+  let d: dyn Animal = Dog { name: "Dog" }
+  describe(c)
+  describe(d)
+}

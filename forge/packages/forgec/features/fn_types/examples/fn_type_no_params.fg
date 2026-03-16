@@ -1,0 +1,14 @@
+/// # Nullary Function Type
+///
+/// Function type with no parameters: fn() -> R.
+///
+/// expect: 42
+
+fn run(f: fn() -> int) -> int {
+  f()
+}
+
+fn main() {
+  let get_val = () -> 42
+  println(string(run(get_val)))
+}

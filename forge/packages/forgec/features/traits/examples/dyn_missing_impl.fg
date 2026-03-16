@@ -1,0 +1,18 @@
+/// # Missing Trait Impl Error
+///
+/// Assigning a type that doesn't implement a trait to dyn Trait
+/// should produce a clear type error.
+///
+/// expect-error: F0012
+
+type Dog = { name: string }
+
+trait Flyable {
+  fn fly(self) -> string
+}
+
+fn main() {
+  let d = Dog { name: "Rex" }
+  let f: dyn Flyable = d
+  println(f.fly())
+}

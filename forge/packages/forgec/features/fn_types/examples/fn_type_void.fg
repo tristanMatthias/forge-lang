@@ -1,0 +1,13 @@
+/// # Void Function Type
+///
+/// Function type without a return type: fn(A) — returns void.
+///
+/// expect: hello
+
+fn run_action(action: fn(string)) {
+  action("hello")
+}
+
+fn main() {
+  run_action((msg: string) -> println(msg))
+}

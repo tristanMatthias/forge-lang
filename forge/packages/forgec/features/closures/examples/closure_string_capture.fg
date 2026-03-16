@@ -1,0 +1,12 @@
+/// # Closure String Capture
+///
+/// A closure that captures a string variable from the outer scope
+/// and uses it in its body.
+///
+/// expect: hello world
+
+fn main() {
+  let greeting = "hello"
+  let greet = (name: string) -> `${greeting} ${name}`
+  println(greet("world"))
+}

@@ -1,0 +1,45 @@
+/// # Heterogeneous List with Dynamic Dispatch
+///
+/// Store different types implementing the same trait in a list
+/// and call trait methods via dynamic dispatch.
+///
+/// expect: 1
+/// expect: +
+/// expect: hello
+
+type IntLit = { value: int }
+type BinOp = { op: string }
+type StrLit = { text: string }
+
+trait Node {
+  fn render(self) -> string
+}
+
+impl Node for IntLit {
+  fn render(self) -> string {
+    string(self.value)
+  }
+}
+
+impl Node for BinOp {
+  fn render(self) -> string {
+    self.op
+  }
+}
+
+impl Node for StrLit {
+  fn render(self) -> string {
+    self.text
+  }
+}
+
+fn main() {
+  let nodes: list<dyn Node> = [
+    IntLit { value: 1 },
+    BinOp { op: "+" },
+    StrLit { text: "hello" }
+  ]
+  for node in nodes {
+    println(node.render())
+  }
+}

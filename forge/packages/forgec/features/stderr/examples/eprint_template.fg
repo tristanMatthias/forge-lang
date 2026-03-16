@@ -1,0 +1,10 @@
+/// # Stderr template strings
+///
+/// eprintln() works with template string interpolation.
+///
+/// expect-stderr: error at line 42
+
+fn main() {
+  let line = 42
+  eprintln(`error at line ${string(line)}`)
+}

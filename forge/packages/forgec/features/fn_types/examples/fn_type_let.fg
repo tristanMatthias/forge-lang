@@ -1,0 +1,10 @@
+/// # Function Type in Let Binding
+///
+/// Declare a closure with an explicit function type annotation.
+///
+/// expect: 6
+
+fn main() {
+  let f: fn(int) -> int = (x: int) -> x + 1
+  println(string(f(5)))
+}

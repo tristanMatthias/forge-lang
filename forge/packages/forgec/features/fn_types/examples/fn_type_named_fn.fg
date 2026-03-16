@@ -1,0 +1,17 @@
+/// # Named Function as Function Type Value
+///
+/// Named functions are first-class values that satisfy function types.
+///
+/// expect: 25
+
+fn square(x: int) -> int {
+  x * x
+}
+
+fn apply(f: fn(int) -> int, x: int) -> int {
+  f(x)
+}
+
+fn main() {
+  println(string(apply(square, 5)))
+}

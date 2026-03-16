@@ -1,0 +1,12 @@
+/// # Function Type in Struct Field
+///
+/// Store a function in a struct field using a function type.
+///
+/// expect: 42
+
+type Handler = { process: fn(int) -> string }
+
+fn main() {
+  let h = Handler { process: (x: int) -> string(x) }
+  println(h.process(42))
+}
