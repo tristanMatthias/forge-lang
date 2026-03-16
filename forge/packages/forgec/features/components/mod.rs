@@ -31,6 +31,7 @@ mechanical work of template expansion. Adding a new domain (database, message qu
 requires only a new package, never a compiler change.",
     grammar: "<component>   ::= \"component\" <ident> \"(\" <args> \")\" <block>",
     category: "Components",
+    category_order: Advanced,
 }
 
 pub mod parser;

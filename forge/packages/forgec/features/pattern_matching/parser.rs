@@ -10,6 +10,12 @@ impl Parser {
         self.skip_newlines();
         let subject = self.parse_expr()?;
         self.skip_newlines();
+
+        // Check for `table` keyword — delegate to match_tables feature
+        if self.check(&TokenKind::Table) {
+            return self.parse_match_table(subject, span);
+        }
+
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
 

@@ -165,6 +165,11 @@ impl<'ctx> Codegen<'ctx> {
             Type::Int => self.context.i64_type().const_zero().into(),
             Type::Float => self.context.f64_type().const_float(0.0).into(),
             Type::Bool => self.context.i8_type().const_zero().into(),
+            Type::String => {
+                let string_type = self.string_type();
+                string_type.const_zero().into()
+            }
+            Type::Ptr => self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into(),
             _ => self.context.i64_type().const_zero().into(),
         }
     }
@@ -235,85 +240,84 @@ impl<'ctx> Codegen<'ctx> {
             },
             Expr::Call { callee, args, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
-                    match name.as_str() {
-                        "println" | "print" => Type::Void,
-                        "string" => Type::String,
-                        "channel" => {
-                            // channel<T>(N) -> channel<T>, channel(N) -> channel<unknown>
-                            if let Expr::Call { type_args, .. } = expr {
-                                if let Some(first_ta) = type_args.first() {
-                                    let inner = self.type_checker.resolve_type_expr(first_ta);
-                                    return Type::Channel(Box::new(inner));
-                                }
-                            }
-                            Type::Channel(Box::new(Type::Unknown))
-                        }
-                        "validate" => {
-                            // validate(value, TypeName) -> Result<TypeName, ValidationError>
-                            if args.len() >= 2 {
-                                if let CallArg { value: Expr::Ident(type_name, _), .. } = &args[1] {
-                                    let ok_type = self.type_checker.env.resolve_type_name(type_name);
-                                    let err_type = self.type_checker.env.resolve_type_name("ValidationError");
-                                    return Type::Result(Box::new(ok_type), Box::new(err_type));
-                                }
-                            }
-                            return Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown));
-                        }
-                        _ => {
-                            // Check for generic functions first
-                            if let Some(generic_fn) = self.generic_fns.get(name.as_str()) {
-                                // Infer return type by substituting type args
-                                if let Some(type_args) = self.infer_type_args(name, args) {
-                                    let type_map: HashMap<String, Type> = type_args.into_iter().collect();
-                                    if let Some(ref rt) = generic_fn.return_type {
-                                        let resolved = self.substitute_type_expr(rt, &type_map);
-                                        return self.type_checker.resolve_type_expr(&resolved);
+                    // Handle builtins with special return type inference
+                    if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
+                        match def.feature_id {
+                            "channels" => {
+                                // channel<T>(N) -> channel<T>, channel(N) -> channel<unknown>
+                                if let Expr::Call { type_args, .. } = expr {
+                                    if let Some(first_ta) = type_args.first() {
+                                        let inner = self.type_checker.resolve_type_expr(first_ta);
+                                        return Type::Channel(Box::new(inner));
                                     }
                                 }
-                                return Type::Unknown;
+                                return Type::Channel(Box::new(Type::Unknown));
                             }
-
-                            if let Some(Type::Function { return_type, .. }) =
-                                self.type_checker.env.lookup_function(name)
-                            {
-                                *return_type.clone()
-                            } else if let Some(info) = self.type_checker.env.lookup(name) {
-                                if let Type::Function { return_type, .. } = &info.ty {
-                                    *return_type.clone()
-                                } else {
-                                    Type::Unknown
+                            "validation" => {
+                                // validate(value, TypeName) -> Result<TypeName, ValidationError>
+                                if args.len() >= 2 {
+                                    if let CallArg { value: Expr::Ident(type_name, _), .. } = &args[1] {
+                                        let ok_type = self.type_checker.env.resolve_type_name(type_name);
+                                        let err_type = self.type_checker.env.resolve_type_name("ValidationError");
+                                        return Type::Result(Box::new(ok_type), Box::new(err_type));
+                                    }
                                 }
-                            } else if let Some(ret_ty) = self.fn_return_types.get(name) {
-                                ret_ty.clone()
-                            } else {
-                                Type::Unknown
+                                return Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown));
+                            }
+                            _ => {
+                                // Simple builtins: return type from env.functions
+                                let ret = def.return_type.to_type();
+                                if ret != Type::Unknown {
+                                    return ret;
+                                }
                             }
                         }
+                    }
+                    // Check for generic functions first
+                    if let Some(generic_fn) = self.generic_fns.get(name.as_str()) {
+                        // Infer return type by substituting type args
+                        if let Some(type_args) = self.infer_type_args(name, args) {
+                            let type_map: HashMap<String, Type> = type_args.into_iter().collect();
+                            if let Some(ref rt) = generic_fn.return_type {
+                                let resolved = self.substitute_type_expr(rt, &type_map);
+                                return self.type_checker.resolve_type_expr(&resolved);
+                            }
+                        }
+                        return Type::Unknown;
+                    }
+
+                    if let Some(Type::Function { return_type, .. }) =
+                        self.type_checker.env.lookup_function(name)
+                    {
+                        *return_type.clone()
+                    } else if let Some(info) = self.type_checker.env.lookup(name) {
+                        if let Type::Function { return_type, .. } = &info.ty {
+                            *return_type.clone()
+                        } else {
+                            Type::Unknown
+                        }
+                    } else if let Some(ret_ty) = self.fn_return_types.get(name) {
+                        ret_ty.clone()
+                    } else {
+                        Type::Unknown
                     }
                 } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
-                    // ptr bridge calls
+                    // Namespace method type inference via registry
                     if let Expr::Ident(name, _) = object.as_ref() {
-                        match (name.as_str(), field.as_str()) {
-                            ("string", "from_ptr") => return Type::String,
-                            ("ptr", "from_string") => return Type::Ptr,
-                            _ => {}
-                        }
-                    }
-                    // json.stringify/parse intrinsics
-                    if let Expr::Ident(name, _) = object.as_ref() {
-                        if name == "json" {
-                            match field.as_str() {
-                                "stringify" => return Type::String,
-                                _ => {}
+                        if let Some(ns_method) = crate::registry::BuiltinFnRegistry::get_namespace_method(name, field) {
+                            match ns_method.return_type {
+                                crate::registry::BuiltinType::Custom("channel") => {
+                                    // channel.tick() -> Channel<Int>, channel.new() -> Channel<Unknown>
+                                    if field == "tick" {
+                                        return Type::Channel(Box::new(Type::Int));
+                                    }
+                                    return Type::Channel(Box::new(Type::Unknown));
+                                }
+                                crate::registry::BuiltinType::Custom(_) => {
+                                    // json.parse etc. — handled by callers
+                                }
+                                _ => return ns_method.return_type.to_type(),
                             }
-                        }
-                        // channel.tick() returns channel<int> (tick channel)
-                        if name == "channel" && field == "tick" {
-                            return Type::Channel(Box::new(Type::Int));
-                        }
-                        // channel.new() returns channel<T>
-                        if name == "channel" && field == "new" {
-                            return Type::Channel(Box::new(Type::Unknown));
                         }
                     }
                     // Check static_methods registry (for expanded component functions)
@@ -487,8 +491,10 @@ impl<'ctx> Codegen<'ctx> {
             ("table_literal", _)               => infer_table_lit_feature_type,
             ("closures", _)                    => infer_closure_feature_type,
             ("pattern_matching", _)            => infer_match_feature_type,
+            ("match_tables", _)               => infer_match_table_feature_type,
             ("if_else", _)                     => infer_if_feature_type,
             ("null_safety", "NullCoalesce")    => infer_null_coalesce_feature_type,
+            ("null_throw", _)                  => infer_null_throw_feature_type,
             ("null_safety", "NullPropagate")   => infer_null_propagate_feature_type,
             ("null_safety", "ForceUnwrap")     => infer_force_unwrap_feature_type,
             ("error_propagation", "ErrorPropagate") => infer_error_propagate_feature_type,

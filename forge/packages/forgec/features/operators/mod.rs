@@ -29,4 +29,5 @@ addition and subtraction, and comparison operators bind tighter than logical ope
 Forge deliberately omits bitwise operators from the core language, since they are rarely needed \
 in application-level code. This keeps the operator set small and the precedence rules simple.",
     category: "Operators",
+    category_order: Primary,
 }

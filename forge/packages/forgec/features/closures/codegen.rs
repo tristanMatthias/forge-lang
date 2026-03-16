@@ -165,9 +165,11 @@ impl<'ctx> Codegen<'ctx> {
 
         // Collect free variables referenced in the body (excluding params and builtins)
         let param_names: HashSet<String> = params.iter().map(|p| p.name.clone()).collect();
-        let builtins: HashSet<&str> = ["println", "print", "string", "int", "float", "assert",
-            "sleep", "channel", "validate", "json", "fs", "process", "datetime_now",
-            "datetime_format", "process_uptime"].iter().cloned().collect();
+        let builtin_names = crate::registry::BuiltinFnRegistry::all_names();
+        let mut builtins: HashSet<&str> = builtin_names.into_iter().collect();
+        for ns in inventory::iter::<crate::registry::BuiltinNamespace>.into_iter() {
+            builtins.insert(ns.name);
+        }
         let mut free_vars = HashSet::new();
         collect_free_vars(body, &mut free_vars);
         // Remove params and builtins
@@ -315,13 +317,13 @@ impl<'ctx> Codegen<'ctx> {
             }
             Expr::Call { callee, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
-                    match name.as_str() {
-                        "string" => Type::String,
-                        "int" => Type::Int,
-                        "float" => Type::Float,
-                        "println" | "print" => Type::Void,
-                        _ => self.infer_type(body),
+                    if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
+                        let ret = def.return_type.to_type();
+                        if ret != crate::typeck::types::Type::Unknown {
+                            return ret;
+                        }
                     }
+                    self.infer_type(body)
                 } else {
                     self.infer_type(body)
                 }

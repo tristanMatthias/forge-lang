@@ -2,7 +2,6 @@ use crate::feature::FeatureStmt;
 use crate::feature_data;
 use crate::errors::Diagnostic;
 use crate::typeck::checker::TypeChecker;
-use crate::typeck::env::BUILTIN_FN_NAMES;
 use crate::typeck::types::Type;
 
 use super::types::{FnDeclData, ReturnData};
@@ -68,7 +67,7 @@ impl TypeChecker {
     pub(crate) fn register_fn_feature(&mut self, fe: &FeatureStmt) {
         if let Some(data) = feature_data!(fe, FnDeclData) {
             // Check for builtin shadowing
-            if BUILTIN_FN_NAMES.contains(&data.name.as_str()) {
+            if crate::registry::BuiltinFnRegistry::all_names().contains(&data.name.as_str()) {
                 self.diagnostics.push(Diagnostic::error(
                     "F0012",
                     format!("cannot redefine builtin function '{}'", data.name),

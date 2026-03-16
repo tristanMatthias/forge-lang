@@ -29,7 +29,23 @@ treats all callables uniformly. Methods on types are just functions that receive
 their first argument, accessed through dot notation.",
     grammar: "<fn_decl>     ::= \"fn\" <ident> \"(\" <params> \")\" [\"->\" <type>] <block>",
     category: "Functions",
+    category_order: Primary,
 }
+
+crate::builtin_fn! { name: "assert", feature: "functions", params: [Bool], ret: Void, variadic: true }
+crate::builtin_fn! { name: "sleep", feature: "functions", params: [Int], ret: Void, variadic: false }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_alloc", feature: "functions", params: [I64], ret: Ptr }
+crate::runtime_fn! { name: "forge_spawn", feature: "functions", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_sleep_ms", feature: "functions", params: [I64], ret: Void }
+crate::runtime_fn! { name: "forge_rc_retain", feature: "functions", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_rc_release", feature: "functions", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_panic", feature: "functions", params: [Ptr, I64], ret: Void }
+crate::runtime_fn! { name: "forge_assert", feature: "functions", params: [I8, Ptr, I64, Ptr, I64, I64, I64], ret: Void, conditional: true }
+crate::runtime_fn! { name: "snprintf", feature: "functions", params: [Ptr, I64, Ptr], ret: I32, conditional: true }
+crate::runtime_fn! { name: "forge_write_cstring", feature: "functions", params: [Ptr, I64, Ptr, I64], ret: Void, conditional: true }
+crate::runtime_fn! { name: "atoll", feature: "functions", params: [Ptr], ret: I64, conditional: true }
 
 pub mod types;
 pub mod parser;

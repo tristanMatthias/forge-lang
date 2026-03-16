@@ -27,7 +27,12 @@ combined with `??` to provide a default.
 Both collections are mutable when declared with `mut`. Immutable collections cannot have elements \
 added or removed, making them safe to share across function boundaries without defensive copying.",
     category: "Collections",
+    category_order: Primary,
 }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_list_to_json", feature: "collections", params: [Ptr, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_list_int_to_json", feature: "collections", params: [Ptr, I64], ret: ForgeString }
 
 pub mod types;
 pub mod codegen;

@@ -786,23 +786,7 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Build the Result<TargetType, ValidationError> type for validation results.
     fn validation_result_type(target_type: &Type) -> Type {
-        let validation_error_type = Type::Struct {
-            name: Some("ValidationError".to_string()),
-            fields: vec![
-                ("fields".to_string(), Type::List(Box::new(Type::Struct {
-                    name: Some("FieldError".to_string()),
-                    fields: vec![
-                        ("field".to_string(), Type::String),
-                        ("rule".to_string(), Type::String),
-                        ("message".to_string(), Type::String),
-                    ],
-                }))),
-            ],
-        };
-        Type::Result(
-            Box::new(target_type.clone()),
-            Box::new(validation_error_type),
-        )
+        super::validation_result_type(target_type)
     }
 
     /// Build a Result::Ok wrapping the given struct value

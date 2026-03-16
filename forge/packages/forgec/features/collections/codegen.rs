@@ -1082,4 +1082,49 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
     }
+
+    /// Dispatch list method calls. Called from compile_method_call in core dispatch.
+    pub(crate) fn dispatch_list_method(
+        &mut self,
+        object: &crate::parser::ast::Expr,
+        obj_val: &BasicValueEnum<'ctx>,
+        obj_type: &Type,
+        inner: &Type,
+        method: &str,
+        args: &[crate::parser::ast::CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        match method {
+            "push" => self.compile_list_push(object, obj_val, obj_type, args),
+            "clone" => Some(*obj_val),
+            "filter" => self.compile_list_filter(obj_val, inner, args),
+            "map" => self.compile_list_map(obj_val, inner, args),
+            "sum" => self.compile_list_sum(obj_val, inner),
+            "find" => self.compile_list_find(obj_val, inner, args),
+            "any" => self.compile_list_any(obj_val, inner, args),
+            "all" => self.compile_list_all(obj_val, inner, args),
+            "enumerate" => self.compile_list_enumerate(obj_val, inner),
+            "join" => self.compile_list_join(obj_val, inner, args),
+            "reduce" => self.compile_list_reduce(obj_val, inner, args),
+            "sorted" => self.compile_list_sorted(obj_val, inner),
+            "each" => self.compile_list_each(obj_val, inner, args),
+            _ => None,
+        }
+    }
+
+    /// Dispatch map method calls. Called from compile_method_call in core dispatch.
+    pub(crate) fn dispatch_map_method(
+        &mut self,
+        obj_val: &BasicValueEnum<'ctx>,
+        key_type: &Type,
+        val_type: &Type,
+        method: &str,
+        args: &[crate::parser::ast::CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        match method {
+            "has" => self.compile_map_has(obj_val, key_type, val_type, args),
+            "get" => self.compile_map_get(obj_val, key_type, val_type, args),
+            "keys" => self.compile_map_keys(obj_val, key_type, val_type),
+            _ => None,
+        }
+    }
 }

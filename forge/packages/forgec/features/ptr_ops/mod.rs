@@ -22,3 +22,7 @@ Extends the `ptr` type with byte-level operations for systems programming. \
 These operations are unchecked — null pointer access emits a runtime panic.",
     category: "Types",
 }
+
+crate::builtin_namespace! { name: "ptr", feature: "ptr_ops" }
+
+crate::builtin_namespace_method! { namespace: "ptr", method: "from_string", feature: "ptr_ops", ret: Ptr }

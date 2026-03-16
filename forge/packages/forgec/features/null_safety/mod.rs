@@ -31,6 +31,7 @@ or an explicit null check. This makes null a deliberate, visible choice rather t
 landmine.",
     grammar: "<nullable>    ::= <type> \"?\"\\n<coalesce>    ::= <expr> \"??\" <expr>\\n<safe_access> ::= <expr> \"?.\" <ident>",
     category: "Null Safety",
+    category_order: Primary,
 }
 
 pub mod parser;

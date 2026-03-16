@@ -28,6 +28,8 @@ impl<'ctx> Codegen<'ctx> {
                 } else if let Some(func) = self.functions.get(name) {
                     // Return function as a value (pointer)
                     Some(func.as_global_value().as_pointer_value().into())
+                } else if name.starts_with('.') {
+                    self.compile_contextual_variant(name)
                 } else {
                     None
                 }
@@ -120,9 +122,11 @@ impl<'ctx> Codegen<'ctx> {
             ("table_literal", _)               => compile_table_lit_feature,
             ("closures", _)                    => compile_closure_feature,
             ("pattern_matching", _)            => compile_match_feature,
+            ("match_tables", _)               => compile_match_table_feature,
             ("channels", _)                    => compile_channel_feature,
             ("if_else", _)                     => compile_if_feature,
             ("null_safety", "NullCoalesce")    => compile_null_coalesce_feature,
+            ("null_throw", _)                  => compile_null_throw_feature,
             ("null_safety", "NullPropagate")   => compile_null_propagate_feature,
             ("null_safety", "ForceUnwrap")     => compile_force_unwrap_feature,
             ("error_propagation", "ErrorPropagate") => compile_error_propagate_feature,

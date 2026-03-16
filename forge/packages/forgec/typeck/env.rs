@@ -3,13 +3,6 @@ use crate::parser::ast::{Annotation, Expr, TypeParam};
 use crate::typeck::types::{AnnotationArg, FieldAnnotation, Type};
 use std::collections::{HashMap, HashSet};
 
-pub const BUILTIN_FN_NAMES: &[&str] = &[
-    "println", "print", "string", "assert", "sleep", "channel",
-    "datetime_now", "datetime_format", "datetime_parse", "process_uptime",
-    "validate", "strlen", "forge_string_new",
-    "query_gt", "query_gte", "query_lt", "query_lte", "query_between", "query_like",
-];
-
 #[derive(Debug, Clone)]
 pub struct VarInfo {
     pub ty: Type,
@@ -73,42 +66,10 @@ impl TypeEnv {
             fn_type_params: HashMap::new(),
             fn_param_type_names: HashMap::new(),
         };
-        // Register built-in functions
-        env.functions.insert(
-            "println".to_string(),
-            Type::Function {
-                params: vec![Type::String],
-                return_type: Box::new(Type::Void),
-            },
-        );
-        env.functions.insert(
-            "print".to_string(),
-            Type::Function {
-                params: vec![Type::String],
-                return_type: Box::new(Type::Void),
-            },
-        );
-        env.functions.insert(
-            "string".to_string(),
-            Type::Function {
-                params: vec![Type::Unknown],
-                return_type: Box::new(Type::String),
-            },
-        );
-        env.functions.insert(
-            "assert".to_string(),
-            Type::Function {
-                params: vec![Type::Bool],
-                return_type: Box::new(Type::Void),
-            },
-        );
-        env.functions.insert(
-            "sleep".to_string(),
-            Type::Function {
-                params: vec![Type::Int],
-                return_type: Box::new(Type::Void),
-            },
-        );
+        // Register all built-in functions from the feature registry
+        crate::registry::BuiltinFnRegistry::register_all(&mut env);
+
+        // channel() returns int (channel ID) — has Custom return type in registry
         env.functions.insert(
             "channel".to_string(),
             Type::Function {
@@ -116,61 +77,8 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
-        env.functions.insert(
-            "datetime_now".to_string(),
-            Type::Function {
-                params: vec![],
-                return_type: Box::new(Type::Int),
-            },
-        );
-        env.functions.insert(
-            "datetime_format".to_string(),
-            Type::Function {
-                params: vec![Type::Int],
-                return_type: Box::new(Type::String),
-            },
-        );
-        env.functions.insert(
-            "datetime_parse".to_string(),
-            Type::Function {
-                params: vec![Type::String],
-                return_type: Box::new(Type::Int),
-            },
-        );
-        env.functions.insert(
-            "process_uptime".to_string(),
-            Type::Function {
-                params: vec![],
-                return_type: Box::new(Type::Int),
-            },
-        );
-        // Query comparison helpers
-        env.functions.insert("query_gt".to_string(), Type::Function {
-            params: vec![Type::Int], return_type: Box::new(Type::String),
-        });
-        env.functions.insert("query_gte".to_string(), Type::Function {
-            params: vec![Type::Int], return_type: Box::new(Type::String),
-        });
-        env.functions.insert("query_lt".to_string(), Type::Function {
-            params: vec![Type::Int], return_type: Box::new(Type::String),
-        });
-        env.functions.insert("query_lte".to_string(), Type::Function {
-            params: vec![Type::Int], return_type: Box::new(Type::String),
-        });
-        env.functions.insert("query_between".to_string(), Type::Function {
-            params: vec![Type::Int, Type::Int], return_type: Box::new(Type::String),
-        });
-        env.functions.insert("query_like".to_string(), Type::Function {
-            params: vec![Type::String], return_type: Box::new(Type::String),
-        });
-        // Runtime helper functions used by component template expansion
-        env.functions.insert(
-            "forge_string_new".to_string(),
-            Type::Function {
-                params: vec![Type::Ptr, Type::Int],
-                return_type: Box::new(Type::String),
-            },
-        );
+
+        // Runtime helpers used by component template expansion (ptr ↔ string conversion)
         env.functions.insert(
             "strlen".to_string(),
             Type::Function {
@@ -178,51 +86,28 @@ impl TypeEnv {
                 return_type: Box::new(Type::Int),
             },
         );
-        // validate() is handled as a special intrinsic in codegen
-        // It takes (value, Type) and returns Result<T, ValidationError>
-        // The type checker treats it specially — see check_validate_call()
+        env.functions.insert(
+            "forge_string_new".to_string(),
+            Type::Function {
+                params: vec![Type::Ptr, Type::Int],
+                return_type: Box::new(Type::String),
+            },
+        );
+
+        // validate() has complex Result<T, ValidationError> return type
+        use crate::features::validation::{field_error_type, validation_error_type, validation_result_type};
         env.functions.insert(
             "validate".to_string(),
             Type::Function {
                 params: vec![Type::Unknown, Type::Unknown],
-                return_type: Box::new(Type::Result(
-                    Box::new(Type::Unknown),
-                    Box::new(Type::Struct {
-                        name: Some("ValidationError".to_string()),
-                        fields: vec![
-                            ("fields".to_string(), Type::List(Box::new(Type::Struct {
-                                name: Some("FieldError".to_string()),
-                                fields: vec![
-                                    ("field".to_string(), Type::String),
-                                    ("rule".to_string(), Type::String),
-                                    ("message".to_string(), Type::String),
-                                ],
-                            }))),
-                        ],
-                    }),
-                )),
+                return_type: Box::new(validation_result_type(&Type::Unknown)),
             },
         );
+
         // Register ValidationError and FieldError types
-        let field_error_ty = Type::Struct {
-            name: Some("FieldError".to_string()),
-            fields: vec![
-                ("field".to_string(), Type::String),
-                ("rule".to_string(), Type::String),
-                ("message".to_string(), Type::String),
-            ],
-        };
-        let validation_error_ty = Type::Struct {
-            name: Some("ValidationError".to_string()),
-            fields: vec![
-                ("fields".to_string(), Type::List(Box::new(field_error_ty.clone()))),
-            ],
-        };
-        env.type_aliases.insert("FieldError".to_string(), field_error_ty);
-        env.type_aliases.insert("ValidationError".to_string(), validation_error_ty);
-        // Register built-in namespaces (static method targets handled by codegen)
-        env.namespaces.insert("json".to_string());
-        env.namespaces.insert("string".to_string());
+        env.type_aliases.insert("FieldError".to_string(), field_error_type());
+        env.type_aliases.insert("ValidationError".to_string(), validation_error_type());
+
         env
     }
 

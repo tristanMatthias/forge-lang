@@ -120,64 +120,87 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
         type_args: &[TypeExpr],
     ) -> Option<BasicValueEnum<'ctx>> {
-        // Handle channel.tick(interval_ms) built-in
+        // Handle namespace method builtins that need special codegen here
         if let Expr::MemberAccess { object, field, .. } = callee {
             if let Expr::Ident(obj_name, _) = object.as_ref() {
-                if obj_name == "channel" && field == "tick" {
-                    let interval_ms = self.compile_expr(&args[0].value)?;
-                    return self.call_runtime_expect(
-                        "forge_channel_tick_create", &[interval_ms.into()], "tick_ch",
-                        "forge_channel_tick_create not declared",
-                    );
-                }
-                // string.from_ptr(ptr, len) → forge_string_new
-                if obj_name == "string" && field == "from_ptr" {
-                    let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
-                    return self.compile_string_from_ptr(&arg_exprs);
-                }
-                // ptr.from_string(s) → extract ptr from string struct
-                if obj_name == "ptr" && field == "from_string" {
-                    let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
-                    return self.compile_ptr_from_string(&arg_exprs);
+                if let Some(ns_method) = crate::registry::BuiltinFnRegistry::get_namespace_method(obj_name, field) {
+                    match (ns_method.namespace, ns_method.method) {
+                        ("channel", "tick") => {
+                            let interval_ms = self.compile_expr(&args[0].value)?;
+                            return self.call_runtime_expect(
+                                "forge_channel_tick_create", &[interval_ms.into()], "tick_ch",
+                                "forge_channel_tick_create not declared",
+                            );
+                        }
+                        ("string", "from_ptr") => {
+                            let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                            return self.compile_string_from_ptr(&arg_exprs);
+                        }
+                        ("ptr", "from_string") => {
+                            let arg_exprs: Vec<Expr> = args.iter().map(|a| a.value.clone()).collect();
+                            return self.compile_ptr_from_string(&arg_exprs);
+                        }
+                        _ => {} // Fall through to compile_method_call for json.parse etc.
+                    }
                 }
             }
         }
 
         // Handle special built-in functions
         if let Expr::Ident(name, _) = callee {
-            match name.as_str() {
-                "println" => return self.compile_println(args),
-                "print" => return self.compile_print(args),
-                "string" => return self.compile_string_conversion(args),
-                "assert" => return self.compile_assert(args),
-                "sleep" => return self.compile_sleep(args),
-                "datetime_now" => return self.compile_datetime_now(),
-                "process_uptime" => return self.compile_process_uptime(),
-                "datetime_format" => return self.compile_datetime_format(args),
-                "datetime_parse" => return self.compile_datetime_parse(args),
-                "validate" => return self.compile_validate(args),
-                "query_gt" => return self.compile_query_int1(args, "forge_query_gt"),
-                "query_gte" => return self.compile_query_int1(args, "forge_query_gte"),
-                "query_lt" => return self.compile_query_int1(args, "forge_query_lt"),
-                "query_lte" => return self.compile_query_int1(args, "forge_query_lte"),
-                "query_between" => return self.compile_query_between(args),
-                "query_like" => return self.compile_query_like(args),
-                "channel" => {
-                    // channel(capacity) -> int (channel ID)
-                    let capacity = if args.is_empty() {
-                        self.context.i64_type().const_zero().into()
-                    } else {
-                        match self.compile_expr(&args[0].value) {
-                            Some(v) => v.into(),
-                            None => return None,
-                        }
-                    };
-                    return self.call_runtime_expect(
-                        "forge_channel_create", &[capacity], "ch",
-                        "forge_channel_create not declared - did you `use @std.channel`?",
-                    );
-                }
-                _ => {}
+            // Dispatch built-in functions via registry
+            if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
+                return match def.feature_id {
+                    "printing" => match name.as_str() {
+                        "println" => self.compile_println(args),
+                        "print" => self.compile_print(args),
+                        _ => None,
+                    },
+                    "type_conversion" => match name.as_str() {
+                        "int" => self.compile_int_conversion(args),
+                        "float" => self.compile_float_conversion(args),
+                        "string" => self.compile_string_conversion(args),
+                        _ => None,
+                    },
+                    "functions" => match name.as_str() {
+                        "assert" => self.compile_assert(args),
+                        "sleep" => self.compile_sleep(args),
+                        _ => None,
+                    },
+                    "datetime" => match name.as_str() {
+                        "datetime_now" => self.compile_datetime_now(),
+                        "datetime_format" => self.compile_datetime_format(args),
+                        "datetime_parse" => self.compile_datetime_parse(args),
+                        _ => None,
+                    },
+                    "process_uptime" => self.compile_process_uptime(),
+                    "validation" => self.compile_validate(args),
+                    "query_helpers" => match name.as_str() {
+                        "query_gt" => self.compile_query_int1(args, "forge_query_gt"),
+                        "query_gte" => self.compile_query_int1(args, "forge_query_gte"),
+                        "query_lt" => self.compile_query_int1(args, "forge_query_lt"),
+                        "query_lte" => self.compile_query_int1(args, "forge_query_lte"),
+                        "query_between" => self.compile_query_between(args),
+                        "query_like" => self.compile_query_like(args),
+                        _ => None,
+                    },
+                    "channels" => {
+                        // channel(capacity) -> int (channel ID)
+                        let capacity = if args.is_empty() {
+                            self.context.i64_type().const_zero().into()
+                        } else {
+                            match self.compile_expr(&args[0].value) {
+                                Some(v) => v.into(),
+                                None => return None,
+                            }
+                        };
+                        self.call_runtime_expect(
+                            "forge_channel_create", &[capacity], "ch",
+                            "forge_channel_create not declared - did you `use @std.channel`?",
+                        )
+                    },
+                    _ => None,
+                };
             }
 
             // Handle enum constructors: EnumName.variant(args)
@@ -195,10 +218,13 @@ impl<'ctx> Codegen<'ctx> {
                 let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
                 let val = result.try_as_basic_value().left();
                 // Auto-wrap ptr → ForgeString for extern fns declared with `-> string`
-                if let Some(v) = val {
-                    if v.is_pointer_value() {
-                        if let Some(Type::String) = self.fn_return_types.get(name.as_str()) {
-                            return self.wrap_ptr_as_string(v.into_pointer_value());
+                // Skip when suppress_string_wrap is set (caller wants raw ptr, e.g. `let x: ptr = ...`)
+                if !self.suppress_string_wrap {
+                    if let Some(v) = val {
+                        if v.is_pointer_value() {
+                            if let Some(Type::String) = self.fn_return_types.get(name.as_str()) {
+                                return self.wrap_ptr_as_string(v.into_pointer_value());
+                            }
                         }
                     }
                 }

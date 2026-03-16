@@ -31,4 +31,19 @@ user inputs in UI applications.",
     category: "Special",
 }
 
+crate::builtin_fn! { name: "query_gt", feature: "query_helpers", params: [Int], ret: String, variadic: false }
+crate::builtin_fn! { name: "query_gte", feature: "query_helpers", params: [Int], ret: String, variadic: false }
+crate::builtin_fn! { name: "query_lt", feature: "query_helpers", params: [Int], ret: String, variadic: false }
+crate::builtin_fn! { name: "query_lte", feature: "query_helpers", params: [Int], ret: String, variadic: false }
+crate::builtin_fn! { name: "query_between", feature: "query_helpers", params: [Int, Int], ret: String, variadic: false }
+crate::builtin_fn! { name: "query_like", feature: "query_helpers", params: [String], ret: String, variadic: false }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_query_gt", feature: "query_helpers", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_query_gte", feature: "query_helpers", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_query_lt", feature: "query_helpers", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_query_lte", feature: "query_helpers", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_query_between", feature: "query_helpers", params: [I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_query_like", feature: "query_helpers", params: [ForgeString], ret: ForgeString }
+
 pub mod codegen;

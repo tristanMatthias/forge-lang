@@ -27,7 +27,31 @@ readable and less error-prone than chained concatenation.
 Multi-line strings are supported naturally. Forge does not have a separate character type; single \
 characters are simply strings of length one.",
     category: "Strings",
+    category_order: Primary,
 }
+
+crate::builtin_namespace_method! { namespace: "string", method: "from_ptr", feature: "strings", ret: String }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_string_new", feature: "strings", params: [Ptr, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_concat", feature: "strings", params: [ForgeString, ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_int_to_string", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_float_to_string", feature: "strings", params: [F64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_bool_to_string", feature: "strings", params: [I8], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_length", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_string_upper", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_lower", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_trim", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_contains", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_string_starts_with", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_string_ends_with", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_string_replace", feature: "strings", params: [ForgeString, ForgeString, ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_parse_int", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_string_parse_float", feature: "strings", params: [ForgeString], ret: F64 }
+crate::runtime_fn! { name: "forge_string_repeat", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_substring", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_eq", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "strlen", feature: "strings", params: [Ptr], ret: I64, conditional: true }
 
 pub mod checker;
 pub mod codegen;

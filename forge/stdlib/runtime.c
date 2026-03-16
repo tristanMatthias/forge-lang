@@ -256,6 +256,15 @@ int64_t forge_string_parse_int(ForgeString s) {
     return sign * result;
 }
 
+double forge_string_parse_float(ForgeString s) {
+    // Null-terminate for strtod
+    char buf[64];
+    int64_t copy_len = s.len < 63 ? s.len : 63;
+    memcpy(buf, s.ptr, copy_len);
+    buf[copy_len] = '\0';
+    return strtod(buf, NULL);
+}
+
 // ---- String comparison ----
 
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
@@ -371,6 +380,15 @@ void forge_sleep(int64_t ms) {
 
 void forge_exit(int64_t code) {
     exit((int)code);
+}
+
+// ---- Panic ----
+
+void forge_panic(const char* msg, int64_t msg_len) {
+    fprintf(stderr, "panic: ");
+    fwrite(msg, 1, msg_len, stderr);
+    fprintf(stderr, "\n");
+    exit(1);
 }
 
 // ---- Assert ----

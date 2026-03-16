@@ -51,7 +51,14 @@ impl<'ctx> Codegen<'ctx> {
             // let n: ptr = null → null pointer
             Some(self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into())
         } else {
-            self.compile_expr(&data.value)
+            // When type annotation is ptr, suppress auto-wrapping ptr→ForgeString
+            // so the raw C pointer is preserved (needed for forge_model_free_string etc.)
+            if matches!(&ann_type, Some(Type::Ptr)) {
+                self.suppress_string_wrap = true;
+            }
+            let val = self.compile_expr(&data.value);
+            self.suppress_string_wrap = false;
+            val
         };
         self.json_parse_hint = None;
         self.struct_target_type = None;
@@ -82,6 +89,19 @@ impl<'ctx> Codegen<'ctx> {
                 }
             } else {
                 ty
+            };
+            // If type annotation says ptr but value is ForgeString, extract the ptr
+            let val = if ty == Type::Ptr && val.is_struct_value() {
+                let string_type = self.string_type();
+                if val.into_struct_value().get_type() == string_type {
+                    self.builder.build_extract_value(
+                        val.into_struct_value(), 0, "str_to_ptr"
+                    ).unwrap()
+                } else {
+                    val
+                }
+            } else {
+                val
             };
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);

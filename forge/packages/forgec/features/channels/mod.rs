@@ -34,4 +34,11 @@ send blocks until a receiver is ready. This synchronization property makes chann
 easier to reason about than lock-based alternatives.",
     grammar: "<chan_send>   ::= <expr> \"<-\" <expr>\\n<chan_recv>   ::= \"<-\" <expr>",
     category: "Concurrency",
+    category_order: Advanced,
 }
+
+crate::builtin_fn! { name: "channel", feature: "channels", params: [], ret: Custom("channel"), variadic: true }
+crate::builtin_namespace! { name: "channel", feature: "channels" }
+
+crate::builtin_namespace_method! { namespace: "channel", method: "tick", feature: "channels", ret: Custom("channel") }
+crate::builtin_namespace_method! { namespace: "channel", method: "new", feature: "channels", ret: Custom("channel") }

@@ -93,4 +93,23 @@ impl<'ctx> Codegen<'ctx> {
         let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")?;
         Some(forge_str)
     }
+
+    /// Dispatch channel method calls (close, drain). Called from core dispatch.
+    pub(crate) fn dispatch_channel_method(
+        &mut self,
+        obj_val: inkwell::values::BasicValueEnum<'ctx>,
+        method: &str,
+    ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+        let fn_name = match method {
+            "close" => "forge_channel_close",
+            "drain" => "forge_channel_drain",
+            _ => return None,
+        };
+        if let Some(func) = self.module.get_function(fn_name) {
+            let result = self.builder.build_call(func, &[obj_val.into()], method).unwrap();
+            result.try_as_basic_value().left()
+        } else {
+            None
+        }
+    }
 }

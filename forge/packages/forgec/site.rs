@@ -291,7 +291,7 @@ fn highlight_forge(code: &str) -> String {
         "trait", "spec", "given", "then", "use", "const", "true", "false",
         "null", "export", "type", "on",
     ];
-    let builtins = ["print", "println", "string", "int", "float"];
+    let builtin_names = crate::registry::BuiltinFnRegistry::all_names();
 
     while i < len {
         let ch = chars[i];
@@ -388,7 +388,7 @@ fn highlight_forge(code: &str) -> String {
                 out.push_str(r#"<span class="kw">"#);
                 out.push_str(&word);
                 out.push_str("</span>");
-            } else if builtins.contains(&word.as_str()) {
+            } else if builtin_names.contains(&word.as_str()) {
                 out.push_str(r#"<span class="builtin">"#);
                 out.push_str(&word);
                 out.push_str("</span>");

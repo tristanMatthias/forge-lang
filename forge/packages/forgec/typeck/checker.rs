@@ -48,7 +48,7 @@ impl TypeChecker {
                 ..
             } => {
                 // Check for builtin shadowing
-                if crate::typeck::env::BUILTIN_FN_NAMES.contains(&name.as_str()) {
+                if crate::registry::BuiltinFnRegistry::all_names().contains(&name.as_str()) {
                     self.diagnostics.push(Diagnostic::error(
                         "F0012",
                         format!("cannot redefine builtin function '{}'", name),
@@ -433,9 +433,11 @@ impl TypeChecker {
             ("table_literal", _)               => check_table_lit_feature,
             ("closures", _)                    => check_closure_feature,
             ("pattern_matching", _)            => check_match_feature,
+            ("match_tables", _)               => check_match_table_feature,
             ("channels", _)                    => check_channel_feature,
             ("if_else", _)                     => check_if_feature,
             ("null_safety", "NullCoalesce")    => check_null_coalesce_feature,
+            ("null_throw", _)                  => check_null_throw_feature,
             ("null_safety", "NullPropagate")   => check_null_propagate_feature,
             ("error_propagation", "ErrorPropagate") => check_error_propagate_feature,
             ("error_propagation", "OkExpr")    => check_ok_expr_feature,
@@ -468,7 +470,8 @@ impl TypeChecker {
                 } else if let Some(ty) = self.env.lookup_function(name).cloned() {
                     ty
                 } else if name.starts_with('.') {
-                    Type::Unknown
+                    // Contextual variant — resolve to enum type if unambiguous
+                    self.resolve_contextual_variant(name)
                 } else if name.starts_with("__destructure") {
                     Type::Void
                 } else if self.env.enum_types.contains_key(name) {
@@ -550,7 +553,7 @@ impl TypeChecker {
                     Type::Function { params, return_type } => {
                         // Check argument count
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
-                            let is_variadic = matches!(fn_name.as_str(), "println" | "print" | "string" | "assert" | "sleep" | "channel" | "datetime_now" | "datetime_format" | "datetime_parse" | "process_uptime" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like");
+                            let is_variadic = crate::registry::BuiltinFnRegistry::is_variadic(fn_name);
                             if args.len() != params.len() && !is_variadic
                             {
                                 let sig = self.format_fn_signature(fn_name, params);
@@ -595,7 +598,7 @@ impl TypeChecker {
                             }
 
                             // ── validate()-specific checks ──
-                            if fn_name == "validate" && args.len() >= 2 {
+                            if crate::registry::BuiltinFnRegistry::get(fn_name).map_or(false, |d| d.feature_id == "validation") && args.len() >= 2 {
                                 match &args[1].value {
                                     Expr::Ident(type_name, _) => {
                                         // Check that the type exists and is a struct
@@ -669,7 +672,7 @@ impl TypeChecker {
                         }
                         // Override return type for channel() calls to Channel<T>
                         if let Expr::Ident(fn_name, _) = callee.as_ref() {
-                            if fn_name == "channel" {
+                            if crate::registry::BuiltinFnRegistry::get(fn_name).map_or(false, |d| d.feature_id == "channels") {
                                 if let Expr::Call { type_args, .. } = expr {
                                     if let Some(first_ta) = type_args.first() {
                                         let inner = self.resolve_type_expr(first_ta);
@@ -683,12 +686,10 @@ impl TypeChecker {
                     }
                     _ => {
                         if let Expr::Ident(name, _) = callee.as_ref() {
-                            match name.as_str() {
-                                "println" | "print" => Type::Void,
-                                "string" => Type::String,
-                                "datetime_now" | "datetime_parse" | "process_uptime" => Type::Int,
-                                "datetime_format" | "query_gt" | "query_gte" | "query_lt" | "query_lte" | "query_between" | "query_like" => Type::String,
-                                _ => Type::Unknown,
+                            if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
+                                def.return_type.to_type()
+                            } else {
+                                Type::Unknown
                             }
                         } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
                             // Check for ptr bridge calls: string.from_ptr(...), ptr.from_string(...)

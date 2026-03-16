@@ -10,7 +10,7 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         // Handle json.parse() and json.stringify() intrinsics
         if let Expr::Ident(name, _) = object {
-            if name == "json" {
+            if crate::registry::BuiltinFnRegistry::get_namespace_method(name, method).map_or(false, |m| m.feature_id == "json_builtins") {
                 match method {
                     "parse" => {
                         let target = self.json_parse_hint.take()
@@ -155,42 +155,13 @@ impl<'ctx> Codegen<'ctx> {
 
         match &obj_type {
             Type::String => self.compile_string_method(obj_val, method, args),
-            Type::List(inner) => match method {
-                "push" => self.compile_list_push(object, &obj_val, &obj_type, args),
-                "clone" => Some(obj_val),
-                "filter" => self.compile_list_filter(&obj_val, inner, args),
-                "map" => self.compile_list_map(&obj_val, inner, args),
-                "sum" => self.compile_list_sum(&obj_val, inner),
-                "find" => self.compile_list_find(&obj_val, inner, args),
-                "any" => self.compile_list_any(&obj_val, inner, args),
-                "all" => self.compile_list_all(&obj_val, inner, args),
-                "enumerate" => self.compile_list_enumerate(&obj_val, inner),
-                "join" => self.compile_list_join(&obj_val, inner, args),
-                "reduce" => self.compile_list_reduce(&obj_val, inner, args),
-                "sorted" => self.compile_list_sorted(&obj_val, inner),
-                "each" => self.compile_list_each(&obj_val, inner, args),
-                _ => None,
-            },
-            Type::Map(key_type, val_type) => match method {
-                "has" => self.compile_map_has(&obj_val, key_type, val_type, args),
-                "get" => self.compile_map_get(&obj_val, key_type, val_type, args),
-                "keys" => self.compile_map_keys(&obj_val, key_type, val_type),
-                _ => None,
-            },
+            Type::List(inner) => self.dispatch_list_method(object, &obj_val, &obj_type, inner, method, args),
+            Type::Map(key_type, val_type) => self.dispatch_map_method(&obj_val, key_type, val_type, method, args),
             _ => {
                 // Handle channel method calls (channel is represented as int)
-                // ch.close(), ch.drain()
                 if obj_type == Type::Int || obj_type == Type::Unknown || matches!(obj_type, Type::Channel(_)) {
-                    let channel_fn_name = match method {
-                        "close" => Some("forge_channel_close"),
-                        "drain" => Some("forge_channel_drain"),
-                        _ => None,
-                    };
-                    if let Some(fn_name) = channel_fn_name {
-                        if let Some(func) = self.module.get_function(fn_name) {
-                            let result = self.builder.build_call(func, &[obj_val.into()], method).unwrap();
-                            return result.try_as_basic_value().left();
-                        }
+                    if let Some(result) = self.dispatch_channel_method(obj_val, method) {
+                        return Some(result);
                     }
                 }
 

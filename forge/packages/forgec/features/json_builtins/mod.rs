@@ -30,6 +30,12 @@ deserialization happening in optimized native code.",
     category: "Special",
 }
 
+crate::builtin_namespace! { name: "json", feature: "json_builtins" }
+crate::builtin_namespace! { name: "string", feature: "strings" }
+
+crate::builtin_namespace_method! { namespace: "json", method: "parse", feature: "json_builtins", ret: Custom("json_parse") }
+crate::builtin_namespace_method! { namespace: "json", method: "stringify", feature: "json_builtins", ret: String }
+
 pub mod parser;
 pub mod checker;
 pub mod codegen;

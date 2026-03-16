@@ -31,4 +31,13 @@ date arithmetic readable and type-safe.",
     category: "Special",
 }
 
+crate::builtin_fn! { name: "datetime_now", feature: "datetime", params: [], ret: Int, variadic: false }
+crate::builtin_fn! { name: "datetime_format", feature: "datetime", params: [Int], ret: String, variadic: true }
+crate::builtin_fn! { name: "datetime_parse", feature: "datetime", params: [String], ret: Int, variadic: true }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_datetime_now", feature: "datetime", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_datetime_format", feature: "datetime", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_datetime_parse", feature: "datetime", params: [Ptr, I64], ret: I64 }
+
 pub mod codegen;

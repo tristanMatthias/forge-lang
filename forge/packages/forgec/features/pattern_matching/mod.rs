@@ -36,4 +36,5 @@ expression that needs updating. This is the same exhaustiveness guarantee that m
 Haskell's pattern matching so reliable.",
     grammar: "<match_expr>  ::= \"match\" <expr> \"{\" (<pattern> \"->\" <expr>)* \"}\"",
     category: "Pattern Matching",
+    category_order: Primary,
 }

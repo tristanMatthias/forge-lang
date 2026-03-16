@@ -28,6 +28,7 @@ is used as a value. If you write `let x = if cond { 1 } else { \"two\" }`, the c
 report a type mismatch.",
     grammar: "<if_stmt>     ::= \"if\" <expr> <block> [\"else\" (<if_stmt> | <block>)]",
     category: "Control Flow",
+    category_order: Primary,
 }
 
 pub mod parser;

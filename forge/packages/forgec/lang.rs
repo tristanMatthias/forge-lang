@@ -1,6 +1,6 @@
 /// Forge language reference system.
 ///
-/// Powers `compiler lang` CLI commands for exploring language features,
+/// Powers `forge lang` CLI commands for exploring language features,
 /// symbols, error codes, types, and syntax from the terminal.
 
 use std::path::PathBuf;
@@ -557,7 +557,7 @@ fn show_all_packages() {
     println!();
     println!(
         "  Detail: {}",
-        cyan("compiler lang @<package>")
+        cyan("forge lang @<package>")
     );
     println!();
 }
@@ -899,7 +899,7 @@ pub fn show_feature(query: &str) {
             println!(
                 "\n  No feature '{}'. Try {} to see everything.\n",
                 query,
-                cyan("compiler lang --all")
+                cyan("forge lang --all")
             );
             return;
         }
@@ -1016,7 +1016,7 @@ fn show_type(name: &str) {
             println!(
                 "\n  No type '{}'. Try {} to see all types.\n",
                 name,
-                cyan("compiler lang types")
+                cyan("forge lang types")
             );
             return;
         }
@@ -1050,7 +1050,7 @@ fn show_type(name: &str) {
     println!();
     println!(
         "  Detail: {}",
-        cyan(&format!("compiler lang {}.{{method}}", type_doc.name))
+        cyan(&format!("forge lang {}.{{method}}", type_doc.name))
     );
     println!();
 }
@@ -1066,13 +1066,13 @@ fn show_method(type_name: &str, method_name: &str) {
                     "\n  No method '{}' on type '{}'. Try {} to see all methods.\n",
                     method_name,
                     type_name,
-                    cyan(&format!("compiler lang {}", type_name))
+                    cyan(&format!("forge lang {}", type_name))
                 );
             } else {
                 println!(
                     "\n  No type '{}'. Try {} to see all types.\n",
                     type_name,
-                    cyan("compiler lang types")
+                    cyan("forge lang types")
                 );
             }
             return;
@@ -1095,7 +1095,7 @@ fn show_method(type_name: &str, method_name: &str) {
     println!();
     println!(
         "  Type: {}",
-        cyan(&format!("compiler lang {}", type_doc.name))
+        cyan(&format!("forge lang {}", type_doc.name))
     );
     println!();
 }
@@ -1127,7 +1127,7 @@ fn show_types() {
     println!();
     println!(
         "  Detail: {}",
-        cyan("compiler lang <type>")
+        cyan("forge lang <type>")
     );
     println!();
 }
@@ -1141,7 +1141,7 @@ pub fn show_all() {
     println!();
     println!(
         "  {} {} Forge Language Reference",
-        bold("compiler lang"),
+        bold("forge lang"),
         dim("\u{2014}")
     );
     println!("  {}", dim(&"\u{2500}".repeat(37)));
@@ -1220,33 +1220,36 @@ pub fn show_all() {
     println!();
     print_error_code_list();
 
-    // Hints
+    // LLM hint — most important for AI assistants
     println!();
-    let mut hints = Vec::new();
-    hints.push(format!(
-        "Types: {}",
-        cyan("compiler lang string")
-    ));
-    let has_symbols = features.iter().any(|f| !f.tokens.is_empty());
-    if has_symbols {
-        hints.push(format!(
-            "Symbols: {}",
-            cyan("compiler lang symbols")
-        ));
-    }
-    hints.push(format!(
-        "Packages: {}",
-        cyan("compiler lang @http")
-    ));
-    hints.push(format!(
-        "Errors: {}",
-        cyan("compiler lang F0012")
-    ));
-    hints.push(format!(
-        "Detail: {}",
-        cyan("compiler lang <feature>")
-    ));
-    println!("  {}", hints.join("  |  "));
+    println!("  {}", dim(&"─".repeat(60)));
+    println!();
+    println!(
+        "  {} {}",
+        bold("For LLMs / code generation:"),
+        cyan("forge lang --llm")
+    );
+    println!(
+        "  {}                    {}",
+        dim("  with examples:"),
+        cyan("forge lang --llm --examples")
+    );
+    println!();
+
+    // Exploration hints
+    println!(
+        "  {}  {}  {}  {}",
+        cyan("forge lang <feature>"),
+        cyan("forge lang string"),
+        cyan("forge lang @http"),
+        cyan("forge lang F0012")
+    );
+    println!(
+        "  {}  {}  {}",
+        cyan("forge lang --cheatsheet"),
+        cyan("forge lang --search <term>"),
+        cyan("forge lang --symbols"),
+    );
     println!();
 }
 
@@ -1335,7 +1338,7 @@ fn show_error(code: &str) {
         println!();
         println!(
             "  Full explanation: {}",
-            cyan(&format!("compiler explain {}", code))
+            cyan(&format!("forge explain {}", code))
         );
         println!();
     } else {
@@ -1343,7 +1346,7 @@ fn show_error(code: &str) {
         println!(
             "  Unknown error code '{}'. Run {} to see all error codes.",
             code,
-            cyan("compiler lang errors")
+            cyan("forge lang errors")
         );
         println!();
     }
@@ -1545,7 +1548,7 @@ pub fn resolve(query: &str) {
                 println!(
                     "\n  No package '@{}'. Try {} to see all packages.\n",
                     ns,
-                    cyan("compiler lang packages")
+                    cyan("forge lang packages")
                 );
             }
         } else {
@@ -1555,7 +1558,7 @@ pub fn resolve(query: &str) {
                 println!(
                     "\n  No package '@{}'. Try {} to see all packages.\n",
                     package_query,
-                    cyan("compiler lang packages")
+                    cyan("forge lang packages")
                 );
             }
         }
@@ -1633,7 +1636,7 @@ pub fn resolve(query: &str) {
         println!();
         println!(
             "  Run {} for a full explanation.",
-            cyan("compiler explain <code>")
+            cyan("forge explain <code>")
         );
         println!();
         return;
@@ -1643,7 +1646,7 @@ pub fn resolve(query: &str) {
     println!(
         "\n  No match for '{}'. Try {} to see everything.\n",
         query,
-        cyan("compiler lang --all")
+        cyan("forge lang --all")
     );
 }
 
@@ -1660,7 +1663,7 @@ pub fn show_short(query: &str) {
             println!(
                 "\n  No feature '{}'. Try {} to see everything.\n",
                 query,
-                cyan("compiler lang --all")
+                cyan("forge lang --all")
             );
         }
     }
@@ -1683,20 +1686,31 @@ fn feature_desc(meta: &FeatureMetadata) -> &str {
 
 /// Generate compact LLM-friendly language spec (<4K tokens).
 pub fn show_llm_compact() {
-    println!("# Forge Language Spec (compact)");
-    println!("# Types: int, float, string, bool, null, list<T>, map<K,V>, fn<(A)->R>");
-    println!("# Truthy: everything except false, null, 0, \"\"");
+    println!("# Forge Language Reference");
+    println!("# Compile & run: forge run file.fg | Build: forge build file.fg | Type-check: forge check file.fg");
+
+    // Quick example — read from quickstart.fg
+    if let Some(example) = read_quickstart_example() {
+        println!();
+        println!("## Quick Example");
+        println!("```forge");
+        print!("{}", example);
+        println!("```");
+    }
+
     println!();
 
+    // All feature syntax, grouped by category — everything comes from feature metadata
     for (group_name, features) in FeatureRegistry::by_category() {
         let mut group_lines: Vec<String> = Vec::new();
         for meta in &features {
             if !meta.syntax.is_empty() {
                 for s in meta.syntax {
-                    group_lines.push(s.to_string());
+                    let line = s.to_string();
+                    if !group_lines.contains(&line) {
+                        group_lines.push(line);
+                    }
                 }
-            } else {
-                group_lines.push(format!("# {}", feature_desc(meta)));
             }
         }
         if !group_lines.is_empty() {
@@ -1739,20 +1753,21 @@ pub fn show_llm_compact() {
     }
     println!();
 
-    // Packages section
+    // Packages section — only show non-empty entries
     let packages = discover_packages();
-    if !packages.is_empty() {
+    let non_empty: Vec<&PackageDoc> = packages.iter().filter(|p| {
+        !p.description.is_empty() || !p.components.is_empty() || !p.extern_fns.is_empty()
+    }).collect();
+    if !non_empty.is_empty() {
         println!();
-        println!("## Packages");
-        for p in &packages {
+        println!("## Packages (use @namespace)");
+        for p in &non_empty {
             let mut parts = Vec::new();
 
-            // Description or component summary
             if !p.description.is_empty() {
                 parts.push(p.description.clone());
             }
 
-            // Add component syntax summaries
             for comp in &p.components {
                 if !comp.syntax_patterns.is_empty() {
                     let patterns: Vec<String> = comp
@@ -1765,14 +1780,12 @@ pub fn show_llm_compact() {
                 }
             }
 
-            // Add key extern fn summaries for packages without components
             if p.components.is_empty() && !p.extern_fns.is_empty() {
                 let fn_names: Vec<String> = p
                     .extern_fns
                     .iter()
                     .take(5)
                     .map(|f| {
-                        // Strip package prefix for readability
                         let short = f
                             .name
                             .strip_prefix(&format!("forge_{}_", p.namespace))
@@ -1784,9 +1797,47 @@ pub fn show_llm_compact() {
                 parts.push(fn_names.join(", "));
             }
 
-            println!("@{}: {}", p.namespace, parts.join(" -- "));
+            if !parts.is_empty() {
+                println!("@{}: {}", p.namespace, parts.join(" — "));
+            }
         }
     }
+
+    println!();
+    println!("# For more detail: forge lang --llm --examples");
+    println!("# Look up a feature: forge lang <feature_name>");
+    println!("# Search: forge lang --search <term>");
+}
+
+/// Read the quickstart example from tests/programs/quickstart.fg,
+/// stripping doc comments and expect lines.
+fn read_quickstart_example() -> Option<String> {
+    // Look for quickstart.fg relative to features dir (which is in packages/forgec/features/)
+    let features_dir = find_features_dir()?;
+    // features_dir is packages/forgec/features/, go up 3 levels to forge root
+    let forge_root = features_dir.parent()?.parent()?.parent()?;
+    let quickstart = forge_root.join("tests").join("programs").join("quickstart.fg");
+    if !quickstart.exists() {
+        return None;
+    }
+    let source = std::fs::read_to_string(&quickstart).ok()?;
+    let mut code: Vec<&str> = source
+        .lines()
+        .filter(|l| {
+            let trimmed = l.trim();
+            !trimmed.starts_with("/// expect:")
+                && !trimmed.starts_with("/// expect-error:")
+                && !trimmed.starts_with("/// #")
+                && !(trimmed.starts_with("///") && !trimmed.starts_with("////"))
+        })
+        .collect();
+    while code.first().map_or(false, |l| l.trim().is_empty()) {
+        code.remove(0);
+    }
+    while code.last().map_or(false, |l| l.trim().is_empty()) {
+        code.pop();
+    }
+    if code.is_empty() { None } else { Some(code.join("\n") + "\n") }
 }
 
 // ── LLM Full ────────────────────────────────────────────────────────
@@ -2214,7 +2265,7 @@ pub fn show_search(query: &str) {
     if results.is_empty() {
         println!();
         println!("  No results for \"{}\".", query);
-        println!("  Try: {}", cyan("compiler lang --all"));
+        println!("  Try: {}", cyan("forge lang --all"));
         println!();
         return;
     }

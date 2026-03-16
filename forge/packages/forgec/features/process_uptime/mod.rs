@@ -25,4 +25,9 @@ even if the system time is changed during execution.",
     category: "Special",
 }
 
+crate::builtin_fn! { name: "process_uptime", feature: "process_uptime", params: [], ret: Int, variadic: false }
+
+// Runtime function declarations
+crate::runtime_fn! { name: "forge_process_uptime", feature: "process_uptime", params: [], ret: I64 }
+
 pub mod codegen;

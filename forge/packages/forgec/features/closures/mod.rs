@@ -30,6 +30,7 @@ closures. The `->` syntax was chosen over `=>` (JavaScript) to avoid ambiguity w
 operators and to visually distinguish closures from match arms.",
     grammar: "<closure>     ::= \"(\" <params> \")\" \"->\" <expr>\\n                | \"(\" <params> \")\" \"->\" <block>",
     category: "Closures",
+    category_order: Primary,
 }
 
 pub mod parser;
