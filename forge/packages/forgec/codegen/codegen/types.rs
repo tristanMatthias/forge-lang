@@ -526,6 +526,7 @@ impl<'ctx> Codegen<'ctx> {
             ("tuples", _)                      => infer_tuple_lit_feature_type,
             ("collections", "ListLit")         => infer_list_lit_feature_type,
             ("collections", "MapLit")          => infer_map_lit_feature_type,
+            ("slicing", _)                     => infer_slice_feature_type,
         })
     }
 

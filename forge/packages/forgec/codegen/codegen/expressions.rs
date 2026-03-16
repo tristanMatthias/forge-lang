@@ -137,6 +137,7 @@ impl<'ctx> Codegen<'ctx> {
             ("tuples", _)                      => compile_tuple_lit_feature,
             ("collections", "ListLit")         => compile_list_lit_feature,
             ("collections", "MapLit")          => compile_map_lit_feature,
+            ("slicing", _)                     => compile_slice_feature,
         })
     }
 

@@ -171,12 +171,54 @@ impl Parser {
                 self.advance();
                 Some(Pattern::Wildcard(tok.span))
             }
+            TokenKind::Dot => {
+                // Nested enum pattern: .Variant or .Variant(sub_patterns)
+                self.advance();
+                let variant = self.expect_ident()?;
+                if self.check(&TokenKind::LParen) {
+                    self.advance();
+                    self.skip_newlines();
+                    let fields =
+                        self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
+                    Some(Pattern::Enum {
+                        variant,
+                        fields,
+                        span: tok.span,
+                    })
+                } else {
+                    Some(Pattern::Enum {
+                        variant,
+                        fields: vec![],
+                        span: tok.span,
+                    })
+                }
+            }
             TokenKind::LParen => {
                 // Tuple pattern: (a, b, ...)
                 let span = self.advance()?.span;
                 self.skip_newlines();
                 let elems = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                 Some(Pattern::Tuple(elems, span))
+            }
+            TokenKind::IntLiteral(n) => {
+                let n = *n;
+                self.advance();
+                Some(Pattern::Literal(Box::new(Expr::IntLit(n, tok.span))))
+            }
+            TokenKind::FloatLiteral(f) => {
+                let f = *f;
+                self.advance();
+                Some(Pattern::Literal(Box::new(Expr::FloatLit(f, tok.span))))
+            }
+            TokenKind::StringLiteral(s) => {
+                let s = s.clone();
+                self.advance();
+                Some(Pattern::Literal(Box::new(Expr::StringLit(s, tok.span))))
+            }
+            TokenKind::BoolLiteral(b) => {
+                let b = *b;
+                self.advance();
+                Some(Pattern::Literal(Box::new(Expr::BoolLit(b, tok.span))))
             }
             TokenKind::Ident(name) => {
                 let name = name.clone();

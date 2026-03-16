@@ -469,6 +469,27 @@ ForgeString forge_list_int_to_json(int64_t* data, int64_t len) {
     return (ForgeString){ .ptr = buf, .len = pos };
 }
 
+// ---- List slice ----
+
+typedef struct {
+    void* ptr;
+    int64_t len;
+} ForgeListSlice;
+
+ForgeListSlice forge_list_slice(void* data, int64_t list_len, int64_t start, int64_t end, int64_t elem_size) {
+    if (start < 0) start = 0;
+    if (end > list_len) end = list_len;
+    if (start >= end) {
+        void* empty = forge_alloc(0);
+        return (ForgeListSlice){ .ptr = empty, .len = 0 };
+    }
+    int64_t count = end - start;
+    int64_t total = count * elem_size;
+    void* buf = forge_alloc(total);
+    memcpy(buf, (char*)data + start * elem_size, total);
+    return (ForgeListSlice){ .ptr = buf, .len = count };
+}
+
 // ---- List sort ----
 
 void forge_list_sort_int(int64_t* data, int64_t len) {

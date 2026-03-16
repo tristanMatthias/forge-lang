@@ -1,0 +1,31 @@
+/// # Nested Pattern: Three Levels Deep
+///
+/// Match patterns three levels deep using recursive enum types.
+///
+/// expect: 6
+/// expect: 100
+
+enum Expr {
+  Lit(value: int)
+  Add(left: Expr, right: Expr)
+}
+
+fn eval(e: Expr) -> int {
+  match e {
+    .Lit(v) -> v
+    .Add(l, r) -> eval(l) + eval(r)
+  }
+}
+
+fn main() {
+  // (1 + 2) + 3 = 6, evaluated recursively
+  let e1 = Expr.Add(
+    left: Expr.Add(left: Expr.Lit(value: 1), right: Expr.Lit(value: 2)),
+    right: Expr.Lit(value: 3)
+  )
+  println(string(eval(e1)))
+
+  // plain literal
+  let e2 = Expr.Lit(value: 100)
+  println(string(eval(e2)))
+}

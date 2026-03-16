@@ -1,0 +1,30 @@
+/// # Nested Pattern: Wildcard in Nested Position
+///
+/// Use _ inside nested patterns to ignore specific fields.
+///
+/// expect: right is 10
+/// expect: right is 20
+/// expect: not an add
+
+enum Expr {
+  Lit(value: int)
+  Add(left: Expr, right: Expr)
+}
+
+fn right_value(e: Expr) -> string {
+  match e {
+    .Add(_, .Lit(b)) -> "right is " + string(b)
+    _ -> "not an add"
+  }
+}
+
+fn main() {
+  let e1 = Expr.Add(left: Expr.Lit(value: 5), right: Expr.Lit(value: 10))
+  println(right_value(e1))
+
+  let e2 = Expr.Add(left: Expr.Lit(value: 99), right: Expr.Lit(value: 20))
+  println(right_value(e2))
+
+  let e3 = Expr.Lit(value: 42)
+  println(right_value(e3))
+}

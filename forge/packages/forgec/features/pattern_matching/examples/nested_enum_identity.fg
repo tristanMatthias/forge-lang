@@ -1,0 +1,36 @@
+/// # Nested Pattern: Identity Elimination
+///
+/// Nested enum patterns to eliminate identity operations like `x + 0` and `0 + x`.
+///
+/// expect: 42
+/// expect: 99
+/// expect: 7
+
+enum Expr {
+  Lit(value: int)
+  Add(left: Expr, right: Expr)
+}
+
+fn simplify(e: Expr) -> int {
+  match e {
+    .Add(.Lit(a), .Lit(b)) -> a + b
+    .Add(x, .Lit(0)) -> simplify(x)
+    .Add(.Lit(0), y) -> simplify(y)
+    .Lit(v) -> v
+    _ -> 0
+  }
+}
+
+fn main() {
+  // x + 0 -> x
+  let e1 = Expr.Add(left: Expr.Lit(value: 42), right: Expr.Lit(value: 0))
+  println(string(simplify(e1)))
+
+  // 0 + x -> x
+  let e2 = Expr.Add(left: Expr.Lit(value: 0), right: Expr.Lit(value: 99))
+  println(string(simplify(e2)))
+
+  // a + b -> a + b
+  let e3 = Expr.Add(left: Expr.Lit(value: 3), right: Expr.Lit(value: 4))
+  println(string(simplify(e3)))
+}

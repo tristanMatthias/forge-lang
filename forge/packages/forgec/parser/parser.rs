@@ -888,14 +888,42 @@ impl Parser {
             } else if self.check(&TokenKind::LBracket) {
                 let span = self.advance()?.span;
                 self.skip_newlines();
-                let index = self.parse_expr()?;
-                self.skip_newlines();
-                self.expect(&TokenKind::RBracket)?;
-                expr = Expr::Index {
-                    object: Box::new(expr),
-                    index: Box::new(index),
-                    span,
-                };
+                if self.check(&TokenKind::DotDot) || self.check(&TokenKind::DotDotEq) {
+                    self.advance();
+                    self.skip_newlines();
+                    let end_expr = self.parse_addition()?;
+                    self.skip_newlines();
+                    self.expect(&TokenKind::RBracket)?;
+                    expr = feature_expr("slicing", "Slice",
+                        Box::new(crate::features::slicing::types::SliceData {
+                            object: Box::new(expr), start: None, end: Some(Box::new(end_expr)),
+                        }), span);
+                } else {
+                    let start_expr = self.parse_addition()?;
+                    self.skip_newlines();
+                    if self.check(&TokenKind::DotDot) || self.check(&TokenKind::DotDotEq) {
+                        self.advance();
+                        self.skip_newlines();
+                        if self.check(&TokenKind::RBracket) {
+                            self.expect(&TokenKind::RBracket)?;
+                            expr = feature_expr("slicing", "Slice",
+                                Box::new(crate::features::slicing::types::SliceData {
+                                    object: Box::new(expr), start: Some(Box::new(start_expr)), end: None,
+                                }), span);
+                        } else {
+                            let end_expr = self.parse_addition()?;
+                            self.skip_newlines();
+                            self.expect(&TokenKind::RBracket)?;
+                            expr = feature_expr("slicing", "Slice",
+                                Box::new(crate::features::slicing::types::SliceData {
+                                    object: Box::new(expr), start: Some(Box::new(start_expr)), end: Some(Box::new(end_expr)),
+                                }), span);
+                        }
+                    } else {
+                        self.expect(&TokenKind::RBracket)?;
+                        expr = Expr::Index { object: Box::new(expr), index: Box::new(start_expr), span };
+                    }
+                }
             } else if self.check(&TokenKind::Question) {
                 // Error propagation: expr?
                 let span = self.advance()?.span;

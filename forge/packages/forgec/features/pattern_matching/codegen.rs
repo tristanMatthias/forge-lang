@@ -169,7 +169,7 @@ impl<'ctx> Codegen<'ctx> {
                     None
                 }
             }
-            Pattern::Enum { variant, .. } => {
+            Pattern::Enum { variant, fields, .. } => {
                 // Check the tag of the enum or Result
                 if let Type::Result(_, _) = subject_type {
                     // Result matching: Ok tag=0, Err tag=1
@@ -192,11 +192,36 @@ impl<'ctx> Codegen<'ctx> {
                             let struct_val = subject_val.into_struct_value();
                             let tag = self.builder.build_extract_value(struct_val, 0, "tag").ok()?;
                             let expected = self.context.i8_type().const_int(idx as u64, false);
-                            Some(
-                                self.builder
-                                    .build_int_compare(IntPredicate::EQ, tag.into_int_value(), expected, "enum_match")
-                                    .unwrap(),
-                            )
+                            let tag_check = self.builder
+                                .build_int_compare(IntPredicate::EQ, tag.into_int_value(), expected, "enum_match")
+                                .unwrap();
+
+                            // Check nested patterns in fields recursively.
+                            // Skip boxed (recursive) fields — loading a boxed pointer
+                            // from a wrong-variant payload would segfault since the IR
+                            // runs before the branch based on tag_check.
+                            let v = &variants[idx];
+                            let mut combined = tag_check;
+                            let has_non_trivial_nested = fields.iter().any(|p| !matches!(p, Pattern::Wildcard(_) | Pattern::Ident(_, _)));
+                            if has_non_trivial_nested && !v.fields.is_empty() {
+                                let field_vals = self.extract_enum_variant_fields(subject_val, subject_type, v);
+                                for (i, field_pattern) in fields.iter().enumerate() {
+                                    // Skip boxed fields — cannot safely dereference before branching
+                                    if v.boxed_fields.contains(&i) {
+                                        continue;
+                                    }
+                                    if let Some((field_val, field_type)) = field_vals.get(i) {
+                                        if let Some(nested_check) = self.compile_pattern_check(
+                                            field_pattern,
+                                            field_val,
+                                            field_type,
+                                        ) {
+                                            combined = self.builder.build_and(combined, nested_check, "nested_and").unwrap();
+                                        }
+                                    }
+                                }
+                            }
+                            Some(combined)
                         } else {
                             None
                         }
@@ -209,6 +234,79 @@ impl<'ctx> Codegen<'ctx> {
             }
             _ => None,
         }
+    }
+
+
+    /// Extract all field values from an enum variant, handling boxed (recursive) fields.
+    /// Returns Vec of (value, field_type) pairs.
+    fn extract_enum_variant_fields(
+        &mut self,
+        subject_val: &BasicValueEnum<'ctx>,
+        subject_type: &Type,
+        v: &crate::typeck::types::EnumVariantType,
+    ) -> Vec<(BasicValueEnum<'ctx>, Type)> {
+        let mut results = Vec::new();
+        if !subject_val.is_struct_value() || v.fields.is_empty() {
+            return results;
+        }
+
+        let enum_llvm_ty = self.type_to_llvm_basic(subject_type).into_struct_type();
+        let enum_alloca = self.builder.build_alloca(enum_llvm_ty, "nested_extract_tmp").unwrap();
+        self.builder.build_store(enum_alloca, *subject_val).unwrap();
+
+        let payload_ptr = self.builder.build_struct_gep(
+            enum_llvm_ty, enum_alloca, 1, "payload_ptr"
+        ).unwrap();
+
+        let variant_field_types: Vec<BasicTypeEnum<'ctx>> = v.fields.iter()
+            .enumerate()
+            .map(|(i, (_, ty))| {
+                if v.boxed_fields.contains(&i) {
+                    self.context.i64_type().into()
+                } else {
+                    self.type_to_llvm_basic(ty)
+                }
+            })
+            .collect();
+        let variant_struct_type = self.context.struct_type(&variant_field_types, false);
+
+        let typed_ptr = self.builder.build_bit_cast(
+            payload_ptr,
+            self.context.ptr_type(inkwell::AddressSpace::default()),
+            "variant_ptr",
+        ).unwrap().into_pointer_value();
+
+        let variant_val = self.builder.build_load(
+            variant_struct_type, typed_ptr, "variant_data"
+        ).unwrap().into_struct_value();
+
+        for (i, (_field_name, field_type)) in v.fields.iter().enumerate() {
+            let field_val = self.builder.build_extract_value(
+                variant_val,
+                i as u32,
+                &format!("field_{}", i),
+            ).unwrap();
+
+            let (final_val, final_type) = if v.boxed_fields.contains(&i) {
+                let full_type = subject_type.clone();
+                let full_llvm_ty = self.type_to_llvm_basic(&full_type);
+                let heap_ptr = self.builder.build_int_to_ptr(
+                    field_val.into_int_value(),
+                    self.context.ptr_type(inkwell::AddressSpace::default()),
+                    "unboxed_ptr",
+                ).unwrap();
+                let loaded = self.builder.build_load(
+                    full_llvm_ty, heap_ptr, "unboxed_val"
+                ).unwrap();
+                (loaded, full_type)
+            } else {
+                (field_val, field_type.clone())
+            };
+
+            results.push((final_val, final_type));
+        }
+
+        results
     }
 
     pub(crate) fn bind_pattern_vars(
@@ -255,72 +353,12 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 } else if let Type::Enum { variants, .. } = subject_type {
                     if let Some(v) = variants.iter().find(|v| v.name == *variant) {
-                        // Extract fields from enum via memory bitcast (i64-slot union layout)
-                        if subject_val.is_struct_value() {
-                            let enum_llvm_ty = self.type_to_llvm_basic(subject_type).into_struct_type();
-                            let enum_alloca = self.builder.build_alloca(enum_llvm_ty, "enum_extract_tmp").unwrap();
-                            self.builder.build_store(enum_alloca, *subject_val).unwrap();
-
-                            let payload_ptr = self.builder.build_struct_gep(
-                                enum_llvm_ty, enum_alloca, 1, "payload_ptr"
-                            ).unwrap();
-
-                            // Build variant struct type from field types
-                            // Boxed fields are stored as i64 (pointer) in the union
-                            let variant_field_types: Vec<inkwell::types::BasicTypeEnum<'ctx>> = v.fields.iter()
-                                .enumerate()
-                                .map(|(i, (_, ty))| {
-                                    if v.boxed_fields.contains(&i) {
-                                        self.context.i64_type().into()
-                                    } else {
-                                        self.type_to_llvm_basic(ty)
-                                    }
-                                })
-                                .collect();
-                            let variant_struct_type = self.context.struct_type(&variant_field_types, false);
-
-                            let typed_ptr = self.builder.build_bit_cast(
-                                payload_ptr,
-                                self.context.ptr_type(inkwell::AddressSpace::default()),
-                                "variant_ptr",
-                            ).unwrap().into_pointer_value();
-
-                            let variant_val = self.builder.build_load(
-                                variant_struct_type, typed_ptr, "variant_data"
-                            ).unwrap().into_struct_value();
-
-                            for (i, (field_pattern, (_field_name, field_type))) in
-                                fields.iter().zip(v.fields.iter()).enumerate()
-                            {
-                                if let Pattern::Ident(name, _) = field_pattern {
-                                    let field_val = self.builder.build_extract_value(
-                                        variant_val,
-                                        i as u32,
-                                        name,
-                                    ).unwrap();
-
-                                    // Unbox: if field is boxed, convert i64 -> pointer and load the value
-                                    let (final_val, final_type) = if v.boxed_fields.contains(&i) {
-                                        // The field_type for boxed fields is a stub Enum with empty variants.
-                                        // We need the full enum type from the subject_type.
-                                        let full_type = subject_type.clone();
-                                        let full_llvm_ty = self.type_to_llvm_basic(&full_type);
-                                        let heap_ptr = self.builder.build_int_to_ptr(
-                                            field_val.into_int_value(),
-                                            self.context.ptr_type(inkwell::AddressSpace::default()),
-                                            "unboxed_ptr",
-                                        ).unwrap();
-                                        let loaded = self.builder.build_load(
-                                            full_llvm_ty, heap_ptr, "unboxed_val"
-                                        ).unwrap();
-                                        (loaded, full_type)
-                                    } else {
-                                        (field_val, field_type.clone())
-                                    };
-
-                                    let alloca = self.create_entry_block_alloca(&final_type, name);
-                                    self.builder.build_store(alloca, final_val).unwrap();
-                                    self.define_var(name.clone(), alloca, final_type);
+                        // Extract fields and recursively bind nested patterns
+                        if subject_val.is_struct_value() && !fields.is_empty() {
+                            let field_vals = self.extract_enum_variant_fields(subject_val, subject_type, v);
+                            for (i, field_pattern) in fields.iter().enumerate() {
+                                if let Some((field_val, field_type)) = field_vals.get(i) {
+                                    self.bind_pattern_vars(field_pattern, field_val, field_type);
                                 }
                             }
                         }

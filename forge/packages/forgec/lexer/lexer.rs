@@ -694,10 +694,20 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number(&mut self, start: usize, line: u32, col: u32) -> Token {
+        // Check for base prefixes: 0x, 0b, 0o
+        if self.peek() == Some('0') {
+            match self.peek_at(1) {
+                Some('x') | Some('X') => return self.lex_hex(start, line, col),
+                Some('b') | Some('B') => return self.lex_binary(start, line, col),
+                Some('o') | Some('O') => return self.lex_octal(start, line, col),
+                _ => {}
+            }
+        }
+
         let mut is_float = false;
 
         while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
+            if c.is_ascii_digit() || c == '_' {
                 self.advance();
             } else if c == '.' && self.peek_at(1).map_or(false, |c2| c2.is_ascii_digit()) {
                 is_float = true;
@@ -711,9 +721,10 @@ impl<'a> Lexer<'a> {
         }
 
         let text: String = self.chars[start..self.pos].iter().collect();
+        let clean: String = text.chars().filter(|c| *c != '_').collect();
 
         if is_float {
-            match text.parse::<f64>() {
+            match clean.parse::<f64>() {
                 Ok(v) => Token::new(
                     TokenKind::FloatLiteral(v),
                     Span::new(start, self.pos, line, col),
@@ -731,7 +742,7 @@ impl<'a> Lexer<'a> {
                 }
             }
         } else {
-            match text.parse::<i64>() {
+            match clean.parse::<i64>() {
                 Ok(v) => {
                     // Duration suffix: d (days), h (hours), m (minutes), s (seconds)
                     // Only match if the suffix char is NOT followed by an alphanumeric or underscore
@@ -775,6 +786,145 @@ impl<'a> Lexer<'a> {
                         Span::new(start, self.pos, line, col),
                     )
                 }
+            }
+        }
+    }
+
+
+    fn lex_hex(&mut self, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // '0'
+        self.advance(); // 'x' or 'X'
+        let mut digits = String::new();
+        let mut has_digits = false;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_hexdigit() {
+                digits.push(c);
+                has_digits = true;
+                self.advance();
+            } else if c == '_' {
+                self.advance();
+            } else if c.is_alphanumeric() {
+                let bad = c;
+                self.advance();
+                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                    self.advance();
+                }
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("invalid hex digit '{}'", bad), Span::new(start, self.pos, line, col))
+                        .with_help("hex digits are 0-9 and a-f"),
+                );
+                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            } else {
+                break;
+            }
+        }
+        if !has_digits {
+            self.diagnostics.push(
+                Diagnostic::error("F0006", "hex literal must have at least one digit after '0x'", Span::new(start, self.pos, line, col))
+                    .with_help("try: 0x0 or 0xFF"),
+            );
+            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+        }
+        match i64::from_str_radix(&digits, 16) {
+            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Err(_) => {
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("hex literal out of range: 0x{}", digits), Span::new(start, self.pos, line, col))
+                        .with_help("maximum value is 0x7FFFFFFFFFFFFFFF (i64 max)"),
+                );
+                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
+            }
+        }
+    }
+
+    fn lex_binary(&mut self, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // '0'
+        self.advance(); // 'b' or 'B'
+        let mut digits = String::new();
+        let mut has_digits = false;
+        while let Some(c) = self.peek() {
+            if c == '0' || c == '1' {
+                digits.push(c);
+                has_digits = true;
+                self.advance();
+            } else if c == '_' {
+                self.advance();
+            } else if c.is_alphanumeric() {
+                let bad = c;
+                self.advance();
+                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                    self.advance();
+                }
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("invalid binary digit '{}'", bad), Span::new(start, self.pos, line, col))
+                        .with_help("binary digits are 0 and 1"),
+                );
+                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            } else {
+                break;
+            }
+        }
+        if !has_digits {
+            self.diagnostics.push(
+                Diagnostic::error("F0006", "binary literal must have at least one digit after '0b'", Span::new(start, self.pos, line, col))
+                    .with_help("try: 0b0 or 0b1010"),
+            );
+            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+        }
+        match i64::from_str_radix(&digits, 2) {
+            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Err(_) => {
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("binary literal out of range: 0b{}", digits), Span::new(start, self.pos, line, col))
+                        .with_help("maximum value is 63 binary digits (i64 max)"),
+                );
+                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
+            }
+        }
+    }
+
+    fn lex_octal(&mut self, start: usize, line: u32, col: u32) -> Token {
+        self.advance(); // '0'
+        self.advance(); // 'o' or 'O'
+        let mut digits = String::new();
+        let mut has_digits = false;
+        while let Some(c) = self.peek() {
+            if c >= '0' && c <= '7' {
+                digits.push(c);
+                has_digits = true;
+                self.advance();
+            } else if c == '_' {
+                self.advance();
+            } else if c.is_alphanumeric() {
+                let bad = c;
+                self.advance();
+                while self.peek().map_or(false, |c| c.is_alphanumeric() || c == '_') {
+                    self.advance();
+                }
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("invalid octal digit '{}'", bad), Span::new(start, self.pos, line, col))
+                        .with_help("octal digits are 0-7"),
+                );
+                return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+            } else {
+                break;
+            }
+        }
+        if !has_digits {
+            self.diagnostics.push(
+                Diagnostic::error("F0006", "octal literal must have at least one digit after '0o'", Span::new(start, self.pos, line, col))
+                    .with_help("try: 0o0 or 0o755"),
+            );
+            return Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col));
+        }
+        match i64::from_str_radix(&digits, 8) {
+            Ok(v) => Token::new(TokenKind::IntLiteral(v), Span::new(start, self.pos, line, col)),
+            Err(_) => {
+                self.diagnostics.push(
+                    Diagnostic::error("F0006", format!("octal literal out of range: 0o{}", digits), Span::new(start, self.pos, line, col))
+                        .with_help("maximum value is 0o777777777777777777777 (i64 max)"),
+                );
+                Token::new(TokenKind::IntLiteral(0), Span::new(start, self.pos, line, col))
             }
         }
     }

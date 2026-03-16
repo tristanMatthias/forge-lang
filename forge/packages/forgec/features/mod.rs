@@ -70,3 +70,5 @@ pub mod primitive_types;
 pub mod type_conversion;
 pub mod printing;
 pub mod expression_blocks;
+pub mod slicing;
+pub mod numeric_literals;

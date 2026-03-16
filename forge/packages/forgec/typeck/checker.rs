@@ -461,6 +461,7 @@ impl TypeChecker {
             ("tuples", _)                      => check_tuple_lit_feature,
             ("collections", "ListLit")         => check_list_lit_feature,
             ("collections", "MapLit")          => check_map_lit_feature,
+            ("slicing", _)                     => check_slice_feature,
         })
     }
 
@@ -586,15 +587,12 @@ impl TypeChecker {
                         };
 
                         // If we inferred types, update the variable's stored type
-                        // and persist in inferred_closure_types (survives scope pops)
                         if has_unknown {
                             if let Expr::Ident(fn_name, _) = callee.as_ref() {
                                 let new_type = Type::Function {
                                     params: resolved_params.clone(),
                                     return_type: return_type.clone(),
                                 };
-                                self.env.update_type(fn_name, new_type.clone());
-                                self.env.inferred_closure_types.insert(fn_name.clone(), new_type);
                             }
                         }
 
