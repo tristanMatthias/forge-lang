@@ -198,13 +198,39 @@ impl<'ctx> Codegen<'ctx> {
             return Some(list_val.into());
         }
 
+        // Check if we have a type hint indicating trait-typed elements
+        let trait_elem_hint = match &self.json_parse_hint {
+            Some(Type::List(inner)) => {
+                if let Type::DynTrait(ref trait_name) = **inner {
+                    Some(trait_name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
         // Compile all elements
         let mut elem_vals = Vec::new();
         let mut elem_type = Type::Unknown;
         for expr in elements {
             let val = self.compile_expr(expr)?;
             if elem_type == Type::Unknown {
-                elem_type = self.infer_type(expr);
+                if trait_elem_hint.is_some() {
+                    elem_type = Type::DynTrait(trait_elem_hint.as_ref().unwrap().clone());
+                } else {
+                    elem_type = self.infer_type(expr);
+                }
+            }
+            // If elements should be trait objects, wrap each in a fat pointer
+            if let Some(ref trait_name) = trait_elem_hint {
+                let concrete_type = self.infer_type(expr);
+                if !matches!(concrete_type, Type::DynTrait(_)) {
+                    if let Some(fat) = self.build_trait_fat_pointer(val, &concrete_type, trait_name) {
+                        elem_vals.push(fat);
+                        continue;
+                    }
+                }
             }
             elem_vals.push(val);
         }

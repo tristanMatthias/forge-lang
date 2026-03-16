@@ -91,10 +91,12 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Generate vtables for all (trait, type) impl pairs.
-    /// Each vtable is a global constant struct of function pointers.
+    /// Each vtable is a global constant struct of thunk function pointers.
+    /// Thunks take (ptr) as self, load the concrete type, and call the real method.
     pub(crate) fn generate_vtables(&mut self) {
         let impls = self.impls.clone();
         let traits = self.traits.clone();
+        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
 
         for impl_info in &impls {
             if let Some(ref trait_name) = impl_info.trait_name {
@@ -102,25 +104,82 @@ impl<'ctx> Codegen<'ctx> {
                     let type_name = &impl_info.type_name;
                     let vtable_name = format!("__vtable_{}_for_{}", trait_name, type_name);
 
-                    // Collect function pointers in trait method order
-                    let mut fn_ptrs = Vec::new();
+                    // Generate thunks and collect their pointers
+                    let mut thunk_ptrs = Vec::new();
                     for tm in &trait_info.methods {
                         let mangled = format!("{}_{}", type_name, tm.name);
-                        if let Some(func) = self.functions.get(&mangled) {
-                            fn_ptrs.push(func.as_global_value().as_pointer_value());
+                        if let Some(real_func) = self.functions.get(&mangled).copied() {
+                            let thunk_name = format!("__thunk_{}_{}", type_name, tm.name);
+
+                            // Build thunk: takes (ptr, extra_args...) -> ret
+                            // Loads concrete self from ptr, calls real method
+                            let real_fn_type = real_func.get_type();
+                            let real_param_count = real_fn_type.count_param_types();
+                            let real_ret = real_fn_type.get_return_type();
+
+                            // Thunk params: ptr (for self), then same extra params as real fn
+                            let mut thunk_params: Vec<inkwell::types::BasicMetadataTypeEnum> = vec![ptr_type.into()];
+                            for i in 1..real_param_count {
+                                thunk_params.push(real_fn_type.get_param_types()[i as usize].into());
+                            }
+
+                            let thunk_fn_type = if let Some(ret) = real_ret {
+                                match ret {
+                                    inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&thunk_params, false),
+                                    inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&thunk_params, false),
+                                    inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&thunk_params, false),
+                                    inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&thunk_params, false),
+                                    _ => self.context.i64_type().fn_type(&thunk_params, false),
+                                }
+                            } else {
+                                self.context.void_type().fn_type(&thunk_params, false)
+                            };
+
+                            let thunk_fn = self.module.add_function(&thunk_name, thunk_fn_type, None);
+
+                            // Build thunk body
+                            let saved_bb = self.builder.get_insert_block();
+                            let entry = self.context.append_basic_block(thunk_fn, "entry");
+                            self.builder.position_at_end(entry);
+
+                            // Load concrete self from ptr
+                            let self_ptr = thunk_fn.get_first_param().unwrap().into_pointer_value();
+                            let self_type = real_fn_type.get_param_types()[0];
+                            let loaded_self = self.builder.build_load(self_type, self_ptr, "self").unwrap();
+
+                            // Build call args: loaded_self + forwarded params
+                            let mut call_args: Vec<BasicMetadataValueEnum> = vec![loaded_self.into()];
+                            for i in 1..thunk_fn.count_params() {
+                                call_args.push(thunk_fn.get_nth_param(i).unwrap().into());
+                            }
+
+                            let result = self.builder.build_call(real_func, &call_args, "thunk_call").unwrap();
+
+                            if real_ret.is_some() {
+                                let ret_val = result.try_as_basic_value().left().unwrap();
+                                self.builder.build_return(Some(&ret_val)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+
+                            // Restore builder position
+                            if let Some(bb) = saved_bb {
+                                self.builder.position_at_end(bb);
+                            }
+
+                            thunk_ptrs.push(thunk_fn.as_global_value().as_pointer_value());
                         }
                     }
 
-                    if fn_ptrs.len() == trait_info.methods.len() {
-                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                    if thunk_ptrs.len() == trait_info.methods.len() {
                         let vtable_type = self.context.struct_type(
-                            &vec![ptr_type.into(); fn_ptrs.len()],
+                            &vec![ptr_type.into(); thunk_ptrs.len()],
                             false,
                         );
                         let vtable_global = self.module.add_global(vtable_type, None, &vtable_name);
 
                         let mut vtable_init = vtable_type.get_undef();
-                        for (i, fp) in fn_ptrs.iter().enumerate() {
+                        for (i, fp) in thunk_ptrs.iter().enumerate() {
                             vtable_init = self.builder.build_insert_value(vtable_init, *fp, i as u32, "vt")
                                 .unwrap().into_struct_value();
                         }
@@ -218,30 +277,25 @@ impl<'ctx> Codegen<'ctx> {
             .map(|t| self.type_checker.resolve_type_expr(t))
             .unwrap_or(Type::Void);
 
-        // Find a sample concrete function to get its type signature
-        let impls = self.impls.clone();
-        let sample_fn = impls.iter()
-            .filter(|i| i.trait_name.as_deref() == Some(trait_name))
-            .find_map(|i| {
-                let mangled = format!("{}_{}", i.type_name, method);
-                self.functions.get(&mangled).copied()
-            });
-
-        let sample = sample_fn?;
-
-        // Load the concrete self value from data_ptr using the sample function's self type
-        let self_type = sample.get_first_param()?.get_type();
-        let loaded_self = self.builder.build_load(self_type, data_ptr, "loaded_self").unwrap();
-
-        let mut call_args: Vec<BasicMetadataValueEnum> = vec![loaded_self.into()];
+        // Build call: thunks take (ptr, extra_args...) -> ret
+        // Pass data_ptr directly as ptr (thunk loads the concrete type)
+        let mut call_args: Vec<BasicMetadataValueEnum> = vec![data_ptr.into()];
         for arg in args {
             if let Some(val) = self.compile_expr(&arg.value) {
                 call_args.push(val.into());
             }
         }
 
-        // Use the sample function's type for the indirect call
-        let fn_type = sample.get_type();
+        // Find the thunk to get its type signature
+        let impls = self.impls.clone();
+        let thunk_fn = impls.iter()
+            .filter(|i| i.trait_name.as_deref() == Some(trait_name))
+            .find_map(|i| {
+                let thunk_name = format!("__thunk_{}_{}", i.type_name, method);
+                self.module.get_function(&thunk_name)
+            })?;
+
+        let fn_type = thunk_fn.get_type();
 
         let result = self.builder.build_indirect_call(fn_type, fn_ptr, &call_args, "dyn_call")
             .unwrap();
