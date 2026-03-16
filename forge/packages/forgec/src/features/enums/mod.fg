@@ -68,7 +68,7 @@ fn parse_enum(p: Parser) -> Statement? {
 
     mut variants: List<EnumVariant> = []
 
-    for !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         let variant = parse_enum_variant(p)
         if variant != null {
@@ -99,7 +99,7 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
     if p.check(.LParen) {
         p.advance()
         mut field_idx = 0
-        for !p.check(.RParen) && !p.is_at_end() {
+        while !p.check(.RParen) && !p.is_at_end() {
             p.skip_newlines()
             // Check for named field: name: Type
             // or positional: just Type

@@ -1,11 +1,16 @@
 // ─── Forge Compiler (Self-Hosted) ──────────────
-// Usage:
-//   forge run src/main.fg -- build <input.fg> [-o output]
-//   forge run src/main.fg -- check <input.fg>
-//   forge run src/main.fg -- run <input.fg>
 
 use @std.process
 use @std.fs
+
+// Declare modules
+mod core
+mod lexer
+mod parser
+mod checker
+mod codegen
+mod driver
+mod features
 
 // Import all features (triggers registration)
 use features
@@ -63,7 +68,6 @@ fn main() {
             if !compile_file(input, "a.out") {
                 process.exit(1)
             }
-            // Execute the compiled binary
             process.exec("./a.out")
         }
         _ -> {

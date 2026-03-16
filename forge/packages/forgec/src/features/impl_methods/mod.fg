@@ -72,7 +72,7 @@ fn parse_impl(p: Parser) -> Statement? {
 
     // Parse methods
     mut methods: List<ImplMethod> = []
-    for !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         if p.check(.Fn) {
             let method = parse_impl_method(p)

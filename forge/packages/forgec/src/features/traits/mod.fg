@@ -57,7 +57,7 @@ fn parse_trait(p: Parser) -> Statement? {
 
     mut methods: List<TraitMethod> = []
 
-    for !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         if p.check(.Fn) {
             let method = parse_trait_method(p)
@@ -89,7 +89,7 @@ fn parse_trait_method(p: Parser) -> TraitMethod? {
     if p.expect(.LParen) == null { return null }
 
     mut params: List<TraitMethodParam> = []
-    for !p.check(.RParen) && !p.is_at_end() {
+    while !p.check(.RParen) && !p.is_at_end() {
         p.skip_newlines()
         let param_name = p.expect_ident()
         if param_name == null { break }

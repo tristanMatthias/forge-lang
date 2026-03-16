@@ -142,7 +142,7 @@ impl Lexer {
     // ─── Whitespace & Comments ─────────────────
 
     fn skip_whitespace(self) {
-        for self.pos < self.chars.length {
+        while self.pos < self.chars.length {
             let ch = self.chars[self.pos]
             if is_whitespace_not_newline(ch) {
                 self.advance()
@@ -167,7 +167,7 @@ impl Lexer {
                     }
                 }
                 // Skip to end of line
-                for self.pos < self.chars.length && self.chars[self.pos] != "\n" {
+                while self.pos < self.chars.length && self.chars[self.pos] != "\n" {
                     self.pos = self.pos + 1
                     self.col = self.col + 1
                 }
@@ -184,7 +184,7 @@ impl Lexer {
     fn tokenize(self) -> List<Token> {
         mut tokens: List<Token> = []
 
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             self.skip_whitespace()
             self.skip_comments()
 
@@ -291,7 +291,7 @@ impl Lexer {
 
         // Collect until newline
         mut text = ""
-        for !self.is_at_end() && self.peek()! != "\n" {
+        while !self.is_at_end() && self.peek()! != "\n" {
             text = text + self.advance()
         }
 
@@ -326,7 +326,7 @@ impl Lexer {
         mut is_float = false
 
         // Integer part: consume digits and underscores
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             let ch = self.peek()!
             if is_digit(ch) {
                 text = text + self.advance()
@@ -343,7 +343,7 @@ impl Lexer {
                 // Make sure it's not .. (range operator)
                 is_float = true
                 text = text + self.advance() // consume .
-                for !self.is_at_end() {
+                while !self.is_at_end() {
                     let ch = self.peek()!
                     if is_digit(ch) {
                         text = text + self.advance()
@@ -394,7 +394,7 @@ impl Lexer {
 
     fn lex_radix(self, start_pos: int, start_line: int, start_col: int, radix: int, prefix: string) -> Token {
         mut text = ""
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             let ch = self.peek()!
             let valid = match radix {
                 16 -> is_hex_digit(ch)
@@ -435,7 +435,7 @@ impl Lexer {
         mut parts: List<TemplatePart> = []
         mut has_interpolation = is_template
 
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             let ch = self.peek()!
 
             // Closing delimiter
@@ -546,7 +546,7 @@ impl Lexer {
         mut depth = 1
         mut text = ""
 
-        for !self.is_at_end() && depth > 0 {
+        while !self.is_at_end() && depth > 0 {
             let ch = self.peek()!
 
             if ch == "{" {
@@ -568,7 +568,7 @@ impl Lexer {
             // Skip nested strings
             if ch == "\"" {
                 text = text + self.advance() // opening "
-                for !self.is_at_end() && self.peek()! != "\"" {
+                while !self.is_at_end() && self.peek()! != "\"" {
                     if self.peek()! == "\\" {
                         text = text + self.advance() // backslash
                         if !self.is_at_end() {
@@ -587,7 +587,7 @@ impl Lexer {
             // Skip nested templates
             if ch == "`" {
                 text = text + self.advance() // opening `
-                for !self.is_at_end() && self.peek()! != "`" {
+                while !self.is_at_end() && self.peek()! != "`" {
                     if self.peek()! == "\\" {
                         text = text + self.advance()
                         if !self.is_at_end() {
@@ -619,7 +619,7 @@ impl Lexer {
         mut text = ""
         text = text + self.advance() // first char
 
-        for !self.is_at_end() && is_ident_continue(self.peek()!) {
+        while !self.is_at_end() && is_ident_continue(self.peek()!) {
             text = text + self.advance()
         }
 
@@ -654,7 +654,7 @@ impl Lexer {
         mut text = ""
         mut parts: List<TemplatePart> = []
 
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             let ch = self.peek()!
 
             if ch == "`" {
@@ -707,7 +707,7 @@ impl Lexer {
         mut depth = 1
         mut type_text = ""
 
-        for !self.is_at_end() && depth > 0 {
+        while !self.is_at_end() && depth > 0 {
             let ch = self.peek()!
             if ch == "<" {
                 depth = depth + 1
@@ -730,7 +730,7 @@ impl Lexer {
             mut text = ""
             mut parts: List<TemplatePart> = []
 
-            for !self.is_at_end() {
+            while !self.is_at_end() {
                 let ch = self.peek()!
 
                 if ch == "`" {

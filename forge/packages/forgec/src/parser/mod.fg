@@ -125,7 +125,7 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
-        for self.check(.Newline) {
+        while self.check(.Newline) {
             self.advance()
         }
     }
@@ -146,7 +146,7 @@ impl Parser {
         // Peek at the nth non-newline token
         mut count = 0
         mut offset = 0
-        for self.pos + offset < self.tokens.length {
+        while self.pos + offset < self.tokens.length {
             let tok = self.tokens[self.pos + offset]
             if !(tok.kind is .Newline) {
                 if count == n {
@@ -169,7 +169,7 @@ impl Parser {
         mut statements: List<Statement> = []
         self.skip_newlines()
 
-        for !self.is_at_end() {
+        while !self.is_at_end() {
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
@@ -255,7 +255,7 @@ impl Parser {
         self.skip_newlines()
         mut statements: List<Statement> = []
 
-        for !self.check(.RBrace) && !self.is_at_end() {
+        while !self.check(.RBrace) && !self.is_at_end() {
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
@@ -354,7 +354,7 @@ impl Parser {
         if self.expect(.Lt) == null { return null }
         mut args: List<TypeExpr> = []
 
-        for !self.check(.Gt) && !self.is_at_end() {
+        while !self.check(.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
@@ -382,7 +382,7 @@ impl Parser {
         if self.expect(.LParen) == null { return null }
 
         mut params: List<TypeExpr> = []
-        for !self.check(.RParen) && !self.is_at_end() {
+        while !self.check(.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
@@ -421,7 +421,7 @@ impl Parser {
             // Tuple type
             self.advance()
             mut elements: List<TypeExpr> = [first!]
-            for !self.check(.RParen) && !self.is_at_end() {
+            while !self.check(.RParen) && !self.is_at_end() {
                 self.skip_newlines()
                 let ty = self.parse_type_expr()
                 if ty != null {
@@ -462,7 +462,7 @@ impl Parser {
         let start = self.advance().span // consume {
         mut fields: List<TypeField> = []
 
-        for !self.check(.RBrace) && !self.is_at_end() {
+        while !self.check(.RBrace) && !self.is_at_end() {
             self.skip_newlines()
             let mutable = if self.check(.Mut) { self.advance(); true } else { false }
             let name = self.expect_ident()
@@ -487,7 +487,7 @@ impl Parser {
         if self.expect(.LParen) == null { return null }
         mut params: List<Param> = []
 
-        for !self.check(.RParen) && !self.is_at_end() {
+        while !self.check(.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let param = self.parse_param()
             if param != null {
@@ -534,7 +534,7 @@ impl Parser {
         self.advance() // consume <
 
         mut params: List<string> = []
-        for !self.check(.Gt) && !self.is_at_end() {
+        while !self.check(.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let name = self.expect_ident()
             if name != null {
@@ -555,7 +555,7 @@ impl Parser {
     fn parse_delimited(self, close: TokenKind) -> List<Expr> {
         mut items: List<Expr> = []
 
-        for !self.check(close) && !self.is_at_end() {
+        while !self.check(close) && !self.is_at_end() {
             self.skip_newlines()
             let item = self.parse_expr()
             if item != null {

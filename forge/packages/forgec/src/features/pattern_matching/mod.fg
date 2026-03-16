@@ -71,7 +71,7 @@ fn parse_match(p: Parser) -> Expr? {
 
     mut arms: List<MatchArm> = []
 
-    for !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         let arm = parse_match_arm(p)
         if arm != null {
@@ -127,7 +127,7 @@ fn parse_pattern(p: Parser) -> Pattern? {
     // Check for or-pattern: pattern | pattern
     if p.check(.Bar) {
         mut alternatives: List<Pattern> = [first!]
-        for p.check(.Bar) {
+        while p.check(.Bar) {
             p.advance()
             p.skip_newlines()
             let next = parse_simple_pattern(p)
@@ -161,7 +161,7 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
             if p.check(.LParen) {
                 p.advance()
                 mut fields: List<Pattern> = []
-                for !p.check(.RParen) && !p.is_at_end() {
+                while !p.check(.RParen) && !p.is_at_end() {
                     p.skip_newlines()
                     let sub = parse_pattern(p)
                     if sub != null {
@@ -210,7 +210,7 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
         .LParen -> {
             let start = p.advance().span
             mut elements: List<Pattern> = []
-            for !p.check(.RParen) && !p.is_at_end() {
+            while !p.check(.RParen) && !p.is_at_end() {
                 p.skip_newlines()
                 let sub = parse_pattern(p)
                 if sub != null {
