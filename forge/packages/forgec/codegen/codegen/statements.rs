@@ -71,7 +71,13 @@ impl<'ctx> Codegen<'ctx> {
                 let val = if matches!(&ann_type, Some(Type::Map(_, _))) && matches!(value, Expr::Block(b) if b.statements.is_empty()) {
                     self.compile_map_lit(&[])
                 } else {
-                    self.compile_expr(value)
+                    // When type annotation is ptr, suppress auto-wrapping ptr→ForgeString
+                    if matches!(&ann_type, Some(Type::Ptr)) {
+                        self.suppress_string_wrap = true;
+                    }
+                    let val = self.compile_expr(value);
+                    self.suppress_string_wrap = false;
+                    val
                 };
                 self.json_parse_hint = None;
                 self.struct_target_type = None;
@@ -106,6 +112,19 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     } else {
                         ty
+                    };
+                    // If type annotation says ptr but value is ForgeString, extract the ptr
+                    let val = if ty == Type::Ptr && val.is_struct_value() {
+                        let string_type = self.string_type();
+                        if val.into_struct_value().get_type() == string_type {
+                            self.builder.build_extract_value(
+                                val.into_struct_value(), 0, "str_to_ptr"
+                            ).unwrap()
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
                     };
                     let alloca = self.create_entry_block_alloca(&ty, name);
                     self.builder.build_store(alloca, val).unwrap();
