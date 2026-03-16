@@ -1,0 +1,81 @@
+// ─── String Templates Feature ─────────────────
+// Handles: template literals "hello ${name}" → string concatenation.
+// Side table stores template parts (literal segments + interpolated exprs).
+// Construction helper called from expression parser on TemplateLiteral tokens.
+
+use core.token.Span
+use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Table ─────────────────────────────────
+
+mut TEMPLATES: Map<string, TemplateData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+enum TemplatePart {
+    Literal(value: string)
+    Interpolation(expr: Expr)
+}
+
+type TemplateData = {
+    parts: List<TemplatePart>,
+    span: Span,
+}
+
+fn get_template(id: int) -> TemplateData? {
+    let key = "${id}"
+    if TEMPLATES.has(key) { TEMPLATES[key] } else { null }
+}
+
+// ─── Construction Helper ────────────────────────
+// Called by expression parser when it encounters a template string.
+
+fn make_template(parts: List<TemplatePart>, span: Span) -> Expr {
+    let id = next_node_id()
+    TEMPLATES["${id}"] = TemplateData { parts, span }
+    feature_expr("string_templates", "template", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_template(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_template(node.node_id)
+    if d == null { return Type.String }
+    let data = d!
+
+    // Check each interpolated expression
+    for part in data.parts {
+        match part {
+            .Interpolation(expr) -> { tc.infer_expr(expr) }
+            .Literal(_) -> {}
+        }
+    }
+
+    Type.String
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_template(cg: Codegen, node: NodeRef) -> ptr {
+    // TODO: emit string concat of literal parts + stringified interpolations
+    // For now, placeholder empty string
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "string_templates",
+    name: "String Template Literals",
+    status: "wip",
+    parsers: {},  // Template strings parsed in expression parser's literal handling
+    check_stmt: null,
+    check_expr: check_template,
+    emit_stmt: null,
+    emit_expr: emit_template,
+    top_level: null,
+})

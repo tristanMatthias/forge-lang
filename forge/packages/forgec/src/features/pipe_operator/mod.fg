@@ -1,0 +1,21 @@
+// ─── Pipe Operator Feature ────────────────────
+// Handles: expr |> fn — pipes left side as first argument to right side.
+// Already handled in expression parser's precedence climbing (infix |>).
+// No side table — desugared to a function call during parsing or checking.
+// Just register metadata.
+
+use core.registry.{register_feature, FeatureRegistration}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "pipe_operator",
+    name: "Pipe Operator",
+    status: "draft",
+    parsers: {},
+    check_stmt: null,
+    check_expr: null,
+    emit_stmt: null,
+    emit_expr: null,
+    top_level: null,
+})

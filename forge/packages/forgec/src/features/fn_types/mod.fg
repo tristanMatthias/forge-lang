@@ -1,0 +1,21 @@
+// ─── Function Types Feature ───────────────────
+// Handles: fn(int, string) -> bool type expressions.
+// Function types are represented as Type.Function in the type system.
+// No parse handler — fn types are parsed in the type expression parser.
+// No side table — the type system handles function type representation.
+
+use core.registry.{register_feature, FeatureRegistration}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "fn_types",
+    name: "Function Types",
+    status: "draft",
+    parsers: {},
+    check_stmt: null,
+    check_expr: null,
+    emit_stmt: null,
+    emit_expr: null,
+    top_level: null,
+})

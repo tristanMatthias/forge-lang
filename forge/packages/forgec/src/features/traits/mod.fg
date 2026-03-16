@@ -1,0 +1,146 @@
+// ─── Traits Feature ───────────────────────────
+// Handles: trait declarations — trait Name { fn method(self) -> Type }
+// Side table for trait data. Parse handler for "trait" token.
+// Traits are type-only: check registers them, emit does nothing.
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, NodeRef, feature_stmt, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, TypeExpr}
+use checker.mod.TypeChecker
+
+// ─── Side Table ─────────────────────────────────
+
+mut TRAIT_DECLS: Map<string, TraitDeclData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type TraitMethod = {
+    name: string,
+    params: List<TraitMethodParam>,
+    return_type: TypeExpr?,
+    span: Span,
+}
+
+type TraitMethodParam = {
+    name: string,
+    type_ann: TypeExpr?,
+    is_self: bool,
+}
+
+type TraitDeclData = {
+    name: string,
+    methods: List<TraitMethod>,
+    exported: bool,
+    span: Span,
+}
+
+fn get_trait_decl(id: int) -> TraitDeclData? {
+    let key = "${id}"
+    if TRAIT_DECLS.has(key) { TRAIT_DECLS[key] } else { null }
+}
+
+// ─── Parse: Trait Declaration ───────────────────
+
+fn parse_trait(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'trait'
+
+    let name = p.expect_ident()
+    if name == null {
+        p.error("expected trait name after 'trait'")
+        return null
+    }
+
+    if p.expect(.LBrace) == null { return null }
+    p.skip_newlines()
+
+    mut methods: List<TraitMethod> = []
+
+    for !p.check(.RBrace) && !p.is_at_end() {
+        p.skip_newlines()
+        if p.check(.Fn) {
+            let method = parse_trait_method(p)
+            if method != null {
+                methods = methods.push(method!)
+            }
+        } else {
+            p.advance()  // skip unexpected token
+        }
+        p.skip_newlines()
+    }
+
+    if p.expect(.RBrace) == null { return null }
+
+    let id = next_node_id()
+    TRAIT_DECLS["${id}"] = TraitDeclData {
+        name: name!, methods, exported: false, span: start,
+    }
+
+    feature_stmt("traits", "trait_decl", id, start)
+}
+
+fn parse_trait_method(p: Parser) -> TraitMethod? {
+    let start = p.advance().span // consume 'fn'
+
+    let name = p.expect_ident()
+    if name == null { return null }
+
+    if p.expect(.LParen) == null { return null }
+
+    mut params: List<TraitMethodParam> = []
+    for !p.check(.RParen) && !p.is_at_end() {
+        p.skip_newlines()
+        let param_name = p.expect_ident()
+        if param_name == null { break }
+
+        let is_self = param_name! == "self"
+        let type_ann = if p.check(.Colon) {
+            p.advance()
+            p.parse_type_expr()
+        } else { null }
+
+        params = params.push(TraitMethodParam { name: param_name!, type_ann, is_self })
+
+        if p.check(.Comma) { p.advance() }
+    }
+    if p.expect(.RParen) == null { return null }
+
+    // Optional return type: -> Type
+    let return_type = if p.check(.Arrow) {
+        p.advance()
+        p.parse_type_expr()
+    } else { null }
+
+    TraitMethod { name: name!, params, return_type, span: start }
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_trait(tc: TypeChecker, node: NodeRef) {
+    let d = get_trait_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Register trait in type environment
+    // TODO: build proper trait type with method signatures
+    tc.env.define(data.name, Type.Trait(data.name), false)
+}
+
+fn top_level_trait(tc: TypeChecker, node: NodeRef) {
+    check_trait(tc, node)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "traits",
+    name: "Trait Declarations",
+    status: "wip",
+    parsers: { "trait": parse_trait },
+    check_stmt: check_trait,
+    check_expr: null,
+    emit_stmt: null,  // Traits are type-only, no code emitted
+    emit_expr: null,
+    top_level: top_level_trait,
+})

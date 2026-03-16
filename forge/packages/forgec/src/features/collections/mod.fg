@@ -1,0 +1,110 @@
+// ─── Collections Feature ───────────────────────
+// Handles: List<T> and Map<K,V> types.
+// List literals: [1, 2, 3]
+// Map literals: { "key": value }
+// Methods: .length, .push(), .pop(), .has(), .keys()
+// Index access: list[i], map[key]
+
+use core.token.{TokenKind, Span}
+use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
+use core.types.{Type, StructField}
+use core.registry.{register_feature, FeatureRegistration}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Tables ────────────────────────────────
+
+mut LIST_LITS: Map<string, ListLitData> = {}
+mut MAP_LITS: Map<string, MapLitData> = {}
+
+type ListLitData = {
+    elements: List<Expr>,
+    span: Span,
+}
+
+type MapEntry = {
+    key: Expr,
+    value: Expr,
+}
+
+type MapLitData = {
+    entries: List<MapEntry>,
+    span: Span,
+}
+
+fn get_list_lit(id: int) -> ListLitData? {
+    let key = "${id}"
+    if LIST_LITS.has(key) { LIST_LITS[key] } else { null }
+}
+
+fn get_map_lit(id: int) -> MapLitData? {
+    let key = "${id}"
+    if MAP_LITS.has(key) { MAP_LITS[key] } else { null }
+}
+
+// ─── Construction Helpers ───────────────────────
+
+fn make_list_lit(elements: List<Expr>, span: Span) -> Expr {
+    let id = next_node_id()
+    LIST_LITS["${id}"] = ListLitData { elements, span }
+    feature_expr("collections", "list_lit", id, span)
+}
+
+fn make_map_lit(entries: List<MapEntry>, span: Span) -> Expr {
+    let id = next_node_id()
+    MAP_LITS["${id}"] = MapLitData { entries, span }
+    feature_expr("collections", "map_lit", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_collection(tc: TypeChecker, node: NodeRef) -> Type {
+    match node.kind_name {
+        "list_lit" -> {
+            let d = get_list_lit(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            mut elem_type = Type.Unknown
+            for elem in data.elements {
+                let t = tc.infer_expr(elem)
+                if elem_type is .Unknown { elem_type = t }
+            }
+            Type.ListType(elem_type)
+        }
+        "map_lit" -> {
+            let d = get_map_lit(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            mut key_type = Type.Unknown
+            mut val_type = Type.Unknown
+            for entry in data.entries {
+                let kt = tc.infer_expr(entry.key)
+                let vt = tc.infer_expr(entry.value)
+                if key_type is .Unknown { key_type = kt }
+                if val_type is .Unknown { val_type = vt }
+            }
+            Type.MapType(key_type, val_type)
+        }
+        _ -> Type.Unknown
+    }
+}
+
+fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {
+    // TODO: emit runtime calls to construct List/Map values
+    // For now, placeholder
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "collections",
+    name: "List & Map Collections",
+    status: "wip",
+    parsers: {},  // [...] and { k: v } parsed in expression parser
+    check_stmt: null,
+    check_expr: check_collection,
+    emit_stmt: null,
+    emit_expr: emit_collection,
+    top_level: null,
+})

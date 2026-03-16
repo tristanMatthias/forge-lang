@@ -1,0 +1,143 @@
+// ─── Error Propagation Feature ────────────────
+// Handles: Result<T,E> types, Ok/Err constructors, ? operator, catch blocks.
+// Minimal implementation — registers types and construction helpers.
+
+use core.token.Span
+use core.ast.{Expr, Block, NodeRef, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Tables ────────────────────────────────
+
+mut RESULT_EXPRS: Map<string, ResultExprData> = {}
+mut CATCH_BLOCKS: Map<string, CatchData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+enum ResultExprKind {
+    Ok
+    Err
+    Propagate  // ? operator
+}
+
+type ResultExprData = {
+    kind: ResultExprKind,
+    inner: Expr,
+    span: Span,
+}
+
+type CatchData = {
+    try_expr: Expr,
+    error_name: string?,
+    catch_body: Block,
+    span: Span,
+}
+
+fn get_result_expr(id: int) -> ResultExprData? {
+    let key = "${id}"
+    if RESULT_EXPRS.has(key) { RESULT_EXPRS[key] } else { null }
+}
+
+fn get_catch(id: int) -> CatchData? {
+    let key = "${id}"
+    if CATCH_BLOCKS.has(key) { CATCH_BLOCKS[key] } else { null }
+}
+
+// ─── Construction Helpers ───────────────────────
+
+fn make_ok(inner: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    RESULT_EXPRS["${id}"] = ResultExprData { kind: .Ok, inner, span }
+    feature_expr("error_propagation", "result_expr", id, span)
+}
+
+fn make_err(inner: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    RESULT_EXPRS["${id}"] = ResultExprData { kind: .Err, inner, span }
+    feature_expr("error_propagation", "result_expr", id, span)
+}
+
+fn make_propagate(inner: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    RESULT_EXPRS["${id}"] = ResultExprData { kind: .Propagate, inner, span }
+    feature_expr("error_propagation", "propagate", id, span)
+}
+
+fn make_catch(try_expr: Expr, error_name: string?, catch_body: Block, span: Span) -> Expr {
+    let id = next_node_id()
+    CATCH_BLOCKS["${id}"] = CatchData { try_expr, error_name, catch_body, span }
+    feature_expr("error_propagation", "catch", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_error_prop(tc: TypeChecker, node: NodeRef) -> Type {
+    match node.kind_name {
+        "result_expr" -> {
+            let d = get_result_expr(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let inner_type = tc.infer_expr(data.inner)
+            match data.kind {
+                .Ok -> Type.Result(inner_type, Type.String)
+                .Err -> Type.Result(Type.Unknown, inner_type)
+                .Propagate -> inner_type  // Unwraps Result<T,E> to T
+            }
+        }
+        "propagate" -> {
+            let d = get_result_expr(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let inner_type = tc.infer_expr(data.inner)
+            // ? on Result<T,E> yields T
+            match inner_type {
+                .Result(ok_type, _) -> ok_type
+                _ -> inner_type
+            }
+        }
+        "catch" -> {
+            let d = get_catch(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let try_type = tc.infer_expr(data.try_expr)
+
+            // Bind error name in catch scope
+            tc.env.push_scope()
+            if data.error_name != null {
+                tc.env.define(data.error_name!, Type.String, false)
+            }
+            let catch_type = tc.check_block(data.catch_body)
+            tc.env.pop_scope()
+
+            // Result unwraps to ok type, catch provides fallback
+            match try_type {
+                .Result(ok_type, _) -> ok_type
+                _ -> try_type
+            }
+        }
+        _ -> Type.Unknown
+    }
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_error_prop(cg: Codegen, node: NodeRef) -> ptr {
+    // TODO: emit Result tagged union + propagation branching
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "error_propagation",
+    name: "Error Propagation",
+    status: "wip",
+    parsers: {},  // Ok/Err/? parsed in expression parser
+    check_stmt: null,
+    check_expr: check_error_prop,
+    emit_stmt: null,
+    emit_expr: emit_error_prop,
+    top_level: null,
+})

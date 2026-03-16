@@ -22,3 +22,26 @@ use features.impl_methods
 use features.while_loops
 use features.for_loops
 use features.ranges
+
+// Phase 2d
+use features.collections
+
+// Phase 2e
+use features.strings
+use features.string_templates
+
+// Phase 2f
+use features.closures
+use features.fn_types
+
+// Phase 2g
+use features.null_safety
+use features.error_propagation
+
+// Phase 2h
+use features.traits
+use features.generics
+
+// Phase 2i
+use features.pipe_operator
+use features.modules

@@ -1,0 +1,106 @@
+// ─── Modules Feature ──────────────────────────
+// Handles: use path.to.module.{items} import statements.
+// Side table for use declarations. Parse handler for "use" token.
+// Check: resolve imports. Emit: nothing (imports are compile-time only).
+
+use core.token.{TokenKind, Span}
+use core.ast.{Statement, NodeRef, feature_stmt, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.Parser
+use checker.mod.TypeChecker
+
+// ─── Side Table ─────────────────────────────────
+
+mut USE_DECLS: Map<string, UseData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type UseData = {
+    path: List<string>,      // e.g., ["core", "ast"]
+    items: List<string>,     // e.g., ["Statement", "Expr"] or [] for wildcard
+    span: Span,
+}
+
+fn get_use_decl(id: int) -> UseData? {
+    let key = "${id}"
+    if USE_DECLS.has(key) { USE_DECLS[key] } else { null }
+}
+
+// ─── Parse: Use Declaration ─────────────────────
+
+fn parse_use(p: Parser) -> Statement? {
+    let start = p.advance().span // consume 'use'
+
+    // Parse dotted path: a.b.c
+    mut path: List<string> = []
+    let first = p.expect_ident()
+    if first == null {
+        p.error("expected module path after 'use'")
+        return null
+    }
+    path = path.push(first!)
+
+    for p.check(.Dot) {
+        p.advance()
+        // Check for destructured imports: { item1, item2 }
+        if p.check(.LBrace) { break }
+        let segment = p.expect_ident()
+        if segment == null { break }
+        path = path.push(segment!)
+    }
+
+    // Optional destructured imports: .{ item1, item2 }
+    mut items: List<string> = []
+    if p.check(.LBrace) {
+        p.advance()
+        p.skip_newlines()
+        for !p.check(.RBrace) && !p.is_at_end() {
+            p.skip_newlines()
+            let item = p.expect_ident()
+            if item != null {
+                items = items.push(item!)
+            }
+            p.skip_newlines()
+            if p.check(.Comma) { p.advance() }
+        }
+        if p.expect(.RBrace) == null { return null }
+    }
+
+    let id = next_node_id()
+    USE_DECLS["${id}"] = UseData { path, items, span: start }
+
+    feature_stmt("modules", "use_decl", id, start)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_use(tc: TypeChecker, node: NodeRef) {
+    let d = get_use_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // TODO: resolve module path, import symbols into current scope
+    // For now, just record that the import exists
+    for item in data.items {
+        tc.env.define(item, Type.Unknown, false)
+    }
+}
+
+fn top_level_use(tc: TypeChecker, node: NodeRef) {
+    check_use(tc, node)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "modules",
+    name: "Modules & Imports",
+    status: "wip",
+    parsers: { "use": parse_use },
+    check_stmt: check_use,
+    check_expr: null,
+    emit_stmt: null,  // Imports are compile-time only
+    emit_expr: null,
+    top_level: top_level_use,
+})

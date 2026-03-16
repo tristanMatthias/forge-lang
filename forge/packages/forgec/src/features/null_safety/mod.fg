@@ -1,0 +1,131 @@
+// ─── Null Safety Feature ──────────────────────
+// Handles: nullable types (T?), null checks, force unwrap (!),
+// null coalescing (??), optional chaining (?.).
+// Construction helpers for FeatureExprs created by expression parser.
+
+use core.token.Span
+use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Tables ────────────────────────────────
+
+mut FORCE_UNWRAPS: Map<string, UnwrapData> = {}
+mut COALESCES: Map<string, CoalesceData> = {}
+mut OPTIONAL_CHAINS: Map<string, OptionalChainData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type UnwrapData = {
+    expr: Expr,
+    span: Span,
+}
+
+type CoalesceData = {
+    lhs: Expr,
+    rhs: Expr,
+    span: Span,
+}
+
+type OptionalChainData = {
+    object: Expr,
+    field: string,
+    span: Span,
+}
+
+fn get_unwrap(id: int) -> UnwrapData? {
+    let key = "${id}"
+    if FORCE_UNWRAPS.has(key) { FORCE_UNWRAPS[key] } else { null }
+}
+
+fn get_coalesce(id: int) -> CoalesceData? {
+    let key = "${id}"
+    if COALESCES.has(key) { COALESCES[key] } else { null }
+}
+
+fn get_optional_chain(id: int) -> OptionalChainData? {
+    let key = "${id}"
+    if OPTIONAL_CHAINS.has(key) { OPTIONAL_CHAINS[key] } else { null }
+}
+
+// ─── Construction Helpers ───────────────────────
+
+fn make_force_unwrap(expr: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    FORCE_UNWRAPS["${id}"] = UnwrapData { expr, span }
+    feature_expr("null_safety", "force_unwrap", id, span)
+}
+
+fn make_coalesce(lhs: Expr, rhs: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    COALESCES["${id}"] = CoalesceData { lhs, rhs, span }
+    feature_expr("null_safety", "coalesce", id, span)
+}
+
+fn make_optional_chain(object: Expr, field: string, span: Span) -> Expr {
+    let id = next_node_id()
+    OPTIONAL_CHAINS["${id}"] = OptionalChainData { object, field, span }
+    feature_expr("null_safety", "optional_chain", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_null_safety(tc: TypeChecker, node: NodeRef) -> Type {
+    match node.kind_name {
+        "force_unwrap" -> {
+            let d = get_unwrap(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let inner = tc.infer_expr(data.expr)
+            // Unwrap nullable: T? -> T
+            match inner {
+                .Nullable(t) -> t
+                _ -> inner  // Already non-null
+            }
+        }
+        "coalesce" -> {
+            let d = get_coalesce(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let lhs_type = tc.infer_expr(data.lhs)
+            let rhs_type = tc.infer_expr(data.rhs)
+            // T? ?? T -> T
+            match lhs_type {
+                .Nullable(t) -> t
+                _ -> lhs_type
+            }
+        }
+        "optional_chain" -> {
+            let d = get_optional_chain(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let obj_type = tc.infer_expr(data.object)
+            // TODO: resolve field type, wrap in nullable
+            Type.Nullable(Type.Unknown)
+        }
+        _ -> Type.Unknown
+    }
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_null_safety(cg: Codegen, node: NodeRef) -> ptr {
+    // TODO: emit null checks with branching
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "null_safety",
+    name: "Null Safety",
+    status: "wip",
+    parsers: {},  // ?, ??, ?. parsed in expression parser
+    check_stmt: null,
+    check_expr: check_null_safety,
+    emit_stmt: null,
+    emit_expr: emit_null_safety,
+    top_level: null,
+})

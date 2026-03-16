@@ -1,0 +1,92 @@
+// ─── Closures Feature ─────────────────────────
+// Handles: (x) -> expr, (x: int) -> expr, () -> expr
+// Side table for closure data. Construction helper called from expression parser.
+
+use core.token.Span
+use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
+use core.types.Type
+use core.registry.{register_feature, FeatureRegistration}
+use parser.mod.{Parser, Param, TypeExpr}
+use checker.mod.TypeChecker
+use codegen.mod.Codegen
+
+// ─── Side Table ─────────────────────────────────
+
+mut CLOSURES: Map<string, ClosureData> = {}
+
+// ─── Data Types ─────────────────────────────────
+
+type ClosureParam = {
+    name: string,
+    type_ann: TypeExpr?,
+}
+
+type ClosureData = {
+    params: List<ClosureParam>,
+    body: Expr,
+    span: Span,
+}
+
+fn get_closure(id: int) -> ClosureData? {
+    let key = "${id}"
+    if CLOSURES.has(key) { CLOSURES[key] } else { null }
+}
+
+// ─── Construction Helper ────────────────────────
+// Called by expression parser when it parses (params) -> body.
+
+fn make_closure(params: List<ClosureParam>, body: Expr, span: Span) -> Expr {
+    let id = next_node_id()
+    CLOSURES["${id}"] = ClosureData { params, body, span }
+    feature_expr("closures", "closure", id, span)
+}
+
+// ─── Check ──────────────────────────────────────
+
+fn check_closure(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_closure(node.node_id)
+    if d == null { return Type.Unknown }
+    let data = d!
+
+    tc.env.push_scope()
+
+    // Define params in scope, infer types where annotated
+    mut param_types: List<Type> = []
+    for p in data.params {
+        let ty = if p.type_ann != null {
+            tc.resolve_type_expr(p.type_ann!)
+        } else {
+            Type.Unknown  // TODO: infer from usage context
+        }
+        tc.env.define(p.name, ty, false)
+        param_types = param_types.push(ty)
+    }
+
+    // Check body
+    let return_type = tc.infer_expr(data.body)
+
+    tc.env.pop_scope()
+
+    Type.Function(param_types, return_type)
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_closure(cg: Codegen, node: NodeRef) -> ptr {
+    // TODO: emit closure as function pointer + captured environment
+    llvm.const_int(cg.types.i64_type, 0, 0)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature(FeatureRegistration {
+    id: "closures",
+    name: "Closures",
+    status: "wip",
+    parsers: {},  // Closure syntax parsed in expression parser
+    check_stmt: null,
+    check_expr: check_closure,
+    emit_stmt: null,
+    emit_expr: emit_closure,
+    top_level: null,
+})
