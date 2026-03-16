@@ -6,9 +6,9 @@ use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, feature_expr, next_node_id}
 use core.types.{Type, EnumVariantType, StructField}
 use core.registry.{register_feature, FeatureRegistration}
-use parser.mod.{Parser, Param, TypeExpr}
-use checker.mod.TypeChecker
-use codegen.mod.Codegen
+use parser.{Parser, Param, TypeExpr}
+use checker.TypeChecker
+use codegen.Codegen
 
 // ─── Side Tables ────────────────────────────────
 

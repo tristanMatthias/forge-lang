@@ -4,10 +4,10 @@
 
 use core.ast.Program
 use core.error.{render_diagnostic, render_all}
-use lexer.mod.{lexer_new}
-use parser.mod.{parser_new}
-use checker.mod.{type_checker_new}
-use codegen.mod.{codegen_new}
+use lexer.{lexer_new}
+use parser.{parser_new}
+use checker.{type_checker_new}
+use codegen.{codegen_new}
 use @std.fs
 use @std.process
 

@@ -1,0 +1,66 @@
+// ─── Self-test ─────────────────────────────────
+// Tests compiler-like patterns: enums, structs, match, impl.
+//
+// Expected output:
+//   Tokens: 4
+//   IntLit
+//   Plus
+//   IntLit
+//   Eof
+//   Result: 50
+
+enum TokenKind {
+    IntLit(value: int)
+    Plus
+    Minus
+    Eof
+}
+
+type Token = {
+    kind: TokenKind,
+}
+
+impl Token {
+    fn describe(self) -> string {
+        match self.kind {
+            .IntLit(_) -> "IntLit"
+            .Plus -> "Plus"
+            .Minus -> "Minus"
+            .Eof -> "Eof"
+        }
+    }
+}
+
+fn make_int_token(v: int) -> Token {
+    Token { kind: TokenKind.IntLit(v) }
+}
+
+fn make_token(k: TokenKind) -> Token {
+    Token { kind: k }
+}
+
+fn main() {
+    mut tokens: List<Token> = []
+    tokens = tokens.push(make_int_token(42))
+    tokens = tokens.push(make_token(TokenKind.Plus))
+    tokens = tokens.push(make_int_token(8))
+    tokens = tokens.push(make_token(TokenKind.Eof))
+
+    println("Tokens: ${string(tokens.length)}")
+
+    for tok in tokens {
+        println(tok.describe())
+    }
+
+    // Extract values via match
+    let a = match tokens[0].kind {
+        .IntLit(v) -> v
+        _ -> 0
+    }
+    let b = match tokens[2].kind {
+        .IntLit(v) -> v
+        _ -> 0
+    }
+
+    println("Result: ${string(a + b)}")
+}

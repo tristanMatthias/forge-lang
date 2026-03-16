@@ -7,8 +7,8 @@ use core.token.{TokenKind, Span}
 use core.ast.{Statement, NodeRef, feature_stmt, next_node_id}
 use core.types.Type
 use core.registry.{register_feature, FeatureRegistration}
-use parser.mod.Parser
-use checker.mod.TypeChecker
+use parser.Parser
+use checker.TypeChecker
 
 // ─── Side Table ─────────────────────────────────
 

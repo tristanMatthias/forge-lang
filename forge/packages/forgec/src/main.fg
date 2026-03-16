@@ -8,10 +8,10 @@ use @std.process
 use @std.fs
 
 // Import all features (triggers registration)
-use features.mod
+use features
 
 // Import driver
-use driver.mod.{compile_file, check_file, compile, CompileOptions}
+use driver.{compile_file, check_file, compile, CompileOptions}
 
 fn main() {
     let args = process.args()

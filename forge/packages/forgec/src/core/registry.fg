@@ -9,9 +9,9 @@
 use core.token.Span
 use core.ast.{Statement, Expr, NodeRef}
 use core.types.Type
-use parser.mod.Parser
-use checker.mod.TypeChecker
-use codegen.mod.Codegen
+use parser.Parser
+use checker.TypeChecker
+use codegen.Codegen
 
 // ─── Handler Types ─────────────────────────────
 

@@ -6,8 +6,8 @@ use core.token.Span
 use core.ast.{Expr, Block, NodeRef, feature_expr, next_node_id}
 use core.types.Type
 use core.registry.{register_feature, FeatureRegistration}
-use checker.mod.TypeChecker
-use codegen.mod.Codegen
+use checker.TypeChecker
+use codegen.Codegen
 
 // ─── Side Tables ────────────────────────────────
 
