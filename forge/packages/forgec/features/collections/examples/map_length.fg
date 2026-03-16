@@ -1,0 +1,12 @@
+/// # Map length property
+/// Access map length directly with .length
+/// expect: 0
+/// expect: 2
+
+fn main() {
+  mut m: map<string, int> = {}
+  println(string(m.length))
+  m["a"] = 1
+  m["b"] = 2
+  println(string(m.length))
+}

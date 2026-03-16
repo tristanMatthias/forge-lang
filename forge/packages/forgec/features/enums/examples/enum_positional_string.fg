@@ -1,0 +1,23 @@
+/// # Positional string enum variant
+/// Enum variants with unnamed string fields
+/// expect: hello
+/// expect: world
+
+enum Token {
+  Ident(string),
+  Num(int),
+  Eof,
+}
+
+fn show(t: Token) -> string {
+  match t {
+    .Ident(s) -> s
+    .Num(n) -> string(n)
+    .Eof -> "eof"
+  }
+}
+
+fn main() {
+  println(show(Token.Ident("hello")))
+  println(show(Token.Ident("world")))
+}

@@ -204,6 +204,18 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Handle map.length
+        if let Type::Map(_, _) = &obj_type {
+            if field == "length" {
+                let obj_val = self.compile_expr(object)?;
+                if obj_val.is_struct_value() {
+                    let struct_val = obj_val.into_struct_value();
+                    // Map is {keys_ptr, values_ptr, length} - length at index 2
+                    return self.builder.build_extract_value(struct_val, 2, "map_length").ok();
+                }
+            }
+        }
+
         // Handle tuple numeric field access (p.0, p.1, etc.)
         if let Type::Tuple(elems) = &obj_type {
             if let Ok(idx) = field.parse::<u32>() {

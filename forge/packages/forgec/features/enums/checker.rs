@@ -25,19 +25,28 @@ impl TypeChecker {
                         .iter()
                         .enumerate()
                         .map(|(i, f)| {
-                            let is_self_ref = f.type_ann.as_ref()
-                                .map(|t| crate::typeck::checker::type_expr_references_name(t, &data.name))
-                                .unwrap_or(false);
+                            let is_self_ref = if let Some(ref t) = f.type_ann {
+                                crate::typeck::checker::type_expr_references_name(t, &data.name)
+                            } else {
+                                // Positional: check if the name matches the enum name
+                                f.name == data.name
+                            };
                             let ty = if is_self_ref {
                                 boxed_fields.push(i);
                                 Type::Enum { name: data.name.clone(), variants: vec![] }
+                            } else if let Some(ref t) = f.type_ann {
+                                self.resolve_type_expr(t)
                             } else {
-                                f.type_ann
-                                    .as_ref()
-                                    .map(|t| self.resolve_type_expr(t))
-                                    .unwrap_or(Type::Unknown)
+                                // Positional field: name IS the type (e.g., Ident(string))
+                                self.env.resolve_type_name(&f.name)
                             };
-                            (f.name.clone(), ty)
+                            // For positional fields, use index as field name
+                            let field_name = if f.type_ann.is_none() {
+                                format!("{}", i)
+                            } else {
+                                f.name.clone()
+                            };
+                            (field_name, ty)
                         })
                         .collect();
                     EnumVariantType {
