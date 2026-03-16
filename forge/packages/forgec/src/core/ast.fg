@@ -1,0 +1,158 @@
+// ─── Core AST for the Forge Self-Hosted Compiler ───────────────────
+//
+// Design principle: the Feature(...) variant is the ONLY extension point.
+// Core AST NEVER changes when new features are added. Features store
+// their real data in side tables keyed by node_id; the core AST holds
+// only a lightweight NodeRef that names the owning feature and node kind.
+//
+
+
+// ─── AST Data Trait ────────────────────────────────────────────────
+// Every feature's AST node implements this trait.
+// Core dispatch uses feature_id() to look up handlers in the registry.
+
+trait AstData {
+    fn kind(self) -> string
+    fn feature_id(self) -> string
+    fn span(self) -> Span
+}
+
+
+// ─── Node Reference (bridge for trait-object downcast) ─────────────
+// Used when dyn trait `as` cast isn't available yet.
+// Features store real data in side tables keyed by node_id.
+
+type NodeRef = {
+    node_id: int,
+    feature: string,
+    kind_name: string,
+    node_span: Span,
+}
+
+impl AstData for NodeRef {
+    fn kind(self) -> string { self.kind_name }
+    fn feature_id(self) -> string { self.feature }
+    fn span(self) -> Span { self.node_span }
+}
+
+
+// ─── Feature Wrappers ─────────────────────────────────────────────
+// Thin wrappers that carry a NodeRef inside Statement / Expr enums.
+
+type FeatureStmt = {
+    data: NodeRef,
+}
+
+type FeatureExpr = {
+    data: NodeRef,
+}
+
+
+// ─── Binary Operators ─────────────────────────────────────────────
+
+enum BinOp {
+    Add
+    Sub
+    Mul
+    Div
+    Mod
+    Eq
+    NotEq
+    Lt
+    LtEq
+    Gt
+    GtEq
+    And
+    Or
+    BitAnd
+    BitOr
+    BitXor
+    Shl
+    Shr
+    Pipe
+}
+
+
+// ─── Unary Operators ──────────────────────────────────────────────
+
+enum UnaryOp {
+    Neg
+    Not
+    BitNot
+}
+
+
+// ─── Block ────────────────────────────────────────────────────────
+
+type Block = {
+    statements: List<Statement>,
+    span: Span,
+}
+
+
+// ─── Program ──────────────────────────────────────────────────────
+
+type Program = {
+    statements: List<Statement>,
+}
+
+
+// ─── Statement ────────────────────────────────────────────────────
+// Structural primitives only. ALL feature-specific statements
+// go through the Feature(...) variant.
+
+enum Statement {
+    Expr(expr: Expr)
+    Assign(target: Expr, value: Expr, span: Span)
+    Return(value: Expr?, span: Span)
+    Feature(stmt: FeatureStmt)
+}
+
+
+// ─── Expression ───────────────────────────────────────────────────
+// Structural primitives only. ALL feature-specific expressions
+// go through the Feature(...) variant.
+
+enum Expr {
+    IntLit(value: int, span: Span)
+    FloatLit(value: float, span: Span)
+    StringLit(value: string, span: Span)
+    BoolLit(value: bool, span: Span)
+    NullLit(span: Span)
+    Ident(name: string, span: Span)
+    Binary(left: Expr, op: BinOp, right: Expr, span: Span)
+    Unary(op: UnaryOp, operand: Expr, span: Span)
+    Call(callee: Expr, args: List<Expr>, span: Span)
+    MemberAccess(object: Expr, field: string, span: Span)
+    Index(object: Expr, index: Expr, span: Span)
+    Block(block: Block)
+    Feature(expr: FeatureExpr)
+}
+
+
+// ─── Node ID Generation ──────────────────────────────────────────
+// Global counter for assigning unique IDs to feature AST nodes.
+
+mut NEXT_NODE_ID = 0
+
+fn next_node_id() -> int {
+    let id = NEXT_NODE_ID
+    NEXT_NODE_ID = NEXT_NODE_ID + 1
+    id
+}
+
+
+// ─── Convenience Constructors ─────────────────────────────────────
+// Shorthand for creating Feature-wrapped statements and expressions.
+
+fn feature_stmt(feature: string, kind_name: string, node_id: int, span: Span) -> Statement {
+    Statement.Feature(FeatureStmt {
+        data: NodeRef { node_id, feature, kind_name, node_span: span },
+    })
+}
+
+fn feature_expr(feature: string, kind_name: string, node_id: int, span: Span) -> Expr {
+    Expr.Feature(FeatureExpr {
+        data: NodeRef { node_id, feature, kind_name, node_span: span },
+    })
+}

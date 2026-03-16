@@ -1,0 +1,10 @@
+// Forge compiler - self-hosted
+// Usage: forge run src/main.fg -- <input.fg> [-o output]
+
+use @std.cli
+use @std.process
+
+fn main() {
+    print("forgec v0.1.0 - self-hosted Forge compiler")
+    // TODO: parse CLI args, run pipeline
+}

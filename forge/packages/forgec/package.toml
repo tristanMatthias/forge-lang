@@ -1,0 +1,11 @@
+[package]
+name = "forgec"
+namespace = "forge"
+version = "0.1.0"
+description = "Self-hosted Forge compiler written in Forge"
+
+[dependencies]
+"@std.llvm" = "0.1.0"
+"@std.fs" = "0.1.0"
+"@std.process" = "0.1.0"
+"@std.cli" = "0.1.0"

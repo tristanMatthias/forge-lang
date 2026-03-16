@@ -67,6 +67,80 @@ extern fn forge_llvm_build_global_string_ptr(builder: ptr, s: string, name: stri
 extern fn forge_llvm_build_phi(builder: ptr, ty: ptr, name: string) -> ptr
 extern fn forge_llvm_add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int)
 
+// ── Struct Types ──
+extern fn forge_llvm_struct_type(ctx: ptr, element_types: ptr, count: int, packed: int) -> ptr
+extern fn forge_llvm_struct_get_type_at_index(struct_type: ptr, index: int) -> ptr
+extern fn forge_llvm_count_struct_element_types(struct_type: ptr) -> int
+
+// ── Aggregate Operations ──
+extern fn forge_llvm_build_gep2(builder: ptr, ty: ptr, pointer: ptr, indices: ptr, num_indices: int, name: string) -> ptr
+extern fn forge_llvm_build_struct_gep2(builder: ptr, ty: ptr, pointer: ptr, index: int, name: string) -> ptr
+extern fn forge_llvm_build_insert_value(builder: ptr, agg: ptr, element: ptr, index: int, name: string) -> ptr
+extern fn forge_llvm_build_extract_value(builder: ptr, agg: ptr, index: int, name: string) -> ptr
+
+// ── Arithmetic (division, remainder, float ops) ──
+extern fn forge_llvm_build_sdiv(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_srem(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fadd(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fsub(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fmul(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fdiv(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_frem(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fneg(builder: ptr, val: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fcmp(builder: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
+
+// ── Integer Conversions ──
+extern fn forge_llvm_build_zext(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_sext(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_trunc(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_si_to_fp(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fp_to_si(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_bitcast(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_ptr_to_int(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_int_to_ptr(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+
+// ── Bitwise Operations ──
+extern fn forge_llvm_build_and(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_or(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_xor(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_shl(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_ashr(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_not(builder: ptr, val: ptr, name: string) -> ptr
+
+// ── Control Flow (switch, unreachable) ──
+extern fn forge_llvm_build_unreachable(builder: ptr) -> ptr
+extern fn forge_llvm_build_switch(builder: ptr, val: ptr, else_bb: ptr, num_cases: int) -> ptr
+extern fn forge_llvm_add_case(switch_val: ptr, on_val: ptr, dest: ptr)
+
+// ── Constants and Globals ──
+extern fn forge_llvm_const_null(ty: ptr) -> ptr
+extern fn forge_llvm_get_undef(ty: ptr) -> ptr
+extern fn forge_llvm_const_real(ty: ptr, value: float) -> ptr
+extern fn forge_llvm_const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr
+extern fn forge_llvm_add_global(m: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_set_initializer(global: ptr, val: ptr)
+extern fn forge_llvm_set_global_constant(global: ptr, is_constant: int)
+
+// ── Builder/Block Operations ──
+extern fn forge_llvm_get_insert_block(builder: ptr) -> ptr
+extern fn forge_llvm_get_basic_block_parent(bb: ptr) -> ptr
+extern fn forge_llvm_position_builder_before(builder: ptr, instr: ptr)
+extern fn forge_llvm_get_first_instruction(bb: ptr) -> ptr
+extern fn forge_llvm_get_entry_basic_block(f: ptr) -> ptr
+
+// ── Target Machine ──
+extern fn forge_llvm_initialize_all_targets()
+extern fn forge_llvm_get_default_target_triple() -> ptr
+extern fn forge_llvm_get_target_from_triple(triple: ptr, target_out: ptr) -> int
+extern fn forge_llvm_create_target_machine(target: ptr, triple: ptr, cpu: ptr, features: ptr, level: int, reloc: int, code_model: int) -> ptr
+extern fn forge_llvm_dispose_target_machine(tm: ptr)
+extern fn forge_llvm_target_machine_emit_to_file(tm: ptr, m: ptr, filename: ptr, codegen: int) -> int
+extern fn forge_llvm_set_target(m: ptr, triple: ptr)
+extern fn forge_llvm_set_data_layout(m: ptr, layout: ptr)
+extern fn forge_llvm_create_target_data_layout(tm: ptr) -> ptr
+extern fn forge_llvm_copy_string_rep_of_target_data(td: ptr) -> ptr
+extern fn forge_llvm_dispose_target_data(td: ptr)
+
 // ── Convenience exports ──
 extern fn strlen(s: ptr) -> int
 
@@ -280,4 +354,302 @@ export fn build_phi(builder: ptr, ty: ptr, name: string) -> ptr {
 /// Add incoming values to a PHI node.
 export fn add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int) {
     forge_llvm_add_incoming(phi, values, blocks, count)
+}
+
+// ── Struct Types ──
+
+/// Create a struct type with the given element types.
+export fn struct_type(ctx: ptr, element_types: ptr, count: int, packed: int) -> ptr {
+    forge_llvm_struct_type(ctx, element_types, count, packed)
+}
+
+/// Get the type of a struct element at the given index.
+export fn struct_get_type_at_index(struct_type: ptr, index: int) -> ptr {
+    forge_llvm_struct_get_type_at_index(struct_type, index)
+}
+
+/// Get the number of element types in a struct type.
+export fn count_struct_element_types(struct_type: ptr) -> int {
+    forge_llvm_count_struct_element_types(struct_type)
+}
+
+// ── Aggregate Operations ──
+
+/// Build a GEP (get element pointer) instruction.
+export fn build_gep2(builder: ptr, ty: ptr, pointer: ptr, indices: ptr, num_indices: int, name: string) -> ptr {
+    forge_llvm_build_gep2(builder, ty, pointer, indices, num_indices, name)
+}
+
+/// Build a struct GEP instruction.
+export fn build_struct_gep2(builder: ptr, ty: ptr, pointer: ptr, index: int, name: string) -> ptr {
+    forge_llvm_build_struct_gep2(builder, ty, pointer, index, name)
+}
+
+/// Build an insert value instruction (insert element into aggregate).
+export fn build_insert_value(builder: ptr, agg: ptr, element: ptr, index: int, name: string) -> ptr {
+    forge_llvm_build_insert_value(builder, agg, element, index, name)
+}
+
+/// Build an extract value instruction (extract element from aggregate).
+export fn build_extract_value(builder: ptr, agg: ptr, index: int, name: string) -> ptr {
+    forge_llvm_build_extract_value(builder, agg, index, name)
+}
+
+// ── Arithmetic (division, remainder, float ops) ──
+
+/// Build a signed integer division instruction.
+export fn build_sdiv(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_sdiv(builder, lhs, rhs, name)
+}
+
+/// Build a signed integer remainder instruction.
+export fn build_srem(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_srem(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point add instruction.
+export fn build_fadd(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_fadd(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point subtract instruction.
+export fn build_fsub(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_fsub(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point multiply instruction.
+export fn build_fmul(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_fmul(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point division instruction.
+export fn build_fdiv(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_fdiv(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point remainder instruction.
+export fn build_frem(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_frem(builder, lhs, rhs, name)
+}
+
+/// Build a floating-point negation instruction.
+export fn build_fneg(builder: ptr, val: ptr, name: string) -> ptr {
+    forge_llvm_build_fneg(builder, val, name)
+}
+
+/// Build a floating-point comparison. pred: 0=false, 1=oeq, 2=ogt, 3=oge, 4=olt, 5=ole, 6=one, 7=ord, 8=uno, 9=ueq, 10=ugt, 11=uge, 12=ult, 13=ule, 14=une, 15=true
+export fn build_fcmp(builder: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_fcmp(builder, pred, lhs, rhs, name)
+}
+
+// ── Integer Conversions ──
+
+/// Build a zero-extend instruction.
+export fn build_zext(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_zext(builder, val, dest_ty, name)
+}
+
+/// Build a sign-extend instruction.
+export fn build_sext(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_sext(builder, val, dest_ty, name)
+}
+
+/// Build a truncate instruction.
+export fn build_trunc(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_trunc(builder, val, dest_ty, name)
+}
+
+/// Build a signed integer to floating-point conversion.
+export fn build_si_to_fp(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_si_to_fp(builder, val, dest_ty, name)
+}
+
+/// Build a floating-point to signed integer conversion.
+export fn build_fp_to_si(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_fp_to_si(builder, val, dest_ty, name)
+}
+
+/// Build a bitcast instruction.
+export fn build_bitcast(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_bitcast(builder, val, dest_ty, name)
+}
+
+/// Build a pointer-to-integer conversion.
+export fn build_ptr_to_int(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_ptr_to_int(builder, val, dest_ty, name)
+}
+
+/// Build an integer-to-pointer conversion.
+export fn build_int_to_ptr(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_int_to_ptr(builder, val, dest_ty, name)
+}
+
+// ── Bitwise Operations ──
+
+/// Build a bitwise AND instruction.
+export fn build_and(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_and(builder, lhs, rhs, name)
+}
+
+/// Build a bitwise OR instruction.
+export fn build_or(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_or(builder, lhs, rhs, name)
+}
+
+/// Build a bitwise XOR instruction.
+export fn build_xor(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_xor(builder, lhs, rhs, name)
+}
+
+/// Build a left shift instruction.
+export fn build_shl(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_shl(builder, lhs, rhs, name)
+}
+
+/// Build an arithmetic right shift instruction.
+export fn build_ashr(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_ashr(builder, lhs, rhs, name)
+}
+
+/// Build a bitwise NOT instruction.
+export fn build_not(builder: ptr, val: ptr, name: string) -> ptr {
+    forge_llvm_build_not(builder, val, name)
+}
+
+// ── Control Flow (switch, unreachable) ──
+
+/// Build an unreachable instruction.
+export fn build_unreachable(builder: ptr) -> ptr {
+    forge_llvm_build_unreachable(builder)
+}
+
+/// Build a switch instruction. Returns the switch value for adding cases.
+export fn build_switch(builder: ptr, val: ptr, else_bb: ptr, num_cases: int) -> ptr {
+    forge_llvm_build_switch(builder, val, else_bb, num_cases)
+}
+
+/// Add a case to a switch instruction.
+export fn add_case(switch_val: ptr, on_val: ptr, dest: ptr) {
+    forge_llvm_add_case(switch_val, on_val, dest)
+}
+
+// ── Constants and Globals ──
+
+/// Create a null constant of the given type.
+export fn const_null(ty: ptr) -> ptr {
+    forge_llvm_const_null(ty)
+}
+
+/// Get an undef value of the given type.
+export fn get_undef(ty: ptr) -> ptr {
+    forge_llvm_get_undef(ty)
+}
+
+/// Create a floating-point constant.
+export fn const_real(ty: ptr, value: float) -> ptr {
+    forge_llvm_const_real(ty, value)
+}
+
+/// Create a constant struct from the given values.
+export fn const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr {
+    forge_llvm_const_struct(ctx, values, count, packed)
+}
+
+/// Add a global variable to a module.
+export fn add_global(m: ptr, ty: ptr, name: string) -> ptr {
+    forge_llvm_add_global(m, ty, name)
+}
+
+/// Set the initializer for a global variable.
+export fn set_initializer(global: ptr, val: ptr) {
+    forge_llvm_set_initializer(global, val)
+}
+
+/// Mark a global variable as constant.
+export fn set_global_constant(global: ptr, is_constant: int) {
+    forge_llvm_set_global_constant(global, is_constant)
+}
+
+// ── Builder/Block Operations ──
+
+/// Get the basic block the builder is currently inserting into.
+export fn get_insert_block(builder: ptr) -> ptr {
+    forge_llvm_get_insert_block(builder)
+}
+
+/// Get the function that a basic block belongs to.
+export fn get_basic_block_parent(bb: ptr) -> ptr {
+    forge_llvm_get_basic_block_parent(bb)
+}
+
+/// Position the builder before the given instruction.
+export fn position_builder_before(builder: ptr, instr: ptr) {
+    forge_llvm_position_builder_before(builder, instr)
+}
+
+/// Get the first instruction in a basic block.
+export fn get_first_instruction(bb: ptr) -> ptr {
+    forge_llvm_get_first_instruction(bb)
+}
+
+/// Get the entry basic block of a function.
+export fn get_entry_basic_block(f: ptr) -> ptr {
+    forge_llvm_get_entry_basic_block(f)
+}
+
+// ── Target Machine ──
+
+/// Initialize all LLVM targets (must call before any target machine operations).
+export fn initialize_all_targets() {
+    forge_llvm_initialize_all_targets()
+}
+
+/// Get the default target triple for this host. Returns a raw C string pointer.
+export fn get_default_target_triple() -> ptr {
+    forge_llvm_get_default_target_triple()
+}
+
+/// Look up a target by triple. Writes target ptr to target_out. Returns 0 on success.
+export fn get_target_from_triple(triple: ptr, target_out: ptr) -> int {
+    forge_llvm_get_target_from_triple(triple, target_out)
+}
+
+/// Create a target machine. level: 0=None, 1=Less, 2=Default, 3=Aggressive. reloc: 0=Default, 1=Static, 2=PIC. code_model: 0=Default, 1=JITDefault, 2=Tiny, 3=Small, 4=Kernel, 5=Medium, 6=Large.
+export fn create_target_machine(target: ptr, triple: ptr, cpu: ptr, features: ptr, level: int, reloc: int, code_model: int) -> ptr {
+    forge_llvm_create_target_machine(target, triple, cpu, features, level, reloc, code_model)
+}
+
+/// Dispose a target machine.
+export fn dispose_target_machine(tm: ptr) {
+    forge_llvm_dispose_target_machine(tm)
+}
+
+/// Emit module to file. codegen: 0=assembly, 1=object. Returns 0 on success.
+export fn target_machine_emit_to_file(tm: ptr, m: ptr, filename: ptr, codegen: int) -> int {
+    forge_llvm_target_machine_emit_to_file(tm, m, filename, codegen)
+}
+
+/// Set the target triple on a module.
+export fn set_target(m: ptr, triple: ptr) {
+    forge_llvm_set_target(m, triple)
+}
+
+/// Set the data layout string on a module.
+export fn set_data_layout(m: ptr, layout: ptr) {
+    forge_llvm_set_data_layout(m, layout)
+}
+
+/// Create a target data layout from a target machine.
+export fn create_target_data_layout(tm: ptr) -> ptr {
+    forge_llvm_create_target_data_layout(tm)
+}
+
+/// Get the string representation of a target data layout. Returns a raw C string pointer.
+export fn copy_string_rep_of_target_data(td: ptr) -> ptr {
+    forge_llvm_copy_string_rep_of_target_data(td)
+}
+
+/// Dispose a target data layout.
+export fn dispose_target_data(td: ptr) {
+    forge_llvm_dispose_target_data(td)
 }

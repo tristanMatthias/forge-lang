@@ -1,0 +1,158 @@
+// ============================================================================
+// Token types for the Forge self-hosted compiler
+// Ported from forgec-rust/lexer/token.rs
+// ============================================================================
+
+// --- Span -------------------------------------------------------------------
+// Tracks source position for error reporting and diagnostics.
+
+type Span = {
+    start: int,
+    end: int,
+    line: int,
+    col: int,
+}
+
+fn span_new(start: int, end: int, line: int, col: int) -> Span {
+    Span { start: start, end: end, line: line, col: col }
+}
+
+fn span_dummy() -> Span {
+    Span { start: 0, end: 0, line: 0, col: 0 }
+}
+
+// --- TemplatePart -----------------------------------------------------------
+// Represents a segment of a template literal or dollar string.
+
+enum TemplatePart {
+    Literal(value: string),
+    Expr(value: string, span: Span),
+}
+
+// --- TokenKind --------------------------------------------------------------
+// Every distinct token the lexer can produce.
+
+enum TokenKind {
+    // Literals
+    IntLiteral(value: int),
+    FloatLiteral(value: float),
+    StringLiteral(value: string),
+    TemplateLiteral(parts: List<TemplatePart>),
+    DollarString(parts: List<TemplatePart>),
+    TaggedTemplate(tag: string, parts: List<TemplatePart>, type_param: string?),
+    BoolLiteral(value: bool),
+    NullLiteral,
+
+    // Identifiers
+    Ident(name: string),
+
+    // Keywords
+    Let,
+    Mut,
+    Const,
+    Fn,
+    Return,
+    If,
+    Else,
+    Match,
+    For,
+    In,
+    While,
+    Loop,
+    Break,
+    Continue,
+    Enum,
+    TypeKw,
+    Use,
+    Mod,
+    As,
+    Export,
+    Emit,
+    On,
+    Trait,
+    Impl,
+    Defer,
+    Errdefer,
+    Spawn,
+    Parallel,
+    With,
+    Catch,
+    Select,
+    Component,
+    Without,
+    Only,
+    Partial,
+    Is,
+    Table,
+    Null,
+    OkKw,
+    ErrKw,
+
+    // Operators
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Eq,
+    EqEq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    And,
+    Or,
+    Not,
+    Pipe,
+    Arrow,
+    LeftArrow,
+    Question,
+    QuestionDot,
+    DoubleQuestion,
+    DotDot,
+    DotDotEq,
+    Ampersand,
+    Bar,
+    Caret,
+    Tilde,
+    ShiftLeft,
+    ShiftRight,
+
+    // Delimiters
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+
+    // Punctuation
+    Comma,
+    Dot,
+    Colon,
+    Semicolon,
+    At,
+    Hash,
+    Underscore,
+    Spread,
+
+    // Doc comment: /// text
+    DocComment(text: string),
+
+    // Special
+    Newline,
+    Eof,
+}
+
+// --- Token ------------------------------------------------------------------
+// A lexed token: its kind plus source location.
+
+type Token = {
+    kind: TokenKind,
+    span: Span,
+}
+
+fn token_new(kind: TokenKind, span: Span) -> Token {
+    Token { kind: kind, span: span }
+}

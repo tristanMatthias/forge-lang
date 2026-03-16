@@ -6,7 +6,7 @@ use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
 // Opaque pointer type used for all LLVM refs
 type LLVMPtr = *mut c_void;
 
-// LLVM C API bindings (from llvm-c/Core.h, llvm-c/Analysis.h)
+// LLVM C API bindings (from llvm-c/Core.h, llvm-c/Analysis.h, llvm-c/TargetMachine.h)
 extern "C" {
     // Context
     fn LLVMContextCreate() -> LLVMPtr;
@@ -17,6 +17,8 @@ extern "C" {
     fn LLVMDisposeModule(m: LLVMPtr);
     fn LLVMPrintModuleToString(m: LLVMPtr) -> *mut c_char;
     fn LLVMDisposeMessage(msg: *mut c_char);
+    fn LLVMSetTarget(m: LLVMPtr, triple: *const c_char);
+    fn LLVMSetDataLayout(m: LLVMPtr, layout: *const c_char);
 
     // Types
     fn LLVMInt1TypeInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -27,6 +29,9 @@ extern "C" {
     fn LLVMVoidTypeInContext(ctx: LLVMPtr) -> LLVMPtr;
     fn LLVMPointerTypeInContext(ctx: LLVMPtr, address_space: c_uint) -> LLVMPtr;
     fn LLVMFunctionType(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_uint, is_vararg: c_int) -> LLVMPtr;
+    fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
+    fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
+    fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
 
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
@@ -34,10 +39,15 @@ extern "C" {
 
     // Basic Blocks
     fn LLVMAppendBasicBlockInContext(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetInsertBlock(builder: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetBasicBlockParent(bb: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetFirstInstruction(bb: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetEntryBasicBlock(f: LLVMPtr) -> LLVMPtr;
 
     // Builder
     fn LLVMCreateBuilderInContext(ctx: LLVMPtr) -> LLVMPtr;
     fn LLVMPositionBuilderAtEnd(builder: LLVMPtr, bb: LLVMPtr);
+    fn LLVMPositionBuilderBefore(builder: LLVMPtr, instr: LLVMPtr);
     fn LLVMDisposeBuilder(builder: LLVMPtr);
     fn LLVMBuildRet(builder: LLVMPtr, value: LLVMPtr) -> LLVMPtr;
     fn LLVMBuildRetVoid(builder: LLVMPtr) -> LLVMPtr;
@@ -46,9 +56,27 @@ extern "C" {
     fn LLVMBuildAdd(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildSub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildMul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildSDiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildSRem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFAdd(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFSub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFMul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFDiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFRem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFNeg(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFCmp(builder: LLVMPtr, op: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Constants
     fn LLVMConstInt(ty: LLVMPtr, n: c_ulonglong, sign_extend: c_int) -> LLVMPtr;
+    fn LLVMConstReal(ty: LLVMPtr, n: f64) -> LLVMPtr;
+    fn LLVMConstNull(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetUndef(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMConstStructInContext(ctx: LLVMPtr, values: *mut LLVMPtr, count: c_uint, packed: c_int) -> LLVMPtr;
+
+    // Globals
+    fn LLVMAddGlobal(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMSetInitializer(global: LLVMPtr, val: LLVMPtr);
+    fn LLVMSetGlobalConstant(global: LLVMPtr, is_constant: c_int);
 
     // Verification
     fn LLVMVerifyModule(m: LLVMPtr, action: c_int, out_message: *mut *mut c_char) -> c_int;
@@ -58,10 +86,37 @@ extern "C" {
     fn LLVMBuildStore(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
+    // Aggregate operations (GEP, insert/extract)
+    fn LLVMBuildGEP2(builder: LLVMPtr, ty: LLVMPtr, pointer: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_uint, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildStructGEP2(builder: LLVMPtr, ty: LLVMPtr, pointer: LLVMPtr, index: c_uint, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildInsertValue(builder: LLVMPtr, agg_val: LLVMPtr, element: LLVMPtr, index: c_uint, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildExtractValue(builder: LLVMPtr, agg_val: LLVMPtr, index: c_uint, name: *const c_char) -> LLVMPtr;
+
     // Control flow
     fn LLVMBuildBr(builder: LLVMPtr, dest: LLVMPtr) -> LLVMPtr;
     fn LLVMBuildCondBr(builder: LLVMPtr, cond: LLVMPtr, then_bb: LLVMPtr, else_bb: LLVMPtr) -> LLVMPtr;
     fn LLVMBuildICmp(builder: LLVMPtr, op: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildUnreachable(builder: LLVMPtr) -> LLVMPtr;
+    fn LLVMBuildSwitch(builder: LLVMPtr, val: LLVMPtr, else_bb: LLVMPtr, num_cases: c_uint) -> LLVMPtr;
+    fn LLVMAddCase(switch: LLVMPtr, on_val: LLVMPtr, dest: LLVMPtr);
+
+    // Integer conversions
+    fn LLVMBuildZExt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildSExt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildTrunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildSIToFP(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildFPToSI(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildBitCast(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildPtrToInt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildIntToPtr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+
+    // Bitwise operations
+    fn LLVMBuildAnd(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildOr(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildXor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildShl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildAShr(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildNot(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Calls
     fn LLVMBuildCall2(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_uint, name: *const c_char) -> LLVMPtr;
@@ -72,6 +127,21 @@ extern "C" {
     // PHI
     fn LLVMBuildPhi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMAddIncoming(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_uint);
+
+    // Target machine (llvm-c/TargetMachine.h)
+    fn LLVMInitializeAllTargetInfos();
+    fn LLVMInitializeAllTargets();
+    fn LLVMInitializeAllTargetMCs();
+    fn LLVMInitializeAllAsmParsers();
+    fn LLVMInitializeAllAsmPrinters();
+    fn LLVMGetDefaultTargetTriple() -> *mut c_char;
+    fn LLVMGetTargetFromTriple(triple: *const c_char, target: *mut LLVMPtr, error_message: *mut *mut c_char) -> c_int;
+    fn LLVMCreateTargetMachine(target: LLVMPtr, triple: *const c_char, cpu: *const c_char, features: *const c_char, level: c_int, reloc: c_int, code_model: c_int) -> LLVMPtr;
+    fn LLVMDisposeTargetMachine(tm: LLVMPtr);
+    fn LLVMTargetMachineEmitToFile(tm: LLVMPtr, m: LLVMPtr, filename: *const c_char, codegen: c_int, error_message: *mut *mut c_char) -> c_int;
+    fn LLVMCreateTargetDataLayout(tm: LLVMPtr) -> LLVMPtr;
+    fn LLVMCopyStringRepOfTargetData(td: LLVMPtr) -> *mut c_char;
+    fn LLVMDisposeTargetData(td: LLVMPtr);
 }
 
 // ── Context & Module ──
@@ -328,4 +398,322 @@ pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *con
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_int) {
     unsafe { LLVMAddIncoming(phi, values, blocks, count as c_uint) }
+}
+
+// ── Struct Types ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_struct_type(ctx: LLVMPtr, element_types: *mut LLVMPtr, count: c_int, packed: c_int) -> LLVMPtr {
+    unsafe { LLVMStructTypeInContext(ctx, element_types, count as c_uint, packed) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_struct_get_type_at_index(struct_type: LLVMPtr, index: c_int) -> LLVMPtr {
+    unsafe { LLVMStructGetTypeAtIndex(struct_type, index as c_uint) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) -> c_int {
+    unsafe { LLVMCountStructElementTypes(struct_type) as c_int }
+}
+
+// ── Aggregate Operations ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, element: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildInsertValue(builder, agg, element, index as c_uint, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildExtractValue(builder, agg, index as c_uint, name) }
+}
+
+// ── Arithmetic (division, remainder, float ops) ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildSDiv(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_srem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildSRem(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fadd(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFAdd(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fsub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFSub(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fmul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFMul(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFDiv(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_frem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFRem(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fneg(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFNeg(builder, val, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fcmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFCmp(builder, pred, lhs, rhs, name) }
+}
+
+// ── Integer Conversions ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildZExt(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_sext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildSExt(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildTrunc(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_si_to_fp(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildSIToFP(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_fp_to_si(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildFPToSI(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_bitcast(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildBitCast(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, name) }
+}
+
+// ── Bitwise Operations ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildAnd(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildOr(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildXor(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_shl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildShl(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_ashr(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildAShr(builder, lhs, rhs, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_not(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildNot(builder, val, name) }
+}
+
+// ── Control Flow (switch, unreachable) ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_unreachable(builder: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMBuildUnreachable(builder) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_switch(builder: LLVMPtr, val: LLVMPtr, else_bb: LLVMPtr, num_cases: c_int) -> LLVMPtr {
+    unsafe { LLVMBuildSwitch(builder, val, else_bb, num_cases as c_uint) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_add_case(switch: LLVMPtr, on_val: LLVMPtr, dest: LLVMPtr) {
+    unsafe { LLVMAddCase(switch, on_val, dest) }
+}
+
+// ── Constants and Globals ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMConstNull(ty) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_undef(ty: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGetUndef(ty) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_const_real(ty: LLVMPtr, value: f64) -> LLVMPtr {
+    unsafe { LLVMConstReal(ty, value) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_const_struct(ctx: LLVMPtr, values: *mut LLVMPtr, count: c_int, packed: c_int) -> LLVMPtr {
+    unsafe { LLVMConstStructInContext(ctx, values, count as c_uint, packed) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMAddGlobal(m, ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_set_initializer(global: LLVMPtr, val: LLVMPtr) {
+    unsafe { LLVMSetInitializer(global, val) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_set_global_constant(global: LLVMPtr, is_constant: c_int) {
+    unsafe { LLVMSetGlobalConstant(global, is_constant) }
+}
+
+// ── Builder/Block Operations ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_insert_block(builder: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGetInsertBlock(builder) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_basic_block_parent(bb: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGetBasicBlockParent(bb) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_position_builder_before(builder: LLVMPtr, instr: LLVMPtr) {
+    unsafe { LLVMPositionBuilderBefore(builder, instr) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_first_instruction(bb: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGetFirstInstruction(bb) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_entry_basic_block(f: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGetEntryBasicBlock(f) }
+}
+
+// ── Target Machine ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_initialize_all_targets() {
+    unsafe {
+        LLVMInitializeAllTargetInfos();
+        LLVMInitializeAllTargets();
+        LLVMInitializeAllTargetMCs();
+        LLVMInitializeAllAsmParsers();
+        LLVMInitializeAllAsmPrinters();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_default_target_triple() -> *mut c_char {
+    unsafe { LLVMGetDefaultTargetTriple() }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_target_from_triple(triple: *const c_char, target_out: *mut LLVMPtr) -> c_int {
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMGetTargetFromTriple(triple, target_out, &mut err);
+        if !err.is_null() {
+            LLVMDisposeMessage(err);
+        }
+        result
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_create_target_machine(target: LLVMPtr, triple: *const c_char, cpu: *const c_char, features: *const c_char, level: c_int, reloc: c_int, code_model: c_int) -> LLVMPtr {
+    unsafe { LLVMCreateTargetMachine(target, triple, cpu, features, level, reloc, code_model) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_dispose_target_machine(tm: LLVMPtr) {
+    unsafe { LLVMDisposeTargetMachine(tm) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_target_machine_emit_to_file(tm: LLVMPtr, m: LLVMPtr, filename: *const c_char, codegen: c_int) -> c_int {
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMTargetMachineEmitToFile(tm, m, filename, codegen, &mut err);
+        if !err.is_null() {
+            LLVMDisposeMessage(err);
+        }
+        result
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_set_target(m: LLVMPtr, triple: *const c_char) {
+    unsafe { LLVMSetTarget(m, triple) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_set_data_layout(m: LLVMPtr, layout: *const c_char) {
+    unsafe { LLVMSetDataLayout(m, layout) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_create_target_data_layout(tm: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMCreateTargetDataLayout(tm) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_copy_string_rep_of_target_data(td: LLVMPtr) -> *mut c_char {
+    unsafe { LLVMCopyStringRepOfTargetData(td) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_dispose_target_data(td: LLVMPtr) {
+    unsafe { LLVMDisposeTargetData(td) }
 }

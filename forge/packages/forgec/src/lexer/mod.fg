@@ -1,0 +1,1153 @@
+// ─── Lexer ─────────────────────────────────────
+// Tokenizes Forge source code into a stream of tokens.
+// Ported from forgec-rust/lexer/lexer.rs (~1256 lines).
+
+use core.token.{Token, TokenKind, Span, TemplatePart}
+use core.error.{Diagnostic, error, E_SYNTAX, E_UNTERMINATED_STRING, E_UNTERMINATED_TEMPLATE, E_BAD_NUMBER}
+
+// ─── Lexer State ───────────────────────────────
+
+type Lexer = {
+    source: string,
+    chars: List<string>,
+    mut pos: int,
+    mut line: int,
+    mut col: int,
+    pos_offset: int,
+    mut diagnostics: List<Diagnostic>,
+}
+
+fn lexer_new(source: string) -> Lexer {
+    Lexer {
+        source,
+        chars: string_to_chars(source),
+        pos: 0,
+        line: 1,
+        col: 1,
+        pos_offset: 0,
+        diagnostics: [],
+    }
+}
+
+fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int) -> Lexer {
+    Lexer {
+        source,
+        chars: string_to_chars(source),
+        pos: 0,
+        line,
+        col,
+        pos_offset,
+        diagnostics: [],
+    }
+}
+
+// ─── Character Helpers ─────────────────────────
+
+fn string_to_chars(s: string) -> List<string> {
+    // Split string into individual characters
+    // Each element is a single-character string
+    mut result: List<string> = []
+    for ch in s {
+        result = result.push(ch)
+    }
+    result
+}
+
+fn is_alpha(ch: string) -> bool {
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+fn is_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "9"
+}
+
+fn is_hex_digit(ch: string) -> bool {
+    is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+}
+
+fn is_alnum(ch: string) -> bool {
+    is_alpha(ch) || is_digit(ch)
+}
+
+fn is_ident_start(ch: string) -> bool {
+    is_alpha(ch) || ch == "$"
+}
+
+fn is_ident_continue(ch: string) -> bool {
+    is_alnum(ch) || ch == "$"
+}
+
+fn is_whitespace_not_newline(ch: string) -> bool {
+    ch == " " || ch == "\t" || ch == "\r"
+}
+
+// ─── Lexer Methods ─────────────────────────────
+
+impl Lexer {
+    fn is_at_end(self) -> bool {
+        self.pos >= self.chars.length
+    }
+
+    fn peek(self) -> string? {
+        if self.pos < self.chars.length {
+            self.chars[self.pos]
+        } else {
+            null
+        }
+    }
+
+    fn peek_at(self, offset: int) -> string? {
+        let idx = self.pos + offset
+        if idx < self.chars.length {
+            self.chars[idx]
+        } else {
+            null
+        }
+    }
+
+    fn advance(self) -> string {
+        let ch = self.chars[self.pos]
+        self.pos = self.pos + 1
+        if ch == "\n" {
+            self.line = self.line + 1
+            self.col = 1
+        } else {
+            self.col = self.col + 1
+        }
+        ch
+    }
+
+    fn make_span(self, start_pos: int, start_line: int, start_col: int) -> Span {
+        Span {
+            start: start_pos + self.pos_offset,
+            end: self.pos + self.pos_offset,
+            line: start_line,
+            col: start_col,
+        }
+    }
+
+    fn current_span(self) -> Span {
+        Span {
+            start: self.pos + self.pos_offset,
+            end: self.pos + self.pos_offset,
+            line: self.line,
+            col: self.col,
+        }
+    }
+
+    fn add_error(self, code: string, message: string, span: Span) {
+        self.diagnostics = self.diagnostics.push(error(code, message, span))
+    }
+
+    // ─── Whitespace & Comments ─────────────────
+
+    fn skip_whitespace(self) {
+        for self.pos < self.chars.length {
+            let ch = self.chars[self.pos]
+            if is_whitespace_not_newline(ch) {
+                self.advance()
+            } else {
+                break
+            }
+        }
+    }
+
+    fn skip_comments(self) {
+        // Skip // comments (but not /// doc comments)
+        if self.pos + 1 < self.chars.length {
+            if self.chars[self.pos] == "/" && self.chars[self.pos + 1] == "/" {
+                // Check if it's a doc comment (///)
+                if self.pos + 2 < self.chars.length && self.chars[self.pos + 2] == "/" {
+                    // Check it's not //// (which is a regular comment)
+                    if self.pos + 3 < self.chars.length && self.chars[self.pos + 3] == "/" {
+                        // //// — regular comment, skip it
+                    } else {
+                        // /// — doc comment, don't skip (will be tokenized)
+                        return
+                    }
+                }
+                // Skip to end of line
+                for self.pos < self.chars.length && self.chars[self.pos] != "\n" {
+                    self.pos = self.pos + 1
+                    self.col = self.col + 1
+                }
+                // Skip whitespace after comment
+                self.skip_whitespace()
+                // Recursively skip more comments
+                self.skip_comments()
+            }
+        }
+    }
+
+    // ─── Main Tokenization ─────────────────────
+
+    fn tokenize(self) -> List<Token> {
+        mut tokens: List<Token> = []
+
+        for !self.is_at_end() {
+            self.skip_whitespace()
+            self.skip_comments()
+
+            if self.is_at_end() {
+                break
+            }
+
+            let token = self.next_token()
+            if token != null {
+                tokens = tokens.push(token!)
+            }
+        }
+
+        // Add EOF
+        tokens = tokens.push(Token {
+            kind: .Eof,
+            span: self.current_span(),
+        })
+
+        tokens
+    }
+
+    fn next_token(self) -> Token? {
+        let ch = self.peek()!
+        let start_pos = self.pos
+        let start_line = self.line
+        let start_col = self.col
+
+        // Newline
+        if ch == "\n" {
+            self.advance()
+            return Token {
+                kind: .Newline,
+                span: self.make_span(start_pos, start_line, start_col),
+            }
+        }
+
+        // Doc comment: ///
+        if ch == "/" && self.peek_at(1) == "/" && self.peek_at(2) == "/" {
+            if self.peek_at(3) != "/" {
+                return self.lex_doc_comment(start_pos, start_line, start_col)
+            }
+        }
+
+        // Numbers
+        if is_digit(ch) {
+            return self.lex_number(start_pos, start_line, start_col)
+        }
+
+        // Identifiers and keywords
+        if is_ident_start(ch) {
+            // Check for $" and $` (dollar strings/templates)
+            if ch == "$" {
+                if self.peek_at(1) == "\"" {
+                    self.advance() // consume $
+                    self.advance() // consume "
+                    return self.lex_dollar_string(start_pos, start_line, start_col)
+                }
+                if self.peek_at(1) == "`" {
+                    self.advance() // consume $
+                    self.advance() // consume `
+                    return self.lex_dollar_template(start_pos, start_line, start_col)
+                }
+                // $ident — regular identifier starting with $
+                if self.peek_at(1) != null && (is_alpha(self.peek_at(1)!) || self.peek_at(1)! == "_") {
+                    return self.lex_ident_or_keyword(start_pos, start_line, start_col)
+                }
+                // Standalone $ — error
+                self.advance()
+                self.add_error(E_SYNTAX, "unexpected character: '$'", self.make_span(start_pos, start_line, start_col))
+                return null
+            }
+            return self.lex_ident_or_keyword(start_pos, start_line, start_col)
+        }
+
+        // String literals
+        if ch == "\"" {
+            self.advance() // consume opening "
+            return self.lex_string(start_pos, start_line, start_col)
+        }
+
+        // Template literals
+        if ch == "`" {
+            self.advance() // consume opening `
+            return self.lex_template(start_pos, start_line, start_col)
+        }
+
+        // Operators and punctuation
+        self.lex_operator(start_pos, start_line, start_col)
+    }
+
+    // ─── Doc Comments ──────────────────────────
+
+    fn lex_doc_comment(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // Consume ///
+        self.advance()
+        self.advance()
+        self.advance()
+
+        // Skip one leading space if present
+        if self.peek() == " " {
+            self.advance()
+        }
+
+        // Collect until newline
+        mut text = ""
+        for !self.is_at_end() && self.peek()! != "\n" {
+            text = text + self.advance()
+        }
+
+        Token {
+            kind: .DocComment(text),
+            span: self.make_span(start_pos, start_line, start_col),
+        }
+    }
+
+    // ─── Numbers ───────────────────────────────
+
+    fn lex_number(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // Check for base prefixes
+        if self.peek()! == "0" && self.peek_at(1) != null {
+            let next = self.peek_at(1)!
+            if next == "x" || next == "X" {
+                self.advance() // 0
+                self.advance() // x
+                return self.lex_hex(start_pos, start_line, start_col)
+            }
+            if next == "b" || next == "B" {
+                self.advance()
+                self.advance()
+                return self.lex_binary(start_pos, start_line, start_col)
+            }
+            if next == "o" || next == "O" {
+                self.advance()
+                self.advance()
+                return self.lex_octal(start_pos, start_line, start_col)
+            }
+        }
+
+        // Decimal number
+        mut text = ""
+        mut is_float = false
+
+        // Integer part: consume digits and underscores
+        for !self.is_at_end() {
+            let ch = self.peek()!
+            if is_digit(ch) {
+                text = text + self.advance()
+            } else if ch == "_" {
+                self.advance() // skip underscores in numbers
+            } else {
+                break
+            }
+        }
+
+        // Decimal point (only if followed by a digit, and not .. range)
+        if !self.is_at_end() && self.peek()! == "." {
+            if self.peek_at(1) != null && is_digit(self.peek_at(1)!) {
+                // Make sure it's not .. (range operator)
+                is_float = true
+                text = text + self.advance() // consume .
+                for !self.is_at_end() {
+                    let ch = self.peek()!
+                    if is_digit(ch) {
+                        text = text + self.advance()
+                    } else if ch == "_" {
+                        self.advance()
+                    } else {
+                        break
+                    }
+                }
+            }
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+
+        if is_float {
+            let value = parse_float(text)
+            return Token { kind: .FloatLiteral(value), span }
+        }
+
+        // Parse integer
+        let value = parse_int(text)
+
+        // Check for duration suffixes: d, h, m, s
+        if !self.is_at_end() {
+            let ch = self.peek()!
+            if ch == "d" || ch == "h" || ch == "m" || ch == "s" {
+                // Ensure next char is NOT alphanumeric (prevent 5min -> 5m + in)
+                let next_next = self.peek_at(1)
+                if next_next == null || (!is_alnum(next_next!) && next_next! != "_") {
+                    let suffix = self.advance()
+                    let multiplier = match suffix {
+                        "d" -> 86400000
+                        "h" -> 3600000
+                        "m" -> 60000
+                        "s" -> 1000
+                        _ -> 1
+                    }
+                    return Token {
+                        kind: .IntLiteral(value * multiplier),
+                        span: self.make_span(start_pos, start_line, start_col),
+                    }
+                }
+            }
+        }
+
+        Token { kind: .IntLiteral(value), span }
+    }
+
+    fn lex_hex(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        mut text = ""
+        for !self.is_at_end() {
+            let ch = self.peek()!
+            if is_hex_digit(ch) {
+                text = text + self.advance()
+            } else if ch == "_" {
+                self.advance()
+            } else {
+                break
+            }
+        }
+        if text.length == 0 {
+            let span = self.make_span(start_pos, start_line, start_col)
+            self.add_error(E_BAD_NUMBER, "expected hex digits after 0x", span)
+            return Token { kind: .IntLiteral(0), span }
+        }
+        Token {
+            kind: .IntLiteral(parse_int_radix(text, 16)),
+            span: self.make_span(start_pos, start_line, start_col),
+        }
+    }
+
+    fn lex_binary(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        mut text = ""
+        for !self.is_at_end() {
+            let ch = self.peek()!
+            if ch == "0" || ch == "1" {
+                text = text + self.advance()
+            } else if ch == "_" {
+                self.advance()
+            } else {
+                break
+            }
+        }
+        if text.length == 0 {
+            let span = self.make_span(start_pos, start_line, start_col)
+            self.add_error(E_BAD_NUMBER, "expected binary digits after 0b", span)
+            return Token { kind: .IntLiteral(0), span }
+        }
+        Token {
+            kind: .IntLiteral(parse_int_radix(text, 2)),
+            span: self.make_span(start_pos, start_line, start_col),
+        }
+    }
+
+    fn lex_octal(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        mut text = ""
+        for !self.is_at_end() {
+            let ch = self.peek()!
+            if ch >= "0" && ch <= "7" {
+                text = text + self.advance()
+            } else if ch == "_" {
+                self.advance()
+            } else {
+                break
+            }
+        }
+        if text.length == 0 {
+            let span = self.make_span(start_pos, start_line, start_col)
+            self.add_error(E_BAD_NUMBER, "expected octal digits after 0o", span)
+            return Token { kind: .IntLiteral(0), span }
+        }
+        Token {
+            kind: .IntLiteral(parse_int_radix(text, 8)),
+            span: self.make_span(start_pos, start_line, start_col),
+        }
+    }
+
+    // ─── Strings ───────────────────────────────
+
+    fn lex_string(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // Opening " already consumed
+        mut text = ""
+        mut parts: List<TemplatePart> = []
+        mut has_interpolation = false
+
+        for !self.is_at_end() {
+            let ch = self.peek()!
+
+            if ch == "\"" {
+                self.advance() // consume closing "
+                if has_interpolation {
+                    if text.length > 0 {
+                        parts = parts.push(TemplatePart.Literal(text))
+                    }
+                    return Token {
+                        kind: .TemplateLiteral(parts),
+                        span: self.make_span(start_pos, start_line, start_col),
+                    }
+                }
+                return Token {
+                    kind: .StringLiteral(text),
+                    span: self.make_span(start_pos, start_line, start_col),
+                }
+            }
+
+            if ch == "\\" {
+                self.advance() // consume backslash
+                if !self.is_at_end() {
+                    let escaped = self.advance()
+                    match escaped {
+                        "n" -> { text = text + "\n" }
+                        "t" -> { text = text + "\t" }
+                        "\\" -> { text = text + "\\" }
+                        "\"" -> { text = text + "\"" }
+                        "$" -> { text = text + "$" }
+                        _ -> { text = text + escaped }
+                    }
+                }
+                continue
+            }
+
+            if ch == "$" && self.peek_at(1) == "{" {
+                has_interpolation = true
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                    text = ""
+                }
+                self.advance() // consume $
+                self.advance() // consume {
+                let expr_span = self.current_span()
+                let expr_text = self.capture_interpolation_expr()
+                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        // Unterminated string
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_UNTERMINATED_STRING, "unterminated string literal", span)
+        Token { kind: .StringLiteral(text), span }
+    }
+
+    fn lex_template(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // Opening ` already consumed
+        mut text = ""
+        mut parts: List<TemplatePart> = []
+
+        for !self.is_at_end() {
+            let ch = self.peek()!
+
+            if ch == "`" {
+                self.advance()
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                }
+                return Token {
+                    kind: .TemplateLiteral(parts),
+                    span: self.make_span(start_pos, start_line, start_col),
+                }
+            }
+
+            if ch == "\\" {
+                self.advance()
+                if !self.is_at_end() {
+                    let escaped = self.advance()
+                    match escaped {
+                        "n" -> { text = text + "\n" }
+                        "t" -> { text = text + "\t" }
+                        "\\" -> { text = text + "\\" }
+                        "`" -> { text = text + "`" }
+                        _ -> { text = text + escaped }
+                    }
+                }
+                continue
+            }
+
+            if ch == "$" && self.peek_at(1) == "{" {
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                    text = ""
+                }
+                self.advance() // $
+                self.advance() // {
+                let expr_span = self.current_span()
+                let expr_text = self.capture_interpolation_expr()
+                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated template literal", span)
+        if text.length > 0 {
+            parts = parts.push(TemplatePart.Literal(text))
+        }
+        Token { kind: .TemplateLiteral(parts), span }
+    }
+
+    fn lex_dollar_string(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // $" already consumed — limited escapes
+        mut text = ""
+        mut parts: List<TemplatePart> = []
+
+        for !self.is_at_end() {
+            let ch = self.peek()!
+
+            if ch == "\"" {
+                self.advance()
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                }
+                return Token {
+                    kind: .DollarString(parts),
+                    span: self.make_span(start_pos, start_line, start_col),
+                }
+            }
+
+            // Only \" and \\ escapes in dollar strings
+            if ch == "\\" {
+                if self.peek_at(1) == "\"" {
+                    self.advance()
+                    text = text + self.advance()
+                    continue
+                }
+                if self.peek_at(1) == "\\" {
+                    self.advance()
+                    text = text + self.advance()
+                    continue
+                }
+            }
+
+            if ch == "$" && self.peek_at(1) == "{" {
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                    text = ""
+                }
+                self.advance()
+                self.advance()
+                let expr_span = self.current_span()
+                let expr_text = self.capture_interpolation_expr()
+                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_UNTERMINATED_STRING, "unterminated dollar string", span)
+        Token { kind: .DollarString(parts), span }
+    }
+
+    fn lex_dollar_template(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        // $` already consumed — no escapes
+        mut text = ""
+        mut parts: List<TemplatePart> = []
+
+        for !self.is_at_end() {
+            let ch = self.peek()!
+
+            if ch == "`" {
+                self.advance()
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                }
+                return Token {
+                    kind: .DollarString(parts),
+                    span: self.make_span(start_pos, start_line, start_col),
+                }
+            }
+
+            if ch == "$" && self.peek_at(1) == "{" {
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                    text = ""
+                }
+                self.advance()
+                self.advance()
+                let expr_span = self.current_span()
+                let expr_text = self.capture_interpolation_expr()
+                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated dollar template", span)
+        Token { kind: .DollarString(parts), span }
+    }
+
+    // ─── Interpolation Capture ─────────────────
+
+    fn capture_interpolation_expr(self) -> string {
+        // Capture everything between ${ and matching }
+        // Track brace depth, skip nested strings/templates
+        mut depth = 1
+        mut text = ""
+
+        for !self.is_at_end() && depth > 0 {
+            let ch = self.peek()!
+
+            if ch == "{" {
+                depth = depth + 1
+                text = text + self.advance()
+                continue
+            }
+
+            if ch == "}" {
+                depth = depth - 1
+                if depth == 0 {
+                    self.advance() // consume closing }
+                    return text
+                }
+                text = text + self.advance()
+                continue
+            }
+
+            // Skip nested strings
+            if ch == "\"" {
+                text = text + self.advance() // opening "
+                for !self.is_at_end() && self.peek()! != "\"" {
+                    if self.peek()! == "\\" {
+                        text = text + self.advance() // backslash
+                        if !self.is_at_end() {
+                            text = text + self.advance() // escaped char
+                        }
+                    } else {
+                        text = text + self.advance()
+                    }
+                }
+                if !self.is_at_end() {
+                    text = text + self.advance() // closing "
+                }
+                continue
+            }
+
+            // Skip nested templates
+            if ch == "`" {
+                text = text + self.advance() // opening `
+                for !self.is_at_end() && self.peek()! != "`" {
+                    if self.peek()! == "\\" {
+                        text = text + self.advance()
+                        if !self.is_at_end() {
+                            text = text + self.advance()
+                        }
+                    } else if self.peek()! == "$" && self.peek_at(1) == "{" {
+                        text = text + self.advance() // $
+                        text = text + self.advance() // {
+                        depth = depth + 1
+                    } else {
+                        text = text + self.advance()
+                    }
+                }
+                if !self.is_at_end() {
+                    text = text + self.advance() // closing `
+                }
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        text
+    }
+
+    // ─── Identifiers & Keywords ────────────────
+
+    fn lex_ident_or_keyword(self, start_pos: int, start_line: int, start_col: int) -> Token {
+        mut text = ""
+        text = text + self.advance() // first char
+
+        for !self.is_at_end() && is_ident_continue(self.peek()!) {
+            text = text + self.advance()
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+
+        // Check for tagged template: ident immediately followed by `
+        // (only if not a keyword)
+        let kind = keyword_kind(text)
+        if kind == null && !self.is_at_end() && self.peek()! == "`" {
+            self.advance() // consume `
+            return self.lex_tagged_template(text, start_pos, start_line, start_col)
+        }
+
+        // Check for typed tagged template: ident<Type>`
+        if kind == null && !self.is_at_end() && self.peek()! == "<" {
+            let typed_tag = self.try_typed_tagged_template(text, start_pos, start_line, start_col)
+            if typed_tag != null {
+                return typed_tag!
+            }
+        }
+
+        // Return keyword or identifier
+        if kind != null {
+            return Token { kind: kind!, span }
+        }
+
+        Token { kind: .Ident(text), span }
+    }
+
+    fn lex_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token {
+        // ` already consumed, parse template body
+        mut text = ""
+        mut parts: List<TemplatePart> = []
+
+        for !self.is_at_end() {
+            let ch = self.peek()!
+
+            if ch == "`" {
+                self.advance()
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                }
+                return Token {
+                    kind: .TaggedTemplate(tag, parts, null),
+                    span: self.make_span(start_pos, start_line, start_col),
+                }
+            }
+
+            if ch == "\\" {
+                self.advance()
+                if !self.is_at_end() {
+                    text = text + self.advance()
+                }
+                continue
+            }
+
+            if ch == "$" && self.peek_at(1) == "{" {
+                if text.length > 0 {
+                    parts = parts.push(TemplatePart.Literal(text))
+                    text = ""
+                }
+                self.advance()
+                self.advance()
+                let expr_span = self.current_span()
+                let expr_text = self.capture_interpolation_expr()
+                parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                continue
+            }
+
+            text = text + self.advance()
+        }
+
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated tagged template", span)
+        Token { kind: .TaggedTemplate(tag, parts, null), span }
+    }
+
+    fn try_typed_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token? {
+        // Try to parse ident<Type>` — backtrack if it doesn't match
+        let saved_pos = self.pos
+        let saved_line = self.line
+        let saved_col = self.col
+
+        self.advance() // consume <
+        mut depth = 1
+        mut type_text = ""
+
+        for !self.is_at_end() && depth > 0 {
+            let ch = self.peek()!
+            if ch == "<" {
+                depth = depth + 1
+                type_text = type_text + self.advance()
+            } else if ch == ">" {
+                depth = depth - 1
+                if depth == 0 {
+                    self.advance() // consume closing >
+                } else {
+                    type_text = type_text + self.advance()
+                }
+            } else {
+                type_text = type_text + self.advance()
+            }
+        }
+
+        // Check if immediately followed by `
+        if !self.is_at_end() && self.peek()! == "`" {
+            self.advance() // consume `
+            mut text = ""
+            mut parts: List<TemplatePart> = []
+
+            for !self.is_at_end() {
+                let ch = self.peek()!
+
+                if ch == "`" {
+                    self.advance()
+                    if text.length > 0 {
+                        parts = parts.push(TemplatePart.Literal(text))
+                    }
+                    return Token {
+                        kind: .TaggedTemplate(tag, parts, type_text),
+                        span: self.make_span(start_pos, start_line, start_col),
+                    }
+                }
+
+                if ch == "\\" {
+                    self.advance()
+                    if !self.is_at_end() {
+                        text = text + self.advance()
+                    }
+                    continue
+                }
+
+                if ch == "$" && self.peek_at(1) == "{" {
+                    if text.length > 0 {
+                        parts = parts.push(TemplatePart.Literal(text))
+                        text = ""
+                    }
+                    self.advance()
+                    self.advance()
+                    let expr_span = self.current_span()
+                    let expr_text = self.capture_interpolation_expr()
+                    parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
+                    continue
+                }
+
+                text = text + self.advance()
+            }
+
+            let span = self.make_span(start_pos, start_line, start_col)
+            self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated typed tagged template", span)
+            return Token { kind: .TaggedTemplate(tag, parts, type_text), span }
+        }
+
+        // Not a typed tagged template — backtrack
+        self.pos = saved_pos
+        self.line = saved_line
+        self.col = saved_col
+        null
+    }
+
+    // ─── Operators & Punctuation ───────────────
+
+    fn lex_operator(self, start_pos: int, start_line: int, start_col: int) -> Token? {
+        let ch = self.advance()
+
+        // Single-character tokens
+        if ch == "(" { return Token { kind: .LParen, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ")" { return Token { kind: .RParen, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "{" { return Token { kind: .LBrace, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "}" { return Token { kind: .RBrace, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "[" { return Token { kind: .LBracket, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "]" { return Token { kind: .RBracket, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "," { return Token { kind: .Comma, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ":" { return Token { kind: .Colon, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ";" { return Token { kind: .Semicolon, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "@" { return Token { kind: .At, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "#" { return Token { kind: .Hash, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "+" { return Token { kind: .Plus, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "*" { return Token { kind: .Star, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "%" { return Token { kind: .Percent, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "^" { return Token { kind: .Caret, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "~" { return Token { kind: .Tilde, span: self.make_span(start_pos, start_line, start_col) } }
+
+        // Multi-character operators
+        let next = self.peek()
+
+        // - or ->
+        if ch == "-" {
+            if next == ">" {
+                self.advance()
+                return Token { kind: .Arrow, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Minus, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // = or ==
+        if ch == "=" {
+            if next == "=" {
+                self.advance()
+                return Token { kind: .EqEq, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Eq, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // ! or !=
+        if ch == "!" {
+            if next == "=" {
+                self.advance()
+                return Token { kind: .NotEq, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Not, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // < or <= or <- or <<
+        if ch == "<" {
+            if next == "=" {
+                self.advance()
+                return Token { kind: .LtEq, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            if next == "-" {
+                self.advance()
+                return Token { kind: .LeftArrow, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            if next == "<" {
+                self.advance()
+                return Token { kind: .ShiftLeft, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Lt, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // > or >= or >>
+        if ch == ">" {
+            if next == "=" {
+                self.advance()
+                return Token { kind: .GtEq, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            if next == ">" {
+                self.advance()
+                return Token { kind: .ShiftRight, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Gt, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // & or &&
+        if ch == "&" {
+            if next == "&" {
+                self.advance()
+                return Token { kind: .And, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Ampersand, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // | or || or |>
+        if ch == "|" {
+            if next == "|" {
+                self.advance()
+                return Token { kind: .Or, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            if next == ">" {
+                self.advance()
+                return Token { kind: .Pipe, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Bar, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // ? or ?. or ??
+        if ch == "?" {
+            if next == "." {
+                self.advance()
+                return Token { kind: .QuestionDot, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            if next == "?" {
+                self.advance()
+                return Token { kind: .DoubleQuestion, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Question, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // . or .. or ... or ..=
+        if ch == "." {
+            if next == "." {
+                self.advance()
+                let next2 = self.peek()
+                if next2 == "." {
+                    self.advance()
+                    return Token { kind: .Spread, span: self.make_span(start_pos, start_line, start_col) }
+                }
+                if next2 == "=" {
+                    self.advance()
+                    return Token { kind: .DotDotEq, span: self.make_span(start_pos, start_line, start_col) }
+                }
+                return Token { kind: .DotDot, span: self.make_span(start_pos, start_line, start_col) }
+            }
+            return Token { kind: .Dot, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // /
+        if ch == "/" {
+            return Token { kind: .Slash, span: self.make_span(start_pos, start_line, start_col) }
+        }
+
+        // Unknown character
+        let span = self.make_span(start_pos, start_line, start_col)
+        self.add_error(E_SYNTAX, "unexpected character: '${ch}'", span)
+        null
+    }
+}
+
+// ─── Keyword Lookup ────────────────────────────
+
+fn keyword_kind(text: string) -> TokenKind? {
+    match text {
+        "let" -> .Let
+        "mut" -> .Mut
+        "const" -> .Const
+        "fn" -> .Fn
+        "return" -> .Return
+        "if" -> .If
+        "else" -> .Else
+        "match" -> .Match
+        "for" -> .For
+        "in" -> .In
+        "while" -> .While
+        "loop" -> .Loop
+        "break" -> .Break
+        "continue" -> .Continue
+        "enum" -> .Enum
+        "type" -> .TypeKw
+        "use" -> .Use
+        "mod" -> .Mod
+        "as" -> .As
+        "export" -> .Export
+        "emit" -> .Emit
+        "on" -> .On
+        "trait" -> .Trait
+        "impl" -> .Impl
+        "defer" -> .Defer
+        "errdefer" -> .Errdefer
+        "spawn" -> .Spawn
+        "parallel" -> .Parallel
+        "with" -> .With
+        "without" -> .Without
+        "only" -> .Only
+        "partial" -> .Partial
+        "catch" -> .Catch
+        "select" -> .Select
+        "component" -> .Component
+        "is" -> .Is
+        "table" -> .Table
+        "true" -> .BoolLiteral(true)
+        "false" -> .BoolLiteral(false)
+        "null" -> .NullLiteral
+        "Ok" -> .OkKw
+        "Err" -> .ErrKw
+        "_" -> .Underscore
+        _ -> null
+    }
+}
+
+// ─── Number Parsing Helpers ────────────────────
+
+fn parse_int(text: string) -> int {
+    // Use runtime int() conversion
+    int(text)
+}
+
+fn parse_float(text: string) -> float {
+    // Use runtime float() conversion
+    float(text)
+}
+
+fn parse_int_radix(text: string, radix: int) -> int {
+    mut result = 0
+    for ch in text {
+        mut digit = 0
+        if ch >= "0" && ch <= "9" {
+            digit = int(ch) - int("0")
+        } else if ch >= "a" && ch <= "f" {
+            digit = int(ch) - int("a") + 10
+        } else if ch >= "A" && ch <= "F" {
+            digit = int(ch) - int("A") + 10
+        }
+        result = result * radix + digit
+    }
+    result
+}

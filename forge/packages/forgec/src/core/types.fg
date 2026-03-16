@@ -1,0 +1,141 @@
+// ─── Type System ───────────────────────────────
+// Represents Forge types during compilation. This is the self-hosted
+// equivalent of the Rust Type enum in the current compiler.
+
+// ─── Core Type Enum ────────────────────────────
+
+enum Type {
+    Int
+    Float
+    Bool
+    String
+    Void
+    Never
+    Ptr
+    Nullable(inner: Type)
+    ListType(element: Type)
+    MapType(key: Type, value: Type)
+    Tuple(elements: List<Type>)
+    Struct(name: string?, fields: List<StructField>)
+    Enum(name: string, variants: List<EnumVariantType>)
+    Function(params: List<Type>, return_type: Type)
+    Result(ok: Type, err: Type)
+    Range(element: Type)
+    Channel(element: Type)
+    TypeVar(id: int)
+    Unknown
+    Error
+}
+
+// ─── Supporting Types ──────────────────────────
+
+type StructField = {
+    name: string,
+    field_type: Type,
+}
+
+type EnumVariantType = {
+    name: string,
+    fields: List<StructField>,
+}
+
+// ─── Type Predicates ───────────────────────────
+
+fn type_is_numeric(t: Type) -> bool {
+    match t {
+        .Int -> true
+        .Float -> true
+        _ -> false
+    }
+}
+
+fn type_is_nullable(t: Type) -> bool {
+    match t {
+        .Nullable(_) -> true
+        _ -> false
+    }
+}
+
+fn type_is_primitive(t: Type) -> bool {
+    match t {
+        .Int -> true
+        .Float -> true
+        .Bool -> true
+        .String -> true
+        .Void -> true
+        _ -> false
+    }
+}
+
+fn type_is_container(t: Type) -> bool {
+    match t {
+        .ListType(_) -> true
+        .MapType(_, _) -> true
+        .Tuple(_) -> true
+        _ -> false
+    }
+}
+
+fn type_is_callable(t: Type) -> bool {
+    match t {
+        .Function(_, _) -> true
+        _ -> false
+    }
+}
+
+// ─── Type Unwrapping ───────────────────────────
+
+fn unwrap_nullable(t: Type) -> Type {
+    match t {
+        .Nullable(inner) -> inner
+        _ -> t
+    }
+}
+
+fn unwrap_list_element(t: Type) -> Type? {
+    match t {
+        .ListType(element) -> element
+        _ -> null
+    }
+}
+
+fn unwrap_result_ok(t: Type) -> Type? {
+    match t {
+        .Result(ok, _) -> ok
+        _ -> null
+    }
+}
+
+fn unwrap_result_err(t: Type) -> Type? {
+    match t {
+        .Result(_, err) -> err
+        _ -> null
+    }
+}
+
+// ─── Type Display ──────────────────────────────
+
+fn type_to_string(t: Type) -> string {
+    match t {
+        .Int -> "int"
+        .Float -> "float"
+        .Bool -> "bool"
+        .String -> "string"
+        .Void -> "void"
+        .Never -> "never"
+        .Ptr -> "ptr"
+        .Nullable(inner) -> "${type_to_string(inner)}?"
+        .ListType(element) -> "List<${type_to_string(element)}>"
+        .MapType(key, value) -> "Map<${type_to_string(key)}, ${type_to_string(value)}>"
+        .Tuple(elements) -> "(tuple)"
+        .Struct(name, _) -> name ?? "(anonymous struct)"
+        .Enum(name, _) -> name
+        .Function(_, ret) -> "fn(...) -> ${type_to_string(ret)}"
+        .Result(ok, err) -> "Result<${type_to_string(ok)}, ${type_to_string(err)}>"
+        .Range(element) -> "Range<${type_to_string(element)}>"
+        .Channel(element) -> "Channel<${type_to_string(element)}>"
+        .TypeVar(id) -> "T${id}"
+        .Unknown -> "unknown"
+        .Error -> "error"
+    }
+}

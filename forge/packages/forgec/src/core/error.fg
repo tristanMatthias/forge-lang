@@ -1,0 +1,161 @@
+// ─── Diagnostics ───────────────────────────────
+// All compiler errors go through this system. No raw eprintln!
+// This is the self-hosted equivalent of CompileError + render().
+
+use core.token.Span
+
+// ─── Severity ──────────────────────────────────
+
+enum Severity {
+    Error
+    Warning
+    Info
+}
+
+// ─── Diagnostic ────────────────────────────────
+
+type Diagnostic = {
+    code: string,
+    message: string,
+    severity: Severity,
+    span: Span,
+    help: string?,
+    note: string?,
+}
+
+// ─── Diagnostic Collection ─────────────────────
+
+type DiagnosticBag = {
+    mut diagnostics: List<Diagnostic>,
+    mut has_errors: bool,
+}
+
+fn new_diagnostic_bag() -> DiagnosticBag {
+    DiagnosticBag {
+        diagnostics: [],
+        has_errors: false,
+    }
+}
+
+fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
+    bag.diagnostics.push(d)
+    if d.severity == .Error {
+        bag.has_errors = true
+    }
+}
+
+fn bag_error_count(bag: DiagnosticBag) -> int {
+    mut count = 0
+    for d in bag.diagnostics {
+        if d.severity == .Error {
+            count = count + 1
+        }
+    }
+    count
+}
+
+// ─── Constructor Helpers ───────────────────────
+
+fn error(code: string, message: string, span: Span) -> Diagnostic {
+    Diagnostic {
+        code,
+        message,
+        severity: .Error,
+        span,
+        help: null,
+        note: null,
+    }
+}
+
+fn error_with_help(code: string, message: string, span: Span, help: string) -> Diagnostic {
+    Diagnostic {
+        code,
+        message,
+        severity: .Error,
+        span,
+        help,
+        note: null,
+    }
+}
+
+fn warning(code: string, message: string, span: Span) -> Diagnostic {
+    Diagnostic {
+        code,
+        message,
+        severity: .Warning,
+        span,
+        help: null,
+        note: null,
+    }
+}
+
+fn info(code: string, message: string, span: Span) -> Diagnostic {
+    Diagnostic {
+        code,
+        message,
+        severity: .Info,
+        span,
+        help: null,
+        note: null,
+    }
+}
+
+// ─── Error Codes ───────────────────────────────
+
+let E_SYNTAX = "F0001"
+let E_UNTERMINATED_STRING = "F0002"
+let E_UNTERMINATED_TEMPLATE = "F0003"
+let E_BAD_NUMBER = "F0006"
+let E_TYPE_MISMATCH = "F0012"
+let E_IMMUTABLE_ASSIGN = "F0013"
+let E_WRONG_ARG_COUNT = "F0014"
+let E_UNDEFINED_VAR = "F0020"
+let E_TABLE_COLUMN = "F0030"
+let E_UNUSED_VAR = "F0801"
+let E_SPEC_TEST = "F0900"
+let E_ICE = "F9999"
+
+// ─── Rendering ─────────────────────────────────
+
+fn severity_to_string(s: Severity) -> string {
+    match s {
+        .Error -> "error"
+        .Warning -> "warning"
+        .Info -> "info"
+    }
+}
+
+fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
+    // Build the primary message line: severity[code]: message
+    let sev = severity_to_string(d.severity)
+    mut msg = "${sev}[${d.code}]: ${d.message}"
+
+    // Location line
+    msg = "${msg}\n  --> ${filename}:${d.span.line}:${d.span.col}"
+
+    // Help text if present
+    if d.help != null {
+        msg = "${msg}\n  help: ${d.help!}"
+    }
+
+    // Note if present
+    if d.note != null {
+        msg = "${msg}\n  note: ${d.note!}"
+    }
+
+    // TODO: implement rich source context rendering with line excerpts,
+    // underline carets, and multi-line span highlighting.
+
+    msg
+}
+
+fn render_all(bag: DiagnosticBag, source: string, filename: string) -> string {
+    mut output = ""
+    for d in bag.diagnostics {
+        if output != "" {
+            output = "${output}\n\n"
+        }
+        output = "${output}${render_diagnostic(d, source, filename)}"
+    }
+    output
+}

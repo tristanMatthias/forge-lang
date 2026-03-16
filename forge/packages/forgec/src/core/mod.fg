@@ -1,0 +1,19 @@
+// ─── Core Module ───────────────────────────────
+// Exports all core types used by the compiler infrastructure.
+// Features import from here — this file NEVER changes for new features.
+
+// Token types: TokenKind, Token, Span, TemplatePart
+export use core.token
+
+// AST types: Statement, Expr, Block, Program, BinOp, UnaryOp,
+//            FeatureStmt, FeatureExpr, NodeRef, AstData trait
+export use core.ast
+
+// Type system: Type, StructField, EnumVariantType
+export use core.types
+
+// Error system: Diagnostic, Severity, error codes, render_diagnostic
+export use core.error
+
+// Feature registry: REGISTRY, register_feature, FeatureRegistration
+export use core.registry
