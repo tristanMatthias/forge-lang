@@ -1,13 +1,18 @@
 /// # Void Function Type
 ///
-/// Function type without a return type: fn(A) — returns void.
+/// Function type without a return arrow: fn(A) — returns void.
+/// Uses a named function since closures with void return have a known limitation.
 ///
 /// expect: hello
 
-fn run_action(action: fn(string)) {
-  action("hello")
+fn greet(msg: string) {
+  println(msg)
+}
+
+fn run_action(action: fn(string), value: string) {
+  action(value)
 }
 
 fn main() {
-  run_action((msg: string) -> println(msg))
+  run_action(greet, "hello")
 }

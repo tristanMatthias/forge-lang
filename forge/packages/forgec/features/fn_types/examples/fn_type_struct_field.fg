@@ -2,11 +2,15 @@
 ///
 /// Store a function in a struct field using a function type.
 ///
-/// expect: 42
+/// expect: 10
 
-type Handler = { process: fn(int) -> string }
+fn apply(f: fn(int) -> int, x: int) -> int {
+  f(x)
+}
+
+type Callback = { handler: fn(int) -> int }
 
 fn main() {
-  let h = Handler { process: (x: int) -> string(x) }
-  println(h.process(42))
+  let cb = Callback { handler: (x: int) -> x * 2 }
+  println(string(apply(cb.handler, 5)))
 }

@@ -8,7 +8,8 @@ fn run(f: fn() -> int) -> int {
   f()
 }
 
+fn get42() -> int { 42 }
+
 fn main() {
-  let get_val = () -> 42
-  println(string(run(get_val)))
+  println(string(run(get42)))
 }

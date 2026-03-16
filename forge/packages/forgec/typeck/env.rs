@@ -168,6 +168,16 @@ impl TypeEnv {
         None
     }
 
+    /// Update the type of a variable in scope (used for closure type inference).
+    pub fn update_var_type(&mut self, name: &str, ty: Type) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(info) = scope.get_mut(name) {
+                info.ty = ty;
+                return;
+            }
+        }
+    }
+
     pub fn lookup_function(&self, name: &str) -> Option<&Type> {
         self.functions.get(name)
     }

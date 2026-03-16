@@ -191,6 +191,17 @@ impl<'ctx> Codegen<'ctx> {
                         "query_like" => self.compile_query_like(args),
                         _ => None,
                     },
+                    "file_io" => match name.as_str() {
+                        "read_file" => self.compile_read_file(args),
+                        "write_file" => self.compile_write_file(args),
+                        "file_exists" => self.compile_file_exists(args),
+                        _ => None,
+                    },
+                    "stderr" => match name.as_str() {
+                        "eprintln" => self.compile_eprintln(args),
+                        "eprint" => self.compile_eprint(args),
+                        _ => None,
+                    },
                     "channels" => {
                         // channel(capacity) -> int (channel ID)
                         let capacity = if args.is_empty() {
@@ -384,6 +395,22 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         val
+    }
+
+    pub(crate) fn compile_eprintln(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+        if args.is_empty() {
+            let newline = self.build_string_literal("\n");
+            self.call_runtime_void("forge_eprint_string", &[newline.into()]);
+            return None;
+        }
+        self.compile_print_dispatch(args, "forge_eprintln")
+    }
+
+    pub(crate) fn compile_eprint(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+        if args.is_empty() {
+            return None;
+        }
+        self.compile_print_dispatch(args, "forge_eprint")
     }
 
     pub(crate) fn compile_println(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {

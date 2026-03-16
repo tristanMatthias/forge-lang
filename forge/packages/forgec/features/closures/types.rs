@@ -74,6 +74,9 @@ impl<'ctx> Codegen<'ctx> {
                     BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => {
                         return Type::Bool;
                     }
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                        return Type::Int;
+                    }
                 }
             }
             Expr::Call { callee, .. } => {

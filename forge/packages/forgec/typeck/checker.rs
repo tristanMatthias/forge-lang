@@ -539,6 +539,35 @@ impl TypeChecker {
                         Type::Bool
                     }
                     BinaryOp::And | BinaryOp::Or => Type::Bool,
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                        let op_str = match op {
+                            BinaryOp::BitAnd => "&",
+                            BinaryOp::BitOr => "|",
+                            BinaryOp::BitXor => "^",
+                            BinaryOp::Shl => "<<",
+                            BinaryOp::Shr => ">>",
+                            _ => unreachable!(),
+                        };
+                        if left_type != Type::Int && left_type != Type::Unknown && left_type != Type::Error {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "F0012",
+                                    format!("bitwise operator `{}` requires int operands, found {}", op_str, left_type),
+                                    left.span(),
+                                ).with_help("bitwise operators only work on int values".to_string()),
+                            );
+                        }
+                        if right_type != Type::Int && right_type != Type::Unknown && right_type != Type::Error {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "F0012",
+                                    format!("bitwise operator `{}` requires int operands, found {}", op_str, right_type),
+                                    right.span(),
+                                ).with_help("bitwise operators only work on int values".to_string()),
+                            );
+                        }
+                        Type::Int
+                    }
                 }
             }
 
@@ -547,6 +576,18 @@ impl TypeChecker {
                 match op {
                     UnaryOp::Not => Type::Bool,
                     UnaryOp::Neg => operand_type,
+                    UnaryOp::BitNot => {
+                        if operand_type != Type::Int && operand_type != Type::Unknown && operand_type != Type::Error {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "F0012",
+                                    format!("bitwise operator `~` requires int operand, found {}", operand_type),
+                                    operand.span(),
+                                ).with_help("bitwise NOT only works on int values".to_string()),
+                            );
+                        }
+                        Type::Int
+                    }
                 }
             }
 
@@ -587,12 +628,14 @@ impl TypeChecker {
                         };
 
                         // If we inferred types, update the variable's stored type
+                        // so subsequent calls see the resolved param types
                         if has_unknown {
                             if let Expr::Ident(fn_name, _) = callee.as_ref() {
                                 let new_type = Type::Function {
                                     params: resolved_params.clone(),
                                     return_type: return_type.clone(),
                                 };
+                                self.env.update_var_type(fn_name, new_type);
                             }
                         }
 

@@ -737,6 +737,34 @@ impl Parser {
         self.parse_binary_level(
             &[(TokenKind::Lt, BinaryOp::Lt), (TokenKind::LtEq, BinaryOp::LtEq),
               (TokenKind::Gt, BinaryOp::Gt), (TokenKind::GtEq, BinaryOp::GtEq)],
+            Self::parse_bitwise_or,
+        )
+    }
+
+    pub(crate) fn parse_bitwise_or(&mut self) -> Option<Expr> {
+        self.parse_binary_level(
+            &[(TokenKind::Bar, BinaryOp::BitOr)],
+            Self::parse_bitwise_xor,
+        )
+    }
+
+    pub(crate) fn parse_bitwise_xor(&mut self) -> Option<Expr> {
+        self.parse_binary_level(
+            &[(TokenKind::Caret, BinaryOp::BitXor)],
+            Self::parse_bitwise_and,
+        )
+    }
+
+    pub(crate) fn parse_bitwise_and(&mut self) -> Option<Expr> {
+        self.parse_binary_level(
+            &[(TokenKind::Ampersand, BinaryOp::BitAnd)],
+            Self::parse_bitwise_shift,
+        )
+    }
+
+    pub(crate) fn parse_bitwise_shift(&mut self) -> Option<Expr> {
+        self.parse_binary_level(
+            &[(TokenKind::ShiftLeft, BinaryOp::Shl), (TokenKind::ShiftRight, BinaryOp::Shr)],
             Self::parse_range,
         )
     }
@@ -774,6 +802,16 @@ impl Parser {
             let operand = self.parse_unary()?;
             return Some(Expr::Unary {
                 op: UnaryOp::Neg,
+                operand: Box::new(operand),
+                span,
+            });
+        }
+        if self.check(&TokenKind::Tilde) {
+            let span = self.advance()?.span;
+            self.skip_newlines();
+            let operand = self.parse_unary()?;
+            return Some(Expr::Unary {
+                op: UnaryOp::BitNot,
                 operand: Box::new(operand),
                 span,
             });
@@ -1565,6 +1603,27 @@ impl Parser {
                 } else {
                     Some(TypeExpr::Tuple(types))
                 }
+            }
+            TokenKind::Fn => {
+                // Function type: fn(A, B) -> R  or  fn(A) (void return)
+                self.advance(); // consume `fn`
+                self.expect(&TokenKind::LParen)?;
+                self.skip_newlines();
+                let params = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_type_expr())?;
+                self.skip_newlines();
+
+                let return_type = if self.check(&TokenKind::Arrow) {
+                    self.advance();
+                    self.skip_newlines();
+                    self.parse_type_expr()?
+                } else {
+                    TypeExpr::Named("void".to_string())
+                };
+
+                Some(TypeExpr::Function {
+                    params,
+                    return_type: Box::new(return_type),
+                })
             }
             TokenKind::LBrace => {
                 // Struct type: { name: string @min(1), age: int }
