@@ -3,11 +3,13 @@
 // Source → Lexer → Parser → Checker → Codegen → Linker
 
 use core.ast.Program
-use core.error.{render_all, bag_error_count}
-use lexer.mod.{Lexer, lexer_new}
-use parser.mod.{Parser, parser_new}
-use checker.mod.{TypeChecker, type_checker_new}
-use codegen.mod.{Codegen, codegen_new}
+use core.error.{render_diagnostic, render_all}
+use lexer.mod.{lexer_new}
+use parser.mod.{parser_new}
+use checker.mod.{type_checker_new}
+use codegen.mod.{codegen_new}
+use @std.fs
+use @std.process
 
 // ─── Compilation Options ───────────────────────
 
@@ -25,22 +27,19 @@ fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
     mut lexer = lexer_new(source)
     let tokens = lexer.tokenize()
 
-    // Check for lexer errors
     if lexer.diagnostics.length > 0 {
         for d in lexer.diagnostics {
-            eprint(render_diagnostic(d, source, filename))
+            eprintln(render_diagnostic(d, source, filename))
         }
-        // Continue even with lex errors (best-effort)
     }
 
     // Phase 2: Parse
     mut parser = parser_new(tokens)
     let program = parser.parse_program()
 
-    // Check for parse errors
     if parser.diagnostics.length > 0 {
         for d in parser.diagnostics {
-            eprint(render_diagnostic(d, source, filename))
+            eprintln(render_diagnostic(d, source, filename))
         }
         return false
     }
@@ -55,46 +54,43 @@ fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
         return false
     }
 
-    // If check-only, stop here
     if opts.check_only {
         return true
     }
 
     // Phase 4: Codegen
-    let module_name = filename
-    mut cg = codegen_new(module_name)
+    mut cg = codegen_new(filename)
     cg.emit_program(program)
 
-    // Verify module
     if !cg.verify() {
         eprintln("error: LLVM module verification failed")
         if opts.emit_ir {
-            let ir = cg.print_ir()
-            // TODO: print IR for debugging
+            // Print IR for debugging
+            let ir_ptr = cg.print_ir()
+            // TODO: convert raw ptr to string and print
         }
         cg.dispose()
         return false
     }
 
     if opts.emit_ir {
-        let ir = cg.print_ir()
-        // TODO: print IR
+        let ir_ptr = cg.print_ir()
+        // TODO: convert and print IR
     }
 
-    // Phase 5: Emit + Link
+    // Phase 5: Emit object + link
     let output = opts.output_path ?? "a.out"
-    // TODO: emit_and_link(cg.module, output, runtime_path)
+    // TODO: use target machine to emit .o, then link with cc
+    // For now, we just verify the IR is valid
 
     cg.dispose()
     true
 }
 
-// ─── Convenience Entry Points ──────────────────
+// ─── File-based Entry Points ───────────────────
 
 fn compile_file(path: string, output: string?) -> bool {
-    // TODO: read file using @std.fs
-    // let source = fs.read(path)
-    let source = "" // placeholder
+    let source = fs.read(path)
     compile(source, path, CompileOptions {
         input_path: path,
         output_path: output,
@@ -104,7 +100,7 @@ fn compile_file(path: string, output: string?) -> bool {
 }
 
 fn check_file(path: string) -> bool {
-    let source = "" // placeholder
+    let source = fs.read(path)
     compile(source, path, CompileOptions {
         input_path: path,
         output_path: null,

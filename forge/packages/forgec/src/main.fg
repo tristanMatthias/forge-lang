@@ -1,10 +1,75 @@
-// Forge compiler - self-hosted
-// Usage: forge run src/main.fg -- <input.fg> [-o output]
+// ─── Forge Compiler (Self-Hosted) ──────────────
+// Usage:
+//   forge run src/main.fg -- build <input.fg> [-o output]
+//   forge run src/main.fg -- check <input.fg>
+//   forge run src/main.fg -- run <input.fg>
 
-use @std.cli
 use @std.process
+use @std.fs
+
+// Import all features (triggers registration)
+use features.mod
+
+// Import driver
+use driver.mod.{compile_file, check_file, compile, CompileOptions}
 
 fn main() {
-    print("forgec v0.1.0 - self-hosted Forge compiler")
-    // TODO: parse CLI args, run pipeline
+    let args = process.args()
+
+    if args.length < 2 {
+        eprintln("forgec v0.1.0 - self-hosted Forge compiler")
+        eprintln("")
+        eprintln("Usage:")
+        eprintln("  forgec build <file.fg> [-o output]")
+        eprintln("  forgec check <file.fg>")
+        eprintln("  forgec run <file.fg>")
+        process.exit(1)
+    }
+
+    let command = args[1]
+
+    match command {
+        "build" -> {
+            if args.length < 3 {
+                eprintln("error: missing input file")
+                process.exit(1)
+            }
+            let input = args[2]
+            let output = if args.length >= 5 && args[3] == "-o" {
+                args[4]
+            } else {
+                null
+            }
+            if !compile_file(input, output) {
+                process.exit(1)
+            }
+        }
+        "check" -> {
+            if args.length < 3 {
+                eprintln("error: missing input file")
+                process.exit(1)
+            }
+            if !check_file(args[2]) {
+                process.exit(1)
+            }
+            println("OK")
+        }
+        "run" -> {
+            if args.length < 3 {
+                eprintln("error: missing input file")
+                process.exit(1)
+            }
+            let input = args[2]
+            if !compile_file(input, "a.out") {
+                process.exit(1)
+            }
+            // Execute the compiled binary
+            process.exec("./a.out")
+        }
+        _ -> {
+            eprintln("error: unknown command '${command}'")
+            eprintln("available: build, check, run")
+            process.exit(1)
+        }
+    }
 }

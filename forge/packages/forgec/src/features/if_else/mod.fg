@@ -11,8 +11,10 @@
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_node_id}
-use core.registry.{register_feature, FeatureRegistration}
-use parser.mod.{Parser}
+use core.types.Type
+use core.registry.register_feature_meta
+use checker.mod.{TypeChecker, register_check_expr}
+use codegen.mod.{Codegen, register_emit_expr}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -53,19 +55,41 @@ fn make_if_expr(condition: Expr, then_block: Block, else_block: Block?, span: Sp
     feature_expr("if_else", "if_expr", id, span)
 }
 
-// ─── Registration ────────────────────────────────
-// No parse_tokens because if/else is parsed as a prefix expression
-// inside expressions.fg, not as a statement keyword.
+// ─── Check ──────────────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "if_else",
-    name: "If/Else Expressions",
-    status: "wip",
-    parse_tokens: [],
-    parse_handlers: [],
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {
+    let d = get_if_expr(node.node_id)
+    if d == null { return Type.Void }
+    let data = d!
+
+    let cond_type = tc.infer_expr(data.condition)
+    // TODO: verify cond_type is bool
+
+    let then_type = tc.check_block(data.then_block)
+
+    if data.else_block != null {
+        let else_type = tc.check_block(data.else_block!)
+        // TODO: unify then_type and else_type
+        then_type
+    } else {
+        Type.Void
+    }
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
+    let d = get_if_expr(node.node_id)
+    if d == null { return cg.null_ptr() }
+    let data = d!
+
+    let cond_val = cg.emit_expr(data.condition)
+    // TODO: full if/else codegen with phi nodes
+    cg.emit_block(data.then_block)
+}
+
+// ─── Registration ────────────────────────────────
+
+register_feature_meta("if_else", "If/Else Expressions", "wip")
+register_check_expr("if_else", check_if_expr)
+register_emit_expr("if_else", emit_if_expr)

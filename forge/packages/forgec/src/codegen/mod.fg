@@ -3,12 +3,25 @@
 // Feature-specific codegen is dispatched via the registry.
 
 use core.token.Span
-use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr}
+use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use core.types.Type
-use core.registry.REGISTRY
 use codegen.types.{TypeMapper, type_mapper_new}
 use codegen.runtime.{RuntimeFns, declare_runtime}
 use @std.llvm
+
+// ─── Emit Dispatch Maps ──────────────────────────
+// Features register typed emit handlers here.
+
+mut EMIT_STMT_HANDLERS: Map<string, fn(Codegen, NodeRef)> = {}
+mut EMIT_EXPR_HANDLERS: Map<string, fn(Codegen, NodeRef) -> ptr> = {}
+
+fn register_emit_stmt(feature_id: string, handler: fn(Codegen, NodeRef)) {
+    EMIT_STMT_HANDLERS[feature_id] = handler
+}
+
+fn register_emit_expr(feature_id: string, handler: fn(Codegen, NodeRef) -> ptr) {
+    EMIT_EXPR_HANDLERS[feature_id] = handler
+}
 
 // ─── Variable Slot ─────────────────────────────
 
@@ -153,9 +166,9 @@ impl Codegen {
 
     fn emit_feature_stmt(self, fe: FeatureStmt) {
         let feature_id = fe.data.feature
-        if REGISTRY.emit_stmt.has(feature_id) {
-            let handler = REGISTRY.emit_stmt[feature_id]
-            // TODO: call handler
+        if EMIT_STMT_HANDLERS.has(feature_id) {
+            let handler = EMIT_STMT_HANDLERS[feature_id]
+            handler(self, fe.data)
         }
     }
 
@@ -215,9 +228,9 @@ impl Codegen {
             }
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if REGISTRY.emit_expr.has(feature_id) {
-                    let handler = REGISTRY.emit_expr[feature_id]
-                    // TODO: call handler
+                if EMIT_EXPR_HANDLERS.has(feature_id) {
+                    let handler = EMIT_EXPR_HANDLERS[feature_id]
+                    return handler(self, fe.data)
                 }
                 llvm.const_int(self.types.i64_type, 0, 0)
             }
@@ -264,42 +277,107 @@ impl Codegen {
     }
 
     fn emit_call(self, callee: Expr, args: List<Expr>) -> ptr {
-        // Emit all arguments
-        let arg_arr = llvm.value_array_new(args.length)
-        mut i = 0
-        for arg in args {
-            let val = self.emit_expr(arg)
-            llvm.value_array_set(arg_arr, i, val)
-            i = i + 1
-        }
-
-        // Resolve callee
         match callee {
             .Ident(name, _) -> {
-                // Look up function in our table or runtime
-                let fn_val = if self.functions.has(name) {
-                    self.functions[name]
-                } else {
-                    // Try to find in module (runtime functions)
-                    // TODO: proper function lookup
-                    null
+                // Built-in print functions: convert arg to string, call runtime
+                if name == "println" || name == "print" || name == "eprintln" || name == "eprint" {
+                    return self.emit_print_call(name, args)
                 }
 
-                if fn_val != null {
-                    // TODO: need function type for call2
-                    // For now, return placeholder
-                    llvm.value_array_free(arg_arr)
-                    llvm.const_int(self.types.i64_type, 0, 0)
-                } else {
-                    llvm.value_array_free(arg_arr)
-                    llvm.const_int(self.types.i64_type, 0, 0)
+                // Convert function (int, float, string, bool)
+                if name == "string" && args.length == 1 {
+                    return self.emit_to_string(args[0])
                 }
+                if name == "int" && args.length == 1 {
+                    // TODO: proper type conversion
+                    return self.emit_expr(args[0])
+                }
+
+                // User-defined function
+                if self.functions.has(name) {
+                    let fn_val = self.functions[name]
+                    let arg_arr = llvm.value_array_new(args.length)
+                    mut i = 0
+                    for arg in args {
+                        llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
+                        i = i + 1
+                    }
+                    // Build function type for the call
+                    let param_arr = llvm.type_array_new(args.length)
+                    i = 0
+                    for arg in args {
+                        llvm.type_array_set(param_arr, i, self.types.i64_type)
+                        i = i + 1
+                    }
+                    let fn_type = llvm.function_type(self.types.i64_type, param_arr, args.length, 0)
+                    llvm.type_array_free(param_arr)
+                    let result = llvm.build_call(self.builder, fn_type, fn_val, arg_arr, args.length, "call")
+                    llvm.value_array_free(arg_arr)
+                    return result
+                }
+
+                // Unknown function — return 0 as placeholder
+                llvm.const_int(self.types.i64_type, 0, 0)
             }
             _ -> {
-                llvm.value_array_free(arg_arr)
                 llvm.const_int(self.types.i64_type, 0, 0)
             }
         }
+    }
+
+    // Emit print/println: convert arg to ForgeString, call runtime
+    fn emit_print_call(self, name: string, args: List<Expr>) -> ptr {
+        let rt_fn = match name {
+            "println" -> self.runtime.forge_println
+            "print" -> self.runtime.forge_print
+            "eprintln" -> self.runtime.forge_eprintln
+            "eprint" -> self.runtime.forge_eprint
+            _ -> self.runtime.forge_println
+        }
+
+        // For each arg, convert to string and print
+        for arg in args {
+            let str_val = self.emit_to_string(arg)
+            // ForgeString is { ptr, i64 } — extract fields for the call
+            let str_ptr = llvm.build_extract_value(self.builder, str_val, 0, "str_ptr")
+            let str_len = llvm.build_extract_value(self.builder, str_val, 1, "str_len")
+
+            // Call forge_println(ptr, i64)
+            let call_args = llvm.value_array_new(2)
+            llvm.value_array_set(call_args, 0, str_ptr)
+            llvm.value_array_set(call_args, 1, str_len)
+
+            let void_ty = self.types.void_type
+            let param_types = llvm.type_array_new(2)
+            llvm.type_array_set(param_types, 0, self.types.ptr_type)
+            llvm.type_array_set(param_types, 1, self.types.i64_type)
+            let fn_type = llvm.function_type(void_ty, param_types, 2, 0)
+            llvm.type_array_free(param_types)
+
+            llvm.build_call(self.builder, fn_type, rt_fn, call_args, 2, "")
+            llvm.value_array_free(call_args)
+        }
+
+        llvm.const_int(self.types.i64_type, 0, 0) // print returns void
+    }
+
+    // Convert any expression to a ForgeString value
+    fn emit_to_string(self, expr: Expr) -> ptr {
+        let val = self.emit_expr(expr)
+
+        // TODO: check type of expr and pick the right converter
+        // For now, assume int and call forge_int_to_string
+        let call_args = llvm.value_array_new(1)
+        llvm.value_array_set(call_args, 0, val)
+
+        let param_types = llvm.type_array_new(1)
+        llvm.type_array_set(param_types, 0, self.types.i64_type)
+        let fn_type = llvm.function_type(self.types.string_type, param_types, 1, 0)
+        llvm.type_array_free(param_types)
+
+        let result = llvm.build_call(self.builder, fn_type, self.runtime.forge_int_to_string, call_args, 1, "to_str")
+        llvm.value_array_free(call_args)
+        result
     }
 
     fn emit_block(self, block: Block) -> ptr {

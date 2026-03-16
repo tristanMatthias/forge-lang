@@ -1,0 +1,5 @@
+// Absolute minimum test — just a println
+// Expected output: 42
+
+let x = 42
+println(string(x))

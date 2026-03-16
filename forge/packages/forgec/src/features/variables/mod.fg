@@ -1,12 +1,14 @@
 // ─── Variables Feature ─────────────────────────
 // Handles: let, mut, const bindings.
-// Side table stores VarDeclData keyed by node_id (as string).
-// Parse handlers for "let", "mut", "const" tokens.
+// Side table stores VarDeclData keyed by node_id.
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
-use core.registry.{register_feature, FeatureRegistration, REGISTRY}
-use parser.mod.{Parser, Param, TypeExpr}
+use core.types.Type
+use core.registry.register_feature_meta
+use parser.mod.{Parser, Param, TypeExpr, register_parse_handler}
+use checker.mod.{TypeChecker, register_check_stmt, register_top_level}
+use codegen.mod.{Codegen, register_emit_stmt}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -14,11 +16,7 @@ mut VAR_DECLS: Map<string, VarDeclData> = {}
 
 // ─── Data Types ──────────────────────────────────
 
-enum VarKind {
-    Let
-    Mut
-    Const
-}
+enum VarKind { Let, Mut, Const }
 
 type VarDeclData = {
     var_kind: VarKind,
@@ -29,26 +27,19 @@ type VarDeclData = {
     span: Span,
 }
 
-// ─── Lookup Helper ───────────────────────────────
-
 fn get_var_decl(node_id: int) -> VarDeclData? {
     let key = "${node_id}"
-    if VAR_DECLS.has(key) {
-        VAR_DECLS[key]
-    } else {
-        null
-    }
+    if VAR_DECLS.has(key) { VAR_DECLS[key] } else { null }
 }
 
-// ─── Parse Helpers ───────────────────────────────
+// ─── Parse ──────────────────────────────────────
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
 
-    // Expect identifier
     let name = p.expect_ident()
     if name == null {
-        p.error("expected variable name after '${match kind { .Let -> "let", .Mut -> "mut", .Const -> "const" }}'")
+        p.error("expected variable name")
         return null
     }
 
@@ -56,9 +47,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let type_ann = if p.check(.Colon) {
         p.advance()
         p.parse_type_expr()
-    } else {
-        null
-    }
+    } else { null }
 
     // Expect = value
     if p.expect(.Eq) == null {
@@ -72,56 +61,60 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Store in side table
     let id = next_node_id()
-    let key = "${id}"
-    VAR_DECLS[key] = VarDeclData {
-        var_kind: kind,
-        name: name!,
-        type_ann,
-        value: value!,
-        exported,
-        span: start,
+    VAR_DECLS["${id}"] = VarDeclData {
+        var_kind: kind, name: name!, type_ann, value: value!, exported, span: start,
     }
 
     feature_stmt("variables", match kind {
-        .Let -> "let_decl"
-        .Mut -> "mut_decl"
-        .Const -> "const_decl"
+        .Let -> "let_decl", .Mut -> "mut_decl", .Const -> "const_decl",
     }, id, start)
 }
 
-// ─── Parse Handlers ──────────────────────────────
+fn parse_let(p: Parser) -> Statement? { parse_var_binding(p, .Let, false) }
+fn parse_mut(p: Parser) -> Statement? { parse_var_binding(p, .Mut, false) }
+fn parse_const(p: Parser) -> Statement? { parse_var_binding(p, .Const, false) }
 
-fn parse_let(ctx: ptr) -> ptr {
-    let p = ctx as Parser
-    let result = parse_var_binding(p, .Let, false)
-    result as ptr
+// ─── Check ──────────────────────────────────────
+
+fn check_var(tc: TypeChecker, node: NodeRef) {
+    let d = get_var_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    let val_type = tc.infer_expr(data.value)
+    let ty = if data.type_ann != null {
+        // TODO: resolve type annotation
+        val_type
+    } else { val_type }
+
+    let mutable = data.var_kind is .Mut
+    tc.env.define(data.name, ty, mutable)
 }
 
-fn parse_mut(ctx: ptr) -> ptr {
-    let p = ctx as Parser
-    let result = parse_var_binding(p, .Mut, false)
-    result as ptr
+fn top_level_var(tc: TypeChecker, node: NodeRef) {
+    // Pre-register variable in scope for forward references
+    check_var(tc, node)
 }
 
-fn parse_const(ctx: ptr) -> ptr {
-    let p = ctx as Parser
-    let result = parse_var_binding(p, .Const, false)
-    result as ptr
+// ─── Emit ───────────────────────────────────────
+
+fn emit_var(cg: Codegen, node: NodeRef) {
+    let d = get_var_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    let val = cg.emit_expr(data.value)
+    // TODO: resolve type from checker
+    cg.define_var(data.name, Type.Int, val)
 }
 
-// ─── Registration ────────────────────────────────
+// ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "variables",
-    name: "Variable Declarations",
-    status: "wip",
-    parse_tokens: ["let", "mut", "const"],
-    parse_handlers: [parse_let, parse_mut, parse_const],
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+register_feature_meta("variables", "Variable Declarations", "wip")
+register_parse_handler("let", parse_let)
+register_parse_handler("mut", parse_mut)
+register_parse_handler("const", parse_const)
+register_check_stmt("variables", check_var)
+register_top_level("variables", top_level_var)
+register_emit_stmt("variables", emit_var)

@@ -9,7 +9,7 @@
 // and provides helpers for the type checker to resolve TypeExpr.Named
 // nodes into concrete types.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.register_feature_meta
 
 // ─── Primitive Type Names ────────────────────────
 
@@ -52,15 +52,4 @@ fn primitive_coercible(from: string, to: string) -> bool {
 // ─── Registration ────────────────────────────────
 // No parse handlers — types are resolved during type checking.
 
-register_feature(FeatureRegistration {
-    id: "primitive_types",
-    name: "Primitive Types",
-    status: "wip",
-    parse_tokens: [],
-    parse_handlers: [],
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+register_feature_meta("primitive_types", "Primitive Types", "wip")

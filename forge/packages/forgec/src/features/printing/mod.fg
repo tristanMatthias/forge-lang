@@ -11,7 +11,7 @@
 // so that the type checker does not report them as undefined, and so
 // that codegen knows to emit the appropriate runtime calls.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.register_feature_meta
 
 // ─── Built-in Function Names ─────────────────────
 // Used by the checker to recognize these as valid call targets.
@@ -24,18 +24,7 @@ fn is_print_builtin(name: string) -> bool {
 
 // ─── Registration ────────────────────────────────
 // No parse handlers — print/println are regular function calls.
-// Check and emit handlers will be added when the checker/codegen
-// phases are implemented.
+// Check and emit are handled by the core call-expression pipeline
+// which consults is_print_builtin() to recognize these names.
 
-register_feature(FeatureRegistration {
-    id: "printing",
-    name: "Print Functions",
-    status: "wip",
-    parse_tokens: [],
-    parse_handlers: [],
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+register_feature_meta("printing", "Print Functions", "wip")

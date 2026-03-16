@@ -1,12 +1,15 @@
 // ─── Functions Feature ─────────────────────────
 // Handles: fn declarations and export fn.
-// Side table stores FnDeclData keyed by node_id (as string).
-// Parse handlers for "fn" and "export" tokens.
+// Side table stores FnDeclData keyed by node_id.
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
-use core.registry.{register_feature, FeatureRegistration, REGISTRY}
-use parser.mod.{Parser, Param, TypeExpr}
+use core.types.Type
+use core.registry.register_feature_meta
+use parser.mod.{Parser, Param, TypeExpr, register_parse_handler}
+use checker.mod.{TypeChecker, register_check_stmt, register_top_level}
+use codegen.mod.{Codegen, register_emit_stmt}
+use features.variables.{parse_var_binding, VarKind}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -24,125 +27,158 @@ type FnDeclData = {
     span: Span,
 }
 
-// ─── Lookup Helper ───────────────────────────────
-
 fn get_fn_decl(node_id: int) -> FnDeclData? {
     let key = "${node_id}"
-    if FN_DECLS.has(key) {
-        FN_DECLS[key]
-    } else {
-        null
-    }
+    if FN_DECLS.has(key) { FN_DECLS[key] } else { null }
 }
 
-// ─── Parse Helpers ───────────────────────────────
+// ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     let start = p.advance().span // consume 'fn'
 
-    // Expect function name
     let name = p.expect_ident()
     if name == null {
         p.error("expected function name after 'fn'")
         return null
     }
 
-    // Optional type parameters: <T, U>
     let type_params = p.parse_type_params()
-
-    // Parameter list: (a: int, b: string)
     let params = p.parse_params()
-    if params == null {
-        return null
-    }
+    if params == null { return null }
 
-    // Optional return type: -> Type
     let return_type = if p.check(.Arrow) {
         p.advance()
         p.parse_type_expr()
-    } else {
-        null
-    }
+    } else { null }
 
-    // Function body: { ... }
     let body = p.parse_block()
     if body == null {
         p.error("expected function body")
         return null
     }
 
-    // Store in side table
     let id = next_node_id()
-    let key = "${id}"
-    FN_DECLS[key] = FnDeclData {
-        name: name!,
-        type_params,
-        params: params!,
-        return_type,
-        body: body!,
-        exported,
-        span: start,
+    FN_DECLS["${id}"] = FnDeclData {
+        name: name!, type_params, params: params!,
+        return_type, body: body!, exported, span: start,
     }
 
     feature_stmt("functions", "fn_decl", id, start)
 }
 
-// ─── Parse Handlers ──────────────────────────────
+fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 
-fn parse_fn(ctx: ptr) -> ptr {
-    let p = ctx as Parser
-    let result = parse_fn_decl(p, false)
-    result as ptr
-}
-
-fn parse_export(ctx: ptr) -> ptr {
-    let p = ctx as Parser
+fn parse_export(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'export'
-    let tok = p.peek()
 
-    match tok.kind {
-        .Fn -> {
-            // export fn name(...) { ... }
-            let result = parse_fn_decl(p, true)
-            result as ptr
-        }
-        .Let -> {
-            // export let name = value
-            // Delegate to variables feature
-            use features.variables.{parse_var_binding, VarKind}
-            let result = parse_var_binding(p, .Let, true)
-            result as ptr
-        }
-        .Mut -> {
-            // export mut name = value
-            use features.variables.{parse_var_binding, VarKind}
-            let result = parse_var_binding(p, .Mut, true)
-            result as ptr
-        }
-        .Const -> {
-            // export const name = value
-            use features.variables.{parse_var_binding, VarKind}
-            let result = parse_var_binding(p, .Const, true)
-            result as ptr
-        }
+    match p.peek().kind {
+        .Fn -> parse_fn_decl(p, true)
+        .Let -> parse_var_binding(p, .Let, true)
+        .Mut -> parse_var_binding(p, .Mut, true)
+        .Const -> parse_var_binding(p, .Const, true)
         _ -> {
             p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
-            null as ptr
+            null
         }
     }
 }
 
-// ─── Registration ────────────────────────────────
+// ─── Check ──────────────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "functions",
-    name: "Function Declarations",
-    status: "wip",
-    parse_tokens: ["fn", "export"],
-    parse_handlers: [parse_fn, parse_export],
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+fn check_fn(tc: TypeChecker, node: NodeRef) {
+    let d = get_fn_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Build function type
+    mut param_types: List<Type> = []
+    for param in data.params {
+        // TODO: resolve param type from annotation
+        param_types = param_types.push(Type.Unknown)
+    }
+    let ret_type = Type.Void // TODO: resolve from return_type annotation
+    let fn_type = Type.Function(param_types, ret_type)
+
+    // Register function in scope
+    tc.env.define(data.name, fn_type, false)
+
+    // Check body in new scope
+    tc.env.push_scope()
+    tc.env.push_return_type(ret_type)
+
+    // Define params in scope
+    mut i = 0
+    for param in data.params {
+        tc.env.define(param.name, param_types[i], param.mutable)
+        i = i + 1
+    }
+
+    tc.check_block(data.body)
+    tc.env.pop_return_type()
+    tc.env.pop_scope()
+}
+
+fn top_level_fn(tc: TypeChecker, node: NodeRef) {
+    let d = get_fn_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Pre-register function type for forward references
+    mut param_types: List<Type> = []
+    for param in data.params {
+        param_types = param_types.push(Type.Unknown)
+    }
+    tc.env.define(data.name, Type.Function(param_types, Type.Void), false)
+}
+
+// ─── Emit ───────────────────────────────────────
+
+fn emit_fn(cg: Codegen, node: NodeRef) {
+    let d = get_fn_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+
+    // Build LLVM function type
+    let param_arr = llvm.type_array_new(data.params.length)
+    mut i = 0
+    for param in data.params {
+        llvm.type_array_set(param_arr, i, cg.types.i64_type) // TODO: resolve actual types
+        i = i + 1
+    }
+    let ret_ty = cg.types.i64_type // TODO: resolve return type
+    let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
+    llvm.type_array_free(param_arr)
+
+    let fn_val = llvm.add_function(cg.module, data.name, fn_type)
+    cg.functions[data.name] = fn_val
+    cg.current_fn = fn_val
+
+    // Create entry block
+    let entry = llvm.append_basic_block(cg.ctx, fn_val, "entry")
+    llvm.position_at_end(cg.builder, entry)
+
+    // Define params as local variables
+    i = 0
+    for param in data.params {
+        let param_val = llvm.get_param(fn_val, i)
+        cg.define_var(param.name, Type.Int, param_val) // TODO: actual types
+        i = i + 1
+    }
+
+    // Emit body
+    let result = cg.emit_block(data.body)
+
+    // If no explicit return, add one
+    // TODO: check if block already terminates
+    llvm.build_ret(cg.builder, result)
+}
+
+// ─── Registration ───────────────────────────────
+
+register_feature_meta("functions", "Function Declarations", "wip")
+register_parse_handler("fn", parse_fn)
+register_parse_handler("export", parse_export)
+register_check_stmt("functions", check_fn)
+register_top_level("functions", top_level_fn)
+register_emit_stmt("functions", emit_fn)

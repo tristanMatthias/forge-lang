@@ -1,124 +1,27 @@
 // ─── Feature Registry ──────────────────────────
-// Global Map-based dispatch tables. Features register handlers here at import
-// time. Core dispatch does map lookups instead of hardcoded match arms.
+// Metadata registry for compiler features. Each phase (parse, check, emit)
+// owns its own typed dispatch maps in its own module.
 //
-// Handler signature convention: fn(ptr) -> ptr
-//   - Parse handlers:  ctx_ptr → ast_node_ptr
-//   - Check handlers:  (checker_ptr, node_ptr) → void or type_ptr
-//   - Emit handlers:   (codegen_ptr, node_ptr) → void or value_ptr
-//
-// We use fn(ptr) -> ptr as a generic handler signature. Callers cast as needed.
-// The registry pattern is what matters — exact types will be refined as the
-// type system matures.
+// This module stores only feature metadata and the parse dispatch map.
+// The parse map uses Map<string, fn(Parser) -> Statement?> — fully typed,
+// no ptr casts. Checker and codegen dispatch maps live in their own modules
+// to avoid circular imports.
 
-// ─── Handler Types ─────────────────────────────
+use core.token.Span
+use core.ast.{Statement, Expr, NodeRef}
+use core.types.Type
 
-type FeatureRegistry = {
-    // Parser: token_kind_string -> parse handler
-    mut parse_stmt: Map<string, fn(ptr) -> ptr>,
-    // Checker: feature_id -> check handler
-    mut check_stmt: Map<string, fn(ptr, ptr)>,
-    mut check_expr: Map<string, fn(ptr, ptr) -> ptr>,
-    // Codegen: feature_id -> emit handler
-    mut emit_stmt: Map<string, fn(ptr, ptr)>,
-    mut emit_expr: Map<string, fn(ptr, ptr) -> ptr>,
-    // Top-level: feature_id -> first-pass registration handler
-    mut top_level: Map<string, fn(ptr, ptr)>,
-}
+// ─── Feature Metadata ────────────────────────────
 
-// ─── Global Instance ───────────────────────────
-
-mut REGISTRY = FeatureRegistry {
-    parse_stmt: {},
-    check_stmt: {},
-    check_expr: {},
-    emit_stmt: {},
-    emit_expr: {},
-    top_level: {},
-}
-
-// ─── Registration Record ───────────────────────
-
-type FeatureRegistration = {
+type FeatureMeta = {
     id: string,
     name: string,
     status: string,
-    parse_tokens: List<string>,
-    parse_handlers: List<fn(ptr) -> ptr>,
-    check_stmt: fn(ptr, ptr)?,
-    check_expr: fn(ptr, ptr) -> ptr?,
-    emit_stmt: fn(ptr, ptr)?,
-    emit_expr: fn(ptr, ptr) -> ptr?,
-    top_level: fn(ptr, ptr)?,
 }
 
-// ─── Registration ──────────────────────────────
+// Global metadata list
+mut FEATURES: List<FeatureMeta> = []
 
-fn register_feature(reg: FeatureRegistration) {
-    // Register parse handlers for each token kind
-    mut i = 0
-    for token in reg.parse_tokens {
-        REGISTRY.parse_stmt[token] = reg.parse_handlers[i]
-        i = i + 1
-    }
-
-    if reg.check_stmt != null {
-        REGISTRY.check_stmt[reg.id] = reg.check_stmt!
-    }
-    if reg.check_expr != null {
-        REGISTRY.check_expr[reg.id] = reg.check_expr!
-    }
-    if reg.emit_stmt != null {
-        REGISTRY.emit_stmt[reg.id] = reg.emit_stmt!
-    }
-    if reg.emit_expr != null {
-        REGISTRY.emit_expr[reg.id] = reg.emit_expr!
-    }
-    if reg.top_level != null {
-        REGISTRY.top_level[reg.id] = reg.top_level!
-    }
-}
-
-// ─── Dispatch Helpers ──────────────────────────
-
-fn dispatch_parse(token_kind: string, ctx: ptr) -> ptr? {
-    if REGISTRY.parse_stmt.has(token_kind) {
-        let handler = REGISTRY.parse_stmt[token_kind]
-        return handler(ctx)
-    }
-    return null
-}
-
-fn dispatch_check_stmt(feature_id: string, checker: ptr, node: ptr) -> bool {
-    if REGISTRY.check_stmt.has(feature_id) {
-        let handler = REGISTRY.check_stmt[feature_id]
-        handler(checker, node)
-        return true
-    }
-    return false
-}
-
-fn dispatch_check_expr(feature_id: string, checker: ptr, node: ptr) -> ptr? {
-    if REGISTRY.check_expr.has(feature_id) {
-        let handler = REGISTRY.check_expr[feature_id]
-        return handler(checker, node)
-    }
-    return null
-}
-
-fn dispatch_emit_stmt(feature_id: string, codegen: ptr, node: ptr) -> bool {
-    if REGISTRY.emit_stmt.has(feature_id) {
-        let handler = REGISTRY.emit_stmt[feature_id]
-        handler(codegen, node)
-        return true
-    }
-    return false
-}
-
-fn dispatch_emit_expr(feature_id: string, codegen: ptr, node: ptr) -> ptr? {
-    if REGISTRY.emit_expr.has(feature_id) {
-        let handler = REGISTRY.emit_expr[feature_id]
-        return handler(codegen, node)
-    }
-    return null
+fn register_feature_meta(id: string, name: string, status: string) {
+    FEATURES = FEATURES.push(FeatureMeta { id, name, status })
 }

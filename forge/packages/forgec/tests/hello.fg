@@ -1,0 +1,41 @@
+// ─── hello.fg ──────────────────────────────────
+// Minimal test for the self-hosted Forge compiler.
+// Exercises all 6 Phase 1 features:
+//   - variables (let, mut)
+//   - functions (fn)
+//   - operators (+, -, *, ==, <)
+//   - if_else
+//   - printing (println)
+//   - primitive_types (int)
+//
+// Expected output:
+//   Hello from forgec!
+//   55
+//   120
+
+fn fib(n: int) -> int {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+fn factorial(n: int) -> int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+fn main() {
+    println("Hello from forgec!")
+
+    let result = fib(10)
+    println(string(result))
+
+    mut x = 1
+    let fact = factorial(5)
+    println(string(fact))
+}
