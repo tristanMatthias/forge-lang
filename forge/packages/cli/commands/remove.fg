@@ -1,0 +1,11 @@
+/// Remove command — remove a package dependency.
+
+use shared.{forward}
+
+export command remove "Remove a package dependency" {
+    arg package "Package to remove"
+
+    run {
+        forward("remove")
+    }
+}

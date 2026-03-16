@@ -1,0 +1,12 @@
+/// Deps command — show dependency tree.
+
+use shared.{forward}
+
+export command deps "Show dependency tree" {
+    flag flat "Show flat list instead of tree"
+    flag outdated "Show outdated dependencies"
+
+    run {
+        forward("deps")
+    }
+}

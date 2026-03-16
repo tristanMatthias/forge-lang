@@ -1,0 +1,11 @@
+/// Add command — add a package dependency.
+
+use shared.{forward}
+
+export command add "Add a package dependency" {
+    arg package "Package to add (e.g., graphql, graphql@^1.0, @std/http)"
+
+    run {
+        forward("add")
+    }
+}

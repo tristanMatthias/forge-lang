@@ -427,7 +427,8 @@ mod tests {
     fn typosquat_edit_distance_1() {
         let popular = &["http", "model", "queue"];
         assert!(check_typosquat("httq", popular).is_some());
-        assert!(check_typosquat("modle", popular).is_some());
+        // "modle" is distance 2 from "model" (transposition), so won't flag with threshold 1
+        assert!(check_typosquat("modle", popular).is_none());
     }
 
     #[test]
@@ -475,7 +476,7 @@ mod tests {
     fn levenshtein_single_edit() {
         assert_eq!(levenshtein_distance("kitten", "sitten"), 1); // substitution
         assert_eq!(levenshtein_distance("http", "httq"), 1); // substitution
-        assert_eq!(levenshtein_distance("model", "modle"), 1); // transposition counts as 2 in basic lev
+        assert_eq!(levenshtein_distance("model", "modle"), 2); // transposition counts as 2 in basic lev
     }
 
     #[test]

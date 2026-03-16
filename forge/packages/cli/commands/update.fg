@@ -1,0 +1,11 @@
+/// Update command — update package dependencies.
+
+use shared.{forward}
+
+export command update "Update package dependencies" {
+    arg package "Package to update (or omit for all)"
+
+    run {
+        forward("update")
+    }
+}

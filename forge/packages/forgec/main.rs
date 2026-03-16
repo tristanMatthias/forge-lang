@@ -146,9 +146,13 @@ enum Commands {
         #[arg(long)]
         symbols: bool,
 
-        /// Compact LLM-friendly language spec (use with query "full" for examples)
+        /// Machine-readable language spec for LLMs and code generators
         #[arg(long)]
         llm: bool,
+
+        /// Include code examples (use with --llm for full spec with examples)
+        #[arg(long)]
+        examples: bool,
 
         /// Show just the one-liner for a feature
         #[arg(long)]
@@ -247,6 +251,65 @@ enum Commands {
     Auth {
         #[command(subcommand)]
         action: AuthAction,
+    },
+
+    /// Add a dependency to the project
+    Add {
+        /// Package specifiers (e.g., "graphql", "http@^1.0", "@std/json")
+        packages: Vec<String>,
+
+        /// Dev dependency
+        #[arg(long)]
+        dev: bool,
+    },
+
+    /// Remove a dependency from the project
+    Remove {
+        /// Package names to remove
+        packages: Vec<String>,
+    },
+
+    /// Update dependencies
+    Update {
+        /// Specific packages to update (all if omitted)
+        packages: Vec<String>,
+    },
+
+    /// Publish the package to the registry
+    Publish {
+        /// Perform a dry run without actually publishing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Registry URL
+        #[arg(long)]
+        registry: Option<String>,
+
+        /// Auth token (overrides stored credentials)
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Audit dependencies for security and integrity
+    Audit {
+        /// Fix issues automatically where possible
+        #[arg(long)]
+        fix: bool,
+    },
+
+    /// Allow a capability for a package
+    Allow {
+        /// Package name
+        package: String,
+
+        /// Capability to allow (network, filesystem, native, ffi, compile_time_codegen)
+        capability: String,
+    },
+
+    /// Show quality report for a package
+    Quality {
+        /// Path to project directory (default: current directory)
+        path: Option<PathBuf>,
     },
 
     /// Run feature example tests
@@ -612,6 +675,7 @@ fn cmd_lang(
     all: bool,
     symbols: bool,
     llm: bool,
+    examples: bool,
     short: bool,
     grammar: bool,
     cheatsheet: bool,
@@ -632,7 +696,8 @@ fn cmd_lang(
     } else if cheatsheet {
         forge::lang::show_cheatsheet();
     } else if llm {
-        if query.as_deref() == Some("full") {
+        // --llm --examples  OR  --llm full  (backwards compat)
+        if examples || query.as_deref() == Some("full") {
             forge::lang::show_llm_full();
         } else {
             forge::lang::show_llm_compact();
@@ -908,8 +973,8 @@ fn run() {
 
         Commands::Features { feature, graph } => cmd_features(feature, graph),
 
-        Commands::Lang { query, all, symbols, llm, short, grammar, cheatsheet, search, validate, site, site_dir } => {
-            cmd_lang(query, all, symbols, llm, short, grammar, cheatsheet, search, validate, site, site_dir)
+        Commands::Lang { query, all, symbols, llm, examples, short, grammar, cheatsheet, search, validate, site, site_dir } => {
+            cmd_lang(query, all, symbols, llm, examples, short, grammar, cheatsheet, search, validate, site, site_dir)
         }
 
         Commands::Docs { query, symbols, short, search, llm, validate, site, site_dir } => {
@@ -921,6 +986,14 @@ fn run() {
         }
 
         Commands::Deps { flat } => cmd_deps(flat),
+
+        Commands::Add { packages, dev } => cmd_add(packages, dev),
+        Commands::Remove { packages } => cmd_remove(packages),
+        Commands::Update { packages } => cmd_update(packages),
+        Commands::Publish { dry_run, registry, token } => cmd_publish(dry_run, registry, token),
+        Commands::Audit { fix } => cmd_audit(fix),
+        Commands::Allow { package, capability } => cmd_allow(package, capability),
+        Commands::Quality { path } => cmd_quality(path),
 
         Commands::Auth { action } => match action {
             AuthAction::Login { token } => cmd_auth_login(token),
@@ -1085,6 +1158,137 @@ fn cmd_auth_token_list() {
 fn cmd_auth_token_revoke(id: String) {
     eprintln!("token revocation requires registry connection (not yet implemented)");
     eprintln!("  token id: {}", id);
+}
+
+// ── Package management commands ───────────────────────────────────
+
+fn cmd_add(packages: Vec<String>, _dev: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for spec_str in &packages {
+        let spec = match forge::pkg_commands::parse_package_spec(spec_str, None) {
+            Ok(s) => s,
+            Err(e) => fail(CompileError::CliError {
+                message: format!("invalid package specifier '{}': {}", spec_str, e),
+                help: Some("formats: graphql, graphql@^1.0, @std/http".to_string()),
+            }),
+        };
+        if let Err(e) = forge::pkg_commands::add_dependency(&cwd, &spec.name, Some(spec.version.as_str())) {
+            fail(CompileError::CliError {
+                message: format!("failed to add {}: {}", spec.name, e),
+                help: None,
+            });
+        }
+        eprintln!("added {}@{}", spec.name, spec.version);
+    }
+}
+
+fn cmd_remove(packages: Vec<String>) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for name in &packages {
+        if let Err(e) = forge::pkg_commands::remove_dependency(&cwd, name) {
+            fail(CompileError::CliError {
+                message: format!("failed to remove {}: {}", name, e),
+                help: None,
+            });
+        }
+        eprintln!("removed {}", name);
+    }
+}
+
+fn cmd_update(packages: Vec<String>) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if packages.is_empty() {
+        // Update all
+        eprintln!("updating all dependencies...");
+    }
+    for name in &packages {
+        if let Err(e) = forge::pkg_commands::update_dependency(&cwd, Some(name.as_str()), None) {
+            fail(CompileError::CliError {
+                message: format!("failed to update {}: {}", name, e),
+                help: None,
+            });
+        }
+        eprintln!("updated {}", name);
+    }
+}
+
+fn cmd_publish(dry_run: bool, registry: Option<String>, token: Option<String>) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut config = forge::publish::PublishConfig::default();
+    config.dry_run = dry_run;
+    if let Some(url) = registry {
+        config.registry_url = url;
+    }
+    config.token = token.or_else(|| {
+        // Try stored credentials
+        let cred_path = credentials_path();
+        std::fs::read_to_string(&cred_path).ok().and_then(|c| {
+            c.lines()
+                .find(|l| l.starts_with("token"))
+                .and_then(|l| l.split('=').nth(1))
+                .map(|s| s.trim().trim_matches('"').to_string())
+        })
+    });
+
+    match forge::publish::publish(&cwd, &config) {
+        Ok(result) => {
+            if dry_run {
+                eprintln!("dry run: would publish {}@{} (hash: {})", result.package_name, result.version, result.content_hash);
+            } else {
+                eprintln!("published {}@{} to {}", result.package_name, result.version, result.registry_url);
+            }
+        }
+        Err(e) => fail(CompileError::CliError {
+            message: format!("publish failed: {}", e),
+            help: Some("check your credentials with `forgec auth whoami`".to_string()),
+        }),
+    }
+}
+
+fn cmd_audit(_fix: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match forge::audit::audit_project(&cwd) {
+        Ok(report) => {
+            print!("{}", forge::audit::format_report(&report));
+            if !report.vulnerabilities.is_empty() || !report.hash_mismatches.is_empty() {
+                process::exit(1);
+            }
+        }
+        Err(e) => fail(CompileError::CliError {
+            message: format!("audit failed: {}", e),
+            help: None,
+        }),
+    }
+}
+
+fn cmd_allow(package: String, capability: String) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Err(e) = forge::audit::allow_capability(&cwd, &package, &capability) {
+        fail(CompileError::CliError {
+            message: format!("failed to allow capability: {}", e),
+            help: None,
+        });
+    }
+    eprintln!("allowed {} for package {}", capability, package);
+}
+
+fn cmd_quality(path: Option<PathBuf>) {
+    let project_dir = path.unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    });
+    let meta = forge::quality::extract_meta(&project_dir);
+    // Try to get package name/version from forge.toml
+    let toml_path = project_dir.join("forge.toml");
+    let (pkg_name, pkg_version) = if let Ok(content) = std::fs::read_to_string(&toml_path) {
+        let val: toml::Value = toml::from_str(&content).unwrap_or(toml::Value::Table(Default::default()));
+        let name = val.get("project").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("unknown").to_string();
+        let version = val.get("project").and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string();
+        (name, version)
+    } else {
+        ("unknown".to_string(), "0.0.0".to_string())
+    };
+    let report = forge::quality::compute_quality(&pkg_name, &pkg_version, &meta);
+    print!("{}", forge::quality::format_report(&report));
 }
 
 fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {

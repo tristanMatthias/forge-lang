@@ -1,0 +1,9 @@
+use shared.{forward}
+
+export command publish "Publish this package to the registry" {
+    flag dry_run "Simulate publish without uploading"
+
+    run {
+        forward("publish")
+    }
+}
