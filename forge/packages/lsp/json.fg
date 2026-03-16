@@ -1,0 +1,119 @@
+/// JSON field extraction — pure Forge, no externs needed.
+/// Uses ptr.from_string / string.from_ptr for byte-level scanning.
+
+/// Extract a JSON string value by key: `"key":"value"` → `value`
+export fn json_string(body: string, key: string) -> string {
+  let needle = `"${key}":"`
+  let p = ptr.from_string(body)
+  let np = ptr.from_string(needle)
+  let blen = body.length()
+  let nlen = needle.length()
+  mut i = 0
+
+  while i <= blen - nlen {
+    mut matched = true
+    mut j = 0
+    while j < nlen {
+      if p[i + j] != np[j] {
+        matched = false
+        j = nlen
+      }
+      j = j + 1
+    }
+
+    if matched {
+      let start = i + nlen
+      mut end = start
+      while end < blen {
+        let byte = p[end]
+        if byte == 34 {
+          if end == start { return "" }
+          let prev = p[end - 1]
+          if prev != 92 { return body.substring(start, end) }
+        }
+        end = end + 1
+      }
+    }
+    i = i + 1
+  }
+  ""
+}
+
+/// Extract a raw JSON value by key (string, object, array, or scalar).
+export fn json_raw(body: string, key: string) -> string {
+  let needle = `"${key}":`
+  let p = ptr.from_string(body)
+  let np = ptr.from_string(needle)
+  let blen = body.length()
+  let nlen = needle.length()
+  mut i = 0
+
+  while i <= blen - nlen {
+    mut matched = true
+    mut j = 0
+    while j < nlen {
+      if p[i + j] != np[j] {
+        matched = false
+        j = nlen
+      }
+      j = j + 1
+    }
+
+    if matched {
+      // skip whitespace after colon
+      mut s = i + nlen
+      while s < blen {
+        let c = p[s]
+        if c != 32 && c != 9 { break }
+        s = s + 1
+      }
+      if s >= blen { return "" }
+
+      let ch = p[s]
+
+      // quoted string
+      if ch == 34 {
+        mut e = s + 1
+        while e < blen {
+          if p[e] == 34 && p[e - 1] != 92 {
+            return body.substring(s, e + 1)
+          }
+          e = e + 1
+        }
+      }
+
+      // object or array
+      if ch == 123 || ch == 91 {
+        let close = match ch { 123 -> 125, _ -> 93 }
+        mut depth = 1
+        mut e = s + 1
+        mut in_str = false
+        while e < blen && depth > 0 {
+          let b = p[e]
+          if in_str {
+            if b == 34 && p[e - 1] != 92 { in_str = false }
+          } else {
+            if b == 34 { in_str = true }
+            if b == ch { depth = depth + 1 }
+            if b == close { depth = depth - 1 }
+          }
+          e = e + 1
+        }
+        return body.substring(s, e)
+      }
+
+      // bare value (number, bool, null)
+      mut e = s
+      while e < blen {
+        let b = p[e]
+        if b == 44 || b == 125 || b == 93 || b == 10 {
+          return body.substring(s, e)
+        }
+        e = e + 1
+      }
+      return body.substring(s, blen)
+    }
+    i = i + 1
+  }
+  ""
+}

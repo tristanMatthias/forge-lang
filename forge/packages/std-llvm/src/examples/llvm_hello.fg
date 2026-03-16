@@ -1,0 +1,50 @@
+/// Generate an LLVM IR module with an `add` function and print the IR.
+/// expect: define i64 @add(i64 %0, i64 %1)
+
+use @std.llvm
+
+fn main() {
+    // Create context and module
+    let ctx = llvm.context_create()
+    let m = llvm.module_create("test_module", ctx)
+
+    // Create the function type: (i64, i64) -> i64
+    let i64t = llvm.int64_type(ctx)
+    let params = llvm.type_array_new(2)
+    llvm.type_array_set(params, 0, i64t)
+    llvm.type_array_set(params, 1, i64t)
+    let fn_type = llvm.function_type(i64t, params, 2, 0)
+    llvm.type_array_free(params)
+
+    // Add the function to the module
+    let add_fn = llvm.add_function(m, "add", fn_type)
+
+    // Create entry basic block
+    let entry = llvm.append_basic_block(ctx, add_fn, "entry")
+
+    // Create builder and position at end of entry block
+    let builder = llvm.create_builder(ctx)
+    llvm.position_at_end(builder, entry)
+
+    // Get function parameters and build add + ret
+    let p0 = llvm.get_param(add_fn, 0)
+    let p1 = llvm.get_param(add_fn, 1)
+    let sum = llvm.build_add(builder, p0, p1, "sum")
+    llvm.build_ret(builder, sum)
+
+    // Verify the module
+    let ok = llvm.verify_module(m)
+    println(`verified: ${string(ok == 0)}`)
+
+    // Print the IR (using direct extern fns for ptr-to-string conversion)
+    let raw = forge_llvm_module_print(m)
+    let len = strlen(raw)
+    let ir = forge_string_new(raw, len)
+    forge_llvm_dispose_message(raw)
+    println(ir)
+
+    // Cleanup
+    llvm.dispose_builder(builder)
+    llvm.module_dispose(m)
+    llvm.context_dispose(ctx)
+}

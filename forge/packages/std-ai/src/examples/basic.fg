@@ -1,0 +1,25 @@
+use @std.ai
+
+fn main() {
+  // Configure once — provider, api key, default model, base_url (empty = default)
+  ai.configure("anthropic", "your-api-key", "claude-sonnet-4-5", "")
+
+  // One-shot prompt — model/system/temperature/max_tokens are optional (pass "" to use defaults)
+  let reply = ai.ask("What is 2 + 2?", "", "", "", "")
+  println(reply)
+
+  // Stateful agent with system prompt
+  let agent = ai.agent_create("assistant", "", "You are a helpful coding assistant.", "[]", "", "")
+
+  // Multi-turn conversation
+  let conv = ai.conversation_create(agent)
+  let r1 = ai.conversation_say(conv, "What is Forge lang?")
+  println(r1)
+  let r2 = ai.conversation_say(conv, "Give me a code example")
+  println(r2)
+
+  // Fork a conversation to explore a branch without affecting the original
+  let branch = ai.conversation_fork(conv)
+  let r3 = ai.conversation_say(branch, "Now explain closures")
+  println(r3)
+}

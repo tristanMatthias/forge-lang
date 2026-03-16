@@ -1,0 +1,5 @@
+[project]
+name = "forge-lsp"
+version = "0.1.0"
+description = "Forge Language Server — pure Forge, zero Rust"
+entry = "main.fg"

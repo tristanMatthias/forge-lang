@@ -1,0 +1,25 @@
+use @std.queue.{queue, worker}
+
+// Declare a queue — payloads are JSON strings
+queue jobs {}
+
+// Declare a worker that processes messages from the queue
+worker processor for jobs {
+  on message(msg) {
+    let task: { id: int, name: string } = json.parse(msg)
+    println(`processing job ${task.id}: ${task.name}`)
+  }
+
+  on error(err) {
+    println(`job failed: ${err}`)
+  }
+}
+
+fn main() {
+  // Send work to the queue
+  jobs.send(`{"id": 1, "name": "send-welcome-email"}`)
+  jobs.send(`{"id": 2, "name": "resize-image"}`)
+  jobs.send(`{"id": 3, "name": "generate-report"}`)
+
+  println(`queued ${jobs.depth()} jobs`)
+}

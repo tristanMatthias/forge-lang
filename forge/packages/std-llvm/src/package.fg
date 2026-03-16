@@ -1,0 +1,283 @@
+// ── Context & Module ──
+extern fn forge_llvm_context_create() -> ptr
+extern fn forge_llvm_context_dispose(ctx: ptr)
+extern fn forge_llvm_module_create(name: string, ctx: ptr) -> ptr
+extern fn forge_llvm_module_dispose(m: ptr)
+extern fn forge_llvm_module_print(m: ptr) -> ptr
+extern fn forge_llvm_dispose_message(msg: ptr)
+
+// ── Types ──
+extern fn forge_llvm_int1_type(ctx: ptr) -> ptr
+extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
+extern fn forge_llvm_int32_type(ctx: ptr) -> ptr
+extern fn forge_llvm_int64_type(ctx: ptr) -> ptr
+extern fn forge_llvm_double_type(ctx: ptr) -> ptr
+extern fn forge_llvm_void_type(ctx: ptr) -> ptr
+extern fn forge_llvm_pointer_type(ctx: ptr) -> ptr
+extern fn forge_llvm_function_type(ret: ptr, params: ptr, param_count: int, is_vararg: int) -> ptr
+
+// ── Type array helpers ──
+extern fn forge_llvm_type_array_new(count: int) -> ptr
+extern fn forge_llvm_type_array_set(arr: ptr, index: int, ty: ptr)
+extern fn forge_llvm_type_array_free(arr: ptr)
+
+// ── Functions ──
+extern fn forge_llvm_add_function(m: ptr, name: string, fn_type: ptr) -> ptr
+extern fn forge_llvm_get_param(f: ptr, index: int) -> ptr
+
+// ── Basic Blocks & Builder ──
+extern fn forge_llvm_append_basic_block(ctx: ptr, f: ptr, name: string) -> ptr
+extern fn forge_llvm_create_builder(ctx: ptr) -> ptr
+extern fn forge_llvm_position_at_end(builder: ptr, bb: ptr)
+extern fn forge_llvm_dispose_builder(builder: ptr)
+extern fn forge_llvm_build_ret(builder: ptr, value: ptr) -> ptr
+extern fn forge_llvm_build_ret_void(builder: ptr) -> ptr
+
+// ── Arithmetic ──
+extern fn forge_llvm_build_add(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_sub(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_mul(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+
+// ── Constants ──
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+
+// ── Verification ──
+extern fn forge_llvm_verify_module(m: ptr) -> int
+
+// ── Memory ──
+extern fn forge_llvm_build_alloca(builder: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_store(builder: ptr, val: ptr, ptr_val: ptr) -> ptr
+extern fn forge_llvm_build_load(builder: ptr, ty: ptr, ptr_val: ptr, name: string) -> ptr
+
+// ── Control flow ──
+extern fn forge_llvm_build_br(builder: ptr, bb: ptr) -> ptr
+extern fn forge_llvm_build_cond_br(builder: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
+extern fn forge_llvm_build_icmp(builder: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
+
+// ── Function calls ──
+extern fn forge_llvm_build_call(builder: ptr, fn_type: ptr, fn_val: ptr, args: ptr, num_args: int, name: string) -> ptr
+extern fn forge_llvm_value_array_new(count: int) -> ptr
+extern fn forge_llvm_value_array_set(arr: ptr, index: int, val: ptr)
+extern fn forge_llvm_value_array_free(arr: ptr)
+
+// ── Global strings ──
+extern fn forge_llvm_build_global_string_ptr(builder: ptr, s: string, name: string) -> ptr
+
+// ── PHI nodes ──
+extern fn forge_llvm_build_phi(builder: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int)
+
+// ── Convenience exports ──
+extern fn strlen(s: ptr) -> int
+
+/// Create a new LLVM context.
+export fn context_create() -> ptr {
+    forge_llvm_context_create()
+}
+
+/// Dispose an LLVM context.
+export fn context_dispose(ctx: ptr) {
+    forge_llvm_context_dispose(ctx)
+}
+
+/// Create a new LLVM module with the given name.
+export fn module_create(name: string, ctx: ptr) -> ptr {
+    forge_llvm_module_create(name, ctx)
+}
+
+/// Dispose an LLVM module.
+export fn module_dispose(m: ptr) {
+    forge_llvm_module_dispose(m)
+}
+
+/// Print the module IR. Returns a raw C string pointer.
+/// Use forge_string_new(raw, strlen(raw)) to convert to a Forge string,
+/// then forge_llvm_dispose_message(raw) to free the LLVM-allocated buffer.
+export fn module_print(m: ptr) -> ptr {
+    forge_llvm_module_print(m)
+}
+
+/// Get the i1 (boolean) type.
+export fn int1_type(ctx: ptr) -> ptr {
+    forge_llvm_int1_type(ctx)
+}
+
+/// Get the i8 type.
+export fn int8_type(ctx: ptr) -> ptr {
+    forge_llvm_int8_type(ctx)
+}
+
+/// Get the i32 type.
+export fn int32_type(ctx: ptr) -> ptr {
+    forge_llvm_int32_type(ctx)
+}
+
+/// Get the i64 type.
+export fn int64_type(ctx: ptr) -> ptr {
+    forge_llvm_int64_type(ctx)
+}
+
+/// Get the double type.
+export fn double_type(ctx: ptr) -> ptr {
+    forge_llvm_double_type(ctx)
+}
+
+/// Get the void type.
+export fn void_type(ctx: ptr) -> ptr {
+    forge_llvm_void_type(ctx)
+}
+
+/// Get the opaque pointer type (LLVM 18).
+export fn pointer_type(ctx: ptr) -> ptr {
+    forge_llvm_pointer_type(ctx)
+}
+
+/// Create a function type.
+export fn function_type(ret: ptr, params: ptr, param_count: int, is_vararg: int) -> ptr {
+    forge_llvm_function_type(ret, params, param_count, is_vararg)
+}
+
+/// Allocate a type array of the given size.
+export fn type_array_new(count: int) -> ptr {
+    forge_llvm_type_array_new(count)
+}
+
+/// Set an element in a type array.
+export fn type_array_set(arr: ptr, index: int, ty: ptr) {
+    forge_llvm_type_array_set(arr, index, ty)
+}
+
+/// Free a type array.
+export fn type_array_free(arr: ptr) {
+    forge_llvm_type_array_free(arr)
+}
+
+/// Add a function to a module.
+export fn add_function(m: ptr, name: string, fn_type: ptr) -> ptr {
+    forge_llvm_add_function(m, name, fn_type)
+}
+
+/// Get a function parameter by index.
+export fn get_param(fn_val: ptr, index: int) -> ptr {
+    forge_llvm_get_param(fn_val, index)
+}
+
+/// Append a basic block to a function.
+export fn append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr {
+    forge_llvm_append_basic_block(ctx, fn_val, name)
+}
+
+/// Create an IR builder.
+export fn create_builder(ctx: ptr) -> ptr {
+    forge_llvm_create_builder(ctx)
+}
+
+/// Position the builder at the end of a basic block.
+export fn position_at_end(builder: ptr, bb: ptr) {
+    forge_llvm_position_at_end(builder, bb)
+}
+
+/// Dispose an IR builder.
+export fn dispose_builder(builder: ptr) {
+    forge_llvm_dispose_builder(builder)
+}
+
+/// Build a return instruction.
+export fn build_ret(builder: ptr, value: ptr) -> ptr {
+    forge_llvm_build_ret(builder, value)
+}
+
+/// Build a void return instruction.
+export fn build_ret_void(builder: ptr) -> ptr {
+    forge_llvm_build_ret_void(builder)
+}
+
+/// Build an integer add instruction.
+export fn build_add(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_add(builder, lhs, rhs, name)
+}
+
+/// Build an integer subtract instruction.
+export fn build_sub(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_sub(builder, lhs, rhs, name)
+}
+
+/// Build an integer multiply instruction.
+export fn build_mul(builder: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_mul(builder, lhs, rhs, name)
+}
+
+/// Create an integer constant.
+export fn const_int(ty: ptr, value: int, sign_extend: int) -> ptr {
+    forge_llvm_const_int(ty, value, sign_extend)
+}
+
+/// Verify a module. Returns 0 on success, 1 on failure.
+export fn verify_module(m: ptr) -> int {
+    forge_llvm_verify_module(m)
+}
+
+/// Build an alloca instruction.
+export fn build_alloca(builder: ptr, ty: ptr, name: string) -> ptr {
+    forge_llvm_build_alloca(builder, ty, name)
+}
+
+/// Build a store instruction.
+export fn build_store(builder: ptr, val: ptr, ptr_val: ptr) -> ptr {
+    forge_llvm_build_store(builder, val, ptr_val)
+}
+
+/// Build a load instruction.
+export fn build_load(builder: ptr, ty: ptr, ptr_val: ptr, name: string) -> ptr {
+    forge_llvm_build_load(builder, ty, ptr_val, name)
+}
+
+/// Build an unconditional branch.
+export fn build_br(builder: ptr, bb: ptr) -> ptr {
+    forge_llvm_build_br(builder, bb)
+}
+
+/// Build a conditional branch.
+export fn build_cond_br(builder: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr {
+    forge_llvm_build_cond_br(builder, cond, then_bb, else_bb)
+}
+
+/// Build an integer comparison. pred: 32=eq, 33=ne, 34=ugt, 35=uge, 36=ult, 37=ule, 38=sgt, 39=sge, 40=slt, 41=sle
+export fn build_icmp(builder: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr {
+    forge_llvm_build_icmp(builder, pred, lhs, rhs, name)
+}
+
+/// Build a function call.
+export fn build_call(builder: ptr, fn_type: ptr, fn_val: ptr, args: ptr, num_args: int, name: string) -> ptr {
+    forge_llvm_build_call(builder, fn_type, fn_val, args, num_args, name)
+}
+
+/// Allocate a value array of the given size.
+export fn value_array_new(count: int) -> ptr {
+    forge_llvm_value_array_new(count)
+}
+
+/// Set an element in a value array.
+export fn value_array_set(arr: ptr, index: int, val: ptr) {
+    forge_llvm_value_array_set(arr, index, val)
+}
+
+/// Free a value array.
+export fn value_array_free(arr: ptr) {
+    forge_llvm_value_array_free(arr)
+}
+
+/// Build a global string pointer constant.
+export fn build_global_string_ptr(builder: ptr, s: string, name: string) -> ptr {
+    forge_llvm_build_global_string_ptr(builder, s, name)
+}
+
+/// Build a PHI node.
+export fn build_phi(builder: ptr, ty: ptr, name: string) -> ptr {
+    forge_llvm_build_phi(builder, ty, name)
+}
+
+/// Add incoming values to a PHI node.
+export fn add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int) {
+    forge_llvm_add_incoming(phi, values, blocks, count)
+}

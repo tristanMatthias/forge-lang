@@ -1,0 +1,7 @@
+/// Registry client modules.
+
+mod client
+mod auth
+mod manifest
+mod lockfile
+mod installer

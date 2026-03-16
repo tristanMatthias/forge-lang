@@ -1,0 +1,10 @@
+/// Create an LLVM context and dispose it.
+/// expect: context created
+
+use @std.llvm
+
+fn main() {
+    let ctx = llvm.context_create()
+    println("context created")
+    llvm.context_dispose(ctx)
+}

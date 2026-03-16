@@ -1,0 +1,8 @@
+[package]
+name = "forge-llvm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "forge_llvm"
+crate-type = ["staticlib"]

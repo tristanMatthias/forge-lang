@@ -1,0 +1,29 @@
+use @std.cron.{schedule}
+use @std.model.{model}
+
+model Metric {
+  id: int @primary @auto_increment
+  name: string
+  value: float
+  recorded_at: string
+}
+
+// Runs every 5 seconds — `every` is in milliseconds
+schedule heartbeat { every: 5000 } {
+  on tick {
+    println("heartbeat")
+  }
+}
+
+// Runs every minute — collect and store a metric
+schedule collector { every: 60000 } {
+  on tick {
+    let count = Metric.count()
+    Metric.create({ name: "metric_count", value: float(count), recorded_at: "now" })
+    println(`recorded ${count} metrics`)
+  }
+}
+
+fn main() {
+  println("schedules started")
+}

@@ -1,0 +1,35 @@
+/// # Forge Quick Example
+///
+/// A compact program showing enums, match, closures, null safety,
+/// template strings, and collection methods.
+///
+/// expect: Red, Green, Blue
+/// expect: Top scores: 2
+/// expect: Alice
+
+enum Color { red, green, blue }
+
+fn color_name(c: Color) -> string {
+  match c {
+    .red -> "Red"
+    .green -> "Green"
+    .blue -> "Blue"
+  }
+}
+
+fn find_user(name: string) -> string? {
+  if name == "alice" { "Alice" } else { null }
+}
+
+fn main() {
+  let colors = [Color.red, Color.green, Color.blue]
+  let names = colors.map((c) -> color_name(c))
+  println(names.join(", "))
+
+  let scores = [85, 92, 78, 95, 88]
+  let top = scores.filter(it > 90).sorted()
+  println(`Top scores: ${string(top.length)}`)
+
+  let user = find_user("alice") ?? "anonymous"
+  println(user)
+}

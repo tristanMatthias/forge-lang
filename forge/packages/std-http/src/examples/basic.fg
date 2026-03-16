@@ -1,0 +1,30 @@
+use @std.model.{model}
+use @std.http.{server}
+
+model Post {
+  id: int @primary @auto_increment
+  title: string
+  body: string
+}
+
+service PostService for Post {}
+
+server :3000 {
+  // Static response
+  route GET /health -> { status: "ok" }
+
+  // URL params via req.params JSON string
+  route GET /hello/:name -> (req) {
+    let name = json.parse(req.params).get("name") ?? "world"
+    { message: `hello ${name}` }
+  }
+
+  // Body parsing
+  route POST /echo -> (req) {
+    let data: { text: string } = json.parse(req.body)
+    { echo: data.text }
+  }
+
+  // Auto-generate GET/POST/PUT/DELETE for a service
+  mount PostService at /posts
+}

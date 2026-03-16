@@ -1,10 +1,10 @@
 # Build output
-/forge
 /target/
 *.a
 *.o
 *.so
 *.dylib
+*.dSYM/
 
 # Dolt database files (added by bd init)
 .dolt/

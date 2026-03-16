@@ -1,0 +1,37 @@
+use @std.model.{model}
+
+model Task {
+  id: int @primary @auto_increment
+  title: string
+  done: bool @default(false)
+  priority: int @default(0)
+}
+
+fn main() {
+  // Create
+  let id = Task.create({ title: "Buy groceries" })
+  Task.create({ title: "Write tests", priority: 1 })
+
+  // Read
+  let task = Task.get(id)
+  println(task?.title ?? "not found")
+
+  // List all
+  for t in Task.list() {
+    println(`${t.id}: ${t.title} [done=${t.done}]`)
+  }
+
+  // Filter
+  let pending = Task.where(`{"done": false}`)
+  println(`${pending.length} pending tasks`)
+
+  // Update
+  Task.update(id, { done: true })
+
+  // Aggregates
+  println(`total: ${Task.count()}`)
+  println(`avg priority: ${Task.avg("priority")}`)
+
+  // Delete
+  Task.delete(id)
+}
