@@ -292,10 +292,19 @@ impl Driver {
         }
         for pkg in &loaded_packages {
             for fn_stmt in &pkg.exported_fns {
-                if let Statement::FnDecl { name, .. } = fn_stmt {
+                let fn_name = match fn_stmt {
+                    Statement::FnDecl { name, .. } => Some(name.clone()),
+                    Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                        use crate::feature_data;
+                        use crate::features::functions::types::FnDeclData;
+                        feature_data!(fe, FnDeclData).map(|d| d.name.clone())
+                    }
+                    _ => None,
+                };
+                if let Some(name) = fn_name {
                     let full_name = format!("{}_{}", pkg.name, name);
                     codegen.static_methods.insert(
-                        (pkg.name.clone(), name.clone()),
+                        (pkg.name.clone(), name),
                         full_name,
                     );
                 }
@@ -1406,6 +1415,23 @@ fn inject_exported_fns(program: &mut Program, packages: &[PackageInfo]) {
                     span: *span,
                 };
                 program.statements.insert(0, renamed);
+            } else if let Statement::Feature(fe) = fn_stmt {
+                if fe.feature_id == "functions" && fe.kind == "FnDecl" {
+                    use crate::feature_data;
+                    use crate::features::functions::types::FnDeclData;
+                    if let Some(data) = feature_data!(fe, FnDeclData) {
+                        let renamed = Statement::FnDecl {
+                            name: format!("{}_{}", pkg.name, data.name),
+                            type_params: data.type_params.clone(),
+                            params: data.params.clone(),
+                            return_type: data.return_type.clone(),
+                            body: data.body.clone(),
+                            exported: false,
+                            span: fe.span,
+                        };
+                        program.statements.insert(0, renamed);
+                    }
+                }
             }
         }
     }

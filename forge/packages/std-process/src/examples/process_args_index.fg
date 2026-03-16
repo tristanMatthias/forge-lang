@@ -1,0 +1,18 @@
+/// Access args by index and iterate over them.
+/// expect: true
+/// expect: true
+
+use @std.process
+
+fn main() {
+    let args = process.args()
+    // First arg (binary path) is always a non-empty string
+    let first = args[0]
+    println(string(first.length > 0))
+    // Can iterate the args list
+    mut count = 0
+    for a in args {
+        count = count + 1
+    }
+    println(string(count == args.length))
+}

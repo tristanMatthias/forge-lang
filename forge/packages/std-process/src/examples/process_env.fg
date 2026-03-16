@@ -1,0 +1,10 @@
+/// Access environment variables via process.env().
+/// expect: true
+
+use @std.process
+
+fn main() {
+    // PATH is always set on unix systems
+    let path = process.env("PATH")
+    println(string(path.length > 0))
+}

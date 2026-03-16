@@ -1,0 +1,13 @@
+/// Demonstrate process.args() — returns command-line arguments as list<string>.
+/// expect: true
+/// expect: true
+
+use @std.process
+
+fn main() {
+    let args = process.args()
+    // There is always at least one arg (the binary path)
+    println(string(args.length > 0))
+    // The first arg is a string with non-zero length
+    println(string(args[0].length > 0))
+}

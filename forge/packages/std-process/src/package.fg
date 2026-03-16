@@ -11,3 +11,19 @@ extern fn forge_process_args() -> string
 extern fn forge_process_exit(code: int)
 extern fn forge_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn forge_process_self_dir() -> ptr
+
+/// Return command-line arguments as a list of strings.
+/// argv[0] is the binary path, argv[1+] are user arguments.
+export fn args() -> list<string> {
+    json.parse(forge_process_args())
+}
+
+/// Exit the process with the given status code.
+export fn exit(code: int) {
+    forge_process_exit(code)
+}
+
+/// Get an environment variable by name. Returns "" if not set.
+export fn env(key: string) -> string {
+    forge_process_env_get(key)
+}
