@@ -35,6 +35,7 @@ impl<'ctx> Codegen<'ctx> {
                             type_ann: Some(self.type_to_type_expr(&self_type)),
                             default: None,
                             span: p.span,
+                            mutable: p.mutable,
                         });
                     } else {
                         let mut param = p.clone();
@@ -64,6 +65,7 @@ impl<'ctx> Codegen<'ctx> {
                                             type_ann: Some(self.type_to_type_expr(&self_type)),
                                             default: None,
                                             span: p.span,
+                                            mutable: p.mutable,
                                         });
                                     } else {
                                         resolved_params.push(p.clone());

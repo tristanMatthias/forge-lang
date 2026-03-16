@@ -476,6 +476,7 @@ fn substitute_param(p: &Param, ctx: &SubstitutionContext) -> Param {
         type_ann: p.type_ann.as_ref().map(|t| substitute_type_expr(t, ctx)),
         default: p.default.as_ref().map(|e| substitute_expr(e, ctx)),
         span: p.span,
+        mutable: p.mutable,
     }
 }
 

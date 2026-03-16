@@ -50,6 +50,7 @@ impl Parser {
                 type_ann: None,
                 default: None,
                 span: hook_start,
+                mutable: false,
             }],
             return_type: None,
             body,

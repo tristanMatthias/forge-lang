@@ -1060,6 +1060,7 @@ impl Parser {
                         type_ann: None,
                         default: None,
                         span,
+                        mutable: false,
                     }],
                     body: Box::new(value),
                 }),
@@ -1195,6 +1196,7 @@ impl Parser {
                         type_ann: None,
                         default: None,
                         span,
+                        mutable: false,
                     }],
                     body: Box::new(body),
                 }),
@@ -1592,6 +1594,16 @@ impl Parser {
         self.skip_newlines();
         self.parse_delimited_until(&TokenKind::RParen, |p| {
             let span = p.current_span();
+
+            // Check for `mut` keyword before param name
+            let mutable = if p.check(&TokenKind::Mut) {
+                p.advance();
+                p.skip_newlines();
+                true
+            } else {
+                false
+            };
+
             let name = p.expect_ident()?;
             p.skip_newlines();
 
@@ -1616,6 +1628,7 @@ impl Parser {
                 type_ann,
                 default,
                 span,
+                mutable,
             })
         })
     }
