@@ -1416,22 +1416,357 @@ fn scaffold_package(name: &str, with_component: bool) -> Result<(), String> {
     forge::package::scaffold_package(name, with_component)
 }
 
-// ── Deps subcommand stubs ──────────────────────────────────────────
+// ── Deps subcommands ───────────────────────────────────────────────
+
+/// Load the resolved dependency graph for the current project.
+fn load_dep_graph() -> (String, String, forge::resolver::ResolvedGraph) {
+    use forge::resolver;
+    use forge::features::modules::project::ForgeProject;
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    let project = match ForgeProject::load(&cwd) {
+        Ok(p) => p,
+        Err(e) => fail(CompileError::CliError {
+            message: format!("cannot load project: {}", e),
+            help: Some("run this command from a directory containing forge.toml".to_string()),
+        }),
+    };
+
+    let toml_path = cwd.join("forge.toml");
+    let toml_content = match std::fs::read_to_string(&toml_path) {
+        Ok(c) => c,
+        Err(e) => fail(CompileError::FileNotFound {
+            path: toml_path.display().to_string(),
+            detail: e.to_string(),
+        }),
+    };
+    let toml_val: toml::Value = match toml::from_str(&toml_content) {
+        Ok(v) => v,
+        Err(e) => fail(CompileError::CliError {
+            message: format!("invalid forge.toml: {}", e),
+            help: None,
+        }),
+    };
+
+    let direct_deps: std::collections::HashMap<String, String> = toml_val
+        .get("dependencies")
+        .and_then(|d| d.as_table())
+        .map(|t| {
+            t.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let packages_dir = cwd.join("packages");
+    let local_pkgs = resolver::scan_local_packages(&packages_dir);
+    let available = |name: &str| -> Option<resolver::PackageVersions> {
+        local_pkgs.get(name).cloned()
+    };
+
+    let graph = match resolver::resolve(&direct_deps, &available) {
+        Ok(g) => g,
+        Err(e) => fail(e),
+    };
+
+    (
+        project.config.project.name.clone(),
+        project.config.project.version.clone(),
+        graph,
+    )
+}
 
 fn cmd_deps_explain(package: String) {
-    eprintln!("dependency explain for '{}' requires registry connection (not yet implemented)", package);
+    use std::collections::VecDeque;
+
+    let (project_name, project_version, graph) = load_dep_graph();
+
+    if !graph.packages.contains_key(&package) {
+        fail(CompileError::CliError {
+            message: format!("package '{}' not found in dependency tree", package),
+            help: Some("run `forge deps` to see all resolved dependencies".to_string()),
+        });
+    }
+
+    let root_label = format!("{} v{}", project_name, project_version);
+
+    // BFS: find shortest path from root deps to the target package
+    let mut queue: VecDeque<Vec<String>> = VecDeque::new();
+    for root_dep in &graph.root_deps {
+        queue.push_back(vec![root_dep.clone()]);
+    }
+
+    let mut shortest_path: Option<Vec<String>> = None;
+    'bfs: while let Some(path) = queue.pop_front() {
+        let current = path.last().unwrap().clone();
+        if current == package {
+            shortest_path = Some(path);
+            break 'bfs;
+        }
+        if let Some(dep) = graph.packages.get(&current) {
+            for child in &dep.dependencies {
+                if !path.contains(child) {
+                    let mut new_path = path.clone();
+                    new_path.push(child.clone());
+                    queue.push_back(new_path);
+                }
+            }
+        }
+    }
+
+    let path = shortest_path.unwrap_or_else(|| vec![package.clone()]);
+    let dep_info = graph.packages.get(&package).unwrap();
+
+    eprintln!();
+    eprintln!("  {} v{} is in your project because:", dep_info.name, dep_info.version);
+    eprintln!();
+
+    let mut chain_parts = vec![root_label];
+    for name in &path {
+        if let Some(d) = graph.packages.get(name) {
+            chain_parts.push(format!("{} v{}", d.name, d.version));
+        } else {
+            chain_parts.push(name.clone());
+        }
+    }
+    eprintln!("  {}", chain_parts.join(" \u{2192} "));
+
+    if !dep_info.capabilities.is_empty() {
+        let ancestor_caps: Vec<String> = path[..path.len().saturating_sub(1)]
+            .iter()
+            .flat_map(|n| graph.packages.get(n).map(|d| d.capabilities.clone()).unwrap_or_default())
+            .collect();
+        let already_approved: Vec<&String> = dep_info.capabilities.iter()
+            .filter(|c| ancestor_caps.contains(c))
+            .collect();
+
+        eprint!("\n  capabilities: [{}]", dep_info.capabilities.join(", "));
+        if !already_approved.is_empty() && path.len() >= 2 {
+            eprint!(" (already approved via {})", path[path.len() - 2]);
+        }
+        eprintln!();
+    }
+
+    eprintln!();
 }
 
 fn cmd_deps_capabilities() {
-    eprintln!("dependency capabilities listing requires registry connection (not yet implemented)");
+    use std::collections::BTreeMap;
+
+    let (project_name, project_version, graph) = load_dep_graph();
+
+    eprintln!();
+    eprintln!("  {} v{} \u{2014} capability summary", project_name, project_version);
+    eprintln!();
+
+    let all_caps = ["compile_time_codegen", "ffi", "filesystem", "native", "network"];
+    let mut cap_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for cap in &all_caps {
+        cap_map.insert(cap.to_string(), Vec::new());
+    }
+
+    let mut sorted_deps: Vec<_> = graph.packages.values().collect();
+    sorted_deps.sort_by(|a, b| a.name.cmp(&b.name));
+
+    for dep in sorted_deps {
+        for cap in &dep.capabilities {
+            cap_map.entry(cap.clone())
+                .or_default()
+                .push(format!("{} v{}", dep.name, dep.version));
+        }
+    }
+
+    for (cap, pkgs) in &cap_map {
+        if pkgs.is_empty() {
+            eprintln!("  {:<20} (none)", cap);
+        } else {
+            eprintln!("  {:<20} {}", cap, pkgs.join(", "));
+        }
+    }
+
+    eprintln!();
 }
 
 fn cmd_deps_outdated() {
-    eprintln!("outdated dependency check requires registry connection (not yet implemented)");
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match forge::pkg_commands::list_outdated(&cwd) {
+        Ok(_) => {}
+        Err(e) => fail(CompileError::CliError {
+            message: format!("failed to check outdated deps: {}", e),
+            help: None,
+        }),
+    }
 }
 
-fn cmd_info(package: String, _context: bool) {
-    eprintln!("package info for '{}' requires registry connection (not yet implemented)", package);
+fn cmd_info(package: String, show_context: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let packages_dir = cwd.join("packages");
+
+    match find_package_dir(&packages_dir, &package) {
+        Some(dir) => print_package_info(&package, &dir, show_context),
+        None => fail(CompileError::CliError {
+            message: format!("package '{}' not found in packages/ directory", package),
+            help: Some("use `forge deps` to list resolved project dependencies".to_string()),
+        }),
+    }
+}
+
+/// Search `packages_dir` for a subdirectory whose package.toml name or directory
+/// name matches `package_name`. Returns the first matching path.
+fn find_package_dir(packages_dir: &std::path::Path, package_name: &str) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(packages_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        if dir_name == package_name {
+            return Some(path);
+        }
+        let toml_path = path.join("package.toml");
+        if let Ok(content) = std::fs::read_to_string(&toml_path) {
+            if let Ok(val) = content.parse::<toml::Value>() {
+                let declared_name = val.get("package")
+                    .and_then(|p| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let namespace = val.get("package")
+                    .and_then(|p| p.get("namespace"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let qualified = if namespace.is_empty() {
+                    declared_name.to_string()
+                } else {
+                    format!("@{}/{}", namespace, declared_name)
+                };
+                if declared_name == package_name || qualified == package_name {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn print_package_info(package_name: &str, pkg_dir: &std::path::Path, show_context: bool) {
+    let toml_path = pkg_dir.join("package.toml");
+    let toml_content = std::fs::read_to_string(&toml_path).unwrap_or_default();
+    let val: toml::Value = toml_content.parse::<toml::Value>()
+        .unwrap_or(toml::Value::Table(Default::default()));
+    let pkg = val.get("package");
+
+    let name = pkg.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or(package_name);
+    let version = pkg.and_then(|p| p.get("version")).and_then(|v| v.as_str()).unwrap_or("0.0.0");
+    let description = pkg.and_then(|p| p.get("description")).and_then(|v| v.as_str()).unwrap_or("");
+    let license = pkg.and_then(|p| p.get("license")).and_then(|v| v.as_str()).unwrap_or("");
+    let repository = pkg.and_then(|p| p.get("repository")).and_then(|v| v.as_str()).unwrap_or("");
+
+    let authors: Vec<String> = pkg
+        .and_then(|p| p.get("authors"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|a| a.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    let deps: Vec<String> = val.get("dependencies")
+        .and_then(|d| d.as_table())
+        .map(|t| {
+            let mut sorted: Vec<_> = t.iter().collect();
+            sorted.sort_by_key(|(k, _)| k.clone());
+            sorted.iter().filter_map(|(k, v)| v.as_str().map(|ver| format!("{} {}", k, ver))).collect()
+        })
+        .unwrap_or_default();
+
+    let caps: Vec<String> = val.get("capabilities")
+        .and_then(|c| c.as_table())
+        .map(|t| {
+            let mut enabled: Vec<_> = t.iter()
+                .filter(|(_, v)| v.as_bool() == Some(true))
+                .map(|(k, _)| k.clone())
+                .collect();
+            enabled.sort();
+            enabled
+        })
+        .unwrap_or_default();
+
+    let meta = forge::quality::extract_meta(pkg_dir);
+    let report = forge::quality::compute_quality(name, version, &meta);
+
+    eprintln!();
+    eprintln!("  \x1b[1m{} v{}\x1b[0m", name, version);
+    if !description.is_empty() {
+        eprintln!("  \x1b[38;5;246m\"{}\"\x1b[0m", description);
+    }
+    eprintln!();
+
+    if !caps.is_empty() {
+        eprintln!("  capabilities:  [{}]", caps.join(", "));
+    } else {
+        eprintln!("  capabilities:  [none]");
+    }
+    if !deps.is_empty() {
+        eprintln!("  dependencies:  {}", deps.join(", "));
+    }
+    if !license.is_empty() {
+        eprintln!("  license:       {}", license);
+    }
+    if !authors.is_empty() {
+        eprintln!("  authors:       {}", authors.join(", "));
+    }
+    if !repository.is_empty() {
+        eprintln!("  repository:    {}", repository);
+    }
+
+    eprintln!();
+    let score = report.overall_score;
+    let filled = score as usize;
+    let empty = 10usize.saturating_sub(filled);
+    let color = if score >= 7.0 { "32" } else if score >= 4.0 { "33" } else { "31" };
+    eprintln!(
+        "  quality: \x1b[{}m{}\x1b[90m{}\x1b[0m {:.1}/10",
+        color,
+        "\u{2588}".repeat(filled),
+        "\u{2591}".repeat(empty),
+        score
+    );
+
+    let check = "\u{2713}";
+    let cross = "\u{2717}";
+    let tests_ok = meta.test_count > 0;
+    let docs_ok = meta.has_readme || meta.has_description;
+    let maintained = meta.has_changelog || meta.has_repository;
+    let stable_api = score >= 7.0;
+
+    let mut badges = Vec::new();
+    if tests_ok { badges.push(format!("\x1b[32m{} tests\x1b[0m", check)); }
+    else { badges.push(format!("\x1b[31m{} tests\x1b[0m", cross)); }
+    if docs_ok { badges.push(format!("\x1b[32m{} documented\x1b[0m", check)); }
+    else { badges.push(format!("\x1b[31m{} documented\x1b[0m", cross)); }
+    if maintained { badges.push(format!("\x1b[32m{} maintained\x1b[0m", check)); }
+    else { badges.push(format!("\x1b[31m{} maintained\x1b[0m", cross)); }
+    if stable_api { badges.push(format!("\x1b[32m{} stable API\x1b[0m", check)); }
+    else { badges.push(format!("\x1b[33m~ stable API\x1b[0m")); }
+
+    eprintln!("  {}", badges.join("  "));
+
+    if show_context {
+        let context_path = pkg_dir.join("context.fg");
+        if context_path.exists() {
+            if let Ok(ctx) = std::fs::read_to_string(&context_path) {
+                eprintln!();
+                eprintln!("  \x1b[1mexported API surface (context.fg):\x1b[0m");
+                for line in ctx.lines() {
+                    eprintln!("    {}", line);
+                }
+            }
+        } else {
+            eprintln!();
+            eprintln!("  \x1b[38;5;246m(no context.fg found \u{2014} run `forge context` to generate)\x1b[0m");
+        }
+    }
+
+    eprintln!();
 }
 
 // ── Cache commands ─────────────────────────────────────────────────
