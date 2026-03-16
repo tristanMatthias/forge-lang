@@ -10,6 +10,7 @@ impl Parser {
     /// Called from `parse_paren_expr` after `looks_like_closure_params` returns true.
     pub(crate) fn looks_like_closure_params(&self) -> bool {
         // Look ahead to see if this is (name: type, ...) -> or (name) {
+        // If we find binary operators at depth 1, it's a grouped expression, not closure params.
         let mut i = self.pos;
         let mut depth = 1;
         while i < self.tokens.len() && depth > 0 {
@@ -30,6 +31,15 @@ impl Parser {
                         }
                     }
                 }
+                // Binary/comparison operators at depth 1 mean this is a grouped
+                // expression, not closure params. Closures have: ident, colon,
+                // type names, commas — never binary operators.
+                TokenKind::EqEq | TokenKind::NotEq | TokenKind::Lt | TokenKind::LtEq
+                | TokenKind::Gt | TokenKind::GtEq | TokenKind::And | TokenKind::Or
+                | TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash
+                | TokenKind::Percent | TokenKind::Pipe | TokenKind::Bar
+                | TokenKind::Ampersand | TokenKind::Caret
+                    if depth == 1 => return false,
                 _ => {}
             }
             i += 1;

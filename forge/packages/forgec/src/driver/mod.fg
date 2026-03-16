@@ -13,7 +13,7 @@ use @std.process
 
 // ─── Compilation Options ───────────────────────
 
-type CompileOptions = {
+export type CompileOptions = {
     input_path: string,
     output_path: string?,
     check_only: bool,
@@ -22,7 +22,7 @@ type CompileOptions = {
 
 // ─── Pipeline ──────────────────────────────────
 
-fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
+export fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
     // Phase 1: Lex
     mut lexer = lexer_new(source)
     let tokens = lexer.tokenize()
@@ -89,7 +89,7 @@ fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
 
 // ─── File-based Entry Points ───────────────────
 
-fn compile_file(path: string, output: string?) -> bool {
+export fn compile_file(path: string, output: string?) -> bool {
     let source = fs.read(path)
     compile(source, path, CompileOptions {
         input_path: path,
@@ -99,7 +99,7 @@ fn compile_file(path: string, output: string?) -> bool {
     })
 }
 
-fn check_file(path: string) -> bool {
+export fn check_file(path: string) -> bool {
     let source = fs.read(path)
     compile(source, path, CompileOptions {
         input_path: path,

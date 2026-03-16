@@ -1184,21 +1184,10 @@ impl Parser {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::Match => self.parse_match_expr(),
             TokenKind::Dot => {
-                // Enum variant shorthand: .variant
+                // Enum variant shorthand: .Variant or .Variant(args...)
+                // Return as Ident(".Variant"); postfix parsing handles (args) call
                 let span = self.advance()?.span;
                 let variant = self.expect_ident()?;
-                // Check for constructor args
-                if self.check(&TokenKind::LParen) {
-                    self.advance();
-                    self.skip_newlines();
-                    let _fields = self.parse_delimited_until(&TokenKind::RParen, |p| {
-                        let name = p.expect_ident()?;
-                        Some(Pattern::Ident(name, span))
-                    })?;
-                    // This is used in match arms, return as Ident for now
-                    // We'll handle it specially in the match pattern parsing
-                    return Some(Expr::Ident(format!(".{}", variant), span));
-                }
                 Some(Expr::Ident(format!(".{}", variant), span))
             }
             _ => {

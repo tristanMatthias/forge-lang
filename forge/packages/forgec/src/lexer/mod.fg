@@ -308,15 +308,18 @@ impl Lexer {
         if self.peek()! == "0" && self.peek_at(1) != null {
             let next = self.peek_at(1)!
             if next == "x" || next == "X" {
-                self.advance(); self.advance()
+                self.advance()
+                self.advance()
                 return self.lex_radix(start_pos, start_line, start_col, 16, "x")
             }
             if next == "b" || next == "B" {
-                self.advance(); self.advance()
+                self.advance()
+                self.advance()
                 return self.lex_radix(start_pos, start_line, start_col, 2, "b")
             }
             if next == "o" || next == "O" {
-                self.advance(); self.advance()
+                self.advance()
+                self.advance()
                 return self.lex_radix(start_pos, start_line, start_col, 8, "o")
             }
         }
