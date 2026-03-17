@@ -146,14 +146,14 @@ impl<'ctx> Codegen<'ctx> {
                     fields.iter().map(|(_, t)| self.type_to_llvm_basic(t)).collect();
                 // Use named LLVM struct type for named Forge structs
                 if let Some(n) = name {
+                    let body: Vec<_> = field_types.iter().map(|t| (*t).into()).collect();
                     if let Some(existing) = self.context.get_struct_type(n) {
+                        // Always update body — second pass might have better field types
+                        existing.set_body(&body, false);
                         return existing.into();
                     }
                     let st = self.context.opaque_struct_type(n);
-                    st.set_body(
-                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                        false,
-                    );
+                    st.set_body(&body, false);
                     return st.into();
                 }
                 self.context

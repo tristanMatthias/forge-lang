@@ -219,9 +219,12 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Pre-populate LLVM type cache for all known types.
-        // This ensures all struct/enum constructions use the SAME LLVM type objects,
-        // preventing type mismatches in PHI nodes and function calls.
-        {
+        // Run twice: first pass creates named types (some with wrong bodies due to
+        // forward references). Second pass updates bodies with correct field types
+        // (now all named types exist).
+        for _ in 0..2 {
+            // Clear cache to force re-resolution on second pass
+            self.llvm_type_cache.borrow_mut().clear();
             let type_aliases: Vec<_> = self.type_checker.env.type_aliases.clone().into_iter().collect();
             for (_, ty) in &type_aliases {
                 self.type_to_llvm_basic(ty);

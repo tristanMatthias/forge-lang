@@ -89,12 +89,33 @@ impl<'ctx> Codegen<'ctx> {
 
             let arm_end_bb = self.builder.get_insert_block().unwrap();
             if arm_end_bb.get_terminator().is_none() {
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
                 if let Some(val) = arm_val {
                     if result_type.is_none() {
                         result_type = Some(val.get_type());
                     }
-                    arm_results.push((val, arm_end_bb));
+                    // Coerce value to match result_type
+                    let final_val = if let Some(rt) = result_type {
+                        if val.get_type() != rt {
+                            if matches!(&arm.body, Expr::NullLit(_)) {
+                                match rt {
+                                    BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                                    BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                                    _ => self.coerce_value(val, rt),
+                                }
+                            } else {
+                                self.coerce_value(val, rt)
+                            }
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
+                    };
+                    let final_bb = self.builder.get_insert_block().unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    arm_results.push((final_val, final_bb));
+                } else {
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
                 }
             }
 
