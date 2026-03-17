@@ -213,19 +213,24 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(val) = value {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
-                        // Check if value needs nullable wrapping
+                        // Always check if nullable wrapping is needed
                         if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            let expected = self.type_to_llvm_basic(&ret_ty);
-                            if v.get_type() != expected {
-                                if let Type::Nullable(_) = &ret_ty {
+                            if let Type::Nullable(_) = &ret_ty {
+                                let expected = self.type_to_llvm_basic(&ret_ty);
+                                if v.get_type() != expected {
                                     let wrapped = self.wrap_in_nullable(v, &ret_ty);
                                     self.builder.build_return(Some(&wrapped)).unwrap();
                                 } else {
-                                    let coerced = self.coerce_value(v, expected);
-                                    self.builder.build_return(Some(&coerced)).unwrap();
+                                    self.builder.build_return(Some(&v)).unwrap();
                                 }
                             } else {
-                                self.builder.build_return(Some(&v)).unwrap();
+                                let expected = self.type_to_llvm_basic(&ret_ty);
+                                if v.get_type() != expected {
+                                    let coerced = self.coerce_value(v, expected);
+                                    self.builder.build_return(Some(&coerced)).unwrap();
+                                } else {
+                                    self.builder.build_return(Some(&v)).unwrap();
+                                }
                             }
                         } else {
                             self.builder.build_return(Some(&v)).unwrap();
@@ -410,19 +415,23 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(val) = maybe_val {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
-                        // Check if value needs nullable wrapping
                         if let Some(fn_ret) = self.current_fn_return_type.clone() {
-                            let expected = self.type_to_llvm_basic(&fn_ret);
-                            if v.get_type() != expected {
-                                if let Type::Nullable(_) = &fn_ret {
+                            if let Type::Nullable(_) = &fn_ret {
+                                let expected = self.type_to_llvm_basic(&fn_ret);
+                                if v.get_type() != expected {
                                     let wrapped = self.wrap_in_nullable(v, &fn_ret);
                                     self.builder.build_return(Some(&wrapped)).unwrap();
                                 } else {
-                                    let coerced = self.coerce_value(v, expected);
-                                    self.builder.build_return(Some(&coerced)).unwrap();
+                                    self.builder.build_return(Some(&v)).unwrap();
                                 }
                             } else {
-                                self.builder.build_return(Some(&v)).unwrap();
+                                let expected = self.type_to_llvm_basic(&fn_ret);
+                                if v.get_type() != expected {
+                                    let coerced = self.coerce_value(v, expected);
+                                    self.builder.build_return(Some(&coerced)).unwrap();
+                                } else {
+                                    self.builder.build_return(Some(&v)).unwrap();
+                                }
                             }
                         } else {
                             self.builder.build_return(Some(&v)).unwrap();
