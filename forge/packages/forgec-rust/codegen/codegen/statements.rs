@@ -373,10 +373,11 @@ impl<'ctx> Codegen<'ctx> {
             self.define_var(param.name.clone(), alloca, ty);
         }
 
-        // Compile body
-        let ret_ty = return_type
-            .map(|t| self.type_checker.resolve_type_expr(t))
-            .unwrap_or(Type::Void);
+        // Compile body — use the previously resolved return type from fn_return_types
+        let ret_ty = self.fn_return_types.get(name).cloned()
+            .unwrap_or_else(|| return_type
+                .map(|t| self.type_checker.resolve_type_expr(t))
+                .unwrap_or(Type::Void));
 
         let prev_return_type = self.current_fn_return_type.take();
         self.current_fn_return_type = Some(ret_ty.clone());
