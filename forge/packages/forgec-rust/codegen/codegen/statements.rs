@@ -229,24 +229,21 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(val) = value {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
-                        // Always check if nullable wrapping is needed
-                        if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            if let Type::Nullable(_) = &ret_ty {
-                                let expected = self.type_to_llvm_basic(&ret_ty);
-                                if v.get_type() != expected {
-                                    let wrapped = self.wrap_in_nullable(v, &ret_ty);
-                                    self.builder.build_return(Some(&wrapped)).unwrap();
-                                } else {
-                                    self.builder.build_return(Some(&v)).unwrap();
-                                }
+                        // Use the LLVM function's actual return type for coercion
+                        let fn_ret = self.builder.get_insert_block()
+                            .and_then(|bb| bb.get_parent())
+                            .and_then(|f| f.get_type().get_return_type());
+
+                        if let Some(fn_ret_ty) = fn_ret {
+                            if v.get_type() == fn_ret_ty {
+                                self.builder.build_return(Some(&v)).unwrap();
+                            } else if let Some(Type::Nullable(_)) = &self.current_fn_return_type {
+                                let ret_ty = self.current_fn_return_type.clone().unwrap();
+                                let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                self.builder.build_return(Some(&wrapped)).unwrap();
                             } else {
-                                let expected = self.type_to_llvm_basic(&ret_ty);
-                                if v.get_type() != expected {
-                                    let coerced = self.coerce_value(v, expected);
-                                    self.builder.build_return(Some(&coerced)).unwrap();
-                                } else {
-                                    self.builder.build_return(Some(&v)).unwrap();
-                                }
+                                let coerced = self.coerce_value(v, fn_ret_ty);
+                                self.builder.build_return(Some(&coerced)).unwrap();
                             }
                         } else {
                             self.builder.build_return(Some(&v)).unwrap();
@@ -458,23 +455,21 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(val) = maybe_val {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
-                        if let Some(fn_ret) = self.current_fn_return_type.clone() {
-                            if let Type::Nullable(_) = &fn_ret {
-                                let expected = self.type_to_llvm_basic(&fn_ret);
-                                if v.get_type() != expected {
-                                    let wrapped = self.wrap_in_nullable(v, &fn_ret);
-                                    self.builder.build_return(Some(&wrapped)).unwrap();
-                                } else {
-                                    self.builder.build_return(Some(&v)).unwrap();
-                                }
+                        // Use LLVM function's actual return type for coercion
+                        let fn_ret = self.builder.get_insert_block()
+                            .and_then(|bb| bb.get_parent())
+                            .and_then(|f| f.get_type().get_return_type());
+
+                        if let Some(fn_ret_ty) = fn_ret {
+                            if v.get_type() == fn_ret_ty {
+                                self.builder.build_return(Some(&v)).unwrap();
+                            } else if let Some(Type::Nullable(_)) = &self.current_fn_return_type {
+                                let ret_ty = self.current_fn_return_type.clone().unwrap();
+                                let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                self.builder.build_return(Some(&wrapped)).unwrap();
                             } else {
-                                let expected = self.type_to_llvm_basic(&fn_ret);
-                                if v.get_type() != expected {
-                                    let coerced = self.coerce_value(v, expected);
-                                    self.builder.build_return(Some(&coerced)).unwrap();
-                                } else {
-                                    self.builder.build_return(Some(&v)).unwrap();
-                                }
+                                let coerced = self.coerce_value(v, fn_ret_ty);
+                                self.builder.build_return(Some(&coerced)).unwrap();
                             }
                         } else {
                             self.builder.build_return(Some(&v)).unwrap();
@@ -563,8 +558,13 @@ impl<'ctx> Codegen<'ctx> {
                     } else if fn_ret.is_struct_type() && !val.is_struct_value() {
                         // Value type doesn't match struct return — use zeroed struct
                         self.builder.build_return(Some(&fn_ret.into_struct_type().const_zero())).unwrap();
+                    } else if fn_ret.is_pointer_type() && val.is_struct_value() {
+                        // Struct value but function returns ptr — alloca, store, return ptr
+                        let alloca = self.builder.build_alloca(val.get_type(), "ret_tmp").unwrap();
+                        self.builder.build_store(alloca, val).unwrap();
+                        self.builder.build_return(Some(&alloca)).unwrap();
                     } else if fn_ret.is_pointer_type() && !val.is_pointer_value() {
-                        // Value doesn't match ptr return — use null pointer
+                        // Non-struct value doesn't match ptr return — use null pointer
                         self.builder.build_return(Some(&fn_ret.into_pointer_type().const_null())).unwrap();
                     } else {
                         let coerced = self.coerce_value(val, fn_ret);

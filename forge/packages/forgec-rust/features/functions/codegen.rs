@@ -42,7 +42,20 @@ impl<'ctx> Codegen<'ctx> {
                                         self.builder.build_return(Some(&v)).unwrap();
                                     }
                                 } else {
-                                    self.builder.build_return(Some(&v)).unwrap();
+                                    // Use LLVM function's actual return type for coercion
+                                    let fn_ret = self.builder.get_insert_block()
+                                        .and_then(|bb| bb.get_parent())
+                                        .and_then(|f| f.get_type().get_return_type());
+                                    if let Some(fr) = fn_ret {
+                                        if v.get_type() == fr {
+                                            self.builder.build_return(Some(&v)).unwrap();
+                                        } else {
+                                            let coerced = self.coerce_value(v, fr);
+                                            self.builder.build_return(Some(&coerced)).unwrap();
+                                        }
+                                    } else {
+                                        self.builder.build_return(Some(&v)).unwrap();
+                                    }
                                 }
                             } else {
                                 self.builder.build_return(Some(&v)).unwrap();
@@ -428,12 +441,20 @@ impl<'ctx> Codegen<'ctx> {
                 .into();
         }
 
-        // ForgeString struct → raw ptr (for extern fn calls expecting C strings)
+        // ForgeString struct → raw ptr for extern fn calls expecting C strings
         if val.is_struct_value() && target_type.is_pointer_type() {
-            return self.builder
-                .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
-                .unwrap()
-                .into();
+            let string_type = self.string_type();
+            if val.into_struct_value().get_type() == string_type {
+                // ForgeString → extract ptr field for extern FFI
+                return self.builder
+                    .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
+                    .unwrap()
+                    .into();
+            }
+            // Other structs → alloca and return pointer
+            let alloca = self.builder.build_alloca(val.get_type(), "struct_to_ptr").unwrap();
+            self.builder.build_store(alloca, val).unwrap();
+            return alloca.into();
         }
 
         // Struct → different struct: alloca + store + load to bitcast
