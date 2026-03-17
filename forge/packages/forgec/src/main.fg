@@ -1,8 +1,73 @@
-// Test: with core module
+// ─── Forge Compiler (Self-Hosted) ──────────────
+
+use @std.process
+use @std.fs
 
 mod core
+mod lexer
+mod parser
+mod checker
+mod features
+
+use features
+
+use core.error.{render_diagnostic, render_all}
+use lexer.{lexer_new}
+use parser.{parser_new}
+use checker.{type_checker_new}
+
+fn check(source: string, filename: string) -> bool {
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
+
+    if lex.diagnostics.length > 0 {
+        for d in lex.diagnostics {
+            eprintln(render_diagnostic(d, source, filename))
+        }
+    }
+
+    mut p = parser_new(tokens)
+    let program = p.parse_program()
+
+    if p.diagnostics.length > 0 {
+        for d in p.diagnostics {
+            eprintln(render_diagnostic(d, source, filename))
+        }
+        return false
+    }
+
+    mut tc = type_checker_new()
+    tc.check_program(program)
+
+    if tc.diagnostics.has_errors {
+        let output = render_all(tc.diagnostics, source, filename)
+        eprintln(output)
+        return false
+    }
+
+    true
+}
 
 fn main() {
-    let x = 1 + 2
-    println(string(x))
+    let args = process.args()
+
+    if args.length < 3 {
+        eprintln("forgec v0.1.0 - self-hosted Forge compiler")
+        eprintln("Usage: forgec check <file.fg>")
+        process.exit(1)
+    }
+
+    let command = args[1]
+    let input = args[2]
+
+    if command == "check" {
+        let source = fs.read(input)
+        if !check(source, input) {
+            process.exit(1)
+        }
+        println("OK")
+    } else {
+        eprintln("unknown command")
+        process.exit(1)
+    }
 }

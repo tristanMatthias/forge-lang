@@ -344,12 +344,11 @@ impl<'ctx> Codegen<'ctx> {
             let mut deferred_global_inits: Vec<Statement> = Vec::new();
             for stmt in &program.statements {
                 match stmt {
-                    Statement::Mut { .. } => {
-                        // Defer global mut inits to run inside main() startup
+                    // Defer ALL global variable inits to main() startup
+                    Statement::Let { .. } | Statement::Mut { .. } | Statement::Const { .. } => {
                         deferred_global_inits.push(stmt.clone());
                     }
-                    Statement::Feature(fe) if fe.feature_id == "variables"
-                        && (fe.kind == "Mut" || fe.kind == "mut_decl") => {
+                    Statement::Feature(fe) if fe.feature_id == "variables" => {
                         deferred_global_inits.push(stmt.clone());
                     }
                     _ => {

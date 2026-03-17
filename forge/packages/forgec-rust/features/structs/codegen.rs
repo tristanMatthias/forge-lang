@@ -73,10 +73,20 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
 
-                let struct_type = self.context.struct_type(
-                    &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                    false,
-                );
+                // Use named struct type if the target type has a name
+                let struct_type = if let Some(Type::Struct { name: Some(n), .. }) = &self.struct_target_type {
+                    self.context.get_struct_type(n).unwrap_or_else(|| {
+                        self.context.struct_type(
+                            &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                            false,
+                        )
+                    })
+                } else {
+                    self.context.struct_type(
+                        &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                        false,
+                    )
+                };
                 let mut struct_val = struct_type.get_undef();
                 for (i, val) in all_field_vals.iter().enumerate() {
                     struct_val = self.builder
@@ -184,7 +194,26 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, StructLitData, |data| self.compile_struct_lit(&data.fields))
+        feature_codegen!(self, fe, StructLitData, |data| {
+            // Set struct_target_type from the struct name so the literal
+            // uses the named LLVM type (e.g., %FeatureStmt not anonymous)
+            if let Some(ref name) = data.name {
+                if let Some(ty) = self.type_checker.env.type_aliases.get(name).cloned() {
+                    let prev = self.struct_target_type.take();
+                    self.struct_target_type = Some(match ty {
+                        Type::Struct { fields, name: None } => Type::Struct {
+                            name: Some(name.clone()),
+                            fields,
+                        },
+                        other => other,
+                    });
+                    let result = self.compile_struct_lit(&data.fields);
+                    self.struct_target_type = prev;
+                    return result;
+                }
+            }
+            self.compile_struct_lit(&data.fields)
+        })
     }
 
     /// Infer the type of a struct literal expression.
