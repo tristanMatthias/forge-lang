@@ -92,14 +92,41 @@ impl<'ctx> Codegen<'ctx> {
         let mut field_vals = Vec::new();
         let mut type_fields = Vec::new();
 
+        // Try to use the current function's return type for field type resolution
+        // This ensures enum fields use the canonical (full-size) type, not narrow types
+        let return_struct_fields: Option<Vec<(String, Type)>> = self.current_fn_return_type.as_ref()
+            .and_then(|t| match t {
+                Type::Struct { fields: f, .. } => Some(f.clone()),
+                Type::Nullable(inner) => match inner.as_ref() {
+                    Type::Struct { fields: f, .. } => Some(f.clone()),
+                    _ => None,
+                },
+                _ => None,
+            });
+
         for (name, expr) in fields {
             let val = self.compile_expr(expr)?;
             let ty = self.infer_type(expr);
-            // Use the actual LLVM type from the compiled value rather than the
-            // inferred type. infer_type can return Type::Unknown for complex
-            // expressions (e.g. static method calls like fs.filename(p) inside
-            // struct literals), which maps to i64 and causes type mismatches.
-            field_types.push(val.get_type());
+
+            // If we have a target struct type, use its field type for LLVM
+            let llvm_ty = if let Some(ref target_fields) = return_struct_fields {
+                if let Some((_, ftype)) = target_fields.iter().find(|(n, _)| n == name) {
+                    let target_llvm = self.type_to_llvm_basic(ftype);
+                    if val.get_type() != target_llvm {
+                        field_vals.push(self.coerce_value(val, target_llvm));
+                        field_types.push(target_llvm);
+                        type_fields.push((name.clone(), ty));
+                        continue;
+                    }
+                    target_llvm
+                } else {
+                    val.get_type()
+                }
+            } else {
+                val.get_type()
+            };
+
+            field_types.push(llvm_ty);
             field_vals.push(val);
             type_fields.push((name.clone(), ty));
         }

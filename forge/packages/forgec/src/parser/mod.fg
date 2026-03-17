@@ -102,7 +102,7 @@ impl Parser {
         if self.check(kind) {
             self.advance()
         } else {
-            self.error("expected ${kind}, got ${self.peek().kind}")
+            self.error("expected token")
             null
         }
     }
@@ -127,7 +127,7 @@ impl Parser {
                 "_"
             }
             _ -> {
-                self.error("expected identifier, got ${self.peek().kind}")
+                self.error("expected identifier")
                 null
             }
         }
@@ -349,7 +349,7 @@ impl Parser {
             }
 
             _ -> {
-                self.error("expected type, got ${tok.kind}")
+                self.error("expected type")
                 null
             }
         }

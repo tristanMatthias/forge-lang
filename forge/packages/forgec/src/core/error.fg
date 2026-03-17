@@ -60,7 +60,7 @@ export fn error(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
-        severity: .Error,
+        severity: Severity.Error,
         span,
         help: null,
         note: null,
@@ -71,7 +71,7 @@ export fn error_with_help(code: string, message: string, span: Span, help: strin
     Diagnostic {
         code,
         message,
-        severity: .Error,
+        severity: Severity.Error,
         span,
         help,
         note: null,
@@ -82,7 +82,7 @@ export fn warning(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
-        severity: .Warning,
+        severity: Severity.Warning,
         span,
         help: null,
         note: null,
@@ -93,7 +93,7 @@ export fn info(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
-        severity: .Info,
+        severity: Severity.Info,
         span,
         help: null,
         note: null,

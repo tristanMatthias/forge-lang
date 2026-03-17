@@ -290,7 +290,7 @@ impl Parser {
             }
 
             _ -> {
-                self.error("unexpected token: ${tok.kind}")
+                self.error("unexpected token")
                 self.advance() // skip the bad token
                 null
             }
