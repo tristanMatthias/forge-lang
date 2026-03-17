@@ -192,7 +192,7 @@ impl TypeChecker {
                 } else if type_is_numeric(left_type) && type_is_numeric(right_type) {
                     if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int }
                 } else {
-                    self.type_error("cannot add ${type_to_string(left_type)} and ${type_to_string(right_type)}", span)
+                    self.type_error("type error in addition", span)
                     Type.Error
                 }
             }
@@ -268,7 +268,7 @@ impl TypeChecker {
                 if callee_type is .Unknown || callee_type is .Error {
                     Type.Unknown
                 } else {
-                    self.type_error("${type_to_string(callee_type)} is not callable", span)
+                    self.type_error("type is not callable", span)
                     Type.Error
                 }
             }
@@ -311,10 +311,7 @@ impl TypeChecker {
             _ -> {}
         }
 
-        self.type_error(
-            "type mismatch: expected ${type_to_string(expected)}, got ${type_to_string(actual)}",
-            span
-        )
+        self.type_error("type mismatch", span)
     }
 
     fn type_error(self, message: string, span: Span) {

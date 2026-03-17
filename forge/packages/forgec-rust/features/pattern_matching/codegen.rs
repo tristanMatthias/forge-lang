@@ -89,12 +89,25 @@ impl<'ctx> Codegen<'ctx> {
 
             let arm_end_bb = self.builder.get_insert_block().unwrap();
             if arm_end_bb.get_terminator().is_none() {
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
                 if let Some(val) = arm_val {
                     if result_type.is_none() {
                         result_type = Some(val.get_type());
                     }
-                    arm_results.push((val, arm_end_bb));
+                    // Coerce to result_type if types differ (prevents PHI type mismatch)
+                    let final_val = if let Some(rt) = result_type {
+                        if val.get_type() != rt {
+                            self.coerce_value(val, rt)
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
+                    };
+                    let final_bb = self.builder.get_insert_block().unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    arm_results.push((final_val, final_bb));
+                } else {
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
                 }
             }
 
@@ -108,29 +121,19 @@ impl<'ctx> Codegen<'ctx> {
         // Build phi for results — coerce all arm values to the same LLVM type
         if let Some(rtype) = result_type {
             if !arm_results.is_empty() {
-                // Coerce all values to rtype to ensure PHI type consistency
-                let mut coerced_results: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
-                for (val, bb) in &arm_results {
-                    if val.get_type() != rtype {
-                        // Position at end of the arm's block (before terminator)
-                        self.builder.position_at_end(*bb);
-                        if let Some(term) = bb.get_terminator() {
-                            term.erase_from_basic_block();
-                        }
-                        let coerced = self.coerce_value(*val, rtype);
-                        let new_bb = self.builder.get_insert_block().unwrap();
-                        self.builder.build_unconditional_branch(merge_bb).unwrap();
-                        coerced_results.push((coerced, new_bb));
-                    } else {
-                        coerced_results.push((*val, *bb));
-                    }
-                }
+                // Build PHI with whatever types the arms produced, then
+                // coerce the PHI result to the correct type via alloca
                 self.builder.position_at_end(merge_bb);
                 let phi = self.builder.build_phi(rtype, "match_result").unwrap();
                 let incoming: Vec<(&dyn BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
-                    coerced_results.iter().map(|(v, bb)| (v as &dyn BasicValue, *bb)).collect();
+                    arm_results.iter().map(|(v, bb)| (v as &dyn BasicValue, *bb)).collect();
                 phi.add_incoming(&incoming);
-                return Some(phi.as_basic_value());
+                let phi_val = phi.as_basic_value();
+                // If any arm had a mismatched type, coerce via alloca
+                if arm_results.iter().any(|(v, _)| v.get_type() != rtype) {
+                    return Some(self.coerce_value(phi_val, rtype));
+                }
+                return Some(phi_val);
             }
         }
 
