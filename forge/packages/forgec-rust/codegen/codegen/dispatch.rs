@@ -108,13 +108,13 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            // Only wrap if the function returns string (not ptr)
-                            // Check fn_return_types for the method's return type
+                            // Only wrap ptr→ForgeString when fn_return_types
+                            // explicitly says the function returns String
                             let fn_name = format!("{}_{}", name, method);
+                            let ret_type = self.fn_return_types.get(&fn_name)
+                                .or_else(|| self.fn_return_types.get(method));
                             let should_wrap = !self.suppress_string_wrap
-                                && self.fn_return_types.get(&fn_name)
-                                    .or_else(|| self.fn_return_types.get(method))
-                                    .map_or(true, |t| *t != Type::Ptr);
+                                && matches!(ret_type, Some(Type::String));
                             if should_wrap {
                                 return self.wrap_ptr_as_string(ptr_val);
                             }

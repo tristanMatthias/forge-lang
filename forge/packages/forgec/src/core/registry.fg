@@ -74,6 +74,7 @@ export type FeatureRegistration = {
 }
 
 export fn register_feature(reg: FeatureRegistration) {
+    eprintln("register_feature: ${reg.id}")
     REGISTRY.features = REGISTRY.features.push(FeatureMeta {
         id: reg.id, name: reg.name, status: reg.status,
     })

@@ -119,6 +119,10 @@ impl Codegen {
     // ─── Statements ────────────────────────────
 
     fn emit_statement(self, stmt: Statement) {
+        if stmt is .Expr { eprintln("  .Expr") }
+        if stmt is .Assign { eprintln("  .Assign") }
+        if stmt is .Return { eprintln("  .Return") }
+        if stmt is .Feature { eprintln("  .Feature") }
         match stmt {
             .Expr(expr) -> { self.emit_expr(expr) }
             .Assign(target, value, span) -> {}

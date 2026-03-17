@@ -343,6 +343,7 @@ impl<'ctx> Codegen<'ctx> {
             // Global mut inits must happen inside main() (not at file scope) because
             // Map {} initialization needs runtime allocation.
             let mut deferred_global_inits: Vec<Statement> = Vec::new();
+            let mut deferred_expr_stmts: Vec<Statement> = Vec::new();
             for stmt in &program.statements {
                 match stmt {
                     // Defer ALL global variable inits to main() startup
@@ -352,18 +353,31 @@ impl<'ctx> Codegen<'ctx> {
                     Statement::Feature(fe) if fe.feature_id == "variables" => {
                         deferred_global_inits.push(stmt.clone());
                     }
+                    // Expression statements (like register_feature()) must run
+                    // inside a function — defer to main() startup
+                    Statement::Expr(_) => {
+                        deferred_expr_stmts.push(stmt.clone());
+                    }
+                    Statement::Feature(fe) if !Self::is_feature_declaration_only(fe) => {
+                        deferred_expr_stmts.push(stmt.clone());
+                    }
                     _ => {
                         self.compile_statement(stmt);
                     }
                 }
             }
             // Compile deferred global inits via helper functions (not inline in main)
-            // to avoid stack corruption from too many operations in one function.
-            if !deferred_global_inits.is_empty() {
-                // Split inits into batches of 5 to keep each function small
+            // Compile deferred inits + expr stmts in batched helper functions
+            let all_deferred: Vec<Statement> = deferred_global_inits.iter()
+                .chain(deferred_expr_stmts.iter())
+                .cloned()
+                .collect();
+            eprintln!("[bootstrap] deferred: {} global_inits + {} expr_stmts = {} total",
+                deferred_global_inits.len(), deferred_expr_stmts.len(), all_deferred.len());
+            if !all_deferred.is_empty() {
                 let batch_size = 5;
                 let mut batch_fns: Vec<inkwell::values::FunctionValue> = Vec::new();
-                for (batch_idx, chunk) in deferred_global_inits.chunks(batch_size).enumerate() {
+                for (batch_idx, chunk) in all_deferred.chunks(batch_size).enumerate() {
                     let init_name = format!("__global_init_{}", batch_idx);
                     let void_type = self.context.void_type();
                     let fn_type = void_type.fn_type(&[], false);
