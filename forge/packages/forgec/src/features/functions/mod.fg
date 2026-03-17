@@ -58,7 +58,11 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         return null
     }
 
+    // Store for codegen (bypass side table — struct literals fail in patched binary)
+    store_fn_for_codegen(name!, body!)
+
     let id = next_node_id()
+    // Side table may not work in patched binary, but try anyway for checker
     FN_DECLS["${id}"] = FnDeclData {
         name: name!, type_params, params: params!,
         return_type, body: body!, exported, span: start,
@@ -173,6 +177,84 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
     cg.emit_block(data.body)
 
     // Add implicit return if needed
+    if is_main {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+    } else {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+    }
+}
+
+// ─── Emit All Functions (bypass enum dispatch) ──
+
+// Global list of (name, body) pairs — simpler than Map<string, struct>
+// because the bootstrap can't populate Maps with complex struct values
+mut FN_NAMES: List<string> = []
+mut FN_BODIES: List<Block> = []
+
+export fn store_fn_for_codegen(name: string, body: Block) {
+    eprintln("store_fn: ${name}")
+    FN_NAMES = FN_NAMES.push(name)
+    FN_BODIES = FN_BODIES.push(body)
+    eprintln("stored, count: ${FN_NAMES.length}")
+}
+
+export fn emit_all_functions(cg: Codegen) {
+    mut i = 0
+    while i < FN_NAMES.length {
+        let name = FN_NAMES[i]
+        let body = FN_BODIES[i]
+        emit_fn_simple(cg, name, body)
+        i = i + 1
+    }
+}
+
+fn emit_fn_simple(cg: Codegen, name: string, body: Block) {
+    let is_main = name == "main"
+    let params = llvm.type_array_new(0)
+    let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+    let fn_type = llvm.function_type(ret_ty, params, 0, 0)
+    llvm.type_array_free(params)
+    let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+    cg.functions[name] = fn_val
+    cg.current_fn = fn_val
+    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+    llvm.position_at_end(CG_B, entry)
+    cg.emit_block(body)
+    if is_main {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+    } else {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+    }
+}
+
+fn emit_fn_data(cg: Codegen, data: FnDeclData) {
+    let is_main = data.name == "main"
+    let param_arr = llvm.type_array_new(data.params.length)
+    mut i = 0
+    for param in data.params {
+        llvm.type_array_set(param_arr, i, CG_I64)
+        i = i + 1
+    }
+    let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+    let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
+    llvm.type_array_free(param_arr)
+
+    let fn_val = llvm.add_function(CG_MOD, data.name, fn_type)
+    cg.functions[data.name] = fn_val
+    cg.current_fn = fn_val
+
+    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+    llvm.position_at_end(CG_B, entry)
+
+    i = 0
+    for param in data.params {
+        let param_val = llvm.get_param(fn_val, i)
+        cg.define_var(param.name, Type.Int, param_val)
+        i = i + 1
+    }
+
+    cg.emit_block(data.body)
+
     if is_main {
         llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
     } else {

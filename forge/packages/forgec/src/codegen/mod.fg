@@ -109,20 +109,26 @@ impl Codegen {
     // ─── Program ───────────────────────────────
 
     fn emit_program(self, program: Program) {
-        eprintln("emit_program: ${program.statements.length} stmts")
-        for stmt in program.statements {
-            self.emit_statement(stmt)
-        }
-        eprintln("emit_program done")
+        // Bypass side table — emit fn declarations directly from AST
+        // Side tables use Map<string, StructLiteral> which the bootstrap
+        // can't populate correctly in the patched binary
+        emit_all_functions(self)
     }
 
-    // ─── Statements ────────────────────────────
+    // Direct codegen for fn main: create main() with the given body
+    fn emit_main_fn(self, body: Block) {
+        let params = llvm.type_array_new(0)
+        let mt = llvm.function_type(CG_I32, params, 0, 0)
+        llvm.type_array_free(params)
+        let mf = llvm.add_function(CG_MOD, "main", mt)
+        self.current_fn = mf
+        let entry = llvm.append_basic_block(CG_CTX, mf, "entry")
+        llvm.position_at_end(CG_B, entry)
+        self.emit_block(body)
+        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+    }
 
     fn emit_statement(self, stmt: Statement) {
-        if stmt is .Expr { eprintln("  .Expr") }
-        if stmt is .Assign { eprintln("  .Assign") }
-        if stmt is .Return { eprintln("  .Return") }
-        if stmt is .Feature { eprintln("  .Feature") }
         match stmt {
             .Expr(expr) -> { self.emit_expr(expr) }
             .Assign(target, value, span) -> {}
