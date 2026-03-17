@@ -3,7 +3,7 @@
 use @std.process
 use @std.fs
 
-// Declare modules (codegen excluded — needs @std.llvm package)
+// Declare modules
 mod core
 mod lexer
 mod parser
@@ -13,7 +13,7 @@ mod features
 // Import all features (triggers registration)
 use features
 
-// Import only what main.fg directly uses
+// Import what main.fg directly uses
 use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new}
@@ -55,5 +55,25 @@ fn check(source: string, filename: string) -> bool {
 }
 
 fn main() {
-    println("hello")
+    let args = process.args()
+
+    if args.length < 3 {
+        eprintln("forgec v0.1.0 - self-hosted Forge compiler")
+        eprintln("Usage: forgec check <file.fg>")
+        process.exit(1)
+    }
+
+    let command = args[1]
+    let input = args[2]
+
+    if command == "check" {
+        let source = fs.read(input)
+        if !check(source, input) {
+            process.exit(1)
+        }
+        println("OK")
+    } else {
+        eprintln("unknown command")
+        process.exit(1)
+    }
 }
