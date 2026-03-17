@@ -51,20 +51,20 @@ fn emit_while(cg: Codegen, node: NodeRef) {
     let data = d!
 
     let fn_val = cg.current_fn!
-    let cond_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.cond")
-    let body_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.body")
-    let end_bb = llvm.append_basic_block(cg.ctx, fn_val, "while.end")
+    let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.cond")
+    let body_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.body")
+    let end_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.end")
 
-    llvm.build_br(cg.builder, cond_bb)
-    llvm.position_at_end(cg.builder, cond_bb)
+    llvm.build_br(CG_B, cond_bb)
+    llvm.position_at_end(CG_B, cond_bb)
     let cond = cg.emit_expr(data.condition)
-    llvm.build_cond_br(cg.builder, cond, body_bb, end_bb)
+    llvm.build_cond_br(CG_B, cond, body_bb, end_bb)
 
-    llvm.position_at_end(cg.builder, body_bb)
+    llvm.position_at_end(CG_B, body_bb)
     cg.emit_block(data.body)
-    llvm.build_br(cg.builder, cond_bb)
+    llvm.build_br(CG_B, cond_bb)
 
-    llvm.position_at_end(cg.builder, end_bb)
+    llvm.position_at_end(CG_B, end_bb)
 }
 
 // Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)

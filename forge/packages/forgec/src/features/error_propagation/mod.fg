@@ -125,7 +125,7 @@ fn check_error_prop(tc: TypeChecker, node: NodeRef) -> Type {
 
 fn emit_error_prop(cg: Codegen, node: NodeRef) -> ptr {
     // TODO: emit Result tagged union + propagation branching
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ───────────────────────────────

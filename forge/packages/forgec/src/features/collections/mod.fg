@@ -92,7 +92,7 @@ fn check_collection(tc: TypeChecker, node: NodeRef) -> Type {
 fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {
     // TODO: emit runtime calls to construct List/Map values
     // For now, placeholder
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ───────────────────────────────

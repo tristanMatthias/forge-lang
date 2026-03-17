@@ -16,7 +16,12 @@ mod ranges
 mod collections
 mod strings
 mod string_templates
+mod closures
+mod fn_types
+mod null_safety
 mod traits
+mod generics
+mod pipe_operator
 mod modules
 
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
@@ -34,6 +39,8 @@ use pattern_matching.{check_match, emit_match}
 use collections.{check_collection, emit_collection}
 use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
+use closures.{check_closure, emit_closure}
+use null_safety.{check_null_safety, emit_null_safety}
 
 // All feature registration in one function, called from main()
 // (top-level calls don't work in the bootstrap AOT binary)
@@ -113,6 +120,12 @@ export fn init_features() {
     reg_check_expr("string_templates", check_template)
     reg_emit_expr("string_templates", emit_template)
 
+    // closures
+    reg_check_expr("closures", check_closure)
+    reg_emit_expr("closures", emit_closure)
 
+    // null_safety
+    reg_check_expr("null_safety", check_null_safety)
+    reg_emit_expr("null_safety", emit_null_safety)
 
 }

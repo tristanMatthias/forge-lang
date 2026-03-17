@@ -40,7 +40,7 @@ fn check_range(tc: TypeChecker, node: NodeRef) -> Type {
 
 fn emit_range(cg: Codegen, node: NodeRef) -> ptr {
     // Ranges are consumed by for loops, not emitted as standalone values
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)

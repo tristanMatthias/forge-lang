@@ -113,7 +113,7 @@ fn check_null_safety(tc: TypeChecker, node: NodeRef) -> Type {
 
 fn emit_null_safety(cg: Codegen, node: NodeRef) -> ptr {
     // TODO: emit null checks with branching
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ───────────────────────────────

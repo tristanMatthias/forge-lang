@@ -63,7 +63,7 @@ fn check_template(tc: TypeChecker, node: NodeRef) -> Type {
 fn emit_template(cg: Codegen, node: NodeRef) -> ptr {
     // TODO: emit string concat of literal parts + stringified interpolations
     // For now, placeholder empty string
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ───────────────────────────────

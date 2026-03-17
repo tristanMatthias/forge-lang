@@ -74,7 +74,7 @@ fn check_closure(tc: TypeChecker, node: NodeRef) -> Type {
 
 fn emit_closure(cg: Codegen, node: NodeRef) -> ptr {
     // TODO: emit closure as function pointer + captured environment
-    llvm.const_int(cg.types.i64_type, 0, 0)
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ───────────────────────────────

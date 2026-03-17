@@ -80,7 +80,7 @@ fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {
 
 fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     let d = get_if_expr(node.node_id)
-    if d == null { return cg.null_ptr() }
+    if d == null { return llvm.const_null(CG_PTR) }
     let data = d!
 
     let cond_val = cg.emit_expr(data.condition)

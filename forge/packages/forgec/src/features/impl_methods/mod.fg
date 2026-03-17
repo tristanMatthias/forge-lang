@@ -178,19 +178,19 @@ fn emit_impl(cg: Codegen, node: NodeRef) {
         let param_arr = llvm.type_array_new(method.params.length)
         mut i = 0
         for param in method.params {
-            llvm.type_array_set(param_arr, i, cg.types.i64_type) // TODO: actual types
+            llvm.type_array_set(param_arr, i, CG_I64) // TODO: actual types
             i = i + 1
         }
-        let ret_ty = cg.types.i64_type // TODO: actual return type
+        let ret_ty = CG_I64 // TODO: actual return type
         let fn_type = llvm.function_type(ret_ty, param_arr, method.params.length, 0)
         llvm.type_array_free(param_arr)
 
-        let fn_val = llvm.add_function(cg.module, fn_name, fn_type)
+        let fn_val = llvm.add_function(CG_MOD, fn_name, fn_type)
         cg.functions[fn_name] = fn_val
         cg.current_fn = fn_val
 
-        let entry = llvm.append_basic_block(cg.ctx, fn_val, "entry")
-        llvm.position_at_end(cg.builder, entry)
+        let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+        llvm.position_at_end(CG_B, entry)
 
         i = 0
         for param in method.params {
@@ -200,7 +200,7 @@ fn emit_impl(cg: Codegen, node: NodeRef) {
         }
 
         let result = cg.emit_block(method.body)
-        llvm.build_ret(cg.builder, result)
+        llvm.build_ret(CG_B, result)
     }
 }
 
