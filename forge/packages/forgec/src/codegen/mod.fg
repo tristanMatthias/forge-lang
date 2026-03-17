@@ -304,8 +304,8 @@ impl Codegen {
         last
     }
 
-    fn print_ir(self) {
-        llvm.module_print(self.module)
+    fn write_ir(self, path: string) -> bool {
+        llvm.print_module_to_file(self.module, path) == 0
     }
 
     // ─── Variable Definition ───────────────────

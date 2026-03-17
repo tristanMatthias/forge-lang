@@ -51,7 +51,7 @@ fn check(source: string, filename: string) -> bool {
     true
 }
 
-fn build_compile(source: string, filename: string) {
+fn build_compile(source: string, filename: string, output: string) {
     mut lex = lexer_new(source)
     let tokens = lex.tokenize()
 
@@ -80,12 +80,15 @@ fn build_compile(source: string, filename: string) {
         process.exit(1)
     }
 
+    // Codegen
     mut cg = codegen_new()
     cg.init(filename)
     cg.emit_program(program)
 
-    println("build: codegen OK")
+    // Write IR to file
+    cg.write_ir("output.ll")
     cg.dispose()
+    println("wrote output.ll")
 }
 
 fn main() {
@@ -108,7 +111,8 @@ fn main() {
         println("OK")
     } else if command == "build" {
         let source = fs.read(input)
-        build_compile(source, input)
+        let output = if args.length > 3 { args[3] } else { "a.out" }
+        build_compile(source, input, output)
     } else {
         eprintln("unknown command")
         process.exit(1)

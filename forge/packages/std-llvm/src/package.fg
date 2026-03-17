@@ -4,6 +4,7 @@ extern fn forge_llvm_context_dispose(ctx: ptr)
 extern fn forge_llvm_module_create(name: string, ctx: ptr) -> ptr
 extern fn forge_llvm_module_dispose(m: ptr)
 extern fn forge_llvm_module_print(m: ptr) -> ptr
+extern fn forge_llvm_print_module_to_file(m: ptr, filename: string) -> int
 extern fn forge_llvm_dispose_message(msg: ptr)
 
 // ── Types ──
@@ -169,6 +170,11 @@ export fn module_dispose(m: ptr) {
 /// then forge_llvm_dispose_message(raw) to free the LLVM-allocated buffer.
 export fn module_print(m: ptr) -> ptr {
     forge_llvm_module_print(m)
+}
+
+/// Write LLVM IR text to a file. Returns 0 on success.
+export fn print_module_to_file(m: ptr, filename: string) -> int {
+    forge_llvm_print_module_to_file(m, filename)
 }
 
 /// Get the i1 (boolean) type.

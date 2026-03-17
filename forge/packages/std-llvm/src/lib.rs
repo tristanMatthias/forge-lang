@@ -78,6 +78,9 @@ extern "C" {
     fn LLVMSetInitializer(global: LLVMPtr, val: LLVMPtr);
     fn LLVMSetGlobalConstant(global: LLVMPtr, is_constant: c_int);
 
+    // Print module to file
+    fn LLVMPrintModuleToFile(m: LLVMPtr, filename: *const c_char, error_message: *mut *mut c_char) -> c_int;
+
     // Verification
     fn LLVMVerifyModule(m: LLVMPtr, action: c_int, out_message: *mut *mut c_char) -> c_int;
 
@@ -175,6 +178,17 @@ pub extern "C" fn forge_llvm_module_dispose(m: LLVMPtr) {
 #[no_mangle]
 pub extern "C" fn forge_llvm_module_print(m: LLVMPtr) -> *mut c_char {
     unsafe { LLVMPrintModuleToString(m) }
+}
+
+/// Write LLVM IR to a file. Returns 0 on success.
+#[no_mangle]
+pub extern "C" fn forge_llvm_print_module_to_file(m: LLVMPtr, filename: *const c_char) -> c_int {
+    let mut error: *mut c_char = std::ptr::null_mut();
+    let result = unsafe { LLVMPrintModuleToFile(m, filename, &mut error) };
+    if result != 0 && !error.is_null() {
+        unsafe { LLVMDisposeMessage(error) };
+    }
+    result
 }
 
 #[no_mangle]
