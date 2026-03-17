@@ -18,6 +18,7 @@ use lexer.{lexer_new}
 use parser.{parser_new}
 use checker.{type_checker_new}
 use codegen.{codegen_new}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
@@ -96,6 +97,7 @@ fn build_compile(source: string, filename: string, output: string) {
 }
 
 fn main() {
+    init_features()
     let args = process.args()
 
     if args.length < 3 {

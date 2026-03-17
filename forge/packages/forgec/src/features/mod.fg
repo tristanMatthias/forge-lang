@@ -1,47 +1,136 @@
 // Features for the self-hosted compiler.
-// Each feature handles its own parsing, checking, and codegen.
-// Adding a feature = 1 directory + 1 line here.
 
-// Phase 1
-use features.variables
-use features.functions
-use features.operators
-use features.if_else
-use features.printing
-use features.primitive_types
+use variables
+use functions
+use operators
+use if_else
+use printing
+use primitive_types
+use enums
+use pattern_matching
+use structs
+use impl_methods
+use while_loops
+use for_loops
+use ranges
+use collections
+use strings
+use string_templates
+use closures
+use fn_types
+use null_safety
+use error_propagation
+use traits
+use generics
+use pipe_operator
+use modules
 
-// Phase 2a
-use features.enums
-use features.pattern_matching
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
+use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
+use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn}
+use enums.{parse_enum, check_enum, emit_enum_decl, top_level_enum}
+use structs.{parse_type_decl, check_type_decl, check_struct_lit, emit_type_decl, emit_struct_lit, top_level_type}
+use traits.{parse_trait, check_trait, top_level_trait}
+use impl_methods.{parse_impl, check_impl, emit_impl, top_level_impl}
+use modules.{parse_use, check_use, top_level_use}
+use while_loops.{parse_while, check_while, emit_while}
+use for_loops.{parse_for, check_for, emit_for}
+use if_else.{check_if_expr, emit_if_expr}
+use pattern_matching.{check_match, emit_match}
+use collections.{check_collection, emit_collection}
+use ranges.{check_range, emit_range}
+use string_templates.{check_template, emit_template}
+use closures.{check_closure, emit_closure}
+use null_safety.{check_null_safety, emit_null_safety}
+use error_propagation.{check_error_prop, emit_error_prop}
 
-// Phase 2b
-use features.structs
-use features.impl_methods
+// All feature registration in one function, called from main()
+// (top-level calls don't work in the bootstrap AOT binary)
+export fn init_features() {
+    // variables
+    reg_parser("let", parse_let)
+    reg_parser("mut", parse_mut)
+    reg_parser("const", parse_const)
+    reg_check_stmt("variables", check_var)
+    reg_emit_stmt("variables", emit_var)
+    reg_top_level("variables", top_level_var)
 
-// Phase 2c
-use features.while_loops
-use features.for_loops
-use features.ranges
+    // functions
+    reg_parser("fn", parse_fn)
+    reg_parser("export", parse_export)
+    reg_check_stmt("functions", check_fn)
+    reg_emit_stmt("functions", emit_fn)
+    reg_top_level("functions", top_level_fn)
 
-// Phase 2d
-use features.collections
+    // enums
+    reg_parser("enum", parse_enum)
+    reg_check_stmt("enums", check_enum)
+    reg_emit_stmt("enums", emit_enum_decl)
+    reg_top_level("enums", top_level_enum)
 
-// Phase 2e
-use features.strings
-use features.string_templates
+    // structs
+    reg_parser("type", parse_type_decl)
+    reg_check_stmt("structs", check_type_decl)
+    reg_check_expr("structs", check_struct_lit)
+    reg_emit_stmt("structs", emit_type_decl)
+    reg_emit_expr("structs", emit_struct_lit)
+    reg_top_level("structs", top_level_type)
 
-// Phase 2f
-use features.closures
-use features.fn_types
+    // traits
+    reg_parser("trait", parse_trait)
+    reg_check_stmt("traits", check_trait)
+    reg_top_level("traits", top_level_trait)
 
-// Phase 2g
-use features.null_safety
-use features.error_propagation
+    // impl_methods
+    reg_parser("impl", parse_impl)
+    reg_check_stmt("impl_methods", check_impl)
+    reg_emit_stmt("impl_methods", emit_impl)
+    reg_top_level("impl_methods", top_level_impl)
 
-// Phase 2h
-use features.traits
-use features.generics
+    // modules
+    reg_parser("use", parse_use)
+    reg_check_stmt("modules", check_use)
+    reg_top_level("modules", top_level_use)
 
-// Phase 2i
-use features.pipe_operator
-use features.modules
+    // while_loops
+    reg_parser("while", parse_while)
+    reg_check_stmt("while_loops", check_while)
+    reg_emit_stmt("while_loops", emit_while)
+
+    // for_loops
+    reg_parser("for", parse_for)
+    reg_check_stmt("for_loops", check_for)
+    reg_emit_stmt("for_loops", emit_for)
+
+    // if_else
+    reg_check_expr("if_else", check_if_expr)
+    reg_emit_expr("if_else", emit_if_expr)
+
+    // pattern_matching
+    reg_check_expr("pattern_matching", check_match)
+    reg_emit_expr("pattern_matching", emit_match)
+
+    // collections
+    reg_check_expr("collections", check_collection)
+    reg_emit_expr("collections", emit_collection)
+
+    // ranges
+    reg_check_expr("ranges", check_range)
+    reg_emit_expr("ranges", emit_range)
+
+    // string_templates
+    reg_check_expr("string_templates", check_template)
+    reg_emit_expr("string_templates", emit_template)
+
+    // closures
+    reg_check_expr("closures", check_closure)
+    reg_emit_expr("closures", emit_closure)
+
+    // null_safety
+    reg_check_expr("null_safety", check_null_safety)
+    reg_emit_expr("null_safety", emit_null_safety)
+
+    // error_propagation
+    reg_check_expr("error_propagation", check_error_prop)
+    reg_emit_expr("error_propagation", emit_error_prop)
+}
