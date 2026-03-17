@@ -326,7 +326,18 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(cond_bb).unwrap();
         self.builder.position_at_end(cond_bb);
 
-        let cond_val = self.compile_expr(condition).unwrap();
+        let cond_val = match self.compile_expr(condition) {
+            Some(v) => v,
+            None => {
+                // Condition failed to compile — treat as false (exit loop)
+                self.builder.build_unconditional_branch(end_bb).unwrap();
+                self.builder.position_at_end(end_bb);
+                return;
+            }
+        };
+        // After compiling the condition, the builder may be in a different block
+        // (e.g. if the condition involved function calls with internal branches).
+        // Use the current insert block for the conditional branch.
         let cond_bool = self.to_i1(cond_val);
         self.builder.build_conditional_branch(cond_bool, body_bb, end_bb).unwrap();
 
