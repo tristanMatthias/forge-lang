@@ -19,9 +19,11 @@ use parser.{parser_new}
 use checker.{type_checker_new}
 use codegen.{codegen_new}
 
-fn parse_source(source: string, filename: string) -> Program? {
+fn check(source: string, filename: string) -> bool {
+    eprintln("check: source length ${source.length}")
     mut lex = lexer_new(source)
     let tokens = lex.tokenize()
+    eprintln("check: ${tokens.length} tokens")
 
     if lex.diagnostics.length > 0 {
         for d in lex.diagnostics {
@@ -36,7 +38,7 @@ fn parse_source(source: string, filename: string) -> Program? {
         for d in p.diagnostics {
             eprintln(render_diagnostic(d, source, filename))
         }
-        return null
+        return false
     }
 
     mut tc = type_checker_new()
@@ -45,37 +47,69 @@ fn parse_source(source: string, filename: string) -> Program? {
     if tc.diagnostics.has_errors {
         let output = render_all(tc.diagnostics, source, filename)
         eprintln(output)
-        return null
+        return false
     }
 
-    program
+    true
 }
 
-fn check(source: string, filename: string) -> bool {
-    let program = parse_source(source, filename)
-    program != null
+// Separate parse step for build — stores program in global to avoid
+// bootstrap stack corruption in large functions
+mut BUILD_PROGRAM: Program = Program { statements: [] }
+
+fn build_parse(source: string, filename: string) -> bool {
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
+
+    if lex.diagnostics.length > 0 {
+        for d in lex.diagnostics {
+            eprintln(render_diagnostic(d, source, filename))
+        }
+    }
+
+    mut p = parser_new(tokens)
+    let parsed = p.parse_program()
+    eprintln("parsed: ${parsed.statements.length} statements")
+    BUILD_PROGRAM = parsed
+
+    if p.diagnostics.length > 0 {
+        for d in p.diagnostics {
+            eprintln(render_diagnostic(d, source, filename))
+        }
+        return false
+    }
+
+    mut tc = type_checker_new()
+    tc.check_program(BUILD_PROGRAM)
+
+    if tc.diagnostics.has_errors {
+        let output = render_all(tc.diagnostics, source, filename)
+        eprintln(output)
+        return false
+    }
+
+    true
+}
+
+fn build_codegen(filename: string) -> bool {
+    mut cg = codegen_new()
+    cg.init(filename)
+    eprintln("build: ${BUILD_PROGRAM.statements.length} statements")
+    cg.emit_program(BUILD_PROGRAM)
+
+    let verified = cg.verify()
+    if !verified {
+        eprintln("warning: LLVM verification failed")
+    }
+    cg.dispose()
+    verified
 }
 
 fn build(source: string, filename: string, output: string) -> bool {
-    let program = parse_source(source, filename)
-    if program == null {
+    if !build_parse(source, filename) {
         return false
     }
-
-    mut cg = codegen_new()
-    cg.init(filename)
-    cg.emit_program(program!)
-
-    if !cg.verify() {
-        eprintln("LLVM verification failed")
-        cg.dispose()
-        return false
-    }
-    eprintln("build: verified OK")
-
-    cg.dispose()
-    println("build: codegen complete (linking not yet implemented)")
-    true
+    build_codegen(filename)
 }
 
 fn main() {
