@@ -57,17 +57,14 @@ fn check(source: string, filename: string) -> bool {
 }
 
 fn build(source: string, filename: string, output: string) -> bool {
-    eprintln("build: parsing...")
     let program = parse_source(source, filename)
     if program == null {
         return false
     }
-    eprintln("build: parse OK, creating codegen...")
 
-    mut cg = codegen_new(filename)
-    eprintln("build: codegen created, emitting program...")
+    mut cg = codegen_new()
+    cg.init(filename)
     cg.emit_program(program!)
-    eprintln("build: emit done, verifying...")
 
     if !cg.verify() {
         eprintln("LLVM verification failed")

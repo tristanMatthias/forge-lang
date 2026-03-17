@@ -74,7 +74,19 @@ fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
     ft
 }
 
-export fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
+// Split runtime declaration to avoid bootstrap segfault
+// (bootstrap can't handle functions with 15+ local variables)
+
+type RuntimeTypes = {
+    ptr_ty: ptr,
+    i64_ty: ptr,
+    i1_ty: ptr,
+    void_ty: ptr,
+    f64_ty: ptr,
+    string_ty: ptr,
+}
+
+fn get_runtime_types(ctx: ptr) -> RuntimeTypes {
     let ptr_ty = llvm.pointer_type(ctx)
     let i64_ty = llvm.int64_type(ctx)
     let i1_ty = llvm.int1_type(ctx)
@@ -85,21 +97,57 @@ export fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
     llvm.type_array_set(str_fields, 1, i64_ty)
     let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
     llvm.type_array_free(str_fields)
-    let print_ty = make_fn_type(void_ty, [ptr_ty, i64_ty])
+    RuntimeTypes { ptr_ty, i64_ty, i1_ty, void_ty, f64_ty, string_ty }
+}
+
+fn declare_print_fns(module: ptr, rt: RuntimeTypes) -> List<ptr> {
+    let print_ty = make_fn_type(rt.void_ty, [rt.ptr_ty, rt.i64_ty])
+    [
+        llvm.add_function(module, "forge_print", print_ty),
+        llvm.add_function(module, "forge_println", print_ty),
+        llvm.add_function(module, "forge_eprint", print_ty),
+        llvm.add_function(module, "forge_eprintln", print_ty),
+    ]
+}
+
+fn declare_string_fns(module: ptr, rt: RuntimeTypes) -> List<ptr> {
+    [
+        llvm.add_function(module, "forge_string_new", make_fn_type(rt.string_ty, [rt.ptr_ty, rt.i64_ty])),
+        llvm.add_function(module, "forge_string_concat", make_fn_type(rt.string_ty, [rt.ptr_ty, rt.i64_ty, rt.ptr_ty, rt.i64_ty])),
+        llvm.add_function(module, "forge_string_eq", make_fn_type(rt.i1_ty, [rt.ptr_ty, rt.i64_ty, rt.ptr_ty, rt.i64_ty])),
+        llvm.add_function(module, "forge_string_len", make_fn_type(rt.i64_ty, [rt.ptr_ty, rt.i64_ty])),
+    ]
+}
+
+fn declare_conv_fns(module: ptr, rt: RuntimeTypes) -> List<ptr> {
+    [
+        llvm.add_function(module, "forge_int_to_string", make_fn_type(rt.string_ty, [rt.i64_ty])),
+        llvm.add_function(module, "forge_float_to_string", make_fn_type(rt.string_ty, [rt.f64_ty])),
+        llvm.add_function(module, "forge_bool_to_string", make_fn_type(rt.string_ty, [rt.i1_ty])),
+    ]
+}
+
+fn declare_mem_fns(module: ptr, rt: RuntimeTypes) -> List<ptr> {
+    [
+        llvm.add_function(module, "forge_alloc", make_fn_type(rt.ptr_ty, [rt.i64_ty])),
+        llvm.add_function(module, "forge_free", make_fn_type(rt.void_ty, [rt.ptr_ty])),
+    ]
+}
+
+export fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
+    let rt = get_runtime_types(ctx)
+    let p = declare_print_fns(module, rt)
+    let s = declare_string_fns(module, rt)
+    let c = declare_conv_fns(module, rt)
+    let m = declare_mem_fns(module, rt)
     RuntimeFns {
-        forge_print: llvm.add_function(module, "forge_print", print_ty),
-        forge_println: llvm.add_function(module, "forge_println", print_ty),
-        forge_eprint: llvm.add_function(module, "forge_eprint", print_ty),
-        forge_eprintln: llvm.add_function(module, "forge_eprintln", print_ty),
-        forge_string_new: llvm.add_function(module, "forge_string_new", make_fn_type(string_ty, [ptr_ty, i64_ty])),
-        forge_string_concat: llvm.add_function(module, "forge_string_concat", make_fn_type(string_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])),
-        forge_string_eq: llvm.add_function(module, "forge_string_eq", make_fn_type(i1_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])),
-        forge_string_len: llvm.add_function(module, "forge_string_len", make_fn_type(i64_ty, [ptr_ty, i64_ty])),
-        forge_int_to_string: llvm.add_function(module, "forge_int_to_string", make_fn_type(string_ty, [i64_ty])),
-        forge_float_to_string: llvm.add_function(module, "forge_float_to_string", make_fn_type(string_ty, [f64_ty])),
-        forge_bool_to_string: llvm.add_function(module, "forge_bool_to_string", make_fn_type(string_ty, [i1_ty])),
-        forge_alloc: llvm.add_function(module, "forge_alloc", make_fn_type(ptr_ty, [i64_ty])),
-        forge_free: llvm.add_function(module, "forge_free", make_fn_type(void_ty, [ptr_ty])),
+        forge_print: p[0], forge_println: p[1],
+        forge_eprint: p[2], forge_eprintln: p[3],
+        forge_string_new: s[0], forge_string_concat: s[1],
+        forge_string_eq: s[2], forge_string_len: s[3],
+        forge_int_to_string: c[0], forge_float_to_string: c[1],
+        forge_bool_to_string: c[2],
+        forge_alloc: m[0], forge_free: m[1],
     }
 }
 
@@ -114,19 +162,40 @@ export type Codegen = {
     mut functions: Map<string, ptr>,
 }
 
-export fn codegen_new(module_name: string) -> Codegen {
-    let ctx = llvm.context_create()
-    let module = llvm.module_create(module_name, ctx)
-    let builder = llvm.create_builder(ctx)
-    let types = type_mapper_new(ctx)
-    let runtime = declare_runtime(module, ctx)
+// Workaround: bootstrap corrupts local variables when functions return
+// large structs and there are many locals. Use init() method instead
+// of doing everything in the constructor.
+
+export fn codegen_new() -> Codegen {
     Codegen {
-        ctx, module, builder, types, runtime,
+        ctx: null, module: null, builder: null,
+        types: TypeMapper {
+            ctx: null, i1_type: null, i8_type: null, i32_type: null,
+            i64_type: null, f64_type: null, void_type: null,
+            ptr_type: null, string_type: null,
+        },
+        runtime: RuntimeFns {
+            forge_print: null, forge_println: null,
+            forge_eprint: null, forge_eprintln: null,
+            forge_string_new: null, forge_string_concat: null,
+            forge_string_eq: null, forge_string_len: null,
+            forge_int_to_string: null, forge_float_to_string: null,
+            forge_bool_to_string: null,
+            forge_alloc: null, forge_free: null,
+        },
         vars: {}, current_fn: null, functions: {},
     }
 }
 
 impl Codegen {
+    fn init(self, module_name: string) {
+        self.ctx = llvm.context_create()
+        self.module = llvm.module_create(module_name, self.ctx)
+        self.builder = llvm.create_builder(self.ctx)
+        self.types = type_mapper_new(self.ctx)
+        self.runtime = declare_runtime(self.module, self.ctx)
+    }
+
     fn null_ptr(self) -> ptr { llvm.const_null(self.types.ptr_type) }
     fn verify(self) -> bool { llvm.verify_module(self.module) == 0 }
     fn print_ir(self) -> ptr { llvm.module_print(self.module) }
