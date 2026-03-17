@@ -406,6 +406,22 @@ impl<'ctx> Codegen<'ctx> {
                 .into();
         }
 
+        // Struct → different struct: alloca + store + load to bitcast
+        if val.is_struct_value() && target_type.is_struct_type() {
+            let target_st = target_type.into_struct_type();
+            let alloca = self.builder.build_alloca(target_st, "coerce_tmp").unwrap();
+            // Zero-initialize to avoid garbage in padding
+            self.builder.build_store(alloca, target_st.const_zero()).unwrap();
+            // Store the smaller value at the same address (reinterpret)
+            let src_ptr = self.builder.build_bit_cast(
+                alloca,
+                self.context.ptr_type(inkwell::AddressSpace::default()),
+                "coerce_ptr",
+            ).unwrap();
+            self.builder.build_store(src_ptr.into_pointer_value(), val).unwrap();
+            return self.builder.build_load(target_st, alloca, "coerced").unwrap();
+        }
+
         val
     }
 

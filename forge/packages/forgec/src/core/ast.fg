@@ -97,21 +97,11 @@ export type Program = {
 }
 
 
-// ─── Statement ────────────────────────────────────────────────────
-// Structural primitives only. ALL feature-specific statements
-// go through the Feature(...) variant.
-
-export enum Statement {
-    Expr(expr: Expr)
-    Assign(target: Expr, value: Expr, span: Span)
-    Return(value: Expr?, span: Span)
-    Feature(stmt: FeatureStmt)
-}
-
-
 // ─── Expression ───────────────────────────────────────────────────
 // Structural primitives only. ALL feature-specific expressions
 // go through the Feature(...) variant.
+// NOTE: Expr must be defined BEFORE Statement so the type checker
+// knows Expr's full size when processing Statement's variants.
 
 export enum Expr {
     IntLit(value: int, span: Span)
@@ -127,6 +117,17 @@ export enum Expr {
     Index(object: Expr, index: Expr, span: Span)
     Block(block: Block)
     Feature(expr: FeatureExpr)
+}
+
+// ─── Statement ────────────────────────────────────────────────────
+// Structural primitives only. ALL feature-specific statements
+// go through the Feature(...) variant.
+
+export enum Statement {
+    Expr(expr: Expr)
+    Assign(target: Expr, value: Expr, span: Span)
+    Return(value: Expr?, span: Span)
+    Feature(stmt: FeatureStmt)
 }
 
 
