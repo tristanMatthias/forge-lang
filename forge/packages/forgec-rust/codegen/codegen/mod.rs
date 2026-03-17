@@ -88,6 +88,7 @@ pub struct Codegen<'ctx> {
     pub(crate) monomorphized: HashSet<String>,
     pub(crate) named_types: HashMap<String, Type>,
     pub(crate) global_mutables: HashMap<String, Type>,
+    pub(crate) initialized_globals: HashSet<String>,
     pub(crate) scope_vars: Vec<Vec<(String, Type)>>,
     pub static_methods: HashMap<(String, String), String>,
     pub fn_return_types: HashMap<String, Type>,
@@ -129,6 +130,7 @@ impl<'ctx> Codegen<'ctx> {
             monomorphized: HashSet::new(),
             named_types: HashMap::new(),
             global_mutables: HashMap::new(),
+            initialized_globals: HashSet::new(),
             scope_vars: Vec::new(),
             static_methods: HashMap::new(),
             fn_return_types: HashMap::new(),
@@ -344,14 +346,29 @@ impl<'ctx> Codegen<'ctx> {
             // Map {} initialization needs runtime allocation.
             let mut deferred_global_inits: Vec<Statement> = Vec::new();
             let mut deferred_expr_stmts: Vec<Statement> = Vec::new();
+            let mut deferred_names: HashSet<String> = HashSet::new();
             for stmt in &program.statements {
                 match stmt {
                     // Defer ALL global variable inits to main() startup
-                    Statement::Let { .. } | Statement::Mut { .. } | Statement::Const { .. } => {
-                        deferred_global_inits.push(stmt.clone());
+                    // Skip duplicates (module merge can produce both Statement::Mut and Feature)
+                    Statement::Mut { name, .. } => {
+                        if deferred_names.insert(name.clone()) {
+                            deferred_global_inits.push(stmt.clone());
+                        }
+                    }
+                    Statement::Let { name, .. } | Statement::Const { name, .. } => {
+                        if deferred_names.insert(name.clone()) {
+                            deferred_global_inits.push(stmt.clone());
+                        }
                     }
                     Statement::Feature(fe) if fe.feature_id == "variables" => {
-                        deferred_global_inits.push(stmt.clone());
+                        use crate::features::variables::types::VarDeclData;
+                        let name = crate::feature_data!(fe, VarDeclData)
+                            .map(|d| d.name.clone())
+                            .unwrap_or_default();
+                        if name.is_empty() || deferred_names.insert(name) {
+                            deferred_global_inits.push(stmt.clone());
+                        }
                     }
                     // ALL non-declaration stmts must run inside a function
                     _ => {

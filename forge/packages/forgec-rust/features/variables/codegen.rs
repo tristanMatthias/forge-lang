@@ -130,6 +130,13 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_mut_var(&mut self, data: &VarDeclData) {
         // Skip global mutables - they are created in compile_program first pass
         if self.global_mutables.contains_key(&data.name) {
+            // Skip if already initialized (avoid double-init from module merge)
+            if self.initialized_globals.contains(&data.name) {
+                eprintln!("[skip] already initialized: {}", data.name);
+                return;
+            }
+            eprintln!("[init] first init: {}", data.name);
+            self.initialized_globals.insert(data.name.clone());
             // Global mutable: compile initializer and store it to the global
             if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
                 let global_ty = self.global_mutables.get(&data.name).cloned();
@@ -146,7 +153,11 @@ impl<'ctx> Codegen<'ctx> {
                 if matches!(&global_ty, Some(Type::Ptr)) {
                     self.suppress_string_wrap = true;
                 }
-                let val = if matches!(&global_ty, Some(Type::Map(_, _))) && matches!(&data.value, Expr::Block(b) if b.statements.is_empty()) {
+                // ALWAYS use compile_map_lit for {} values on Map-typed globals
+                let is_empty_block = matches!(&data.value, Expr::Block(b) if b.statements.is_empty());
+                let val = if is_empty_block {
+                    // Always allocate as Map (the value type might not match but the
+                    // runtime Map is just {ptr, ptr, i64} regardless of generic params)
                     self.compile_map_lit(&[])
                 } else {
                     self.compile_expr(&data.value)

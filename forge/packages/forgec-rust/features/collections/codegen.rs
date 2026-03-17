@@ -293,15 +293,24 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn compile_map_lit(&mut self, entries: &[(Expr, Expr)]) -> Option<BasicValueEnum<'ctx>> {
         if entries.is_empty() {
+            // Allocate real (empty) arrays for keys and values
+            // so the Map is usable for insert/has operations
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i64_type = self.context.i64_type();
+            let one_byte = i64_type.const_int(8, false);
+            let keys_ptr = self.call_runtime("forge_alloc", &[one_byte.into()], "map_keys")?
+                .into_pointer_value();
+            let vals_ptr = self.call_runtime("forge_alloc", &[one_byte.into()], "map_vals")?
+                .into_pointer_value();
             let map_type = self.context.struct_type(
-                &[
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.ptr_type(AddressSpace::default()).into(),
-                    self.context.i64_type().into(),
-                ],
+                &[ptr_type.into(), ptr_type.into(), i64_type.into()],
                 false,
             );
-            return Some(map_type.const_zero().into());
+            let mut map_val = map_type.get_undef();
+            map_val = self.builder.build_insert_value(map_val, keys_ptr, 0, "mk").unwrap().into_struct_value();
+            map_val = self.builder.build_insert_value(map_val, vals_ptr, 1, "mv").unwrap().into_struct_value();
+            map_val = self.builder.build_insert_value(map_val, i64_type.const_zero(), 2, "ml").unwrap().into_struct_value();
+            return Some(map_val.into());
         }
 
         let count = entries.len() as u64;
