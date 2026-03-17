@@ -27,7 +27,7 @@ impl<'ctx> Codegen<'ctx> {
                 &target_triple,
                 "generic",
                 "",
-                OptimizationLevel::Default,
+                OptimizationLevel::None,
                 RelocMode::Default,
                 CodeModel::Default,
             )

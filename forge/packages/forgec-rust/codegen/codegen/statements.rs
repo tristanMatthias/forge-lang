@@ -185,7 +185,13 @@ impl<'ctx> Codegen<'ctx> {
             }
             Statement::Assign { target, value, .. } => {
                 if let Expr::Ident(name, _) = target {
+                    // Suppress ptr→ForgeString wrapping for ptr-typed assignments
+                    let var_type = self.lookup_var(name).map(|(_, t)| t);
+                    if matches!(&var_type, Some(Type::Ptr)) || self.global_mutables.get(name) == Some(&Type::Ptr) {
+                        self.suppress_string_wrap = true;
+                    }
                     let val = self.compile_expr(value);
+                    self.suppress_string_wrap = false;
                     if let Some(val) = val {
                         if let Some((ptr, _)) = self.lookup_var(name) {
                             self.builder.build_store(ptr, val).unwrap();
@@ -552,7 +558,7 @@ impl<'ctx> Codegen<'ctx> {
                     } else if let Type::Nullable(_) = &ret_ty {
                         let wrapped = self.wrap_in_nullable(val, &ret_ty);
                         self.builder.build_return(Some(&wrapped)).unwrap();
-                    } else if ret_ty == Type::String && val.is_pointer_value() {
+                    } else if ret_ty == Type::String && val.is_pointer_value() && !matches!(fn_ret, BasicTypeEnum::PointerType(_)) {
                         let forge_str = self.wrap_ptr_as_string(val.into_pointer_value()).unwrap();
                         self.builder.build_return(Some(&forge_str)).unwrap();
                     } else if fn_ret.is_struct_type() && !val.is_struct_value() {

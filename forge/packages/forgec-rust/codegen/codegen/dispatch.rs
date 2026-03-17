@@ -108,7 +108,10 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            return self.wrap_ptr_as_string(ptr_val);
+                            if !self.suppress_string_wrap {
+                                return self.wrap_ptr_as_string(ptr_val);
+                            }
+                            return Some(ptr_val.into());
                         }
                     }
                     return raw;

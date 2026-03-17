@@ -125,11 +125,16 @@ impl<'ctx> Codegen<'ctx> {
             // Global mutable: compile initializer and store it to the global
             if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
                 let global_ty = self.global_mutables.get(&data.name).cloned();
+                // Suppress ptr→ForgeString wrapping for ptr-typed globals
+                if matches!(&global_ty, Some(Type::Ptr)) {
+                    self.suppress_string_wrap = true;
+                }
                 let val = if matches!(&global_ty, Some(Type::Map(_, _))) && matches!(&data.value, Expr::Block(b) if b.statements.is_empty()) {
                     self.compile_map_lit(&[])
                 } else {
                     self.compile_expr(&data.value)
                 };
+                self.suppress_string_wrap = false;
                 if let Some(val) = val {
                     if let Some(global) = self.module.get_global(&data.name) {
                         self.builder.build_store(global.as_pointer_value(), val).unwrap();
