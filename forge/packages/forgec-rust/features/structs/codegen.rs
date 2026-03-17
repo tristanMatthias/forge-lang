@@ -131,10 +131,42 @@ impl<'ctx> Codegen<'ctx> {
             type_fields.push((name.clone(), ty));
         }
 
-        let struct_type = self.context.struct_type(
-            &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-            false,
-        );
+        // Build struct type — try to match a named LLVM struct from the type system
+        let struct_type = {
+            let type_fields_ty = Type::Struct {
+                name: None,
+                fields: type_fields.clone(),
+            };
+            // Check if the return type or target type has a matching named struct
+            let named_type = self.current_fn_return_type.as_ref()
+                .and_then(|rt| match rt {
+                    Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
+                    Type::Nullable(inner) => match inner.as_ref() {
+                        Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .or_else(|| self.struct_target_type.as_ref().and_then(|st| match st {
+                    Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
+                    _ => None,
+                }));
+            if let Some(named) = named_type {
+                if named.count_fields() == field_types.len() as u32 {
+                    named
+                } else {
+                    self.context.struct_type(
+                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                        false,
+                    )
+                }
+            } else {
+                self.context.struct_type(
+                    &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                    false,
+                )
+            }
+        };
 
         let mut struct_val = struct_type.get_undef();
         for (i, val) in field_vals.iter().enumerate() {

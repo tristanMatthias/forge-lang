@@ -218,6 +218,20 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Pre-populate LLVM type cache for all known types.
+        // This ensures all struct/enum constructions use the SAME LLVM type objects,
+        // preventing type mismatches in PHI nodes and function calls.
+        {
+            let type_aliases: Vec<_> = self.type_checker.env.type_aliases.clone().into_iter().collect();
+            for (_, ty) in &type_aliases {
+                self.type_to_llvm_basic(ty);
+            }
+            let enum_types: Vec<_> = self.type_checker.env.enum_types.clone().into_iter().collect();
+            for (_, ty) in &enum_types {
+                self.type_to_llvm_basic(ty);
+            }
+        }
+
         self.compile_all_impl_methods();
         self.generate_vtables();
 

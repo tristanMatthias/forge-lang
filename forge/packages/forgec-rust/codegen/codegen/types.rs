@@ -80,8 +80,19 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn type_to_llvm_basic(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
         // Cache composite types to ensure the same Forge type always
-        // produces the same LLVM type object (prevents PHI type mismatches)
-        let cache_key = format!("{:?}", ty);
+        // produces the same LLVM type object (prevents PHI/call type mismatches).
+        // Use type NAME for named types to avoid cache misses from different
+        // Debug representations of the same conceptual type.
+        let cache_key = match ty {
+            Type::Struct { name: Some(n), .. } => format!("struct:{}", n),
+            Type::Enum { name, .. } => format!("enum:{}", name),
+            Type::Nullable(inner) => format!("nullable:{}", match inner.as_ref() {
+                Type::Struct { name: Some(n), .. } => format!("struct:{}", n),
+                Type::Enum { name, .. } => format!("enum:{}", name),
+                other => format!("{:?}", other),
+            }),
+            other => format!("{:?}", other),
+        };
         if let Some(cached) = self.llvm_type_cache.borrow().get(&cache_key) {
             return *cached;
         }
@@ -105,14 +116,40 @@ impl<'ctx> Codegen<'ctx> {
             Type::Void => self.context.i8_type().into(),
             Type::Ptr => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Nullable(inner) => {
+                // Use named struct for nullable types with named inner types
+                let name = match inner.as_ref() {
+                    Type::Struct { name: Some(n), .. } => Some(format!("Nullable_{}", n)),
+                    Type::Enum { name, .. } => Some(format!("Nullable_{}", name)),
+                    _ => None,
+                };
                 let inner_ty = self.type_to_llvm_basic(inner);
+                if let Some(name) = name {
+                    if let Some(existing) = self.context.get_struct_type(&name) {
+                        return existing.into();
+                    }
+                    let st = self.context.opaque_struct_type(&name);
+                    st.set_body(&[self.context.i8_type().into(), inner_ty.into()], false);
+                    return st.into();
+                }
                 self.context
                     .struct_type(&[self.context.i8_type().into(), inner_ty.into()], false)
                     .into()
             }
-            Type::Struct { fields, .. } => {
+            Type::Struct { name, fields, .. } => {
                 let field_types: Vec<BasicTypeEnum<'ctx>> =
                     fields.iter().map(|(_, t)| self.type_to_llvm_basic(t)).collect();
+                // Use named LLVM struct type for named Forge structs
+                if let Some(n) = name {
+                    if let Some(existing) = self.context.get_struct_type(n) {
+                        return existing.into();
+                    }
+                    let st = self.context.opaque_struct_type(n);
+                    st.set_body(
+                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                        false,
+                    );
+                    return st.into();
+                }
                 self.context
                     .struct_type(
                         &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
@@ -134,7 +171,6 @@ impl<'ctx> Codegen<'ctx> {
                 self.context.ptr_type(AddressSpace::default()).into()
             }
             Type::Result(ok, err) => {
-                // Compute the number of i64 slots needed for the payload union
                 let ok_slots = self.type_i64_slots(ok);
                 let err_slots = self.type_i64_slots(err);
                 let max_slots = ok_slots.max(err_slots).max(1);
@@ -204,12 +240,16 @@ impl<'ctx> Codegen<'ctx> {
                 for _ in 0..max_slots {
                     field_types.push(self.context.i64_type().into());
                 }
-                self.context
-                    .struct_type(
-                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                        false,
-                    )
-                    .into()
+                // Use named LLVM struct type for enums
+                if let Some(existing) = self.context.get_struct_type(name) {
+                    return existing.into();
+                }
+                let st = self.context.opaque_struct_type(name);
+                st.set_body(
+                    &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                    false,
+                );
+                st.into()
             }
             Type::DynTrait(_) => {
                 // Fat pointer: { data_ptr, vtable_ptr }
