@@ -357,15 +357,32 @@ impl<'ctx> Codegen<'ctx> {
                     }
                 }
             }
-            // Compile deferred global inits at the start of main()
+            // Compile deferred global inits via helper functions (not inline in main)
+            // to avoid stack corruption from too many operations in one function.
             if !deferred_global_inits.is_empty() {
+                // Split inits into batches of 5 to keep each function small
+                let batch_size = 5;
+                let mut batch_fns: Vec<inkwell::values::FunctionValue> = Vec::new();
+                for (batch_idx, chunk) in deferred_global_inits.chunks(batch_size).enumerate() {
+                    let init_name = format!("__global_init_{}", batch_idx);
+                    let void_type = self.context.void_type();
+                    let fn_type = void_type.fn_type(&[], false);
+                    let init_fn = self.module.add_function(&init_name, fn_type, None);
+                    let entry = self.context.append_basic_block(init_fn, "entry");
+                    self.builder.position_at_end(entry);
+                    for stmt in chunk {
+                        self.compile_statement(stmt);
+                    }
+                    self.builder.build_return(None).unwrap();
+                    batch_fns.push(init_fn);
+                }
+
                 if let Some(main_fn) = self.module.get_function("main") {
-                    // Insert init block at the very beginning of main
                     let first_bb = main_fn.get_first_basic_block().unwrap();
                     let init_bb = self.context.prepend_basic_block(first_bb, "global_init");
                     self.builder.position_at_end(init_bb);
-                    for stmt in &deferred_global_inits {
-                        self.compile_statement(stmt);
+                    for init_fn in &batch_fns {
+                        self.builder.build_call(*init_fn, &[], "").unwrap();
                     }
                     self.builder.build_unconditional_branch(first_bb).unwrap();
                 }
