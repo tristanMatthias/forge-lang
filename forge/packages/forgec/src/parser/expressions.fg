@@ -82,7 +82,7 @@ impl Parser {
             self.skip_newlines()
             let right = self.parse_next_level(level)
             if right == null { return null }
-            let span = self.merge_spans(result.span(), right!.span())
+            let span = self.merge_spans(self.current_span(), self.current_span())
             result = Expr.Binary(result, op!, right!, span)
         }
         result
@@ -99,24 +99,24 @@ impl Parser {
             let start = self.advance().span
             let operand = self.parse_unary_expr() // right-associative
             if operand == null { return null }
-            let span = self.merge_spans(start, operand!.span())
-            return Expr.Unary(.Not, operand!, span)
+            let span = self.merge_spans(start, self.current_span())
+            return Expr.Unary(UnaryOp.Not, operand!, span)
         }
 
         if self.check(TokenKind.Minus) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
-            let span = self.merge_spans(start, operand!.span())
-            return Expr.Unary(.Neg, operand!, span)
+            let span = self.merge_spans(start, self.current_span())
+            return Expr.Unary(UnaryOp.Neg, operand!, span)
         }
 
         if self.check(TokenKind.Tilde) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
-            let span = self.merge_spans(start, operand!.span())
-            return Expr.Unary(.BitNot, operand!, span)
+            let span = self.merge_spans(start, self.current_span())
+            return Expr.Unary(UnaryOp.BitNot, operand!, span)
         }
 
         self.parse_postfix_expr()
@@ -135,7 +135,7 @@ impl Parser {
                 self.advance()
                 let args = self.parse_call_args()
                 let close = self.expect(TokenKind.RParen)
-                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
                 continue
             }
@@ -147,7 +147,7 @@ impl Parser {
                 match self.peek().kind {
                     .IntLiteral(n) -> {
                         let field_span = self.advance().span
-                        let span = self.merge_spans(result.span(), field_span)
+                        let span = self.merge_spans(self.current_span(), field_span)
                         result = Expr.Index(result, Expr.IntLit(n, field_span), span)
                         continue
                     }
@@ -155,7 +155,7 @@ impl Parser {
                 }
                 let field = self.expect_ident()
                 if field == null { return null }
-                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.MemberAccess(result, field!, span)
                 continue
             }
@@ -175,7 +175,7 @@ impl Parser {
                 let index = self.parse_expr()
                 if index == null { return null }
                 if self.expect(TokenKind.RBracket) == null { return null }
-                let span = self.merge_spans(result.span(), self.peek_at(-1).span)
+                let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Index(result, index!, span)
                 continue
             }
@@ -467,7 +467,7 @@ impl Parser {
                 // else if — wrap in block with single if expr
                 let elif = self.parse_if_expr()
                 if elif != null {
-                    Block { statements: [Statement.Expr(elif!)], span: elif!.span() }
+                    Block { statements: [Statement.Expr(elif!)], span: self.current_span() }
                 } else { null }
             } else {
                 self.parse_block()

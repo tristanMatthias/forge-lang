@@ -546,9 +546,37 @@ impl<'ctx> Codegen<'ctx> {
                     self.builder.build_return(Some(&val)).unwrap();
                 }
             } else {
-                // Return default value
-                let default = self.default_value(&ret_ty);
-                self.builder.build_return(Some(&default)).unwrap();
+                // Return default value — use the LLVM function's actual return type
+                // to avoid mismatch when Forge type resolution returns Unknown
+                let fn_val = self.builder.get_insert_block()
+                    .and_then(|bb| bb.get_parent());
+                if let Some(func) = fn_val {
+                    if let Some(llvm_ret) = func.get_type().get_return_type() {
+                        match llvm_ret {
+                            BasicTypeEnum::StructType(st) => {
+                                self.builder.build_return(Some(&st.const_zero())).unwrap();
+                            }
+                            BasicTypeEnum::IntType(it) => {
+                                self.builder.build_return(Some(&it.const_zero())).unwrap();
+                            }
+                            BasicTypeEnum::FloatType(ft) => {
+                                self.builder.build_return(Some(&ft.const_float(0.0))).unwrap();
+                            }
+                            BasicTypeEnum::PointerType(pt) => {
+                                self.builder.build_return(Some(&pt.const_null())).unwrap();
+                            }
+                            _ => {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            }
+                        }
+                    } else {
+                        self.builder.build_return(None).unwrap();
+                    }
+                } else {
+                    let default = self.default_value(&ret_ty);
+                    self.builder.build_return(Some(&default)).unwrap();
+                }
             }
         }
 

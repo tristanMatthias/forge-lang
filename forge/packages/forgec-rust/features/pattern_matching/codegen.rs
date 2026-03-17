@@ -101,8 +101,9 @@ impl<'ctx> Codegen<'ctx> {
             let arm_val = self.compile_expr(&arm.body);
             self.pop_scope();
 
-            let arm_end_bb = self.builder.get_insert_block().unwrap();
-            if arm_end_bb.get_terminator().is_none() {
+            // Get the ACTUAL current block (may differ from arm_bbs[i] if body created new blocks)
+            let current_bb = self.builder.get_insert_block().unwrap();
+            if current_bb.get_terminator().is_none() {
                 if let Some(val) = arm_val {
                     if result_type.is_none() {
                         result_type = Some(val.get_type());
@@ -112,9 +113,12 @@ impl<'ctx> Codegen<'ctx> {
                             self.coerce_value(val, rt)
                         } else { val }
                     } else { val };
-                    let final_bb = self.builder.get_insert_block().unwrap();
-                    self.builder.build_unconditional_branch(merge_bb).unwrap();
-                    arm_results.push((final_val, final_bb));
+                    // Re-get current block after possible coercion
+                    let branch_bb = self.builder.get_insert_block().unwrap();
+                    if branch_bb.get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        arm_results.push((final_val, branch_bb));
+                    }
                 } else {
                     self.builder.build_unconditional_branch(merge_bb).unwrap();
                 }
@@ -123,7 +127,7 @@ impl<'ctx> Codegen<'ctx> {
 
         self.builder.position_at_end(merge_bb);
 
-        // Build phi for results
+        // Build phi for results — only include arms that actually branch to merge_bb
         if let Some(rtype) = result_type {
             if !arm_results.is_empty() {
                 let phi = self.builder.build_phi(rtype, "match_result").unwrap();
@@ -150,7 +154,8 @@ impl<'ctx> Codegen<'ctx> {
         let subject_type = self.infer_type(subject);
 
         // Fast path: use switch instruction for simple enum dispatch
-        if self.can_use_switch(&subject_type, arms) {
+        // TODO: fix PHI predecessor mismatch for arms with nested blocks
+        if false && self.can_use_switch(&subject_type, arms) {
             if let Some(result) = self.compile_match_switch(&subject_val, &subject_type, arms) {
                 return Some(result);
             }
