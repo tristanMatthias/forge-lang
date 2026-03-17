@@ -203,8 +203,8 @@ impl Lexer {
             }
 
             let token = self.next_token()
-            if token != null {
-                tokens = tokens.push(token!)
+            if token.kind is not .Eof {
+                tokens = tokens.push(token)
             }
         }
 
@@ -217,7 +217,7 @@ impl Lexer {
         tokens
     }
 
-    fn next_token(self) -> Token? {
+    fn next_token(self) -> Token {
         let ch = self.peek_ch()
         let start_pos = self.pos
         let start_line = self.line
@@ -264,8 +264,8 @@ impl Lexer {
                 }
                 // Standalone $ — error
                 self.advance()
-                self.add_error(E_SYNTAX, "unexpected character: '$'", self.make_span(start_pos, start_line, start_col))
-                return null
+                self.add_error("F0001", "unexpected character: '$'", self.make_span(start_pos, start_line, start_col))
+                return Token { kind: .Eof, span: self.make_span(start_pos, start_line, start_col) }
             }
             return self.lex_ident_or_keyword(start_pos, start_line, start_col)
         }
@@ -425,7 +425,7 @@ impl Lexer {
         }
         if text.length == 0 {
             let span = self.make_span(start_pos, start_line, start_col)
-            self.add_error(E_BAD_NUMBER, "expected digits after 0${prefix}", span)
+            self.add_error("F0006", "expected digits after 0${prefix}", span)
             return Token { kind: .IntLiteral(0), span }
         }
         Token {
@@ -526,7 +526,7 @@ impl Lexer {
         // Unterminated
         let span = self.make_span(start_pos, start_line, start_col)
         let err_code = if close_ch == "\"" { E_UNTERMINATED_STRING } else { E_UNTERMINATED_TEMPLATE }
-        self.add_error(err_code, "unterminated string literal", span)
+        self.add_error("F0002", "unterminated string literal", span)
         if text.length > 0 {
             parts = parts.push(TemplatePart.Literal(text))
         }
@@ -649,8 +649,8 @@ impl Lexer {
         // Check for typed tagged template: ident<Type>`
         if kind == null && !self.is_at_end() && self.peek_ch() == "<" {
             let typed_tag = self.try_typed_tagged_template(text, start_pos, start_line, start_col)
-            if typed_tag != null {
-                return typed_tag!
+            if typed_tag.kind is not .Eof {
+                return typed_tag
             }
         }
 
@@ -706,11 +706,11 @@ impl Lexer {
         }
 
         let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated tagged template", span)
+        self.add_error("F0003", "unterminated tagged template", span)
         Token { kind: .TaggedTemplate(tag, parts, null), span }
     }
 
-    fn try_typed_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token? {
+    fn try_typed_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token {
         // Try to parse ident<Type>` — backtrack if it doesn't match
         let saved_pos = self.pos
         let saved_line = self.line
@@ -782,7 +782,7 @@ impl Lexer {
             }
 
             let span = self.make_span(start_pos, start_line, start_col)
-            self.add_error(E_UNTERMINATED_TEMPLATE, "unterminated typed tagged template", span)
+            self.add_error("F0003", "unterminated typed tagged template", span)
             return Token { kind: .TaggedTemplate(tag, parts, type_text), span }
         }
 
@@ -790,12 +790,12 @@ impl Lexer {
         self.pos = saved_pos
         self.line = saved_line
         self.col = saved_col
-        null
+        Token { kind: .Eof, span: self.current_span() }
     }
 
     // ─── Operators & Punctuation ───────────────
 
-    fn lex_operator(self, start_pos: int, start_line: int, start_col: int) -> Token? {
+    fn lex_operator(self, start_pos: int, start_line: int, start_col: int) -> Token {
         let ch = self.advance()
 
         // Single-character tokens
@@ -936,8 +936,8 @@ impl Lexer {
 
         // Unknown character
         let span = self.make_span(start_pos, start_line, start_col)
-        self.add_error(E_SYNTAX, "unexpected character: '${ch}'", span)
-        null
+        self.add_error("F0001", "unexpected character: '${ch}'", span)
+        Token { kind: .Eof, span }
     }
 }
 

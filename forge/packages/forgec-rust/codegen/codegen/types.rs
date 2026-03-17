@@ -195,7 +195,19 @@ impl<'ctx> Codegen<'ctx> {
                 string_type.const_zero().into()
             }
             Type::Ptr => self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into(),
-            _ => self.context.i64_type().const_zero().into(),
+            _ => {
+                // For struct/enum/nullable/etc, return a zero-initialized value
+                // of the correct LLVM type
+                let llvm_ty = self.type_to_llvm_basic(ty);
+                match llvm_ty {
+                    BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                    BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                    BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                    BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                    BasicTypeEnum::ArrayType(at) => at.const_zero().into(),
+                    BasicTypeEnum::VectorType(vt) => vt.const_zero().into(),
+                }
+            }
         }
     }
 
