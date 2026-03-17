@@ -84,9 +84,7 @@ fn build_compile(source: string, filename: string) {
     cg.init(filename)
     cg.emit_program(program)
 
-    // Print IR to stdout for debugging
-    cg.print_ir()
-    println("build: codegen complete")
+    println("build: codegen OK")
     cg.dispose()
 }
 
