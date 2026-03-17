@@ -77,6 +77,21 @@ export fn is_ident_continue(ch: string) -> bool {
     is_alnum(ch) || ch == "$"
 }
 
+fn is_binary_digit(ch: string) -> bool {
+    ch == "0" || ch == "1"
+}
+
+fn is_octal_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "7"
+}
+
+fn is_radix_digit(ch: string, radix: int) -> bool {
+    if radix == 16 { return is_hex_digit(ch) }
+    if radix == 2 { return is_binary_digit(ch) }
+    if radix == 8 { return is_octal_digit(ch) }
+    false
+}
+
 export fn is_whitespace_not_newline(ch: string) -> bool {
     ch == " " || ch == "\t" || ch == "\r"
 }
@@ -409,12 +424,7 @@ impl Lexer {
         mut text = ""
         while !self.is_at_end() {
             let ch = self.peek_ch()
-            let valid = match radix {
-                16 -> is_hex_digit(ch)
-                2 -> ch == "0" || ch == "1"
-                8 -> ch >= "0" && ch <= "7"
-                _ -> false
-            }
+            let valid = is_radix_digit(ch, radix)
             if valid {
                 text = text + self.advance()
             } else if ch == "_" {
@@ -659,7 +669,7 @@ impl Lexer {
             return Token { kind: kind!, span }
         }
 
-        Token { kind: .Ident(text), span }
+        Token { kind: TokenKind.Ident(text), span }
     }
 
     fn lex_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token {
@@ -834,7 +844,7 @@ impl Lexer {
                 self.advance()
                 return Token { kind: TokenKind.EqEq, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: .Eq, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Eq, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // ! or !=
@@ -860,7 +870,7 @@ impl Lexer {
                 self.advance()
                 return Token { kind: TokenKind.ShiftLeft, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: .Lt, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Lt, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // > or >= or >>
@@ -873,7 +883,7 @@ impl Lexer {
                 self.advance()
                 return Token { kind: TokenKind.ShiftRight, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: .Gt, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Gt, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // & or &&
@@ -889,7 +899,7 @@ impl Lexer {
         if ch == "|" {
             if next == "|" {
                 self.advance()
-                return Token { kind: .Or, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.Or, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == ">" {
                 self.advance()
@@ -908,7 +918,7 @@ impl Lexer {
                 self.advance()
                 return Token { kind: TokenKind.DoubleQuestion, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: .Question, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Question, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // . or .. or ... or ..=
@@ -924,9 +934,9 @@ impl Lexer {
                     self.advance()
                     return Token { kind: TokenKind.DotDotEq, span: self.make_span(start_pos, start_line, start_col) }
                 }
-                return Token { kind: .DotDot, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: .Dot, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // /
