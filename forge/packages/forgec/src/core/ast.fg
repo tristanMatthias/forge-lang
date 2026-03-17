@@ -82,17 +82,9 @@ export enum UnaryOp {
 }
 
 
-// ─── Block ────────────────────────────────────────────────────────
-
-export type Block = {
-    statements: List<Statement>,
-    span: Span,
-}
-
-
 // ─── Expression ───────────────────────────────────────────────────
 // NOTE: Definition order matters for the bootstrap type checker.
-// Expr → Statement → Program (dependencies first)
+// Expr → Statement → Block → Program (dependencies first)
 
 export enum Expr {
     IntLit(value: int, span: Span)
@@ -117,10 +109,16 @@ export enum Statement {
     Feature(stmt: FeatureStmt)
 }
 
+// ─── Block + Program (after Statement so List<Statement> resolves)
+
+export type Block = {
+    statements: List<Statement>,
+    span: Span,
+}
+
 export type Program = {
     statements: List<Statement>,
 }
-
 
 // ─── Node ID Generation ──────────────────────────────────────────
 // Global counter for assigning unique IDs to feature AST nodes.

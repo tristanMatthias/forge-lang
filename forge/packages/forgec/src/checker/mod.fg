@@ -57,7 +57,7 @@ impl TypeChecker {
     fn check_statement(self, stmt: Statement) {
         match stmt {
             .Expr(expr) -> {
-                self.infer_expr(expr)
+                let _ = self.infer_expr(expr)
             }
             .Assign(target, value, span) -> {
                 self.check_assign(target, value, span)
@@ -180,25 +180,20 @@ impl TypeChecker {
         }
     }
 
+    fn arithmetic_result(self, a: Type, b: Type) -> Type {
+        if a is .Float || b is .Float { Type.Float } else { Type.Int }
+    }
+
     fn infer_binary(self, left: Expr, op: BinOp, right: Expr, span: Span) -> Type {
         let left_type = self.infer_expr(left)
         let right_type = self.infer_expr(right)
 
         match op {
             // Arithmetic: both numeric, result matches
-            .Add -> {
-                if left_type is .String || right_type is .String {
-                    Type.String // string concatenation
-                } else if type_is_numeric(left_type) && type_is_numeric(right_type) {
-                    if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int }
-                } else {
-                    self.type_error("type error in addition", span)
-                    Type.Error
-                }
-            }
-            .Sub -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
-            .Mul -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
-            .Div -> { if left_type is .Float || right_type is .Float { Type.Float } else { Type.Int } }
+            .Add -> self.arithmetic_result(left_type, right_type)
+            .Sub -> self.arithmetic_result(left_type, right_type)
+            .Mul -> self.arithmetic_result(left_type, right_type)
+            .Div -> self.arithmetic_result(left_type, right_type)
             .Mod -> Type.Int
 
             // Comparison: result is bool
