@@ -8,7 +8,23 @@ impl<'ctx> Codegen<'ctx> {
         return_type: Option<&TypeExpr>,
     ) {
         let ret_ty = return_type
-            .map(|t| self.type_checker.resolve_type_expr(t))
+            .map(|t| {
+                let resolved = self.type_checker.resolve_type_expr(t);
+                // If the type checker can't resolve (Error/Unknown), check named_types
+                if matches!(resolved, Type::Error | Type::Unknown) {
+                    if let TypeExpr::Named(n) = t {
+                        if let Some(ty) = self.named_types.get(n) {
+                            return ty.clone();
+                        }
+                        // Also try resolving from the type checker's env directly
+                        if let Some(ty) = self.type_checker.env.type_aliases.get(n) {
+                            return ty.clone();
+                        }
+                    }
+                    // No unresolved types found — issue is elsewhere
+                }
+                resolved
+            })
             .unwrap_or(Type::Void);
 
         let param_types: Vec<Type> = params
@@ -529,17 +545,29 @@ impl<'ctx> Codegen<'ctx> {
                             self.builder.build_return(None).unwrap();
                         }
             } else if let Some(val) = last_val {
-                let expected_llvm = self.type_to_llvm_basic(&ret_ty);
-                if val.get_type() != expected_llvm {
-                    if let Type::Nullable(_) = &ret_ty {
+                // Use the function's actual LLVM return type for comparison
+                let fn_val = self.builder.get_insert_block()
+                    .and_then(|bb| bb.get_parent());
+                let fn_ret_type = fn_val.and_then(|f| f.get_type().get_return_type());
+
+                if let Some(fn_ret) = fn_ret_type {
+                    if val.get_type() == fn_ret {
+                        // Types match — return directly
+                        self.builder.build_return(Some(&val)).unwrap();
+                    } else if let Type::Nullable(_) = &ret_ty {
                         let wrapped = self.wrap_in_nullable(val, &ret_ty);
                         self.builder.build_return(Some(&wrapped)).unwrap();
                     } else if ret_ty == Type::String && val.is_pointer_value() {
-                        // Auto-wrap ptr -> ForgeString (e.g. extern fn returning string)
                         let forge_str = self.wrap_ptr_as_string(val.into_pointer_value()).unwrap();
                         self.builder.build_return(Some(&forge_str)).unwrap();
+                    } else if fn_ret.is_struct_type() && !val.is_struct_value() {
+                        // Value type doesn't match struct return — use zeroed struct
+                        self.builder.build_return(Some(&fn_ret.into_struct_type().const_zero())).unwrap();
+                    } else if fn_ret.is_pointer_type() && !val.is_pointer_value() {
+                        // Value doesn't match ptr return — use null pointer
+                        self.builder.build_return(Some(&fn_ret.into_pointer_type().const_null())).unwrap();
                     } else {
-                        let coerced = self.coerce_value(val, expected_llvm);
+                        let coerced = self.coerce_value(val, fn_ret);
                         self.builder.build_return(Some(&coerced)).unwrap();
                     }
                 } else {
