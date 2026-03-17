@@ -125,6 +125,15 @@ impl<'ctx> Codegen<'ctx> {
             // Global mutable: compile initializer and store it to the global
             if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
                 let global_ty = self.global_mutables.get(&data.name).cloned();
+                // For ptr-typed globals with null initializer, store ptr null directly
+                // (avoid nullable {i8,i64} zeroinitializer which is 16 bytes into 8-byte slot)
+                if matches!(&global_ty, Some(Type::Ptr)) && matches!(&data.value, Expr::NullLit(_)) {
+                    if let Some(global) = self.module.get_global(&data.name) {
+                        let null_ptr = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+                        self.builder.build_store(global.as_pointer_value(), null_ptr).unwrap();
+                    }
+                    return;
+                }
                 // Suppress ptr→ForgeString wrapping for ptr-typed globals
                 if matches!(&global_ty, Some(Type::Ptr)) {
                     self.suppress_string_wrap = true;

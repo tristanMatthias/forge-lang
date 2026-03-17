@@ -80,14 +80,12 @@ fn build_compile(source: string, filename: string, output: string) {
         process.exit(1)
     }
 
-    // Codegen
+    // Codegen — use free functions to avoid method dispatch corruption
+    codegen_init(filename)
     mut cg = codegen_new()
-    cg.init(filename)
     cg.emit_program(program)
-
-    // Write IR to file
-    cg.write_ir("output.ll")
-    cg.dispose()
+    codegen_write_ir("output.ll")
+    codegen_cleanup()
     println("wrote output.ll")
 }
 

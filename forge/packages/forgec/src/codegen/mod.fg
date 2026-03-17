@@ -46,6 +46,22 @@ fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
 
 // ─── Codegen Methods ───────────────────────────
 
+export fn codegen_init(name: string) {
+    cg_init_ctx(name)
+    cg_init_int_types()
+    cg_init_other_types()
+    cg_init_str()
+    cg_init_runtime()
+}
+
+export fn codegen_write_ir(path: string) {
+    llvm.print_module_to_file(CG_MOD, path)
+}
+
+export fn codegen_cleanup() {
+    cg_cleanup()
+}
+
 fn cg_init_ctx(name: string) {
     CG_CTX = llvm.context_create()
     CG_MOD = llvm.module_create(name, CG_CTX)
@@ -85,16 +101,10 @@ fn cg_cleanup() {
 }
 
 impl Codegen {
-    fn init(self, name: string) {
-        cg_init_ctx(name)
-        cg_init_int_types()
-        cg_init_other_types()
-        cg_init_str()
-        cg_init_runtime()
-    }
-
+    fn init(self, name: string) { codegen_init(name) }
     fn verify(self) -> bool { llvm.verify_module(CG_MOD) == 0 }
-    fn dispose(self) { cg_cleanup() }
+    fn dispose(self) { codegen_cleanup() }
+    fn write_ir(self, path: string) { codegen_write_ir(path) }
 
     // ─── Program ───────────────────────────────
 
