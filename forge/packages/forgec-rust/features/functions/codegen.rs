@@ -31,7 +31,29 @@ impl<'ctx> Codegen<'ctx> {
                     if let Some(val) = &data.value {
                         let compiled = self.compile_expr(val);
                         if let Some(v) = compiled {
-                            self.builder.build_return(Some(&v)).unwrap();
+                            // Check nullable wrapping
+                            if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                                if let crate::typeck::types::Type::Nullable(_) = &ret_ty {
+                                    let expected = self.type_to_llvm_basic(&ret_ty);
+                                    if v.get_type() != expected {
+                                        let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                        self.builder.build_return(Some(&wrapped)).unwrap();
+                                    } else {
+                                        self.builder.build_return(Some(&v)).unwrap();
+                                    }
+                                } else {
+                                    self.builder.build_return(Some(&v)).unwrap();
+                                }
+                            } else {
+                                self.builder.build_return(Some(&v)).unwrap();
+                            }
+                        } else if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != crate::typeck::types::Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
                         } else {
                             self.builder.build_return(None).unwrap();
                         }
@@ -39,6 +61,13 @@ impl<'ctx> Codegen<'ctx> {
                         self.builder
                             .build_return(Some(&self.context.i32_type().const_zero()))
                             .unwrap();
+                    } else if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                        if ret_ty != crate::typeck::types::Type::Void {
+                            let default = self.default_value(&ret_ty);
+                            self.builder.build_return(Some(&default)).unwrap();
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
                     } else {
                         self.builder.build_return(None).unwrap();
                     }

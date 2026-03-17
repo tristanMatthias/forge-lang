@@ -242,10 +242,28 @@ impl<'ctx> Codegen<'ctx> {
                                 let default = self.default_value(&ret_ty);
                                 self.builder.build_return(Some(&default)).unwrap();
                             } else {
+                                if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
                                 self.builder.build_return(None).unwrap();
                             }
                         } else {
                             self.builder.build_return(None).unwrap();
+                        }
+                            }
+                        } else {
+                            if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
                         }
                     }
                 } else if self.current_fn_name.as_deref() == Some("main") {
@@ -254,7 +272,16 @@ impl<'ctx> Codegen<'ctx> {
                         .build_return(Some(&self.context.i32_type().const_zero()))
                         .unwrap();
                 } else {
-                    self.builder.build_return(None).unwrap();
+                    if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
                 }
             }
             Statement::For { pattern, iterable, body, .. } => self.compile_for(pattern, iterable, body),
@@ -448,7 +475,16 @@ impl<'ctx> Codegen<'ctx> {
                         let default = self.default_value(&ret_ty);
                         self.builder.build_return(Some(&default)).unwrap();
                     } else {
-                        self.builder.build_return(None).unwrap();
+                        if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
                     }
                 }
                 self.pop_scope();
@@ -482,7 +518,16 @@ impl<'ctx> Codegen<'ctx> {
                     .build_return(Some(&self.context.i32_type().const_zero()))
                     .unwrap();
             } else if ret_ty == Type::Void {
-                self.builder.build_return(None).unwrap();
+                if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
             } else if let Some(val) = last_val {
                 let expected_llvm = self.type_to_llvm_basic(&ret_ty);
                 if val.get_type() != expected_llvm {
