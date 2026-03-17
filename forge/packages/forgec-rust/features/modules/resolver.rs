@@ -417,8 +417,9 @@ pub fn resolve_all_imports(
     //    are imported into a scope, but the definitions themselves all compile
     //    together into one binary.
     //
-    //    Inject in reverse order (deepest modules first) so dependencies
-    //    are defined before dependents.
+    //    Inject in forward order. Modules are discovered depth-first by
+    //    resolve_mod_tree, so dependencies come before dependents.
+    //    We insert at position 0 so they precede main's own statements.
     {
         let mut seen_types: HashSet<String> = HashSet::new();
         let mut seen_fns: HashSet<String> = HashSet::new();
@@ -453,7 +454,9 @@ pub fn resolve_all_imports(
                 _ => {}
             }
         }
-        for (_mod_path, _file_path, _source, mod_program) in local_modules.iter().rev() {
+        // Track insertion point — increment as we insert so order is preserved
+        let mut insert_pos = 0;
+        for (_mod_path, _file_path, _source, mod_program) in local_modules.iter() {
             for stmt in &mod_program.statements {
                 match stmt {
                     Statement::ModDecl { .. } | Statement::Use { .. } => continue,
@@ -461,11 +464,11 @@ pub fn resolve_all_imports(
                     // Deduplicate type/enum/fn definitions
                     Statement::EnumDecl { name, .. } | Statement::TypeDecl { name, .. } => {
                         if !seen_types.insert(name.clone()) { continue; }
-                        program.statements.insert(0, stmt.clone());
+                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
                     }
                     Statement::FnDecl { name, .. } => {
                         if !seen_fns.insert(name.clone()) { continue; }
-                        program.statements.insert(0, stmt.clone());
+                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
                     }
                     Statement::Feature(fe) => {
                         use crate::feature_data;
@@ -482,11 +485,11 @@ pub fn resolve_all_imports(
                             false
                         };
                         if !skip {
-                            program.statements.insert(0, stmt.clone());
+                            program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
                         }
                     }
                     _ => {
-                        program.statements.insert(0, stmt.clone());
+                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
                     }
                 }
             }
