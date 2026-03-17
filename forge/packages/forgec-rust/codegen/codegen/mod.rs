@@ -235,6 +235,22 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Declare all named functions first (before impl method compilation)
+        // This ensures impl methods can call any user-defined function.
+        for stmt in &program.statements {
+            match stmt {
+                Statement::FnDecl { name, type_params, params, return_type, .. } => {
+                    if type_params.is_empty() {
+                        self.declare_function(name, params, return_type.as_ref());
+                    }
+                }
+                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                    self.declare_program_functions_feature(fe);
+                }
+                _ => {}
+            }
+        }
+
         self.compile_all_impl_methods();
         self.generate_vtables();
 
@@ -262,21 +278,6 @@ impl<'ctx> Codegen<'ctx> {
                 _ => true,
             }
         });
-
-        // Declare all named functions first (before any compilation)
-        for stmt in &program.statements {
-            match stmt {
-                Statement::FnDecl { name, type_params, params, return_type, .. } => {
-                    if type_params.is_empty() {
-                        self.declare_function(name, params, return_type.as_ref());
-                    }
-                }
-                Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
-                    self.declare_program_functions_feature(fe);
-                }
-                _ => {}
-            }
-        }
 
         if !has_explicit_main && has_top_level_stmts {
             // Auto-main: compile declarations first, then wrap top-level stmts in main()

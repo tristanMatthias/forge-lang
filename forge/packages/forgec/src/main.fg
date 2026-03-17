@@ -2,13 +2,11 @@
 
 use @std.process
 use @std.fs
-use @std.llvm
 
 mod core
 mod lexer
 mod parser
 mod checker
-mod codegen
 mod features
 
 use features
@@ -17,12 +15,11 @@ use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new}
 use checker.{type_checker_new}
-use codegen.{codegen_new}
+// use codegen.{codegen_new}
 
 fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
     let tokens = lex.tokenize()
-    eprintln("check: ${tokens.length} tokens")
 
     if lex.diagnostics.length > 0 {
         for d in lex.diagnostics {
@@ -90,25 +87,9 @@ fn build_parse(source: string, filename: string) -> bool {
     true
 }
 
-fn build_codegen(filename: string) -> bool {
-    mut cg = codegen_new()
-    cg.init(filename)
-    eprintln("build: ${BUILD_PROGRAM.statements.length} statements")
-    cg.emit_program(BUILD_PROGRAM)
-
-    let verified = cg.verify()
-    if !verified {
-        eprintln("warning: LLVM verification failed")
-    }
-    cg.dispose()
-    verified
-}
-
 fn build(source: string, filename: string, output: string) -> bool {
-    if !build_parse(source, filename) {
-        return false
-    }
-    build_codegen(filename)
+    eprintln("build not available without codegen module")
+    false
 }
 
 fn main() {
