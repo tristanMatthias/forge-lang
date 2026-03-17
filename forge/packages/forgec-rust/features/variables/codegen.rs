@@ -53,8 +53,16 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             // When type annotation is ptr, suppress auto-wrapping ptr→ForgeString
             // so the raw C pointer is preserved (needed for forge_model_free_string etc.)
+            // Also suppress when value is a namespace method call (llvm.xxx()) that returns ptr
             if matches!(&ann_type, Some(Type::Ptr)) {
                 self.suppress_string_wrap = true;
+            } else if ann_type.is_none() {
+                // No type annotation — check if the value is a method call on a namespace
+                // that returns ptr (e.g., llvm.context_create())
+                let inferred = self.infer_type(&data.value);
+                if inferred == Type::Ptr {
+                    self.suppress_string_wrap = true;
+                }
             }
             let val = self.compile_expr(&data.value);
             self.suppress_string_wrap = false;

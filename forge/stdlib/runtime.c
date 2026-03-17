@@ -57,6 +57,22 @@ void* forge_alloc(int64_t size) {
     return (void*)((char*)obj + sizeof(int64_t));
 }
 
+// ---- Deep-copy helpers for bootstrap workaround ----
+// The bootstrap compiler's codegen corrupts stack locals across extern
+// function calls. These functions box values on the heap so they survive.
+
+/// Box a pointer value on the heap. Returns a pointer to the heap slot.
+void* forge_box_ptr(void* val) {
+    void** slot = (void**)malloc(sizeof(void*));
+    *slot = val;
+    return (void*)slot;
+}
+
+/// Unbox a pointer from a heap slot.
+void* forge_unbox_ptr(void* slot) {
+    return *((void**)slot);
+}
+
 // ---- String allocation (plain malloc, no refcount header) ----
 // ForgeString .ptr fields must be compatible with C free() and Rust CString::from_raw.
 // forge_alloc adds an 8-byte refcount header which breaks C interop, so string

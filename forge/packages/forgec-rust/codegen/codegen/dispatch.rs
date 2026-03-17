@@ -108,7 +108,14 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            if !self.suppress_string_wrap {
+                            // Only wrap if the function returns string (not ptr)
+                            // Check fn_return_types for the method's return type
+                            let fn_name = format!("{}_{}", name, method);
+                            let should_wrap = !self.suppress_string_wrap
+                                && self.fn_return_types.get(&fn_name)
+                                    .or_else(|| self.fn_return_types.get(method))
+                                    .map_or(true, |t| *t != Type::Ptr);
+                            if should_wrap {
                                 return self.wrap_ptr_as_string(ptr_val);
                             }
                             return Some(ptr_val.into());
