@@ -64,7 +64,6 @@ fn build_compile(source: string, filename: string, output: string) {
 
     mut p = parser_new(tokens)
     let program = p.parse_program()
-    eprintln("build: ${program.statements.length} stmts parsed")
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -82,12 +81,6 @@ fn build_compile(source: string, filename: string, output: string) {
         process.exit(1)
     }
 
-    let has_fn = REG_PARSE.has("fn")
-    let has_let = REG_PARSE.has("let")
-    eprintln("has fn:")
-    eprintln(has_fn)
-    eprintln("has let:")
-    eprintln(has_let)
     codegen_init(filename)
     mut cg = codegen_new()
     cg.emit_program(program)
@@ -97,11 +90,8 @@ fn build_compile(source: string, filename: string, output: string) {
 }
 
 fn main() {
-    eprintln("starting...")
     init_features()
-    eprintln("features ok")
     let args = process.args()
-    eprintln("args ok")
 
     if args.length < 3 {
         eprintln("forgec v0.1.0 - self-hosted Forge compiler")
