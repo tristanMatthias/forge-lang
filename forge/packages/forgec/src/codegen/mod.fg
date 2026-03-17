@@ -109,21 +109,11 @@ impl Codegen {
     // ─── Program ───────────────────────────────
 
     fn emit_program(self, program: Program) {
-        // Wrap everything in main() for now
-        let params = llvm.type_array_new(0)
-        let mt = llvm.function_type(CG_I32, params, 0, 0)
-        llvm.type_array_free(params)
-        let mf = llvm.add_function(CG_MOD, "main", mt)
-        self.current_fn = mf
-        let entry = llvm.append_basic_block(CG_CTX, mf, "entry")
-        llvm.position_at_end(CG_B, entry)
-
+        eprintln("emit_program: ${program.statements.length} stmts")
         for stmt in program.statements {
             self.emit_statement(stmt)
         }
-
-        let zero = llvm.const_int(CG_I32, 0, 0)
-        llvm.build_ret(CG_B, zero)
+        eprintln("emit_program done")
     }
 
     // ─── Statements ────────────────────────────
@@ -148,9 +138,13 @@ impl Codegen {
 
     fn dispatch_stmt(self, fe: FeatureStmt) {
         let fid = fe.data.feature
+        eprintln("dispatch: ${fid} kind=${fe.data.kind_name}")
         if REGISTRY.emit_stmt.has(fid) {
+            eprintln("  handler found!")
             let handler = REGISTRY.emit_stmt[fid]
             handler(self, fe.data)
+        } else {
+            eprintln("  no handler")
         }
     }
 

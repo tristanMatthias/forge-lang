@@ -63,6 +63,7 @@ fn build_compile(source: string, filename: string, output: string) {
 
     mut p = parser_new(tokens)
     let program = p.parse_program()
+    eprintln("build: ${program.statements.length} stmts parsed")
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -80,7 +81,6 @@ fn build_compile(source: string, filename: string, output: string) {
         process.exit(1)
     }
 
-    // Codegen — use free functions to avoid method dispatch corruption
     codegen_init(filename)
     mut cg = codegen_new()
     cg.emit_program(program)
