@@ -409,58 +409,93 @@ pub fn resolve_all_imports(
     let main_imports = resolve_use_statements(program, &module_exports)
         .map_err(|e| CompileError::CliError { message: e, help: None })?;
 
-    // 5. Inject imported functions into the main program
-    inject_imports_into_program(program, &main_imports, &module_stmts);
-
-    // 6. Inject transitive dependencies: when the main program imports ANY symbol
-    //    from a sub-module, that symbol's body may reference functions the sub-module
-    //    itself imported. Inject all sub-module imports transitively.
-    let mut transitive_imports = Vec::new();
-    let mut seen_transitive: HashSet<String> = HashSet::new();
-    let mut injected_modules: HashSet<String> = HashSet::new();
-    for imp in &main_imports {
-        // Find which module this import came from
-        for (mod_path, mod_imports) in &sub_module_imports {
-            if imp.mangled_name.starts_with(&mod_path.replace('.', "_")) {
-                // Inject all of this sub-module's imports (deduplicated)
-                for mod_imp in mod_imports {
-                    if seen_transitive.insert(mod_imp.local_name.clone()) {
-                        transitive_imports.push(mod_imp.clone());
-                    }
-                    if let ExportedSymbol::Function { .. } = &mod_imp.symbol {
-                        let source_mod = mod_imp.mangled_name
-                            .rsplit_once('_')
-                            .map(|(prefix, _)| prefix.replace('_', "."))
-                            .unwrap_or_default();
-                        if !source_mod.is_empty() {
-                            injected_modules.insert(source_mod);
+    // 5. Merge all module definitions into the main program.
+    //
+    //    All `mod`-declared modules are part of one compilation unit. Their
+    //    definitions (functions, types, enums, impl blocks, globals) must be
+    //    visible during type-checking and codegen. `use` controls which names
+    //    are imported into a scope, but the definitions themselves all compile
+    //    together into one binary.
+    //
+    //    Inject in reverse order (deepest modules first) so dependencies
+    //    are defined before dependents.
+    {
+        let mut seen_types: HashSet<String> = HashSet::new();
+        let mut seen_fns: HashSet<String> = HashSet::new();
+        // Collect names already in main program
+        for stmt in &program.statements {
+            match stmt {
+                Statement::EnumDecl { name, .. } | Statement::TypeDecl { name, .. } => {
+                    seen_types.insert(name.clone());
+                }
+                Statement::FnDecl { name, .. } => {
+                    seen_fns.insert(name.clone());
+                }
+                Statement::Feature(fe) => {
+                    use crate::feature_data;
+                    if fe.feature_id == "enums" {
+                        use crate::features::enums::types::EnumDeclData;
+                        if let Some(d) = feature_data!(fe, EnumDeclData) {
+                            seen_types.insert(d.name.clone());
+                        }
+                    } else if fe.feature_id == "structs" {
+                        use crate::features::structs::types::TypeDeclData;
+                        if let Some(d) = feature_data!(fe, TypeDeclData) {
+                            seen_types.insert(d.name.clone());
+                        }
+                    } else if fe.feature_id == "functions" {
+                        use crate::features::functions::types::FnDeclData;
+                        if let Some(d) = feature_data!(fe, FnDeclData) {
+                            seen_fns.insert(d.name.clone());
                         }
                     }
                 }
+                _ => {}
             }
         }
-    }
-    // For each source module identified, inject ALL its exported functions
-    for mod_path in &injected_modules {
-        if let Some(exports) = module_exports.get(mod_path) {
-            for sym in exports {
-                if let ExportedSymbol::Function { name, .. } = sym {
-                    // Check if already in transitive_imports to avoid duplicates
-                    let already = transitive_imports.iter().any(|i| i.local_name == *name);
-                    if !already {
-                        transitive_imports.push(ResolvedImport {
-                            local_name: name.clone(),
-                            mangled_name: format!("{}_{}", mod_path.replace('.', "_"), name),
-                            symbol: sym.clone(),
-                        });
+        for (_mod_path, _file_path, _source, mod_program) in local_modules.iter().rev() {
+            for stmt in &mod_program.statements {
+                match stmt {
+                    Statement::ModDecl { .. } | Statement::Use { .. } => continue,
+                    Statement::Feature(fe) if fe.feature_id == "imports" && fe.kind == "Use" => continue,
+                    // Deduplicate type/enum/fn definitions
+                    Statement::EnumDecl { name, .. } | Statement::TypeDecl { name, .. } => {
+                        if !seen_types.insert(name.clone()) { continue; }
+                        program.statements.insert(0, stmt.clone());
+                    }
+                    Statement::FnDecl { name, .. } => {
+                        if !seen_fns.insert(name.clone()) { continue; }
+                        program.statements.insert(0, stmt.clone());
+                    }
+                    Statement::Feature(fe) => {
+                        use crate::feature_data;
+                        let skip = if fe.feature_id == "enums" {
+                            use crate::features::enums::types::EnumDeclData;
+                            feature_data!(fe, EnumDeclData).map_or(false, |d| !seen_types.insert(d.name.clone()))
+                        } else if fe.feature_id == "structs" {
+                            use crate::features::structs::types::TypeDeclData;
+                            feature_data!(fe, TypeDeclData).map_or(false, |d| !seen_types.insert(d.name.clone()))
+                        } else if fe.feature_id == "functions" {
+                            use crate::features::functions::types::FnDeclData;
+                            feature_data!(fe, FnDeclData).map_or(false, |d| !seen_fns.insert(d.name.clone()))
+                        } else {
+                            false
+                        };
+                        if !skip {
+                            program.statements.insert(0, stmt.clone());
+                        }
+                    }
+                    _ => {
+                        program.statements.insert(0, stmt.clone());
                     }
                 }
             }
         }
     }
-    if !transitive_imports.is_empty() {
-        inject_imports_into_program(program, &transitive_imports, &module_stmts);
-    }
+
+    // 6. Also inject function bodies for explicitly imported symbols
+    //    (handles renaming via `use foo.{bar as baz}`)
+    inject_imports_into_program(program, &main_imports, &module_stmts);
 
     Ok(ModuleImportResult { main_imports })
 }

@@ -218,12 +218,38 @@ impl TypeChecker {
                     }
                 }
             }
+            // Pre-register top-level let/mut/const so they're available for forward references
+            Statement::Let { name, type_ann, value, .. }
+            | Statement::Const { name, type_ann, value, .. } => {
+                let ty = type_ann.as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or_else(|| self.infer_type(value));
+                self.env.define(name.clone(), ty, false);
+            }
+            Statement::Mut { name, type_ann, value, .. } => {
+                let ty = type_ann.as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or_else(|| self.infer_type(value));
+                self.env.define(name.clone(), ty, true);
+            }
             Statement::Feature(fe) => {
                 match fe.feature_id {
                     "enums" => self.register_enum_feature(fe),
                     "functions" => self.register_fn_feature(fe),
                     "structs" => self.register_type_decl_feature(fe),
                     "traits" => self.register_traits_feature(fe),
+                    "variables" => {
+                        // Pre-register exported variables from features
+                        use crate::feature_data;
+                        use crate::features::variables::types::VarDeclData;
+                        if let Some(data) = feature_data!(fe, VarDeclData) {
+                            let ty = data.type_ann.as_ref()
+                                .map(|t| self.resolve_type_expr(t))
+                                .unwrap_or_else(|| self.infer_type(&data.value));
+                            let mutable = matches!(data.kind, crate::features::variables::types::VarKind::Mut);
+                            self.env.define(data.name.clone(), ty, mutable);
+                        }
+                    }
                     _ => {}
                 }
             }
