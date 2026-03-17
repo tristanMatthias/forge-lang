@@ -35,6 +35,50 @@ impl TypeChecker {
             self.register_top_level(stmt);
         }
 
+        // Re-resolve type aliases now that all enums are registered.
+        // This fixes circular references like Block → List<Statement>
+        // where Statement wasn't available during Block's registration.
+        let alias_names: Vec<String> = self.env.type_aliases.keys().cloned().collect();
+        for name in &alias_names {
+            if let Some(ty) = self.env.type_aliases.get(name).cloned() {
+                if let Type::Struct { name: sname, fields } = &ty {
+                    let re_resolved_fields: Vec<(String, Type)> = fields.iter().map(|(fname, ftype)| {
+                        match ftype {
+                            Type::List(inner) if matches!(inner.as_ref(), Type::Error | Type::Unknown) => {
+                                // Try to re-resolve the field from the original type decl
+                                // For now, just keep it — the list element type will be resolved later
+                                (fname.clone(), ftype.clone())
+                            }
+                            _ => (fname.clone(), ftype.clone()),
+                        }
+                    }).collect();
+                    // Re-resolve the entire struct type from scratch
+                    // by looking up the original TypeDecl statement
+                }
+            }
+        }
+
+        // Actually simpler: just re-run register_top_level for type aliases
+        for stmt in &program.statements {
+            match stmt {
+                Statement::TypeDecl { name, value, .. } => {
+                    let ty = self.resolve_type_expr(value);
+                    let ty = match ty {
+                        Type::Struct { fields, .. } => Type::Struct {
+                            name: Some(name.clone()),
+                            fields,
+                        },
+                        other => other,
+                    };
+                    self.env.type_aliases.insert(name.clone(), ty);
+                }
+                Statement::Feature(fe) if fe.feature_id == "structs" => {
+                    self.register_type_decl_feature(fe);
+                }
+                _ => {}
+            }
+        }
+
         // Second pass: type check
         for stmt in &program.statements {
             self.check_statement(stmt);
@@ -105,13 +149,30 @@ impl TypeChecker {
                             .iter()
                             .enumerate()
                             .map(|(i, f)| {
+                                // Only box DIRECT self-references (Type or Type?), not
+                                // indirect ones through List<Type>/Map<Type> (those are
+                                // already heap-allocated).
                                 let is_self_ref = f.type_ann.as_ref()
-                                    .map(|t| type_expr_references_name(t, name))
+                                    .map(|t| match t {
+                                        TypeExpr::Named(n) => n == name,
+                                        TypeExpr::Nullable(inner) => matches!(inner.as_ref(), TypeExpr::Named(n) if n == name),
+                                        _ => false,
+                                    })
                                     .unwrap_or(false);
                                 let ty = if is_self_ref {
                                     boxed_fields.push(i);
-                                    // Use a stub enum type to avoid infinite recursion
-                                    Type::Enum { name: name.clone(), variants: vec![] }
+                                    // Use a stub enum type to avoid infinite recursion.
+                                    // Preserve wrapper types (List<Self>, Self?, etc.)
+                                    let stub = Type::Enum { name: name.clone(), variants: vec![] };
+                                    match f.type_ann.as_ref() {
+                                        Some(TypeExpr::Generic { name: wrapper, args }) if wrapper == "List" || wrapper == "list" => {
+                                            Type::List(Box::new(stub))
+                                        }
+                                        Some(TypeExpr::Nullable(_)) => {
+                                            Type::Nullable(Box::new(stub))
+                                        }
+                                        _ => stub
+                                    }
                                 } else {
                                     f.type_ann
                                         .as_ref()

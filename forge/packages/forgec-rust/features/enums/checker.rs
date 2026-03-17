@@ -25,15 +25,32 @@ impl TypeChecker {
                         .iter()
                         .enumerate()
                         .map(|(i, f)| {
+                            // Only box DIRECT self-references (Type or Type?), not
+                            // indirect ones through List<Type> (those are heap-allocated).
                             let is_self_ref = if let Some(ref t) = f.type_ann {
-                                crate::typeck::checker::type_expr_references_name(t, &data.name)
+                                match t {
+                                    crate::parser::ast::TypeExpr::Named(n) => n == &data.name,
+                                    crate::parser::ast::TypeExpr::Nullable(inner) => {
+                                        matches!(inner.as_ref(), crate::parser::ast::TypeExpr::Named(n) if n == &data.name)
+                                    }
+                                    _ => false,
+                                }
                             } else {
-                                // Positional: check if the name matches the enum name
                                 f.name == data.name
                             };
                             let ty = if is_self_ref {
                                 boxed_fields.push(i);
-                                Type::Enum { name: data.name.clone(), variants: vec![] }
+                                // Preserve Nullable wrapper for boxed self-refs
+                                let stub = Type::Enum { name: data.name.clone(), variants: vec![] };
+                                if let Some(ref t) = f.type_ann {
+                                    if matches!(t, crate::parser::ast::TypeExpr::Nullable(_)) {
+                                        Type::Nullable(Box::new(stub))
+                                    } else {
+                                        stub
+                                    }
+                                } else {
+                                    stub
+                                }
                             } else if let Some(ref t) = f.type_ann {
                                 self.resolve_type_expr(t)
                             } else {
