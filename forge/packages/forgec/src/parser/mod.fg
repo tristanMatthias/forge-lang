@@ -209,6 +209,16 @@ impl Parser {
             return handler(self)
         }
 
+        // Hardcoded feature dispatch (bootstrap workaround — Map registry hangs)
+        match tok.kind {
+            .Let -> { return parse_let(self) }
+            .Mut -> { return parse_mut(self) }
+            .Const -> { return parse_const(self) }
+            .Fn -> { return parse_fn(self) }
+            .Export -> { return parse_export(self) }
+            _ -> {}
+        }
+
         // Built-in structural statements
         match tok.kind {
             .Return -> self.parse_return()

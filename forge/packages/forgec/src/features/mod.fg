@@ -42,90 +42,82 @@ use string_templates.{check_template, emit_template}
 use closures.{check_closure, emit_closure}
 use null_safety.{check_null_safety, emit_null_safety}
 
-// All feature registration in one function, called from main()
-// (top-level calls don't work in the bootstrap AOT binary)
-export fn init_features() {
-    // variables
+// Split into small functions to avoid bootstrap stack corruption
+fn init_vars() {
     reg_parser("let", parse_let)
     reg_parser("mut", parse_mut)
     reg_parser("const", parse_const)
     reg_check_stmt("variables", check_var)
     reg_emit_stmt("variables", emit_var)
     reg_top_level("variables", top_level_var)
+}
 
-    // functions
+fn init_fns() {
     reg_parser("fn", parse_fn)
     reg_parser("export", parse_export)
     reg_check_stmt("functions", check_fn)
     reg_emit_stmt("functions", emit_fn)
     reg_top_level("functions", top_level_fn)
+}
 
-    // enums
+export fn init_features() {
+    // No-op: Map operations hang in the large bootstrap-compiled binary.
+    // Feature dispatch is hardcoded in parser/checker/codegen for generation 1.
+}
+
+fn init_features_UNUSED() {
+    init_vars()
+    init_fns()
+    init_types()
+    init_control()
+    init_exprs()
+}
+
+fn init_types() {
     reg_parser("enum", parse_enum)
     reg_check_stmt("enums", check_enum)
     reg_emit_stmt("enums", emit_enum_decl)
     reg_top_level("enums", top_level_enum)
-
-    // structs
     reg_parser("type", parse_type_decl)
     reg_check_stmt("structs", check_type_decl)
     reg_check_expr("structs", check_struct_lit)
     reg_emit_stmt("structs", emit_type_decl)
     reg_emit_expr("structs", emit_struct_lit)
     reg_top_level("structs", top_level_type)
-
-    // traits
     reg_parser("trait", parse_trait)
     reg_check_stmt("traits", check_trait)
     reg_top_level("traits", top_level_trait)
-
-    // impl_methods
     reg_parser("impl", parse_impl)
     reg_check_stmt("impl_methods", check_impl)
     reg_emit_stmt("impl_methods", emit_impl)
     reg_top_level("impl_methods", top_level_impl)
-
-    // modules
     reg_parser("use", parse_use)
     reg_check_stmt("modules", check_use)
     reg_top_level("modules", top_level_use)
+}
 
-    // while_loops
+fn init_control() {
     reg_parser("while", parse_while)
     reg_check_stmt("while_loops", check_while)
     reg_emit_stmt("while_loops", emit_while)
-
-    // for_loops
     reg_parser("for", parse_for)
     reg_check_stmt("for_loops", check_for)
     reg_emit_stmt("for_loops", emit_for)
-
-    // if_else
     reg_check_expr("if_else", check_if_expr)
     reg_emit_expr("if_else", emit_if_expr)
-
-    // pattern_matching
     reg_check_expr("pattern_matching", check_match)
     reg_emit_expr("pattern_matching", emit_match)
+}
 
-    // collections
+fn init_exprs() {
     reg_check_expr("collections", check_collection)
     reg_emit_expr("collections", emit_collection)
-
-    // ranges
     reg_check_expr("ranges", check_range)
     reg_emit_expr("ranges", emit_range)
-
-    // string_templates
     reg_check_expr("string_templates", check_template)
     reg_emit_expr("string_templates", emit_template)
-
-    // closures
     reg_check_expr("closures", check_closure)
     reg_emit_expr("closures", emit_closure)
-
-    // null_safety
     reg_check_expr("null_safety", check_null_safety)
     reg_emit_expr("null_safety", emit_null_safety)
-
 }
