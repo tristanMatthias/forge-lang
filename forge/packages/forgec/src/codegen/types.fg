@@ -59,17 +59,23 @@ impl TypeMapper {
             .Void -> self.void_type
             .Ptr -> self.ptr_type
             .Never -> self.void_type
-            .Nullable(inner) -> self.ptr_type // nullable = pointer
-            .ListType(_) -> self.ptr_type // list = pointer to runtime struct
-            .MapType(_, _) -> self.ptr_type
-            .Function(_, _) -> self.ptr_type // function pointer
-            .Result(_, _) -> self.ptr_type
-            .Channel(_) -> self.ptr_type
-            _ -> self.i64_type // fallback
+            .Nullable(inner) -> self.ptr_type
+            .ListType(elem) -> self.ptr_type
+            .MapType(k, v) -> self.ptr_type
+            .Function(params, ret) -> self.ptr_type
+            .Result(ok, err) -> self.ptr_type
+            .Channel(elem) -> self.ptr_type
+            .Struct(name, fields) -> self.ptr_type
+            .Enum(name, variants) -> self.i64_type
+            .Tuple(elems) -> self.ptr_type
+            .Range(elem) -> self.ptr_type
+            .TypeVar(id) -> self.i64_type
+            .Unknown -> self.i64_type
+            .Error -> self.i64_type
         }
     }
 
     fn is_aggregate(self, ty: Type) -> bool {
-        ty is .String || ty is .Struct(_, _)
+        ty is .String || ty is .Struct
     }
 }

@@ -367,16 +367,20 @@ impl Driver {
             let runtime_obj = self.compile_runtime(source_path)?;
             bp.add("runtime", t.elapsed());
 
-            // Collect package native lib paths
+            // Collect package native lib paths and link flags
             let package_lib_paths: Vec<PathBuf> = loaded_packages
                 .iter()
                 .filter(|p| p.lib_path.exists())
                 .map(|p| p.lib_path.clone())
                 .collect();
+            let package_link_flags: Vec<String> = loaded_packages
+                .iter()
+                .flat_map(|p| p.link_flags.iter().cloned())
+                .collect();
 
             // Link
             let t = Instant::now();
-            self.link_with_packages(&obj_path, &runtime_obj, &output_path, &package_lib_paths)?;
+            self.link_with_packages(&obj_path, &runtime_obj, &output_path, &package_lib_paths, &package_link_flags)?;
             bp.add("link", t.elapsed());
 
             // Cleanup
@@ -1150,6 +1154,7 @@ impl Driver {
         runtime_obj: &Path,
         output: &Path,
         package_lib_paths: &[PathBuf],
+        package_link_flags: &[String],
     ) -> Result<(), CompileError> {
         let path_str = |p: &Path| -> Result<String, CompileError> {
             p.to_str().map(|s| s.to_string()).ok_or_else(|| CompileError::LinkerFailed {
@@ -1169,6 +1174,11 @@ impl Driver {
         for lib_path in package_lib_paths {
             args.push(path_str(lib_path)?);
             has_native_packages = true;
+        }
+
+        // Add package-specified link flags (e.g., -L/path -lLLVM-18)
+        for flag in package_link_flags {
+            args.push(flag.clone());
         }
 
         // On macOS, we need to link system frameworks for the Rust static libs

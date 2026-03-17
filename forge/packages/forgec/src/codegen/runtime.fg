@@ -26,6 +26,19 @@ type RuntimeFns = {
     forge_free: ptr,
 }
 
+// Helper: make function type from a list of param types
+fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
+    let arr = llvm.type_array_new(params.length)
+    mut i = 0
+    for p in params {
+        llvm.type_array_set(arr, i, p)
+        i = i + 1
+    }
+    let ft = llvm.function_type(ret, arr, params.length, 0)
+    llvm.type_array_free(arr)
+    ft
+}
+
 fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
     let ptr_ty = llvm.pointer_type(ctx)
     let i64_ty = llvm.int64_type(ctx)
@@ -38,19 +51,6 @@ fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
     llvm.type_array_set(str_fields, 1, i64_ty)
     let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
     llvm.type_array_free(str_fields)
-
-    // Helper: make function type
-    fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
-        let arr = llvm.type_array_new(params.length)
-        mut i = 0
-        for p in params {
-            llvm.type_array_set(arr, i, p)
-            i = i + 1
-        }
-        let ft = llvm.function_type(ret, arr, params.length, 0)
-        llvm.type_array_free(arr)
-        ft
-    }
 
     // forge_print(ForgeString) -> void
     let print_ty = make_fn_type(void_ty, [ptr_ty, i64_ty])

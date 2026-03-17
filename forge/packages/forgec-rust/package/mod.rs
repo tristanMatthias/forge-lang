@@ -37,6 +37,8 @@ pub struct PackageInfo {
     pub lib_path: PathBuf,
     /// Path to the native shared library (.dylib/.so file) for JIT loading
     pub dylib_path: PathBuf,
+    /// Extra linker flags from package.toml [native] section (e.g., -lLLVM-18)
+    pub link_flags: Vec<String>,
     /// Component metadata from package.toml
     pub component_metas: Vec<ComponentMeta>,
 
@@ -100,6 +102,7 @@ struct NativeMeta {
     library: String,
     enabled: Option<bool>,
     targets: Option<Vec<String>>,
+    link_flags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -227,6 +230,12 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
         None => PackageCapabilities::default(),
     };
 
+    let link_flags = config
+        .native
+        .as_ref()
+        .and_then(|n| n.link_flags.clone())
+        .unwrap_or_default();
+
     Ok(PackageInfo {
         name: config.package.name,
         namespace: config.package.namespace,
@@ -237,6 +246,7 @@ pub fn load_package(package_dir: &Path) -> Result<PackageInfo, String> {
         component_templates: extern_fns.2,
         lib_path,
         dylib_path,
+        link_flags,
         component_metas,
         description: config.package.description,
         license: config.package.license,

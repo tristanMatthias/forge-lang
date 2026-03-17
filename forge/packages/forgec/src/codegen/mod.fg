@@ -1,23 +1,107 @@
-// ─── Code Generator ────────────────────────────
-// Walks the AST and emits LLVM IR using @std.llvm.
-// Feature-specific codegen is dispatched via the registry.
-
-use core.token.Span
-use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
+// ─── Code Generator (types + runtime) ──────────
 use core.types.Type
-use core.registry.REGISTRY
-use codegen.types.{TypeMapper, type_mapper_new}
-use codegen.runtime.{RuntimeFns, declare_runtime}
 use @std.llvm
 
-// ─── Variable Slot ─────────────────────────────
-
-type VarSlot = {
-    alloca: ptr,
-    var_type: Type,
+export type TypeMapper = {
+    ctx: ptr,
+    i1_type: ptr, i8_type: ptr, i32_type: ptr, i64_type: ptr,
+    f64_type: ptr, void_type: ptr, ptr_type: ptr, string_type: ptr,
 }
 
-// ─── Codegen State ─────────────────────────────
+export fn type_mapper_new(ctx: ptr) -> TypeMapper {
+    let i1 = llvm.int1_type(ctx)
+    let i8 = llvm.int8_type(ctx)
+    let i32 = llvm.int32_type(ctx)
+    let i64 = llvm.int64_type(ctx)
+    let f64 = llvm.double_type(ctx)
+    let void = llvm.void_type(ctx)
+    let p = llvm.pointer_type(ctx)
+    let str_fields = llvm.type_array_new(2)
+    llvm.type_array_set(str_fields, 0, p)
+    llvm.type_array_set(str_fields, 1, i64)
+    let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
+    llvm.type_array_free(str_fields)
+    TypeMapper {
+        ctx, i1_type: i1, i8_type: i8, i32_type: i32, i64_type: i64,
+        f64_type: f64, void_type: void, ptr_type: p, string_type: string_ty,
+    }
+}
+
+impl TypeMapper {
+    fn to_llvm(self, ty: Type) -> ptr {
+        match ty {
+            .Int -> { return self.i64_type }
+            .Float -> { return self.f64_type }
+            .Bool -> { return self.i1_type }
+            .String -> { return self.string_type }
+            .Void -> { return self.void_type }
+            .Ptr -> { return self.ptr_type }
+            .Never -> { return self.void_type }
+            .Nullable(inner) -> { return self.ptr_type }
+            .ListType(elem) -> { return self.ptr_type }
+            .MapType(k, v) -> { return self.ptr_type }
+            .Function(params, ret) -> { return self.ptr_type }
+            .Result(ok, err) -> { return self.ptr_type }
+            .Channel(elem) -> { return self.ptr_type }
+            .Struct(name, fields) -> { return self.ptr_type }
+            .Enum(name, variants) -> { return self.i64_type }
+            .Tuple(elems) -> { return self.ptr_type }
+            .Range(elem) -> { return self.ptr_type }
+            .TypeVar(id) -> { return self.i64_type }
+            .Unknown -> { return self.i64_type }
+            .Error -> { return self.i64_type }
+        }
+        self.i64_type
+    }
+}
+
+export type RuntimeFns = {
+    forge_print: ptr, forge_println: ptr, forge_eprint: ptr, forge_eprintln: ptr,
+    forge_string_new: ptr, forge_string_concat: ptr, forge_string_eq: ptr, forge_string_len: ptr,
+    forge_int_to_string: ptr, forge_float_to_string: ptr, forge_bool_to_string: ptr,
+    forge_alloc: ptr, forge_free: ptr,
+}
+
+fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
+    let arr = llvm.type_array_new(params.length)
+    mut i = 0
+    for p in params {
+        llvm.type_array_set(arr, i, p)
+        i = i + 1
+    }
+    let ft = llvm.function_type(ret, arr, params.length, 0)
+    llvm.type_array_free(arr)
+    ft
+}
+
+export fn declare_runtime(module: ptr, ctx: ptr) -> RuntimeFns {
+    let ptr_ty = llvm.pointer_type(ctx)
+    let i64_ty = llvm.int64_type(ctx)
+    let i1_ty = llvm.int1_type(ctx)
+    let void_ty = llvm.void_type(ctx)
+    let f64_ty = llvm.double_type(ctx)
+    let str_fields = llvm.type_array_new(2)
+    llvm.type_array_set(str_fields, 0, ptr_ty)
+    llvm.type_array_set(str_fields, 1, i64_ty)
+    let string_ty = llvm.struct_type(ctx, str_fields, 2, 0)
+    llvm.type_array_free(str_fields)
+    let print_ty = make_fn_type(void_ty, [ptr_ty, i64_ty])
+    RuntimeFns {
+        forge_print: llvm.add_function(module, "forge_print", print_ty),
+        forge_println: llvm.add_function(module, "forge_println", print_ty),
+        forge_eprint: llvm.add_function(module, "forge_eprint", print_ty),
+        forge_eprintln: llvm.add_function(module, "forge_eprintln", print_ty),
+        forge_string_new: llvm.add_function(module, "forge_string_new", make_fn_type(string_ty, [ptr_ty, i64_ty])),
+        forge_string_concat: llvm.add_function(module, "forge_string_concat", make_fn_type(string_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])),
+        forge_string_eq: llvm.add_function(module, "forge_string_eq", make_fn_type(i1_ty, [ptr_ty, i64_ty, ptr_ty, i64_ty])),
+        forge_string_len: llvm.add_function(module, "forge_string_len", make_fn_type(i64_ty, [ptr_ty, i64_ty])),
+        forge_int_to_string: llvm.add_function(module, "forge_int_to_string", make_fn_type(string_ty, [i64_ty])),
+        forge_float_to_string: llvm.add_function(module, "forge_float_to_string", make_fn_type(string_ty, [f64_ty])),
+        forge_bool_to_string: llvm.add_function(module, "forge_bool_to_string", make_fn_type(string_ty, [i1_ty])),
+        forge_alloc: llvm.add_function(module, "forge_alloc", make_fn_type(ptr_ty, [i64_ty])),
+        forge_free: llvm.add_function(module, "forge_free", make_fn_type(void_ty, [ptr_ty])),
+    }
+}
 
 export type Codegen = {
     ctx: ptr,
@@ -25,11 +109,8 @@ export type Codegen = {
     builder: ptr,
     types: TypeMapper,
     runtime: RuntimeFns,
-    // Variable storage: name → alloca pointer + type
-    mut vars: Map<string, VarSlot>,
-    // Current function being compiled
+    mut vars: Map<string, ptr>,
     mut current_fn: ptr?,
-    // Named functions: name → LLVM function value
     mut functions: Map<string, ptr>,
 }
 
@@ -39,98 +120,223 @@ export fn codegen_new(module_name: string) -> Codegen {
     let builder = llvm.create_builder(ctx)
     let types = type_mapper_new(ctx)
     let runtime = declare_runtime(module, ctx)
-
     Codegen {
         ctx, module, builder, types, runtime,
-        vars: {},
-        current_fn: null,
-        functions: {},
+        vars: {}, current_fn: null, functions: {},
     }
 }
 
-// ─── Codegen Methods ───────────────────────────
-
 impl Codegen {
+    fn null_ptr(self) -> ptr { llvm.const_null(self.types.ptr_type) }
+    fn verify(self) -> bool { llvm.verify_module(self.module) == 0 }
+    fn print_ir(self) -> ptr { llvm.module_print(self.module) }
+    fn dispose(self) {
+        llvm.dispose_builder(self.builder)
+        llvm.module_dispose(self.module)
+        llvm.context_dispose(self.ctx)
+    }
 
-    fn emit_program(self, program: Program) {
-        // First pass: declare all functions
-        for stmt in program.statements {
-            self.declare_top_level(stmt)
+    fn define_var(self, name: string, ty: Type, value: ptr) {
+        let llvm_ty = self.types.to_llvm(ty)
+        let alloca = llvm.build_alloca(self.builder, llvm_ty, name)
+        llvm.build_store(self.builder, value, alloca)
+        self.vars[name] = alloca
+    }
+
+    fn emit_expr(self, expr: Expr) -> ptr {
+        match expr {
+            .IntLit(value, span) -> { return llvm.const_int(self.types.i64_type, value, 0) }
+            .FloatLit(value, span) -> { return llvm.const_real(self.types.f64_type, value) }
+            .BoolLit(value, span) -> {
+                let v = if value { 1 } else { 0 }
+                return llvm.const_int(self.types.i1_type, v, 0)
+            }
+            .NullLit(span) -> { return llvm.const_null(self.types.ptr_type) }
+            .StringLit(value, span) -> {
+                let raw = llvm.build_global_string_ptr(self.builder, value, "str")
+                let len = llvm.const_int(self.types.i64_type, value.length, 0)
+                let str_val = llvm.get_undef(self.types.string_type)
+                let with_ptr = llvm.build_insert_value(self.builder, str_val, raw, 0, "str_ptr")
+                return llvm.build_insert_value(self.builder, with_ptr, len, 1, "str_len")
+            }
+            .Ident(name, span) -> { return self.emit_ident(name) }
+            .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
+            .Unary(op, operand, span) -> { return self.emit_unary(op, operand) }
+            .Call(callee, args, span) -> { return self.emit_call(callee, args) }
+            .MemberAccess(obj, field, span) -> { return llvm.const_int(self.types.i64_type, 0, 0) }
+            .Index(obj, idx, span) -> { return llvm.const_int(self.types.i64_type, 0, 0) }
+            .Block(block) -> { return self.emit_block(block) }
+            .Feature(fe) -> { return self.emit_feature_expr(fe) }
         }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
 
-        // Second pass: emit all function bodies + top-level code
-        // Collect top-level statements for main()
-        mut main_stmts: List<Statement> = []
+    fn emit_ident(self, name: string) -> ptr {
+        if self.vars.has(name) {
+            return llvm.build_load(self.builder, self.types.i64_type, self.vars[name], name)
+        }
+        if self.functions.has(name) {
+            return self.functions[name]
+        }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
 
-        for stmt in program.statements {
+    fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
+        let lhs = self.emit_expr(left)
+        let rhs = self.emit_expr(right)
+        match op {
+            .Add -> { return llvm.build_add(self.builder, lhs, rhs, "add") }
+            .Sub -> { return llvm.build_sub(self.builder, lhs, rhs, "sub") }
+            .Mul -> { return llvm.build_mul(self.builder, lhs, rhs, "mul") }
+            .Div -> { return llvm.build_sdiv(self.builder, lhs, rhs, "div") }
+            .Mod -> { return llvm.build_srem(self.builder, lhs, rhs, "mod") }
+            .Eq -> { return llvm.build_icmp(self.builder, 32, lhs, rhs, "eq") }
+            .NotEq -> { return llvm.build_icmp(self.builder, 33, lhs, rhs, "ne") }
+            .Lt -> { return llvm.build_icmp(self.builder, 40, lhs, rhs, "lt") }
+            .LtEq -> { return llvm.build_icmp(self.builder, 41, lhs, rhs, "le") }
+            .Gt -> { return llvm.build_icmp(self.builder, 38, lhs, rhs, "gt") }
+            .GtEq -> { return llvm.build_icmp(self.builder, 39, lhs, rhs, "ge") }
+            .BitAnd -> { return llvm.build_and(self.builder, lhs, rhs, "bitand") }
+            .BitOr -> { return llvm.build_or(self.builder, lhs, rhs, "bitor") }
+            .BitXor -> { return llvm.build_xor(self.builder, lhs, rhs, "bitxor") }
+            .Shl -> { return llvm.build_shl(self.builder, lhs, rhs, "shl") }
+            .Shr -> { return llvm.build_ashr(self.builder, lhs, rhs, "shr") }
+            .And -> { return llvm.build_and(self.builder, lhs, rhs, "and") }
+            .Or -> { return llvm.build_or(self.builder, lhs, rhs, "or") }
+            .Pipe -> { return rhs }
+        }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
+
+    fn emit_unary(self, op: UnaryOp, operand: Expr) -> ptr {
+        let val = self.emit_expr(operand)
+        match op {
+            .Neg -> {
+                let zero = llvm.const_int(self.types.i64_type, 0, 0)
+                return llvm.build_sub(self.builder, zero, val, "neg")
+            }
+            .Not -> { return llvm.build_not(self.builder, val, "not") }
+            .BitNot -> { return llvm.build_not(self.builder, val, "bitnot") }
+        }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
+
+    fn emit_call(self, callee: Expr, args: List<Expr>) -> ptr {
+        match callee {
+            .Ident(name, span) -> {
+                if name == "println" || name == "print" || name == "eprintln" || name == "eprint" {
+                    return self.emit_print_call(name, args)
+                }
+                if name == "string" && args.length == 1 {
+                    return self.emit_to_string(args[0])
+                }
+                if self.functions.has(name) {
+                    return self.emit_fn_call(name, args)
+                }
+            }
+            .MemberAccess(o, f, s) -> {}
+            .Feature(fe) -> {}
+            .Binary(l, o, r, s) -> {}
+            .Unary(o, e, s) -> {}
+            .Call(c, a, s) -> {}
+            .IntLit(v, s) -> {}
+            .FloatLit(v, s) -> {}
+            .StringLit(v, s) -> {}
+            .BoolLit(v, s) -> {}
+            .NullLit(s) -> {}
+            .Index(o, i, s) -> {}
+            .Block(b) -> {}
+        }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
+
+    fn emit_fn_call(self, name: string, args: List<Expr>) -> ptr {
+        let fn_val = self.functions[name]
+        let arg_arr = llvm.value_array_new(args.length)
+        mut i = 0
+        for arg in args {
+            llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
+            i = i + 1
+        }
+        let param_arr = llvm.type_array_new(args.length)
+        i = 0
+        for arg in args {
+            llvm.type_array_set(param_arr, i, self.types.i64_type)
+            i = i + 1
+        }
+        let fn_type = llvm.function_type(self.types.i64_type, param_arr, args.length, 0)
+        llvm.type_array_free(param_arr)
+        let result = llvm.build_call(self.builder, fn_type, fn_val, arg_arr, args.length, "call")
+        llvm.value_array_free(arg_arr)
+        result
+    }
+
+    fn emit_print_call(self, name: string, args: List<Expr>) -> ptr {
+        let rt_fn = if name == "println" { self.runtime.forge_println }
+            else if name == "print" { self.runtime.forge_print }
+            else if name == "eprintln" { self.runtime.forge_eprintln }
+            else { self.runtime.forge_eprint }
+
+        for arg in args {
+            let str_val = self.emit_to_string(arg)
+            let str_ptr = llvm.build_extract_value(self.builder, str_val, 0, "str_ptr")
+            let str_len = llvm.build_extract_value(self.builder, str_val, 1, "str_len")
+            let call_args = llvm.value_array_new(2)
+            llvm.value_array_set(call_args, 0, str_ptr)
+            llvm.value_array_set(call_args, 1, str_len)
+            let param_types = llvm.type_array_new(2)
+            llvm.type_array_set(param_types, 0, self.types.ptr_type)
+            llvm.type_array_set(param_types, 1, self.types.i64_type)
+            let fn_type = llvm.function_type(self.types.void_type, param_types, 2, 0)
+            llvm.type_array_free(param_types)
+            llvm.build_call(self.builder, fn_type, rt_fn, call_args, 2, "")
+            llvm.value_array_free(call_args)
+        }
+        llvm.const_int(self.types.i64_type, 0, 0)
+    }
+
+    fn emit_to_string(self, expr: Expr) -> ptr {
+        let val = self.emit_expr(expr)
+        let call_args = llvm.value_array_new(1)
+        llvm.value_array_set(call_args, 0, val)
+        let param_types = llvm.type_array_new(1)
+        llvm.type_array_set(param_types, 0, self.types.i64_type)
+        let fn_type = llvm.function_type(self.types.string_type, param_types, 1, 0)
+        llvm.type_array_free(param_types)
+        let result = llvm.build_call(self.builder, fn_type, self.runtime.forge_int_to_string, call_args, 1, "to_str")
+        llvm.value_array_free(call_args)
+        result
+    }
+
+    fn emit_block(self, block: Block) -> ptr {
+        mut last_val = llvm.const_int(self.types.i64_type, 0, 0)
+        for stmt in block.statements {
             match stmt {
-                .Feature(fe) -> {
-                    if fe.data.kind_name == "FnDecl" {
-                        self.emit_feature_stmt(fe)
-                    } else {
-                        main_stmts = main_stmts.push(stmt)
-                    }
-                }
-                _ -> {
-                    main_stmts = main_stmts.push(stmt)
-                }
+                .Expr(expr) -> { last_val = self.emit_expr(expr) }
+                .Assign(t, v, s) -> { self.emit_statement(stmt) }
+                .Return(v, s) -> { self.emit_statement(stmt) }
+                .Feature(fe) -> { self.emit_statement(stmt) }
             }
         }
-
-        // Create main() for top-level statements
-        if main_stmts.length > 0 {
-            self.emit_main(main_stmts)
-        }
+        last_val
     }
 
-    fn declare_top_level(self, stmt: Statement) {
-        match stmt {
-            .Feature(fe) -> {
-                if fe.data.kind_name == "FnDecl" {
-                    // TODO: declare function from feature side table
-                }
-            }
-            _ -> {}
+    fn emit_feature_expr(self, fe: FeatureExpr) -> ptr {
+        let feature_id = fe.data.feature
+        if REGISTRY.emit_expr.has(feature_id) {
+            let handler = REGISTRY.emit_expr[feature_id]
+            return handler(self, fe.data)
         }
+        llvm.const_int(self.types.i64_type, 0, 0)
     }
-
-    fn emit_main(self, stmts: List<Statement>) {
-        // Create main() -> i32
-        let params = llvm.type_array_new(0)
-        let main_type = llvm.function_type(self.types.i32_type, params, 0, 0)
-        llvm.type_array_free(params)
-        let main_fn = llvm.add_function(self.module, "main", main_type)
-        self.current_fn = main_fn
-
-        let entry = llvm.append_basic_block(self.ctx, main_fn, "entry")
-        llvm.position_at_end(self.builder, entry)
-
-        for stmt in stmts {
-            self.emit_statement(stmt)
-        }
-
-        // return 0
-        let zero = llvm.const_int(self.types.i32_type, 0, 0)
-        llvm.build_ret(self.builder, zero)
-    }
-
-    // ─── Statement Emission ────────────────────
 
     fn emit_statement(self, stmt: Statement) {
         match stmt {
-            .Expr(expr) -> {
-                self.emit_expr(expr)
-            }
-            .Assign(target, value, _) -> {
-                self.emit_assign(target, value)
-            }
-            .Return(value, _) -> {
-                if value != null {
-                    let val = self.emit_expr(value!)
-                    llvm.build_ret(self.builder, val)
-                } else {
-                    llvm.build_ret_void(self.builder)
-                }
+            .Expr(expr) -> { self.emit_expr(expr) }
+            .Assign(target, value, span) -> {}
+            .Return(value, span) -> {
+                // Avoid value! force-unwrap in match arm (bootstrap bug)
+                self.emit_return(value)
             }
             .Feature(fe) -> {
                 self.emit_feature_stmt(fe)
@@ -138,16 +344,12 @@ impl Codegen {
         }
     }
 
-    fn emit_assign(self, target: Expr, value: Expr) {
-        let val = self.emit_expr(value)
-        match target {
-            .Ident(name, _) -> {
-                if self.vars.has(name) {
-                    let slot = self.vars[name]
-                    llvm.build_store(self.builder, val, slot.alloca)
-                }
-            }
-            _ -> {} // TODO: member assign, index assign
+    fn emit_return(self, value: Expr?) {
+        if value != null {
+            let val = self.emit_expr(value!)
+            llvm.build_ret(self.builder, val)
+        } else {
+            llvm.build_ret_void(self.builder)
         }
     }
 
@@ -159,247 +361,39 @@ impl Codegen {
         }
     }
 
-    // ─── Expression Emission ───────────────────
-
-    fn emit_expr(self, expr: Expr) -> ptr {
-        match expr {
-            .IntLit(value, _) -> {
-                llvm.const_int(self.types.i64_type, value, 0)
-            }
-            .FloatLit(value, _) -> {
-                llvm.const_real(self.types.f64_type, value)
-            }
-            .StringLit(value, _) -> {
-                // Create global string + ForgeString struct
-                let raw = llvm.build_global_string_ptr(self.builder, value, "str")
-                // TODO: build ForgeString { ptr, len }
-                raw
-            }
-            .BoolLit(value, _) -> {
-                let v = if value { 1 } else { 0 }
-                llvm.const_int(self.types.i1_type, v, 0)
-            }
-            .NullLit(_) -> {
-                llvm.const_null(self.types.ptr_type)
-            }
-            .Ident(name, _) -> {
-                if self.vars.has(name) {
-                    let slot = self.vars[name]
-                    let llvm_ty = self.types.to_llvm(slot.var_type)
-                    llvm.build_load(self.builder, llvm_ty, slot.alloca, name)
-                } else if self.functions.has(name) {
-                    self.functions[name]
-                } else {
-                    llvm.const_int(self.types.i64_type, 0, 0) // placeholder
-                }
-            }
-            .Binary(left, op, right, _) -> {
-                self.emit_binary(left, op, right)
-            }
-            .Unary(op, operand, _) -> {
-                self.emit_unary(op, operand)
-            }
-            .Call(callee, args, _) -> {
-                self.emit_call(callee, args)
-            }
-            .MemberAccess(_, _, _) -> {
-                // TODO: struct field access via GEP
-                llvm.const_int(self.types.i64_type, 0, 0)
-            }
-            .Index(_, _, _) -> {
-                // TODO: list/map index access
-                llvm.const_int(self.types.i64_type, 0, 0)
-            }
-            .Block(block) -> {
-                self.emit_block(block)
-            }
-            .Feature(fe) -> {
-                let feature_id = fe.data.feature
-                if REGISTRY.emit_expr.has(feature_id) {
-                    let handler = REGISTRY.emit_expr[feature_id]
-                    return handler(self, fe.data)
-                }
-                llvm.const_int(self.types.i64_type, 0, 0)
-            }
+    fn emit_main(self, stmts: List<Statement>) {
+        let params = llvm.type_array_new(0)
+        let main_type = llvm.function_type(self.types.i32_type, params, 0, 0)
+        llvm.type_array_free(params)
+        let main_fn = llvm.add_function(self.module, "main", main_type)
+        self.current_fn = main_fn
+        let entry = llvm.append_basic_block(self.ctx, main_fn, "entry")
+        llvm.position_at_end(self.builder, entry)
+        for stmt in stmts {
+            self.emit_statement(stmt)
         }
+        let zero = llvm.const_int(self.types.i32_type, 0, 0)
+        llvm.build_ret(self.builder, zero)
     }
 
-    fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
-        let lhs = self.emit_expr(left)
-        let rhs = self.emit_expr(right)
-
-        match op {
-            .Add -> llvm.build_add(self.builder, lhs, rhs, "add")
-            .Sub -> llvm.build_sub(self.builder, lhs, rhs, "sub")
-            .Mul -> llvm.build_mul(self.builder, lhs, rhs, "mul")
-            .Div -> llvm.build_sdiv(self.builder, lhs, rhs, "div")
-            .Mod -> llvm.build_srem(self.builder, lhs, rhs, "mod")
-            .Eq -> llvm.build_icmp(self.builder, 32, lhs, rhs, "eq")     // 32 = LLVMIntEQ
-            .NotEq -> llvm.build_icmp(self.builder, 33, lhs, rhs, "ne")  // 33 = LLVMIntNE
-            .Lt -> llvm.build_icmp(self.builder, 40, lhs, rhs, "lt")     // 40 = LLVMIntSLT
-            .LtEq -> llvm.build_icmp(self.builder, 41, lhs, rhs, "le")   // 41 = LLVMIntSLE
-            .Gt -> llvm.build_icmp(self.builder, 38, lhs, rhs, "gt")     // 38 = LLVMIntSGT
-            .GtEq -> llvm.build_icmp(self.builder, 39, lhs, rhs, "ge")   // 39 = LLVMIntSGE
-            .BitAnd -> llvm.build_and(self.builder, lhs, rhs, "bitand")
-            .BitOr -> llvm.build_or(self.builder, lhs, rhs, "bitor")
-            .BitXor -> llvm.build_xor(self.builder, lhs, rhs, "bitxor")
-            .Shl -> llvm.build_shl(self.builder, lhs, rhs, "shl")
-            .Shr -> llvm.build_ashr(self.builder, lhs, rhs, "shr")
-            .And -> llvm.build_and(self.builder, lhs, rhs, "and")   // logical and = bitwise on i1
-            .Or -> llvm.build_or(self.builder, lhs, rhs, "or")
-            .Pipe -> rhs // TODO: proper pipe implementation
-        }
-    }
-
-    fn emit_unary(self, op: UnaryOp, operand: Expr) -> ptr {
-        let val = self.emit_expr(operand)
-        match op {
-            .Neg -> {
-                let zero = llvm.const_int(self.types.i64_type, 0, 0)
-                llvm.build_sub(self.builder, zero, val, "neg")
-            }
-            .Not -> llvm.build_not(self.builder, val, "not")
-            .BitNot -> llvm.build_not(self.builder, val, "bitnot")
-        }
-    }
-
-    fn emit_call(self, callee: Expr, args: List<Expr>) -> ptr {
-        match callee {
-            .Ident(name, _) -> {
-                // Built-in print functions: convert arg to string, call runtime
-                if name == "println" || name == "print" || name == "eprintln" || name == "eprint" {
-                    return self.emit_print_call(name, args)
-                }
-
-                // Convert function (int, float, string, bool)
-                if name == "string" && args.length == 1 {
-                    return self.emit_to_string(args[0])
-                }
-                if name == "int" && args.length == 1 {
-                    // TODO: proper type conversion
-                    return self.emit_expr(args[0])
-                }
-
-                // User-defined function
-                if self.functions.has(name) {
-                    let fn_val = self.functions[name]
-                    let arg_arr = llvm.value_array_new(args.length)
-                    mut i = 0
-                    for arg in args {
-                        llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
-                        i = i + 1
-                    }
-                    // Build function type for the call
-                    let param_arr = llvm.type_array_new(args.length)
-                    i = 0
-                    for arg in args {
-                        llvm.type_array_set(param_arr, i, self.types.i64_type)
-                        i = i + 1
-                    }
-                    let fn_type = llvm.function_type(self.types.i64_type, param_arr, args.length, 0)
-                    llvm.type_array_free(param_arr)
-                    let result = llvm.build_call(self.builder, fn_type, fn_val, arg_arr, args.length, "call")
-                    llvm.value_array_free(arg_arr)
-                    return result
-                }
-
-                // Unknown function — return 0 as placeholder
-                llvm.const_int(self.types.i64_type, 0, 0)
-            }
-            _ -> {
-                llvm.const_int(self.types.i64_type, 0, 0)
-            }
-        }
-    }
-
-    // Emit print/println: convert arg to ForgeString, call runtime
-    fn emit_print_call(self, name: string, args: List<Expr>) -> ptr {
-        let rt_fn = match name {
-            "println" -> self.runtime.forge_println
-            "print" -> self.runtime.forge_print
-            "eprintln" -> self.runtime.forge_eprintln
-            "eprint" -> self.runtime.forge_eprint
-            _ -> self.runtime.forge_println
-        }
-
-        // For each arg, convert to string and print
-        for arg in args {
-            let str_val = self.emit_to_string(arg)
-            // ForgeString is { ptr, i64 } — extract fields for the call
-            let str_ptr = llvm.build_extract_value(self.builder, str_val, 0, "str_ptr")
-            let str_len = llvm.build_extract_value(self.builder, str_val, 1, "str_len")
-
-            // Call forge_println(ptr, i64)
-            let call_args = llvm.value_array_new(2)
-            llvm.value_array_set(call_args, 0, str_ptr)
-            llvm.value_array_set(call_args, 1, str_len)
-
-            let void_ty = self.types.void_type
-            let param_types = llvm.type_array_new(2)
-            llvm.type_array_set(param_types, 0, self.types.ptr_type)
-            llvm.type_array_set(param_types, 1, self.types.i64_type)
-            let fn_type = llvm.function_type(void_ty, param_types, 2, 0)
-            llvm.type_array_free(param_types)
-
-            llvm.build_call(self.builder, fn_type, rt_fn, call_args, 2, "")
-            llvm.value_array_free(call_args)
-        }
-
-        llvm.const_int(self.types.i64_type, 0, 0) // print returns void
-    }
-
-    // Convert any expression to a ForgeString value
-    fn emit_to_string(self, expr: Expr) -> ptr {
-        let val = self.emit_expr(expr)
-
-        // TODO: check type of expr and pick the right converter
-        // For now, assume int and call forge_int_to_string
-        let call_args = llvm.value_array_new(1)
-        llvm.value_array_set(call_args, 0, val)
-
-        let param_types = llvm.type_array_new(1)
-        llvm.type_array_set(param_types, 0, self.types.i64_type)
-        let fn_type = llvm.function_type(self.types.string_type, param_types, 1, 0)
-        llvm.type_array_free(param_types)
-
-        let result = llvm.build_call(self.builder, fn_type, self.runtime.forge_int_to_string, call_args, 1, "to_str")
-        llvm.value_array_free(call_args)
-        result
-    }
-
-    fn emit_block(self, block: Block) -> ptr {
-        mut last_val = llvm.const_int(self.types.i64_type, 0, 0)
-        for stmt in block.statements {
+    fn emit_program(self, program: Program) {
+        mut main_stmts: List<Statement> = []
+        for stmt in program.statements {
             match stmt {
-                .Expr(expr) -> { last_val = self.emit_expr(expr) }
-                _ -> { self.emit_statement(stmt) }
+                .Feature(fe) -> {
+                    if fe.data.kind_name == "fn_decl" {
+                        self.emit_feature_stmt(fe)
+                    } else {
+                        main_stmts = main_stmts.push(stmt)
+                    }
+                }
+                .Expr(e) -> { main_stmts = main_stmts.push(stmt) }
+                .Assign(t, v, s) -> { main_stmts = main_stmts.push(stmt) }
+                .Return(v, s) -> { main_stmts = main_stmts.push(stmt) }
             }
         }
-        last_val
-    }
-
-    // ─── Variable Definition ───────────────────
-
-    fn define_var(self, name: string, ty: Type, value: ptr) {
-        let llvm_ty = self.types.to_llvm(ty)
-        let alloca = llvm.build_alloca(self.builder, llvm_ty, name)
-        llvm.build_store(self.builder, value, alloca)
-        self.vars[name] = VarSlot { alloca, var_type: ty }
-    }
-
-    // ─── Finalization ──────────────────────────
-
-    fn verify(self) -> bool {
-        llvm.verify_module(self.module) == 0
-    }
-
-    fn print_ir(self) -> ptr {
-        llvm.module_print(self.module)
-    }
-
-    fn dispose(self) {
-        llvm.dispose_builder(self.builder)
-        llvm.module_dispose(self.module)
-        llvm.context_dispose(self.ctx)
+        if main_stmts.length > 0 {
+            self.emit_main(main_stmts)
+        }
     }
 }

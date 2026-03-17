@@ -128,12 +128,18 @@ extern "C" {
     fn LLVMBuildPhi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMAddIncoming(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_uint);
 
-    // Target machine (llvm-c/TargetMachine.h)
-    fn LLVMInitializeAllTargetInfos();
-    fn LLVMInitializeAllTargets();
-    fn LLVMInitializeAllTargetMCs();
-    fn LLVMInitializeAllAsmParsers();
-    fn LLVMInitializeAllAsmPrinters();
+    // Target-specific initialization (these are real exported symbols, unlike the
+    // LLVMInitializeAll* inline functions in the C header)
+    fn LLVMInitializeAArch64TargetInfo();
+    fn LLVMInitializeAArch64Target();
+    fn LLVMInitializeAArch64TargetMC();
+    fn LLVMInitializeAArch64AsmParser();
+    fn LLVMInitializeAArch64AsmPrinter();
+    fn LLVMInitializeX86TargetInfo();
+    fn LLVMInitializeX86Target();
+    fn LLVMInitializeX86TargetMC();
+    fn LLVMInitializeX86AsmParser();
+    fn LLVMInitializeX86AsmPrinter();
     fn LLVMGetDefaultTargetTriple() -> *mut c_char;
     fn LLVMGetTargetFromTriple(triple: *const c_char, target: *mut LLVMPtr, error_message: *mut *mut c_char) -> c_int;
     fn LLVMCreateTargetMachine(target: LLVMPtr, triple: *const c_char, cpu: *const c_char, features: *const c_char, level: c_int, reloc: c_int, code_model: c_int) -> LLVMPtr;
@@ -646,11 +652,18 @@ pub extern "C" fn forge_llvm_get_entry_basic_block(f: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_initialize_all_targets() {
     unsafe {
-        LLVMInitializeAllTargetInfos();
-        LLVMInitializeAllTargets();
-        LLVMInitializeAllTargetMCs();
-        LLVMInitializeAllAsmParsers();
-        LLVMInitializeAllAsmPrinters();
+        // Use target-specific init functions (real exported symbols) instead of
+        // LLVMInitializeAll* (inline C header functions that aren't in libLLVM)
+        LLVMInitializeAArch64TargetInfo();
+        LLVMInitializeAArch64Target();
+        LLVMInitializeAArch64TargetMC();
+        LLVMInitializeAArch64AsmParser();
+        LLVMInitializeAArch64AsmPrinter();
+        LLVMInitializeX86TargetInfo();
+        LLVMInitializeX86Target();
+        LLVMInitializeX86TargetMC();
+        LLVMInitializeX86AsmParser();
+        LLVMInitializeX86AsmPrinter();
     }
 }
 
