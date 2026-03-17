@@ -97,8 +97,11 @@ fn build_compile(source: string, filename: string, output: string) {
 }
 
 fn main() {
+    eprintln("starting...")
     init_features()
+    eprintln("features ok")
     let args = process.args()
+    eprintln("args ok")
 
     if args.length < 3 {
         eprintln("forgec v0.1.0 - self-hosted Forge compiler")
@@ -106,11 +109,16 @@ fn main() {
         process.exit(1)
     }
 
+    eprintln("getting command...")
     let command = args[1]
+    eprintln("getting input...")
     let input = args[2]
+    eprintln("dispatching...")
 
     if command == "check" {
+        eprintln("reading file...")
         let source = fs.read(input)
+        eprintln("read ok, checking...")
         if !check(source, input) {
             process.exit(1)
         }

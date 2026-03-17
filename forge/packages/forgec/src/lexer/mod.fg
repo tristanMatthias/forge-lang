@@ -44,12 +44,16 @@ export fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int
 // ─── Character Helpers ─────────────────────────
 
 export fn string_to_chars(s: string) -> List<string> {
-    // Split string into individual characters
-    // Each element is a single-character string
+    eprintln("s2c start")
+    let len = s.length
+    eprintln("s2c len=${len}")
     mut result: List<string> = []
-    for ch in s {
-        result = result.push(ch)
+    mut i = 0
+    while i < len {
+        result = result.push(s[i])
+        i = i + 1
     }
+    eprintln("s2c done")
     result
 }
 

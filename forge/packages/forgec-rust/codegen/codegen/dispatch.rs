@@ -108,16 +108,9 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            // Only wrap ptr→ForgeString when fn_return_types
-                            // explicitly says the function returns String
-                            let fn_name = format!("{}_{}", name, method);
-                            let ret_type = self.fn_return_types.get(&fn_name)
-                                .or_else(|| self.fn_return_types.get(method));
-                            let should_wrap = !self.suppress_string_wrap
-                                && matches!(ret_type, Some(Type::String));
-                            if should_wrap {
-                                return self.wrap_ptr_as_string(ptr_val);
-                            }
+                            // NEVER wrap ptr→ForgeString in static method dispatch.
+                            // The export wrapper functions handle conversion.
+                            // Wrapping here double-wraps and corrupts the value.
                             return Some(ptr_val.into());
                         }
                     }
