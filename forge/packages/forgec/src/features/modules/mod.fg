@@ -6,7 +6,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, NodeRef, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
 
@@ -93,14 +93,8 @@ fn top_level_use(tc: TypeChecker, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "modules",
-    name: "Modules & Imports",
-    status: "wip",
-    parsers: { "use": parse_use },
-    check_stmt: check_use,
-    check_expr: null,
-    emit_stmt: null,  // Imports are compile-time only
-    emit_expr: null,
-    top_level: top_level_use,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "modules", ... })
+reg_parser("use", parse_use)
+reg_check_stmt("modules", check_use)
+reg_top_level("modules", top_level_use)

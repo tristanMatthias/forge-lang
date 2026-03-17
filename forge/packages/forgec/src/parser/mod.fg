@@ -13,7 +13,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use core.registry.REGISTRY
+use core.registry.{REG_PARSE, REG_CHECK_STMT, REG_CHECK_EXPR, REG_EMIT_STMT, REG_EMIT_EXPR, REG_TOP_LEVEL}
 
 // ─── Param Type ────────────────────────────────
 
@@ -204,8 +204,8 @@ impl Parser {
 
         // Check feature registry for this token kind
         let token_key = self.token_kind_key(tok.kind)
-        if token_key != "" && REGISTRY.parse_stmt.has(token_key) {
-            let handler = REGISTRY.parse_stmt[token_key]
+        if token_key != "" && REG_PARSE.has(token_key) {
+            let handler = REG_PARSE[token_key]
             return handler(self)
         }
 

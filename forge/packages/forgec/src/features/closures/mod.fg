@@ -5,7 +5,7 @@
 use core.token.Span
 use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
 use codegen.Codegen
@@ -79,14 +79,7 @@ fn emit_closure(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "closures",
-    name: "Closures",
-    status: "wip",
-    parsers: {},  // Closure syntax parsed in expression parser
-    check_stmt: null,
-    check_expr: check_closure,
-    emit_stmt: null,
-    emit_expr: emit_closure,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "closures", ... })
+reg_check_expr("closures", check_closure)
+reg_emit_expr("closures", emit_closure)

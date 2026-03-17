@@ -5,7 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, feature_expr, next_node_id}
 use core.types.{Type, EnumVariantType, StructField}
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
 use codegen.Codegen
@@ -177,14 +177,9 @@ fn emit_enum_decl(cg: Codegen, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "enums",
-    name: "Enum Declarations",
-    status: "wip",
-    parsers: { "enum": parse_enum },
-    check_stmt: check_enum,
-    check_expr: null,
-    emit_stmt: emit_enum_decl,
-    emit_expr: null,
-    top_level: top_level_enum,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "enums", ... })
+reg_parser("enum", parse_enum)
+reg_check_stmt("enums", check_enum)
+reg_emit_stmt("enums", emit_enum_decl)
+reg_top_level("enums", top_level_enum)

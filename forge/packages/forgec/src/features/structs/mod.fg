@@ -5,7 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, FeatureExpr, feature_stmt, feature_expr, next_node_id}
 use core.types.{Type, StructField}
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, TypeField}
 use checker.TypeChecker
 use codegen.Codegen
@@ -164,14 +164,11 @@ fn emit_struct_lit(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "structs",
-    name: "Struct Types",
-    status: "wip",
-    parsers: { "type": parse_type_decl },
-    check_stmt: check_type_decl,
-    check_expr: check_struct_lit,
-    emit_stmt: emit_type_decl,
-    emit_expr: emit_struct_lit,
-    top_level: top_level_type,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "structs", ... })
+reg_parser("type", parse_type_decl)
+reg_check_stmt("structs", check_type_decl)
+reg_check_expr("structs", check_struct_lit)
+reg_emit_stmt("structs", emit_type_decl)
+reg_emit_expr("structs", emit_struct_lit)
+reg_top_level("structs", top_level_type)

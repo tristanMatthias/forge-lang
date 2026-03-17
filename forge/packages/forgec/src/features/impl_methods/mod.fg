@@ -5,7 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
 use codegen.Codegen
@@ -206,14 +206,9 @@ fn emit_impl(cg: Codegen, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "impl_methods",
-    name: "Impl Blocks & Methods",
-    status: "wip",
-    parsers: { "impl": parse_impl },
-    check_stmt: check_impl,
-    check_expr: null,
-    emit_stmt: emit_impl,
-    emit_expr: null,
-    top_level: top_level_impl,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "impl_methods", ... })
+reg_parser("impl", parse_impl)
+reg_check_stmt("impl_methods", check_impl)
+reg_emit_stmt("impl_methods", emit_impl)
+reg_top_level("impl_methods", top_level_impl)

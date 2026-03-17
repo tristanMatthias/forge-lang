@@ -6,21 +6,12 @@
 // No parse handler — methods are resolved by the checker on String type.
 
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 // No side tables needed — string methods are resolved inline
 // by the checker when it sees a method call on a String-typed value.
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "strings",
-    name: "String Methods",
-    status: "draft",
-    parsers: {},
-    check_stmt: null,
-    check_expr: null,  // Method resolution handled in checker's method dispatch
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "strings", ... })

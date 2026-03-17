@@ -2,7 +2,7 @@
 // int, float, bool, string, void, ptr — resolved during type checking.
 // No parse handlers needed.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 fn is_primitive_type(name: string) -> bool {
     name == "int" || name == "float" || name == "bool" ||
@@ -23,12 +23,5 @@ fn primitive_coercible(from: string, to: string) -> bool {
     false
 }
 
-register_feature(FeatureRegistration {
-    id: "primitive_types",
-    name: "Primitive Types",
-    status: "wip",
-    parsers: {},
-    check_stmt: null, check_expr: null,
-    emit_stmt: null, emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "primitive_types", ... })

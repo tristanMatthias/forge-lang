@@ -5,7 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -43,14 +43,7 @@ fn emit_range(cg: Codegen, node: NodeRef) -> ptr {
     llvm.const_int(cg.types.i64_type, 0, 0)
 }
 
-register_feature(FeatureRegistration {
-    id: "ranges",
-    name: "Range Expressions",
-    status: "wip",
-    parsers: {},  // .. and ..= parsed in expression parser
-    check_stmt: null,
-    check_expr: check_range,
-    emit_stmt: null,
-    emit_expr: emit_range,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "ranges", ... })
+reg_check_expr("ranges", check_range)
+reg_emit_expr("ranges", emit_range)

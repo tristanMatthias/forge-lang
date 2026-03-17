@@ -6,7 +6,7 @@
 use core.token.Span
 use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -68,14 +68,7 @@ fn emit_template(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "string_templates",
-    name: "String Template Literals",
-    status: "wip",
-    parsers: {},  // Template strings parsed in expression parser's literal handling
-    check_stmt: null,
-    check_expr: check_template,
-    emit_stmt: null,
-    emit_expr: emit_template,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "string_templates", ... })
+reg_check_expr("string_templates", check_template)
+reg_emit_expr("string_templates", emit_template)

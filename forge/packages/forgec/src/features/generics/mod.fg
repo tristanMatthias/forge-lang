@@ -5,18 +5,9 @@
 // No parse handler — type params are part of existing declaration parsers.
 // No side table — generic info is stored on the declarations themselves.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "generics",
-    name: "Generic Type Parameters",
-    status: "draft",
-    parsers: {},
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "generics", ... })

@@ -3,7 +3,7 @@
 
 use core.types.Type
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
-use core.registry.REGISTRY
+use core.registry.{REG_PARSE, REG_CHECK_STMT, REG_CHECK_EXPR, REG_EMIT_STMT, REG_EMIT_EXPR, REG_TOP_LEVEL}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -143,9 +143,9 @@ impl Codegen {
     fn dispatch_stmt(self, fe: FeatureStmt) {
         let fid = fe.data.feature
         eprintln("dispatch: ${fid} kind=${fe.data.kind_name}")
-        if REGISTRY.emit_stmt.has(fid) {
+        if REG_EMIT_STMT.has(fid) {
             eprintln("  handler found!")
-            let handler = REGISTRY.emit_stmt[fid]
+            let handler = REG_EMIT_STMT[fid]
             handler(self, fe.data)
         } else {
             eprintln("  no handler")
@@ -154,8 +154,8 @@ impl Codegen {
 
     fn dispatch_expr(self, fe: FeatureExpr) -> ptr {
         let fid = fe.data.feature
-        if REGISTRY.emit_expr.has(fid) {
-            let handler = REGISTRY.emit_expr[fid]
+        if REG_EMIT_EXPR.has(fid) {
+            let handler = REG_EMIT_EXPR[fid]
             return handler(self, fe.data)
         }
         llvm.const_int(CG_I64, 0, 0)

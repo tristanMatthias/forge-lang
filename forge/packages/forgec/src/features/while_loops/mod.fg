@@ -4,7 +4,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
 use codegen.Codegen
@@ -67,12 +67,8 @@ fn emit_while(cg: Codegen, node: NodeRef) {
     llvm.position_at_end(cg.builder, end_bb)
 }
 
-register_feature(FeatureRegistration {
-    id: "while_loops",
-    name: "While Loops",
-    status: "wip",
-    parsers: { "while": parse_while },
-    check_stmt: check_while, check_expr: null,
-    emit_stmt: emit_while, emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "while_loops", ... })
+reg_parser("while", parse_while)
+reg_check_stmt("while_loops", check_while)
+reg_emit_stmt("while_loops", emit_while)

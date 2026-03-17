@@ -5,7 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
 use codegen.Codegen
@@ -111,14 +111,11 @@ fn emit_var(cg: Codegen, node: NodeRef) {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "variables",
-    name: "Variable Declarations",
-    status: "wip",
-    parsers: { "let": parse_let, "mut": parse_mut, "const": parse_const },
-    check_stmt: check_var,
-    check_expr: null,
-    emit_stmt: emit_var,
-    emit_expr: null,
-    top_level: top_level_var,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "variables", ... })
+reg_parser("let", parse_let)
+reg_parser("mut", parse_mut)
+reg_parser("const", parse_const)
+reg_check_stmt("variables", check_var)
+reg_emit_stmt("variables", emit_var)
+reg_top_level("variables", top_level_var)

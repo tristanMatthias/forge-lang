@@ -5,7 +5,7 @@ use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use core.types.{Type, type_is_numeric, type_to_string}
 use core.error.{Diagnostic, DiagnosticBag, new_diagnostic_bag, error, error_with_help, E_TYPE_MISMATCH, E_UNDEFINED_VAR, E_IMMUTABLE_ASSIGN, E_WRONG_ARG_COUNT}
-use core.registry.REGISTRY
+use core.registry.{REG_PARSE, REG_CHECK_STMT, REG_CHECK_EXPR, REG_EMIT_STMT, REG_EMIT_EXPR, REG_TOP_LEVEL}
 use checker.env.{TypeEnv, type_env_new}
 
 // ─── Type Checker State ────────────────────────
@@ -45,8 +45,8 @@ impl TypeChecker {
         match stmt {
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if REGISTRY.top_level.has(feature_id) {
-                    let handler = REGISTRY.top_level[feature_id]
+                if REG_TOP_LEVEL.has(feature_id) {
+                    let handler = REG_TOP_LEVEL[feature_id]
                     handler(self, fe.data)
                 }
             }
@@ -67,8 +67,8 @@ impl TypeChecker {
             }
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if REGISTRY.check_stmt.has(feature_id) {
-                    let handler = REGISTRY.check_stmt[feature_id]
+                if REG_CHECK_STMT.has(feature_id) {
+                    let handler = REG_CHECK_STMT[feature_id]
                     handler(self, fe.data)
                 }
             }
@@ -171,8 +171,8 @@ impl TypeChecker {
 
             .Feature(fe) -> {
                 let feature_id = fe.data.feature
-                if REGISTRY.check_expr.has(feature_id) {
-                    let handler = REGISTRY.check_expr[feature_id]
+                if REG_CHECK_EXPR.has(feature_id) {
+                    let handler = REG_CHECK_EXPR[feature_id]
                     return handler(self, fe.data)
                 }
                 Type.Unknown

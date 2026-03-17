@@ -6,7 +6,7 @@
 use core.token.Span
 use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -118,14 +118,7 @@ fn emit_null_safety(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "null_safety",
-    name: "Null Safety",
-    status: "wip",
-    parsers: {},  // ?, ??, ?. parsed in expression parser
-    check_stmt: null,
-    check_expr: check_null_safety,
-    emit_stmt: null,
-    emit_expr: emit_null_safety,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "null_safety", ... })
+reg_check_expr("null_safety", check_null_safety)
+reg_emit_expr("null_safety", emit_null_safety)

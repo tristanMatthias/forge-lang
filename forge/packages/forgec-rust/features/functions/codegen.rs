@@ -6,7 +6,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use crate::codegen::codegen::{Codegen, GenericFnInfo};
 use crate::feature::FeatureStmt;
 use crate::feature_data;
-use crate::parser::ast::{CallArg, Expr, TypeExpr};
+use crate::parser::ast::{CallArg, Expr, Statement, TypeExpr};
 use crate::typeck::types::Type;
 
 use super::types::{FnDeclData, ReturnData};
@@ -132,10 +132,26 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn is_feature_declaration_only(fe: &FeatureStmt) -> bool {
         match fe.feature_id {
             "functions" => fe.kind == "FnDecl",
-            "variables" => fe.kind == "Mut",
+            "variables" => fe.kind == "Mut" || fe.kind == "Let" || fe.kind == "Const",
             "structs" => fe.kind == "TypeDecl",
             "traits" => fe.kind == "TraitDecl" || fe.kind == "ImplBlock",
             "imports" => fe.kind == "Use",
+            "enums" => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_stmt_declaration_only(stmt: &Statement) -> bool {
+        match stmt {
+            Statement::FnDecl { .. }
+            | Statement::TypeDecl { .. }
+            | Statement::TraitDecl { .. }
+            | Statement::ImplBlock { .. }
+            | Statement::EnumDecl { .. }
+            | Statement::ExternFn { .. }
+            | Statement::ModDecl { .. }
+            | Statement::Use { .. } => true,
+            Statement::Feature(fe) => Self::is_feature_declaration_only(fe),
             _ => false,
         }
     }

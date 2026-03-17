@@ -353,29 +353,24 @@ impl<'ctx> Codegen<'ctx> {
                     Statement::Feature(fe) if fe.feature_id == "variables" => {
                         deferred_global_inits.push(stmt.clone());
                     }
-                    // Expression statements (like register_feature()) must run
-                    // inside a function — defer to main() startup
-                    Statement::Expr(_) => {
-                        deferred_expr_stmts.push(stmt.clone());
-                    }
-                    Statement::Feature(fe) if !Self::is_feature_declaration_only(fe) => {
-                        deferred_expr_stmts.push(stmt.clone());
-                    }
+                    // ALL non-declaration stmts must run inside a function
                     _ => {
-                        self.compile_statement(stmt);
+                        if Self::is_stmt_declaration_only(stmt) {
+                            self.compile_statement(stmt);
+                        } else {
+                            deferred_expr_stmts.push(stmt.clone());
+                        }
                     }
                 }
             }
-            // Compile deferred global inits via helper functions (not inline in main)
-            // Compile deferred inits + expr stmts in batched helper functions
+            // Compile deferred stmts in small batched functions to avoid
+            // stack corruption from too many operations in one block.
             let all_deferred: Vec<Statement> = deferred_global_inits.iter()
                 .chain(deferred_expr_stmts.iter())
                 .cloned()
                 .collect();
-            eprintln!("[bootstrap] deferred: {} global_inits + {} expr_stmts = {} total",
-                deferred_global_inits.len(), deferred_expr_stmts.len(), all_deferred.len());
             if !all_deferred.is_empty() {
-                let batch_size = 5;
+                let batch_size = 3; // Small batches to minimize stack pressure
                 let mut batch_fns: Vec<inkwell::values::FunctionValue> = Vec::new();
                 for (batch_idx, chunk) in all_deferred.chunks(batch_size).enumerate() {
                     let init_name = format!("__global_init_{}", batch_idx);

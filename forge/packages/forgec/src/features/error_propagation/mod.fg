@@ -5,7 +5,7 @@
 use core.token.Span
 use core.ast.{Expr, Block, NodeRef, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -130,14 +130,7 @@ fn emit_error_prop(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "error_propagation",
-    name: "Error Propagation",
-    status: "wip",
-    parsers: {},  // Ok/Err/? parsed in expression parser
-    check_stmt: null,
-    check_expr: check_error_prop,
-    emit_stmt: null,
-    emit_expr: emit_error_prop,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "error_propagation", ... })
+reg_check_expr("error_propagation", check_error_prop)
+reg_emit_expr("error_propagation", emit_error_prop)

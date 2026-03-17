@@ -4,14 +4,7 @@
 // They produce core Expr.Binary/Expr.Unary nodes directly — no
 // feature-specific parse handlers needed.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
-register_feature(FeatureRegistration {
-    id: "operators",
-    name: "Arithmetic & Comparison Operators",
-    status: "wip",
-    parsers: {},
-    check_stmt: null, check_expr: null,
-    emit_stmt: null, emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "operators", ... })

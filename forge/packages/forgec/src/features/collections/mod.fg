@@ -8,7 +8,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.{Type, StructField}
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -97,14 +97,7 @@ fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "collections",
-    name: "List & Map Collections",
-    status: "wip",
-    parsers: {},  // [...] and { k: v } parsed in expression parser
-    check_stmt: null,
-    check_expr: check_collection,
-    emit_stmt: null,
-    emit_expr: emit_collection,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "collections", ... })
+reg_check_expr("collections", check_collection)
+reg_emit_expr("collections", emit_collection)

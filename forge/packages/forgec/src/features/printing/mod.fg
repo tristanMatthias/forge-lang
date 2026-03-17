@@ -2,18 +2,11 @@
 // print/println are ordinary function calls resolved during codegen.
 // No parse handlers needed — they parse as Expr.Call nodes.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 fn is_print_builtin(name: string) -> bool {
     name == "print" || name == "println" || name == "eprint" || name == "eprintln"
 }
 
-register_feature(FeatureRegistration {
-    id: "printing",
-    name: "Print Functions",
-    status: "wip",
-    parsers: {},
-    check_stmt: null, check_expr: null,
-    emit_stmt: null, emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "printing", ... })

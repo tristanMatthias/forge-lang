@@ -81,8 +81,8 @@ fn build_compile(source: string, filename: string, output: string) {
         process.exit(1)
     }
 
-    let has_fn = REGISTRY.parse_stmt.has("fn")
-    let has_let = REGISTRY.parse_stmt.has("let")
+    let has_fn = REG_PARSE.has("fn")
+    let has_let = REG_PARSE.has("let")
     eprintln("has fn:")
     eprintln(has_fn)
     eprintln("has let:")

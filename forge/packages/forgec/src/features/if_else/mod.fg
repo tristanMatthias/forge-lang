@@ -12,7 +12,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_node_id}
 use core.types.Type
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
 use codegen.Codegen
 
@@ -90,14 +90,7 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
 
 // ─── Registration ────────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "if_else",
-    name: "If/Else Expressions",
-    status: "wip",
-    parsers: {},
-    check_stmt: null,
-    check_expr: check_if_expr,
-    emit_stmt: null,
-    emit_expr: emit_if_expr,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "if_else", ... })
+reg_check_expr("if_else", check_if_expr)
+reg_emit_expr("if_else", emit_if_expr)

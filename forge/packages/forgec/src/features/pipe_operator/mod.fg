@@ -4,18 +4,9 @@
 // No side table — desugared to a function call during parsing or checking.
 // Just register metadata.
 
-use core.registry.{register_feature, FeatureRegistration}
+use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 // ─── Registration ───────────────────────────────
 
-register_feature(FeatureRegistration {
-    id: "pipe_operator",
-    name: "Pipe Operator",
-    status: "draft",
-    parsers: {},
-    check_stmt: null,
-    check_expr: null,
-    emit_stmt: null,
-    emit_expr: null,
-    top_level: null,
-})
+// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
+// Old: register_feature(FeatureRegistration { id: "pipe_operator", ... })
