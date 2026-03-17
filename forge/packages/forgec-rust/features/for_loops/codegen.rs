@@ -251,6 +251,71 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_unconditional_branch(loop_bb).unwrap();
 
             self.builder.position_at_end(end_bb);
+        } else if iter_type == Type::String {
+            // String character iteration: for ch in "hello" → iterate chars via char_at
+            let str_val = self.compile_expr(iterable).unwrap();
+            let function = self.current_function();
+
+            // Get string length
+            let str_len = self.call_runtime("forge_string_length", &[str_val.into()], "str_len")
+                .unwrap().into_int_value();
+
+            let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__str_idx");
+            self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+
+            let loop_bb = self.context.append_basic_block(function, "str_loop");
+            let body_bb = self.context.append_basic_block(function, "str_body");
+            let end_bb = self.context.append_basic_block(function, "str_end");
+            let inc_bb = self.context.append_basic_block(function, "str_inc");
+
+            self.builder.build_unconditional_branch(loop_bb).unwrap();
+            self.builder.position_at_end(loop_bb);
+
+            let current_idx = self.builder
+                .build_load(self.context.i64_type(), idx_alloca, "idx")
+                .unwrap()
+                .into_int_value();
+            let cond = self.builder
+                .build_int_compare(IntPredicate::SLT, current_idx, str_len, "str_cond")
+                .unwrap();
+            self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+
+            self.builder.position_at_end(body_bb);
+
+            // Get character at index: forge_string_char_at(str, idx)
+            let char_val = self.call_runtime(
+                "forge_string_char_at",
+                &[str_val.into(), current_idx.into()],
+                "char_at",
+            ).unwrap();
+
+            self.push_scope();
+            self.loop_exit_blocks.push((end_bb, None));
+            self.loop_continue_blocks.push(inc_bb);
+
+            if let Pattern::Ident(name, _) = pattern {
+                let alloca = self.create_entry_block_alloca(&Type::String, name);
+                self.builder.build_store(alloca, char_val).unwrap();
+                self.define_var(name.clone(), alloca, Type::String);
+            }
+
+            for stmt in &body.statements {
+                self.compile_statement(stmt);
+            }
+
+            self.pop_scope();
+            self.loop_exit_blocks.pop();
+            self.loop_continue_blocks.pop();
+
+            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                self.builder.build_unconditional_branch(inc_bb).unwrap();
+            }
+
+            self.builder.position_at_end(inc_bb);
+            self.increment_i64(idx_alloca, 1);
+            self.builder.build_unconditional_branch(loop_bb).unwrap();
+
+            self.builder.position_at_end(end_bb);
         } else if iter_type == Type::Int || matches!(iter_type, Type::Channel(_)) {
             // Treat int/channel as channel ID — iterate by calling forge_channel_receive
             // until we get the "\0CLOSED" sentinel

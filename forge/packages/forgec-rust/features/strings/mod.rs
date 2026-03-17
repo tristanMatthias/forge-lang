@@ -52,6 +52,7 @@ crate::runtime_fn! { name: "forge_string_parse_float", feature: "strings", param
 crate::runtime_fn! { name: "forge_string_repeat", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_substring", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_eq", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_string_compare", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_string_char_at", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_byte_at", feature: "strings", params: [ForgeString, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_string_bytes", feature: "strings", params: [ForgeString, Ptr], ret: I64 }

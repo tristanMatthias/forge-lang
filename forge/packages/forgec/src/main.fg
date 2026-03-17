@@ -20,7 +20,6 @@ use checker.{type_checker_new}
 use codegen.{codegen_new}
 
 fn check(source: string, filename: string) -> bool {
-    eprintln("check: source length ${source.length}")
     mut lex = lexer_new(source)
     let tokens = lex.tokenize()
     eprintln("check: ${tokens.length} tokens")

@@ -270,6 +270,14 @@ impl<'ctx> Codegen<'ctx> {
                 }];
                 self.compile_map_get(&obj_val, key_type, val_type, &args)
             }
+            Type::String => {
+                // String indexing: s[i] → forge_string_char_at(s, i)
+                self.call_runtime(
+                    "forge_string_char_at",
+                    &[obj_val.into(), idx_val.into()],
+                    "char_at",
+                )
+            }
             Type::Ptr => {
                 let ptr_val = obj_val.into_pointer_value();
                 self.compile_ptr_index_read(ptr_val, index)

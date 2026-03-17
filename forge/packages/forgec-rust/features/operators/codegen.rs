@@ -199,7 +199,7 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        // String equality
+        // String equality and ordering
         if left_type == Type::String && right_type == Type::String {
             if matches!(op, BinaryOp::Eq | BinaryOp::NotEq) {
                 let val = self.call_runtime("forge_string_eq", &[lhs.into(), rhs.into()], "string_eq")?;
@@ -212,6 +212,21 @@ impl<'ctx> Codegen<'ctx> {
                     return Some(self.builder.build_int_z_extend(negated, self.context.i8_type(), "neq_ext").unwrap().into());
                 }
                 return Some(val);
+            }
+            // String ordering: <, <=, >, >= via forge_string_compare
+            if matches!(op, BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq) {
+                let cmp_val = self.call_runtime("forge_string_compare", &[lhs.into(), rhs.into()], "str_cmp")?;
+                let cmp_i = cmp_val.into_int_value();
+                let zero = self.context.i64_type().const_zero();
+                let pred = match op {
+                    BinaryOp::Lt => IntPredicate::SLT,
+                    BinaryOp::LtEq => IntPredicate::SLE,
+                    BinaryOp::Gt => IntPredicate::SGT,
+                    BinaryOp::GtEq => IntPredicate::SGE,
+                    _ => unreachable!(),
+                };
+                let result = self.builder.build_int_compare(pred, cmp_i, zero, "str_ord").unwrap();
+                return Some(self.builder.build_int_z_extend(result, self.context.i8_type(), "ord_ext").unwrap().into());
             }
         }
 

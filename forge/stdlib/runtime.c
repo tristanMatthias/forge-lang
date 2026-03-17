@@ -364,6 +364,17 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
 
+// Lexicographic comparison: returns -1, 0, or 1
+int64_t forge_string_compare(ForgeString a, ForgeString b) {
+    int64_t min_len = a.len < b.len ? a.len : b.len;
+    int result = memcmp(a.ptr, b.ptr, min_len);
+    if (result < 0) return -1;
+    if (result > 0) return 1;
+    if (a.len < b.len) return -1;
+    if (a.len > b.len) return 1;
+    return 0;
+}
+
 // ---- String byte/char access ----
 
 // Shared bounds check helper — prints error and exits if index is out of range
