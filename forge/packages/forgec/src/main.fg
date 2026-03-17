@@ -55,30 +55,5 @@ fn check(source: string, filename: string) -> bool {
 }
 
 fn main() {
-    let args = process.args()
-
-    if args.length < 3 {
-        eprintln("forgec v0.1.0 - self-hosted Forge compiler")
-        eprintln("")
-        eprintln("Usage: forgec check <file.fg>")
-        process.exit(1)
-    }
-
-    let command = args[1]
-    let input = args[2]
-
-    match command {
-        "check" -> {
-            let source = fs.read(input)
-            if !check(source, input) {
-                process.exit(1)
-            }
-            println("OK")
-        }
-        _ -> {
-            eprintln("error: unknown command '${command}'")
-            eprintln("(only 'check' available — codegen requires @std.llvm package)")
-            process.exit(1)
-        }
-    }
+    println("hello")
 }
