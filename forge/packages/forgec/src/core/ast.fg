@@ -11,7 +11,7 @@
 // Every feature's AST node implements this trait.
 // Core dispatch uses feature_id() to look up handlers in the registry.
 
-trait AstData {
+export trait AstData {
     fn kind(self) -> string
     fn feature_id(self) -> string
     fn span(self) -> Span
@@ -22,7 +22,7 @@ trait AstData {
 // Used when dyn trait `as` cast isn't available yet.
 // Features store real data in side tables keyed by node_id.
 
-type NodeRef = {
+export type NodeRef = {
     node_id: int,
     feature: string,
     kind_name: string,
@@ -39,18 +39,18 @@ impl AstData for NodeRef {
 // ─── Feature Wrappers ─────────────────────────────────────────────
 // Thin wrappers that carry a NodeRef inside Statement / Expr enums.
 
-type FeatureStmt = {
+export type FeatureStmt = {
     data: NodeRef,
 }
 
-type FeatureExpr = {
+export type FeatureExpr = {
     data: NodeRef,
 }
 
 
 // ─── Binary Operators ─────────────────────────────────────────────
 
-enum BinOp {
+export enum BinOp {
     Add
     Sub
     Mul
@@ -75,7 +75,7 @@ enum BinOp {
 
 // ─── Unary Operators ──────────────────────────────────────────────
 
-enum UnaryOp {
+export enum UnaryOp {
     Neg
     Not
     BitNot
@@ -84,7 +84,7 @@ enum UnaryOp {
 
 // ─── Block ────────────────────────────────────────────────────────
 
-type Block = {
+export type Block = {
     statements: List<Statement>,
     span: Span,
 }
@@ -92,7 +92,7 @@ type Block = {
 
 // ─── Program ──────────────────────────────────────────────────────
 
-type Program = {
+export type Program = {
     statements: List<Statement>,
 }
 
@@ -101,7 +101,7 @@ type Program = {
 // Structural primitives only. ALL feature-specific statements
 // go through the Feature(...) variant.
 
-enum Statement {
+export enum Statement {
     Expr(expr: Expr)
     Assign(target: Expr, value: Expr, span: Span)
     Return(value: Expr?, span: Span)
@@ -113,7 +113,7 @@ enum Statement {
 // Structural primitives only. ALL feature-specific expressions
 // go through the Feature(...) variant.
 
-enum Expr {
+export enum Expr {
     IntLit(value: int, span: Span)
     FloatLit(value: float, span: Span)
     StringLit(value: string, span: Span)
@@ -133,9 +133,9 @@ enum Expr {
 // ─── Node ID Generation ──────────────────────────────────────────
 // Global counter for assigning unique IDs to feature AST nodes.
 
-mut NEXT_NODE_ID = 0
+export mut NEXT_NODE_ID = 0
 
-fn next_node_id() -> int {
+export fn next_node_id() -> int {
     let id = NEXT_NODE_ID
     NEXT_NODE_ID = NEXT_NODE_ID + 1
     id
@@ -145,13 +145,13 @@ fn next_node_id() -> int {
 // ─── Convenience Constructors ─────────────────────────────────────
 // Shorthand for creating Feature-wrapped statements and expressions.
 
-fn feature_stmt(feature: string, kind_name: string, node_id: int, span: Span) -> Statement {
+export fn feature_stmt(feature: string, kind_name: string, node_id: int, span: Span) -> Statement {
     Statement.Feature(FeatureStmt {
         data: NodeRef { node_id, feature, kind_name, node_span: span },
     })
 }
 
-fn feature_expr(feature: string, kind_name: string, node_id: int, span: Span) -> Expr {
+export fn feature_expr(feature: string, kind_name: string, node_id: int, span: Span) -> Expr {
     Expr.Feature(FeatureExpr {
         data: NodeRef { node_id, feature, kind_name, node_span: span },
     })

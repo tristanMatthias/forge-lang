@@ -7,7 +7,7 @@ use core.error.{Diagnostic, error, E_SYNTAX, E_UNTERMINATED_STRING, E_UNTERMINAT
 
 // ─── Lexer State ───────────────────────────────
 
-type Lexer = {
+export type Lexer = {
     source: string,
     chars: List<string>,
     mut pos: int,
@@ -17,7 +17,7 @@ type Lexer = {
     mut diagnostics: List<Diagnostic>,
 }
 
-fn lexer_new(source: string) -> Lexer {
+export fn lexer_new(source: string) -> Lexer {
     Lexer {
         source,
         chars: string_to_chars(source),
@@ -29,7 +29,7 @@ fn lexer_new(source: string) -> Lexer {
     }
 }
 
-fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int) -> Lexer {
+export fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int) -> Lexer {
     Lexer {
         source,
         chars: string_to_chars(source),
@@ -43,7 +43,7 @@ fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int) -> Le
 
 // ─── Character Helpers ─────────────────────────
 
-fn string_to_chars(s: string) -> List<string> {
+export fn string_to_chars(s: string) -> List<string> {
     // Split string into individual characters
     // Each element is a single-character string
     mut result: List<string> = []
@@ -53,31 +53,31 @@ fn string_to_chars(s: string) -> List<string> {
     result
 }
 
-fn is_alpha(ch: string) -> bool {
+export fn is_alpha(ch: string) -> bool {
     (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
 }
 
-fn is_digit(ch: string) -> bool {
+export fn is_digit(ch: string) -> bool {
     ch >= "0" && ch <= "9"
 }
 
-fn is_hex_digit(ch: string) -> bool {
+export fn is_hex_digit(ch: string) -> bool {
     is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
 }
 
-fn is_alnum(ch: string) -> bool {
+export fn is_alnum(ch: string) -> bool {
     is_alpha(ch) || is_digit(ch)
 }
 
-fn is_ident_start(ch: string) -> bool {
+export fn is_ident_start(ch: string) -> bool {
     is_alpha(ch) || ch == "$"
 }
 
-fn is_ident_continue(ch: string) -> bool {
+export fn is_ident_continue(ch: string) -> bool {
     is_alnum(ch) || ch == "$"
 }
 
-fn is_whitespace_not_newline(ch: string) -> bool {
+export fn is_whitespace_not_newline(ch: string) -> bool {
     ch == " " || ch == "\t" || ch == "\r"
 }
 
@@ -933,7 +933,7 @@ impl Lexer {
 
 // ─── Keyword Lookup ────────────────────────────
 
-fn keyword_kind(text: string) -> TokenKind? {
+export fn keyword_kind(text: string) -> TokenKind? {
     match text {
         "let" -> .Let
         "mut" -> .Mut
@@ -984,17 +984,17 @@ fn keyword_kind(text: string) -> TokenKind? {
 
 // ─── Number Parsing Helpers ────────────────────
 
-fn parse_int(text: string) -> int {
+export fn parse_int(text: string) -> int {
     // Use runtime int() conversion
     int(text)
 }
 
-fn parse_float(text: string) -> float {
+export fn parse_float(text: string) -> float {
     // Use runtime float() conversion
     float(text)
 }
 
-fn parse_int_radix(text: string, radix: int) -> int {
+export fn parse_int_radix(text: string, radix: int) -> int {
     mut result = 0
     for ch in text {
         mut digit = 0

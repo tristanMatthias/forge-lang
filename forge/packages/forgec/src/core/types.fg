@@ -4,7 +4,7 @@
 
 // ─── Core Type Enum ────────────────────────────
 
-enum Type {
+export enum Type {
     Int
     Float
     Bool
@@ -29,19 +29,19 @@ enum Type {
 
 // ─── Supporting Types ──────────────────────────
 
-type StructField = {
+export type StructField = {
     name: string,
     field_type: Type,
 }
 
-type EnumVariantType = {
+export type EnumVariantType = {
     name: string,
     fields: List<StructField>,
 }
 
 // ─── Type Predicates ───────────────────────────
 
-fn type_is_numeric(t: Type) -> bool {
+export fn type_is_numeric(t: Type) -> bool {
     match t {
         .Int -> true
         .Float -> true
@@ -49,14 +49,14 @@ fn type_is_numeric(t: Type) -> bool {
     }
 }
 
-fn type_is_nullable(t: Type) -> bool {
+export fn type_is_nullable(t: Type) -> bool {
     match t {
         .Nullable(_) -> true
         _ -> false
     }
 }
 
-fn type_is_primitive(t: Type) -> bool {
+export fn type_is_primitive(t: Type) -> bool {
     match t {
         .Int -> true
         .Float -> true
@@ -67,7 +67,7 @@ fn type_is_primitive(t: Type) -> bool {
     }
 }
 
-fn type_is_container(t: Type) -> bool {
+export fn type_is_container(t: Type) -> bool {
     match t {
         .ListType(_) -> true
         .MapType(_, _) -> true
@@ -76,7 +76,7 @@ fn type_is_container(t: Type) -> bool {
     }
 }
 
-fn type_is_callable(t: Type) -> bool {
+export fn type_is_callable(t: Type) -> bool {
     match t {
         .Function(_, _) -> true
         _ -> false
@@ -85,28 +85,28 @@ fn type_is_callable(t: Type) -> bool {
 
 // ─── Type Unwrapping ───────────────────────────
 
-fn unwrap_nullable(t: Type) -> Type {
+export fn unwrap_nullable(t: Type) -> Type {
     match t {
         .Nullable(inner) -> inner
         _ -> t
     }
 }
 
-fn unwrap_list_element(t: Type) -> Type? {
+export fn unwrap_list_element(t: Type) -> Type? {
     match t {
         .ListType(element) -> element
         _ -> null
     }
 }
 
-fn unwrap_result_ok(t: Type) -> Type? {
+export fn unwrap_result_ok(t: Type) -> Type? {
     match t {
         .Result(ok, _) -> ok
         _ -> null
     }
 }
 
-fn unwrap_result_err(t: Type) -> Type? {
+export fn unwrap_result_err(t: Type) -> Type? {
     match t {
         .Result(_, err) -> err
         _ -> null
@@ -115,7 +115,7 @@ fn unwrap_result_err(t: Type) -> Type? {
 
 // ─── Type Display ──────────────────────────────
 
-fn type_to_string(t: Type) -> string {
+export fn type_to_string(t: Type) -> string {
     match t {
         .Int -> "int"
         .Float -> "float"

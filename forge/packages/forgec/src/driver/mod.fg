@@ -2,7 +2,6 @@
 // Orchestrates the compilation pipeline:
 // Source → Lexer → Parser → Checker → Codegen → Linker
 
-use core.ast.Program
 use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new}
@@ -24,32 +23,32 @@ export type CompileOptions = {
 
 export fn compile(source: string, filename: string, opts: CompileOptions) -> bool {
     // Phase 1: Lex
-    mut lexer = lexer_new(source)
-    let tokens = lexer.tokenize()
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
 
-    if lexer.diagnostics.length > 0 {
-        for d in lexer.diagnostics {
+    if lex.diagnostics.length > 0 {
+        for d in lex.diagnostics {
             eprintln(render_diagnostic(d, source, filename))
         }
     }
 
     // Phase 2: Parse
-    mut parser = parser_new(tokens)
-    let program = parser.parse_program()
+    mut p = parser_new(tokens)
+    let program = p.parse_program()
 
-    if parser.diagnostics.length > 0 {
-        for d in parser.diagnostics {
+    if p.diagnostics.length > 0 {
+        for d in p.diagnostics {
             eprintln(render_diagnostic(d, source, filename))
         }
         return false
     }
 
     // Phase 3: Type Check
-    mut checker = type_checker_new()
-    checker.check_program(program)
+    mut tc = type_checker_new()
+    tc.check_program(program)
 
-    if checker.diagnostics.has_errors {
-        let output = render_all(checker.diagnostics, source, filename)
+    if tc.diagnostics.has_errors {
+        let output = render_all(tc.diagnostics, source, filename)
         eprintln(output)
         return false
     }
@@ -64,24 +63,13 @@ export fn compile(source: string, filename: string, opts: CompileOptions) -> boo
 
     if !cg.verify() {
         eprintln("error: LLVM module verification failed")
-        if opts.emit_ir {
-            // Print IR for debugging
-            let ir_ptr = cg.print_ir()
-            // TODO: convert raw ptr to string and print
-        }
         cg.dispose()
         return false
     }
 
-    if opts.emit_ir {
-        let ir_ptr = cg.print_ir()
-        // TODO: convert and print IR
-    }
-
     // Phase 5: Emit object + link
     let output = opts.output_path ?? "a.out"
-    // TODO: use target machine to emit .o, then link with cc
-    // For now, we just verify the IR is valid
+    // TODO: emit .o + cc link
 
     cg.dispose()
     true

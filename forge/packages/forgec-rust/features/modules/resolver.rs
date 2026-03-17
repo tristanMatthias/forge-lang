@@ -412,33 +412,28 @@ pub fn resolve_all_imports(
     // 5. Inject imported functions into the main program
     inject_imports_into_program(program, &main_imports, &module_stmts);
 
-    // 6. Inject transitive dependencies: when the main program imports a component
-    //    block from a sub-module, that component's body may reference functions the
-    //    sub-module imported. Also inject all exported functions from the source
-    //    modules of those imports (to cover intra-module calls like forward→core_bin).
+    // 6. Inject transitive dependencies: when the main program imports ANY symbol
+    //    from a sub-module, that symbol's body may reference functions the sub-module
+    //    itself imported. Inject all sub-module imports transitively.
     let mut transitive_imports = Vec::new();
     let mut seen_transitive: HashSet<String> = HashSet::new();
     let mut injected_modules: HashSet<String> = HashSet::new();
     for imp in &main_imports {
-        if let ExportedSymbol::ComponentBlock { .. } = &imp.symbol {
-            // Find which module this component came from
-            for (mod_path, mod_imports) in &sub_module_imports {
-                if imp.mangled_name.starts_with(&mod_path.replace('.', "_")) {
-                    // Inject all of this sub-module's imports (deduplicated)
-                    for mod_imp in mod_imports {
-                        if let ExportedSymbol::Function { .. } = &mod_imp.symbol {
-                            if seen_transitive.insert(mod_imp.local_name.clone()) {
-                                transitive_imports.push(mod_imp.clone());
-                            }
-                            // Also inject all exports from the source module of each import
-                            // to handle intra-module deps (e.g. forward calls core_bin)
-                            let source_mod = mod_imp.mangled_name
-                                .rsplit_once('_')
-                                .map(|(prefix, _)| prefix.replace('_', "."))
-                                .unwrap_or_default();
-                            if !source_mod.is_empty() {
-                                injected_modules.insert(source_mod);
-                            }
+        // Find which module this import came from
+        for (mod_path, mod_imports) in &sub_module_imports {
+            if imp.mangled_name.starts_with(&mod_path.replace('.', "_")) {
+                // Inject all of this sub-module's imports (deduplicated)
+                for mod_imp in mod_imports {
+                    if seen_transitive.insert(mod_imp.local_name.clone()) {
+                        transitive_imports.push(mod_imp.clone());
+                    }
+                    if let ExportedSymbol::Function { .. } = &mod_imp.symbol {
+                        let source_mod = mod_imp.mangled_name
+                            .rsplit_once('_')
+                            .map(|(prefix, _)| prefix.replace('_', "."))
+                            .unwrap_or_default();
+                        if !source_mod.is_empty() {
+                            injected_modules.insert(source_mod);
                         }
                     }
                 }

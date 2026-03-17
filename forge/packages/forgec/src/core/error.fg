@@ -6,7 +6,7 @@ use core.token.Span
 
 // ─── Severity ──────────────────────────────────
 
-enum Severity {
+export enum Severity {
     Error
     Warning
     Info
@@ -14,7 +14,7 @@ enum Severity {
 
 // ─── Diagnostic ────────────────────────────────
 
-type Diagnostic = {
+export type Diagnostic = {
     code: string,
     message: string,
     severity: Severity,
@@ -25,26 +25,26 @@ type Diagnostic = {
 
 // ─── Diagnostic Collection ─────────────────────
 
-type DiagnosticBag = {
+export type DiagnosticBag = {
     mut diagnostics: List<Diagnostic>,
     mut has_errors: bool,
 }
 
-fn new_diagnostic_bag() -> DiagnosticBag {
+export fn new_diagnostic_bag() -> DiagnosticBag {
     DiagnosticBag {
         diagnostics: [],
         has_errors: false,
     }
 }
 
-fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
+export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
     bag.diagnostics.push(d)
     if d.severity == .Error {
         bag.has_errors = true
     }
 }
 
-fn bag_error_count(bag: DiagnosticBag) -> int {
+export fn bag_error_count(bag: DiagnosticBag) -> int {
     mut count = 0
     for d in bag.diagnostics {
         if d.severity == .Error {
@@ -56,7 +56,7 @@ fn bag_error_count(bag: DiagnosticBag) -> int {
 
 // ─── Constructor Helpers ───────────────────────
 
-fn error(code: string, message: string, span: Span) -> Diagnostic {
+export fn error(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
@@ -67,7 +67,7 @@ fn error(code: string, message: string, span: Span) -> Diagnostic {
     }
 }
 
-fn error_with_help(code: string, message: string, span: Span, help: string) -> Diagnostic {
+export fn error_with_help(code: string, message: string, span: Span, help: string) -> Diagnostic {
     Diagnostic {
         code,
         message,
@@ -78,7 +78,7 @@ fn error_with_help(code: string, message: string, span: Span, help: string) -> D
     }
 }
 
-fn warning(code: string, message: string, span: Span) -> Diagnostic {
+export fn warning(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
@@ -89,7 +89,7 @@ fn warning(code: string, message: string, span: Span) -> Diagnostic {
     }
 }
 
-fn info(code: string, message: string, span: Span) -> Diagnostic {
+export fn info(code: string, message: string, span: Span) -> Diagnostic {
     Diagnostic {
         code,
         message,
@@ -102,22 +102,22 @@ fn info(code: string, message: string, span: Span) -> Diagnostic {
 
 // ─── Error Codes ───────────────────────────────
 
-let E_SYNTAX = "F0001"
-let E_UNTERMINATED_STRING = "F0002"
-let E_UNTERMINATED_TEMPLATE = "F0003"
-let E_BAD_NUMBER = "F0006"
-let E_TYPE_MISMATCH = "F0012"
-let E_IMMUTABLE_ASSIGN = "F0013"
-let E_WRONG_ARG_COUNT = "F0014"
-let E_UNDEFINED_VAR = "F0020"
-let E_TABLE_COLUMN = "F0030"
-let E_UNUSED_VAR = "F0801"
-let E_SPEC_TEST = "F0900"
-let E_ICE = "F9999"
+export let E_SYNTAX = "F0001"
+export let E_UNTERMINATED_STRING = "F0002"
+export let E_UNTERMINATED_TEMPLATE = "F0003"
+export let E_BAD_NUMBER = "F0006"
+export let E_TYPE_MISMATCH = "F0012"
+export let E_IMMUTABLE_ASSIGN = "F0013"
+export let E_WRONG_ARG_COUNT = "F0014"
+export let E_UNDEFINED_VAR = "F0020"
+export let E_TABLE_COLUMN = "F0030"
+export let E_UNUSED_VAR = "F0801"
+export let E_SPEC_TEST = "F0900"
+export let E_ICE = "F9999"
 
 // ─── Rendering ─────────────────────────────────
 
-fn severity_to_string(s: Severity) -> string {
+export fn severity_to_string(s: Severity) -> string {
     match s {
         .Error -> "error"
         .Warning -> "warning"
@@ -125,7 +125,7 @@ fn severity_to_string(s: Severity) -> string {
     }
 }
 
-fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
+export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
     // Build the primary message line: severity[code]: message
     let sev = severity_to_string(d.severity)
     mut msg = "${sev}[${d.code}]: ${d.message}"
@@ -149,7 +149,7 @@ fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string 
     msg
 }
 
-fn render_all(bag: DiagnosticBag, source: string, filename: string) -> string {
+export fn render_all(bag: DiagnosticBag, source: string, filename: string) -> string {
     mut output = ""
     for d in bag.diagnostics {
         if output != "" {

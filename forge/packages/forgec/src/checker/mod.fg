@@ -1,6 +1,5 @@
 // ─── Type Checker ──────────────────────────────
-// Walks the AST and verifies type correctness.
-// Uses the feature registry to dispatch feature-specific checking.
+mod env
 
 use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
@@ -11,14 +10,14 @@ use checker.env.{TypeEnv, type_env_new}
 
 // ─── Type Checker State ────────────────────────
 
-type TypeChecker = {
+export type TypeChecker = {
     mut env: TypeEnv,
     mut diagnostics: DiagnosticBag,
     // Type annotations on expressions (for codegen to read)
     mut expr_types: Map<string, Type>,
 }
 
-fn type_checker_new() -> TypeChecker {
+export fn type_checker_new() -> TypeChecker {
     TypeChecker {
         env: type_env_new(),
         diagnostics: new_diagnostic_bag(),

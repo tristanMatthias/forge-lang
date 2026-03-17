@@ -19,7 +19,7 @@ type VarSlot = {
 
 // ─── Codegen State ─────────────────────────────
 
-type Codegen = {
+export type Codegen = {
     ctx: ptr,
     module: ptr,
     builder: ptr,
@@ -33,7 +33,7 @@ type Codegen = {
     mut functions: Map<string, ptr>,
 }
 
-fn codegen_new(module_name: string) -> Codegen {
+export fn codegen_new(module_name: string) -> Codegen {
     let ctx = llvm.context_create()
     let module = llvm.module_create(module_name, ctx)
     let builder = llvm.create_builder(ctx)

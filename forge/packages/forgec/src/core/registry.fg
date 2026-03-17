@@ -15,16 +15,16 @@ use codegen.Codegen
 
 // ─── Handler Types ─────────────────────────────
 
-type ParseHandler = fn(Parser) -> Statement?
-type CheckStmtHandler = fn(TypeChecker, NodeRef)
-type CheckExprHandler = fn(TypeChecker, NodeRef) -> Type
-type EmitStmtHandler = fn(Codegen, NodeRef)
-type EmitExprHandler = fn(Codegen, NodeRef) -> ptr
-type TopLevelHandler = fn(TypeChecker, NodeRef)
+export type ParseHandler = fn(Parser) -> Statement?
+export type CheckStmtHandler = fn(TypeChecker, NodeRef)
+export type CheckExprHandler = fn(TypeChecker, NodeRef) -> Type
+export type EmitStmtHandler = fn(Codegen, NodeRef)
+export type EmitExprHandler = fn(Codegen, NodeRef) -> ptr
+export type TopLevelHandler = fn(TypeChecker, NodeRef)
 
 // ─── Registry ──────────────────────────────────
 
-type FeatureRegistry = {
+export type FeatureRegistry = {
     // Metadata
     mut features: List<FeatureMeta>,
     // Parser: token_kind_string → parse handler
@@ -39,13 +39,13 @@ type FeatureRegistry = {
     mut top_level: Map<string, TopLevelHandler>,
 }
 
-type FeatureMeta = {
+export type FeatureMeta = {
     id: string,
     name: string,
     status: string,
 }
 
-mut REGISTRY = FeatureRegistry {
+export mut REGISTRY = FeatureRegistry {
     features: [],
     parse_stmt: {},
     check_stmt: {},
@@ -57,7 +57,7 @@ mut REGISTRY = FeatureRegistry {
 
 // ─── Registration ──────────────────────────────
 
-type FeatureRegistration = {
+export type FeatureRegistration = {
     id: string,
     name: string,
     status: string,
@@ -73,7 +73,7 @@ type FeatureRegistration = {
     top_level: TopLevelHandler?,
 }
 
-fn register_feature(reg: FeatureRegistration) {
+export fn register_feature(reg: FeatureRegistration) {
     REGISTRY.features = REGISTRY.features.push(FeatureMeta {
         id: reg.id, name: reg.name, status: reg.status,
     })

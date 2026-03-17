@@ -6,25 +6,25 @@
 // --- Span -------------------------------------------------------------------
 // Tracks source position for error reporting and diagnostics.
 
-type Span = {
+export type Span = {
     start: int,
     end: int,
     line: int,
     col: int,
 }
 
-fn span_new(start: int, end: int, line: int, col: int) -> Span {
+export fn span_new(start: int, end: int, line: int, col: int) -> Span {
     Span { start: start, end: end, line: line, col: col }
 }
 
-fn span_dummy() -> Span {
+export fn span_dummy() -> Span {
     Span { start: 0, end: 0, line: 0, col: 0 }
 }
 
 // --- TemplatePart -----------------------------------------------------------
 // Represents a segment of a template literal or dollar string.
 
-enum TemplatePart {
+export enum TemplatePart {
     Literal(value: string),
     Expr(value: string, span: Span),
 }
@@ -32,7 +32,7 @@ enum TemplatePart {
 // --- TokenKind --------------------------------------------------------------
 // Every distinct token the lexer can produce.
 
-enum TokenKind {
+export enum TokenKind {
     // Literals
     IntLiteral(value: int),
     FloatLiteral(value: float),
@@ -148,11 +148,11 @@ enum TokenKind {
 // --- Token ------------------------------------------------------------------
 // A lexed token: its kind plus source location.
 
-type Token = {
+export type Token = {
     kind: TokenKind,
     span: Span,
 }
 
-fn token_new(kind: TokenKind, span: Span) -> Token {
+export fn token_new(kind: TokenKind, span: Span) -> Token {
     Token { kind: kind, span: span }
 }

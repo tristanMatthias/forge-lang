@@ -18,7 +18,7 @@ use core.registry.REGISTRY
 
 // ─── Param Type ────────────────────────────────
 
-type Param = {
+export type Param = {
     name: string,
     type_ann: TypeExpr?,
     default_value: Expr?,
@@ -28,7 +28,7 @@ type Param = {
 
 // ─── Type Expressions ──────────────────────────
 
-enum TypeExpr {
+export enum TypeExpr {
     Named(name: string, span: Span)
     Generic(name: string, args: List<TypeExpr>, span: Span)
     Nullable(inner: TypeExpr, span: Span)
@@ -37,7 +37,7 @@ enum TypeExpr {
     Struct(fields: List<TypeField>, span: Span)
 }
 
-type TypeField = {
+export type TypeField = {
     name: string,
     type_expr: TypeExpr,
     mutable: bool,
@@ -45,13 +45,13 @@ type TypeField = {
 
 // ─── Parser State ──────────────────────────────
 
-type Parser = {
+export type Parser = {
     tokens: List<Token>,
     mut pos: int,
     mut diagnostics: List<Diagnostic>,
 }
 
-fn parser_new(tokens: List<Token>) -> Parser {
+export fn parser_new(tokens: List<Token>) -> Parser {
     Parser {
         tokens,
         pos: 0,
