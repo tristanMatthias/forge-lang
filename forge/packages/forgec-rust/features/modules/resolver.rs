@@ -497,9 +497,9 @@ pub fn resolve_all_imports(
         }
     }
 
-    // 6. Also inject function bodies for explicitly imported symbols
-    //    (handles renaming via `use foo.{bar as baz}`)
-    inject_imports_into_program(program, &main_imports, &module_stmts);
+    // 6. Skip inject_imports_into_program — step 5 already merged all
+    //    module statements. Injecting again would create duplicate functions
+    //    with renamed names (add.1) that have broken basic block structure.
 
     Ok(ModuleImportResult { main_imports })
 }

@@ -58,24 +58,61 @@ impl TypeChecker {
             }
         }
 
-        // Actually simpler: just re-run register_top_level for type aliases
-        for stmt in &program.statements {
-            match stmt {
-                Statement::TypeDecl { name, value, .. } => {
-                    let ty = self.resolve_type_expr(value);
-                    let ty = match ty {
-                        Type::Struct { fields, .. } => Type::Struct {
-                            name: Some(name.clone()),
-                            fields,
-                        },
-                        other => other,
+        // Re-resolve type aliases that have Error/Unknown fields (from forward references)
+        let alias_names: Vec<String> = self.env.type_aliases.keys().cloned().collect();
+        for name in alias_names {
+            let needs_reresolution = if let Some(ty) = self.env.type_aliases.get(&name) {
+                match ty {
+                    Type::Struct { fields, .. } => fields.iter().any(|(_, t)| {
+                        matches!(t, Type::Error | Type::Unknown)
+                            || matches!(t, Type::List(inner) if matches!(inner.as_ref(), Type::Error | Type::Unknown))
+                    }),
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            if needs_reresolution {
+                // Find the original TypeDecl statement and re-resolve
+                for stmt in &program.statements {
+                    let resolved = match stmt {
+                        Statement::TypeDecl { name: sname, value, .. } if sname == &name => {
+                            let ty = self.resolve_type_expr(value);
+                            Some(match ty {
+                                Type::Struct { fields, .. } => Type::Struct {
+                                    name: Some(name.clone()),
+                                    fields,
+                                },
+                                other => other,
+                            })
+                        }
+                        Statement::Feature(fe) if fe.feature_id == "structs" => {
+                            use crate::feature_data;
+                            use crate::features::structs::types::TypeDeclData;
+                            if let Some(data) = feature_data!(fe, TypeDeclData) {
+                                if data.name == name {
+                                    let ty = self.resolve_type_expr(&data.value);
+                                    Some(match ty {
+                                        Type::Struct { fields, .. } => Type::Struct {
+                                            name: Some(name.clone()),
+                                            fields,
+                                        },
+                                        other => other,
+                                    })
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
                     };
-                    self.env.type_aliases.insert(name.clone(), ty);
+                    if let Some(ty) = resolved {
+                        self.env.type_aliases.insert(name.clone(), ty);
+                        break;
+                    }
                 }
-                Statement::Feature(fe) if fe.feature_id == "structs" => {
-                    self.register_type_decl_feature(fe);
-                }
-                _ => {}
             }
         }
 
