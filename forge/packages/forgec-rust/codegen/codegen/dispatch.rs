@@ -185,20 +185,28 @@ impl<'ctx> Codegen<'ctx> {
                         .any(|(tn, _)| tn == &type_name);
                     if has_mut_fields {
                         // Get the alloca pointer for the object variable
-                        if let Expr::Ident(var_name, _) = object {
-                            if let Some((ptr, _)) = self.lookup_var(var_name) {
-                                let mut call_args: Vec<BasicMetadataValueEnum> = vec![ptr.into()];
-                                for arg in args {
-                                    if let Some(val) = self.compile_expr(&arg.value) {
-                                        call_args.push(val.into());
-                                    }
+                        let self_ptr = if let Expr::Ident(var_name, _) = object {
+                            self.lookup_var(var_name).map(|(ptr, _)| ptr)
+                        } else {
+                            // For non-Ident objects (e.g. self.env), alloca the value
+                            // so we can pass a pointer for mut-self methods
+                            let obj_llvm_ty = obj_val.get_type();
+                            let alloca = self.builder.build_alloca(obj_llvm_ty.into_struct_type(), "mut_self_tmp").unwrap();
+                            self.builder.build_store(alloca, obj_val).unwrap();
+                            Some(alloca)
+                        };
+                        if let Some(ptr) = self_ptr {
+                            let mut call_args: Vec<BasicMetadataValueEnum> = vec![ptr.into()];
+                            for arg in args {
+                                if let Some(val) = self.compile_expr(&arg.value) {
+                                    call_args.push(val.into());
                                 }
-                                let mangled = self.find_impl_method(&type_name, method);
-                                if let Some(mangled) = mangled {
-                                    if let Some(func) = self.functions.get(&mangled).copied() {
-                                        let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
-                                        return result.try_as_basic_value().left();
-                                    }
+                            }
+                            let mangled = self.find_impl_method(&type_name, method);
+                            if let Some(mangled) = mangled {
+                                if let Some(func) = self.functions.get(&mangled).copied() {
+                                    let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
+                                    return result.try_as_basic_value().left();
                                 }
                             }
                         }
