@@ -1,29 +1,23 @@
 // Features for the self-hosted compiler.
 
-use variables
-use functions
-use operators
-use if_else
-use printing
-use primitive_types
-use enums
-use pattern_matching
-use structs
-use impl_methods
-use while_loops
-use for_loops
-use ranges
-use collections
-use strings
-use string_templates
-use closures
-use fn_types
-use null_safety
-use error_propagation
-use traits
-use generics
-use pipe_operator
-use modules
+mod variables
+mod functions
+mod operators
+mod if_else
+mod printing
+mod primitive_types
+mod enums
+mod pattern_matching
+mod structs
+mod impl_methods
+mod while_loops
+mod for_loops
+mod ranges
+mod collections
+mod strings
+mod string_templates
+mod traits
+mod modules
 
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
@@ -40,9 +34,6 @@ use pattern_matching.{check_match, emit_match}
 use collections.{check_collection, emit_collection}
 use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
-use closures.{check_closure, emit_closure}
-use null_safety.{check_null_safety, emit_null_safety}
-use error_propagation.{check_error_prop, emit_error_prop}
 
 // All feature registration in one function, called from main()
 // (top-level calls don't work in the bootstrap AOT binary)
@@ -122,15 +113,6 @@ export fn init_features() {
     reg_check_expr("string_templates", check_template)
     reg_emit_expr("string_templates", emit_template)
 
-    // closures
-    reg_check_expr("closures", check_closure)
-    reg_emit_expr("closures", emit_closure)
 
-    // null_safety
-    reg_check_expr("null_safety", check_null_safety)
-    reg_emit_expr("null_safety", emit_null_safety)
 
-    // error_propagation
-    reg_check_expr("error_propagation", check_error_prop)
-    reg_emit_expr("error_propagation", emit_error_prop)
 }
