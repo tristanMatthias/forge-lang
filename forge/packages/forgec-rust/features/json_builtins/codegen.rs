@@ -92,7 +92,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                 }
                 Type::Bool => {
@@ -109,7 +109,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                 }
                 Type::Float => {
@@ -127,7 +127,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                 }
                 Type::Struct { name: nested_name, fields: nested_fields } => {
@@ -145,7 +145,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap();
 
                     // Recursively parse the nested struct using the raw pointer
@@ -172,7 +172,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                 }
             };
@@ -218,19 +218,19 @@ impl<'ctx> Codegen<'ctx> {
                     let get_fn = self.module.get_function("forge_json_get_int").unwrap();
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
-                        .unwrap().try_as_basic_value().left().unwrap()
+                        .unwrap().try_as_basic_value().basic().unwrap()
                 }
                 Type::Bool => {
                     let get_fn = self.module.get_function("forge_json_get_bool").unwrap();
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
-                        .unwrap().try_as_basic_value().left().unwrap()
+                        .unwrap().try_as_basic_value().basic().unwrap()
                 }
                 Type::Struct { name: nested_name, fields: nested_fields } => {
                     let get_obj_fn = self.module.get_function("forge_json_get_object").unwrap();
                     let nested_json_ptr = self.builder
                         .build_call(get_obj_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], &format!("{}_json", field_name))
-                        .unwrap().try_as_basic_value().left().unwrap();
+                        .unwrap().try_as_basic_value().basic().unwrap();
                     let nested_fields_clone = nested_fields.clone();
                     let nested_name_clone = nested_name.clone();
                     self.compile_json_parse_struct_from_ptr(
@@ -243,7 +243,7 @@ impl<'ctx> Codegen<'ctx> {
                     let get_fn = self.module.get_function("forge_json_get_string").unwrap();
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), index.into(), field_name_str.as_pointer_value().into()], field_name)
-                        .unwrap().try_as_basic_value().left().unwrap()
+                        .unwrap().try_as_basic_value().basic().unwrap()
                 }
             };
 
@@ -527,7 +527,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                         .into_struct_value();
 
@@ -579,7 +579,7 @@ impl<'ctx> Codegen<'ctx> {
                         )
                         .unwrap()
                         .try_as_basic_value()
-                        .left()
+                        .basic()
                         .unwrap()
                         .into_struct_value();
 
@@ -676,7 +676,7 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_call(string_new, &[buf.into(), offset.into()], "json_str")
             .unwrap();
-        result.try_as_basic_value().left()
+        result.try_as_basic_value().basic()
     }
 
     /// Serialize a List<Struct> to a JSON array string (returned as ForgeString).
@@ -881,7 +881,7 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_call(string_new, &[buf.into(), final_offset.into()], "json_str")
             .unwrap();
-        result.try_as_basic_value().left()
+        result.try_as_basic_value().basic()
     }
 
     /// Serialize a list of primitives (string, int, float, bool) to a JSON array string.
@@ -1009,6 +1009,7 @@ impl<'ctx> Codegen<'ctx> {
             BasicTypeEnum::VectorType(vt) => unsafe {
                 self.builder.build_gep(vt, data_ptr, &[i_val], "elem_ptr").unwrap()
             },
+            BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
         };
         let elem = self
             .builder
@@ -1098,7 +1099,7 @@ impl<'ctx> Codegen<'ctx> {
             .builder
             .build_call(string_new, &[buf.into(), final_offset.into()], "json_str")
             .unwrap();
-        result.try_as_basic_value().left()
+        result.try_as_basic_value().basic()
     }
 
     /// Serialize a nullable struct to JSON. Returns "null" if null, or the struct JSON if present.
@@ -1159,7 +1160,7 @@ impl<'ctx> Codegen<'ctx> {
             )
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap();
         self.builder.build_unconditional_branch(merge_bb).unwrap();
         let null_bb_end = self.builder.get_insert_block().unwrap();
@@ -1212,7 +1213,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(snprintf, &call_args, "wrote")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
         let w64 = self.builder.build_int_z_extend(wrote, i64_type, "w64").unwrap();
@@ -1325,7 +1326,7 @@ impl<'ctx> Codegen<'ctx> {
             )
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
         let w64 = self
@@ -1383,7 +1384,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(snprintf, &call_args, "wrote")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
         let w64 = self
@@ -1426,7 +1427,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(count_fn, &[json_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
 
@@ -1445,7 +1446,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(alloc_fn, &[total_size.into()], "data")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_pointer_value();
 
@@ -1483,21 +1484,21 @@ impl<'ctx> Codegen<'ctx> {
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), i_val.into(), field_name_str.as_pointer_value().into()], field_name)
                         .unwrap()
-                        .try_as_basic_value().left().unwrap()
+                        .try_as_basic_value().basic().unwrap()
                 }
                 Type::Bool => {
                     let get_fn = self.module.get_function("forge_json_get_bool").unwrap();
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), i_val.into(), field_name_str.as_pointer_value().into()], field_name)
                         .unwrap()
-                        .try_as_basic_value().left().unwrap()
+                        .try_as_basic_value().basic().unwrap()
                 }
                 _ => {
                     let get_fn = self.module.get_function("forge_json_get_string").unwrap();
                     self.builder
                         .build_call(get_fn, &[json_ptr.into(), i_val.into(), field_name_str.as_pointer_value().into()], field_name)
                         .unwrap()
-                        .try_as_basic_value().left().unwrap()
+                        .try_as_basic_value().basic().unwrap()
                 }
             };
 
@@ -1566,7 +1567,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(count_fn, &[json_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
 
@@ -1581,7 +1582,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(alloc_fn, &[total_size.into()], "data")
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_pointer_value();
 
@@ -1612,21 +1613,21 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder
                     .build_call(get_fn, &[json_ptr.into(), i_val.into()], "elem")
                     .unwrap()
-                    .try_as_basic_value().left().unwrap()
+                    .try_as_basic_value().basic().unwrap()
             }
             Type::Bool => {
                 let get_fn = self.module.get_function("forge_json_array_get_bool").unwrap();
                 self.builder
                     .build_call(get_fn, &[json_ptr.into(), i_val.into()], "elem")
                     .unwrap()
-                    .try_as_basic_value().left().unwrap()
+                    .try_as_basic_value().basic().unwrap()
             }
             Type::Float => {
                 let get_fn = self.module.get_function("forge_json_array_get_float").unwrap();
                 self.builder
                     .build_call(get_fn, &[json_ptr.into(), i_val.into()], "elem")
                     .unwrap()
-                    .try_as_basic_value().left().unwrap()
+                    .try_as_basic_value().basic().unwrap()
             }
             _ => {
                 // Default to string (covers Type::String and others)
@@ -1634,7 +1635,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder
                     .build_call(get_fn, &[json_ptr.into(), i_val.into()], "elem")
                     .unwrap()
-                    .try_as_basic_value().left().unwrap()
+                    .try_as_basic_value().basic().unwrap()
             }
         };
 
@@ -1658,6 +1659,7 @@ impl<'ctx> Codegen<'ctx> {
             BasicTypeEnum::VectorType(vt) => unsafe {
                 self.builder.build_gep(vt, data_ptr, &[i_val], "elem_ptr").unwrap()
             },
+            BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
         };
         self.builder.build_store(elem_ptr, elem_val).unwrap();
 
@@ -1794,7 +1796,7 @@ impl<'ctx> Codegen<'ctx> {
             self.module.add_function("strlen", ft, None)
         });
         let json_len = self.builder.build_call(strlen_fn, &[raw_ptr.into()], "json_len").unwrap()
-            .try_as_basic_value().left().unwrap().into_int_value();
+            .try_as_basic_value().basic().unwrap().into_int_value();
 
         let three = i64_type.const_int(3, false);
         let buf_len = self.builder.build_int_add(json_len, three, "buf_len").unwrap();
@@ -1803,7 +1805,7 @@ impl<'ctx> Codegen<'ctx> {
             self.module.add_function("forge_alloc", ft, None)
         });
         let buf = self.builder.build_call(alloc_fn, &[buf_len.into()], "json_buf").unwrap()
-            .try_as_basic_value().left().unwrap().into_pointer_value();
+            .try_as_basic_value().basic().unwrap().into_pointer_value();
 
         // snprintf(buf, buf_len, "[%s]", raw_ptr)
         let snprintf_fn = self.module.get_function("snprintf").unwrap_or_else(|| {
@@ -1831,7 +1833,7 @@ impl<'ctx> Codegen<'ctx> {
                         get_fn,
                         &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
                         field_name,
-                    ).unwrap().try_as_basic_value().left().unwrap()
+                    ).unwrap().try_as_basic_value().basic().unwrap()
                 }
                 Type::Bool => {
                     let get_fn = self.module.get_function("forge_json_get_bool").unwrap();
@@ -1839,7 +1841,7 @@ impl<'ctx> Codegen<'ctx> {
                         get_fn,
                         &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
                         field_name,
-                    ).unwrap().try_as_basic_value().left().unwrap()
+                    ).unwrap().try_as_basic_value().basic().unwrap()
                 }
                 _ => {
                     // Default: string (ForgeString)
@@ -1848,7 +1850,7 @@ impl<'ctx> Codegen<'ctx> {
                         get_fn,
                         &[buf.into(), i64_type.const_zero().into(), field_name_str.as_pointer_value().into()],
                         field_name,
-                    ).unwrap().try_as_basic_value().left().unwrap()
+                    ).unwrap().try_as_basic_value().basic().unwrap()
                 }
             };
 

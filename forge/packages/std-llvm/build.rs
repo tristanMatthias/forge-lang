@@ -1,9 +1,9 @@
 use std::process::Command;
 
 fn main() {
-    // Get LLVM 18 config
+    // Get LLVM config (prefer LLVM 19, fall back to env var)
     let llvm_config = std::env::var("LLVM_CONFIG")
-        .unwrap_or_else(|_| "/opt/homebrew/opt/llvm@18/bin/llvm-config".to_string());
+        .unwrap_or_else(|_| "/opt/homebrew/opt/llvm@19/bin/llvm-config".to_string());
 
     let ldflags = Command::new(&llvm_config)
         .arg("--ldflags")

@@ -263,7 +263,7 @@ impl<'ctx> Codegen<'ctx> {
                 };
                 let compiled_args = self.compile_call_args_with_types(args, func, &param_types)?;
                 let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
-                let val = result.try_as_basic_value().left();
+                let val = result.try_as_basic_value().basic();
                 // Auto-wrap ptr → ForgeString for extern fns declared with `-> string`
                 // Skip when suppress_string_wrap is set (caller wants raw ptr, e.g. `let x: ptr = ...`)
                 if !self.suppress_string_wrap {
@@ -286,7 +286,7 @@ impl<'ctx> Codegen<'ctx> {
                         if let Some(func) = self.functions.get(&mangled).copied() {
                             let compiled_args = self.compile_call_args(args, func)?;
                             let result = self.builder.build_call(func, &compiled_args, "call").unwrap();
-                            return result.try_as_basic_value().left();
+                            return result.try_as_basic_value().basic();
                         }
                     }
                 }
@@ -314,6 +314,7 @@ impl<'ctx> Codegen<'ctx> {
                         inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_params, false),
                         inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_params, false),
                         inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_params, false),
+                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
                     };
 
                     // Compile arguments
@@ -326,7 +327,7 @@ impl<'ctx> Codegen<'ctx> {
                     let result = self.builder.build_indirect_call(
                         fn_type, fn_ptr, &compiled_args, "closure_call"
                     ).unwrap();
-                    return result.try_as_basic_value().left();
+                    return result.try_as_basic_value().basic();
                 }
             }
 

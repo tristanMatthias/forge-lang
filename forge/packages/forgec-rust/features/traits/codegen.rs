@@ -159,7 +159,7 @@ impl<'ctx> Codegen<'ctx> {
 
                             // Load concrete self from ptr
                             let self_ptr = thunk_fn.get_first_param().unwrap().into_pointer_value();
-                            let self_type = real_fn_type.get_param_types()[0];
+                            let self_type: inkwell::types::BasicTypeEnum = real_fn_type.get_param_types()[0].try_into().unwrap();
                             let loaded_self = self.builder.build_load(self_type, self_ptr, "self").unwrap();
 
                             // Build call args: loaded_self + forwarded params
@@ -171,7 +171,7 @@ impl<'ctx> Codegen<'ctx> {
                             let result = self.builder.build_call(real_func, &call_args, "thunk_call").unwrap();
 
                             if real_ret.is_some() {
-                                let ret_val = result.try_as_basic_value().left().unwrap();
+                                let ret_val = result.try_as_basic_value().basic().unwrap();
                                 self.builder.build_return(Some(&ret_val)).unwrap();
                             } else {
                                 self.builder.build_return(None).unwrap();
@@ -231,7 +231,7 @@ impl<'ctx> Codegen<'ctx> {
             }),
             &[size.into()],
             "trait_data",
-        ).unwrap().try_as_basic_value().left()?.into_pointer_value();
+        ).unwrap().try_as_basic_value().basic()?.into_pointer_value();
 
         self.builder.build_store(data_ptr, concrete_val).unwrap();
 
@@ -314,7 +314,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let result = self.builder.build_indirect_call(fn_type, fn_ptr, &call_args, "dyn_call")
             .unwrap();
-        result.try_as_basic_value().left()
+        result.try_as_basic_value().basic()
     }
 
     /// Convert a Type back to a TypeExpr for use in param declarations

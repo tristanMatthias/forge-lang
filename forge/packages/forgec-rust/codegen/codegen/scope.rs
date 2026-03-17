@@ -126,7 +126,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_call(func, args, label)
             .ok()?
             .try_as_basic_value()
-            .left()
+            .basic()
     }
 
     /// Call a runtime function by name, expecting it to exist (panics if not found).
@@ -143,7 +143,7 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_call(func, args, label)
             .unwrap()
             .try_as_basic_value()
-            .left()
+            .basic()
     }
 
     /// Call a runtime function for its side effect (ignore return value).

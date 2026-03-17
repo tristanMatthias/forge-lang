@@ -1,26 +1,9 @@
-// ─── Code Generator (stub) ─────────────────────
-// Full codegen deferred until LLVM 18 register allocator bug is resolved.
-// The bootstrap crashes (SIGSEGV in LiveRange::join) when the merged
-// program exceeds ~6500 lines with Expr enum matches in codegen.
-//
-// The self-hosted compiler can CHECK files but not BUILD binaries yet.
-// Building will be enabled once:
-// 1. We upgrade to LLVM 19+ (where the regalloc bug may be fixed), or
-// 2. The bootstrap uses a split compilation model (no single merged program)
-
 use core.types.Type
-use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, NodeRef}
-use core.registry.REGISTRY
+use core.ast.{Program, Statement, Expr}
 use @std.llvm
 
-export type Codegen = {
-    ctx: ptr,
-}
-
-export fn codegen_new() -> Codegen {
-    Codegen { ctx: null }
-}
-
+export type Codegen = { ctx: ptr }
+export fn codegen_new() -> Codegen { Codegen { ctx: null } }
 impl Codegen {
     fn init(self, name: string) {}
     fn verify(self) -> bool { true }

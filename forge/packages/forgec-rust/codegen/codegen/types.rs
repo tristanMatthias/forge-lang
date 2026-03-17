@@ -291,6 +291,7 @@ impl<'ctx> Codegen<'ctx> {
                     BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
                     BasicTypeEnum::ArrayType(at) => at.const_zero().into(),
                     BasicTypeEnum::VectorType(vt) => vt.const_zero().into(),
+                    BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
                 }
             }
         }

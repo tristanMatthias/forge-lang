@@ -250,7 +250,7 @@ impl<'ctx> Codegen<'ctx> {
                             &[lhs.into(), rhs.into()],
                             "op_result",
                         ).unwrap();
-                        let val = result.try_as_basic_value().left();
+                        let val = result.try_as_basic_value().basic();
 
                         // For NotEq, negate the Eq result
                         if matches!(op, BinaryOp::NotEq) {

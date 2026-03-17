@@ -107,7 +107,7 @@ impl<'ctx> Codegen<'ctx> {
         };
         if let Some(func) = self.module.get_function(fn_name) {
             let result = self.builder.build_call(func, &[obj_val.into()], method).unwrap();
-            result.try_as_basic_value().left()
+            result.try_as_basic_value().basic()
         } else {
             None
         }

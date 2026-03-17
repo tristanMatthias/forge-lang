@@ -93,7 +93,7 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_call(func, &compiled_args, "static_call")
                         .unwrap();
-                    let raw = result.try_as_basic_value().left();
+                    let raw = result.try_as_basic_value().basic();
                     // If the extern fn returns ptr, wrap it as a ForgeString
                     if let Some(val) = raw {
                         if val.is_pointer_value() {
@@ -206,7 +206,7 @@ impl<'ctx> Codegen<'ctx> {
                             if let Some(mangled) = mangled {
                                 if let Some(func) = self.functions.get(&mangled).copied() {
                                     let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
-                                    return result.try_as_basic_value().left();
+                                    return result.try_as_basic_value().basic();
                                 }
                             }
                         }
@@ -240,7 +240,7 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
         let result = self.builder.build_call(func, &call_args, "method_call").unwrap();
-        result.try_as_basic_value().left()
+        result.try_as_basic_value().basic()
     }
 
     pub(crate) fn compile_index_access(

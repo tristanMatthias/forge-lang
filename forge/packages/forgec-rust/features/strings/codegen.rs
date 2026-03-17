@@ -96,7 +96,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(split_fn, &[(*obj_val).into(), sep_val.into(), out_ptr.into()], "split_count")
             .unwrap()
             .try_as_basic_value()
-            .left()?
+            .basic()?
             .into_int_value();
 
         let data_ptr = self.builder
@@ -137,7 +137,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
-            .left()?
+            .basic()?
             .into_int_value();
 
         let data_ptr = self.builder
@@ -175,7 +175,7 @@ impl<'ctx> Codegen<'ctx> {
             .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
-            .left()?
+            .basic()?
             .into_int_value();
 
         let data_ptr = self.builder

@@ -43,7 +43,7 @@ impl<'ctx> Codegen<'ctx> {
                             .builder
                             .build_call(func, &compiled_args, "pipe_result")
                             .unwrap();
-                        result.try_as_basic_value().left()
+                        result.try_as_basic_value().basic()
                     } else {
                         // Not a known function — try as method call on the piped value
                         self.compile_method_call(left, name, args, type_args)
@@ -60,7 +60,7 @@ impl<'ctx> Codegen<'ctx> {
                         .builder
                         .build_call(func, &[arg.into()], "pipe_result")
                         .unwrap();
-                    result.try_as_basic_value().left()
+                    result.try_as_basic_value().basic()
                 } else if let Some((ptr, _ty)) = self.lookup_var(name) {
                     // Variable holding a function pointer (e.g. closure)
                     let fn_ptr_val = self.builder.build_load(
@@ -78,7 +78,7 @@ impl<'ctx> Codegen<'ctx> {
                         &[arg.into()],
                         "pipe_closure_result",
                     ).unwrap();
-                    result.try_as_basic_value().left()
+                    result.try_as_basic_value().basic()
                 } else {
                     None
                 }

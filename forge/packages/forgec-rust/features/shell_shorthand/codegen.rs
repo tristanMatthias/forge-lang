@@ -44,7 +44,7 @@ impl<'ctx> Codegen<'ctx> {
         let result = self.builder.build_call(
             exec_fn, &[cmd_ptr.into()], "exec_result"
         ).unwrap();
-        let raw_ptr = result.try_as_basic_value().left()?.into_pointer_value();
+        let raw_ptr = result.try_as_basic_value().basic()?.into_pointer_value();
 
         // Convert ptr to ForgeString
         let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();

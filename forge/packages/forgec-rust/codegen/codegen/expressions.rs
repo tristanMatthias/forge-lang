@@ -274,7 +274,7 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(func) = self.module.get_function(fn_name) {
                     let obj_val = self.compile_expr(object)?;
                     let result = self.builder.build_call(func, &[obj_val.into()], field).unwrap();
-                    return result.try_as_basic_value().left();
+                    return result.try_as_basic_value().basic();
                 }
             }
         }

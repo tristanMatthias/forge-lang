@@ -12,7 +12,7 @@ name = "forgec"
 path = "packages/forgec-rust/main.rs"
 
 [dependencies]
-inkwell = { version = "0.5", features = ["llvm18-0"] }
+inkwell = { version = "0.7", features = ["llvm19-1"] }
 clap = { version = "4", features = ["derive"] }
 ariadne = "0.4"
 colored = "2"

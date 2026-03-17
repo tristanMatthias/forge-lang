@@ -121,7 +121,7 @@ impl<'ctx> Codegen<'ctx> {
                 // Forge fn: takes ForgeString directly
                 let result = self.builder.build_call(func, &[json.into()], "tagged_result")
                     .unwrap();
-                return result.try_as_basic_value().left();
+                return result.try_as_basic_value().basic();
             }
         }
 
@@ -145,12 +145,13 @@ impl<'ctx> Codegen<'ctx> {
                         inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&[str_type.into()], false),
                         inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&[str_type.into()], false),
                         inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&[str_type.into()], false),
+                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
                     };
 
                     let result = self.builder.build_indirect_call(
                         fn_type, fn_ptr, &[json.into()], "tagged_result"
                     ).unwrap();
-                    return result.try_as_basic_value().left();
+                    return result.try_as_basic_value().basic();
                 }
                 _ => {
                     // Non-function variable — type checker should have caught this.
@@ -178,7 +179,7 @@ impl<'ctx> Codegen<'ctx> {
         let result = self.builder.build_call(func, &[ptr.into()], "tagged_result")
             .unwrap();
 
-        if let Some(ret) = result.try_as_basic_value().left() {
+        if let Some(ret) = result.try_as_basic_value().basic() {
             if ret.is_pointer_value() {
                 // Convert ptr return to ForgeString
                 let raw_ptr = ret.into_pointer_value();
@@ -208,7 +209,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let result = self.builder.build_call(
             escape_fn, &[str_ptr.into(), str_len.into()], "escaped"
-        ).unwrap().try_as_basic_value().left().unwrap();
+        ).unwrap().try_as_basic_value().basic().unwrap();
         let escaped_ptr = result.into_pointer_value();
 
         let len = self.call_runtime("strlen", &[escaped_ptr.into()], "elen").unwrap();

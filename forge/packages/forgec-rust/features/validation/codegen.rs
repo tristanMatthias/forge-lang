@@ -716,7 +716,7 @@ impl<'ctx> Codegen<'ctx> {
                 let validate_fn = self.module.get_function(fn_name)?;
                 let result = self.builder.build_call(
                     validate_fn, &[field_val.into()], "validate_result"
-                ).unwrap().try_as_basic_value().left()?.into_int_value();
+                ).unwrap().try_as_basic_value().basic()?.into_int_value();
 
                 Some((self.int_ne_zero(result, "validate_ok"), rule.to_string(), msg.to_string()))
             }

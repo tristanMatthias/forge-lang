@@ -222,6 +222,7 @@ impl<'ctx> Codegen<'ctx> {
                 inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_param_types, false),
                 inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_param_types, false),
                 inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
             }
         };
         let function = self.module.add_function(&closure_name, fn_type, None);
