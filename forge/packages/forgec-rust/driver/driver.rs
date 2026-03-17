@@ -356,6 +356,14 @@ impl Driver {
                 PathBuf::from(stem)
             });
 
+            // Verify module before writing (to distinguish IR bugs from LLVM bugs)
+            if let Err(msg) = codegen.module.verify() {
+                return Err(CompileError::CodegenFailed {
+                    stage: "LLVM module verification (pre-emit)",
+                    detail: msg.to_string(),
+                });
+            }
+
             // Write object file
             let t = Instant::now();
             let obj_path = output_path.with_extension("o");

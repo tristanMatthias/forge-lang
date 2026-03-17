@@ -19,6 +19,128 @@ impl<'ctx> Codegen<'ctx> {
         feature_codegen!(self, fe, MatchData, |data| self.compile_match(&data.subject, &data.arms))
     }
 
+    /// Check if a match can use a switch instruction (simple enum/int tag dispatch).
+    fn can_use_switch(&self, subject_type: &Type, arms: &[MatchArm]) -> bool {
+        // Must be an enum type
+        let variants = match subject_type {
+            Type::Enum { variants, .. } => variants,
+            _ => return false,
+        };
+        // All arms must be simple: Pattern::Enum without guards, or wildcard/ident as last
+        for (i, arm) in arms.iter().enumerate() {
+            if arm.guard.is_some() { return false; }
+            match &arm.pattern {
+                Pattern::Enum { .. } => {}
+                Pattern::Wildcard(_) | Pattern::Ident(_, _) => {
+                    if i != arms.len() - 1 { return false; } // wildcard only as last
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Compile a match using LLVM's switch instruction for simple enum dispatch.
+    /// Produces N+2 basic blocks instead of 2N, avoiding LLVM optimization crashes.
+    fn compile_match_switch(
+        &mut self,
+        subject_val: &BasicValueEnum<'ctx>,
+        subject_type: &Type,
+        arms: &[MatchArm],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let variants = match subject_type {
+            Type::Enum { variants, .. } => variants,
+            _ => return None,
+        };
+
+        let function = self.current_function();
+        let merge_bb = self.context.append_basic_block(function, "match_end");
+
+        // Extract the tag (field 0 of the struct)
+        let tag = if subject_val.is_struct_value() {
+            self.builder.build_extract_value(subject_val.into_struct_value(), 0, "tag")
+                .ok()?.into_int_value()
+        } else {
+            return None;
+        };
+
+        // Create basic blocks for each arm
+        let arm_bbs: Vec<_> = (0..arms.len())
+            .map(|i| self.context.append_basic_block(function, &format!("sw_arm_{}", i)))
+            .collect();
+
+        // Build switch cases
+        let mut cases: Vec<(inkwell::values::IntValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+        let mut default_bb = merge_bb; // default goes to merge (unreachable)
+
+        for (i, arm) in arms.iter().enumerate() {
+            match &arm.pattern {
+                Pattern::Enum { variant, .. } => {
+                    if let Some(idx) = variants.iter().position(|v| v.name == *variant) {
+                        let tag_val = self.context.i8_type().const_int(idx as u64, false);
+                        cases.push((tag_val, arm_bbs[i]));
+                    }
+                }
+                Pattern::Wildcard(_) | Pattern::Ident(_, _) => {
+                    default_bb = arm_bbs[i]; // last arm is the default
+                }
+                _ => {}
+            }
+        }
+
+        self.builder.build_switch(tag, default_bb, &cases).unwrap();
+
+        // Compile each arm body
+        let mut arm_results: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+        let mut result_type: Option<BasicTypeEnum<'ctx>> = None;
+
+        for (i, arm) in arms.iter().enumerate() {
+            self.builder.position_at_end(arm_bbs[i]);
+            self.push_scope();
+            self.bind_pattern_vars(&arm.pattern, subject_val, subject_type);
+            let arm_val = self.compile_expr(&arm.body);
+            self.pop_scope();
+
+            let arm_end_bb = self.builder.get_insert_block().unwrap();
+            if arm_end_bb.get_terminator().is_none() {
+                if let Some(val) = arm_val {
+                    if result_type.is_none() {
+                        result_type = Some(val.get_type());
+                    }
+                    let final_val = if let Some(rt) = result_type {
+                        if val.get_type() != rt {
+                            self.coerce_value(val, rt)
+                        } else { val }
+                    } else { val };
+                    let final_bb = self.builder.get_insert_block().unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    arm_results.push((final_val, final_bb));
+                } else {
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+            }
+        }
+
+        self.builder.position_at_end(merge_bb);
+
+        // Build phi for results
+        if let Some(rtype) = result_type {
+            if !arm_results.is_empty() {
+                let phi = self.builder.build_phi(rtype, "match_result").unwrap();
+                let incoming: Vec<(&dyn BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
+                    arm_results.iter().map(|(v, bb)| (v as &dyn BasicValue, *bb)).collect();
+                phi.add_incoming(&incoming);
+                return Some(phi.as_basic_value());
+            }
+        }
+
+        if arm_results.is_empty() {
+            return Some(self.default_value(subject_type));
+        }
+
+        None
+    }
+
     pub(crate) fn compile_match(
         &mut self,
         subject: &Expr,
@@ -27,10 +149,17 @@ impl<'ctx> Codegen<'ctx> {
         let subject_val = self.compile_expr(subject)?;
         let subject_type = self.infer_type(subject);
 
+        // Fast path: use switch instruction for simple enum dispatch
+        if self.can_use_switch(&subject_type, arms) {
+            if let Some(result) = self.compile_match_switch(&subject_val, &subject_type, arms) {
+                return Some(result);
+            }
+        }
+
         let function = self.current_function();
         let merge_bb = self.context.append_basic_block(function, "match_end");
 
-        // For simplicity, implement match as a chain of if-else
+        // Fallback: if-else chain for complex patterns (guards, nested, non-enum)
         let mut arm_results: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
             Vec::new();
         let mut result_type: Option<BasicTypeEnum<'ctx>> = None;
@@ -39,16 +168,13 @@ impl<'ctx> Codegen<'ctx> {
             let is_last = i == arms.len() - 1;
             let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", i));
             let next_bb = if is_last {
-                // Last arm: always branch to it unconditionally (default case)
                 arm_bb
             } else {
                 self.context.append_basic_block(function, &format!("arm_{}_next", i))
             };
 
-            // Check pattern
             let matched = self.compile_pattern_check(&arm.pattern, &subject_val, &subject_type);
 
-            // Check guard
             let condition = if let Some(guard) = &arm.guard {
                 if let Some(guard_val) = {
                     self.push_scope();
@@ -71,16 +197,13 @@ impl<'ctx> Codegen<'ctx> {
             };
 
             if is_last {
-                // Last arm always matches (default/fallthrough)
                 self.builder.build_unconditional_branch(arm_bb).unwrap();
             } else if let Some(cond) = condition {
                 self.builder.build_conditional_branch(cond, arm_bb, next_bb).unwrap();
             } else {
-                // Wildcard/always match
                 self.builder.build_unconditional_branch(arm_bb).unwrap();
             }
 
-            // Compile arm body
             self.builder.position_at_end(arm_bb);
             self.push_scope();
             self.bind_pattern_vars(&arm.pattern, &subject_val, &subject_type);
