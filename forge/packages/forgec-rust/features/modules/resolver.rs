@@ -174,8 +174,9 @@ pub fn resolve_mod_tree(
         // For file modules (foo.fg), nested mods resolve relative to foo/ (create dir).
         let nested = resolve_mod_tree(&mod_program, &file_path, &module_path, seen, component_registry)?;
 
-        modules.push((module_path, file_path, mod_source, mod_program));
+        // Children (dependencies) before parent so types are defined in order
         modules.extend(nested);
+        modules.push((module_path, file_path, mod_source, mod_program));
     }
 
     Ok(modules)
