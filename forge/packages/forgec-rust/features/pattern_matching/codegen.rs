@@ -116,6 +116,18 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // If all arms had early returns (no arm reached merge_bb), the merge block
+        // is unreachable. Add unreachable terminator and return a default value
+        // so surrounding code can continue compiling.
+        if arm_results.is_empty() {
+            if merge_bb.get_terminator().is_none() {
+                self.builder.build_unreachable().unwrap();
+            }
+            // Return a default value of the expected type so the caller doesn't get None
+            let match_type = self.infer_type(subject);
+            return Some(self.default_value(&match_type));
+        }
+
         None
     }
 

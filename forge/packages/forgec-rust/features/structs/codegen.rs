@@ -52,8 +52,16 @@ impl<'ctx> Codegen<'ctx> {
                                 all_field_types.push(self.type_to_llvm_basic(ftype));
                                 all_field_vals.push(nullable_val.into());
                             } else {
-                                all_field_types.push(val.get_type());
-                                all_field_vals.push(val);
+                                let target_llvm = self.type_to_llvm_basic(ftype);
+                                if val.get_type() != target_llvm {
+                                    // Value type doesn't match target — coerce
+                                    let coerced = self.coerce_value(val, target_llvm);
+                                    all_field_types.push(target_llvm);
+                                    all_field_vals.push(coerced);
+                                } else {
+                                    all_field_types.push(target_llvm);
+                                    all_field_vals.push(val);
+                                }
                             }
                         }
                     } else {

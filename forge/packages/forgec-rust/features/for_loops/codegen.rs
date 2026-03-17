@@ -331,6 +331,9 @@ impl<'ctx> Codegen<'ctx> {
             None => {
                 // Condition failed to compile — treat as false (exit loop)
                 self.builder.build_unconditional_branch(end_bb).unwrap();
+                // body_bb is unreachable but LLVM requires a terminator
+                self.builder.position_at_end(body_bb);
+                self.builder.build_unconditional_branch(end_bb).unwrap();
                 self.builder.position_at_end(end_bb);
                 return;
             }

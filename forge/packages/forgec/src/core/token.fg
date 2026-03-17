@@ -39,7 +39,7 @@ export enum TokenKind {
     StringLiteral(value: string),
     TemplateLiteral(parts: List<TemplatePart>),
     DollarString(parts: List<TemplatePart>),
-    TaggedTemplate(tag: string, parts: List<TemplatePart>, type_param: string?),
+    TaggedTemplate(tag: string, parts: List<TemplatePart>, type_param: string),
     BoolLiteral(value: bool),
     NullLiteral,
 
