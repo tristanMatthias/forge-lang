@@ -109,7 +109,7 @@ export enum Expr {
 export enum Statement {
     Expr(expr: Expr)
     Assign(target: Expr, value: Expr, span: Span)
-    Return(value: Expr?, span: Span)
+    Return(value: Expr, span: Span)  // NullLit for bare return
     Feature(stmt: FeatureStmt)
 }
 

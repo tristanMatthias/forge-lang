@@ -16,7 +16,7 @@ export enum Type {
     ListType(element: Type)
     MapType(key: Type, value: Type)
     Tuple(elements: List<Type>)
-    Struct(name: string?, fields: List<StructField>)
+    Struct(name: string, fields: List<StructField>)
     Enum(name: string, variants: List<EnumVariantType>)
     Function(params: List<Type>, return_type: Type)
     Result(ok: Type, err: Type)
@@ -128,7 +128,7 @@ export fn type_to_string(t: Type) -> string {
         .ListType(element) -> "List<${type_to_string(element)}>"
         .MapType(key, value) -> "Map<${type_to_string(key)}, ${type_to_string(value)}>"
         .Tuple(elements) -> "(tuple)"
-        .Struct(name, _) -> name ?? "(anonymous struct)"
+        .Struct(name, _) -> if name == "" { "(anonymous struct)" } else { name }
         .Enum(name, _) -> name
         .Function(_, ret) -> "fn(...) -> ${type_to_string(ret)}"
         .Result(ok, err) -> "Result<${type_to_string(ok)}, ${type_to_string(err)}>"

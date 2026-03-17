@@ -221,11 +221,14 @@ impl Parser {
 
         // Check if there's a value (not at end of statement)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
-            return Statement.Return(null, start)
+            return Statement.Return(Expr.NullLit(start), start) // bare return
         }
 
         let value = self.parse_expr()
-        Statement.Return(value, start)
+        if value == null {
+            return Statement.Return(Expr.NullLit(start), start)
+        }
+        Statement.Return(value!, start)
     }
 
     fn parse_expr_or_assign(self) -> Statement? {

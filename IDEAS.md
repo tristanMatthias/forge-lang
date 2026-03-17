@@ -1,4 +1,18 @@
 Claude, DO NOT TOUCH THIS FILE under penalty of death
+
+- Forge as the operating layer for autonomous businesses
+- Turn existing SAAS into just keywords (stripe, etc)
+- app store for machine-generated infrastructure.
+- "Joy machines" - Create things that lift human consciousness 
+
+# Philosophy
+Based on the ideas that:
+1. AIs will be writing the majority of code, and humans will be reviewing them (for now) 
+2. The future will be one language (no more fragmented toolchains, environments, languages) and should unify high and low level programming
+3. Compilers should do ALL of the heavy lifting, and code should be as declarative as possible
+4. Escape hatches built in to everything when you don't want magic
+5. DX/Ergonomics is a feature, not an afterthought (errors, docs, tooling, etc) and optmized for LLMs
+
 # TODO
 - Move "provider" naming to "package"
 - Move channel to core, not as a std
@@ -30,6 +44,8 @@ std/mobile
 - shell feature could have better DX with channels etc
 - components/subcomponents
   - @syntax should be removed and just part of component creation
+### New compiler (forgec)
+- new_thing/thing_new is an antipattern, we need a better init/constructor story
 
 # Tooling
 - Test Coverage
@@ -38,6 +54,7 @@ std/mobile
 - Sequence flow diagram for entire codebase
   - Understand how all your services/functions/etc work together
   - Include events, etc to show boundardies
+- Admin dashboard for models (https://github.com/mr-fatalyst/oxyde)
 
 # Marketing / Community / Docs
 - Example grid generator:

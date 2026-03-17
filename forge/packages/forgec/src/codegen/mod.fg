@@ -131,12 +131,21 @@ impl Codegen {
         }
     }
 
-    fn emit_return(self, value: Expr?) {
-        if value != null {
-            let val = self.emit_expr(value!)
-            llvm.build_ret(CG_B, val)
-        } else {
-            llvm.build_ret_void(CG_B)
+    fn emit_return(self, value: Expr) {
+        match value {
+            .NullLit(span) -> { llvm.build_ret_void(CG_B) }
+            .IntLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .FloatLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .StringLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .BoolLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Ident(n, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Binary(l, o, r, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Unary(o, e, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Call(c, a, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .MemberAccess(o, f, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Index(o, i, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Block(b) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .Feature(fe) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
         }
     }
 

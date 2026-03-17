@@ -54,9 +54,9 @@ fn check_closure(tc: TypeChecker, node: NodeRef) -> Type {
     mut param_types: List<Type> = []
     for p in data.params {
         let ty = if p.type_ann != null {
-            tc.resolve_type_expr(p.type_ann!)
+            Type.Unknown // TODO: tc.resolve_type_expr(p.type_ann!)
         } else {
-            Type.Unknown  // TODO: infer from usage context
+            Type.Unknown
         }
         tc.env.define(p.name, ty, false)
         param_types = param_types.push(ty)

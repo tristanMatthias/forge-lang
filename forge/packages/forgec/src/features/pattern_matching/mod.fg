@@ -264,29 +264,15 @@ fn check_match(tc: TypeChecker, node: NodeRef) -> Type {
 }
 
 fn bind_pattern_vars(tc: TypeChecker, pat: Pattern, ty: Type) {
+    // Simplified: only handle Ident binding (bootstrap can't compile
+    // recursive calls with list element access due to type inference bugs)
     match pat {
-        .Wildcard(_) -> {} // binds nothing
-        .Ident(name, _) -> {
-            tc.env.define(name, ty, false)
-        }
-        .Literal(_) -> {} // binds nothing
-        .EnumVariant(_, fields, _) -> {
-            // TODO: resolve variant field types from subject type
-            for field in fields {
-                bind_pattern_vars(tc, field, Type.Unknown)
-            }
-        }
-        .Tuple(elements, _) -> {
-            for elem in elements {
-                bind_pattern_vars(tc, elem, Type.Unknown)
-            }
-        }
-        .Or(alternatives, _) -> {
-            // Bind from first alternative (all should bind same names)
-            if alternatives.length > 0 {
-                bind_pattern_vars(tc, alternatives[0], ty)
-            }
-        }
+        .Wildcard(span) -> {}
+        .Ident(name, span) -> { tc.env.define(name, ty, false) }
+        .Literal(expr) -> {}
+        .EnumVariant(name, fields, span) -> {}
+        .Tuple(elements, span) -> {}
+        .Or(alternatives, span) -> {}
     }
 }
 

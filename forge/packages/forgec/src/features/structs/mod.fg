@@ -31,7 +31,7 @@ type StructLitField = {
 }
 
 type StructLitData = {
-    type_name: string?,
+    type_name: string,
     fields: List<StructLitField>,
     span: Span,
 }
@@ -83,7 +83,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
 // ─── Struct Literal Construction ────────────────
 // Called by expression parser when it detects { ident: expr, ... }
 
-fn make_struct_lit(type_name: string?, fields: List<StructLitField>, span: Span) -> Expr {
+fn make_struct_lit(type_name: string, fields: List<StructLitField>, span: Span) -> Expr {
     let id = next_node_id()
     STRUCT_LITS["${id}"] = StructLitData { type_name, fields, span }
     feature_expr("structs", "struct_lit", id, span)
