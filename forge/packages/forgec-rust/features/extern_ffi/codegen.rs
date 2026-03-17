@@ -30,7 +30,11 @@ impl<'ctx> Codegen<'ctx> {
                 let ret_name = type_expr_name(ty);
                 match ret_name.as_str() {
                     "void" => self.context.void_type().fn_type(&param_types, false),
-                    "string" | "cstring" | "ptr" => {
+                    "string" | "cstring" => {
+                        // Return ForgeString struct {ptr, i64} — not raw ptr
+                        self.string_type().fn_type(&param_types, false)
+                    }
+                    "ptr" => {
                         self.context.ptr_type(AddressSpace::default()).fn_type(&param_types, false)
                     }
                     "int" | "i64" => self.context.i64_type().fn_type(&param_types, false),
