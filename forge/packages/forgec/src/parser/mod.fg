@@ -73,7 +73,7 @@ impl Parser {
         if self.pos < self.tokens.length {
             self.tokens[self.pos]
         } else {
-            Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
         }
     }
 
@@ -82,7 +82,7 @@ impl Parser {
         if idx < self.tokens.length {
             self.tokens[idx]
         } else {
-            Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
         }
     }
 
@@ -134,7 +134,7 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
-        while self.check(.Newline) {
+        while self.check(TokenKind.Newline) {
             self.advance()
         }
     }
@@ -165,7 +165,7 @@ impl Parser {
             }
             offset = offset + 1
         }
-        Token { kind: .Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+        Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
     }
 
     fn next_meaningful_is(self, kind: TokenKind) -> bool {
@@ -216,7 +216,7 @@ impl Parser {
         let start = self.advance().span // consume 'return'
 
         // Check if there's a value (not at end of statement)
-        if self.is_at_end() || self.check(.Newline) || self.check(.RBrace) {
+        if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
             return Statement.Return(null, start)
         }
 
@@ -229,7 +229,7 @@ impl Parser {
         if expr == null { return null }
 
         // Check for assignment: expr = value
-        if self.check(.Eq) {
+        if self.check(TokenKind.Eq) {
             self.advance() // consume =
             let value = self.parse_expr()
             if value == null {
@@ -240,7 +240,7 @@ impl Parser {
         }
 
         // Check for channel send: expr <- value
-        if self.check(.LeftArrow) {
+        if self.check(TokenKind.LeftArrow) {
             self.advance()
             let value = self.parse_expr()
             if value == null {
@@ -259,12 +259,12 @@ impl Parser {
 
     fn parse_block(self) -> Block? {
         let start = self.current_span()
-        if self.expect(.LBrace) == null { return null }
+        if self.expect(TokenKind.LBrace) == null { return null }
 
         self.skip_newlines()
         mut statements: List<Statement> = []
 
-        while !self.check(.RBrace) && !self.is_at_end() {
+        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
@@ -272,7 +272,7 @@ impl Parser {
             self.skip_newlines()
         }
 
-        if self.expect(.RBrace) == null { return null }
+        if self.expect(TokenKind.RBrace) == null { return null }
 
         Block {
             statements,
@@ -287,7 +287,7 @@ impl Parser {
 
     // Parse a block or wrap a single statement in a block
     fn parse_block_or_stmt(self) -> Block? {
-        if self.check(.LBrace) {
+        if self.check(TokenKind.LBrace) {
             self.parse_block()
         } else {
             let start = self.current_span()
@@ -307,7 +307,7 @@ impl Parser {
         if ty == null { return null }
 
         // Check for nullable modifier: Type?
-        if self.check(.Question) {
+        if self.check(TokenKind.Question) {
             let span = self.advance().span
             return TypeExpr.Nullable(ty!, span)
         }
@@ -322,7 +322,7 @@ impl Parser {
             .Ident(name) -> {
                 let start = self.advance().span
                 // Check for generic: Name<A, B>
-                if self.check(.Lt) {
+                if self.check(TokenKind.Lt) {
                     let args = self.parse_type_args()
                     if args != null {
                         return TypeExpr.Generic(name, args!, start)
@@ -356,27 +356,27 @@ impl Parser {
     }
 
     fn parse_type_args(self) -> List<TypeExpr>? {
-        if self.expect(.Lt) == null { return null }
+        if self.expect(TokenKind.Lt) == null { return null }
         mut args: List<TypeExpr> = []
 
-        while !self.check(.Gt) && !self.is_at_end() {
+        while !self.check(TokenKind.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
                 args = args.push(ty!)
             }
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
         // Handle >> as > >
-        if self.check(.ShiftRight) {
+        if self.check(TokenKind.ShiftRight) {
             // Split >> into two > tokens — consume one
             // TODO: proper token splitting
             self.advance()
         } else {
-            if self.expect(.Gt) == null { return null }
+            if self.expect(TokenKind.Gt) == null { return null }
         }
 
         args
@@ -384,23 +384,23 @@ impl Parser {
 
     fn parse_function_type(self) -> TypeExpr? {
         let start = self.advance().span // consume 'fn'
-        if self.expect(.LParen) == null { return null }
+        if self.expect(TokenKind.LParen) == null { return null }
 
         mut params: List<TypeExpr> = []
-        while !self.check(.RParen) && !self.is_at_end() {
+        while !self.check(TokenKind.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
                 params = params.push(ty!)
             }
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
-        if self.expect(.RParen) == null { return null }
+        if self.expect(TokenKind.RParen) == null { return null }
 
         // -> ReturnType
-        let ret = if self.check(.Arrow) {
+        let ret = if self.check(TokenKind.Arrow) {
             self.advance()
             self.parse_type_expr()
         } else {
@@ -414,7 +414,7 @@ impl Parser {
     fn parse_tuple_or_paren_type(self) -> TypeExpr? {
         let start = self.advance().span // consume (
 
-        if self.check(.RParen) {
+        if self.check(TokenKind.RParen) {
             self.advance()
             return TypeExpr.Tuple([], start)
         }
@@ -422,24 +422,24 @@ impl Parser {
         let first = self.parse_type_expr()
         if first == null { return null }
 
-        if self.check(.Comma) {
+        if self.check(TokenKind.Comma) {
             // Tuple type
             self.advance()
             mut elements: List<TypeExpr> = [first!]
-            while !self.check(.RParen) && !self.is_at_end() {
+            while !self.check(TokenKind.RParen) && !self.is_at_end() {
                 self.skip_newlines()
                 let ty = self.parse_type_expr()
                 if ty != null {
                     elements = elements.push(ty!)
                 }
-                if self.check(.Comma) {
+                if self.check(TokenKind.Comma) {
                     self.advance()
                 }
             }
-            if self.expect(.RParen) == null { return null }
+            if self.expect(TokenKind.RParen) == null { return null }
 
             // Check for -> ReturnType (function type)
-            if self.check(.Arrow) {
+            if self.check(TokenKind.Arrow) {
                 self.advance()
                 let ret = self.parse_type_expr()
                 if ret == null { return null }
@@ -449,10 +449,10 @@ impl Parser {
             return TypeExpr.Tuple(elements, start)
         }
 
-        if self.expect(.RParen) == null { return null }
+        if self.expect(TokenKind.RParen) == null { return null }
 
         // Check for -> ReturnType (single-param function type)
-        if self.check(.Arrow) {
+        if self.check(TokenKind.Arrow) {
             self.advance()
             let ret = self.parse_type_expr()
             if ret == null { return null }
@@ -467,52 +467,52 @@ impl Parser {
         let start = self.advance().span // consume {
         mut fields: List<TypeField> = []
 
-        while !self.check(.RBrace) && !self.is_at_end() {
+        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
-            let mutable = if self.check(.Mut) {
+            let mutable = if self.check(TokenKind.Mut) {
                 self.advance()
                 true
             } else { false }
             let name = self.expect_ident()
             if name == null { return null }
-            if self.expect(.Colon) == null { return null }
+            if self.expect(TokenKind.Colon) == null { return null }
             let ty = self.parse_type_expr()
             if ty == null { return null }
             fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
             self.skip_newlines()
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        if self.expect(.RBrace) == null { return null }
+        if self.expect(TokenKind.RBrace) == null { return null }
         TypeExpr.Struct(fields, start)
     }
 
     // ─── Parameter Parsing ─────────────────────
 
     fn parse_params(self) -> List<Param>? {
-        if self.expect(.LParen) == null { return null }
+        if self.expect(TokenKind.LParen) == null { return null }
         mut params: List<Param> = []
 
-        while !self.check(.RParen) && !self.is_at_end() {
+        while !self.check(TokenKind.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
             }
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        if self.expect(.RParen) == null { return null }
+        if self.expect(TokenKind.RParen) == null { return null }
         params
     }
 
     fn parse_param(self) -> Param? {
         let start = self.current_span()
-        let mutable = if self.check(.Mut) {
+        let mutable = if self.check(TokenKind.Mut) {
                 self.advance()
                 true
             } else { false }
@@ -520,7 +520,7 @@ impl Parser {
         if name == null { return null }
 
         // Optional type annotation: : Type
-        let type_ann = if self.check(.Colon) {
+        let type_ann = if self.check(TokenKind.Colon) {
             self.advance()
             self.parse_type_expr()
         } else {
@@ -528,7 +528,7 @@ impl Parser {
         }
 
         // Optional default value: = expr
-        let default_value = if self.check(.Eq) {
+        let default_value = if self.check(TokenKind.Eq) {
             self.advance()
             self.parse_expr()
         } else {
@@ -541,23 +541,23 @@ impl Parser {
     // ─── Type Parameters ───────────────────────
 
     fn parse_type_params(self) -> List<string> {
-        if !self.check(.Lt) { return [] }
+        if !self.check(TokenKind.Lt) { return [] }
         self.advance() // consume <
 
         mut params: List<string> = []
-        while !self.check(.Gt) && !self.is_at_end() {
+        while !self.check(TokenKind.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let name = self.expect_ident()
             if name != null {
                 params = params.push(name!)
             }
             // TODO: bounds (T: Clone)
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        if self.expect(.Gt) == null { return params }
+        if self.expect(TokenKind.Gt) == null { return params }
         params
     }
 
@@ -573,7 +573,7 @@ impl Parser {
                 items = items.push(item!)
             }
             self.skip_newlines()
-            if self.check(.Comma) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }

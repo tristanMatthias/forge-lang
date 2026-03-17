@@ -231,7 +231,17 @@ impl<'ctx> Codegen<'ctx> {
                             self.builder.build_return(Some(&v)).unwrap();
                         }
                     } else {
-                        self.builder.build_return(None).unwrap();
+                        // compile_expr returned None — return default for the function type
+                        if let Some(ret_ty) = self.current_fn_return_type.clone() {
+                            if ret_ty != Type::Void {
+                                let default = self.default_value(&ret_ty);
+                                self.builder.build_return(Some(&default)).unwrap();
+                            } else {
+                                self.builder.build_return(None).unwrap();
+                            }
+                        } else {
+                            self.builder.build_return(None).unwrap();
+                        }
                     }
                 } else if self.current_fn_name.as_deref() == Some("main") {
                     // main() returns i32 for C ABI, so bare return must emit `ret i32 0`
@@ -423,7 +433,13 @@ impl<'ctx> Codegen<'ctx> {
                         .build_return(Some(&self.context.i32_type().const_zero()))
                         .unwrap();
                 } else {
-                    self.builder.build_return(None).unwrap();
+                    // Bare return in non-void function — return default
+                    if ret_ty != Type::Void {
+                        let default = self.default_value(&ret_ty);
+                        self.builder.build_return(Some(&default)).unwrap();
+                    } else {
+                        self.builder.build_return(None).unwrap();
+                    }
                 }
                 self.pop_scope();
                 self.current_fn_name = prev_fn_name;
