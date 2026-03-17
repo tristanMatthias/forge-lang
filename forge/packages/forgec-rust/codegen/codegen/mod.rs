@@ -338,9 +338,37 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
             }
         } else {
-            // Normal path: compile all statements, then auto-create main if needed for startup/shutdown
+            // Normal path: compile declarations first, then main() handles the rest.
+            // Global mut inits must happen inside main() (not at file scope) because
+            // Map {} initialization needs runtime allocation.
+            let mut deferred_global_inits: Vec<Statement> = Vec::new();
             for stmt in &program.statements {
-                self.compile_statement(stmt);
+                match stmt {
+                    Statement::Mut { .. } => {
+                        // Defer global mut inits to run inside main() startup
+                        deferred_global_inits.push(stmt.clone());
+                    }
+                    Statement::Feature(fe) if fe.feature_id == "variables"
+                        && (fe.kind == "Mut" || fe.kind == "mut_decl") => {
+                        deferred_global_inits.push(stmt.clone());
+                    }
+                    _ => {
+                        self.compile_statement(stmt);
+                    }
+                }
+            }
+            // Compile deferred global inits at the start of main()
+            if !deferred_global_inits.is_empty() {
+                if let Some(main_fn) = self.module.get_function("main") {
+                    // Insert init block at the very beginning of main
+                    let first_bb = main_fn.get_first_basic_block().unwrap();
+                    let init_bb = self.context.prepend_basic_block(first_bb, "global_init");
+                    self.builder.position_at_end(init_bb);
+                    for stmt in &deferred_global_inits {
+                        self.compile_statement(stmt);
+                    }
+                    self.builder.build_unconditional_branch(first_bb).unwrap();
+                }
             }
 
             if self.module.get_function("main").is_none() {
