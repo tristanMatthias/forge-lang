@@ -41,10 +41,22 @@ impl<'ctx> Codegen<'ctx> {
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
             Type::Tuple(elems) => elems.iter().map(|e| self.type_i64_slots(e)).sum(),
             Type::Struct { fields, .. } => fields.iter().map(|(_, t)| self.type_i64_slots(t)).sum(),
-            Type::Enum { variants, .. } => {
+            Type::Enum { name, variants, .. } => {
+                // If variants is empty, this is a stub (self-referential type).
+                // Look up the full type from the registry.
+                let actual_variants = if variants.is_empty() {
+                    self.type_checker.env.enum_types.get(name)
+                        .and_then(|t| match t {
+                            Type::Enum { variants: v, .. } => Some(v.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_default()
+                } else {
+                    variants.clone()
+                };
                 // tag (1 slot) + max variant payload
                 // Boxed (self-referential) fields count as 1 slot (pointer)
-                let max_payload = variants.iter().map(|v| {
+                let max_payload = actual_variants.iter().map(|v| {
                     v.fields.iter().enumerate().map(|(i, (_, ty))| {
                         if v.boxed_fields.contains(&i) {
                             1 // pointer-sized
@@ -148,14 +160,23 @@ impl<'ctx> Codegen<'ctx> {
                     )
                     .into()
             }
-            Type::Enum { variants, .. } => {
+            Type::Enum { name, variants, .. } => {
+                // If variants is empty, this is a stub — look up the full type
+                let actual_variants = if variants.is_empty() {
+                    self.type_checker.env.enum_types.get(name)
+                        .and_then(|t| match t {
+                            Type::Enum { variants: v, .. } => Some(v.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_default()
+                } else {
+                    variants.clone()
+                };
                 // Tagged union using i64 slots for type-safe union storage.
-                // Compute max i64 slots needed across all variants' fields.
-                // Boxed (self-referential) fields count as 1 slot (pointer).
-                let max_slots = variants.iter().map(|v| {
+                let max_slots = actual_variants.iter().map(|v| {
                     v.fields.iter().enumerate().map(|(i, (_, ty))| {
                         if v.boxed_fields.contains(&i) {
-                            1 // pointer-sized
+                            1
                         } else {
                             self.type_i64_slots(ty)
                         }

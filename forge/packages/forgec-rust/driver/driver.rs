@@ -442,18 +442,12 @@ impl Driver {
             }
             bp.add("packages_load", t.elapsed());
 
-            // Verify module — log but don't fail for non-fatal issues
+            // Verify module
             if let Err(msg) = codegen.module.verify() {
-                let detail = msg.to_string();
-                // Fatal: dominance violations, use-after-free
-                if detail.contains("does not dominate") || detail.contains("Use still stuck") {
-                    return Err(CompileError::CodegenFailed {
-                        stage: "LLVM module verification",
-                        detail,
-                    });
-                }
-                // Non-fatal: PHI type mismatches from anonymous struct types,
-                // return type wrapping — continue with JIT execution
+                return Err(CompileError::CodegenFailed {
+                    stage: "LLVM module verification",
+                    detail: msg.to_string(),
+                });
             }
 
             // Create JIT execution engine
