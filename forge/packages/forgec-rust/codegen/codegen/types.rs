@@ -2,13 +2,19 @@ use super::*;
 
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn string_type(&self) -> StructType<'ctx> {
-        self.context.struct_type(
+        // Use named type to ensure all ForgeString values have the same LLVM type
+        if let Some(existing) = self.context.get_struct_type("ForgeString") {
+            return existing;
+        }
+        let st = self.context.opaque_struct_type("ForgeString");
+        st.set_body(
             &[
-                self.context.ptr_type(AddressSpace::default()).into(), // ptr
-                self.context.i64_type().into(),                        // len
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.i64_type().into(),
             ],
             false,
-        )
+        );
+        st
     }
 
     pub(crate) fn to_i1(&self, val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
