@@ -101,6 +101,9 @@ pub struct Codegen<'ctx> {
     /// When true, compile_call skips auto-wrapping ptr→ForgeString for extern fns.
     /// Set when `let x: ptr = extern_fn(...)` — the caller wants the raw pointer.
     pub(crate) suppress_string_wrap: bool,
+    /// Cache for LLVM struct types keyed by a type key string.
+    /// Uses RefCell so type_to_llvm_basic can stay &self.
+    pub(crate) llvm_type_cache: std::cell::RefCell<HashMap<String, inkwell::types::BasicTypeEnum<'ctx>>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -131,6 +134,7 @@ impl<'ctx> Codegen<'ctx> {
             fn_return_types: HashMap::new(),
             json_parse_hint: None,
             struct_target_type: None,
+            llvm_type_cache: std::cell::RefCell::new(HashMap::new()),
             deferred_stmts: Vec::new(),
             source_file: String::new(),
             suppress_string_wrap: false,

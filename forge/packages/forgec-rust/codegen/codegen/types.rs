@@ -79,12 +79,30 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub(crate) fn type_to_llvm_basic(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
+        // Cache composite types to ensure the same Forge type always
+        // produces the same LLVM type object (prevents PHI type mismatches)
+        let cache_key = format!("{:?}", ty);
+        if let Some(cached) = self.llvm_type_cache.borrow().get(&cache_key) {
+            return *cached;
+        }
+        let result = self.type_to_llvm_basic_inner(ty);
+        match ty {
+            Type::Struct { .. } | Type::Enum { .. } | Type::Nullable(_)
+            | Type::Result(_, _) | Type::Tuple(_) => {
+                self.llvm_type_cache.borrow_mut().insert(cache_key, result);
+            }
+            _ => {}
+        }
+        result
+    }
+
+    fn type_to_llvm_basic_inner(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
         match ty {
             Type::Int | Type::Channel(_) => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),
             Type::Bool => self.context.i8_type().into(),
             Type::String => self.string_type().into(),
-            Type::Void => self.context.i8_type().into(), // represent void as i8 when needed
+            Type::Void => self.context.i8_type().into(),
             Type::Ptr => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Nullable(inner) => {
                 let inner_ty = self.type_to_llvm_basic(inner);
