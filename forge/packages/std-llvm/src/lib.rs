@@ -20,6 +20,9 @@ extern "C" {
     fn LLVMSetTarget(m: LLVMPtr, triple: *const c_char);
     fn LLVMSetDataLayout(m: LLVMPtr, layout: *const c_char);
 
+    // Size
+    fn LLVMSizeOf(ty: LLVMPtr) -> LLVMPtr;
+
     // Types
     fn LLVMInt1TypeInContext(ctx: LLVMPtr) -> LLVMPtr;
     fn LLVMInt8TypeInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -623,6 +626,11 @@ pub extern "C" fn forge_llvm_add_case(switch: LLVMPtr, on_val: LLVMPtr, dest: LL
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMConstNull(ty) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_size_of(ty: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMSizeOf(ty) }
 }
 
 #[no_mangle]

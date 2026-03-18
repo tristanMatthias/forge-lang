@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -454,8 +454,8 @@ impl Parser {
                         result_is_str = true
                     } else {
                         // List/array indexing: GEP + load from data pointer
-                        // Use pre-computed is_str_list (from index_obj_name, not LAST_IDENT_NAME)
-                        let elem_ty = if is_str_list { CG_STR } else { CG_I64 }
+                        // Use correct element type (int=8B, string=16B, struct=varies)
+                        let elem_ty = if is_list { list_elem_llvm_type(index_obj_name) } else { CG_I64 }
                         let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "list_data")
                         let indices = llvm.value_array_new(1)
                         llvm.value_array_set(indices, 0, idx_val)
@@ -464,7 +464,12 @@ impl Parser {
                         let elem_val = llvm.build_load(CG_B, elem_ty, elem_ptr, "elem")
                         result_is_llvm = true
                         result_llvm = elem_val
-                        result_is_str = is_str_list
+                        // Track type: string elements → str, struct elements → set struct type
+                        let elem_type_name = if is_list { list_elem_type(index_obj_name) } else { "" }
+                        result_is_str = elem_type_name == "string"
+                        if elem_type_name != "" && elem_type_name != "string" && elem_type_name != "int" {
+                            CG_LAST_STRUCT_TYPE = elem_type_name
+                        }
                     }
                     result = Expr.IntLit(0, span)
                     continue
@@ -1398,8 +1403,8 @@ impl Parser {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let item_val = cg.emit_expr(args[0])
-                let str_elems = is_str_list_var(obj_var_name)
-                return emit_list_push_sized(obj_val, item_val, str_elems)
+                let elem_ty = list_elem_llvm_type(obj_var_name)
+                return emit_list_push_typed(obj_val, item_val, elem_ty)
             }
         }
 
@@ -1667,13 +1672,13 @@ fn emit_template_expr(text: string) -> ptr {
 // ─── List Operations ────────────────────────────
 
 fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
-    emit_list_push_sized(list_val, item_val, false)
+    emit_list_push_typed(list_val, item_val, CG_I64)
 }
 
-fn emit_list_push_sized(list_val: ptr, item_val: ptr, str_elems: bool) -> ptr {
+fn emit_list_push_typed(list_val: ptr, item_val: ptr, elem_ty: ptr) -> ptr {
     // List is {ptr data, i64 count}
-    let elem_size_val = if str_elems { llvm.const_int(CG_I64, 16, 0) } else { llvm.const_int(CG_I64, 8, 0) }
-    let elem_ty = if str_elems { CG_STR } else { CG_I64 }
+    // Element size from LLVM's sizeof (returns i64 constant)
+    let elem_size_val = llvm.size_of(elem_ty)
 
     // 1. Extract data_ptr and count
     let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "list_data")

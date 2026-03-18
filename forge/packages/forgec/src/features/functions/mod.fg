@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_TOPLEVEL_SOURCES, create_llvm_globals}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -62,9 +62,9 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     // Capture body source by reconstructing from token positions
     // Use raw source between the { and } tokens (span-based extraction)
     let block_open_span = p.peek().span  // span of the {
-    IN_FUNCTION_BODY = true
+    IN_FUNCTION_BODY = 1
     let body = p.parse_block()
-    IN_FUNCTION_BODY = false
+    IN_FUNCTION_BODY = 0
     // The } token was consumed by parse_block, so peek_at(-1) is the }
     // Use the source positions: from block_open to current position
     let block_close_end = if p.pos > 0 { p.tokens[p.pos - 1].span.end } else { block_open_span.end }
@@ -393,8 +393,7 @@ fn materialize_struct_types() {
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Create LLVM globals for top-level variables
-    create_llvm_globals()
+    // Note: LLVM globals are created in main.fg before emit_program is called
 
     // Materialize struct types: create LLVM types for structs registered during initial parse
     // Simple approach: for each registered struct, create all-i64 fields

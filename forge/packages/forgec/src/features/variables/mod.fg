@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new, store_toplevel_source, register_global}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -37,10 +37,16 @@ fn get_var_decl(node_id: int) -> VarDeclData? {
 // ─── Parse ──────────────────────────────────────
 
 // Track whether we're inside a function body (to detect top-level globals)
-export mut IN_FUNCTION_BODY: bool = false
+export mut IN_FUNCTION_BODY: int = 0
+
+// Global variable tracking
+export mut VAR_GLOBAL_COUNT: int = 0
+export mut VAR_GLOBAL_NAMES: List<string> = []
+// Bitmask: bit i = 1 if global i is string/list type
+export mut VAR_GLOBAL_STR_MASK: int = 0
+export mut VAR_GLOBAL_IS_STR: int = 0
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
-    let start_pos = p.pos
     let start = p.advance().span // consume let/mut/const
 
     let var_name = p.expect_ident()
@@ -61,67 +67,33 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
+    // Peek at value token to detect type for globals (before parse_expr consumes it)
+    let value_tok_kind = p.peek().kind_id
+    // kind_id 4 = StringLit, 2 = IntLit, 3 = FloatLit
+    // LBracket = list literal, LBrace = map literal
+    let value_tok_key = p.kind_to_key(p.peek().kind)
+
     let value = p.parse_expr()
     if value == null {
         p.error("expected expression after '='")
         return null
     }
 
-    // If this is a top-level variable (not inside a function body),
-    // register it as a global and capture source for initialization
-    if !CG_ACTIVE && !IN_FUNCTION_BODY {
-        // Infer type from type annotation or initializer
-        mut type_name = "int"
-        match value! {
-            .StringLit(v, s) -> { type_name = "string" }
-            .Block(b) -> {
-                // Empty block {} → map, or [] → list
-                // Heuristic: check if type_ann contains "List" or "Map"
-                // For now, use "list" for empty blocks since [] parses as Block
-                type_name = "list"
+    // Register top-level globals with type detection from value token
+    if IN_FUNCTION_BODY != 1 {
+        // Set bit in bitmask if this is a string/list/map global
+        if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
+            // Set bit VAR_GLOBAL_COUNT in the mask (1 << count)
+            mut bit = 1
+            mut shift = 0
+            while shift < VAR_GLOBAL_COUNT {
+                bit = bit * 2
+                shift = shift + 1
             }
-            _ -> {}
+            VAR_GLOBAL_STR_MASK = VAR_GLOBAL_STR_MASK + bit
         }
-        // Override with type annotation if present
-        // Scan tokens before = to find List<string>, List<int>, Map, string
-        mut found_list = false
-        mut found_list_str = false
-        mut scan = start_pos + 1
-        while scan < p.tokens.length {
-            let stok = p.tokens[scan]
-            if stok.kind_id == 1 {
-                if stok.text == "List" {
-                    found_list = true
-                    type_name = "list"
-                    // Check if next tokens are <string>
-                    if scan + 2 < p.tokens.length {
-                        let next1 = p.tokens[scan + 1]
-                        let next2 = p.tokens[scan + 2]
-                        if p.kind_to_key(next1.kind) == "Lt" && next2.kind_id == 1 && next2.text == "string" {
-                            type_name = "list_str"
-                            found_list_str = true
-                        }
-                    }
-                }
-                else if stok.text == "Map" { type_name = "map" }
-                else if stok.text == "string" && !found_list { type_name = "string" }
-            }
-            // Stop at = sign
-            if p.kind_to_key(stok.kind) == "Eq" { break }
-            scan = scan + 1
-        }
-        // Register as global variable
-        register_global(var_name, type_name)
-        // Capture source text for init in main
-        if p.source.length > 0 {
-            let end_pos = if p.pos > 0 && p.pos <= p.tokens.length {
-                p.tokens[p.pos - 1].span.end + 1
-            } else { start.end }
-            if end_pos > start.start {
-                let src = p.source.substring(start.start, end_pos)
-                store_toplevel_source(src)
-            }
-        }
+        VAR_GLOBAL_COUNT = VAR_GLOBAL_COUNT + 1
+        VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
     }
 
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)

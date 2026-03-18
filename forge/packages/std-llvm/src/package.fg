@@ -121,6 +121,7 @@ extern fn forge_llvm_const_null(ty: ptr) -> ptr
 extern fn forge_llvm_get_undef(ty: ptr) -> ptr
 extern fn forge_llvm_const_real(ty: ptr, value: float) -> ptr
 extern fn forge_llvm_const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr
+extern fn forge_llvm_size_of(ty: ptr) -> ptr
 extern fn forge_llvm_add_global(m: ptr, ty: ptr, name: string) -> ptr
 extern fn forge_llvm_set_initializer(global: ptr, val: ptr)
 extern fn forge_llvm_set_global_constant(global: ptr, is_constant: int)
@@ -576,6 +577,11 @@ export fn const_real(ty: ptr, value: float) -> ptr {
 /// Create a constant struct from the given values.
 export fn const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr {
     forge_llvm_const_struct(ctx, values, count, packed)
+}
+
+/// Get the size of a type as a ConstantExpr (i64).
+export fn size_of(ty: ptr) -> ptr {
+    forge_llvm_size_of(ty)
 }
 
 /// Add a global variable to a module.

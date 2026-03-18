@@ -17,7 +17,8 @@ use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
-use codegen.{codegen_new}
+use codegen.{codegen_new, create_globals_typed}
+use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 
 fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
@@ -81,6 +82,8 @@ fn build_compile(source: string, filename: string, output: string) {
     }
 
     codegen_init(filename)
+    // Create LLVM globals for top-level variables
+    create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     mut cg = codegen_new()
     cg.emit_program(program)
 

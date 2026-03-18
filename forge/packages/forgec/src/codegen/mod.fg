@@ -53,11 +53,12 @@ export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
 // Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
 export mut CG_LIST_VAR_CSV: string = ""        // all list vars
 export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
+// Track list element type names: ",varname:typename," format
+export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
 
-// Top-level global variable tracking
-export mut CG_GLOBAL_NAMES: List<string> = []     // variable names
-export mut CG_GLOBAL_TYPES: List<string> = []     // "int", "string", "list", "map"
-export mut CG_TOPLEVEL_SOURCES: List<string> = [] // init source text for main
+// Top-level global variable tracking (CSV strings — List<string> globals unreliable)
+export mut CG_GLOBAL_CSV: string = ""  // ",name:type,name:type," format
+export mut CG_GLOBAL_COUNT: int = 0
 
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
@@ -116,25 +117,69 @@ export fn store_toplevel_source(src: string) {
     CG_TOPLEVEL_SOURCES = CG_TOPLEVEL_SOURCES.push(src)
 }
 
-// Register a global variable (creates LLVM global + adds to CG_VAR lookup)
-export fn register_global(name: string, type_name: string) {
-    CG_GLOBAL_NAMES = CG_GLOBAL_NAMES.push(name)
-    CG_GLOBAL_TYPES = CG_GLOBAL_TYPES.push(type_name)
+// Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
+// which covers int (wastes 8 bytes), string, and list values.
+export fn create_globals_typed(names: List<string>, str_mask: int) {
+    mut i = 0
+    while i < names.length {
+        let name = names[i]
+        // Check bitmask: bit i set = string/list type
+        mut bit = 1
+        mut shift = 0
+        while shift < i {
+            bit = bit * 2
+            shift = shift + 1
+        }
+        let is_str = (str_mask / bit) % 2 == 1
+        mut gty = if is_str { CG_STR } else { CG_I64 }
+        let gv = llvm.add_global(CG_MOD, gty, name)
+        let zero = if is_str { llvm.const_null(gty) } else { llvm.const_int(CG_I64, 0, 0) }
+        llvm.set_initializer(gv, zero)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        if is_str {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+        }
+        i = i + 1
+    }
 }
 
 // Create LLVM globals for all registered global variables.
-// Must be called after codegen_init() but before emit_all_fn_bodies().
-export fn create_llvm_globals() {
-    mut i = 0
-    while i < CG_GLOBAL_NAMES.length {
-        let name = CG_GLOBAL_NAMES[i]
-        let type_name = CG_GLOBAL_TYPES[i]
+// Parses CSV string with "name:type\n" entries.
+export fn create_llvm_globals_from(csv: string, count: int) {
+    if count == 0 { return }
+    mut pos = 0
+    let csv_len = csv.length
+    while pos < csv_len {
+        // Read name (until :)
+        mut name = ""
+        while pos < csv_len && csv[pos] != ":" {
+            name = name + csv[pos]
+            pos = pos + 1
+        }
+        if pos >= csv_len { break }
+        pos = pos + 1 // skip :
+        // Read type (until \n)
+        mut type_name = ""
+        while pos < csv_len && csv[pos] != "\n" {
+            type_name = type_name + csv[pos]
+            pos = pos + 1
+        }
+        if pos < csv_len { pos = pos + 1 } // skip \n
+        if name == "" { break }
+
         // Determine LLVM type
         mut gty = CG_I64
-        let is_list = type_name == "list" || type_name == "list_str"
+        let is_list_struct = type_name.length > 12 && type_name.substring(0, 12) == "list_struct:"
+        let is_list = type_name == "list" || type_name == "list_str" || is_list_struct
         if type_name == "string" || is_list { gty = CG_STR }
         else if type_name == "map" { gty = CG_PTR }
-        // Create LLVM global with zero/null initializer
+
         let gv = llvm.add_global(CG_MOD, gty, name)
         let zero = if type_name == "string" || is_list {
             llvm.const_null(gty)
@@ -144,6 +189,7 @@ export fn create_llvm_globals() {
             llvm.const_int(CG_I64, 0, 0)
         }
         llvm.set_initializer(gv, zero)
+
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
@@ -155,14 +201,19 @@ export fn create_llvm_globals() {
         if type_name == "map" {
             CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
         }
-        // Track list variables in CSV strings (reliable across bootstrap)
+        // Track list info
         if is_list {
             CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+            if type_name == "list_str" {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+            } else if is_list_struct {
+                let elem_type = type_name.substring(12, type_name.length)
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:${elem_type},"
+            } else {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:int,"
+            }
         }
-        if type_name == "list_str" {
-            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-        }
-        i = i + 1
     }
 }
 
@@ -197,6 +248,54 @@ export fn is_list_var(name: string) -> bool {
 // Check if a variable is a list with string elements (16-byte stride)
 export fn is_str_list_var(name: string) -> bool {
     csv_contains(CG_STR_LIST_VAR_CSV, name)
+}
+
+// Get the element type name for a list variable. Returns "" if not found.
+export fn list_elem_type(name: string) -> string {
+    // Search CG_LIST_ELEM_TYPE_CSV for ",name:type,"
+    let needle = ",${name}:"
+    let nl = needle.length
+    let cl = CG_LIST_ELEM_TYPE_CSV.length
+    mut i = 0
+    while i <= cl - nl {
+        mut match_ok = true
+        mut j = 0
+        while j < nl {
+            if CG_LIST_ELEM_TYPE_CSV[i + j] != needle[j] {
+                match_ok = false
+                break
+            }
+            j = j + 1
+        }
+        if match_ok {
+            // Found — extract type until next comma
+            mut type_start = i + nl
+            mut type_end = type_start
+            while type_end < cl && CG_LIST_ELEM_TYPE_CSV[type_end] != "," {
+                type_end = type_end + 1
+            }
+            return CG_LIST_ELEM_TYPE_CSV.substring(type_start, type_end)
+        }
+        i = i + 1
+    }
+    ""
+}
+
+// Get the LLVM element type for a list variable
+export fn list_elem_llvm_type(name: string) -> ptr {
+    let elem = list_elem_type(name)
+    if elem == "string" { return CG_STR }
+    if elem == "int" || elem == "" { return CG_I64 }
+    // Struct type — look up in struct registry
+    mut si = CG_STRUCT_NAMES.length - 1
+    while si >= 0 {
+        if CG_STRUCT_NAMES[si] == elem {
+            let sty = CG_STRUCT_TYPES[si]
+            if sty != null { return sty }
+        }
+        si = si - 1
+    }
+    CG_I64
 }
 
 // ─── Codegen Methods ───────────────────────────

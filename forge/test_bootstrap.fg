@@ -1,147 +1,22 @@
-// Mini Forge Lexer+Parser — bootstrap test
+// Test: mixed int + string/list globals
 
-use @std.process
-mod core
+mut COUNTER: int = 0
+mut ITEMS: List<string> = []
 
-export mut TOKENS: List<string> = []
-export mut TOKEN_IDS: List<int> = []
-
-fn add_token(kid: int, txt: string) {
-    TOKENS = TOKENS.push(txt)
-    TOKEN_IDS = TOKEN_IDS.push(kid)
-}
-
-fn lex(source: string) {
-    mut pos = 0
-    while pos < source.length {
-        let ch = source[pos]
-        if ch == " " || ch == "\t" {
-            pos = pos + 1
-        } else if ch == "\n" {
-            add_token(14, "\n")
-            pos = pos + 1
-        } else if ch == "(" {
-            add_token(6, "(")
-            pos = pos + 1
-        } else if ch == ")" {
-            add_token(7, ")")
-            pos = pos + 1
-        } else if ch == "{" {
-            add_token(8, "{")
-            pos = pos + 1
-        } else if ch == "}" {
-            add_token(9, "}")
-            pos = pos + 1
-        } else if ch == "=" {
-            add_token(10, "=")
-            pos = pos + 1
-        } else if ch == "+" {
-            add_token(11, "+")
-            pos = pos + 1
-        } else if ch >= "a" && ch <= "z" {
-            mut word = ""
-            while pos < source.length && source[pos] >= "a" && source[pos] <= "z" {
-                word = word + source[pos]
-                pos = pos + 1
-            }
-            if word == "fn" { add_token(4, word) }
-            else if word == "let" { add_token(3, word) }
-            else if word == "return" { add_token(5, word) }
-            else { add_token(0, word) }
-        } else if ch >= "0" && ch <= "9" {
-            mut num = ""
-            while pos < source.length && source[pos] >= "0" && source[pos] <= "9" {
-                num = num + source[pos]
-                pos = pos + 1
-            }
-            add_token(1, num)
-        } else {
-            pos = pos + 1
-        }
-    }
-    add_token(99, "")
-}
-
-export mut FN_NAMES: List<string> = []
-export mut FN_PARAMS: List<int> = []
-export mut POS: int = 0
-
-fn peek_id() -> int {
-    if POS < TOKEN_IDS.length { return TOKEN_IDS[POS] }
-    return 99
-}
-
-fn peek_text() -> string {
-    if POS < TOKENS.length { return TOKENS[POS] }
-    return ""
-}
-
-fn advance_tok() -> string {
-    let txt = peek_text()
-    POS = POS + 1
-    return txt
-}
-
-fn skip_nl() {
-    while peek_id() == 14 { advance_tok() }
-}
-
-fn parse() {
-    skip_nl()
-    while peek_id() != 99 {
-        skip_nl()
-        if peek_id() == 4 {
-            advance_tok()
-            let name = advance_tok()
-            FN_NAMES = FN_NAMES.push(name)
-            advance_tok() // (
-            mut pc = 0
-            while peek_id() != 7 && peek_id() != 99 {
-                advance_tok()
-                pc = pc + 1
-            }
-            advance_tok() // )
-            FN_PARAMS = FN_PARAMS.push(pc)
-            skip_nl()
-            if peek_id() == 8 {
-                mut depth = 1
-                advance_tok()
-                while depth > 0 && peek_id() != 99 {
-                    let kid = peek_id()
-                    advance_tok()
-                    if kid == 8 { depth = depth + 1 }
-                    if kid == 9 { depth = depth - 1 }
-                }
-            }
-        } else {
-            advance_tok()
-        }
-        skip_nl()
-    }
-}
+fn bump() { COUNTER = COUNTER + 1 }
+fn add(s: string) { ITEMS = ITEMS.push(s) }
 
 fn main() {
-    let source = "fn add(a b) {\n  return a + b\n}\n\nfn main() {\n  let x = 42\n}\n"
-    lex(source)
-    println(TOKENS.length)
+    bump()
+    bump()
+    bump()
+    println(COUNTER)
 
-    parse()
-    println(FN_NAMES.length)
+    add("hello")
+    add("world")
+    println(ITEMS.length)
+    println(ITEMS[0])
+    println(ITEMS[1])
 
-    mut i = 0
-    while i < FN_NAMES.length {
-        println(FN_NAMES[i])
-        println(FN_PARAMS[i])
-        i = i + 1
-    }
-
-    // Break test
-    mut j = 0
-    while j < 100 {
-        if j == 5 { break }
-        j = j + 1
-    }
-    println(j)
-
-    println("BOOTSTRAP PASSED")
+    println("mixed globals work!")
 }
