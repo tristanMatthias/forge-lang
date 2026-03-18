@@ -69,6 +69,7 @@ extern fn forge_llvm_build_global_string_ptr(builder: ptr, s: string, name: stri
 // ── PHI nodes ──
 extern fn forge_llvm_build_phi(builder: ptr, ty: ptr, name: string) -> ptr
 extern fn forge_llvm_add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int)
+extern fn forge_llvm_add_incoming_one(phi: ptr, value: ptr, block: ptr)
 
 // ── Struct Types ──
 extern fn forge_llvm_struct_type(ctx: ptr, element_types: ptr, count: int, packed: int) -> ptr
@@ -370,7 +371,11 @@ export fn build_phi(builder: ptr, ty: ptr, name: string) -> ptr {
 }
 
 /// Add incoming values to a PHI node.
-export fn add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int) {
+export fn add_incoming(phi: ptr, value: ptr, block: ptr) {
+    forge_llvm_add_incoming_one(phi, value, block)
+}
+
+export fn add_incoming_array(phi: ptr, values: ptr, blocks: ptr, count: int) {
     forge_llvm_add_incoming(phi, values, blocks, count)
 }
 

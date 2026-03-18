@@ -14,7 +14,7 @@ use core.ast.{
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type}
-use features.while_loops.PARSE_END_POS
+use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
 export mut PARSED_PARAM_TYPES: List<string> = []
@@ -312,6 +312,20 @@ impl Parser {
         match tok.kind {
             .Return -> {
                 self.parse_return()
+            }
+            .Break -> {
+                self.advance() // consume 'break'
+                if CG_ACTIVE && WHILE_END_BB != null {
+                    llvm.build_br(CG_B, WHILE_END_BB)
+                }
+                Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Continue -> {
+                self.advance() // consume 'continue'
+                if CG_ACTIVE && WHILE_COND_BB != null {
+                    llvm.build_br(CG_B, WHILE_COND_BB)
+                }
+                Statement.Expr(Expr.IntLit(0, tok.span))
             }
             _ -> self.parse_expr_or_assign()
         }

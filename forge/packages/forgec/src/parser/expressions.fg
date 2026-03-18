@@ -123,6 +123,53 @@ impl Parser {
             let op = self.binop_from_key(op_key)
             self.advance()
             self.skip_newlines()
+
+            // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
+            if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
+                mut cg = codegen_new()
+                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                // Truncate LHS to i1
+                let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sc_lhs")
+                let current_bb = llvm.get_insert_block(CG_B)
+                let current_fn = llvm.get_basic_block_parent(current_bb)
+                let rhs_bb = llvm.append_basic_block(CG_CTX, current_fn, "sc.rhs")
+                let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "sc.merge")
+                // For &&: if LHS false → skip to merge (result=0), else eval RHS
+                // For ||: if LHS true → skip to merge (result=1), else eval RHS
+                if op_key == "And" {
+                    llvm.build_cond_br(CG_B, lhs_i1, rhs_bb, merge_bb)
+                } else {
+                    llvm.build_cond_br(CG_B, lhs_i1, merge_bb, rhs_bb)
+                }
+                // Parse+emit RHS inside rhs_bb
+                llvm.position_at_end(CG_B, rhs_bb)
+                let right = self.parse_next_level(level)
+                if right == null { return null }
+                let rhs = cg.emit_expr(right!)
+                // Truncate RHS result to i1
+                let rhs_i1 = llvm.build_trunc(CG_B, rhs, llvm.int1_type(CG_CTX), "sc_rhs_i1")
+                let rhs_end_bb = llvm.get_insert_block(CG_B) // might have changed
+                llvm.build_br(CG_B, merge_bb)
+                // Merge: phi node selects result
+                llvm.position_at_end(CG_B, merge_bb)
+                // For &&: from lhs_bb → 0, from rhs_bb → rhs result
+                // For ||: from lhs_bb → 1, from rhs_bb → rhs result
+                let short_val = if op_key == "And" {
+                    llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
+                } else {
+                    llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
+                }
+                let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sc_phi")
+                llvm.add_incoming(phi, short_val, current_bb)
+                llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
+                let sc_result = llvm.build_zext(CG_B, phi, llvm.int64_type(CG_CTX), "sc_ext")
+                result_is_llvm = true
+                result_llvm = sc_result
+                result_is_str = false
+                result = Expr.IntLit(0, self.current_span())
+                continue
+            }
+
             let right = self.parse_next_level(level)
             if right == null { return null }
             // Capture whether the rhs expression is a string

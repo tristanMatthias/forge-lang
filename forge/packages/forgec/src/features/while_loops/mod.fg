@@ -16,6 +16,10 @@ use @std.llvm
 // Shared by ALL feature parse functions
 export mut PARSE_END_POS: int = -1
 
+// Current while loop's blocks (for break/continue)
+export mut WHILE_COND_BB: ptr = null
+export mut WHILE_END_BB: ptr = null
+
 export fn parse_while(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'while'
     p.skip_newlines()
@@ -28,6 +32,12 @@ export fn parse_while(p: Parser) -> Statement? {
         let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.cond")
         let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.body")
         let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.end")
+
+        // Save outer loop blocks and set current loop blocks
+        let outer_cond = WHILE_COND_BB
+        let outer_end = WHILE_END_BB
+        WHILE_COND_BB = cond_bb
+        WHILE_END_BB = end_bb
 
         // Jump to condition check
         llvm.build_br(CG_B, cond_bb)
@@ -55,6 +65,10 @@ export fn parse_while(p: Parser) -> Statement? {
         if !llvm.block_has_terminator(CG_B) {
             llvm.build_br(CG_B, cond_bb)
         }
+
+        // Restore outer loop blocks
+        WHILE_COND_BB = outer_cond
+        WHILE_END_BB = outer_end
 
         // Continue after loop
         llvm.position_at_end(CG_B, end_bb)

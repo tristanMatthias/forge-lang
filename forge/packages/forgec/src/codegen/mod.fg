@@ -588,13 +588,15 @@ impl Codegen {
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
-                    // Set struct type flag if function returns a struct
+                    // Set type flags based on function return type
                     mut fi = 0
                     while fi < FN_NAMES.length {
                         if FN_NAMES[fi] == name {
                             if fi < FN_RETURN_TYPES.length {
                                 let rtn = FN_RETURN_TYPES[fi]
-                                if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "string" && rtn != "ptr" {
+                                if rtn == "string" {
+                                    CG_LAST_IS_STR = 1
+                                } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
                                     CG_LAST_STRUCT_TYPE = rtn
                                 }
                             }

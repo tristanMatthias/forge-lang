@@ -432,6 +432,15 @@ pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, values: *mut LLVMPtr, bl
     unsafe { LLVMAddIncoming(phi, values, blocks, count as c_uint) }
 }
 
+#[no_mangle]
+pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
+    unsafe {
+        let mut values = [value];
+        let mut blocks = [block];
+        LLVMAddIncoming(phi, values.as_mut_ptr(), blocks.as_mut_ptr(), 1);
+    }
+}
+
 // ── Struct Types ──
 
 #[no_mangle]
