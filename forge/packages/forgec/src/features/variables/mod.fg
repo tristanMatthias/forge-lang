@@ -87,6 +87,9 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
                 cg.define_var(var_name, var_type, val)
             }
         }
+        // Reset flags for next expression
+        CG_LAST_IS_STR = 0
+        CG_HAS_LAST_VAL = 0
     }
 
     PARSE_END_POS = p.pos

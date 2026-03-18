@@ -1,17 +1,8 @@
 fn main() {
-    let nums = [10, 20, 30, 40, 50]
-    println(nums.length)
-    println(nums[0])
-    println(nums[2])
-    println(nums[4])
-
-    // Sum via while loop
+    let nums = [10, 20, 30]
     mut sum = 0
-    mut i = 0
-    while i < nums.length {
-        sum = sum + nums[i]
-        i = i + 1
+    for n in nums {
+        sum = sum + n
     }
     println(sum)
-    println("done!")
 }
