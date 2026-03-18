@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_B, CG_CTX, codegen_new}
+use codegen.{CG_ACTIVE, CG_B, CG_CTX, codegen_new}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -124,7 +124,7 @@ impl Parser {
             let right = self.parse_next_level(level)
             if right == null { return null }
 
-            if CG_B != null {
+            if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Get LHS: either from tracked LLVM value or emit AST
                 let lhs = if result_is_llvm {
@@ -133,7 +133,11 @@ impl Parser {
                     cg.emit_expr(result)
                 }
                 let rhs = cg.emit_expr(right!)
-                let val = emit_binop(lhs, op_key, rhs)
+                mut val = emit_binop(lhs, op_key, rhs)
+                // Comparison ops return i1 — zero-extend to i64 for consistent storage
+                if op_key == "Eq" || op_key == "NotEq" || op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
+                    val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cmpext")
+                }
                 // Track the LLVM value directly (no AST round-trip)
                 result_is_llvm = true
                 result_llvm = val
@@ -520,7 +524,7 @@ impl Parser {
         self.skip_newlines()
 
         // If codegen is active, create LLVM blocks BEFORE parsing bodies
-        if CG_B != null {
+        if CG_ACTIVE {
             mut cg = codegen_new()
             let cond_val = cg.emit_expr(condition!)
             let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")

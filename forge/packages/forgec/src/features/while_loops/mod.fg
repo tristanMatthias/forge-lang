@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_B, CG_I64, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, codegen_new}
 use @std.llvm
 
 // Global to propagate parser position back after free-function parse calls
@@ -21,13 +21,7 @@ export fn parse_while(p: Parser) -> Statement? {
     p.skip_newlines()
 
     // If codegen is active, set up while loop blocks BEFORE parsing body
-    if CG_B != null {
-        // Parse condition
-        let condition = p.parse_expr()
-        if condition == null { return null }
-
-        p.skip_newlines()
-
+    if CG_ACTIVE {
         let current_bb = llvm.get_insert_block(CG_B)
         let current_fn = llvm.get_basic_block_parent(current_bb)
 
@@ -38,8 +32,17 @@ export fn parse_while(p: Parser) -> Statement? {
         // Jump to condition check
         llvm.build_br(CG_B, cond_bb)
 
-        // Emit condition
+        // Position in cond_bb BEFORE parsing condition
+        // (inline binary emit goes into cond_bb so it's re-evaluated each iteration)
         llvm.position_at_end(CG_B, cond_bb)
+
+        // Parse condition (inline emit fires in cond_bb)
+        let condition = p.parse_expr()
+        if condition == null { return null }
+
+        p.skip_newlines()
+
+        // The condition's final value (may be in a temp var from inline binary)
         mut cg = codegen_new()
         let cond_val = cg.emit_expr(condition!)
         let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "whilecond")

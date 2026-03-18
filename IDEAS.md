@@ -17,6 +17,10 @@ Based on the ideas that:
 - Move "provider" naming to "package"
 - Move channel to core, not as a std
 
+# Language
+- Pascal's const recurision declaration
+- Pascal's if i in [0..3, 7, 9, 12..15] 
+
 # Std libs
 - @std/config
 - @@std/logs

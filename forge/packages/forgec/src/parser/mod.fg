@@ -13,7 +13,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use codegen.{CG_B, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{CG_ACTIVE, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -273,7 +273,7 @@ impl Parser {
         // Check if there's a value (not at end of statement)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
             // Bare return — emit void return inline if codegen active
-            if CG_B != null {
+            if CG_ACTIVE {
                 llvm.build_ret_void(CG_B)
             }
             return Statement.Expr(Expr.IntLit(0, start))
@@ -281,14 +281,14 @@ impl Parser {
 
         let value = self.parse_expr()
         if value == null {
-            if CG_B != null {
+            if CG_ACTIVE {
                 llvm.build_ret_void(CG_B)
             }
             return Statement.Expr(Expr.IntLit(0, start))
         }
 
         // Emit return inline during codegen
-        if CG_B != null {
+        if CG_ACTIVE {
             mut cg = codegen_new()
             let ret_val = cg.emit_expr(value!)
             llvm.build_ret(CG_B, ret_val)
@@ -309,7 +309,7 @@ impl Parser {
                 return null
             }
             // Emit assignment inline during re-parse+codegen
-            if CG_B != null {
+            if CG_ACTIVE {
                 // Extract variable name from target (Ident)
                 match expr! {
                     .Ident(name, span) -> {
@@ -346,7 +346,7 @@ impl Parser {
         }
 
         // Emit expression statement inline during codegen
-        if CG_B != null {
+        if CG_ACTIVE {
             mut cg = codegen_new()
             cg.emit_expr(expr!)
         }

@@ -1,7 +1,32 @@
+fn binary_search(target: int) -> int {
+    mut lo = 0
+    mut hi = target
+    while lo <= hi {
+        let mid = lo / 2 + hi / 2
+        let sq = mid * mid
+        if sq == target {
+            return mid
+        } else if sq < target {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return hi
+}
+
 fn main() {
+    println("=== Tests ===")
     let a = 10
     let b = 20
     println(a + b * 2)
     println(a * b + 30)
-    println((a + b) / 2)
+
+    println("isqrt(144):")
+    println(binary_search(144))
+
+    println("isqrt(10000):")
+    println(binary_search(10000))
+
+    println("done!")
 }

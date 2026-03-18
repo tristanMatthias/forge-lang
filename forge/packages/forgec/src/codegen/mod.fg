@@ -26,10 +26,11 @@ mut CG_RT_I2S: ptr = null
 mut CG_RT_SNEW: ptr = null
 
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
-// Note: can't use Map<string, ptr> — ptr values corrupt in Maps (same as DECLARED_FNS)
-// Using parallel lists instead
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
+
+// Flag indicating codegen is active (CG_B != null check unreliable for ptr)
+export mut CG_ACTIVE: bool = false
 
 export type Codegen = {
     mut current_fn: ptr?,
@@ -61,6 +62,7 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
+    CG_ACTIVE = true
 }
 
 export fn codegen_write_ir(path: string) {
@@ -73,6 +75,7 @@ export fn codegen_emit_object(path: string) -> bool {
 }
 
 export fn codegen_cleanup() {
+    CG_ACTIVE = false
     cg_cleanup()
 }
 
