@@ -1,3 +1,13 @@
+fn count_down(n: int) -> int {
+    mut i = n
+    mut count = 0
+    while i > 0 {
+        i = i - 1
+        count = count + 1
+    }
+    return count
+}
+
 fn main() {
-    println(42)
+    println(count_down(5))
 }

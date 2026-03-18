@@ -42,9 +42,15 @@ export fn parse_while(p: Parser) -> Statement? {
 
         // Position in body block, then parse+emit body
         llvm.position_at_end(CG_B, body_bb)
-        eprintln("[parse_while] before body parse pos=${p.pos}")
+        eprintln("[pw] before body pos=${p.pos} total_tokens=${p.tokens.length}")
+        if p.pos < p.tokens.length {
+            eprintln("[pw] token at pos: kid=${p.tokens[p.pos].kind_id} key=${p.kind_to_key(p.tokens[p.pos].kind)}")
+        }
         let body = p.parse_block()
-        eprintln("[parse_while] after body parse pos=${p.pos} stmts=${body.statements.length}")
+        eprintln("[pw] after body pos=${p.pos}")
+        if p.pos < p.tokens.length {
+            eprintln("[pw] token after: kid=${p.tokens[p.pos].kind_id} key=${p.kind_to_key(p.tokens[p.pos].kind)}")
+        }
         // Body is already emitted inline during parsing
         llvm.build_br(CG_B, cond_bb)
 
