@@ -520,6 +520,34 @@ impl Parser {
             return self.parse_struct_literal()
         }
 
+        // Check for empty {} → map literal (when used as value expression)
+        if CG_ACTIVE {
+            // Peek: if next meaningful token after { is }, it's an empty map
+            let next = self.peek_at(1)
+            if self.kind_to_key(next.kind) == "RBrace" || self.kind_to_key(next.kind) == "Newline" {
+                // Check if NEXT after newlines is RBrace
+                mut offset = 1
+                while self.kind_to_key(self.peek_at(offset).kind) == "Newline" {
+                    offset = offset + 1
+                }
+                if self.kind_to_key(self.peek_at(offset).kind) == "RBrace" {
+                    // Empty block → create a map via forge_map_new()
+                    self.advance() // consume {
+                    self.skip_newlines()
+                    self.advance() // consume }
+                    let map_ptr = call_rt_0(CG_RT_MAP_NEW, CG_PTR, "map_new")
+                    BINOP_COUNTER = BINOP_COUNTER + 1
+                    let tmp = "__map${BINOP_COUNTER}"
+                    mut cg = codegen_new()
+                    cg.define_var(tmp, Type.Int, map_ptr)
+                    CG_LAST_IS_STR = 0
+                    CG_LAST_VAL = map_ptr
+                    CG_HAS_LAST_VAL = 1
+                    return Expr.Ident(tmp, self.current_span())
+                }
+            }
+        }
+
         let block = self.parse_block()
         if block == null { return null }
         Expr.Block(block!)
@@ -864,9 +892,23 @@ impl Parser {
         }
 
         if method == "has" {
-            // Map.has(key) → linear scan keys array (simplified)
-            // For now, stub as 0 (false)
-            return llvm.const_int(CG_I64, 0, 0)
+            // Map.has(key) → forge_map_has(map_ptr, key) → i8
+            if args.length >= 1 {
+                mut cg = codegen_new()
+                let key_val = cg.emit_expr(args[0])
+                let has_args = llvm.value_array_new(2)
+                llvm.value_array_set(has_args, 0, obj_val)
+                llvm.value_array_set(has_args, 1, key_val)
+                let has_pt = llvm.type_array_new(2)
+                llvm.type_array_set(has_pt, 0, CG_PTR)
+                llvm.type_array_set(has_pt, 1, CG_STR)
+                let has_ft = llvm.function_type(CG_I8, has_pt, 2, 0)
+                llvm.type_array_free(has_pt)
+                let result = llvm.build_call(CG_B, has_ft, CG_RT_MAP_HAS, has_args, 2, "has")
+                llvm.value_array_free(has_args)
+                // zext i8 to i64
+                return llvm.build_zext(CG_B, result, llvm.int64_type(CG_CTX), "has_ext")
+            }
         }
 
         // Default: return 0
@@ -876,7 +918,17 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+
+fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
+    let args = llvm.value_array_new(0)
+    let param_types = llvm.type_array_new(0)
+    let ft = llvm.function_type(ret_ty, param_types, 0, 0)
+    llvm.type_array_free(param_types)
+    let result = llvm.build_call(CG_B, ft, fn_ref, args, 0, name)
+    llvm.value_array_free(args)
+    result
+}
 
 fn call_rt_1(fn_ref: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(1)

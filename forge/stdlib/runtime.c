@@ -608,6 +608,70 @@ void forge_memcpy(void* dst, void* src, int64_t size) {
     memcpy(dst, src, (size_t)size);
 }
 
+// ---- Map helpers ----
+// Simple linear-scan map: {ForgeString* keys, int64_t* values, int64_t count}
+// Used by the self-hosted compiler for variable/function lookup.
+
+// Pointer-based map: heap-allocated, passed by ptr.
+// {ForgeString* keys, int64_t* values, int64_t count, int64_t capacity}
+typedef struct {
+    ForgeString* keys;
+    int64_t* values;
+    int64_t count;
+    int64_t capacity;
+} ForgeMap;
+
+// Create an empty map (returns heap pointer)
+void* forge_map_new() {
+    ForgeMap* m = (ForgeMap*)malloc(sizeof(ForgeMap));
+    m->capacity = 16;
+    m->keys = (ForgeString*)malloc(m->capacity * sizeof(ForgeString));
+    m->values = (int64_t*)malloc(m->capacity * sizeof(int64_t));
+    m->count = 0;
+    return (void*)m;
+}
+
+// Check if a key exists
+int8_t forge_map_has(void* map_ptr, ForgeString key) {
+    ForgeMap* m = (ForgeMap*)map_ptr;
+    for (int64_t i = 0; i < m->count; i++) {
+        if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Get value by key (returns 0 if not found)
+int64_t forge_map_get(void* map_ptr, ForgeString key) {
+    ForgeMap* m = (ForgeMap*)map_ptr;
+    for (int64_t i = 0; i < m->count; i++) {
+        if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
+            return m->values[i];
+        }
+    }
+    return 0;
+}
+
+// Set value by key (inserts or updates)
+void forge_map_set(void* map_ptr, ForgeString key, int64_t value) {
+    ForgeMap* m = (ForgeMap*)map_ptr;
+    for (int64_t i = 0; i < m->count; i++) {
+        if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
+            m->values[i] = value;
+            return;
+        }
+    }
+    if (m->count >= m->capacity) {
+        m->capacity *= 2;
+        m->keys = (ForgeString*)realloc(m->keys, m->capacity * sizeof(ForgeString));
+        m->values = (int64_t*)realloc(m->values, m->capacity * sizeof(int64_t));
+    }
+    m->keys[m->count] = key;
+    m->values[m->count] = value;
+    m->count++;
+}
+
 // ---- Panic ----
 
 void forge_panic(const char* msg, int64_t msg_len) {
