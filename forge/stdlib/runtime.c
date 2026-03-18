@@ -605,7 +605,9 @@ void forge_exit(int64_t code) {
 // ---- Memory helpers ----
 
 void forge_memcpy(void* dst, void* src, int64_t size) {
-    memcpy(dst, src, (size_t)size);
+    if (size > 0 && src != NULL && dst != NULL) {
+        memcpy(dst, src, (size_t)size);
+    }
 }
 
 // ---- Map helpers ----

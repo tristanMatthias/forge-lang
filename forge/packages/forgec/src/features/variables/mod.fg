@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new, store_toplevel_source, register_global}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -36,7 +36,11 @@ fn get_var_decl(node_id: int) -> VarDeclData? {
 
 // ─── Parse ──────────────────────────────────────
 
+// Track whether we're inside a function body (to detect top-level globals)
+export mut IN_FUNCTION_BODY: bool = false
+
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
+    let start_pos = p.pos
     let start = p.advance().span // consume let/mut/const
 
     let var_name = p.expect_ident()
@@ -61,6 +65,50 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     if value == null {
         p.error("expected expression after '='")
         return null
+    }
+
+    // If this is a top-level variable (not inside a function body),
+    // register it as a global and capture source for initialization
+    if !CG_ACTIVE && !IN_FUNCTION_BODY {
+        // Infer type from type annotation or initializer
+        mut type_name = "int"
+        match value! {
+            .StringLit(v, s) -> { type_name = "string" }
+            .Block(b) -> {
+                // Empty block {} → map, or [] → list
+                // Heuristic: check if type_ann contains "List" or "Map"
+                // For now, use "list" for empty blocks since [] parses as Block
+                type_name = "list"
+            }
+            _ -> {}
+        }
+        // Override with type annotation if present
+        // Check tokens before the = sign for type info
+        // Scan back to find List or Map keywords
+        mut scan = start_pos + 1
+        while scan < p.tokens.length {
+            let stok = p.tokens[scan]
+            if stok.kind_id == 1 {
+                if stok.text == "List" { type_name = "list" }
+                else if stok.text == "Map" { type_name = "map" }
+                else if stok.text == "string" { type_name = "string" }
+            }
+            // Stop at = sign
+            if stok.kind_id == 0 && p.kind_to_key(stok.kind) == "Eq" { break }
+            scan = scan + 1
+        }
+        // Register as global variable
+        register_global(var_name, type_name)
+        // Capture source text for init in main
+        if p.source.length > 0 {
+            let end_pos = if p.pos > 0 && p.pos <= p.tokens.length {
+                p.tokens[p.pos - 1].span.end + 1
+            } else { start.end }
+            if end_pos > start.start {
+                let src = p.source.substring(start.start, end_pos)
+                store_toplevel_source(src)
+            }
+        }
     }
 
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)

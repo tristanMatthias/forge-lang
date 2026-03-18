@@ -1,0 +1,28 @@
+// Test: global list registry pattern
+
+mut NAMES: List<string> = []
+mut IDS: List<int> = []
+
+fn register(name: string, id: int) {
+    NAMES = NAMES.push(name)
+    IDS = IDS.push(id)
+}
+
+fn find(name: string) -> int {
+    mut i = 0
+    while i < NAMES.length {
+        if NAMES[i] == name { return IDS[i] }
+        i = i + 1
+    }
+    return -1
+}
+
+fn main() {
+    register("variables", 1)
+    register("functions", 2)
+    register("operators", 3)
+    println(find("functions"))
+    println(find("operators"))
+    println(find("unknown"))
+    println("registry works!")
+}

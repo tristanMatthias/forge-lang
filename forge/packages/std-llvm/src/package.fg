@@ -588,6 +588,11 @@ export fn set_global_constant(global: ptr, is_constant: int) {
     forge_llvm_set_global_constant(global, is_constant)
 }
 
+/// Create a constant struct value.
+export fn const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr {
+    forge_llvm_const_struct(ctx, values, count, packed)
+}
+
 // ── Builder/Block Operations ──
 
 /// Get the basic block the builder is currently inserting into.
