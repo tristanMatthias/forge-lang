@@ -1,0 +1,72 @@
+use core.token
+
+export type Token = {
+    kind_id: int,
+    text: string,
+}
+
+export mut VAR_NAMES: List<string> = []
+export mut VAR_VALUES: List<int> = []
+export mut FEAT_NAMES: List<string> = []
+export mut FEAT_IDS: List<int> = []
+export mut FN_NAMES: List<string> = []
+export mut FN_SOURCES: List<string> = []
+export mut FN_PARAM_COUNTS: List<int> = []
+
+fn define_var(name: string, value: int) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_VALUES = VAR_VALUES.push(value)
+}
+
+fn lookup_var(name: string) -> int {
+    mut i = VAR_NAMES.length - 1
+    while i >= 0 {
+        if VAR_NAMES[i] == name { return VAR_VALUES[i] }
+        i = i - 1
+    }
+    return 0
+}
+
+fn register_feature(name: string, id: int) {
+    FEAT_NAMES = FEAT_NAMES.push(name)
+    FEAT_IDS = FEAT_IDS.push(id)
+}
+
+fn store_fn(name: string, body: string, params: int) {
+    FN_NAMES = FN_NAMES.push(name)
+    FN_SOURCES = FN_SOURCES.push(body)
+    FN_PARAM_COUNTS = FN_PARAM_COUNTS.push(params)
+}
+
+fn main() {
+    // Variable registry (like CG_VAR_NAMES)
+    define_var("x", 42)
+    define_var("y", 10)
+    define_var("count", 100)
+    println(lookup_var("y"))
+    println(lookup_var("count"))
+
+    // Feature registry (like the compiler's feature dispatch)
+    register_feature("variables", 1)
+    register_feature("functions", 2)
+    register_feature("operators", 3)
+    register_feature("structs", 7)
+    register_feature("enums", 8)
+
+    // Function storage (like FN_NAMES/FN_BODY_SOURCES)
+    store_fn("main", "{ println(42) }", 0)
+    store_fn("add", "{ return a + b }", 2)
+    store_fn("fib", "{ if n <= 1 { return n } }", 1)
+
+    // Cross-check all registries
+    println(VAR_NAMES.length)
+    println(FEAT_NAMES.length)
+    println(FN_NAMES.length)
+
+    // Verify function data
+    println(FN_NAMES[1])
+    println(FN_PARAM_COUNTS[1])
+    println(FN_SOURCES[2])
+
+    println("ALL PATTERNS PASSED")
+}
