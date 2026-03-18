@@ -83,18 +83,31 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             _ -> {}
         }
         // Override with type annotation if present
-        // Check tokens before the = sign for type info
-        // Scan back to find List or Map keywords
+        // Scan tokens before = to find List<string>, List<int>, Map, string
+        mut found_list = false
+        mut found_list_str = false
         mut scan = start_pos + 1
         while scan < p.tokens.length {
             let stok = p.tokens[scan]
             if stok.kind_id == 1 {
-                if stok.text == "List" { type_name = "list" }
+                if stok.text == "List" {
+                    found_list = true
+                    type_name = "list"
+                    // Check if next tokens are <string>
+                    if scan + 2 < p.tokens.length {
+                        let next1 = p.tokens[scan + 1]
+                        let next2 = p.tokens[scan + 2]
+                        if p.kind_to_key(next1.kind) == "Lt" && next2.kind_id == 1 && next2.text == "string" {
+                            type_name = "list_str"
+                            found_list_str = true
+                        }
+                    }
+                }
                 else if stok.text == "Map" { type_name = "map" }
-                else if stok.text == "string" { type_name = "string" }
+                else if stok.text == "string" && !found_list { type_name = "string" }
             }
             // Stop at = sign
-            if stok.kind_id == 0 && p.kind_to_key(stok.kind) == "Eq" { break }
+            if p.kind_to_key(stok.kind) == "Eq" { break }
             scan = scan + 1
         }
         // Register as global variable

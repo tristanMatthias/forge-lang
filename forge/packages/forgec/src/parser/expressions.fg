@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -346,6 +346,8 @@ impl Parser {
 
             // Index access: expr[index]
             if self.check(TokenKind.LBracket) {
+                // Capture object variable name BEFORE parsing index (index parsing changes LAST_IDENT_NAME)
+                let index_obj_name = LAST_IDENT_NAME
                 self.advance()
                 let index = self.parse_expr()
                 if index == null { return null }
@@ -357,6 +359,10 @@ impl Parser {
                     mut cg = codegen_new()
                     let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                     let idx_val = cg.emit_expr(index!)
+
+                    // Check if this is a list variable (needs GEP, not char_at)
+                    let is_list = is_list_var(index_obj_name)
+                    let is_str_list = is_str_list_var(index_obj_name)
 
                     if result_is_map {
                         // Map indexing: forge_map_get(map_ptr, key) → i64
@@ -378,7 +384,7 @@ impl Parser {
                         result_llvm = get_val
                         result_is_str = false
                         result_is_map = false
-                    } else if result_is_str {
+                    } else if result_is_str && !is_list {
                         // String indexing: forge_string_char_at(str, idx) → ForgeString
                         let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "charat")
                         result_is_llvm = true
@@ -386,15 +392,17 @@ impl Parser {
                         result_is_str = true
                     } else {
                         // List/array indexing: GEP + load from data pointer
+                        // Use pre-computed is_str_list (from index_obj_name, not LAST_IDENT_NAME)
+                        let elem_ty = if is_str_list { CG_STR } else { CG_I64 }
                         let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "list_data")
                         let indices = llvm.value_array_new(1)
                         llvm.value_array_set(indices, 0, idx_val)
-                        let elem_ptr = llvm.build_gep2(CG_B, CG_I64, data_ptr, indices, 1, "elem_ptr")
+                        let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "elem_ptr")
                         llvm.value_array_free(indices)
-                        let elem_val = llvm.build_load(CG_B, CG_I64, elem_ptr, "elem")
+                        let elem_val = llvm.build_load(CG_B, elem_ty, elem_ptr, "elem")
                         result_is_llvm = true
                         result_llvm = elem_val
-                        result_is_str = false
+                        result_is_str = is_str_list
                     }
                     result = Expr.IntLit(0, span)
                     continue
@@ -1288,6 +1296,8 @@ fn is_struct_field_str(struct_name: string, field_idx: int) -> bool {
 
 impl Parser {
     fn emit_method_call_inline(self, obj_val: ptr, method: string) -> ptr {
+        // Capture object variable name BEFORE parsing args (args parsing changes LAST_IDENT_NAME)
+        let obj_var_name = LAST_IDENT_NAME
         // Parse args
         let args = self.parse_call_args()
 
@@ -1326,7 +1336,8 @@ impl Parser {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let item_val = cg.emit_expr(args[0])
-                return emit_list_push(obj_val, item_val)
+                let str_elems = is_str_list_var(obj_var_name)
+                return emit_list_push_sized(obj_val, item_val, str_elems)
             }
         }
 
@@ -1352,7 +1363,7 @@ impl Parser {
 
         // Try user-defined method from impl blocks: TypeName__method
         // The object's struct type determines the type name
-        let obj_type = var_struct_type(LAST_IDENT_NAME)
+        let obj_type = var_struct_type(obj_var_name)
         if obj_type != "" {
             let mangled = "${obj_type}__${method}"
             let fn_ref = llvm.get_named_function(CG_MOD, mangled)
@@ -1594,7 +1605,14 @@ fn emit_template_expr(text: string) -> ptr {
 // ─── List Operations ────────────────────────────
 
 fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
+    emit_list_push_sized(list_val, item_val, false)
+}
+
+fn emit_list_push_sized(list_val: ptr, item_val: ptr, str_elems: bool) -> ptr {
     // List is {ptr data, i64 count}
+    let elem_size_val = if str_elems { llvm.const_int(CG_I64, 16, 0) } else { llvm.const_int(CG_I64, 8, 0) }
+    let elem_ty = if str_elems { CG_STR } else { CG_I64 }
+
     // 1. Extract data_ptr and count
     let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "list_data")
     let old_count = llvm.build_extract_value(CG_B, list_val, 1, "list_count")
@@ -1603,13 +1621,12 @@ fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
     let one = llvm.const_int(CG_I64, 1, 0)
     let new_count = llvm.build_add(CG_B, old_count, one, "new_count")
 
-    // 3. Allocate new buffer: forge_alloc(new_count * 8)
-    let eight = llvm.const_int(CG_I64, 8, 0)
-    let new_size = llvm.build_mul(CG_B, new_count, eight, "new_size")
+    // 3. Allocate new buffer: forge_alloc(new_count * elem_size)
+    let new_size = llvm.build_mul(CG_B, new_count, elem_size_val, "new_size")
     let new_data = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, new_size, "new_data")
 
-    // 4. Copy old data: forge_memcpy(new_data, data_ptr, old_count * 8)
-    let old_size = llvm.build_mul(CG_B, old_count, eight, "old_size")
+    // 4. Copy old data: forge_memcpy(new_data, data_ptr, old_count * elem_size)
+    let old_size = llvm.build_mul(CG_B, old_count, elem_size_val, "old_size")
     let mcpy_args = llvm.value_array_new(3)
     llvm.value_array_set(mcpy_args, 0, new_data)
     llvm.value_array_set(mcpy_args, 1, data_ptr)
@@ -1623,10 +1640,10 @@ fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
     llvm.build_call(CG_B, mcpy_ft, CG_RT_MEMCPY, mcpy_args, 3, "")
     llvm.value_array_free(mcpy_args)
 
-    // 5. Store item at new_data[old_count]
+    // 5. Store item at new_data[old_count] using correct element type for GEP
     let indices = llvm.value_array_new(1)
     llvm.value_array_set(indices, 0, old_count)
-    let elem_ptr = llvm.build_gep2(CG_B, CG_I64, new_data, indices, 1, "elem_ptr")
+    let elem_ptr = llvm.build_gep2(CG_B, elem_ty, new_data, indices, 1, "elem_ptr")
     llvm.value_array_free(indices)
     llvm.build_store(CG_B, item_val, elem_ptr)
 

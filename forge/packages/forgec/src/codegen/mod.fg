@@ -49,6 +49,9 @@ mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELI
 export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
 export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
+// Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
+export mut CG_LIST_VAR_CSV: string = ""        // all list vars
+export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
 
 // Top-level global variable tracking
 export mut CG_GLOBAL_NAMES: List<string> = []     // variable names
@@ -127,12 +130,12 @@ export fn create_llvm_globals() {
         let type_name = CG_GLOBAL_TYPES[i]
         // Determine LLVM type
         mut gty = CG_I64
-        if type_name == "string" || type_name == "list" { gty = CG_STR }
+        let is_list = type_name == "list" || type_name == "list_str"
+        if type_name == "string" || is_list { gty = CG_STR }
         else if type_name == "map" { gty = CG_PTR }
         // Create LLVM global with zero/null initializer
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = if type_name == "string" || type_name == "list" {
-            // Initialize {ptr, i64} to zeroinitializer
+        let zero = if type_name == "string" || is_list {
             llvm.const_null(gty)
         } else if type_name == "map" {
             llvm.const_null(CG_PTR)
@@ -140,19 +143,59 @@ export fn create_llvm_globals() {
             llvm.const_int(CG_I64, 0, 0)
         }
         llvm.set_initializer(gv, zero)
-        // Register in CG_VAR system so emit_ident/assignment can find it
+        // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if type_name == "string" || type_name == "list" { 1 } else { 0 })
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if type_name == "string" || is_list { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if type_name == "map" { 1 } else { 0 })
-        if type_name == "string" || type_name == "list" {
+        if type_name == "string" || is_list {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         if type_name == "map" {
             CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
         }
+        // Track list variables in CSV strings (reliable across bootstrap)
+        if is_list {
+            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+        }
+        if type_name == "list_str" {
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+        }
         i = i + 1
     }
+}
+
+// Check if a name is in a comma-separated string (e.g., ",NAMES,IDS,")
+fn csv_contains(csv: string, name: string) -> bool {
+    let needle = ",${name},"
+    let nl = needle.length
+    let cl = csv.length
+    if cl < nl { return false }
+    mut i = 0
+    while i <= cl - nl {
+        mut match_ok = true
+        mut j = 0
+        while j < nl {
+            if csv[i + j] != needle[j] {
+                match_ok = false
+                break
+            }
+            j = j + 1
+        }
+        if match_ok { return true }
+        i = i + 1
+    }
+    false
+}
+
+// Check if a variable is ANY kind of list
+export fn is_list_var(name: string) -> bool {
+    csv_contains(CG_LIST_VAR_CSV, name)
+}
+
+// Check if a variable is a list with string elements (16-byte stride)
+export fn is_str_list_var(name: string) -> bool {
+    csv_contains(CG_STR_LIST_VAR_CSV, name)
 }
 
 // ─── Codegen Methods ───────────────────────────

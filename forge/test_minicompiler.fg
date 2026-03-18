@@ -1,4 +1,4 @@
-// Test: global list registry pattern
+// Full registry pattern test (same pattern as the compiler uses)
 
 mut NAMES: List<string> = []
 mut IDS: List<int> = []
@@ -21,8 +21,12 @@ fn main() {
     register("variables", 1)
     register("functions", 2)
     register("operators", 3)
+    register("if_else", 4)
+    register("while_loops", 5)
+
     println(find("functions"))
     println(find("operators"))
+    println(find("while_loops"))
     println(find("unknown"))
-    println("registry works!")
+    println("REGISTRY WORKS!")
 }
