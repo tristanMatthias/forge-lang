@@ -1,35 +1,7 @@
-fn fib(n: int) -> int {
-    if n <= 1 { return n }
-    return fib(n - 1) + fib(n - 2)
-}
-
-fn is_prime(n: int) -> int {
-    if n < 2 { return 0 }
-    mut i = 2
-    while i * i <= n {
-        if n / i * i == n { return 0 }
-        i = i + 1
-    }
-    return 1
-}
-
-fn count_primes(limit: int) -> int {
-    mut count = 0
-    mut n = 2
-    while n <= limit {
-        if is_prime(n) == 1 {
-            count = count + 1
-        }
-        n = n + 1
-    }
-    return count
-}
-
 fn main() {
-    println("=== Forge Self-Hosted Compiler ===")
-    println("fib(20):")
-    println(fib(20))
-    println("primes under 100:")
-    println(count_primes(100))
-    println("done!")
+    let a = 10
+    let b = 20
+    println(a + b * 2)
+    println(a * b + 30)
+    println((a + b) / 2)
 }

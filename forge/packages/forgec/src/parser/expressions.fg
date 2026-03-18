@@ -19,10 +19,13 @@
 
 use core.token.{Token, TokenKind, Span, TemplatePart}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
+use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
 use codegen.{CG_B, CG_CTX, codegen_new}
 use @std.llvm
+
+mut BINOP_COUNTER: int = 0
 
 // ─── Precedence Levels ─────────────────────────
 // All binary levels use parse_binary_level(prec) which:
@@ -108,6 +111,10 @@ impl Parser {
         if left == null { return null }
 
         mut result = left!
+        // In codegen mode: track the LLVM value directly to avoid Expr destructuring
+        mut result_is_llvm = false
+        mut result_llvm: ptr = null
+
         while true {
             let op_key = self.token_to_binop_key(level)
             if op_key == "" { break }
@@ -116,8 +123,35 @@ impl Parser {
             self.skip_newlines()
             let right = self.parse_next_level(level)
             if right == null { return null }
-            let span = self.merge_spans(self.current_span(), self.current_span())
-            result = Expr.Binary(result, op!, right!, span)
+
+            if CG_B != null {
+                mut cg = codegen_new()
+                // Get LHS: either from tracked LLVM value or emit AST
+                let lhs = if result_is_llvm {
+                    result_llvm
+                } else {
+                    cg.emit_expr(result)
+                }
+                let rhs = cg.emit_expr(right!)
+                let val = emit_binop(lhs, op_key, rhs)
+                // Track the LLVM value directly (no AST round-trip)
+                result_is_llvm = true
+                result_llvm = val
+                // Still update result for the non-codegen return path
+                result = Expr.IntLit(0, self.current_span())
+            } else {
+                let span = self.merge_spans(self.current_span(), self.current_span())
+                result = Expr.Binary(result, op, right!, span)
+            }
+        }
+
+        // In codegen mode: store the final LLVM value in a temp variable
+        if result_is_llvm {
+            mut cg = codegen_new()
+            BINOP_COUNTER = BINOP_COUNTER + 1
+            let tmp = "__bt${BINOP_COUNTER}"
+            cg.define_var(tmp, Type.Int, result_llvm)
+            return Expr.Ident(tmp, self.current_span())
         }
         result
     }
@@ -362,7 +396,8 @@ impl Parser {
 
         self.skip_newlines()
         if self.expect(TokenKind.RParen) == null { return null }
-        first // parenthesized expression
+
+        first // parenthesized expression (inner expr already emitted inline if in codegen)
     }
 
     // ─── Block Expression ──────────────────────
@@ -598,6 +633,31 @@ impl Parser {
             col: a.col,
         }
     }
+}
+
+// ─── Binary Op Inline Emit ──────────────────────
+// Free function (not method) to avoid passing large Parser struct by value.
+
+fn emit_binop(lhs: ptr, op_key: string, rhs: ptr) -> ptr {
+    if op_key == "Add" { return llvm.build_add(CG_B, lhs, rhs, "add") }
+    if op_key == "Sub" { return llvm.build_sub(CG_B, lhs, rhs, "sub") }
+    if op_key == "Mul" { return llvm.build_mul(CG_B, lhs, rhs, "mul") }
+    if op_key == "Div" { return llvm.build_sdiv(CG_B, lhs, rhs, "div") }
+    if op_key == "Mod" { return llvm.build_srem(CG_B, lhs, rhs, "mod") }
+    if op_key == "Eq" { return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq") }
+    if op_key == "NotEq" { return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne") }
+    if op_key == "Lt" { return llvm.build_icmp(CG_B, 40, lhs, rhs, "lt") }
+    if op_key == "LtEq" { return llvm.build_icmp(CG_B, 41, lhs, rhs, "le") }
+    if op_key == "Gt" { return llvm.build_icmp(CG_B, 38, lhs, rhs, "gt") }
+    if op_key == "GtEq" { return llvm.build_icmp(CG_B, 39, lhs, rhs, "ge") }
+    if op_key == "And" { return llvm.build_and(CG_B, lhs, rhs, "and") }
+    if op_key == "Or" { return llvm.build_or(CG_B, lhs, rhs, "or") }
+    if op_key == "BitAnd" { return llvm.build_and(CG_B, lhs, rhs, "ba") }
+    if op_key == "BitOr" { return llvm.build_or(CG_B, lhs, rhs, "bo") }
+    if op_key == "BitXor" { return llvm.build_xor(CG_B, lhs, rhs, "bx") }
+    if op_key == "Shl" { return llvm.build_shl(CG_B, lhs, rhs, "sl") }
+    if op_key == "Shr" { return llvm.build_ashr(CG_B, lhs, rhs, "sr") }
+    rhs // Pipe or fallback
 }
 
 // ─── Expr Span Access ──────────────────────────
