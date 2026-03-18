@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_B, CG_CTX, codegen_new}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, codegen_new}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -114,6 +114,8 @@ impl Parser {
         // In codegen mode: track the LLVM value directly to avoid Expr destructuring
         mut result_is_llvm = false
         mut result_llvm: ptr = null
+        // Track whether the current result is a string (for string concatenation)
+        mut result_is_str = CG_LAST_IS_STR == 1
 
         while true {
             let op_key = self.token_to_binop_key(level)
@@ -123,6 +125,8 @@ impl Parser {
             self.skip_newlines()
             let right = self.parse_next_level(level)
             if right == null { return null }
+            // Capture whether the rhs expression is a string
+            let rhs_is_str = CG_LAST_IS_STR == 1
 
             if CG_ACTIVE {
                 mut cg = codegen_new()
@@ -133,7 +137,13 @@ impl Parser {
                     cg.emit_expr(result)
                 }
                 let rhs = cg.emit_expr(right!)
-                mut val = emit_binop(lhs, op_key, rhs)
+                // String concatenation: if both sides are strings, call forge_string_concat
+                mut val: ptr = null
+                if op_key == "Add" && result_is_str && rhs_is_str {
+                    val = call_rt_2_ss(CG_RT_SCONCAT, lhs, rhs, CG_STR, "concat")
+                } else {
+                    val = emit_binop(lhs, op_key, rhs)
+                }
                 // Comparison ops return i1 — zero-extend to i64 for consistent storage
                 if op_key == "Eq" || op_key == "NotEq" || op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
                     val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cmpext")
@@ -141,6 +151,8 @@ impl Parser {
                 // Track the LLVM value directly (no AST round-trip)
                 result_is_llvm = true
                 result_llvm = val
+                // String concat produces a string; other ops produce ints
+                result_is_str = op_key == "Add" && result_is_str && rhs_is_str
                 // Still update result for the non-codegen return path
                 result = Expr.IntLit(0, self.current_span())
             } else {
@@ -154,7 +166,9 @@ impl Parser {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
             let tmp = "__bt${BINOP_COUNTER}"
-            cg.define_var(tmp, Type.Int, result_llvm)
+            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            cg.define_var(tmp, tmp_ty, result_llvm)
+            CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
             return Expr.Ident(tmp, self.current_span())
         }
         result
@@ -285,16 +299,30 @@ impl Parser {
                 if self.expect(TokenKind.RBracket) == null { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
-                // In codegen mode: emit string indexing inline
+                // In codegen mode: emit indexing inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
                     let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                     let idx_val = cg.emit_expr(index!)
-                    // Call forge_string_char_at(str, idx) → ForgeString
-                    let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "charat")
-                    result_is_llvm = true
-                    result_llvm = char_val
-                    result_is_str = true  // char_at returns ForgeString
+
+                    if result_is_str {
+                        // String indexing: forge_string_char_at(str, idx) → ForgeString
+                        let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "charat")
+                        result_is_llvm = true
+                        result_llvm = char_val
+                        result_is_str = true
+                    } else {
+                        // List/array indexing: GEP + load from data pointer
+                        let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "list_data")
+                        let indices = llvm.value_array_new(1)
+                        llvm.value_array_set(indices, 0, idx_val)
+                        let elem_ptr = llvm.build_gep2(CG_B, CG_I64, data_ptr, indices, 1, "elem_ptr")
+                        llvm.value_array_free(indices)
+                        let elem_val = llvm.build_load(CG_B, CG_I64, elem_ptr, "elem")
+                        result_is_llvm = true
+                        result_llvm = elem_val
+                        result_is_str = false
+                    }
                     result = Expr.IntLit(0, span)
                     continue
                 }
@@ -317,7 +345,9 @@ impl Parser {
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
             return Expr.Ident(tmp, self.current_span())
         }
-        CG_LAST_IS_STR = 0
+        // Don't clear CG_LAST_IS_STR — it was already set correctly by
+        // parse_list_literal, postfix LLVM tracking, or parse_primary_expr.
+        // Clearing it here loses the flag for list/method-call results.
 
         result
     }
@@ -361,6 +391,7 @@ impl Parser {
         if tok.kind_id == 4 {
             // StringLiteral
             let span = self.advance().span
+            CG_LAST_IS_STR = 1
             return Expr.StringLit(tok.text, span)
         }
         if tok.kind_id == 5 {
@@ -548,11 +579,82 @@ impl Parser {
 
     fn parse_list_literal(self) -> Expr? {
         let start = self.advance().span // consume [
-        let items = self.parse_delimited(.RBracket)
-        if self.expect(TokenKind.RBracket) == null { return null }
 
-        // TODO: create proper list literal FeatureExpr
-        // For now, wrap in a block
+        if CG_ACTIVE {
+            // Count elements first by parsing and emitting each immediately
+            // Use a two-pass approach: first count, then emit
+            // Actually, use a growing approach: start with alloc(8*16), fill, realloc if needed
+            // Simpler: collect LLVM values in a fixed buffer via value_array
+
+            // Parse and emit elements, collecting LLVM values
+            let max_elems = 64  // max list literal size
+            let vals = llvm.value_array_new(max_elems)
+            mut count = 0
+
+            self.skip_newlines()
+            while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+                mut cg = codegen_new()
+                let elem = self.parse_expr()
+                if elem != null {
+                    let val = cg.emit_expr(elem!)
+                    llvm.value_array_set(vals, count, val)
+                    count = count + 1
+                }
+                self.skip_newlines()
+                if self.check(TokenKind.Comma) { self.advance() }
+                self.skip_newlines()
+            }
+            self.expect(TokenKind.RBracket)
+
+            let count_val = llvm.const_int(CG_I64, count, 0)
+
+            // Allocate buffer: forge_alloc(count * 8)
+            let eight = llvm.const_int(CG_I64, 8, 0)
+            let size = llvm.build_mul(CG_B, count_val, eight, "list_size")
+            let data_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, size, "list_data")
+
+            // Store each element via GEP
+            mut i = 0
+            while i < count {
+                let idx = llvm.const_int(CG_I64, i, 0)
+                let indices = llvm.value_array_new(1)
+                llvm.value_array_set(indices, 0, idx)
+                let elem_ptr = llvm.build_gep2(CG_B, CG_I64, data_ptr, indices, 1, "ep")
+                llvm.value_array_free(indices)
+                // Retrieve the pre-emitted value
+                let val = llvm.value_array_get(vals, i)
+                llvm.build_store(CG_B, val, elem_ptr)
+                i = i + 1
+            }
+            llvm.value_array_free(vals)
+
+            // Build list struct {data_ptr, count}
+            let undef = llvm.get_undef(CG_LIST)
+            let s1 = llvm.build_insert_value(CG_B, undef, data_ptr, 0, "ls1")
+            let s2 = llvm.build_insert_value(CG_B, s1, count_val, 1, "ls2")
+
+            // Return the list struct value directly as a StringLit marker
+            // (StringLit triggers Type.String in parse_var_binding)
+            // This is a hack but avoids the CG_LAST_IS_STR timing issue
+            BINOP_COUNTER = BINOP_COUNTER + 1
+            let tmp = "__list${BINOP_COUNTER}"
+            mut cg = codegen_new()
+            cg.define_var(tmp, Type.String, s2)
+            CG_LAST_IS_STR = 1
+            CG_LAST_VAL = s2
+            CG_HAS_LAST_VAL = 1
+            return Expr.Ident(tmp, start)
+        }
+
+        // Non-codegen: parse and discard
+        self.skip_newlines()
+        while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+            self.parse_expr()
+            self.skip_newlines()
+            if self.check(TokenKind.Comma) { self.advance() }
+            self.skip_newlines()
+        }
+        self.expect(TokenKind.RBracket)
         Expr.Block(Block { statements: [], span: start })
     }
 

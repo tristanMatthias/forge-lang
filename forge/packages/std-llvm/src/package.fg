@@ -60,6 +60,7 @@ extern fn forge_llvm_build_icmp(builder: ptr, pred: int, lhs: ptr, rhs: ptr, nam
 extern fn forge_llvm_build_call(builder: ptr, fn_type: ptr, fn_val: ptr, args: ptr, num_args: int, name: string) -> ptr
 extern fn forge_llvm_value_array_new(count: int) -> ptr
 extern fn forge_llvm_value_array_set(arr: ptr, index: int, val: ptr)
+extern fn forge_llvm_value_array_get(arr: ptr, index: int) -> ptr
 extern fn forge_llvm_value_array_free(arr: ptr)
 
 // ── Global strings ──
@@ -350,6 +351,10 @@ export fn value_array_set(arr: ptr, index: int, val: ptr) {
 }
 
 /// Free a value array.
+export fn value_array_get(arr: ptr, index: int) -> ptr {
+    forge_llvm_value_array_get(arr, index)
+}
+
 export fn value_array_free(arr: ptr) {
     forge_llvm_value_array_free(arr)
 }

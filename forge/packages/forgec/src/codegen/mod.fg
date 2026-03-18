@@ -47,6 +47,10 @@ export mut CG_ACTIVE: bool = false
 // Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
 export mut CG_LAST_IS_STR: int = 0
 
+// The most recently emitted LLVM value (for passing through call chain without AST corruption)
+export mut CG_LAST_VAL: ptr = null
+export mut CG_HAS_LAST_VAL: int = 0
+
 export type Codegen = {
     mut current_fn: ptr?,
     mut functions: Map<string, ptr>,

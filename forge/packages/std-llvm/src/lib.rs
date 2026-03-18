@@ -404,6 +404,11 @@ pub extern "C" fn forge_llvm_value_array_set(arr: *mut LLVMPtr, index: c_int, va
 }
 
 #[no_mangle]
+pub extern "C" fn forge_llvm_value_array_get(arr: *mut LLVMPtr, index: c_int) -> LLVMPtr {
+    unsafe { *arr.offset(index as isize) }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_value_array_free(arr: *mut LLVMPtr) {
     let _ = arr;
 }

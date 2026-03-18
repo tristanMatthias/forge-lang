@@ -1,44 +1,17 @@
-fn fib(n: int) -> int {
-    if n <= 1 { return n }
-    return fib(n - 1) + fib(n - 2)
-}
-
 fn main() {
-    println("=== Forge Self-Hosted Compiler ===")
+    let nums = [10, 20, 30, 40, 50]
+    println(nums.length)
+    println(nums[0])
+    println(nums[2])
+    println(nums[4])
 
-    // String operations
-    let greeting = "hello world"
-    println(greeting.length)
-    println(greeting[0])
-    println(greeting[6])
-    println(greeting.indexOf("world"))
-
-    // Arithmetic + functions
-    println(fib(20))
-
-    // While loops
+    // Sum via while loop
     mut sum = 0
-    mut i = 1
-    while i <= 10 {
-        sum = sum + i
+    mut i = 0
+    while i < nums.length {
+        sum = sum + nums[i]
         i = i + 1
     }
     println(sum)
-
-    // FizzBuzz
-    i = 1
-    while i <= 15 {
-        if i / 15 * 15 == i {
-            println("FizzBuzz")
-        } else if i / 3 * 3 == i {
-            println("Fizz")
-        } else if i / 5 * 5 == i {
-            println("Buzz")
-        } else {
-            println(i)
-        }
-        i = i + 1
-    }
-
     println("done!")
 }
