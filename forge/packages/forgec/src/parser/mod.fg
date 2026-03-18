@@ -262,6 +262,11 @@ impl Parser {
                 self.sync_pos()
                 return r
             }
+            .TypeKw -> {
+                let r = parse_type_decl(self)
+                self.sync_pos()
+                return r
+            }
             _ -> {}
         }
 

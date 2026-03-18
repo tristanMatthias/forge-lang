@@ -61,8 +61,11 @@ export mut CG_STRUCT_FIELDS: List<string> = []  // comma-separated field names
 export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
 export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
 
-// Track which variable holds which struct type
-export mut CG_VAR_STRUCT_TYPE: List<string> = []  // struct type name per var ("" if not struct)
+// Track which variables are struct-typed: parallel lists of name → type name
+export mut CG_STRUCT_VAR_NAMES: List<string> = []
+export mut CG_STRUCT_VAR_TYPES: List<string> = []
+// Also the last struct type name for propagation through var binding
+export mut CG_LAST_STRUCT_TYPE: string = ""
 
 // Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
 export mut CG_LAST_IS_STR: int = 0
@@ -140,13 +143,10 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
 
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
-    mut vi = CG_VAR_STRUCT_TYPE.length - 1
+    mut vi = CG_STRUCT_VAR_NAMES.length - 1
     while vi >= 0 {
-        if CG_VAR_NAMES[vi] == name {
-            if vi < CG_VAR_STRUCT_TYPE.length {
-                return CG_VAR_STRUCT_TYPE[vi]
-            }
-            return ""
+        if CG_STRUCT_VAR_NAMES[vi] == name {
+            return CG_STRUCT_VAR_TYPES[vi]
         }
         vi = vi - 1
     }
@@ -418,7 +418,29 @@ impl Codegen {
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
-                let load_ty = if CG_VAR_IS_STR[vi] == 1 { CG_STR } else { CG_I64 }
+                // Determine load type: string, struct, or int
+                mut load_ty = CG_I64
+                // Check string
+                mut si = CG_STR_VAR_NAMES.length - 1
+                while si >= 0 {
+                    if CG_STR_VAR_NAMES[si] == name {
+                        load_ty = CG_STR
+                        break
+                    }
+                    si = si - 1
+                }
+                // Check struct type
+                let struct_type_name = var_struct_type(name)
+                if struct_type_name != "" {
+                    mut sti = 0
+                    while sti < CG_STRUCT_NAMES.length {
+                        if CG_STRUCT_NAMES[sti] == struct_type_name {
+                            load_ty = CG_STRUCT_TYPES[sti]
+                            break
+                        }
+                        sti = sti + 1
+                    }
+                }
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -579,10 +601,21 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        // Use CG_STR alloca for string values, CG_I64 for everything else
+        // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
-        let alloca_ty = if is_str { CG_STR } else { CG_I64 }
+        mut alloca_ty = if is_str { CG_STR } else { CG_I64 }
+        // For struct types, use the registered struct LLVM type
+        if CG_LAST_STRUCT_TYPE != "" {
+            mut si = 0
+            while si < CG_STRUCT_NAMES.length {
+                if CG_STRUCT_NAMES[si] == CG_LAST_STRUCT_TYPE {
+                    alloca_ty = CG_STRUCT_TYPES[si]
+                    break
+                }
+                si = si + 1
+            }
+        }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
@@ -592,8 +625,6 @@ impl Codegen {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-        // Track struct type if set
-        CG_VAR_STRUCT_TYPE = CG_VAR_STRUCT_TYPE.push("")
     }
 
     fn is_map_var(self, name: string) -> bool {

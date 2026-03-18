@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_CTX, CG_STR, CG_I64}
 use features.variables.{parse_var_binding, VarKind}
 use features.while_loops.PARSE_END_POS
 
@@ -306,8 +306,60 @@ export fn emit_next_fn_body(cg: Codegen) {
     FN_EMIT_IDX = FN_EMIT_IDX + 1
 }
 
+// Materialize LLVM types for structs registered during initial parse
+fn materialize_struct_types() {
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_TYPES[si] == null {
+            // Create LLVM struct type from field info
+            let fields_str = CG_STRUCT_FIELD_IS_STR[si]
+            // Count fields
+            mut field_count = 1
+            mut ci = 0
+            while ci < fields_str.length {
+                if fields_str[ci] == "," { field_count = field_count + 1 }
+                ci = ci + 1
+            }
+            if fields_str.length == 0 { field_count = 0 }
+
+            let field_types = llvm.type_array_new(field_count)
+            mut fi = 0
+            mut pos = 0
+            mut cur = ""
+            while pos < fields_str.length {
+                let ch = fields_str[pos]
+                if ch == "," {
+                    llvm.type_array_set(field_types, fi, if cur == "1" { CG_STR } else { CG_I64 })
+                    fi = fi + 1
+                    cur = ""
+                } else {
+                    cur = cur + ch
+                }
+                pos = pos + 1
+            }
+            if cur != "" {
+                llvm.type_array_set(field_types, fi, if cur == "1" { CG_STR } else { CG_I64 })
+            }
+
+            let struct_ty = llvm.struct_type(CG_CTX, field_types, field_count, 0)
+            llvm.type_array_free(field_types)
+            // Update the types list — use a temp workaround since List[i] = doesn't work
+            // Instead, replace the whole list entry
+            // For now, re-push (creates duplicate, last one wins)
+            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(struct_ty)
+            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(CG_STRUCT_FIELDS[si])
+            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
+        }
+        si = si + 1
+    }
+}
+
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
+    // Materialize LLVM types for structs registered during initial parse
+    materialize_struct_types()
+
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
