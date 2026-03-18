@@ -1,3 +1,12 @@
+type Token = {
+    kind_id: int,
+    text: string,
+}
+
+fn make_token(kid: int, txt: string) -> Token {
+    return Token { kind_id: kid, text: txt }
+}
+
 fn is_keyword(text: string) -> int {
     if text == "fn" { return 1 }
     if text == "let" { return 1 }
@@ -10,7 +19,16 @@ fn fib(n: int) -> int {
 }
 
 fn main() {
+    let tok = make_token(1, "hello")
+    println(tok.kind_id)
+    let nums = [10, 20, 30]
+    mut sum = 0
+    for n in nums { sum = sum + n }
+    println(sum)
     println(fib(15))
     println(is_keyword("fn"))
+    mut m = {}
+    m["x"] = 42
+    println(m["x"])
     println("done!")
 }
