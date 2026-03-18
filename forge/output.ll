@@ -1,6 +1,14 @@
 ; ModuleID = 'test_hello.fg'
 source_filename = "test_hello.fg"
 
+@str = private unnamed_addr constant [35 x i8] c"=== Forge Self-Hosted Compiler ===\00", align 1
+@str.1 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@str.2 = private unnamed_addr constant [11 x i8] c"Fibonacci:\00", align 1
+@str.3 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@str.4 = private unnamed_addr constant [16 x i8] c"Prime counting:\00", align 1
+@str.5 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@str.6 = private unnamed_addr constant [18 x i8] c"All tests passed!\00", align 1
+
 declare void @forge_println_string({ ptr, i64 })
 
 declare { ptr, i64 } @forge_int_to_string(i64)
@@ -32,91 +40,6 @@ ifcont:                                           ; preds = %else, %then
   %call6 = call i64 @fib(i64 %sub5)
   %add = add i64 %call, %call6
   ret i64 %add
-  ret i64 0
-}
-
-define i64 @factorial(i64 %0) {
-entry:
-  %n = alloca i64, align 8
-  store i64 %0, ptr %n, align 4
-  %n1 = load i64, ptr %n, align 4
-  %le = icmp sle i64 %n1, 1
-  br i1 %le, label %then, label %else
-
-then:                                             ; preds = %entry
-  ret i64 1
-  br label %ifcont
-
-else:                                             ; preds = %entry
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %then
-  %n2 = load i64, ptr %n, align 4
-  %n3 = load i64, ptr %n, align 4
-  %sub = sub i64 %n3, 1
-  %call = call i64 @factorial(i64 %sub)
-  %mul = mul i64 %n2, %call
-  ret i64 %mul
-  ret i64 0
-}
-
-define i64 @gcd(i64 %0, i64 %1) {
-entry:
-  %a = alloca i64, align 8
-  store i64 %0, ptr %a, align 4
-  %b = alloca i64, align 8
-  store i64 %1, ptr %b, align 4
-  %b1 = load i64, ptr %b, align 4
-  %eq = icmp eq i64 %b1, 0
-  br i1 %eq, label %then, label %else
-
-then:                                             ; preds = %entry
-  %a2 = load i64, ptr %a, align 4
-  ret i64 %a2
-  br label %ifcont
-
-else:                                             ; preds = %entry
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %then
-  %b3 = load i64, ptr %b, align 4
-  %a4 = load i64, ptr %a, align 4
-  %a5 = load i64, ptr %a, align 4
-  %b6 = load i64, ptr %b, align 4
-  %div = sdiv i64 %a5, %b6
-  %b7 = load i64, ptr %b, align 4
-  %mul = mul i64 %div, %b7
-  %sub = sub i64 %a4, %mul
-  %call = call i64 @gcd(i64 %b3, i64 %sub)
-  ret i64 %call
-  ret i64 0
-}
-
-define i64 @pow(i64 %0, i64 %1) {
-entry:
-  %base = alloca i64, align 8
-  store i64 %0, ptr %base, align 4
-  %exp = alloca i64, align 8
-  store i64 %1, ptr %exp, align 4
-  %exp1 = load i64, ptr %exp, align 4
-  %eq = icmp eq i64 %exp1, 0
-  br i1 %eq, label %then, label %else
-
-then:                                             ; preds = %entry
-  ret i64 1
-  br label %ifcont
-
-else:                                             ; preds = %entry
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %then
-  %base2 = load i64, ptr %base, align 4
-  %base3 = load i64, ptr %base, align 4
-  %exp4 = load i64, ptr %exp, align 4
-  %sub = sub i64 %exp4, 1
-  %call = call i64 @pow(i64 %base3, i64 %sub)
-  %mul = mul i64 %base2, %call
-  ret i64 %mul
   ret i64 0
 }
 
@@ -219,80 +142,33 @@ ifcont:                                           ; preds = %else, %then
   br label %while.cond
 }
 
-define i64 @collatz_steps(i64 %0) {
-entry:
-  %n = alloca i64, align 8
-  store i64 %0, ptr %n, align 4
-  %steps = alloca i64, align 8
-  store i64 0, ptr %steps, align 4
-  %n1 = load i64, ptr %n, align 4
-  %current = alloca i64, align 8
-  store i64 %n1, ptr %current, align 4
-  br label %while.cond
-
-while.cond:                                       ; preds = %ifcont, %entry
-  %current2 = load i64, ptr %current, align 4
-  %gt = icmp sgt i64 %current2, 1
-  br i1 %gt, label %while.body, label %while.end
-
-while.body:                                       ; preds = %while.cond
-  %current3 = load i64, ptr %current, align 4
-  %div = sdiv i64 %current3, 2
-  %mul = mul i64 %div, 2
-  %current4 = load i64, ptr %current, align 4
-  %eq = icmp eq i64 %mul, %current4
-  br i1 %eq, label %then, label %else
-
-while.end:                                        ; preds = %while.cond
-  %steps11 = load i64, ptr %steps, align 4
-  ret i64 %steps11
-  ret i64 0
-
-then:                                             ; preds = %while.body
-  %current5 = load i64, ptr %current, align 4
-  %div6 = sdiv i64 %current5, 2
-  store i64 %div6, ptr %current, align 4
-  br label %ifcont
-
-else:                                             ; preds = %while.body
-  %current7 = load i64, ptr %current, align 4
-  %mul8 = mul i64 %current7, 3
-  %add = add i64 %mul8, 1
-  store i64 %add, ptr %current, align 4
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %then
-  %steps9 = load i64, ptr %steps, align 4
-  %add10 = add i64 %steps9, 1
-  store i64 %add10, ptr %steps, align 4
-  br label %while.cond
-}
-
 define i32 @main() {
 entry:
-  %call = call i64 @fib(i64 20)
+  %str = call { ptr, i64 } @forge_string_new(ptr @str, i64 34)
+  call void @forge_println_string({ ptr, i64 } %str)
+  %str1 = call { ptr, i64 } @forge_string_new(ptr @str.1, i64 0)
+  call void @forge_println_string({ ptr, i64 } %str1)
+  %str2 = call { ptr, i64 } @forge_string_new(ptr @str.2, i64 10)
+  call void @forge_println_string({ ptr, i64 } %str2)
+  %call = call i64 @fib(i64 10)
   %ts = call { ptr, i64 } @forge_int_to_string(i64 %call)
   call void @forge_println_string({ ptr, i64 } %ts)
-  %call1 = call i64 @factorial(i64 12)
-  %ts2 = call { ptr, i64 } @forge_int_to_string(i64 %call1)
-  call void @forge_println_string({ ptr, i64 } %ts2)
-  %call3 = call i64 @gcd(i64 252, i64 105)
+  %call3 = call i64 @fib(i64 20)
   %ts4 = call { ptr, i64 } @forge_int_to_string(i64 %call3)
   call void @forge_println_string({ ptr, i64 } %ts4)
-  %call5 = call i64 @pow(i64 2, i64 16)
-  %ts6 = call { ptr, i64 } @forge_int_to_string(i64 %call5)
-  call void @forge_println_string({ ptr, i64 } %ts6)
-  %call7 = call i64 @is_prime(i64 97)
-  %ts8 = call { ptr, i64 } @forge_int_to_string(i64 %call7)
-  call void @forge_println_string({ ptr, i64 } %ts8)
-  %call9 = call i64 @is_prime(i64 100)
-  %ts10 = call { ptr, i64 } @forge_int_to_string(i64 %call9)
-  call void @forge_println_string({ ptr, i64 } %ts10)
-  %call11 = call i64 @count_primes(i64 100)
-  %ts12 = call { ptr, i64 } @forge_int_to_string(i64 %call11)
-  call void @forge_println_string({ ptr, i64 } %ts12)
-  %call13 = call i64 @collatz_steps(i64 27)
-  %ts14 = call { ptr, i64 } @forge_int_to_string(i64 %call13)
-  call void @forge_println_string({ ptr, i64 } %ts14)
+  %str5 = call { ptr, i64 } @forge_string_new(ptr @str.3, i64 0)
+  call void @forge_println_string({ ptr, i64 } %str5)
+  %str6 = call { ptr, i64 } @forge_string_new(ptr @str.4, i64 15)
+  call void @forge_println_string({ ptr, i64 } %str6)
+  %call7 = call i64 @count_primes(i64 100)
+  %primes = alloca i64, align 8
+  store i64 %call7, ptr %primes, align 4
+  %primes8 = load i64, ptr %primes, align 4
+  %ts9 = call { ptr, i64 } @forge_int_to_string(i64 %primes8)
+  call void @forge_println_string({ ptr, i64 } %ts9)
+  %str10 = call { ptr, i64 } @forge_string_new(ptr @str.5, i64 0)
+  call void @forge_println_string({ ptr, i64 } %str10)
+  %str11 = call { ptr, i64 } @forge_string_new(ptr @str.6, i64 17)
+  call void @forge_println_string({ ptr, i64 } %str11)
   ret i32 0
 }

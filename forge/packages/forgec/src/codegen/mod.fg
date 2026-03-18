@@ -372,22 +372,35 @@ impl Codegen {
 
     fn emit_println(self, args: List<Expr>) -> ptr {
         for arg in args {
-            let val = self.emit_expr(arg)
-            self.emit_println_value(val)
+            // Check if arg is a string literal — pass ForgeString directly
+            match arg {
+                .StringLit(value, span) -> {
+                    let str_val = self.emit_string(value)
+                    self.emit_println_str(str_val)
+                }
+                _ -> {
+                    let val = self.emit_expr(arg)
+                    self.emit_println_int(val)
+                }
+            }
         }
         llvm.const_int(CG_I64, 0, 0)
     }
 
-    fn emit_println_value(self, val: ptr) {
-        // Convert to string via int_to_string (simplified — treats all as int)
+    fn emit_println_int(self, val: ptr) {
+        // Convert int to string, then print
         let ca = llvm.value_array_new(1)
         llvm.value_array_set(ca, 0, val)
         let ft = make_fn_type(CG_STR, [CG_I64])
         let sv = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "ts")
         llvm.value_array_free(ca)
-        // Call forge_println_string(ForgeString) — pass struct directly
+        self.emit_println_str(sv)
+    }
+
+    fn emit_println_str(self, str_val: ptr) {
+        // Print ForgeString directly
         let pa = llvm.value_array_new(1)
-        llvm.value_array_set(pa, 0, sv)
+        llvm.value_array_set(pa, 0, str_val)
         let pft = make_fn_type(CG_VOID, [CG_STR])
         llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 1, "")
         llvm.value_array_free(pa)
