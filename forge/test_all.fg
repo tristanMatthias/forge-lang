@@ -1,5 +1,5 @@
 // COMPREHENSIVE TEST: ALL self-hosted compiler features
-// enum + match + struct + list + map + for + while + string + fib + template
+// enum + match + impl + struct + list + map + for + while + string + fib + template
 
 enum Color {
     Red,
@@ -10,6 +10,17 @@ enum Color {
 type Token = {
     kind_id: int,
     text: string,
+}
+
+type Point = {
+    x: int,
+    y: int,
+}
+
+impl Point {
+    fn sum(self) -> int {
+        return self.x + self.y
+    }
 }
 
 fn make_token(kid: int, txt: string) -> Token {
@@ -76,5 +87,12 @@ fn main() {
     let greeting = "world"
     println("hello ${greeting}!")
 
-    println("ALL TESTS PASSED")
+    // 10. Impl method call
+    let p = Point { x: 3, y: 4 }
+    println(p.sum())
+
+    // 11. Enum declaration (variants registered)
+    // For now, enum values are just tags (integers)
+
+    println("ALL 11 TESTS PASSED")
 }

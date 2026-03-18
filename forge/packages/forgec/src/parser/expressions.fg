@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, codegen_new}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -1315,6 +1315,47 @@ impl Parser {
                 llvm.value_array_free(has_args)
                 // zext i8 to i64
                 return llvm.build_zext(CG_B, result, llvm.int64_type(CG_CTX), "has_ext")
+            }
+        }
+
+        // Try user-defined method from impl blocks: TypeName__method
+        // The object's struct type determines the type name
+        let obj_type = var_struct_type(LAST_IDENT_NAME)
+        if obj_type != "" {
+            let mangled = "${obj_type}__${method}"
+            let fn_ref = llvm.get_named_function(CG_MOD, mangled)
+            if fn_ref != null {
+                // Call TypeName__method(self, args...)
+                let total_args = args.length + 1
+                let call_args = llvm.value_array_new(total_args)
+                let call_pts = llvm.type_array_new(total_args)
+                // First arg is self (struct type)
+                llvm.value_array_set(call_args, 0, obj_val)
+                // Look up struct LLVM type
+                mut self_ty = CG_I64
+                mut sti = CG_STRUCT_NAMES.length - 1
+                while sti >= 0 {
+                    if CG_STRUCT_NAMES[sti] == obj_type {
+                        let sty = CG_STRUCT_TYPES[sti]
+                        if sty != null { self_ty = sty }
+                        break
+                    }
+                    sti = sti - 1
+                }
+                llvm.type_array_set(call_pts, 0, self_ty)
+                // Remaining args
+                mut ai = 0
+                while ai < args.length {
+                    mut cg2 = codegen_new()
+                    llvm.value_array_set(call_args, ai + 1, cg2.emit_expr(args[ai]))
+                    llvm.type_array_set(call_pts, ai + 1, CG_I64)
+                    ai = ai + 1
+                }
+                let call_ft = llvm.function_type(CG_I64, call_pts, total_args, 0)
+                llvm.type_array_free(call_pts)
+                let call_result = llvm.build_call(CG_B, call_ft, fn_ref, call_args, total_args, "mcall")
+                llvm.value_array_free(call_args)
+                return call_result
             }
         }
 

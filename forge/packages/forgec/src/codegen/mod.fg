@@ -12,7 +12,7 @@ use @std.llvm
 // ─── LLVM state (globals) ──────────────────────
 
 mut CG_CTX: ptr = null
-mut CG_MOD: ptr = null
+export mut CG_MOD: ptr = null
 mut CG_B: ptr = null
 mut CG_I64: ptr = null
 mut CG_I32: ptr = null

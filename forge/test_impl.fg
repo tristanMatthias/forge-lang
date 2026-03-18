@@ -1,0 +1,19 @@
+type Point = {
+    x: int,
+    y: int,
+}
+
+impl Point {
+    fn sum(self) -> int {
+        return self.x + self.y
+    }
+}
+
+fn main() {
+    let p = Point { x: 3, y: 4 }
+    println(p.x)
+    println(p.y)
+    let s = p.sum()
+    println(s)
+    println("impl methods work!")
+}
