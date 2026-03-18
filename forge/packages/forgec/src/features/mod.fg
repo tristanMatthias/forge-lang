@@ -71,7 +71,6 @@ export fn dispatch_emit_stmt(cg: Codegen, node: NodeRef) {
 
 export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     let fid = node.feature
-    eprintln("[dispatch_expr] fid='${fid}'")
     if fid == "if_else" { return emit_if_expr(cg, node) }
     else if fid == "pattern_matching" { return emit_match(cg, node) }
     else if fid == "collections" { return emit_collection(cg, node) }
