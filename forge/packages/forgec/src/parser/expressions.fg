@@ -428,6 +428,38 @@ impl Parser {
                 continue
             }
 
+            // `is` keyword: expr is .Variant / expr is not .Variant
+            if self.check(TokenKind.Is) {
+                self.advance() // consume 'is'
+                // Check for 'not'
+                let negated = self.check(TokenKind.Not)
+                if negated { self.advance() }
+
+                // Expect .Variant
+                if self.check(TokenKind.Dot) {
+                    self.advance()
+                    let variant_name = self.expect_ident()
+
+                    if CG_ACTIVE {
+                        mut cg = codegen_new()
+                        let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                        let tag = match_enum_tag(variant_name)
+                        let tag_val = llvm.const_int(CG_I64, tag, 0)
+                        // Compare: eq for 'is', ne for 'is not'
+                        let pred = if negated { 33 } else { 32 }  // 32=eq, 33=ne
+                        let cmp = llvm.build_icmp(CG_B, pred, obj_val, tag_val, "is_cmp")
+                        let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "is_ext")
+                        result_is_llvm = true
+                        result_llvm = ext
+                        result_is_str = false
+                    }
+                    result = Expr.IntLit(0, self.current_span())
+                    continue
+                }
+                // Not a .Variant — fall through
+                continue
+            }
+
             break
         }
 

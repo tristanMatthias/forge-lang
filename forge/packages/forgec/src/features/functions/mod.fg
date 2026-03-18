@@ -11,6 +11,8 @@ use lexer.{lexer_new}
 use checker.TypeChecker
 use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64}
 use features.variables.{parse_var_binding, VarKind}
+use features.structs.{parse_type_decl}
+use features.enums.{parse_enum_decl}
 use features.while_loops.PARSE_END_POS
 use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
 
@@ -99,6 +101,25 @@ fn parse_export(p: Parser) -> Statement? {
         .Let -> parse_var_binding(p, .Let, true)
         .Mut -> parse_var_binding(p, .Mut, true)
         .Const -> parse_var_binding(p, .Const, true)
+        .TypeKw -> {
+            // export type — treat same as type
+            parse_type_decl(p)
+        }
+        .Enum -> {
+            // export enum — treat same as enum
+            parse_enum_decl(p)
+        }
+        .Trait -> {
+            // export trait — skip (trait is no-op for codegen)
+            p.advance() // consume 'trait'
+            p.expect_ident() // trait name
+            if p.check(TokenKind.LBrace) {
+                p.parse_block() // skip body
+            }
+            PARSE_END_POS = p.pos
+            let id = next_node_id()
+            feature_stmt("functions", "noop", id, start)
+        }
         _ -> {
             p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
             null

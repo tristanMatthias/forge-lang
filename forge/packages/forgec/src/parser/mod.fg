@@ -281,6 +281,30 @@ impl Parser {
                 self.sync_pos()
                 return r
             }
+            .Use -> {
+                // Skip 'use' statements — module imports are no-op in single-file mode
+                self.advance() // consume 'use'
+                // Skip until newline or end
+                while !self.is_at_end() && !self.check(TokenKind.Newline) {
+                    self.advance()
+                }
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Mod -> {
+                // Skip 'mod' declarations — no-op in single-file mode
+                self.advance() // consume 'mod'
+                self.expect_ident() // consume module name
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Trait -> {
+                // Skip trait declarations — parse and discard
+                self.advance() // consume 'trait'
+                self.expect_ident() // trait name
+                if self.check(TokenKind.LBrace) {
+                    self.parse_block() // skip body
+                }
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
             _ -> {}
         }
 
