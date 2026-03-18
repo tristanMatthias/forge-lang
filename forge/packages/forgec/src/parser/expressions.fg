@@ -218,6 +218,7 @@ impl Parser {
         mut result_is_llvm = false
         mut result_llvm: ptr = null
         mut result_is_str = CG_LAST_IS_STR == 1  // inherit string type from primary expr
+        mut result_is_map = CG_LAST_IS_MAP == 1
 
         while !self.is_at_end() {
             // Function call: expr(args...)
@@ -305,7 +306,27 @@ impl Parser {
                     let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                     let idx_val = cg.emit_expr(index!)
 
-                    if result_is_str {
+                    if result_is_map {
+                        // Map indexing: forge_map_get(map_ptr, key) → i64
+                        // Also save the map+key for potential map[key] = value assignment
+                        CG_MAP_INDEX_OBJ = obj_val
+                        CG_MAP_INDEX_KEY = idx_val
+                        CG_IS_MAP_INDEX = 1
+                        let get_args = llvm.value_array_new(2)
+                        llvm.value_array_set(get_args, 0, obj_val)
+                        llvm.value_array_set(get_args, 1, idx_val)
+                        let get_pt = llvm.type_array_new(2)
+                        llvm.type_array_set(get_pt, 0, CG_PTR)
+                        llvm.type_array_set(get_pt, 1, CG_STR)
+                        let get_ft = llvm.function_type(CG_I64, get_pt, 2, 0)
+                        llvm.type_array_free(get_pt)
+                        let get_val = llvm.build_call(CG_B, get_ft, CG_RT_MAP_GET, get_args, 2, "map_get")
+                        llvm.value_array_free(get_args)
+                        result_is_llvm = true
+                        result_llvm = get_val
+                        result_is_str = false
+                        result_is_map = false
+                    } else if result_is_str {
                         // String indexing: forge_string_char_at(str, idx) → ForgeString
                         let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "charat")
                         result_is_llvm = true
@@ -414,8 +435,13 @@ impl Parser {
                 mut cg = codegen_new()
                 if cg.is_string_var(name) {
                     CG_LAST_IS_STR = 1
+                    CG_LAST_IS_MAP = 0
+                } else if cg.is_map_var(name) {
+                    CG_LAST_IS_MAP = 1
+                    CG_LAST_IS_STR = 0
                 } else {
                     CG_LAST_IS_STR = 0
+                    CG_LAST_IS_MAP = 0
                 }
             }
 
@@ -541,6 +567,7 @@ impl Parser {
                     mut cg = codegen_new()
                     cg.define_var(tmp, Type.Int, map_ptr)
                     CG_LAST_IS_STR = 0
+                    CG_LAST_IS_MAP = 1
                     CG_LAST_VAL = map_ptr
                     CG_HAS_LAST_VAL = 1
                     return Expr.Ident(tmp, self.current_span())
@@ -918,7 +945,7 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)

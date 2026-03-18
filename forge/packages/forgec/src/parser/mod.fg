@@ -13,7 +13,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use codegen.{CG_ACTIVE, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{CG_ACTIVE, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -315,7 +315,28 @@ impl Parser {
             }
             // Emit assignment inline during re-parse+codegen
             if CG_ACTIVE {
-                // Extract variable name from target (Ident)
+                // Check for map[key] = value assignment
+                if CG_IS_MAP_INDEX == 1 {
+                    CG_IS_MAP_INDEX = 0
+                    mut cg = codegen_new()
+                    let val = cg.emit_expr(value!)
+                    // Call forge_map_set(map_ptr, key, value)
+                    let set_args = llvm.value_array_new(3)
+                    llvm.value_array_set(set_args, 0, CG_MAP_INDEX_OBJ)
+                    llvm.value_array_set(set_args, 1, CG_MAP_INDEX_KEY)
+                    llvm.value_array_set(set_args, 2, val)
+                    let set_pt = llvm.type_array_new(3)
+                    llvm.type_array_set(set_pt, 0, CG_PTR)
+                    llvm.type_array_set(set_pt, 1, CG_STR)
+                    llvm.type_array_set(set_pt, 2, CG_I64)
+                    let set_ft = llvm.function_type(CG_VOID, set_pt, 3, 0)
+                    llvm.type_array_free(set_pt)
+                    llvm.build_call(CG_B, set_ft, CG_RT_MAP_SET, set_args, 3, "")
+                    llvm.value_array_free(set_args)
+                    return Statement.Expr(Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 }))
+                }
+
+                // Regular variable assignment: extract variable name from target (Ident)
                 match expr! {
                     .Ident(name, span) -> {
                         mut cg = codegen_new()

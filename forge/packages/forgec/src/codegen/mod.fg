@@ -45,7 +45,8 @@ export mut CG_RT_MAP_SET: ptr = null
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
-mut CG_VAR_IS_STR: List<int> = []  // 1 = string type, 0 = int type
+mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type
+export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
 
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
@@ -56,6 +57,11 @@ export mut CG_LAST_IS_STR: int = 0
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
 export mut CG_LAST_VAL: ptr = null
 export mut CG_HAS_LAST_VAL: int = 0
+export mut CG_LAST_IS_MAP: int = 0
+// Set when the last expression was a map index access (for map[key] = value)
+export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
+export mut CG_MAP_INDEX_KEY: ptr = null   // the key ForgeString value
+export mut CG_IS_MAP_INDEX: int = 0       // 1 if last expr was map[key]
 
 export type Codegen = {
     mut current_fn: ptr?,
@@ -508,11 +514,24 @@ impl Codegen {
     fn define_var(self, name: string, ty: Type, value: ptr) {
         // Use CG_STR alloca for string values, CG_I64 for everything else
         let is_str = ty is .String
+        let is_map = ty is .MapType
         let alloca_ty = if is_str { CG_STR } else { CG_I64 }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+    }
+
+    fn is_map_var(self, name: string) -> bool {
+        mut vi = CG_VAR_NAMES.length - 1
+        while vi >= 0 {
+            if CG_VAR_NAMES[vi] == name {
+                return CG_VAR_IS_MAP[vi] == 1
+            }
+            vi = vi - 1
+        }
+        false
     }
 }

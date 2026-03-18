@@ -1,6 +1,10 @@
 fn main() {
-    println("Map test:")
     mut m = {}
-    println(m.has("hello"))
+    m["x"] = 42
+    m["y"] = 99
+    println(m.has("x"))
+    println(m.has("z"))
+    println(m["x"])
+    println(m["y"])
     println("done!")
 }

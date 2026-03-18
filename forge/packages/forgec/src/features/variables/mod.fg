@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -73,9 +73,16 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             mut cg = codegen_new()
             cg.emit_expr(value!)
         }
-        // Detect string/list type
+        // Detect string/list/map type
         let is_str = CG_LAST_IS_STR == 1
-        let var_type = if is_str { Type.String } else { Type.Int }
+        let is_map = CG_LAST_IS_MAP == 1
+        let var_type = if is_map {
+            Type.MapType(Type.String, Type.Int)
+        } else if is_str {
+            Type.String
+        } else {
+            Type.Int
+        }
         // Also check if value expression is a string literal
         match value! {
             .StringLit(v, s) -> {
@@ -89,6 +96,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         }
         // Reset flags for next expression
         CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
         CG_HAS_LAST_VAL = 0
     }
 
