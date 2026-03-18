@@ -230,6 +230,7 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 // Global parallel lists for function data (bootstrap can't use Map<string, struct>)
 mut FN_NAMES: List<string> = []
 mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
+mut FN_BODIES: List<string> = []       // legacy: unused, kept for compat
 mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
 mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
 mut FN_ALL_PARAM_TYPES: List<string> = [] // flat list of ALL param type names
@@ -564,6 +565,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         if !llvm.block_has_terminator(CG_B) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+            } else if CG_HAS_LAST_VAL == 1 {
+                // Return the last expression value (e.g., match-as-expression)
+                CG_HAS_LAST_VAL = 0
+                llvm.build_ret(CG_B, CG_LAST_VAL)
             } else {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }

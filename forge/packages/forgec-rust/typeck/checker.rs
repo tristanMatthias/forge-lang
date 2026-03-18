@@ -67,6 +67,10 @@ impl TypeChecker {
                         matches!(t, Type::Error | Type::Unknown)
                             || matches!(t, Type::List(inner) if matches!(inner.as_ref(), Type::Error | Type::Unknown))
                     }),
+                    Type::Function { params, return_type } => {
+                        params.iter().any(|p| matches!(p, Type::Error | Type::Unknown))
+                            || matches!(return_type.as_ref(), Type::Error | Type::Unknown)
+                    },
                     _ => false,
                 }
             } else {
@@ -110,6 +114,75 @@ impl TypeChecker {
                     };
                     if let Some(ty) = resolved {
                         self.env.type_aliases.insert(name.clone(), ty);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Re-resolve function signatures that contain Error/Unknown anywhere in their types.
+        // This happens when a function's parameter type is a type alias (e.g., ParseHandler)
+        // that wasn't fully resolved during register_top_level due to forward references.
+        fn type_contains_error(ty: &Type) -> bool {
+            match ty {
+                Type::Error | Type::Unknown => true,
+                Type::Function { params, return_type } => {
+                    params.iter().any(|p| type_contains_error(p))
+                        || type_contains_error(return_type)
+                }
+                Type::List(inner) | Type::Nullable(inner) => type_contains_error(inner),
+                Type::Map(k, v) => type_contains_error(k) || type_contains_error(v),
+                Type::Struct { fields, .. } => fields.iter().any(|(_, t)| type_contains_error(t)),
+                _ => false,
+            }
+        }
+        let fn_names: Vec<String> = self.env.functions.keys().cloned().collect();
+        for fn_name in fn_names {
+            let needs_fn_reresolution = if let Some(fn_type) = self.env.functions.get(&fn_name) {
+                type_contains_error(fn_type)
+            } else {
+                false
+            };
+            if needs_fn_reresolution {
+                // Find the original FnDecl and re-resolve its parameter types
+                for stmt in &program.statements {
+                    let resolved = match stmt {
+                        Statement::FnDecl { name, params, return_type, .. } if name == &fn_name => {
+                            let param_types: Vec<Type> = params.iter().map(|p| {
+                                p.type_ann.as_ref()
+                                    .map(|t| self.resolve_type_expr(t))
+                                    .unwrap_or(Type::Unknown)
+                            }).collect();
+                            let ret = return_type.as_ref()
+                                .map(|t| self.resolve_type_expr(t))
+                                .unwrap_or(Type::Void);
+                            Some(Type::Function { params: param_types, return_type: Box::new(ret) })
+                        }
+                        Statement::Feature(fe) if fe.feature_id == "functions" => {
+                            use crate::feature_data;
+                            use crate::features::functions::types::FnDeclData;
+                            if let Some(data) = feature_data!(fe, FnDeclData) {
+                                if data.name == fn_name {
+                                    let param_types: Vec<Type> = data.params.iter().map(|p| {
+                                        p.type_ann.as_ref()
+                                            .map(|t| self.resolve_type_expr(t))
+                                            .unwrap_or(Type::Unknown)
+                                    }).collect();
+                                    let ret = data.return_type.as_ref()
+                                        .map(|t| self.resolve_type_expr(t))
+                                        .unwrap_or(Type::Void);
+                                    Some(Type::Function { params: param_types, return_type: Box::new(ret) })
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(ty) = resolved {
+                        self.env.functions.insert(fn_name.clone(), ty);
                         break;
                     }
                 }

@@ -101,6 +101,15 @@ fn emit_if_block(block: Block) -> ptr {
     cg.emit_block(block)
 }
 
+// ─── Side Table ─────────────────────────────────
+// Stub: inline-emit-during-parse means no AST data is stored
+mut IF_EXPR_DATA: Map<string, IfExprData> = {}
+
+fn get_if_expr(node_id: int) -> IfExprData? {
+    let key = "${node_id}"
+    if IF_EXPR_DATA.has(key) { IF_EXPR_DATA[key] } else { null }
+}
+
 // ─── Check ──────────────────────────────────────
 
 fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {

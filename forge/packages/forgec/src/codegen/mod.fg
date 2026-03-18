@@ -20,7 +20,7 @@ mut CG_I8: ptr = null
 mut CG_VOID: ptr = null
 mut CG_PTR: ptr = null
 mut CG_F64: ptr = null
-mut CG_STR: ptr = null
+export mut CG_STR: ptr = null
 mut CG_RT_PRINTLN: ptr = null
 mut CG_RT_I2S: ptr = null
 mut CG_RT_SNEW: ptr = null
@@ -65,6 +65,9 @@ export mut CG_VAR_SCOPE_START: int = 0
 
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
+
+// Top-level source fragments to inject into main
+export mut CG_TOPLEVEL_SOURCES: List<string> = []
 
 // Struct type registry: maps struct names to field info
 // Each struct is stored as: name in CG_STRUCT_NAMES, fields as comma-separated
@@ -859,7 +862,11 @@ impl Codegen {
                 }
                 _ -> {
                     let val = self.emit_expr(arg)
-                    self.emit_println_int(val)
+                    if CG_LAST_IS_STR == 1 {
+                        self.emit_println_str(val)
+                    } else {
+                        self.emit_println_int(val)
+                    }
                 }
             }
         }

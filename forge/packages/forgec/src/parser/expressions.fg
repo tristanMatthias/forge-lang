@@ -26,6 +26,8 @@ use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_C
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
+// Suppress cross-newline dot chaining inside match arm bodies
+mut IN_MATCH_ARM: bool = false
 
 // ─── Precedence Levels ─────────────────────────
 // All binary levels use parse_binary_level(prec) which:
@@ -352,6 +354,17 @@ impl Parser {
                         continue
                     }
 
+                    // Enum variant construction: Color.Green -> tag integer
+                    let enum_full = "${LAST_IDENT_NAME}.${field}"
+                    let enum_tag = match_enum_tag(enum_full)
+                    if enum_tag >= 0 {
+                        result_is_llvm = true
+                        result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
+                        result_is_str = false
+                        result = Expr.IntLit(enum_tag, span)
+                        continue
+                    }
+
                     // Struct field access: look up field index from variable's field list
                     let var_name_for_struct = LAST_IDENT_NAME
                     mut svi = CG_STRUCT_VAR_NAMES.length - 1
@@ -400,7 +413,8 @@ impl Parser {
             }
 
             // Cross-newline dot chaining: allow .field after newline
-            if self.check(TokenKind.Newline) {
+            // Disabled inside match arms to prevent consuming .Variant patterns
+            if !IN_MATCH_ARM && self.check(TokenKind.Newline) {
                 let next = self.peek_at_meaningful(0)
                 if next.kind is .Dot {
                     self.skip_newlines()
@@ -1144,6 +1158,11 @@ impl Parser {
             // Create merge block (all arms branch here when done)
             let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.end")
 
+            // Track arm values and blocks for phi node (match-as-expression)
+            mut arm_vals: List<ptr> = []
+            mut arm_bbs: List<ptr> = []
+            mut match_arms_are_str: bool = false
+
             // Parse and emit arms as if-else chain
             // For each arm: compare → cond_br to arm body or next check
             self.skip_newlines()
@@ -1167,17 +1186,28 @@ impl Parser {
                     self.skip_newlines()
                     if self.check(TokenKind.Arrow) { self.advance() }
                     self.skip_newlines()
-                    // Parse and emit body
+                    // Parse and emit body, capturing result for phi
+                    let prev_match = IN_MATCH_ARM
+                    IN_MATCH_ARM = true
+                    mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check(TokenKind.LBrace) {
-                        let _body = self.parse_block()
+                        arm_result = self.parse_block_for_value(cg)
                     } else {
                         let _body = self.parse_expr()
-                        // Emit the expression as a statement
                         if _body != null {
-                            cg.emit_expr(_body!)
+                            arm_result = cg.emit_expr(_body!)
                         }
                     }
+                    // Pick up pre-computed value from nested match or other expression
+                    if CG_HAS_LAST_VAL == 1 {
+                        arm_result = CG_LAST_VAL
+                        CG_HAS_LAST_VAL = 0
+                    }
+                    IN_MATCH_ARM = prev_match
+                    if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                     if !llvm.block_has_terminator(CG_B) {
+                        arm_vals = arm_vals.push(arm_result)
+                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
                         llvm.build_br(CG_B, merge_bb)
                     }
                     self.skip_newlines()
@@ -1217,13 +1247,24 @@ impl Parser {
 
                     // Emit arm body
                     llvm.position_at_end(CG_B, arm_bb)
+                    let prev_match2 = IN_MATCH_ARM
+                    IN_MATCH_ARM = true
+                    mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check(TokenKind.LBrace) {
-                        let _body = self.parse_block()
+                        arm_result = self.parse_block_for_value(cg)
                     } else {
                         let _body = self.parse_expr()
-                        if _body != null { cg.emit_expr(_body!) }
+                        if _body != null { arm_result = cg.emit_expr(_body!) }
                     }
+                    if CG_HAS_LAST_VAL == 1 {
+                        arm_result = CG_LAST_VAL
+                        CG_HAS_LAST_VAL = 0
+                    }
+                    IN_MATCH_ARM = prev_match2
+                    if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                     if !llvm.block_has_terminator(CG_B) {
+                        arm_vals = arm_vals.push(arm_result)
+                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
                         llvm.build_br(CG_B, merge_bb)
                     }
 
@@ -1262,13 +1303,24 @@ impl Parser {
 
                 // Emit arm body
                 llvm.position_at_end(CG_B, arm_bb)
+                let prev_match3 = IN_MATCH_ARM
+                IN_MATCH_ARM = true
+                mut arm_result = llvm.const_int(CG_I64, 0, 0)
                 if self.check(TokenKind.LBrace) {
-                    let _body = self.parse_block()
+                    arm_result = self.parse_block_for_value(cg)
                 } else {
                     let _body = self.parse_expr()
-                    if _body != null { cg.emit_expr(_body!) }
+                    if _body != null { arm_result = cg.emit_expr(_body!) }
                 }
+                if CG_HAS_LAST_VAL == 1 {
+                    arm_result = CG_LAST_VAL
+                    CG_HAS_LAST_VAL = 0
+                }
+                IN_MATCH_ARM = prev_match3
+                if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                 if !llvm.block_has_terminator(CG_B) {
+                    arm_vals = arm_vals.push(arm_result)
+                    arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
                     llvm.build_br(CG_B, merge_bb)
                 }
 
@@ -1277,13 +1329,37 @@ impl Parser {
                 self.skip_newlines()
             }
 
-            // If we fall through all arms, jump to merge
+            // If we fall through all arms (no match), jump to merge with default value
             if !llvm.block_has_terminator(CG_B) {
+                if match_arms_are_str {
+                    // Default: empty string {null, 0}
+                    let undef = llvm.get_undef(CG_STR)
+                    let z1 = llvm.build_insert_value(CG_B, undef, llvm.const_null(CG_PTR), 0, "def.ptr")
+                    let z2 = llvm.build_insert_value(CG_B, z1, llvm.const_int(CG_I64, 0, 0), 1, "def.len")
+                    arm_vals = arm_vals.push(z2)
+                } else {
+                    arm_vals = arm_vals.push(llvm.const_int(CG_I64, 0, 0))
+                }
+                arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
                 llvm.build_br(CG_B, merge_bb)
             }
 
             self.expect(TokenKind.RBrace)
             llvm.position_at_end(CG_B, merge_bb)
+
+            // Build phi node so match can be used as an expression
+            if arm_vals.length > 0 {
+                let phi_ty = if match_arms_are_str { CG_STR } else { CG_I64 }
+                let phi = llvm.build_phi(CG_B, phi_ty, "match.val")
+                mut phi_i = 0
+                while phi_i < arm_vals.length {
+                    llvm.add_incoming(phi, arm_vals[phi_i], arm_bbs[phi_i])
+                    phi_i = phi_i + 1
+                }
+                CG_LAST_VAL = phi
+                CG_HAS_LAST_VAL = 1
+                if match_arms_are_str { CG_LAST_IS_STR = 1 }
+            }
             return Expr.IntLit(0, start)
         }
 

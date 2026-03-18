@@ -484,6 +484,14 @@ impl Parser {
         }
     }
 
+    // Parse a block and return the last emitted LLVM value (for match-as-expression)
+    fn parse_block_for_value(self, cg: Codegen) -> ptr {
+        let block = self.parse_block()
+        // The last emitted value might be in CG_LAST_VAL
+        if CG_HAS_LAST_VAL == 1 { return CG_LAST_VAL }
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
     // Parse a block or wrap a single statement in a block
     fn parse_block_or_stmt(self) -> Block? {
         if self.check(TokenKind.LBrace) {
