@@ -1,22 +1,30 @@
-type Vec3 = {
-    x: int,
-    y: int,
-    z: int,
+// Mini lexer test — a tiny fragment of what the self-hosted compiler does
+
+type Token = {
+    kind_id: int,
+    text: string,
 }
 
-fn dot(a: Vec3, b: Vec3) -> int {
-    return a.x * b.x + a.y * b.y + a.z * b.z
+fn lex_char(ch: string) -> Token {
+    if ch == "(" {
+        return Token { kind_id: 0, text: "" }
+    }
+    if ch == ")" {
+        return Token { kind_id: 0, text: "" }
+    }
+    // Default: treat as identifier
+    return Token { kind_id: 1, text: ch }
 }
 
 fn main() {
-    let v1 = Vec3 { x: 1, y: 2, z: 3 }
-    let v2 = Vec3 { x: 4, y: 5, z: 6 }
+    let tok = lex_char("x")
+    let kid = tok.kind_id
+    let txt = tok.text
+    println(kid)
+    println(txt)
 
-    let d = dot(v1, v2)
-    println(d)
-
-    let sum = v1.x + v1.y + v1.z
-    println(sum)
+    let tok2 = lex_char("(")
+    println(tok2.kind_id)
 
     println("done!")
 }

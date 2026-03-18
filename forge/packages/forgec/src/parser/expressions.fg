@@ -688,10 +688,11 @@ impl Parser {
         // In codegen mode: build LLVM struct value inline
         if CG_ACTIVE {
             let struct_name = LAST_IDENT_NAME
-            // Collect field values and names
+            // Collect field values, names, and types
             let vals = llvm.value_array_new(32)
             mut field_count = 0
             mut parsed_fields = ""
+            mut parsed_field_types = ""  // comma-separated "s" (string) or "i" (int)
 
             while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                 self.skip_newlines()
@@ -707,6 +708,13 @@ impl Parser {
                         let expr_val = self.parse_expr()
                         let val = cg.emit_expr(expr_val!)
                         llvm.value_array_set(vals, field_count, val)
+                        // Track if this field is a string
+                        if field_count > 0 { parsed_field_types = parsed_field_types + "," }
+                        if CG_LAST_IS_STR == 1 {
+                            parsed_field_types = parsed_field_types + "s"
+                        } else {
+                            parsed_field_types = parsed_field_types + "i"
+                        }
                         field_count = field_count + 1
                     }
                 } else {
@@ -718,12 +726,20 @@ impl Parser {
             }
             self.expect(TokenKind.RBrace)
 
-            // Create struct type on-the-fly from field count (all i64 for now)
+            // Create struct type with correct field types
             let ft = llvm.type_array_new(field_count)
+            // Parse field_types string to set LLVM types
             mut fti = 0
-            while fti < field_count {
-                llvm.type_array_set(ft, fti, CG_I64)
+            mut ftpos = 0
+            while fti < field_count && ftpos < parsed_field_types.length {
+                let ftch = parsed_field_types[ftpos]
+                if ftch == "s" {
+                    llvm.type_array_set(ft, fti, CG_STR)
+                } else if ftch == "i" {
+                    llvm.type_array_set(ft, fti, CG_I64)
+                }
                 fti = fti + 1
+                ftpos = ftpos + 2  // skip comma
             }
             let struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
             llvm.type_array_free(ft)
