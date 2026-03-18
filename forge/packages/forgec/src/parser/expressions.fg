@@ -137,16 +137,29 @@ impl Parser {
                     cg.emit_expr(result)
                 }
                 let rhs = cg.emit_expr(right!)
-                // String concatenation: if both sides are strings, call forge_string_concat
+                // String operations: concat and comparison
                 mut val: ptr = null
                 if op_key == "Add" && result_is_str && rhs_is_str {
                     val = call_rt_2_ss(CG_RT_SCONCAT, lhs, rhs, CG_STR, "concat")
+                } else if (op_key == "Eq" || op_key == "NotEq") && (result_is_str || rhs_is_str) {
+                    // String equality: forge_string_eq(a, b) → i8
+                    let eq_val = call_rt_2_ss(CG_RT_SEQ, lhs, rhs, CG_I8, "str_eq")
+                    // zext i8 to i64
+                    val = llvm.build_zext(CG_B, eq_val, llvm.int64_type(CG_CTX), "eq_ext")
+                    if op_key == "NotEq" {
+                        // Invert: != means !eq
+                        val = llvm.build_icmp(CG_B, 32, val, llvm.const_int(CG_I64, 0, 0), "neq")
+                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "neq_ext")
+                    }
                 } else {
                     val = emit_binop(lhs, op_key, rhs)
                 }
                 // Comparison ops return i1 — zero-extend to i64 for consistent storage
                 if op_key == "Eq" || op_key == "NotEq" || op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
-                    val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cmpext")
+                    // Only zext if not already done (string eq already zexted)
+                    if !(result_is_str || rhs_is_str) {
+                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cmpext")
+                    }
                 }
                 // Track the LLVM value directly (no AST round-trip)
                 result_is_llvm = true
