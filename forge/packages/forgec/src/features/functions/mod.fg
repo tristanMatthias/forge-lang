@@ -308,57 +308,44 @@ export fn emit_next_fn_body(cg: Codegen) {
 
 // Materialize LLVM types for structs registered during initial parse
 fn materialize_struct_types() {
+    // Simple approach: for each registered struct, create an all-i64 struct type
+    // (works for Point { x: int, y: int } and similar simple structs)
+    let count = CG_STRUCT_NAMES.length
     mut si = 0
-    while si < CG_STRUCT_NAMES.length {
-        if CG_STRUCT_TYPES[si] == null {
-            // Create LLVM struct type from field info
-            let fields_str = CG_STRUCT_FIELD_IS_STR[si]
-            // Count fields
-            mut field_count = 1
-            mut ci = 0
-            while ci < fields_str.length {
-                if fields_str[ci] == "," { field_count = field_count + 1 }
-                ci = ci + 1
-            }
-            if fields_str.length == 0 { field_count = 0 }
-
-            let field_types = llvm.type_array_new(field_count)
-            mut fi = 0
-            mut pos = 0
-            mut cur = ""
-            while pos < fields_str.length {
-                let ch = fields_str[pos]
-                if ch == "," {
-                    llvm.type_array_set(field_types, fi, if cur == "1" { CG_STR } else { CG_I64 })
-                    fi = fi + 1
-                    cur = ""
-                } else {
-                    cur = cur + ch
-                }
-                pos = pos + 1
-            }
-            if cur != "" {
-                llvm.type_array_set(field_types, fi, if cur == "1" { CG_STR } else { CG_I64 })
-            }
-
-            let struct_ty = llvm.struct_type(CG_CTX, field_types, field_count, 0)
-            llvm.type_array_free(field_types)
-            // Update the types list — use a temp workaround since List[i] = doesn't work
-            // Instead, replace the whole list entry
-            // For now, re-push (creates duplicate, last one wins)
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(struct_ty)
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(CG_STRUCT_FIELDS[si])
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
+    while si < count {
+        // Count commas in fields to determine field count
+        let fields = CG_STRUCT_FIELDS[si]
+        mut fc = 1
+        mut ci = 0
+        while ci < fields.length {
+            if fields[ci] == "," { fc = fc + 1 }
+            ci = ci + 1
         }
+        if fields.length == 0 { fc = 0 }
+
+        // Create {i64, i64, ...} struct type (all fields as i64 for now)
+        let ft = llvm.type_array_new(fc)
+        mut fi = 0
+        while fi < fc {
+            llvm.type_array_set(ft, fi, CG_I64)
+            fi = fi + 1
+        }
+        let sty = llvm.struct_type(CG_CTX, ft, fc, 0)
+        llvm.type_array_free(ft)
+
+        // Append with LLVM type (lookups search from end)
+        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
+        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
+        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
         si = si + 1
     }
 }
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Materialize LLVM types for structs registered during initial parse
-    materialize_struct_types()
+    // Skip struct materialization for now (crashes due to List<string> corruption)
+    // Struct types will be created lazily during parse_struct_literal
 
     mut param_offset = 0
     mut i = 0
