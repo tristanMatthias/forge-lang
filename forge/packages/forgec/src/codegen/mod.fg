@@ -5,7 +5,7 @@ use core.types.Type
 use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
-use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, emit_all_fn_bodies}
+use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use @std.llvm
 
@@ -524,12 +524,43 @@ impl Codegen {
     }
 
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> ptr {
+        // Find param offset for this function
+        mut fn_param_offset = 0
+        mut fn_idx = 0
+        while fn_idx < FN_NAMES.length {
+            if FN_NAMES[fn_idx] == fn_name { break }
+            if fn_idx < FN_PARAM_COUNTS.length {
+                fn_param_offset = fn_param_offset + FN_PARAM_COUNTS[fn_idx]
+            }
+            fn_idx = fn_idx + 1
+        }
+
         let arg_arr = llvm.value_array_new(args.length)
         let param_arr = llvm.type_array_new(args.length)
         mut i = 0
         for arg in args {
             llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
-            llvm.type_array_set(param_arr, i, CG_I64) // TODO: use actual param types
+            // Look up param type
+            mut pty = CG_I64
+            let pt_idx = fn_param_offset + i
+            if pt_idx < FN_ALL_PARAM_TYPES.length {
+                let ptn = FN_ALL_PARAM_TYPES[pt_idx]
+                if ptn == "string" {
+                    pty = CG_STR
+                } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
+                    // Struct param type
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
+                        if CG_STRUCT_NAMES[sti] == ptn {
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null { pty = sty }
+                            break
+                        }
+                        sti = sti - 1
+                    }
+                }
+            }
+            llvm.type_array_set(param_arr, i, pty)
             i = i + 1
         }
         // Look up return type from FN_RETURN_TYPES

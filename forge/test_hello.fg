@@ -1,58 +1,13 @@
-type Token = {
-    kind_id: int,
-    text: string,
-}
-
-fn make_token(kid: int, txt: string) -> Token {
-    return Token { kind_id: kid, text: txt }
-}
-
-fn fib(n: int) -> int {
-    if n <= 1 { return n }
-    return fib(n - 1) + fib(n - 2)
+fn is_keyword(text: string) -> int {
+    if text == "fn" { return 1 }
+    if text == "let" { return 1 }
+    if text == "if" { return 1 }
+    return 0
 }
 
 fn main() {
-    println("=== Forge Compiler v0.3 ===")
-
-    // Struct with string field
-    let tok = make_token(1, "hello")
-    let kid = tok.kind_id
-    println("kind_id = ${kid}")
-
-    // String operations
-    let name = "Forge"
-    println(name.length)
-
-    // Lists + for loops (int list)
-    let nums = [10, 20, 30, 40, 50]
-    mut sum = 0
-    for n in nums {
-        sum = sum + n
-    }
-    println("sum = ${sum}")
-
-    // Maps
-    mut env = {}
-    env["x"] = 42
-    println(env["x"])
-
-    // Recursion
-    let f = fib(15)
-    println("fib = ${f}")
-
-    // String equality
-    let a = "hello"
-    let b = "hello"
-    let c = "world"
-    if a == b {
-        println("a == b: true")
-    }
-    if a == c {
-        println("a == c: true")
-    } else {
-        println("a != c: true")
-    }
-
+    println(is_keyword("fn"))
+    println(is_keyword("hello"))
+    println(is_keyword("let"))
     println("done!")
 }
