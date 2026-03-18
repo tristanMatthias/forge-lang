@@ -395,14 +395,25 @@ impl Codegen {
     }
 
     fn emit_block(self, block: Block) -> ptr {
-
+        // Temporarily removed debug
         mut last = llvm.const_int(CG_I64, 0, 0)
+        mut _si = 0
         for stmt in block.statements {
+            _si = _si + 1
             match stmt {
-                .Expr(expr) -> { last = self.emit_expr(expr) }
-                .Assign(t, v, s) -> {}
-                .Return(v, s) -> { self.emit_return(v) }
-                .Feature(fe) -> { self.dispatch_stmt(fe) }
+                .Expr(expr) -> {
+                    eprintln("[emit_block] s${_si}: Expr")
+                    last = self.emit_expr(expr)
+                }
+                .Assign(t, v, s) -> { eprintln("[emit_block] s${_si}: Assign") }
+                .Return(v, s) -> {
+                    eprintln("[emit_block] s${_si}: Return")
+                    self.emit_return(v)
+                }
+                .Feature(fe) -> {
+                    eprintln("[emit_block] s${_si}: Feature")
+                    self.dispatch_stmt(fe)
+                }
             }
         }
         last

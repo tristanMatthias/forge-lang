@@ -21,7 +21,8 @@ use core.token.{Token, TokenKind, Span, TemplatePart}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use features.if_else.{make_if_expr, make_if_with_else, make_if_no_else}
+use codegen.{CG_B, CG_CTX, codegen_new}
+use @std.llvm
 
 // ─── Precedence Levels ─────────────────────────
 // All binary levels use parse_binary_level(prec) which:
@@ -477,31 +478,64 @@ impl Parser {
         let start = self.advance().span // consume 'if'
         self.skip_newlines()
 
+        // Parse condition first
         let condition = self.parse_expr()
         if condition == null { return null }
 
         self.skip_newlines()
-        let then_block = self.parse_block()
-        if then_block == null { return null }
 
-        // Optional else
+        // If codegen is active, create LLVM blocks BEFORE parsing bodies
+        if CG_B != null {
+            mut cg = codegen_new()
+            let cond_val = cg.emit_expr(condition!)
+            let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
+
+            let current_bb = llvm.get_insert_block(CG_B)
+            let current_fn = llvm.get_basic_block_parent(current_bb)
+
+            // Always create then + else + merge (else may be empty)
+            let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
+            let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
+            let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
+
+            llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
+
+            // Parse+emit then block
+            llvm.position_at_end(CG_B, then_bb)
+            let _then = self.parse_block()
+            llvm.build_br(CG_B, merge_bb)
+
+            // Parse+emit else block (if present)
+            llvm.position_at_end(CG_B, else_bb)
+            self.skip_newlines()
+            if self.check(TokenKind.Else) {
+                self.advance()
+                self.skip_newlines()
+                if self.check(TokenKind.If) {
+                    self.parse_if_expr()
+                } else {
+                    let _else = self.parse_block()
+                }
+            }
+            llvm.build_br(CG_B, merge_bb)
+
+            llvm.position_at_end(CG_B, merge_bb)
+            return Expr.IntLit(0, start)
+        }
+
+        // Not in codegen — just parse normally
+        let then_block = self.parse_block()
         self.skip_newlines()
-        let has_else = self.check(TokenKind.Else)
-        if has_else {
+        if self.check(TokenKind.Else) {
             self.advance()
             self.skip_newlines()
             if self.check(TokenKind.If) {
-                // else if — wrap in block with single if expr
-                let elif = self.parse_if_expr()
-                let elif_block = Block { statements: [Statement.Expr(elif!)], span: self.current_span() }
-                return make_if_with_else(condition!, then_block!, elif_block, start)
+                self.parse_if_expr()
             } else {
-                let else_block = self.parse_block()
-                return make_if_with_else(condition!, then_block!, else_block!, start)
+                self.parse_block()
             }
         }
-
-        make_if_no_else(condition!, then_block!, start)
+        Expr.IntLit(0, start)
     }
 
     // ─── Match Expression ──────────────────────

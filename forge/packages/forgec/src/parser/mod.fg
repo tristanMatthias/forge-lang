@@ -223,6 +223,10 @@ impl Parser {
             .Const -> { return parse_const(self) }
             .Fn -> { return parse_fn(self) }
             .Export -> { return parse_export(self) }
+            .While -> {
+                eprintln("[parse] while matched!")
+                return parse_while(self)
+            }
             _ -> {}
         }
 
@@ -238,14 +242,28 @@ impl Parser {
 
         // Check if there's a value (not at end of statement)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
-            return Statement.Return(Expr.NullLit(start), start) // bare return
+            // Bare return — emit void return inline if codegen active
+            if CG_B != null {
+                llvm.build_ret_void(CG_B)
+            }
+            return Statement.Expr(Expr.IntLit(0, start))
         }
 
         let value = self.parse_expr()
         if value == null {
-            return Statement.Return(Expr.NullLit(start), start)
+            if CG_B != null {
+                llvm.build_ret_void(CG_B)
+            }
+            return Statement.Expr(Expr.IntLit(0, start))
         }
-        Statement.Return(value!, start)
+
+        // Emit return inline during codegen
+        if CG_B != null {
+            mut cg = codegen_new()
+            let ret_val = cg.emit_expr(value!)
+            llvm.build_ret(CG_B, ret_val)
+        }
+        Statement.Expr(Expr.IntLit(0, start))
     }
 
     fn parse_expr_or_assign(self) -> Statement? {
@@ -297,7 +315,12 @@ impl Parser {
             return Statement.Expr(expr!)
         }
 
-        Statement.Expr(expr!)
+        // Emit expression statement inline during codegen
+        if CG_B != null {
+            mut cg = codegen_new()
+            cg.emit_expr(expr!)
+        }
+        Statement.Expr(Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 }))
     }
 
     // ─── Block Parsing ─────────────────────────

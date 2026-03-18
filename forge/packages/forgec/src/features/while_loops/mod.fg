@@ -1,5 +1,6 @@
 // ─── While Loops Feature ───────────────────────
 // while condition { body }
+// Emits LLVM IR inline during parsing (bootstrap workaround).
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
@@ -7,68 +8,68 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, codegen_new}
+use @std.llvm
 
-mut WHILE_DATA: Map<string, WhileData> = {}
-
-type WhileData = {
-    condition: Expr,
-    body: Block,
-    span: Span,
-}
-
-fn get_while(id: int) -> WhileData? {
-    let key = "${id}"
-    if WHILE_DATA.has(key) { WHILE_DATA[key] } else { null }
-}
-
-fn parse_while(p: Parser) -> Statement? {
+export fn parse_while(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'while'
     p.skip_newlines()
 
-    let condition = p.parse_expr()
-    if condition == null { return null }
+    // If codegen is active, set up while loop blocks BEFORE parsing body
+    if CG_B != null {
+        // Parse condition
+        let condition = p.parse_expr()
+        if condition == null { return null }
 
-    p.skip_newlines()
-    let body = p.parse_block()
-    if body == null { return null }
+        p.skip_newlines()
+
+        let current_bb = llvm.get_insert_block(CG_B)
+        let current_fn = llvm.get_basic_block_parent(current_bb)
+
+        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.cond")
+        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.body")
+        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.end")
+
+        // Jump to condition check
+        llvm.build_br(CG_B, cond_bb)
+
+        // Emit condition
+        llvm.position_at_end(CG_B, cond_bb)
+        mut cg = codegen_new()
+        let cond_val = cg.emit_expr(condition!)
+        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "whilecond")
+        llvm.build_cond_br(CG_B, cond_i1, body_bb, end_bb)
+
+        // Position in body block, then parse+emit body
+        llvm.position_at_end(CG_B, body_bb)
+        eprintln("[parse_while] before body parse pos=${p.pos}")
+        let body = p.parse_block()
+        eprintln("[parse_while] after body parse pos=${p.pos} stmts=${body.statements.length}")
+        // Body is already emitted inline during parsing
+        llvm.build_br(CG_B, cond_bb)
+
+        // Continue after loop
+        llvm.position_at_end(CG_B, end_bb)
+    } else {
+        // Not in codegen — just parse and discard
+        let condition = p.parse_expr()
+        p.skip_newlines()
+        let body = p.parse_block()
+    }
 
     let id = next_node_id()
-    WHILE_DATA["${id}"] = WhileData { condition: condition!, body: body!, span: start }
     feature_stmt("while_loops", "while", id, start)
 }
 
 fn check_while(tc: TypeChecker, node: NodeRef) {
-    let d = get_while(node.node_id)
-    if d == null { return }
-    tc.infer_expr(d!.condition)
-    tc.check_block(d!.body)
+    // TODO: type check condition and body
 }
 
 fn emit_while(cg: Codegen, node: NodeRef) {
-    let d = get_while(node.node_id)
-    if d == null { return }
-    let data = d!
-
-    let fn_val = cg.current_fn!
-    let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.cond")
-    let body_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.body")
-    let end_bb = llvm.append_basic_block(CG_CTX, fn_val, "while.end")
-
-    llvm.build_br(CG_B, cond_bb)
-    llvm.position_at_end(CG_B, cond_bb)
-    let cond = cg.emit_expr(data.condition)
-    llvm.build_cond_br(CG_B, cond, body_bb, end_bb)
-
-    llvm.position_at_end(CG_B, body_bb)
-    cg.emit_block(data.body)
-    llvm.build_br(CG_B, cond_bb)
-
-    llvm.position_at_end(CG_B, end_bb)
+    // No-op: while loops are emitted inline during parsing
+    return
 }
 
-// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
-// Old: register_feature(FeatureRegistration { id: "while_loops", ... })
 reg_parser("while", parse_while)
 reg_check_stmt("while_loops", check_while)
 reg_emit_stmt("while_loops", emit_while)
