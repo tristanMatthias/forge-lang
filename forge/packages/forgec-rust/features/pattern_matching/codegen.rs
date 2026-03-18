@@ -120,7 +120,21 @@ impl<'ctx> Codegen<'ctx> {
                         arm_results.push((final_val, branch_bb));
                     }
                 } else {
-                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    // Arm produced no value — add default to maintain PHI consistency
+                    if let Some(rt) = result_type {
+                        let default_val = match rt {
+                            BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                            BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                            BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                            BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                            _ => self.context.i64_type().const_zero().into(),
+                        };
+                        let branch_bb = self.builder.get_insert_block().unwrap();
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        arm_results.push((default_val, branch_bb));
+                    } else {
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    }
                 }
             }
         }
@@ -243,7 +257,21 @@ impl<'ctx> Codegen<'ctx> {
                     self.builder.build_unconditional_branch(merge_bb).unwrap();
                     arm_results.push((final_val, final_bb));
                 } else {
-                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    // Arm produced no value — add default to maintain PHI consistency
+                    if let Some(rt) = result_type {
+                        let default_val = match rt {
+                            BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                            BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                            BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                            BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                            _ => self.context.i64_type().const_zero().into(),
+                        };
+                        let branch_bb = self.builder.get_insert_block().unwrap();
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        arm_results.push((default_val, branch_bb));
+                    } else {
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    }
                 }
             }
 
