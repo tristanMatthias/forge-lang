@@ -309,8 +309,14 @@ impl Parser {
 
         // Emit return inline during codegen
         if CG_ACTIVE {
-            mut cg = codegen_new()
-            let ret_val = cg.emit_expr(value!)
+            // Use CG_LAST_VAL if set (struct literal or function call result)
+            let ret_val = if CG_HAS_LAST_VAL == 1 {
+                CG_HAS_LAST_VAL = 0
+                CG_LAST_VAL
+            } else {
+                mut cg = codegen_new()
+                cg.emit_expr(value!)
+            }
             llvm.build_ret(CG_B, ret_val)
         }
         Statement.Expr(Expr.IntLit(0, start))

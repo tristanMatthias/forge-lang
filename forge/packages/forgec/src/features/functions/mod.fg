@@ -46,8 +46,14 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     let type_params = p.parse_type_params()
     let params = p.parse_params()
 
+    mut return_type_name = ""
     let return_type = if p.check(TokenKind.Arrow) {
         p.advance()
+        // Capture return type name
+        let ret_tok = p.peek()
+        if ret_tok.kind_id == 1 {
+            return_type_name = ret_tok.text
+        }
         p.parse_type_expr()
     } else { null }
 
@@ -62,9 +68,10 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         p.source.substring(block_open_span.start, block_close_end + 1)
     } else { "" }
 
-    // Store for codegen — name, body, param count, names, and types
+    // Store for codegen — name, body, param count, names, types, return type
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)
+    store_fn_return_type(return_type_name)
     // Store param info with type names from PARSED_PARAM_TYPES
     mut pi = 0
     for param in params {
@@ -203,6 +210,7 @@ mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
 mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
 mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
 mut FN_ALL_PARAM_TYPES: List<string> = [] // flat list of ALL param type names
+mut FN_RETURN_TYPES: List<string> = []    // return type name per function
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
@@ -220,6 +228,10 @@ export fn store_fn_param_name(name: string) {
 
 export fn store_fn_param_type(type_name: string) {
     FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
+}
+
+export fn store_fn_return_type(type_name: string) {
+    FN_RETURN_TYPES = FN_RETURN_TYPES.push(type_name)
 }
 
 // Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
@@ -430,7 +442,24 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
         }
-        let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        // Determine return type
+        mut ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        if !is_main && i < FN_RETURN_TYPES.length {
+            let rtn = FN_RETURN_TYPES[i]
+            if rtn == "string" {
+                ret_ty = CG_STR
+            } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
+                mut sti = CG_STRUCT_NAMES.length - 1
+                while sti >= 0 {
+                    if CG_STRUCT_NAMES[sti] == rtn {
+                        let sty = CG_STRUCT_TYPES[sti]
+                        if sty != null { ret_ty = sty }
+                        break
+                    }
+                    sti = sti - 1
+                }
+            }
+        }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
         let fn_val = llvm.add_function(CG_MOD, name, fn_type)

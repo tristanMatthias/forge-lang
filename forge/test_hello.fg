@@ -3,29 +3,21 @@ type Point = {
     y: int,
 }
 
-fn add_points(a: Point, b: Point) -> int {
-    return a.x + b.x + a.y + b.y
+fn make_point(x: int, y: int) -> Point {
+    return Point { x: x, y: y }
 }
 
-fn describe(p: Point) {
-    let px = p.x
-    let py = p.y
-    println("x=${px} y=${py}")
+fn add_points(a: Point, b: Point) -> Point {
+    return Point { x: a.x + b.x, y: a.y + b.y }
 }
 
 fn main() {
-    let p1 = Point { x: 10, y: 20 }
-    let p2 = Point { x: 3, y: 7 }
+    let p1 = make_point(10, 20)
+    let p2 = make_point(3, 7)
+    let p3 = add_points(p1, p2)
 
-    describe(p1)
-    describe(p2)
-
-    let sum = add_points(p1, p2)
-    println("sum=${sum}")
-
-    // Local field access
-    let total = p1.x + p1.y + p2.x + p2.y
-    println("total=${total}")
-
+    let px = p3.x
+    let py = p3.y
+    println("result: x=${px} y=${py}")
     println("done!")
 }
