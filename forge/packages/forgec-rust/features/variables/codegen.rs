@@ -130,13 +130,6 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_mut_var(&mut self, data: &VarDeclData) {
         // Skip global mutables - they are created in compile_program first pass
         if self.global_mutables.contains_key(&data.name) {
-            // Skip if already initialized (avoid double-init from module merge)
-            if self.initialized_globals.contains(&data.name) {
-                eprintln!("[skip] already initialized: {}", data.name);
-                return;
-            }
-            eprintln!("[init] first init: {}", data.name);
-            self.initialized_globals.insert(data.name.clone());
             // Global mutable: compile initializer and store it to the global
             if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
                 let global_ty = self.global_mutables.get(&data.name).cloned();

@@ -106,30 +106,30 @@ impl Parser {
         }
     }
 
-    fn expect_ident(self) -> string? {
+    fn expect_ident(self) -> string {
         match self.peek().kind {
             .Ident(name) -> {
                 self.advance()
-                name
+                return name
             }
-            // Allow some keywords as identifiers
             .Is -> {
                 self.advance()
-                "is"
+                return "is"
             }
             .Table -> {
                 self.advance()
-                "table"
+                return "table"
             }
             .Underscore -> {
                 self.advance()
-                "_"
+                return "_"
             }
             _ -> {
                 self.error("expected identifier")
-                null
+                return ""
             }
         }
+        ""
     }
 
     fn skip_newlines(self) {
@@ -274,28 +274,31 @@ impl Parser {
 
     // ─── Block Parsing ─────────────────────────
 
-    fn parse_block(self) -> Block? {
+    fn parse_block(self) -> Block {
         let start = self.current_span()
-        if self.expect(TokenKind.LBrace) == null { return null }
+        let empty = Block { statements: [], span: start }
+        if self.expect(TokenKind.LBrace) == null { return empty }
 
         self.skip_newlines()
         mut statements: List<Statement> = []
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+            let before = self.pos
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
             }
+            if self.pos == before { self.advance() }
             self.skip_newlines()
         }
 
-        if self.expect(TokenKind.RBrace) == null { return null }
+        self.expect(TokenKind.RBrace)
 
         Block {
             statements,
             span: Span {
                 start: start.start,
-                end: self.peek_at(-1).span.end,
+                end: self.current_span().end,
                 line: start.line,
                 col: start.col,
             },
@@ -508,8 +511,8 @@ impl Parser {
 
     // ─── Parameter Parsing ─────────────────────
 
-    fn parse_params(self) -> List<Param>? {
-        if self.expect(TokenKind.LParen) == null { return null }
+    fn parse_params(self) -> List<Param> {
+        self.expect(TokenKind.LParen)
         mut params: List<Param> = []
 
         while !self.check(TokenKind.RParen) && !self.is_at_end() {
@@ -523,7 +526,7 @@ impl Parser {
             }
         }
 
-        if self.expect(TokenKind.RParen) == null { return null }
+        self.expect(TokenKind.RParen)
         params
     }
 

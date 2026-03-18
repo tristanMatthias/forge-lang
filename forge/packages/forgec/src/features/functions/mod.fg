@@ -38,34 +38,22 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     let start = p.advance().span // consume 'fn'
 
     let name = p.expect_ident()
-    if name == null {
-        p.error("expected function name after 'fn'")
-        return null
-    }
+    if name == "" { return null }
 
     let type_params = p.parse_type_params()
     let params = p.parse_params()
-    // Skip null check — unreliable in patched binary
 
-    let return_type = if p.check(.Arrow) {
+    let return_type = if p.check(TokenKind.Arrow) {
         p.advance()
         p.parse_type_expr()
     } else { null }
 
     let body = p.parse_block()
-    // Skip null check — it's unreliable in the patched binary
-    // (== null returns true for valid Block values)
 
-    // Store for codegen (pass nullable — unwrap is unreliable in patched binary)
+    // Store for codegen (all non-nullable now)
     store_fn_for_codegen(name, body)
 
     let id = next_node_id()
-    // Side table may not work in patched binary, but try anyway for checker
-    FN_DECLS["${id}"] = FnDeclData {
-        name: name!, type_params, params: params!,
-        return_type, body: body!, exported, span: start,
-    }
-
     feature_stmt("functions", "fn_decl", id, start)
 }
 
@@ -189,11 +177,9 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 mut FN_NAMES: List<string> = []
 mut FN_BODIES: List<Block> = []
 
-export fn store_fn_for_codegen(name: string?, body: Block?) {
-    // No null checks — unreliable in patched binary
-    // Just force-push (the values are valid even if nullable checks fail)
-    FN_NAMES = FN_NAMES.push(name!)
-    FN_BODIES = FN_BODIES.push(body!)
+export fn store_fn_for_codegen(name: string, body: Block) {
+    FN_NAMES = FN_NAMES.push(name)
+    FN_BODIES = FN_BODIES.push(body)
 }
 
 export fn emit_all_functions(cg: Codegen) {
