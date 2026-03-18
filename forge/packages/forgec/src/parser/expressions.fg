@@ -503,7 +503,10 @@ impl Parser {
             // Parse+emit then block
             llvm.position_at_end(CG_B, then_bb)
             let _then = self.parse_block()
-            llvm.build_br(CG_B, merge_bb)
+            // Only add br if block doesn't already terminate (e.g., with ret)
+            if !llvm.block_has_terminator(CG_B) {
+                llvm.build_br(CG_B, merge_bb)
+            }
 
             // Parse+emit else block (if present)
             llvm.position_at_end(CG_B, else_bb)
@@ -517,7 +520,9 @@ impl Parser {
                     let _else = self.parse_block()
                 }
             }
-            llvm.build_br(CG_B, merge_bb)
+            if !llvm.block_has_terminator(CG_B) {
+                llvm.build_br(CG_B, merge_bb)
+            }
 
             llvm.position_at_end(CG_B, merge_bb)
             return Expr.IntLit(0, start)

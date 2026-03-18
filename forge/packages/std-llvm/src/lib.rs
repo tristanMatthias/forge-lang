@@ -36,6 +36,7 @@ extern "C" {
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
 
     // Basic Blocks
@@ -729,6 +730,52 @@ pub extern "C" fn forge_llvm_target_machine_emit_to_file(tm: LLVMPtr, m: LLVMPtr
 #[no_mangle]
 pub extern "C" fn forge_llvm_set_target(m: LLVMPtr, triple: *const c_char) {
     unsafe { LLVMSetTarget(m, triple) }
+}
+
+/// Check if a basic block already has a terminator instruction (ret, br, etc.).
+/// Returns 1 if it has a terminator, 0 if not.
+#[no_mangle]
+pub extern "C" fn forge_llvm_block_has_terminator(builder: LLVMPtr) -> c_int {
+    unsafe {
+        let bb = LLVMGetInsertBlock(builder);
+        if bb.is_null() { return 0; }
+        let term = LLVMGetBasicBlockTerminator(bb);
+        if term.is_null() { 0 } else { 1 }
+    }
+}
+
+/// High-level: emit an LLVM module to an object file. Returns 0 on success.
+#[no_mangle]
+pub extern "C" fn forge_llvm_emit_object_file(m: LLVMPtr, filename: *const c_char) -> c_int {
+    unsafe {
+        forge_llvm_initialize_all_targets();
+
+        let triple = LLVMGetDefaultTargetTriple();
+        LLVMSetTarget(m, triple);
+
+        let mut target: LLVMPtr = std::ptr::null_mut();
+        let mut err: *mut c_char = std::ptr::null_mut();
+        if LLVMGetTargetFromTriple(triple, &mut target, &mut err) != 0 {
+            if !err.is_null() { LLVMDisposeMessage(err); }
+            return 1;
+        }
+
+        let cpu = b"generic\0".as_ptr() as *const c_char;
+        let features = b"\0".as_ptr() as *const c_char;
+        // OptLevel=2 (Default), Reloc=0 (Default), CodeModel=0 (Default)
+        let tm = LLVMCreateTargetMachine(target, triple, cpu, features, 2, 0, 0);
+        if tm.is_null() { return 2; }
+
+        err = std::ptr::null_mut();
+        // codegen=1 = ObjectFile (0 = Assembly)
+        let result = LLVMTargetMachineEmitToFile(tm, m, filename, 1, &mut err);
+        if !err.is_null() { LLVMDisposeMessage(err); }
+
+        LLVMDisposeTargetMachine(tm);
+        LLVMDisposeMessage(triple);
+
+        result
+    }
 }
 
 #[no_mangle]

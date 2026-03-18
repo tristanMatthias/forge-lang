@@ -67,6 +67,11 @@ export fn codegen_write_ir(path: string) {
     llvm.print_module_to_file(CG_MOD, path)
 }
 
+export fn codegen_emit_object(path: string) -> bool {
+    let result = llvm.emit_object_file(CG_MOD, path)
+    result == 0
+}
+
 export fn codegen_cleanup() {
     cg_cleanup()
 }

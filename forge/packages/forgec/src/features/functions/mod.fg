@@ -358,10 +358,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             // No cg.emit_block — all code emitted inline during parsing
         }
 
-        if is_main {
-            llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-        } else {
-            llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+        // Add implicit return only if the block doesn't already terminate
+        if !llvm.block_has_terminator(CG_B) {
+            if is_main {
+                llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+            } else {
+                llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+            }
         }
         i = i + 1
     }

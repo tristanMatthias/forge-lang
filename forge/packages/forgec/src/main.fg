@@ -83,9 +83,23 @@ fn build_compile(source: string, filename: string, output: string) {
     codegen_init(filename)
     mut cg = codegen_new()
     cg.emit_program(program)
+
+    // Emit object file
+    let obj_path = output + ".o"
+    if !codegen_emit_object(obj_path) {
+        eprintln("error: failed to emit object file")
+        // Fall back to IR output
+        codegen_write_ir("output.ll")
+        codegen_cleanup()
+        println("wrote output.ll (object emission failed)")
+        return
+    }
+
+    // Also write IR for debugging
     codegen_write_ir("output.ll")
     codegen_cleanup()
-    println("wrote output.ll")
+    println("compiled: ${obj_path}")
+    println("link with: cc ${obj_path} runtime.o -o ${output}")
 }
 
 fn main() {

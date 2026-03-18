@@ -131,6 +131,8 @@ extern fn forge_llvm_get_first_instruction(bb: ptr) -> ptr
 extern fn forge_llvm_get_entry_basic_block(f: ptr) -> ptr
 
 // ── Target Machine ──
+extern fn forge_llvm_block_has_terminator(builder: ptr) -> int
+extern fn forge_llvm_emit_object_file(m: ptr, filename: string) -> int
 extern fn forge_llvm_initialize_all_targets()
 extern fn forge_llvm_get_default_target_triple() -> ptr
 extern fn forge_llvm_get_target_from_triple(triple: ptr, target_out: ptr) -> int
@@ -609,6 +611,16 @@ export fn get_entry_basic_block(f: ptr) -> ptr {
 }
 
 // ── Target Machine ──
+
+/// Check if the current insertion block has a terminator (ret, br, etc.)
+export fn block_has_terminator(builder: ptr) -> bool {
+    forge_llvm_block_has_terminator(builder) != 0
+}
+
+/// High-level: emit module to an object file. Returns 0 on success.
+export fn emit_object_file(m: ptr, filename: string) -> int {
+    forge_llvm_emit_object_file(m, filename)
+}
 
 /// Initialize all LLVM targets (must call before any target machine operations).
 export fn initialize_all_targets() {

@@ -27,14 +27,9 @@ fn count_primes(limit: int) -> int {
 
 fn main() {
     println("=== Forge Self-Hosted Compiler ===")
-    println("")
-    println("Fibonacci:")
-    println(fib(10))
+    println("fib(20):")
     println(fib(20))
-    println("")
-    println("Prime counting:")
-    let primes = count_primes(100)
-    println(primes)
-    println("")
-    println("All tests passed!")
+    println("primes under 100:")
+    println(count_primes(100))
+    println("done!")
 }
