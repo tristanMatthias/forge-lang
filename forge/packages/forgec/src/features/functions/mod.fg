@@ -61,11 +61,16 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         p.source.substring(block_open_span.start, block_close_end + 1)
     } else { "" }
 
-    // Store for codegen
+    // Store for codegen — name, body, param count, names, and types
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)
+    // Store param info — extract type name from source text
+    // Since we can't destructure TypeExpr, use the raw source approach:
+    // Re-scan the param text between ( and ) to get types
+    // For simplicity, default all to "int" for now
     for param in params {
         store_fn_param_name(param.name)
+        store_fn_param_type("int") // TODO: extract actual type names
     }
 
     PARSE_END_POS = p.pos
@@ -193,6 +198,7 @@ mut FN_NAMES: List<string> = []
 mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
 mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
 mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
+mut FN_ALL_PARAM_TYPES: List<string> = [] // flat list of ALL param type names
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
@@ -206,6 +212,10 @@ export fn store_fn_param_count(count: int) {
 
 export fn store_fn_param_name(name: string) {
     FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(name)
+}
+
+export fn store_fn_param_type(type_name: string) {
+    FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
 }
 
 // Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
