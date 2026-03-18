@@ -225,6 +225,7 @@ impl Parser {
             CG_LAST_IS_STR = 0
             CG_LAST_IS_MAP = 0
             CG_HAS_LAST_VAL = 0
+            CG_IS_MAP_INDEX = 0
         }
 
         // Hardcoded feature dispatch (bootstrap can't store fn ptrs in Maps)
@@ -267,6 +268,16 @@ impl Parser {
             }
             .TypeKw -> {
                 let r = parse_type_decl(self)
+                self.sync_pos()
+                return r
+            }
+            .Enum -> {
+                let r = parse_enum_decl(self)
+                self.sync_pos()
+                return r
+            }
+            .Impl -> {
+                let r = parse_impl_block(self)
                 self.sync_pos()
                 return r
             }

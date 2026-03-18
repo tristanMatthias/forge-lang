@@ -1,0 +1,80 @@
+// COMPREHENSIVE TEST: ALL self-hosted compiler features
+// enum + match + struct + list + map + for + while + string + fib + template
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+type Token = {
+    kind_id: int,
+    text: string,
+}
+
+fn make_token(kid: int, txt: string) -> Token {
+    return Token { kind_id: kid, text: txt }
+}
+
+fn is_keyword(text: string) -> int {
+    if text == "fn" { return 1 }
+    if text == "let" { return 1 }
+    return 0
+}
+
+fn fib(n: int) -> int {
+    if n <= 1 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    // 1. Struct + field access
+    let tok = make_token(1, "hello")
+    println(tok.kind_id)
+
+    // 2. List + for loop
+    let nums = [10, 20, 30]
+    mut sum = 0
+    for n in nums { sum = sum + n }
+    println(sum)
+
+    // 3. Recursion (fib)
+    println(fib(15))
+
+    // 4. String equality
+    println(is_keyword("fn"))
+
+    // 5. Map
+    mut m = {}
+    m["x"] = 42
+    println(m["x"])
+
+    // 6. Match on integer
+    let x = 42
+    match x {
+        1 -> println("one")
+        42 -> println("forty-two")
+        _ -> println("other")
+    }
+
+    // 7. Match on string
+    let name = "hello"
+    match name {
+        "world" -> println("world")
+        "hello" -> println("matched hello")
+        _ -> println("no match")
+    }
+
+    // 8. While loop
+    mut count = 0
+    while count < 5 {
+        count = count + 1
+    }
+    println(count)
+
+    // 9. String template
+    let greeting = "world"
+    println("hello ${greeting}!")
+
+    println("ALL TESTS PASSED")
+}

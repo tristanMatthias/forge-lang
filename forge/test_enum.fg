@@ -1,0 +1,58 @@
+// Test: enum + match + impl for self-hosted compiler
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+type Point = {
+    x: int,
+    y: int,
+}
+
+fn add_points(a: Point, b: Point) -> Point {
+    return Point { x: a.x + b.x, y: a.y + b.y }
+}
+
+fn main() {
+    // Match on integers
+    let x = 42
+    match x {
+        1 -> println("one")
+        42 -> println("forty-two")
+        _ -> println("other")
+    }
+
+    // Match on strings
+    let name = "hello"
+    match name {
+        "world" -> println("world")
+        "hello" -> println("hello matched!")
+        _ -> println("no match")
+    }
+
+    // Match with block bodies
+    let y = 10
+    match y {
+        10 -> {
+            println("ten")
+        }
+        _ -> println("not ten")
+    }
+
+    // Struct operations
+    let p1 = Point { x: 3, y: 4 }
+    let p2 = Point { x: 7, y: 6 }
+    let p3 = add_points(p1, p2)
+    println(p3.x)
+    println(p3.y)
+
+    // All features together test
+    let nums = [10, 20, 30]
+    mut sum = 0
+    for n in nums { sum = sum + n }
+    println(sum)
+
+    println("done!")
+}

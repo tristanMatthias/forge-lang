@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_CTX, CG_STR, CG_I64}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64}
 use features.variables.{parse_var_binding, VarKind}
 use features.while_loops.PARSE_END_POS
 use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
@@ -470,7 +470,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
         llvm.position_at_end(CG_B, entry)
 
-        // TODO: clear vars between functions
+        // Reset type tracking flags BEFORE param definition
+        // to prevent leakage from previous function
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_HAS_LAST_VAL = 0
+        CG_IS_MAP_INDEX = 0
+        CG_LAST_STRUCT_TYPE = ""
 
         // Define params with correct types
         pi = 0
@@ -516,6 +522,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_LAST_IS_MAP = 0
         CG_HAS_LAST_VAL = 0
         CG_IS_MAP_INDEX = 0
+        CG_LAST_STRUCT_TYPE = ""
 
         // Re-lex and re-parse the body source text
         if body_src != "" {

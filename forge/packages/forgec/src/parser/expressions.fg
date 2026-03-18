@@ -993,7 +993,8 @@ impl Parser {
     }
 
     // ─── Match Expression ──────────────────────
-    // Basic match parsing. Will be overridden by pattern_matching feature.
+    // Compiles match to an if-else chain with inline LLVM IR emit.
+    // Supports: integer patterns, string patterns, .Variant patterns, _ wildcard.
 
     fn parse_match_expr(self) -> Expr? {
         let start = self.advance().span // consume 'match'
@@ -1002,39 +1003,199 @@ impl Parser {
         let scrutinee = self.parse_expr()
         if scrutinee == null { return null }
 
+        // Track whether scrutinee is a string
+        let scrutinee_is_str = CG_LAST_IS_STR == 1
+
         self.skip_newlines()
         if self.expect(TokenKind.LBrace) == null { return null }
 
-        // Parse match arms: pattern -> expr
+        if CG_ACTIVE {
+            // Emit scrutinee value once
+            mut cg = codegen_new()
+            let subj_val = cg.emit_expr(scrutinee!)
+
+            let current_bb = llvm.get_insert_block(CG_B)
+            let current_fn = llvm.get_basic_block_parent(current_bb)
+
+            // Create merge block (all arms branch here when done)
+            let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.end")
+
+            // Parse and emit arms as if-else chain
+            // For each arm: compare → cond_br to arm body or next check
+            self.skip_newlines()
+            while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+                self.skip_newlines()
+                if self.check(TokenKind.RBrace) { break }
+
+                // Reset type flags at arm boundary to prevent leakage from previous arm's body
+                CG_LAST_IS_STR = 0
+                CG_LAST_IS_MAP = 0
+                CG_HAS_LAST_VAL = 0
+
+                // Check for wildcard _
+                let is_wildcard = self.check(TokenKind.Underscore)
+                // Check for .Variant pattern
+                let is_dot_variant = self.check(TokenKind.Dot)
+
+                if is_wildcard {
+                    // _ -> body (default arm — always matches)
+                    self.advance() // consume _
+                    self.skip_newlines()
+                    if self.check(TokenKind.Arrow) { self.advance() }
+                    self.skip_newlines()
+                    // Parse and emit body
+                    if self.check(TokenKind.LBrace) {
+                        let _body = self.parse_block()
+                    } else {
+                        let _body = self.parse_expr()
+                        // Emit the expression as a statement
+                        if _body != null {
+                            cg.emit_expr(_body!)
+                        }
+                    }
+                    if !llvm.block_has_terminator(CG_B) {
+                        llvm.build_br(CG_B, merge_bb)
+                    }
+                    self.skip_newlines()
+                    continue
+                }
+
+                if is_dot_variant {
+                    // .Variant -> body — compare tag (scrutinee is an int tag for simple enums)
+                    self.advance() // consume .
+                    let variant_name = self.expect_ident()
+                    // For now, .Variant patterns need enum tag lookup
+                    // Skip sub-patterns if present
+                    if self.check(TokenKind.LParen) {
+                        self.advance()
+                        while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                            self.parse_expr()
+                            if self.check(TokenKind.Comma) { self.advance() }
+                        }
+                        self.expect(TokenKind.RParen)
+                    }
+
+                    self.skip_newlines()
+                    if self.check(TokenKind.Arrow) { self.advance() }
+                    self.skip_newlines()
+
+                    // Look up enum tag for this variant
+                    let tag = match_enum_tag(variant_name)
+
+                    // Create arm body block and next check block
+                    let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.arm")
+                    let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.next")
+
+                    // Compare: scrutinee == tag
+                    let tag_val = llvm.const_int(CG_I64, tag, 0)
+                    let cmp = llvm.build_icmp(CG_B, 32, subj_val, tag_val, "match_cmp")
+                    llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+
+                    // Emit arm body
+                    llvm.position_at_end(CG_B, arm_bb)
+                    if self.check(TokenKind.LBrace) {
+                        let _body = self.parse_block()
+                    } else {
+                        let _body = self.parse_expr()
+                        if _body != null { cg.emit_expr(_body!) }
+                    }
+                    if !llvm.block_has_terminator(CG_B) {
+                        llvm.build_br(CG_B, merge_bb)
+                    }
+
+                    // Continue checking from next block
+                    llvm.position_at_end(CG_B, next_bb)
+                    self.skip_newlines()
+                    continue
+                }
+
+                // Regular pattern: parse as expression (integer, string literal, etc.)
+                let pattern = self.parse_expr()
+                let pat_is_str = CG_LAST_IS_STR == 1
+
+                self.skip_newlines()
+                if self.check(TokenKind.Arrow) { self.advance() }
+                self.skip_newlines()
+
+                // Create arm body block and next check block
+                let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.arm")
+                let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.next")
+
+                // Compare scrutinee to pattern
+                if pattern != null {
+                    let pat_val = cg.emit_expr(pattern!)
+                    mut cmp_val: ptr = null
+                    if scrutinee_is_str || pat_is_str {
+                        // String comparison
+                        let eq_val = call_rt_2_ss(CG_RT_SEQ, subj_val, pat_val, CG_I8, "match_seq")
+                        let eq_ext = llvm.build_zext(CG_B, eq_val, llvm.int64_type(CG_CTX), "match_sext")
+                        cmp_val = llvm.build_icmp(CG_B, 33, eq_ext, llvm.const_int(CG_I64, 0, 0), "match_scmp")
+                    } else {
+                        cmp_val = llvm.build_icmp(CG_B, 32, subj_val, pat_val, "match_cmp")
+                    }
+                    llvm.build_cond_br(CG_B, cmp_val, arm_bb, next_bb)
+                }
+
+                // Emit arm body
+                llvm.position_at_end(CG_B, arm_bb)
+                if self.check(TokenKind.LBrace) {
+                    let _body = self.parse_block()
+                } else {
+                    let _body = self.parse_expr()
+                    if _body != null { cg.emit_expr(_body!) }
+                }
+                if !llvm.block_has_terminator(CG_B) {
+                    llvm.build_br(CG_B, merge_bb)
+                }
+
+                // Continue checking from next block
+                llvm.position_at_end(CG_B, next_bb)
+                self.skip_newlines()
+            }
+
+            // If we fall through all arms, jump to merge
+            if !llvm.block_has_terminator(CG_B) {
+                llvm.build_br(CG_B, merge_bb)
+            }
+
+            self.expect(TokenKind.RBrace)
+            llvm.position_at_end(CG_B, merge_bb)
+            return Expr.IntLit(0, start)
+        }
+
+        // Not in codegen — just parse and discard
         self.skip_newlines()
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
-
-            // Parse pattern (simplified: just an expression for now)
-            let pattern = self.parse_expr()
-
-            // Expect ->
-            self.skip_newlines()
-            if self.check(TokenKind.Arrow) {
+            if self.check(TokenKind.Underscore) {
                 self.advance()
-            }
-
-            self.skip_newlines()
-
-            // Parse body (discard result — match not fully implemented yet)
-            if self.check(TokenKind.LBrace) {
-                let _body = self.parse_block()
+            } else if self.check(TokenKind.Dot) {
+                self.advance()
+                self.expect_ident()
+                if self.check(TokenKind.LParen) {
+                    self.advance()
+                    while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                        self.parse_expr()
+                        if self.check(TokenKind.Comma) { self.advance() }
+                    }
+                    self.expect(TokenKind.RParen)
+                }
             } else {
-                let _body = self.parse_expr()
+                self.parse_expr()
             }
-
+            self.skip_newlines()
+            if self.check(TokenKind.Arrow) { self.advance() }
+            self.skip_newlines()
+            if self.check(TokenKind.LBrace) {
+                self.parse_block()
+            } else {
+                self.parse_expr()
+            }
             self.skip_newlines()
         }
 
         self.expect(TokenKind.RBrace)
-
-        // TODO: create proper match FeatureExpr
-        Expr.Block(Block { statements: [], span: start })
+        Expr.IntLit(0, start)
     }
 
     // ─── Span Helper ───────────────────────────
@@ -1165,7 +1326,7 @@ impl Parser {
 // ─── Runtime Call Helpers ────────────────────────
 
 use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
-use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS}
+use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)
@@ -1234,12 +1395,22 @@ fn emit_str_lit(text: string) -> ptr {
 // Sets tpl_var_is_str flag: 1 = string, 0 = int.
 mut TPL_VAR_IS_STR: int = 0
 fn tpl_load_var(name: string) -> ptr {
+    // Determine if string using dedicated name list (CG_VAR_IS_STR parallel list is unreliable)
+    mut is_str = 0
+    mut si = CG_STR_VAR_NAMES.length - 1
+    while si >= 0 {
+        if CG_STR_VAR_NAMES[si] == name {
+            is_str = 1
+            break
+        }
+        si = si - 1
+    }
     // Search in reverse for most recent definition
     mut vi = CG_VAR_NAMES.length - 1
     while vi >= 0 {
         if CG_VAR_NAMES[vi] == name {
-            TPL_VAR_IS_STR = CG_VAR_IS_STR[vi]
-            let load_ty = if CG_VAR_IS_STR[vi] == 1 { CG_STR } else { CG_I64 }
+            TPL_VAR_IS_STR = is_str
+            let load_ty = if is_str == 1 { CG_STR } else { CG_I64 }
             return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
         }
         vi = vi - 1
@@ -1439,4 +1610,33 @@ impl Expr {
             .Feature(fe) -> fe.data.node_span
         }
     }
+}
+
+// ─── Enum Tag Registry ──────────────────────────
+// Maps enum variant names to their tag indices.
+// Populated during enum declaration parsing.
+// Used by match expressions to compare against variant tags.
+
+export mut ENUM_VARIANT_NAMES: List<string> = []   // "Color.Red", "Color.Green", etc.
+export mut ENUM_VARIANT_TAGS: List<int> = []        // 0, 1, 2, etc.
+
+export fn register_enum_variant(enum_name: string, variant_name: string, tag: int) {
+    let full_name = "${enum_name}.${variant_name}"
+    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(full_name)
+    ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
+    // Also register short name (just variant)
+    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
+    ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
+}
+
+// Look up enum variant tag by name. Returns -1 if not found.
+fn match_enum_tag(variant_name: string) -> int {
+    mut vi = ENUM_VARIANT_NAMES.length - 1
+    while vi >= 0 {
+        if ENUM_VARIANT_NAMES[vi] == variant_name {
+            return ENUM_VARIANT_TAGS[vi]
+        }
+        vi = vi - 1
+    }
+    -1
 }
