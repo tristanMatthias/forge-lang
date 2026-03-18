@@ -277,22 +277,44 @@ impl Parser {
                         continue
                     }
 
-                    // Struct field access: check if result is a struct variable
-                    // Look up struct type and field index from the registry
-                    let struct_type = var_struct_type_for_expr(result)
-                    if struct_type != "" {
-                        let fidx = struct_field_index(struct_type, field)
-                        if fidx >= 0 {
-                            let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
-                            result_is_llvm = true
-                            result_llvm = field_val
-                            // Check if field is string-typed
-                            result_is_str = is_struct_field_str(struct_type, fidx)
-                            result_is_map = false
-                            result = Expr.IntLit(0, span)
-                            continue
+                    // Struct field access: look up field index from variable's field list
+                    let var_name_for_struct = LAST_IDENT_NAME
+                    mut svi = CG_STRUCT_VAR_NAMES.length - 1
+                    while svi >= 0 {
+                        if CG_STRUCT_VAR_NAMES[svi] == var_name_for_struct {
+                            let sfields = CG_STRUCT_VAR_FIELDS[svi]
+                            // Find field index in comma-separated list
+                            mut fidx = 0
+                            mut fcur = ""
+                            mut fpos = 0
+                            mut found = false
+                            while fpos < sfields.length {
+                                let fch = sfields[fpos]
+                                if fch == "," {
+                                    if fcur == field { found = true }
+                                    if !found {
+                                        fidx = fidx + 1
+                                        fcur = ""
+                                    }
+                                } else {
+                                    fcur = fcur + fch
+                                }
+                                fpos = fpos + 1
+                            }
+                            if fcur == field { found = true }
+                            if found {
+                                let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
+                                result_is_llvm = true
+                                result_llvm = field_val
+                                result_is_str = false
+                                result_is_map = false
+                                result = Expr.IntLit(0, span)
+                                break
+                            }
                         }
+                        svi = svi - 1
                     }
+                    if svi >= 0 { continue }
                 }
 
                 result = Expr.MemberAccess(result, field, span)
@@ -379,6 +401,17 @@ impl Parser {
             // Null chain: expr? (also no-op for now)
             if self.check(TokenKind.Question) {
                 self.advance()
+                continue
+            }
+
+            // Struct literal: Ident { field: value, ... }
+            if self.check(TokenKind.LBrace) && self.is_struct_literal() {
+                self.parse_struct_literal()
+                // Struct literal already stored in __struct temp var
+                // Don't track as LLVM value (would try to re-store in i64 alloca)
+                result_is_llvm = false
+                result_is_str = false
+                result = Expr.IntLit(0, self.current_span())
                 continue
             }
 
@@ -654,21 +687,25 @@ impl Parser {
 
         // In codegen mode: build LLVM struct value inline
         if CG_ACTIVE {
-            // The struct type name was the LAST parsed ident (e.g., Point in "Point { x: 10 }")
             let struct_name = LAST_IDENT_NAME
-            // Collect field values
-            let vals = llvm.value_array_new(32) // max 32 fields
+            // Collect field values and names
+            let vals = llvm.value_array_new(32)
             mut field_count = 0
+            mut parsed_fields = ""
 
             while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                 self.skip_newlines()
                 let field_tok = self.peek()
                 if field_tok.kind_id == 1 {
+                    let fname = field_tok.text
+                    if field_count > 0 { parsed_fields = parsed_fields + "," }
+                    parsed_fields = parsed_fields + fname
                     self.advance() // consume field name
                     if self.check(TokenKind.Colon) {
                         self.advance() // consume :
                         mut cg = codegen_new()
-                        let val = cg.emit_expr(self.parse_expr()!)
+                        let expr_val = self.parse_expr()
+                        let val = cg.emit_expr(expr_val!)
                         llvm.value_array_set(vals, field_count, val)
                         field_count = field_count + 1
                     }
@@ -681,41 +718,47 @@ impl Parser {
             }
             self.expect(TokenKind.RBrace)
 
-            // Find the registered struct type
-            mut struct_ty: ptr = null
-            mut si = 0
-            while si < CG_STRUCT_NAMES.length {
-                if CG_STRUCT_NAMES[si] == struct_name {
-                    struct_ty = CG_STRUCT_TYPES[si]
-                    break
-                }
-                si = si + 1
+            // Create struct type on-the-fly from field count (all i64 for now)
+            let ft = llvm.type_array_new(field_count)
+            mut fti = 0
+            while fti < field_count {
+                llvm.type_array_set(ft, fti, CG_I64)
+                fti = fti + 1
             }
-
-            if struct_ty != null {
-                // Build the struct value
-                mut struct_val = llvm.get_undef(struct_ty)
-                mut fi = 0
-                while fi < field_count {
-                    let v = llvm.value_array_get(vals, fi)
-                    struct_val = llvm.build_insert_value(CG_B, struct_val, v, fi, "sf")
-                    fi = fi + 1
-                }
-                llvm.value_array_free(vals)
-
-                // Store in temp
-                BINOP_COUNTER = BINOP_COUNTER + 1
-                let tmp = "__struct${BINOP_COUNTER}"
-                // TODO: use proper struct alloca type
-                mut cg = codegen_new()
-                cg.define_var(tmp, Type.Int, struct_val)
-                CG_LAST_IS_STR = 0
-                CG_LAST_STRUCT_TYPE = struct_name
-                CG_LAST_VAL = struct_val
-                CG_HAS_LAST_VAL = 1
-                return Expr.Ident(tmp, start)
+            let struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
+            llvm.type_array_free(ft)
+            mut struct_val = llvm.get_undef(struct_ty)
+            mut fi = 0
+            while fi < field_count {
+                let v = llvm.value_array_get(vals, fi)
+                struct_val = llvm.build_insert_value(CG_B, struct_val, v, fi, "sf")
+                fi = fi + 1
             }
             llvm.value_array_free(vals)
+
+            // Store in temp with struct alloca
+            BINOP_COUNTER = BINOP_COUNTER + 1
+            let tmp = "__struct${BINOP_COUNTER}"
+            let alloca = llvm.build_alloca(CG_B, struct_ty, tmp)
+            llvm.build_store(CG_B, struct_val, alloca)
+            CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
+            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+
+            // Register struct type in codegen (with LLVM type this time)
+            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(struct_name)
+            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(parsed_fields)
+            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push("")
+            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(struct_ty)
+
+            // Register struct variable + type + field names
+            CG_LAST_IS_STR = 0
+            CG_LAST_STRUCT_TYPE = struct_name
+            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
+            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
+            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(parsed_fields)
+            CG_LAST_VAL = struct_val
+            CG_HAS_LAST_VAL = 1
+            return Expr.Ident(tmp, start)
         }
 
         // Non-codegen fallback: parse and discard
@@ -979,7 +1022,7 @@ impl Parser {
 
 // ─── Struct Field Helpers ────────────────────────
 
-use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type}
+use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type}
 
 fn var_struct_type_for_expr(expr: Expr) -> string {
     // For now only handle Ident expressions

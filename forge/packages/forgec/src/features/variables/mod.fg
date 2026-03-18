@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -98,10 +98,17 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         if is_map {
             CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
         }
-        // Register struct variable type
+        // Register struct variable type + copy field info from temp
         if CG_LAST_STRUCT_TYPE != "" {
             CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(var_name)
             CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+            // Copy field list from the temp struct variable (last entry)
+            let last_fi = CG_STRUCT_VAR_FIELDS.length - 1
+            if last_fi >= 0 {
+                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_VAR_FIELDS[last_fi])
+            } else {
+                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("")
+            }
         }
         // Reset flags for next expression
         CG_LAST_IS_STR = 0

@@ -61,9 +61,10 @@ export mut CG_STRUCT_FIELDS: List<string> = []  // comma-separated field names
 export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
 export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
 
-// Track which variables are struct-typed: parallel lists of name → type name
-export mut CG_STRUCT_VAR_NAMES: List<string> = []
-export mut CG_STRUCT_VAR_TYPES: List<string> = []
+// Track which variables are struct-typed
+export mut CG_STRUCT_VAR_NAMES: List<string> = []   // variable names
+export mut CG_STRUCT_VAR_TYPES: List<string> = []   // struct type names
+export mut CG_STRUCT_VAR_FIELDS: List<string> = []  // comma-separated field names
 // Also the last struct type name for propagation through var binding
 export mut CG_LAST_STRUCT_TYPE: string = ""
 
@@ -432,13 +433,15 @@ impl Codegen {
                 // Check struct type
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
-                    mut sti = 0
-                    while sti < CG_STRUCT_NAMES.length {
+                    // Search from END to find entry with LLVM type
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == struct_type_name {
-                            load_ty = CG_STRUCT_TYPES[sti]
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null { load_ty = sty }
                             break
                         }
-                        sti = sti + 1
+                        sti = sti - 1
                     }
                 }
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
@@ -607,13 +610,17 @@ impl Codegen {
         mut alloca_ty = if is_str { CG_STR } else { CG_I64 }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {
-            mut si = 0
-            while si < CG_STRUCT_NAMES.length {
+            // Search from END to find the most recent entry (with LLVM type)
+            mut si = CG_STRUCT_NAMES.length - 1
+            while si >= 0 {
                 if CG_STRUCT_NAMES[si] == CG_LAST_STRUCT_TYPE {
-                    alloca_ty = CG_STRUCT_TYPES[si]
+                    let found_ty = CG_STRUCT_TYPES[si]
+                    if found_ty != null {
+                        alloca_ty = found_ty
+                    }
                     break
                 }
-                si = si + 1
+                si = si - 1
             }
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)

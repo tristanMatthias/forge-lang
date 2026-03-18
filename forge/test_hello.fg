@@ -4,5 +4,9 @@ type Point = {
 }
 
 fn main() {
-    println(42)
+    let p = Point { x: 10, y: 20 }
+    println(p.x)
+    println(p.y)
+    println(p.x + p.y)
+    println("done!")
 }
