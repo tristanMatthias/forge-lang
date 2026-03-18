@@ -15,6 +15,9 @@ use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new}
 use features.while_loops.PARSE_END_POS
+
+export mut LAST_PARAM_TYPE_NAME: string = "int"
+export mut PARSED_PARAM_TYPES: List<string> = []
 use @std.llvm
 
 // ─── Param Type ────────────────────────────────
@@ -631,6 +634,7 @@ impl Parser {
     // ─── Parameter Parsing ─────────────────────
 
     fn parse_params(self) -> List<Param> {
+        PARSED_PARAM_TYPES = []
         self.expect(TokenKind.LParen)
         mut params: List<Param> = []
 
@@ -659,12 +663,22 @@ impl Parser {
         if name == null { return null }
 
         // Optional type annotation: : Type
+        // Capture the type name text before parsing (for struct type lookup)
+        mut type_name_text = "int"  // default
         let type_ann = if self.check(TokenKind.Colon) {
             self.advance()
+            // Capture the next token's text as the type name
+            let type_tok = self.peek()
+            if type_tok.kind_id == 1 {
+                type_name_text = type_tok.text
+            }
             self.parse_type_expr()
         } else {
             null
         }
+        // Store the type name for function param type tracking
+        LAST_PARAM_TYPE_NAME = type_name_text
+        PARSED_PARAM_TYPES = PARSED_PARAM_TYPES.push(type_name_text)
 
         // Optional default value: = expr
         let default_value = if self.check(TokenKind.Eq) {

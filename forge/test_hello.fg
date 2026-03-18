@@ -1,30 +1,31 @@
-// Mini lexer test — a tiny fragment of what the self-hosted compiler does
-
-type Token = {
-    kind_id: int,
-    text: string,
+type Point = {
+    x: int,
+    y: int,
 }
 
-fn lex_char(ch: string) -> Token {
-    if ch == "(" {
-        return Token { kind_id: 0, text: "" }
-    }
-    if ch == ")" {
-        return Token { kind_id: 0, text: "" }
-    }
-    // Default: treat as identifier
-    return Token { kind_id: 1, text: ch }
+fn add_points(a: Point, b: Point) -> int {
+    return a.x + b.x + a.y + b.y
+}
+
+fn describe(p: Point) {
+    let px = p.x
+    let py = p.y
+    println("x=${px} y=${py}")
 }
 
 fn main() {
-    let tok = lex_char("x")
-    let kid = tok.kind_id
-    let txt = tok.text
-    println(kid)
-    println(txt)
+    let p1 = Point { x: 10, y: 20 }
+    let p2 = Point { x: 3, y: 7 }
 
-    let tok2 = lex_char("(")
-    println(tok2.kind_id)
+    describe(p1)
+    describe(p2)
+
+    let sum = add_points(p1, p2)
+    println("sum=${sum}")
+
+    // Local field access
+    let total = p1.x + p1.y + p2.x + p2.y
+    println("total=${total}")
 
     println("done!")
 }

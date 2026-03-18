@@ -12,6 +12,7 @@ use checker.TypeChecker
 use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_CTX, CG_STR, CG_I64}
 use features.variables.{parse_var_binding, VarKind}
 use features.while_loops.PARSE_END_POS
+use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -64,13 +65,16 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     // Store for codegen — name, body, param count, names, and types
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)
-    // Store param info — extract type name from source text
-    // Since we can't destructure TypeExpr, use the raw source approach:
-    // Re-scan the param text between ( and ) to get types
-    // For simplicity, default all to "int" for now
+    // Store param info with type names from PARSED_PARAM_TYPES
+    mut pi = 0
     for param in params {
         store_fn_param_name(param.name)
-        store_fn_param_type("int") // TODO: extract actual type names
+        if pi < PARSED_PARAM_TYPES.length {
+            store_fn_param_type(PARSED_PARAM_TYPES[pi])
+        } else {
+            store_fn_param_type("int")
+        }
+        pi = pi + 1
     }
 
     PARSE_END_POS = p.pos
@@ -354,8 +358,40 @@ fn materialize_struct_types() {
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Skip struct materialization for now (crashes due to List<string> corruption)
-    // Struct types will be created lazily during parse_struct_literal
+    // Materialize struct types: create LLVM types for structs registered during initial parse
+    // Simple approach: for each registered struct, create all-i64 fields
+    // (mixed types will be corrected when struct literals are created)
+    let struct_count = CG_STRUCT_NAMES.length
+    mut si = 0
+    while si < struct_count {
+        // Always create LLVM type (null check on List<ptr> unreliable)
+        if true {
+            // Count fields from field names string
+            let fields = CG_STRUCT_FIELDS[si]
+            mut fc = 1
+            mut ci = 0
+            while ci < fields.length {
+                if fields[ci] == "," { fc = fc + 1 }
+                ci = ci + 1
+            }
+            if fields.length == 0 { fc = 0 }
+            // Create all-i64 struct type (conservative)
+            let fta = llvm.type_array_new(fc)
+            mut fi = 0
+            while fi < fc {
+                llvm.type_array_set(fta, fi, CG_I64)
+                fi = fi + 1
+            }
+            let sty = llvm.struct_type(CG_CTX, fta, fc, 0)
+            llvm.type_array_free(fta)
+            // Re-register with LLVM type
+            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
+            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
+            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+        }
+        si = si + 1
+    }
 
     mut param_offset = 0
     mut i = 0
@@ -365,11 +401,33 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let is_main = name == "main"
         let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
 
-        // Declare the LLVM function (inline, not from Map)
+        // Declare the LLVM function with correct param types
         let param_arr = llvm.type_array_new(pc)
         mut pi = 0
         while pi < pc {
-            llvm.type_array_set(param_arr, pi, CG_I64)
+            // Look up param type — use struct LLVM type if registered
+            let pt_idx = param_offset + pi
+            mut param_ty = CG_I64
+            if pt_idx < FN_ALL_PARAM_TYPES.length {
+                let type_name = FN_ALL_PARAM_TYPES[pt_idx]
+                if type_name == "string" {
+                    param_ty = CG_STR
+                } else if type_name != "int" && type_name != "float" && type_name != "bool" && type_name != "ptr" {
+                    // Might be a struct type — search from end
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
+                        if CG_STRUCT_NAMES[sti] == type_name {
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null {
+                                param_ty = sty
+                            }
+                            break
+                        }
+                        sti = sti - 1
+                    }
+                }
+            }
+            llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
         }
         let ret_ty = if is_main { CG_I32 } else { CG_I64 }
@@ -385,12 +443,41 @@ export fn emit_all_fn_bodies(cg: Codegen) {
 
         // TODO: clear vars between functions
 
-        // Define params
+        // Define params with correct types
         pi = 0
         while pi < pc {
             let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
             let param_val = llvm.get_param(fn_val, pi)
-            cg.define_var(pname, Type.Int, param_val)
+            let pt_idx = param_offset + pi
+            mut param_type_name = "int"
+            if pt_idx < FN_ALL_PARAM_TYPES.length {
+                param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
+            }
+            // Set struct type flag if this param is a struct
+            if param_type_name == "string" {
+                cg.define_var(pname, Type.String, param_val)
+            } else if param_type_name != "int" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr" {
+                // Struct type — set the flag so define_var uses correct alloca
+                CG_LAST_STRUCT_TYPE = param_type_name
+                cg.define_var(pname, Type.Int, param_val)
+                // Register as struct variable
+                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
+                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
+                // Get field info from struct registry
+                mut field_info = ""
+                mut sri = CG_STRUCT_FIELDS.length - 1
+                while sri >= 0 {
+                    if CG_STRUCT_NAMES[sri] == param_type_name {
+                        field_info = CG_STRUCT_FIELDS[sri]
+                        break
+                    }
+                    sri = sri - 1
+                }
+                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
+                CG_LAST_STRUCT_TYPE = ""
+            } else {
+                cg.define_var(pname, Type.Int, param_val)
+            }
             pi = pi + 1
         }
         param_offset = param_offset + pc
