@@ -1,21 +1,46 @@
-fn count_down(n: int) -> int {
-    mut i = n
-    mut count = 0
-    while i > 0 {
-        i = i - 1
-        count = count + 1
-    }
-    return count
+// Comprehensive test of the self-hosted Forge compiler
+// Tests: functions, params, recursion, if/else, while, let/mut, assignment, arithmetic
+
+fn fib(n: int) -> int {
+    if n <= 1 { return n }
+    return fib(n - 1) + fib(n - 2)
 }
 
-fn sum_to(n: int) -> int {
-    mut total = 0
-    mut i = 1
-    while i <= n {
-        total = total + i
+fn factorial(n: int) -> int {
+    if n <= 1 { return 1 }
+    return n * factorial(n - 1)
+}
+
+fn gcd(a: int, b: int) -> int {
+    if b == 0 { return a }
+    return gcd(b, a - a / b * b)
+}
+
+fn pow(base: int, exp: int) -> int {
+    if exp == 0 { return 1 }
+    return base * pow(base, exp - 1)
+}
+
+fn is_prime(n: int) -> int {
+    if n < 2 { return 0 }
+    mut i = 2
+    while i * i <= n {
+        if n / i * i == n { return 0 }
         i = i + 1
     }
-    return total
+    return 1
+}
+
+fn count_primes(limit: int) -> int {
+    mut count = 0
+    mut n = 2
+    while n <= limit {
+        if is_prime(n) == 1 {
+            count = count + 1
+        }
+        n = n + 1
+    }
+    return count
 }
 
 fn collatz_steps(n: int) -> int {
@@ -33,10 +58,12 @@ fn collatz_steps(n: int) -> int {
 }
 
 fn main() {
-    println(count_down(5))
-    println(sum_to(10))
-    println(sum_to(100))
+    println(fib(20))
+    println(factorial(12))
+    println(gcd(252, 105))
+    println(pow(2, 16))
+    println(is_prime(97))
+    println(is_prime(100))
+    println(count_primes(100))
     println(collatz_steps(27))
-    println(collatz_steps(1))
-    println(collatz_steps(6))
 }

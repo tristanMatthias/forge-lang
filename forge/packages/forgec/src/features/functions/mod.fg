@@ -351,10 +351,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         // emit_block handles return, println, and other statements.
         // Already-emitted constructs (while, if) are no-ops via dispatch.
         if body_src != "" {
-            eprintln("[fn_emit] body_src len=${body_src.length} tokens coming...")
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
-            eprintln("[fn_emit] body tokens=${body_tokens.length}")
             mut body_parser = parser_new(body_tokens)
             let _body = body_parser.parse_block()
             // No cg.emit_block — all code emitted inline during parsing

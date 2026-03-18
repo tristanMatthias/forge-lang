@@ -191,7 +191,6 @@ impl Codegen {
             .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Block(block) -> { return self.emit_block(block) }
             .Feature(fe) -> {
-                eprintln("[emit_expr] Feature! fid=${fe.data.feature}")
                 return self.dispatch_expr(fe)
             }
         }
@@ -395,23 +394,17 @@ impl Codegen {
     }
 
     fn emit_block(self, block: Block) -> ptr {
-        // Temporarily removed debug
         mut last = llvm.const_int(CG_I64, 0, 0)
-        mut _si = 0
         for stmt in block.statements {
-            _si = _si + 1
             match stmt {
                 .Expr(expr) -> {
-                    eprintln("[emit_block] s${_si}: Expr")
                     last = self.emit_expr(expr)
                 }
-                .Assign(t, v, s) -> { eprintln("[emit_block] s${_si}: Assign") }
+                .Assign(t, v, s) -> {}
                 .Return(v, s) -> {
-                    eprintln("[emit_block] s${_si}: Return")
                     self.emit_return(v)
                 }
                 .Feature(fe) -> {
-                    eprintln("[emit_block] s${_si}: Feature")
                     self.dispatch_stmt(fe)
                 }
             }

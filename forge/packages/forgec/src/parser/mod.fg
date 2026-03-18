@@ -347,7 +347,6 @@ impl Parser {
 
         // Emit expression statement inline during codegen
         if CG_B != null {
-            eprintln("[inline_expr] pos=${self.pos} emitting expr stmt")
             mut cg = codegen_new()
             cg.emit_expr(expr!)
         }
