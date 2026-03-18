@@ -147,12 +147,41 @@ export enum TokenKind {
 
 // --- Token ------------------------------------------------------------------
 // A lexed token: its kind plus source location.
+// `text` and `kind_id` are bootstrap workarounds — the bootstrap can't
+// match on data-carrying enum variants, so we store the data separately.
+//   kind_id: 0=keyword/op/delim, 1=Ident, 2=IntLiteral, 3=FloatLiteral,
+//            4=StringLiteral, 5=BoolLiteral, 6=Template, 7=DocComment,
+//            8=NullLiteral, 9=TemplatePart, 10=TaggedTemplate
 
 export type Token = {
     kind: TokenKind,
     span: Span,
+    text: string,
+    kind_id: int,
 }
 
 export fn token_new(kind: TokenKind, span: Span) -> Token {
-    Token { kind: kind, span: span }
+    Token { kind: kind, span: span, text: "", kind_id: 0 }
+}
+
+export fn token_ident(name: string, span: Span) -> Token {
+    Token { kind: TokenKind.Ident(name), span: span, text: name, kind_id: 1 }
+}
+
+export fn token_int(value: int, span: Span) -> Token {
+    // Store value in text for later parsing (bootstrap workaround)
+    Token { kind: TokenKind.IntLiteral(value), span: span, text: "${value}", kind_id: 2 }
+}
+
+export fn token_float(value: float, span: Span) -> Token {
+    Token { kind: TokenKind.FloatLiteral(value), span: span, text: "${value}", kind_id: 3 }
+}
+
+export fn token_string(value: string, span: Span) -> Token {
+    Token { kind: TokenKind.StringLiteral(value), span: span, text: value, kind_id: 4 }
+}
+
+export fn token_bool(value: bool, span: Span) -> Token {
+    let t = if value { "true" } else { "false" }
+    Token { kind: TokenKind.BoolLiteral(value), span: span, text: t, kind_id: 5 }
 }

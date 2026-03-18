@@ -35,6 +35,7 @@ extern "C" {
 
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
 
     // Basic Blocks
@@ -267,6 +268,11 @@ pub extern "C" fn forge_llvm_type_array_free(arr: *mut LLVMPtr) {
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_function(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMAddFunction(m, name, fn_type) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMGetNamedFunction(m, name) }
 }
 
 #[no_mangle]

@@ -6,12 +6,29 @@ use std::time::UNIX_EPOCH;
 
 // ── Helpers ──
 
+/// ForgeString ABI: {ptr, len} — matches the Forge runtime's ForgeString struct.
+#[repr(C)]
+pub struct ForgeString {
+    pub ptr: *mut c_char,
+    pub len: i64,
+}
+
 fn cstr(ptr: *const c_char) -> String {
     unsafe { CStr::from_ptr(ptr) }.to_str().unwrap_or("").to_string()
 }
 
 fn to_c(s: &str) -> *mut c_char {
     CString::new(s).unwrap_or_default().into_raw()
+}
+
+fn to_forge_string(s: &str) -> ForgeString {
+    let len = s.len() as i64;
+    let ptr = CString::new(s).unwrap_or_default().into_raw();
+    ForgeString { ptr, len }
+}
+
+fn err_forge_string() -> ForgeString {
+    ForgeString { ptr: std::ptr::null_mut(), len: 0 }
 }
 
 fn err_c() -> *mut c_char {
@@ -21,11 +38,11 @@ fn err_c() -> *mut c_char {
 // ── File operations ──
 
 #[no_mangle]
-pub extern "C" fn forge_fs_read(path: *const c_char) -> *mut c_char {
+pub extern "C" fn forge_fs_read(path: *const c_char) -> ForgeString {
     let path = cstr(path);
     match fs::read_to_string(&path) {
-        Ok(content) => to_c(&content),
-        Err(_) => err_c(),
+        Ok(content) => to_forge_string(&content),
+        Err(_) => err_forge_string(),
     }
 }
 

@@ -8,7 +8,8 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use @std.llvm
 
 // ─── Side Table ──────────────────────────────────
 
@@ -37,20 +38,20 @@ fn get_var_decl(node_id: int) -> VarDeclData? {
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
 
-    let name = p.expect_ident()
-    if name == null {
+    let var_name = p.expect_ident()
+    if var_name == "" {
         p.error("expected variable name")
         return null
     }
 
     // Optional type annotation: : Type
-    let type_ann = if p.check(.Colon) {
+    let type_ann = if p.check(TokenKind.Colon) {
         p.advance()
         p.parse_type_expr()
     } else { null }
 
     // Expect = value
-    if p.expect(.Eq) == null {
+    if p.expect(TokenKind.Eq) == null {
         p.error("expected '=' in variable declaration")
         return null
     }
@@ -61,14 +62,15 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    let id = next_node_id()
-    VAR_DECLS["${id}"] = VarDeclData {
-        var_kind: kind, name: name!, type_ann, value: value!, exported, span: start,
+    // Emit inline during re-parse+codegen (Map storage corrupts complex data)
+    if CG_B != null {
+        mut cg = codegen_new()
+        let val = cg.emit_expr(value!)
+        cg.define_var(var_name, Type.Int, val)
     }
 
-    feature_stmt("variables", match kind {
-        .Let -> "let_decl", .Mut -> "mut_decl", .Const -> "const_decl",
-    }, id, start)
+    let id = next_node_id()
+    feature_stmt("variables", "let_decl", id, start)
 }
 
 fn parse_let(p: Parser) -> Statement? { parse_var_binding(p, .Let, false) }

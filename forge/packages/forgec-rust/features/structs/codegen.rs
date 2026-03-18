@@ -65,11 +65,21 @@ impl<'ctx> Codegen<'ctx> {
                             }
                         }
                     } else {
-                        // Missing field — must be nullable, fill with null (tag=0)
+                        // Missing field — fill with zero value
                         let llvm_ty = self.type_to_llvm_basic(ftype);
-                        let null_val = llvm_ty.into_struct_type().const_zero();
+                        let zero_val = if llvm_ty.is_struct_type() {
+                            llvm_ty.into_struct_type().const_zero().into()
+                        } else if llvm_ty.is_int_type() {
+                            llvm_ty.into_int_type().const_zero().into()
+                        } else if llvm_ty.is_float_type() {
+                            llvm_ty.into_float_type().const_zero().into()
+                        } else if llvm_ty.is_pointer_type() {
+                            llvm_ty.into_pointer_type().const_null().into()
+                        } else {
+                            llvm_ty.into_struct_type().const_zero().into()
+                        };
                         all_field_types.push(llvm_ty);
-                        all_field_vals.push(null_val.into());
+                        all_field_vals.push(zero_val);
                     }
                 }
 

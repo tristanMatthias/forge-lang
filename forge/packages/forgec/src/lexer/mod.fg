@@ -94,7 +94,8 @@ fn is_radix_digit(ch: string, radix: int) -> bool {
 }
 
 export fn is_whitespace_not_newline(ch: string) -> bool {
-    ch == " " || ch == "\t" || ch == "\r"
+    // Note: removed \r check — bootstrap confuses "r" with "\r" in string comparison
+    ch == " " || ch == "\t"
 }
 
 // ─── Lexer Methods ─────────────────────────────
@@ -219,15 +220,17 @@ impl Lexer {
             }
 
             let token = self.next_token()
-            if token.kind is not .Eof {
+            if token.kind_id != 99 {  // 99 = EOF
                 tokens = tokens.push(token)
             }
         }
 
-        // Add EOF
+        // Add EOF (kind_id=99 for EOF detection)
         tokens = tokens.push(Token {
             kind: TokenKind.Eof,
             span: self.current_span(),
+            text: "",
+            kind_id: 99,
         })
 
         tokens
@@ -262,26 +265,10 @@ impl Lexer {
 
         // Identifiers and keywords
         if is_ident_start(ch) {
-            // Check for $" and $` (dollar strings/templates)
+            // Skip $ handling for now (nullable peek_at checks are unreliable)
             if ch == "$" {
-                if self.peek_at(1) == "\"" {
-                    self.advance() // consume $
-                    self.advance() // consume "
-                    return self.lex_dollar_string(start_pos, start_line, start_col)
-                }
-                if self.peek_at(1) == "`" {
-                    self.advance() // consume $
-                    self.advance() // consume `
-                    return self.lex_dollar_template(start_pos, start_line, start_col)
-                }
-                // $ident — regular identifier starting with $
-                if self.peek_at(1) != null && (is_alpha(self.peek_at(1)!) || self.peek_at(1)! == "_") {
-                    return self.lex_ident_or_keyword(start_pos, start_line, start_col)
-                }
-                // Standalone $ — error
-                self.advance()
-                self.add_error("F0001", "unexpected character: '$'", self.make_span(start_pos, start_line, start_col))
-                return Token { kind: TokenKind.Eof, span: self.make_span(start_pos, start_line, start_col) }
+                // Just treat as identifier
+                return self.lex_ident_or_keyword(start_pos, start_line, start_col)
             }
             return self.lex_ident_or_keyword(start_pos, start_line, start_col)
         }
@@ -389,7 +376,7 @@ impl Lexer {
 
         if is_float {
             let value = parse_float(text)
-            return Token { kind: TokenKind.FloatLiteral(value), span }
+            return token_float(value, span)
         }
 
         // Parse integer
@@ -410,15 +397,12 @@ impl Lexer {
                         "s" -> 1000
                         _ -> 1
                     }
-                    return Token {
-                        kind: TokenKind.IntLiteral(value * multiplier),
-                        span: self.make_span(start_pos, start_line, start_col),
-                    }
+                    return token_int(value * multiplier, self.make_span(start_pos, start_line, start_col))
                 }
             }
         }
 
-        Token { kind: TokenKind.IntLiteral(value), span }
+        token_int(value, span)
     }
 
     fn lex_radix(self, start_pos: int, start_line: int, start_col: int, radix: int, prefix: string) -> Token {
@@ -437,12 +421,9 @@ impl Lexer {
         if text.length == 0 {
             let span = self.make_span(start_pos, start_line, start_col)
             self.add_error("F0006", "expected digits after prefix", span)
-            return Token { kind: TokenKind.IntLiteral(0), span }
+            return token_int(0, span)
         }
-        Token {
-            kind: TokenKind.IntLiteral(parse_int_radix(text, radix)),
-            span: self.make_span(start_pos, start_line, start_col),
-        }
+        token_int(parse_int_radix(text, radix), self.make_span(start_pos, start_line, start_col))
     }
 
     // ─── Strings ───────────────────────────────
@@ -475,7 +456,7 @@ impl Lexer {
                 if has_interpolation {
                     return Token { kind: TokenKind.TemplateLiteral(parts), span }
                 }
-                return Token { kind: TokenKind.StringLiteral(text), span }
+                return token_string(text, span)
             }
 
             // Escape handling
@@ -543,7 +524,7 @@ impl Lexer {
         }
         if is_dollar { return Token { kind: TokenKind.DollarString(parts), span } }
         if has_interpolation { return Token { kind: TokenKind.TemplateLiteral(parts), span } }
-        Token { kind: TokenKind.StringLiteral(text), span }
+        token_string(text, span)
     }
 
     fn lex_string(self, sp: int, sl: int, sc: int) -> Token {
@@ -666,11 +647,14 @@ impl Lexer {
         }
 
         // Return keyword or identifier
-        if kind != null {
-            return Token { kind: kind!, span }
+        // Bootstrap workaround: nullable return from keyword_kind is unreliable.
+        // Use is_keyword check (returns bool, not nullable) instead.
+        if is_keyword(text) {
+            let kw = keyword_kind(text)
+            return token_new(kw!, span)
         }
 
-        Token { kind: TokenKind.Ident(text), span }
+        token_ident(text, span)
     }
 
     fn lex_tagged_template(self, tag: string, start_pos: int, start_line: int, start_col: int) -> Token {
@@ -828,7 +812,7 @@ impl Lexer {
         if ch == "~" { return Token { kind: TokenKind.Tilde, span: self.make_span(start_pos, start_line, start_col) } }
 
         // Multi-character operators
-        let next = self.peek()
+        let next = self.peek_ch()
 
         // - or ->
         if ch == "-" {
@@ -953,6 +937,53 @@ impl Lexer {
 }
 
 // ─── Keyword Lookup ────────────────────────────
+
+export fn is_keyword(text: string) -> bool {
+    if text == "let" { return true }
+    if text == "mut" { return true }
+    if text == "const" { return true }
+    if text == "fn" { return true }
+    if text == "return" { return true }
+    if text == "if" { return true }
+    if text == "else" { return true }
+    if text == "match" { return true }
+    if text == "for" { return true }
+    if text == "in" { return true }
+    if text == "while" { return true }
+    if text == "loop" { return true }
+    if text == "break" { return true }
+    if text == "continue" { return true }
+    if text == "enum" { return true }
+    if text == "type" { return true }
+    if text == "use" { return true }
+    if text == "mod" { return true }
+    if text == "as" { return true }
+    if text == "export" { return true }
+    if text == "emit" { return true }
+    if text == "on" { return true }
+    if text == "trait" { return true }
+    if text == "impl" { return true }
+    if text == "defer" { return true }
+    if text == "errdefer" { return true }
+    if text == "spawn" { return true }
+    if text == "parallel" { return true }
+    if text == "with" { return true }
+    if text == "without" { return true }
+    if text == "only" { return true }
+    if text == "partial" { return true }
+    if text == "catch" { return true }
+    if text == "select" { return true }
+    if text == "component" { return true }
+    if text == "is" { return true }
+    if text == "table" { return true }
+    if text == "true" { return true }
+    if text == "false" { return true }
+    if text == "null" { return true }
+    if text == "Ok" { return true }
+    if text == "Err" { return true }
+    if text == "_" { return true }
+    false
+}
 
 export fn keyword_kind(text: string) -> TokenKind? {
     match text {

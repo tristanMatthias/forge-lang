@@ -2,8 +2,11 @@
 // All LLVM pointers stored as globals (bootstrap workaround).
 
 use core.types.Type
+use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
-use core.registry.{REG_PARSE, REG_CHECK_STMT, REG_CHECK_EXPR, REG_EMIT_STMT, REG_EMIT_EXPR, REG_TOP_LEVEL}
+use features.{dispatch_emit_stmt, dispatch_emit_expr}
+use features.functions.{DECLARED_FNS, emit_all_fn_bodies}
+use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -21,6 +24,12 @@ mut CG_STR: ptr = null
 mut CG_RT_PRINTLN: ptr = null
 mut CG_RT_I2S: ptr = null
 mut CG_RT_SNEW: ptr = null
+
+// Global variable storage (bootstrap workaround: struct fields don't survive method calls)
+// Note: can't use Map<string, ptr> — ptr values corrupt in Maps (same as DECLARED_FNS)
+// Using parallel lists instead
+mut CG_VAR_NAMES: List<string> = []
+mut CG_VAR_PTRS: List<ptr> = []
 
 export type Codegen = {
     mut current_fn: ptr?,
@@ -89,7 +98,8 @@ fn cg_init_str() {
 }
 
 fn cg_init_runtime() {
-    CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println", make_fn_type(CG_VOID, [CG_PTR, CG_I64]))
+    // forge_println_string takes a ForgeString struct {ptr, i64}
+    CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println_string", make_fn_type(CG_VOID, [CG_STR]))
     CG_RT_I2S = llvm.add_function(CG_MOD, "forge_int_to_string", make_fn_type(CG_STR, [CG_I64]))
     CG_RT_SNEW = llvm.add_function(CG_MOD, "forge_string_new", make_fn_type(CG_STR, [CG_PTR, CG_I64]))
 }
@@ -109,10 +119,9 @@ impl Codegen {
     // ─── Program ───────────────────────────────
 
     fn emit_program(self, program: Program) {
-        // Bypass side table — emit fn declarations directly from AST
-        // Side tables use Map<string, StructLiteral> which the bootstrap
-        // can't populate correctly in the patched binary
-        emit_all_functions(self)
+        // Single-pass: declare and emit each function
+        // (FN_BODIES[i] data is only valid when accessed immediately)
+        emit_all_fn_bodies(self)
     }
 
     // Direct codegen for fn main: create main() with the given body
@@ -131,7 +140,7 @@ impl Codegen {
     fn emit_statement(self, stmt: Statement) {
         match stmt {
             .Expr(expr) -> { self.emit_expr(expr) }
-            .Assign(target, value, span) -> {}
+            .Assign(target, value, span) -> { self.emit_assign(target, value) }
             .Return(value, span) -> { self.emit_return(value) }
             .Feature(fe) -> { self.dispatch_stmt(fe) }
         }
@@ -156,23 +165,12 @@ impl Codegen {
     }
 
     fn dispatch_stmt(self, fe: FeatureStmt) {
-        let fid = fe.data.feature
-        eprintln("dispatch: ${fid} kind=${fe.data.kind_name}")
-        if REG_EMIT_STMT.has(fid) {
-            eprintln("  handler found!")
-            let handler = REG_EMIT_STMT[fid]
-            handler(self, fe.data)
-        } else {
-            eprintln("  no handler")
-        }
+        dispatch_emit_stmt(self, fe.data)
     }
 
     fn dispatch_expr(self, fe: FeatureExpr) -> ptr {
-        let fid = fe.data.feature
-        if REG_EMIT_EXPR.has(fid) {
-            let handler = REG_EMIT_EXPR[fid]
-            return handler(self, fe.data)
-        }
+        let result = dispatch_emit_expr(self, fe.data)
+        if result != null { return result }
         llvm.const_int(CG_I64, 0, 0)
     }
 
@@ -192,8 +190,88 @@ impl Codegen {
             .MemberAccess(obj, field, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Block(block) -> { return self.emit_block(block) }
-            .Feature(fe) -> { return self.dispatch_expr(fe) }
+            .Feature(fe) -> {
+                eprintln("[emit_expr] Feature! fid=${fe.data.feature}")
+                return self.dispatch_expr(fe)
+            }
         }
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
+    fn emit_assign(self, target: Expr, value: Expr) {
+        // target should be an Ident — look up its alloca in CG_VAR_NAMES/CG_VAR_PTRS
+        match target {
+            .Ident(name, span) -> {
+                let val = self.emit_expr(value)
+                // Find the variable's alloca pointer (search reverse for most recent)
+                mut vi = CG_VAR_NAMES.length - 1
+                while vi >= 0 {
+                    if CG_VAR_NAMES[vi] == name {
+                        llvm.build_store(CG_B, val, CG_VAR_PTRS[vi])
+                        return
+                    }
+                    vi = vi - 1
+                }
+            }
+            _ -> {}
+        }
+    }
+
+    fn emit_if_from_block(self, block: Block) -> ptr {
+        // block.statements[0] = marker, [1] = condition, [2] = then block
+        let cond_stmt = block.statements[1]
+        let then_stmt = block.statements[2]
+
+        // Extract condition expression
+        let cond_expr = match cond_stmt {
+            .Expr(e) -> e
+            _ -> Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
+        }
+        let cond_val = self.emit_expr(cond_expr)
+        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
+
+        let current_fn = self.current_fn
+        if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
+
+        let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "then")
+        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ifcont")
+
+        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
+
+        // Emit then block
+        llvm.position_at_end(CG_B, then_bb)
+        let then_expr = match then_stmt {
+            .Expr(e) -> e
+            _ -> Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
+        }
+        self.emit_expr(then_expr)
+        llvm.build_br(CG_B, merge_bb)
+
+        // Continue at merge
+        llvm.position_at_end(CG_B, merge_bb)
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
+    fn emit_if_inline(self) -> ptr {
+        let cond_val = self.emit_expr(CURRENT_IF_COND)
+        // Truncate to i1
+        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
+
+        let current_fn = self.current_fn
+        if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
+
+        let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "then")
+        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ifcont")
+
+        // No else for now — simple if { ... }
+        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
+
+        llvm.position_at_end(CG_B, then_bb)
+        self.emit_block(CURRENT_IF_THEN)
+        // Only add br if block didn't already terminate (e.g., with return)
+        llvm.build_br(CG_B, merge_bb)
+
+        llvm.position_at_end(CG_B, merge_bb)
         llvm.const_int(CG_I64, 0, 0)
     }
 
@@ -211,12 +289,17 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
-        if self.vars.has(name) {
-            return llvm.build_load(CG_B, CG_I64, self.vars[name], name)
+        // Search vars in reverse order (most recent definition wins)
+        mut vi = CG_VAR_NAMES.length - 1
+        while vi >= 0 {
+            if CG_VAR_NAMES[vi] == name {
+                return llvm.build_load(CG_B, CG_I64, CG_VAR_PTRS[vi], name)
+            }
+            vi = vi - 1
         }
-        if self.functions.has(name) {
-            return self.functions[name]
-        }
+        // Try function lookup
+        let fn_ref = llvm.get_named_function(CG_MOD, name)
+        if fn_ref != null { return fn_ref }
         llvm.const_int(CG_I64, 0, 0)
     }
 
@@ -252,7 +335,9 @@ impl Codegen {
             .Ident(name, span) -> {
                 if name == "println" { return self.emit_println(args) }
                 if name == "print" { return self.emit_println(args) }
-                if self.functions.has(name) { return self.emit_fn_call(name, args) }
+                // Look up function by name in the LLVM module (not Map — Map ptrs are corrupt)
+                let fn_ref = llvm.get_named_function(CG_MOD, name)
+                if fn_ref != null { return self.emit_fn_call_direct(fn_ref, args) }
             }
             .MemberAccess(o, f, s) -> {}
             .Feature(fe) -> {}
@@ -270,8 +355,7 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
-    fn emit_fn_call(self, name: string, args: List<Expr>) -> ptr {
-        let fn_val = self.functions[name]
+    fn emit_fn_call_direct(self, fn_val: ptr, args: List<Expr>) -> ptr {
         let arg_arr = llvm.value_array_new(args.length)
         let param_arr = llvm.type_array_new(args.length)
         mut i = 0
@@ -302,19 +386,16 @@ impl Codegen {
         let ft = make_fn_type(CG_STR, [CG_I64])
         let sv = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "ts")
         llvm.value_array_free(ca)
-        // Extract ptr and len from ForgeString
-        let sp = llvm.build_extract_value(CG_B, sv, 0, "sp")
-        let sl = llvm.build_extract_value(CG_B, sv, 1, "sl")
-        // Call forge_println(ptr, len)
-        let pa = llvm.value_array_new(2)
-        llvm.value_array_set(pa, 0, sp)
-        llvm.value_array_set(pa, 1, sl)
-        let pft = make_fn_type(CG_VOID, [CG_PTR, CG_I64])
-        llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 2, "")
+        // Call forge_println_string(ForgeString) — pass struct directly
+        let pa = llvm.value_array_new(1)
+        llvm.value_array_set(pa, 0, sv)
+        let pft = make_fn_type(CG_VOID, [CG_STR])
+        llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 1, "")
         llvm.value_array_free(pa)
     }
 
     fn emit_block(self, block: Block) -> ptr {
+
         mut last = llvm.const_int(CG_I64, 0, 0)
         for stmt in block.statements {
             match stmt {
@@ -336,6 +417,7 @@ impl Codegen {
     fn define_var(self, name: string, ty: Type, value: ptr) {
         let alloca = llvm.build_alloca(CG_B, CG_I64, name)
         llvm.build_store(CG_B, value, alloca)
-        self.vars[name] = alloca
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
     }
 }

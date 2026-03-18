@@ -6,7 +6,8 @@ use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
-use parser.{Parser, Param, TypeExpr}
+use parser.{Parser, Param, TypeExpr, parser_new}
+use lexer.{lexer_new}
 use checker.TypeChecker
 use codegen.Codegen
 use features.variables.{parse_var_binding, VarKind}
@@ -48,10 +49,23 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         p.parse_type_expr()
     } else { null }
 
+    // Capture body source by reconstructing from token positions
+    // Use raw source between the { and } tokens (span-based extraction)
+    let block_open_span = p.peek().span  // span of the {
     let body = p.parse_block()
+    // The } token was consumed by parse_block, so peek_at(-1) is the }
+    // Use the source positions: from block_open to current position
+    let block_close_end = if p.pos > 0 { p.tokens[p.pos - 1].span.end } else { block_open_span.end }
+    let body_src = if p.source.length > 0 && block_close_end > block_open_span.start {
+        p.source.substring(block_open_span.start, block_close_end + 1)
+    } else { "" }
 
-    // Store for codegen (all non-nullable now)
-    store_fn_for_codegen(name, body)
+    // Store for codegen
+    store_fn_source(name, body_src)
+    store_fn_param_count(params.length)
+    for param in params {
+        store_fn_param_name(param.name)
+    }
 
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
@@ -172,38 +186,220 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 
 // ─── Emit All Functions (bypass enum dispatch) ──
 
-// Global list of (name, body) pairs — simpler than Map<string, struct>
-// because the bootstrap can't populate Maps with complex struct values
+// Global parallel lists for function data (bootstrap can't use Map<string, struct>)
 mut FN_NAMES: List<string> = []
-mut FN_BODIES: List<Block> = []
+mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
+mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
+mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
 
-export fn store_fn_for_codegen(name: string, body: Block) {
+// Store source text for re-parsing during codegen
+export fn store_fn_source(name: string, body_source: string) {
     FN_NAMES = FN_NAMES.push(name)
-    FN_BODIES = FN_BODIES.push(body)
+    FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
 }
 
-export fn emit_all_functions(cg: Codegen) {
+export fn store_fn_param_count(count: int) {
+    FN_PARAM_COUNTS = FN_PARAM_COUNTS.push(count)
+}
+
+export fn store_fn_param_name(name: string) {
+    FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(name)
+}
+
+// Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
+mut DECLARED_FNS: Map<string, ptr> = {}
+
+// Declare all functions (signatures only, no bodies) so forward calls work
+export fn declare_all_functions(cg: Codegen) {
     mut i = 0
     while i < FN_NAMES.length {
         let name = FN_NAMES[i]
-        let body = FN_BODIES[i]
-        emit_fn_simple(cg, name, body)
+        let is_main = name == "main"
+        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+        let param_arr = llvm.type_array_new(pc)
+        mut pi = 0
+        while pi < pc {
+            llvm.type_array_set(param_arr, pi, CG_I64)
+            pi = pi + 1
+        }
+        let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+        llvm.type_array_free(param_arr)
+        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        cg.functions[name] = fn_val
+        DECLARED_FNS[name] = fn_val
         i = i + 1
     }
 }
 
-fn emit_fn_simple(cg: Codegen, name: string, body: Block) {
+// Phase 1: Declare all functions (called before any body emission)
+export fn declare_all_fns() {
+    mut i = 0
+    while i < FN_NAMES.length {
+        let name = FN_NAMES[i]
+        let is_main = name == "main"
+        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+
+        let param_arr = llvm.type_array_new(pc)
+        mut pi = 0
+        while pi < pc {
+            llvm.type_array_set(param_arr, pi, CG_I64)
+            pi = pi + 1
+        }
+        let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+        llvm.type_array_free(param_arr)
+        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        DECLARED_FNS[name] = fn_val
+        i = i + 1
+    }
+}
+
+// Phase 2: Emit one function body at a time from FN_BODIES
+// Each call pops the front body to avoid stale data
+mut FN_EMIT_IDX: int = 0
+
+export fn emit_next_fn_body(cg: Codegen) {
+    if FN_EMIT_IDX >= FN_NAMES.length { return }
+    let i = FN_EMIT_IDX
+    let name = FN_NAMES[i]
+    let body = FN_BODIES[i]
     let is_main = name == "main"
-    let params = llvm.type_array_new(0)
-    let ret_ty = if is_main { CG_I32 } else { CG_I64 }
-    let fn_type = llvm.function_type(ret_ty, params, 0, 0)
-    llvm.type_array_free(params)
-    let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-    cg.functions[name] = fn_val
+    let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+
+    if !DECLARED_FNS.has(name) {
+        FN_EMIT_IDX = FN_EMIT_IDX + 1
+        return
+    }
+    let fn_val = DECLARED_FNS[name]
     cg.current_fn = fn_val
+
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
     llvm.position_at_end(CG_B, entry)
+
+    // Define params
+    mut param_offset = 0
+    mut fi = 0
+    while fi < i {
+        if fi < FN_PARAM_COUNTS.length {
+            param_offset = param_offset + FN_PARAM_COUNTS[fi]
+        }
+        fi = fi + 1
+    }
+    mut pi = 0
+    while pi < pc {
+        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
+        let param_val = llvm.get_param(fn_val, pi)
+        cg.define_var(pname, Type.Int, param_val)
+        pi = pi + 1
+    }
+
     cg.emit_block(body)
+
+    if is_main {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+    } else {
+        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+    }
+    FN_EMIT_IDX = FN_EMIT_IDX + 1
+}
+
+// Emit ALL function bodies — single pass: declare + re-parse + emit each function
+export fn emit_all_fn_bodies(cg: Codegen) {
+    mut param_offset = 0
+    mut i = 0
+    while i < FN_NAMES.length {
+        let name = FN_NAMES[i]
+        let body_src = FN_BODY_SOURCES[i]
+        let is_main = name == "main"
+        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+
+        // Declare the LLVM function (inline, not from Map)
+        let param_arr = llvm.type_array_new(pc)
+        mut pi = 0
+        while pi < pc {
+            llvm.type_array_set(param_arr, pi, CG_I64)
+            pi = pi + 1
+        }
+        let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+        llvm.type_array_free(param_arr)
+        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        // Store in global for function calls (Map<string, ptr>)
+        DECLARED_FNS[name] = fn_val
+        cg.current_fn = fn_val
+
+        let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+        llvm.position_at_end(CG_B, entry)
+
+        // TODO: clear vars between functions
+
+        // Define params
+        pi = 0
+        while pi < pc {
+            let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
+            let param_val = llvm.get_param(fn_val, pi)
+            cg.define_var(pname, Type.Int, param_val)
+            pi = pi + 1
+        }
+        param_offset = param_offset + pc
+
+        // Re-lex and re-parse the body source text
+        if body_src != "" {
+            mut body_lex = lexer_new(body_src)
+            let body_tokens = body_lex.tokenize()
+            mut body_parser = parser_new(body_tokens)
+            let body = body_parser.parse_block()
+            cg.emit_block(body)
+        }
+
+        if is_main {
+            llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+        } else {
+            llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+        }
+        i = i + 1
+    }
+}
+
+// Emit a single function body (called from codegen's emit_statement via dispatch)
+export fn emit_fn_body(cg: Codegen, node: NodeRef) {
+    let d = get_fn_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+    let name = data.name
+    let is_main = name == "main"
+
+    // Get function from global map (struct fields don't survive pass-by-value)
+    if !DECLARED_FNS.has(name) { return }
+    let fn_val = DECLARED_FNS[name]
+    cg.current_fn = fn_val
+
+    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+    llvm.position_at_end(CG_B, entry)
+
+    // Define params as local variables using flat param name list
+    // Find param offset: sum of param counts for functions before this one
+    mut param_offset = 0
+    mut fi = 0
+    while fi < FN_NAMES.length {
+        if FN_NAMES[fi] == name { break }
+        if fi < FN_PARAM_COUNTS.length {
+            param_offset = param_offset + FN_PARAM_COUNTS[fi]
+        }
+        fi = fi + 1
+    }
+    let pc = if fi < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fi] } else { 0 }
+    mut pi = 0
+    while pi < pc {
+        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
+        let param_val = llvm.get_param(fn_val, pi)
+        cg.define_var(pname, Type.Int, param_val)
+        pi = pi + 1
+    }
+
+    cg.emit_block(data.body)
+
     if is_main {
         llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
     } else {

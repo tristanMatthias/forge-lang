@@ -20,6 +20,8 @@
 use core.token.{Token, TokenKind, Span, TemplatePart}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.error.E_SYNTAX
+use lexer.{parse_int, parse_float}
+use features.if_else.{make_if_expr, make_if_with_else, make_if_no_else}
 
 // ─── Precedence Levels ─────────────────────────
 // All binary levels use parse_binary_level(prec) which:
@@ -32,23 +34,53 @@ use core.error.E_SYNTAX
 
 impl Parser {
 
-    // Map current token to BinOp for a given precedence level, or null if no match.
-    fn token_to_binop(self, level: int) -> BinOp? {
-        let kind = self.peek().kind
+    // Map current token to BinOp for a given precedence level.
+    // Returns "" for no match (bootstrap workaround: nullable returns unreliable)
+    fn token_to_binop_key(self, level: int) -> string {
+        let k = self.kind_to_key(self.peek().kind)
         match level {
-            1  -> if kind is .Pipe { .Pipe } else { null }
-            2  -> if kind is .Or { .Or } else { null }
-            3  -> if kind is .And { .And } else { null }
-            4  -> match kind { .EqEq -> .Eq, .NotEq -> .NotEq, _ -> null }
-            5  -> match kind { .Lt -> .Lt, .LtEq -> .LtEq, .Gt -> .Gt, .GtEq -> .GtEq, _ -> null }
-            6  -> if kind is .Bar { .BitOr } else { null }
-            7  -> if kind is .Caret { .BitXor } else { null }
-            8  -> if kind is .Ampersand { .BitAnd } else { null }
-            9  -> match kind { .ShiftLeft -> .Shl, .ShiftRight -> .Shr, _ -> null }
-            10 -> match kind { .Plus -> .Add, .Minus -> .Sub, _ -> null }
-            11 -> match kind { .Star -> .Mul, .Slash -> .Div, .Percent -> .Mod, _ -> null }
-            _  -> null
+            1  -> if k == "Pipe" { "Pipe" } else { "" }
+            2  -> if k == "Or" { "Or" } else { "" }
+            3  -> if k == "And" { "And" } else { "" }
+            4  -> if k == "EqEq" { "Eq" } else if k == "NotEq" { "NotEq" } else { "" }
+            5  -> {
+                if k == "Lt" { "Lt" }
+                else if k == "LtEq" { "LtEq" }
+                else if k == "Gt" { "Gt" }
+                else if k == "GtEq" { "GtEq" }
+                else { "" }
+            }
+            6  -> if k == "Bar" { "BitOr" } else { "" }
+            7  -> if k == "Caret" { "BitXor" } else { "" }
+            8  -> if k == "Ampersand" { "BitAnd" } else { "" }
+            9  -> if k == "ShiftLeft" { "Shl" } else if k == "ShiftRight" { "Shr" } else { "" }
+            10 -> if k == "Plus" { "Add" } else if k == "Minus" { "Sub" } else { "" }
+            11 -> if k == "Star" { "Mul" } else if k == "Slash" { "Div" } else if k == "Percent" { "Mod" } else { "" }
+            _  -> ""
         }
+    }
+
+    fn binop_from_key(self, key: string) -> BinOp {
+        if key == "Add" { return BinOp.Add }
+        if key == "Sub" { return BinOp.Sub }
+        if key == "Mul" { return BinOp.Mul }
+        if key == "Div" { return BinOp.Div }
+        if key == "Mod" { return BinOp.Mod }
+        if key == "Eq" { return BinOp.Eq }
+        if key == "NotEq" { return BinOp.NotEq }
+        if key == "Lt" { return BinOp.Lt }
+        if key == "LtEq" { return BinOp.LtEq }
+        if key == "Gt" { return BinOp.Gt }
+        if key == "GtEq" { return BinOp.GtEq }
+        if key == "And" { return BinOp.And }
+        if key == "Or" { return BinOp.Or }
+        if key == "BitAnd" { return BinOp.BitAnd }
+        if key == "BitOr" { return BinOp.BitOr }
+        if key == "BitXor" { return BinOp.BitXor }
+        if key == "Shl" { return BinOp.Shl }
+        if key == "Shr" { return BinOp.Shr }
+        if key == "Pipe" { return BinOp.Pipe }
+        BinOp.Add  // fallback (shouldn't reach)
     }
 
     // Parse the next-higher precedence level for a given level.
@@ -76,8 +108,9 @@ impl Parser {
 
         mut result = left!
         while true {
-            let op = self.token_to_binop(level)
-            if op == null { break }
+            let op_key = self.token_to_binop_key(level)
+            if op_key == "" { break }
+            let op = self.binop_from_key(op_key)
             self.advance()
             self.skip_newlines()
             let right = self.parse_next_level(level)
@@ -144,19 +177,17 @@ impl Parser {
             if self.check(TokenKind.Dot) {
                 self.advance()
                 // Numeric tuple access: expr.0
-                match self.peek().kind {
-                    .IntLiteral(n) -> {
-                        let field_span = self.advance().span
-                        let span = self.merge_spans(self.current_span(), field_span)
-                        result = Expr.Index(result, Expr.IntLit(n, field_span), span)
-                        continue
-                    }
-                    _ -> {}
+                let pk = self.peek()
+                if pk.kind_id == 2 {
+                    let field_span = self.advance().span
+                    let span = self.merge_spans(self.current_span(), field_span)
+                    result = Expr.Index(result, Expr.IntLit(parse_int(pk.text), field_span), span)
+                    continue
                 }
                 let field = self.expect_ident()
-                if field == null { return null }
+                if field == "" { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
-                result = Expr.MemberAccess(result, field!, span)
+                result = Expr.MemberAccess(result, field, span)
                 continue
             }
 
@@ -211,52 +242,53 @@ impl Parser {
     fn parse_primary_expr(self) -> Expr? {
         let tok = self.peek()
 
+        // Bootstrap workaround: check data-carrying variants via kind_id
+        if tok.kind_id == 2 {
+            // IntLiteral — parse value from text
+            let span = self.advance().span
+            return Expr.IntLit(parse_int(tok.text), span)
+        }
+        if tok.kind_id == 3 {
+            // FloatLiteral — parse value from text
+            let span = self.advance().span
+            return Expr.FloatLit(parse_float(tok.text), span)
+        }
+        if tok.kind_id == 4 {
+            // StringLiteral
+            let span = self.advance().span
+            return Expr.StringLit(tok.text, span)
+        }
+        if tok.kind_id == 5 {
+            // BoolLiteral
+            let span = self.advance().span
+            return Expr.BoolLit(tok.text == "true", span)
+        }
+        if tok.kind_id == 6 {
+            // TemplateLiteral / DollarString
+            let span = self.advance().span
+            return Expr.StringLit("(template)", span)
+        }
+        if tok.kind_id == 1 {
+            // Identifier
+            let name = tok.text
+            let span = self.advance().span
+
+            // Check for single-param closure: x -> expr
+            if self.check(TokenKind.Arrow) {
+                self.advance()
+                self.skip_newlines()
+                let body = self.parse_expr()
+                if body == null { return null }
+                return body
+            }
+
+            return Expr.Ident(name, span)
+        }
+
         match tok.kind {
-            // Literals
-            .IntLiteral(value) -> {
-                let span = self.advance().span
-                Expr.IntLit(value, span)
-            }
-            .FloatLiteral(value) -> {
-                let span = self.advance().span
-                Expr.FloatLit(value, span)
-            }
-            .StringLiteral(value) -> {
-                let span = self.advance().span
-                Expr.StringLit(value, span)
-            }
-            .BoolLiteral(value) -> {
-                let span = self.advance().span
-                Expr.BoolLit(value, span)
-            }
             .NullLiteral -> {
                 let span = self.advance().span
                 Expr.NullLit(span)
-            }
-
-            // Template literals — convert to string concat or keep as-is
-            .TemplateLiteral(parts) -> {
-                let span = self.advance().span
-                // For now, treat as string lit with interpolation placeholder
-                // TODO: expand template parts into concat expressions
-                Expr.StringLit("(template)", span)
-            }
-
-            // Identifier
-            .Ident(name) -> {
-                let span = self.advance().span
-
-                // Check for single-param closure: x -> expr
-                if self.check(TokenKind.Arrow) {
-                    self.advance()
-                    self.skip_newlines()
-                    let body = self.parse_expr()
-                    if body == null { return null }
-                    // TODO: create closure FeatureExpr
-                    return body
-                }
-
-                Expr.Ident(name, span)
             }
 
             // Parenthesized expression or tuple
@@ -279,7 +311,7 @@ impl Parser {
                 self.parse_dot_variant()
             }
 
-            // If expression (will be registered by if_else feature)
+            // If expression
             .If -> {
                 self.parse_if_expr()
             }
@@ -358,19 +390,17 @@ impl Parser {
 
         let after_brace = self.peek_at(offset)
 
-        // { ident: ... } — struct literal
-        match after_brace.kind {
-            .Ident(_) -> {
-                let after_ident = self.peek_at(offset + 1)
-                after_ident.kind is .Colon || after_ident.kind is .Comma || after_ident.kind is .RBrace
-            }
-            // { "string": ... } — map literal
-            .StringLiteral(_) -> {
-                let after_str = self.peek_at(offset + 1)
-                after_str.kind is .Colon
-            }
-            _ -> false
+        // { ident: ... } — struct literal (use kind_id for data variants)
+        if after_brace.kind_id == 1 {
+            let after_ident = self.peek_at(offset + 1)
+            return after_ident.kind is .Colon || after_ident.kind is .Comma || after_ident.kind is .RBrace
         }
+        // { "string": ... } — map literal
+        if after_brace.kind_id == 4 {
+            let after_str = self.peek_at(offset + 1)
+            return after_str.kind is .Colon
+        }
+        false
     }
 
     fn parse_struct_literal(self) -> Expr? {
@@ -383,23 +413,20 @@ impl Parser {
             self.skip_newlines()
 
             // field: value or field (shorthand)
-            match self.peek().kind {
-                .Ident(name) -> {
-                    let name_span = self.advance().span
-                    if self.check(TokenKind.Colon) {
-                        self.advance()
-                        let value = self.parse_expr()
-                        // Store as key-value pair somehow
-                    }
-                    // shorthand: just the name
-                }
-                .StringLiteral(key) -> {
-                    // Map literal
+            let field_tok = self.peek()
+            if field_tok.kind_id == 1 {
+                let name_span = self.advance().span
+                if self.check(TokenKind.Colon) {
                     self.advance()
-                    if self.expect(TokenKind.Colon) == null { return null }
-                    let value = self.parse_expr()
+                    let _value = self.parse_expr()
                 }
-                _ -> { break }
+            } else if field_tok.kind_id == 4 {
+                // Map literal
+                self.advance()
+                if self.expect(TokenKind.Colon) == null { return null }
+                let _value = self.parse_expr()
+            } else {
+                break
             }
 
             self.skip_newlines()
@@ -428,7 +455,7 @@ impl Parser {
     fn parse_dot_variant(self) -> Expr? {
         let start = self.advance().span // consume .
         let name = self.expect_ident()
-        if name == null { return null }
+        if name == "" { return null }
 
         // .Variant(args) — enum constructor with args
         if self.check(TokenKind.LParen) {
@@ -436,12 +463,11 @@ impl Parser {
             let args = self.parse_call_args()
             self.expect(TokenKind.RParen)
             let span = self.merge_spans(start, self.peek_at(-1).span)
-            // TODO: proper contextual enum variant FeatureExpr
-            return Expr.Ident(".${name!}", span)
+            return Expr.Ident(".${name}", span)
         }
 
         // .Variant — simple enum variant
-        Expr.Ident(".${name!}", start)
+        Expr.Ident(".${name}", start)
     }
 
     // ─── If Expression ─────────────────────────
@@ -460,23 +486,22 @@ impl Parser {
 
         // Optional else
         self.skip_newlines()
-        let else_block = if self.check(TokenKind.Else) {
+        let has_else = self.check(TokenKind.Else)
+        if has_else {
             self.advance()
             self.skip_newlines()
             if self.check(TokenKind.If) {
                 // else if — wrap in block with single if expr
                 let elif = self.parse_if_expr()
-                if elif != null {
-                    Block { statements: [Statement.Expr(elif!)], span: self.current_span() }
-                } else { null }
+                let elif_block = Block { statements: [Statement.Expr(elif!)], span: self.current_span() }
+                return make_if_with_else(condition!, then_block!, elif_block, start)
             } else {
-                self.parse_block()
+                let else_block = self.parse_block()
+                return make_if_with_else(condition!, then_block!, else_block!, start)
             }
-        } else { null }
+        }
 
-        // TODO: create proper if FeatureExpr via registry
-        // For now, return the then block as the expression
-        Expr.Block(then_block!)
+        make_if_no_else(condition!, then_block!, start)
     }
 
     // ─── Match Expression ──────────────────────
@@ -508,11 +533,11 @@ impl Parser {
 
             self.skip_newlines()
 
-            // Parse body
+            // Parse body (discard result — match not fully implemented yet)
             if self.check(TokenKind.LBrace) {
-                self.parse_block()
+                let _body = self.parse_block()
             } else {
-                self.parse_expr()
+                let _body = self.parse_expr()
             }
 
             self.skip_newlines()
@@ -547,7 +572,7 @@ impl Expr {
             .StringLit(_, span) -> span
             .BoolLit(_, span) -> span
             .NullLit(span) -> span
-            .Ident(_, span) -> span
+            .Ident(name, span) -> span
             .Binary(_, _, _, span) -> span
             .Unary(_, _, span) -> span
             .Call(_, _, span) -> span

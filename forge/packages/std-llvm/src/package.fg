@@ -24,6 +24,7 @@ extern fn forge_llvm_type_array_free(arr: ptr)
 
 // ── Functions ──
 extern fn forge_llvm_add_function(m: ptr, name: string, fn_type: ptr) -> ptr
+extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
 extern fn forge_llvm_get_param(f: ptr, index: int) -> ptr
 
 // ── Basic Blocks & Builder ──
@@ -235,6 +236,10 @@ export fn type_array_free(arr: ptr) {
 /// Add a function to a module.
 export fn add_function(m: ptr, name: string, fn_type: ptr) -> ptr {
     forge_llvm_add_function(m, name, fn_type)
+}
+
+export fn get_named_function(m: ptr, name: string) -> ptr {
+    forge_llvm_get_named_function(m, name)
 }
 
 /// Get a function parameter by index.

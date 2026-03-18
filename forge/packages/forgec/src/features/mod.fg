@@ -1,4 +1,6 @@
 // Features for the self-hosted compiler.
+// Bootstrap workaround: Map-based registry can't store fn pointers correctly.
+// All dispatch is hardcoded here via match on string IDs.
 
 mod variables
 mod functions
@@ -23,10 +25,14 @@ mod traits
 mod generics
 mod pipe_operator
 mod modules
+// mod error_propagation  // has parse errors with Ok_/Err_ tokens
 
-use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
+use core.ast.NodeRef
+use core.types.Type
+use codegen.Codegen
+use checker.TypeChecker
 use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
-use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn}
+use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, declare_all_functions, emit_fn_body, store_fn_for_codegen}
 use enums.{parse_enum, check_enum, emit_enum_decl, top_level_enum}
 use structs.{parse_type_decl, check_type_decl, check_struct_lit, emit_type_decl, emit_struct_lit, top_level_type}
 use traits.{parse_trait, check_trait, top_level_trait}
@@ -41,83 +47,41 @@ use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
 use closures.{check_closure, emit_closure}
 use null_safety.{check_null_safety, emit_null_safety}
-
-// Split into small functions to avoid bootstrap stack corruption
-fn init_vars() {
-    reg_parser("let", parse_let)
-    reg_parser("mut", parse_mut)
-    reg_parser("const", parse_const)
-    reg_check_stmt("variables", check_var)
-    reg_emit_stmt("variables", emit_var)
-    reg_top_level("variables", top_level_var)
-}
-
-fn init_fns() {
-    reg_parser("fn", parse_fn)
-    reg_parser("export", parse_export)
-    reg_check_stmt("functions", check_fn)
-    reg_emit_stmt("functions", emit_fn)
-    reg_top_level("functions", top_level_fn)
-}
+// use error_propagation.{check_error_prop, emit_error_prop}  // not exported yet
 
 export fn init_features() {
-    // No-op: Map operations hang in the large bootstrap-compiled binary.
-    // Feature dispatch is hardcoded in parser/checker/codegen for generation 1.
+    // No-op: dispatch is hardcoded below (bootstrap can't store fn ptrs in Maps)
 }
 
-fn init_features_UNUSED() {
-    init_vars()
-    init_fns()
-    init_types()
-    init_control()
-    init_exprs()
+// ─── Hardcoded Codegen Dispatch ──────────────────
+
+export fn dispatch_emit_stmt(cg: Codegen, node: NodeRef) {
+    let fid = node.feature
+    if fid == "variables" { emit_var(cg, node) }
+    else if fid == "functions" { emit_fn_body(cg, node) }
+    else if fid == "enums" { emit_enum_decl(cg, node) }
+    else if fid == "structs" { emit_type_decl(cg, node) }
+    else if fid == "impl_methods" { emit_impl(cg, node) }
+    else if fid == "while_loops" { emit_while(cg, node) }
+    else if fid == "for_loops" { emit_for(cg, node) }
+    else {
+        eprintln("[dispatch_emit_stmt] unknown feature: ${fid}")
+    }
 }
 
-fn init_types() {
-    reg_parser("enum", parse_enum)
-    reg_check_stmt("enums", check_enum)
-    reg_emit_stmt("enums", emit_enum_decl)
-    reg_top_level("enums", top_level_enum)
-    reg_parser("type", parse_type_decl)
-    reg_check_stmt("structs", check_type_decl)
-    reg_check_expr("structs", check_struct_lit)
-    reg_emit_stmt("structs", emit_type_decl)
-    reg_emit_expr("structs", emit_struct_lit)
-    reg_top_level("structs", top_level_type)
-    reg_parser("trait", parse_trait)
-    reg_check_stmt("traits", check_trait)
-    reg_top_level("traits", top_level_trait)
-    reg_parser("impl", parse_impl)
-    reg_check_stmt("impl_methods", check_impl)
-    reg_emit_stmt("impl_methods", emit_impl)
-    reg_top_level("impl_methods", top_level_impl)
-    reg_parser("use", parse_use)
-    reg_check_stmt("modules", check_use)
-    reg_top_level("modules", top_level_use)
-}
-
-fn init_control() {
-    reg_parser("while", parse_while)
-    reg_check_stmt("while_loops", check_while)
-    reg_emit_stmt("while_loops", emit_while)
-    reg_parser("for", parse_for)
-    reg_check_stmt("for_loops", check_for)
-    reg_emit_stmt("for_loops", emit_for)
-    reg_check_expr("if_else", check_if_expr)
-    reg_emit_expr("if_else", emit_if_expr)
-    reg_check_expr("pattern_matching", check_match)
-    reg_emit_expr("pattern_matching", emit_match)
-}
-
-fn init_exprs() {
-    reg_check_expr("collections", check_collection)
-    reg_emit_expr("collections", emit_collection)
-    reg_check_expr("ranges", check_range)
-    reg_emit_expr("ranges", emit_range)
-    reg_check_expr("string_templates", check_template)
-    reg_emit_expr("string_templates", emit_template)
-    reg_check_expr("closures", check_closure)
-    reg_emit_expr("closures", emit_closure)
-    reg_check_expr("null_safety", check_null_safety)
-    reg_emit_expr("null_safety", emit_null_safety)
+export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
+    let fid = node.feature
+    eprintln("[dispatch_expr] fid='${fid}'")
+    if fid == "if_else" { return emit_if_expr(cg, node) }
+    else if fid == "pattern_matching" { return emit_match(cg, node) }
+    else if fid == "collections" { return emit_collection(cg, node) }
+    else if fid == "ranges" { return emit_range(cg, node) }
+    else if fid == "string_templates" { return emit_template(cg, node) }
+    else if fid == "closures" { return emit_closure(cg, node) }
+    else if fid == "null_safety" { return emit_null_safety(cg, node) }
+    else if fid == "structs" { return emit_struct_lit(cg, node) }
+    else {
+        eprintln("[dispatch_emit_expr] unknown feature: ${fid}")
+    }
+    null
 }

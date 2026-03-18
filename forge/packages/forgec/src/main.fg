@@ -15,10 +15,9 @@ use features
 
 use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
-use parser.{parser_new}
+use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
 use codegen.{codegen_new}
-use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 
 fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
@@ -30,7 +29,7 @@ fn check(source: string, filename: string) -> bool {
         }
     }
 
-    mut p = parser_new(tokens)
+    mut p = parser_new_with_source(tokens, source)
     let program = p.parse_program()
 
     if p.diagnostics.length > 0 {
@@ -62,7 +61,7 @@ fn build_compile(source: string, filename: string, output: string) {
         }
     }
 
-    mut p = parser_new(tokens)
+    mut p = parser_new_with_source(tokens, source)
     let program = p.parse_program()
 
     if p.diagnostics.length > 0 {
@@ -99,16 +98,11 @@ fn main() {
         process.exit(1)
     }
 
-    eprintln("getting command...")
     let command = args[1]
-    eprintln("getting input...")
     let input = args[2]
-    eprintln("dispatching...")
 
     if command == "check" {
-        eprintln("reading file...")
         let source = fs.read(input)
-        eprintln("read ok, checking...")
         if !check(source, input) {
             process.exit(1)
         }
