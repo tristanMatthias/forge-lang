@@ -602,6 +602,12 @@ void forge_exit(int64_t code) {
     exit((int)code);
 }
 
+// ---- Memory helpers ----
+
+void forge_memcpy(void* dst, void* src, int64_t size) {
+    memcpy(dst, src, (size_t)size);
+}
+
 // ---- Panic ----
 
 void forge_panic(const char* msg, int64_t msg_len) {

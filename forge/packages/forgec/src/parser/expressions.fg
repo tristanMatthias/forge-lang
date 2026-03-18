@@ -735,12 +735,26 @@ impl Parser {
         }
 
         if method == "indexOf" {
-            // string.indexOf(sub) → forge_string_index_of(str, sub)
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let sub_val = cg.emit_expr(args[0])
                 return call_rt_2_ss(CG_RT_SINDEXOF, obj_val, sub_val, CG_I64, "indexof")
             }
+        }
+
+        if method == "push" {
+            // List.push(item) → allocate new array, copy old, append, return new list
+            if args.length >= 1 {
+                mut cg = codegen_new()
+                let item_val = cg.emit_expr(args[0])
+                return emit_list_push(obj_val, item_val)
+            }
+        }
+
+        if method == "has" {
+            // Map.has(key) → linear scan keys array (simplified)
+            // For now, stub as 0 (false)
+            return llvm.const_int(CG_I64, 0, 0)
         }
 
         // Default: return 0
@@ -750,7 +764,7 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_STR, CG_I64, CG_I8, CG_VOID}
+use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 
 fn call_rt_1(fn_ref: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(1)
@@ -792,6 +806,52 @@ fn call_rt_2_ss(fn_ref: ptr, arg1: ptr, arg2: ptr, ret_ty: ptr, name: string) ->
     let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
     llvm.value_array_free(args)
     result
+}
+
+// ─── List Operations ────────────────────────────
+
+fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
+    // List is {ptr data, i64 count}
+    // 1. Extract data_ptr and count
+    let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "list_data")
+    let old_count = llvm.build_extract_value(CG_B, list_val, 1, "list_count")
+
+    // 2. new_count = old_count + 1
+    let one = llvm.const_int(CG_I64, 1, 0)
+    let new_count = llvm.build_add(CG_B, old_count, one, "new_count")
+
+    // 3. Allocate new buffer: forge_alloc(new_count * 8)
+    let eight = llvm.const_int(CG_I64, 8, 0)
+    let new_size = llvm.build_mul(CG_B, new_count, eight, "new_size")
+    let new_data = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, new_size, "new_data")
+
+    // 4. Copy old data: forge_memcpy(new_data, data_ptr, old_count * 8)
+    let old_size = llvm.build_mul(CG_B, old_count, eight, "old_size")
+    let mcpy_args = llvm.value_array_new(3)
+    llvm.value_array_set(mcpy_args, 0, new_data)
+    llvm.value_array_set(mcpy_args, 1, data_ptr)
+    llvm.value_array_set(mcpy_args, 2, old_size)
+    let mcpy_pt = llvm.type_array_new(3)
+    llvm.type_array_set(mcpy_pt, 0, CG_PTR)
+    llvm.type_array_set(mcpy_pt, 1, CG_PTR)
+    llvm.type_array_set(mcpy_pt, 2, CG_I64)
+    let mcpy_ft = llvm.function_type(CG_VOID, mcpy_pt, 3, 0)
+    llvm.type_array_free(mcpy_pt)
+    llvm.build_call(CG_B, mcpy_ft, CG_RT_MEMCPY, mcpy_args, 3, "")
+    llvm.value_array_free(mcpy_args)
+
+    // 5. Store item at new_data[old_count]
+    let indices = llvm.value_array_new(1)
+    llvm.value_array_set(indices, 0, old_count)
+    let elem_ptr = llvm.build_gep2(CG_B, CG_I64, new_data, indices, 1, "elem_ptr")
+    llvm.value_array_free(indices)
+    llvm.build_store(CG_B, item_val, elem_ptr)
+
+    // 6. Build new list struct {new_data, new_count}
+    let undef = llvm.get_undef(CG_LIST)
+    let s1 = llvm.build_insert_value(CG_B, undef, new_data, 0, "list_s1")
+    let s2 = llvm.build_insert_value(CG_B, s1, new_count, 1, "list_s2")
+    s2
 }
 
 // ─── Binary Op Inline Emit ──────────────────────
