@@ -1,31 +1,14 @@
-fn fib(n: int) -> int {
-    if n <= 1 { return n }
-    return fib(n - 1) + fib(n - 2)
-}
-
 fn main() {
-    println("=== Forge Compiler v0.2 ===")
-
-    // String templates
+    // Test nullable force-unwrap
     let x = 42
-    println("value = ${x}")
+    let y = x!
+    println("unwrap: ${y}")
 
-    // Lists + for loop
-    let nums = [2, 3, 5, 7, 11]
-    mut sum = 0
-    for n in nums {
-        sum = sum + n
-    }
-    println("sum = ${sum}")
+    // Templates with arithmetic
+    let a = 10
+    let b = 20
+    let sum = a + b
+    println("${a} + ${b} = ${sum}")
 
-    // Recursion
-    let f = fib(15)
-    println("fib(15) = ${f}")
-
-    // Map
-    mut m = {}
-    m["key"] = 999
-    println(m["key"])
-
-    println("All features working!")
+    println("done!")
 }

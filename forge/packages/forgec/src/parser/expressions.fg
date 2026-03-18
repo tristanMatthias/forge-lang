@@ -353,6 +353,18 @@ impl Parser {
                 continue
             }
 
+            // Force unwrap: expr! (no-op in self-hosted — nullable is compile-time only)
+            if self.check(TokenKind.Not) {
+                self.advance()
+                continue
+            }
+
+            // Null chain: expr? (also no-op for now)
+            if self.check(TokenKind.Question) {
+                self.advance()
+                continue
+            }
+
             break
         }
 

@@ -53,6 +53,17 @@ export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
 
+// Struct type registry: maps struct names to field info
+// Each struct is stored as: name in CG_STRUCT_NAMES, fields as comma-separated
+// in CG_STRUCT_FIELDS, LLVM type in CG_STRUCT_TYPES
+export mut CG_STRUCT_NAMES: List<string> = []
+export mut CG_STRUCT_FIELDS: List<string> = []  // comma-separated field names
+export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
+export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
+
+// Track which variable holds which struct type
+export mut CG_VAR_STRUCT_TYPE: List<string> = []  // struct type name per var ("" if not struct)
+
 // Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
 export mut CG_LAST_IS_STR: int = 0
 
@@ -88,6 +99,59 @@ fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
 }
 
 // ─── Codegen Methods ───────────────────────────
+
+// Register a struct type with its fields
+export fn register_struct_type(name: string, fields: string, field_is_str: string, llvm_ty: ptr) {
+    CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(name)
+    CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
+    CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(field_is_str)
+    CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(llvm_ty)
+}
+
+// Find a struct type's field index by name. Returns -1 if not found.
+export fn struct_field_index(struct_name: string, field_name: string) -> int {
+    // Find the struct
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_NAMES[si] == struct_name {
+            // Parse comma-separated fields
+            let fields = CG_STRUCT_FIELDS[si]
+            mut idx = 0
+            mut current = ""
+            mut fi = 0
+            while fi < fields.length {
+                let ch = fields[fi]
+                if ch == "," {
+                    if current == field_name { return idx }
+                    idx = idx + 1
+                    current = ""
+                } else {
+                    current = current + ch
+                }
+                fi = fi + 1
+            }
+            if current == field_name { return idx }
+            return -1
+        }
+        si = si + 1
+    }
+    return -1
+}
+
+// Get the struct type name for a variable
+export fn var_struct_type(name: string) -> string {
+    mut vi = CG_VAR_STRUCT_TYPE.length - 1
+    while vi >= 0 {
+        if CG_VAR_NAMES[vi] == name {
+            if vi < CG_VAR_STRUCT_TYPE.length {
+                return CG_VAR_STRUCT_TYPE[vi]
+            }
+            return ""
+        }
+        vi = vi - 1
+    }
+    ""
+}
 
 export fn codegen_init(name: string) {
     cg_init_ctx(name)
@@ -528,6 +592,8 @@ impl Codegen {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        // Track struct type if set
+        CG_VAR_STRUCT_TYPE = CG_VAR_STRUCT_TYPE.push("")
     }
 
     fn is_map_var(self, name: string) -> bool {
