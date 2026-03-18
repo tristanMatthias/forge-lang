@@ -426,10 +426,12 @@ impl Parser {
             if CG_ACTIVE {
                 // Parse raw template text and emit LLVM IR for string interpolation
                 let result = emit_template_expr(tok.text)
+                BINOP_COUNTER = BINOP_COUNTER + 1
+                let tmp = "__tpl${BINOP_COUNTER}"
+                mut cg = codegen_new()
+                cg.define_var(tmp, Type.String, result)
                 CG_LAST_IS_STR = 1
-                CG_LAST_VAL = result
-                CG_HAS_LAST_VAL = 1
-                return Expr.StringLit(tok.text, span)
+                return Expr.Ident(tmp, span)
             }
             CG_LAST_IS_STR = 1
             return Expr.StringLit(tok.text, span)

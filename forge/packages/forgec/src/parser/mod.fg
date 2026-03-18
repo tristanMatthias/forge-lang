@@ -13,7 +13,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use codegen.{CG_ACTIVE, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -216,6 +216,13 @@ impl Parser {
         if self.is_at_end() { return null }
 
         let tok = self.peek()
+
+        // Reset type flags at statement boundary to prevent cross-statement leakage
+        if CG_ACTIVE {
+            CG_LAST_IS_STR = 0
+            CG_LAST_IS_MAP = 0
+            CG_HAS_LAST_VAL = 0
+        }
 
         // Hardcoded feature dispatch (bootstrap can't store fn ptrs in Maps)
         // All feature parse fns receive Parser by value — PARSE_END_POS syncs pos back.

@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX}
 use features.variables.{parse_var_binding, VarKind}
 use features.while_loops.PARSE_END_POS
 
@@ -346,10 +346,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         }
         param_offset = param_offset + pc
 
+        // Reset type tracking flags before each function body
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_HAS_LAST_VAL = 0
+        CG_IS_MAP_INDEX = 0
+
         // Re-lex and re-parse the body source text
-        // Parse emits if/else, while, assignments inline.
-        // emit_block handles return, println, and other statements.
-        // Already-emitted constructs (while, if) are no-ops via dispatch.
         if body_src != "" {
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()

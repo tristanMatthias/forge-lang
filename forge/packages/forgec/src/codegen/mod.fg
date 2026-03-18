@@ -45,7 +45,8 @@ export mut CG_RT_MAP_SET: ptr = null
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
-mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type
+mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELIABLE after many entries)
+export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
 export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
 
@@ -433,12 +434,13 @@ impl Codegen {
     }
 
     fn is_string_var(self, name: string) -> bool {
-        mut vi = CG_VAR_NAMES.length - 1
-        while vi >= 0 {
-            if CG_VAR_NAMES[vi] == name {
-                return CG_VAR_IS_STR[vi] == 1
+        // Use dedicated name list (more reliable than parallel int list)
+        mut si = CG_STR_VAR_NAMES.length - 1
+        while si >= 0 {
+            if CG_STR_VAR_NAMES[si] == name {
+                return true
             }
-            vi = vi - 1
+            si = si - 1
         }
         false
     }
@@ -522,6 +524,9 @@ impl Codegen {
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
+        if is_str {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+        }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
     }
 

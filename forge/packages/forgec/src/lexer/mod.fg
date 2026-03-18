@@ -132,6 +132,17 @@ impl Lexer {
         }
     }
 
+    // Non-nullable peek_at (returns "" at end). Use instead of peek_at
+    // to avoid bootstrap nullable comparison issues.
+    fn peek_ch_at(self, offset: int) -> string {
+        let idx = self.pos + offset
+        if idx < self.chars.length {
+            self.chars[idx]
+        } else {
+            ""
+        }
+    }
+
     fn advance(self) -> string {
         let ch = self.chars[self.pos]
         self.pos = self.pos + 1
@@ -437,6 +448,7 @@ impl Lexer {
     fn lex_string_generic(self, start_pos: int, start_line: int, start_col: int,
                           close_ch: string, escapes: string, is_dollar: bool, is_template: bool) -> Token {
         mut text = ""
+        mut raw_text = ""  // full source text for template codegen
         mut parts: List<TemplatePart> = []
         mut has_interpolation = is_template
 
@@ -454,7 +466,7 @@ impl Lexer {
                     return Token { kind: TokenKind.DollarString(parts), span }
                 }
                 if has_interpolation {
-                    return Token { kind: TokenKind.TemplateLiteral(parts), span }
+                    return Token { kind: TokenKind.TemplateLiteral(parts), span, text: raw_text, kind_id: 6 }
                 }
                 return token_string(text, span)
             }
@@ -498,7 +510,7 @@ impl Lexer {
             }
 
             // Interpolation: ${...}
-            if ch == "$" && self.peek_at(1) == "{" {
+            if ch == "$" && self.peek_ch_at(1) == "{" {
                 has_interpolation = true
                 if text.length > 0 {
                     parts = parts.push(TemplatePart.Literal(text))
@@ -508,11 +520,16 @@ impl Lexer {
                 self.advance()
                 let expr_span = self.current_span()
                 let expr_text = self.capture_interpolation_expr()
+                // Use \x24 instead of $ to avoid bootstrap template processing
+                let dollar = "$"
+                raw_text = raw_text + dollar + "{" + expr_text + "}"
                 parts = parts.push(TemplatePart.Expr(expr_text, expr_span))
                 continue
             }
 
-            text = text + self.advance()
+            let adv = self.advance()
+            text = text + adv
+            raw_text = raw_text + adv
         }
 
         // Unterminated
