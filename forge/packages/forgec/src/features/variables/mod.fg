@@ -56,8 +56,21 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     }
 
     // Optional type annotation: : Type
+    // Capture type annotation info for global type detection
+    mut ann_is_list = 0
+    mut ann_elem_name = ""
     let type_ann = if p.check(TokenKind.Colon) {
         p.advance()
+        // Peek: if next is "List", capture element type name
+        let type_tok = p.peek()
+        if type_tok.kind_id == 1 && type_tok.text == "List" {
+            ann_is_list = 1
+            // Element type is 2 tokens ahead: List < ElementType >
+            let elem_tok = p.peek_at(2)
+            if elem_tok.kind_id == 1 {
+                ann_elem_name = elem_tok.text
+            }
+        }
         p.parse_type_expr()
     } else { null }
 
@@ -83,7 +96,6 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     if IN_FUNCTION_BODY != 1 {
         // Set bit in bitmask if this is a string/list/map global
         if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
-            // Set bit VAR_GLOBAL_COUNT in the mask (1 << count)
             mut bit = 1
             mut shift = 0
             while shift < VAR_GLOBAL_COUNT {
@@ -94,6 +106,10 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         }
         VAR_GLOBAL_COUNT = VAR_GLOBAL_COUNT + 1
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
+        // Always push element type marker for lists
+        if ann_is_list == 1 && ann_elem_name != "" {
+            VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(":" + ann_elem_name)
+        }
     }
 
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)

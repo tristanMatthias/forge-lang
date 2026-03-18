@@ -1,22 +1,30 @@
-// Test: mixed int + string/list globals
+// Minimal struct list index test
 
-mut COUNTER: int = 0
-mut ITEMS: List<string> = []
+type Token = {
+    kind_id: int,
+    text: string,
+}
 
-fn bump() { COUNTER = COUNTER + 1 }
-fn add(s: string) { ITEMS = ITEMS.push(s) }
+mut TOKENS: List<Token> = []
+
+fn add_token(kid: int, txt: string) {
+    TOKENS = TOKENS.push(Token { kind_id: kid, text: txt })
+}
 
 fn main() {
-    bump()
-    bump()
-    bump()
-    println(COUNTER)
+    add_token(4, "fn")
+    add_token(0, "main")
+    add_token(6, "(")
+    println(TOKENS.length)
 
-    add("hello")
-    add("world")
-    println(ITEMS.length)
-    println(ITEMS[0])
-    println(ITEMS[1])
+    // Direct access
+    let t0 = TOKENS[0]
+    println(t0.kind_id)
+    println(t0.text)
 
-    println("mixed globals work!")
+    let t1 = TOKENS[1]
+    println(t1.kind_id)
+    println(t1.text)
+
+    println("struct list access done")
 }

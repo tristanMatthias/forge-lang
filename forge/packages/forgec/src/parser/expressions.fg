@@ -381,7 +381,9 @@ impl Parser {
                                 let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
                                 result_is_llvm = true
                                 result_llvm = field_val
-                                result_is_str = false
+                                // Check if this field is a string type
+                                let struct_type_name = CG_STRUCT_VAR_TYPES[svi]
+                                result_is_str = is_struct_field_str(struct_type_name, fidx)
                                 result_is_map = false
                                 result = Expr.IntLit(0, span)
                                 break
@@ -545,6 +547,21 @@ impl Parser {
             let tmp = "__pt${BINOP_COUNTER}"
             let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
+            // If result is a struct, register temp var in struct tracking
+            if CG_LAST_STRUCT_TYPE != "" {
+                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
+                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+                // Copy field info from the struct registry
+                mut sfi = CG_STRUCT_FIELDS.length - 1
+                while sfi >= 0 {
+                    if CG_STRUCT_NAMES[sfi] == CG_LAST_STRUCT_TYPE {
+                        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_FIELDS[sfi])
+                        break
+                    }
+                    sfi = sfi - 1
+                }
+                if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
+            }
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
             return Expr.Ident(tmp, self.current_span())
         }

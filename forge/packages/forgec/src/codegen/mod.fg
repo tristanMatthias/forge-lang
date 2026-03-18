@@ -121,12 +121,25 @@ export fn store_toplevel_source(src: string) {
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
     mut i = 0
+    mut global_idx = 0
+    mut last_list_name = ""  // name of the last list global (for marker entries)
+    mut has_marker = 0       // set to 1 if current list global has a marker
     while i < names.length {
         let name = names[i]
-        // Check bitmask: bit i set = string/list type
+        // Skip marker entries (start with ":")
+        if name.length > 0 && name[0] == ":" {
+            let struct_name = name.substring(1, name.length)
+            if last_list_name != "" {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:${struct_name},"
+                has_marker = 1
+            }
+            i = i + 1
+            continue
+        }
+        // Check bitmask: bit global_idx set = string/list type
         mut bit = 1
         mut shift = 0
-        while shift < i {
+        while shift < global_idx {
             bit = bit * 2
             shift = shift + 1
         }
@@ -139,13 +152,25 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        // Set default element type for previous list if no marker was found
+        if last_list_name != "" && has_marker == 0 {
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${last_list_name},"
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:string,"
+        }
+        has_marker = 0
+        last_list_name = ""
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
             CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+            last_list_name = name
         }
+        global_idx = global_idx + 1
         i = i + 1
+    }
+    // Final default for last list global
+    if last_list_name != "" && has_marker == 0 {
+        CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${last_list_name},"
+        CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:string,"
     }
 }
 
