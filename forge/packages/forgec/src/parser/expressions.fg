@@ -217,7 +217,7 @@ impl Parser {
         // Track LLVM value for inline emit (same pattern as parse_binary_level)
         mut result_is_llvm = false
         mut result_llvm: ptr = null
-        mut result_is_str = false  // track if result is ForgeString type
+        mut result_is_str = CG_LAST_IS_STR == 1  // inherit string type from primary expr
 
         while !self.is_at_end() {
             // Function call: expr(args...)
@@ -408,6 +408,16 @@ impl Parser {
             // Identifier
             let name = tok.text
             let span = self.advance().span
+
+            // Track string type for this ident (for postfix .length, [i], + concat)
+            if CG_ACTIVE {
+                mut cg = codegen_new()
+                if cg.is_string_var(name) {
+                    CG_LAST_IS_STR = 1
+                } else {
+                    CG_LAST_IS_STR = 0
+                }
+            }
 
             // Check for single-param closure: x -> expr
             if self.check(TokenKind.Arrow) {
