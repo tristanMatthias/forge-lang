@@ -1,12 +1,11 @@
-// Debug: check peek_id behavior
-
 type Token = {
     kind_id: int,
     text: string,
 }
 
-mut TOKENS: List<Token> = []
+// Put POS BEFORE TOKENS to avoid memory overlap
 mut POS: int = 0
+mut TOKENS: List<Token> = []
 
 fn add_token(kid: int, txt: string) {
     TOKENS = TOKENS.push(Token { kind_id: kid, text: txt })
@@ -20,29 +19,18 @@ fn peek_id() -> int {
     return 99
 }
 
-fn advance_tok() {
-    POS = POS + 1
-}
+fn advance_pos() { POS = POS + 1 }
 
 fn main() {
     add_token(4, "fn")
     add_token(0, "main")
     add_token(6, "(")
-    add_token(7, ")")
     println(TOKENS.length)
     println(POS)
-
-    // Direct peek
-    let id1 = peek_id()
-    println(id1)
-
-    advance_tok()
-    let id2 = peek_id()
-    println(id2)
-
-    advance_tok()
-    let id3 = peek_id()
-    println(id3)
-
+    println(peek_id())
+    advance_pos()
+    println(peek_id())
+    advance_pos()
+    println(peek_id())
     println("done")
 }

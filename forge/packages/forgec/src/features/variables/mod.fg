@@ -106,10 +106,6 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         }
         VAR_GLOBAL_COUNT = VAR_GLOBAL_COUNT + 1
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
-        // Always push element type marker for lists
-        if ann_is_list == 1 && ann_elem_name != "" {
-            VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(":" + ann_elem_name)
-        }
     }
 
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)

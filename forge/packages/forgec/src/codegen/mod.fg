@@ -60,6 +60,9 @@ export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
 export mut CG_GLOBAL_CSV: string = ""  // ",name:type,name:type," format
 export mut CG_GLOBAL_COUNT: int = 0
 
+// Boundary index: vars before this index are globals, after are function-locals
+export mut CG_VAR_SCOPE_START: int = 0
+
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
 
@@ -121,25 +124,12 @@ export fn store_toplevel_source(src: string) {
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
     mut i = 0
-    mut global_idx = 0
-    mut last_list_name = ""  // name of the last list global (for marker entries)
-    mut has_marker = 0       // set to 1 if current list global has a marker
     while i < names.length {
         let name = names[i]
-        // Skip marker entries (start with ":")
-        if name.length > 0 && name[0] == ":" {
-            let struct_name = name.substring(1, name.length)
-            if last_list_name != "" {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:${struct_name},"
-                has_marker = 1
-            }
-            i = i + 1
-            continue
-        }
-        // Check bitmask: bit global_idx set = string/list type
+        // Check bitmask: bit i set = string/list type
         mut bit = 1
         mut shift = 0
-        while shift < global_idx {
+        while shift < i {
             bit = bit * 2
             shift = shift + 1
         }
@@ -152,25 +142,13 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        // Set default element type for previous list if no marker was found
-        if last_list_name != "" && has_marker == 0 {
-            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${last_list_name},"
-            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:string,"
-        }
-        has_marker = 0
-        last_list_name = ""
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
             CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-            last_list_name = name
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
         }
-        global_idx = global_idx + 1
         i = i + 1
-    }
-    // Final default for last list global
-    if last_list_name != "" && has_marker == 0 {
-        CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${last_list_name},"
-        CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${last_list_name}:string,"
     }
 }
 
@@ -637,9 +615,11 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
-        // Search vars in reverse order (most recent definition wins)
+        // Search current function locals first (from END to scope start)
+        // then globals (from scope start-1 to 0)
+        // This prevents stale locals from other functions being found
         mut vi = CG_VAR_NAMES.length - 1
-        while vi >= 0 {
+        while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {
                 // Determine load type: string, struct, or int
                 mut load_ty = CG_I64
@@ -656,6 +636,35 @@ impl Codegen {
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
                     // Search from END to find entry with LLVM type
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
+                        if CG_STRUCT_NAMES[sti] == struct_type_name {
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null { load_ty = sty }
+                            break
+                        }
+                        sti = sti - 1
+                    }
+                }
+                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+            }
+            vi = vi - 1
+        }
+        // Search globals (indices 0 to CG_VAR_SCOPE_START-1)
+        vi = CG_VAR_SCOPE_START - 1
+        while vi >= 0 {
+            if CG_VAR_NAMES[vi] == name {
+                mut load_ty = CG_I64
+                mut si = CG_STR_VAR_NAMES.length - 1
+                while si >= 0 {
+                    if CG_STR_VAR_NAMES[si] == name {
+                        load_ty = CG_STR
+                        break
+                    }
+                    si = si - 1
+                }
+                let struct_type_name = var_struct_type(name)
+                if struct_type_name != "" {
                     mut sti = CG_STRUCT_NAMES.length - 1
                     while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == struct_type_name {
