@@ -316,53 +316,9 @@ impl Parser {
                 CG_HAS_LAST_VAL = 0
                 llvm.build_ret(CG_B, CG_LAST_VAL)
             } else {
-                // Return: look up the variable alloca directly and load from it
-                // Don't use emit_expr/emit_ident — LLVM folds loads from dominating blocks
                 mut cg = codegen_new()
-                // Parse the expression to get the variable name
-                // value was already parsed; LAST_IDENT_NAME has the var name
-                let ret_name = LAST_IDENT_NAME
-                mut ret_found = false
-                mut rvi = CG_VAR_NAMES.length - 1
-                while rvi >= 0 {
-                    if CG_VAR_NAMES[rvi] == ret_name {
-                        // Load directly from alloca
-                        let alloca = CG_VAR_PTRS[rvi]
-                        // Determine load type
-                        mut load_ty = CG_I64
-                        // Check string
-                        mut sni = CG_STR_VAR_NAMES.length - 1
-                        while sni >= 0 {
-                            if CG_STR_VAR_NAMES[sni] == ret_name {
-                                load_ty = CG_STR
-                                break
-                            }
-                            sni = sni - 1
-                        }
-                        // Check struct
-                        let stn = var_struct_type(ret_name)
-                        if stn != "" {
-                            mut sti = CG_STRUCT_NAMES.length - 1
-                            while sti >= 0 {
-                                if CG_STRUCT_NAMES[sti] == stn {
-                                    let sty = CG_STRUCT_TYPES[sti]
-                                    if sty != null { load_ty = sty }
-                                    break
-                                }
-                                sti = sti - 1
-                            }
-                        }
-                        let loaded = llvm.build_load(CG_B, load_ty, alloca, "ret_val")
-                        llvm.build_ret(CG_B, loaded)
-                        ret_found = true
-                        break
-                    }
-                    rvi = rvi - 1
-                }
-                if !ret_found {
-                    let ret_val = cg.emit_expr(value!)
-                    llvm.build_ret(CG_B, ret_val)
-                }
+                let ret_val = cg.emit_expr(value!)
+                llvm.build_ret(CG_B, ret_val)
             }
         }
         Statement.Expr(Expr.IntLit(0, start))
