@@ -35,41 +35,77 @@ declare i64 @forge_map_get(ptr, { ptr, i64 })
 
 declare void @forge_map_set(ptr, { ptr, i64 }, i64)
 
+define i64 @dot(i64 %0, i64 %1) {
+entry:
+  %a = alloca i64, align 8
+  store i64 %0, ptr %a, align 4
+  %b = alloca i64, align 8
+  store i64 %1, ptr %b, align 4
+  %a1 = load i64, ptr %a, align 4
+  %b2 = load i64, ptr %b, align 4
+  %__bt1 = alloca i64, align 8
+  store i64 0, ptr %__bt1, align 4
+  %a3 = load i64, ptr %a, align 4
+  %b4 = load i64, ptr %b, align 4
+  %__bt2 = alloca i64, align 8
+  store i64 0, ptr %__bt2, align 4
+  %__bt15 = load i64, ptr %__bt1, align 4
+  %__bt26 = load i64, ptr %__bt2, align 4
+  %add = add i64 %__bt15, %__bt26
+  %a7 = load i64, ptr %a, align 4
+  %b8 = load i64, ptr %b, align 4
+  %__bt3 = alloca i64, align 8
+  store i64 0, ptr %__bt3, align 4
+  %__bt39 = load i64, ptr %__bt3, align 4
+  %add10 = add i64 %add, %__bt39
+  %__bt4 = alloca i64, align 8
+  store i64 %add10, ptr %__bt4, align 4
+  %__bt411 = load i64, ptr %__bt4, align 4
+  ret i64 %__bt411
+}
+
 define i32 @main() {
 entry:
-  %__struct1 = alloca { i64, i64 }, align 8
-  store { i64, i64 } { i64 10, i64 20 }, ptr %__struct1, align 4
-  %p = alloca { i64, i64 }, align 8
-  store { i64, i64 } { i64 10, i64 20 }, ptr %p, align 4
-  %p1 = load { i64, i64 }, ptr %p, align 4
-  %x = extractvalue { i64, i64 } %p1, 0
-  %__pt2 = alloca i64, align 8
-  store i64 %x, ptr %__pt2, align 4
-  %__pt22 = load i64, ptr %__pt2, align 4
-  %ts = call { ptr, i64 } @forge_int_to_string(i64 %__pt22)
+  %__struct5 = alloca { i64, i64, i64 }, align 8
+  store { i64, i64, i64 } { i64 1, i64 2, i64 3 }, ptr %__struct5, align 4
+  %v1 = alloca { i64, i64, i64 }, align 8
+  store { i64, i64, i64 } { i64 1, i64 2, i64 3 }, ptr %v1, align 4
+  %__struct6 = alloca { i64, i64, i64 }, align 8
+  store { i64, i64, i64 } { i64 4, i64 5, i64 6 }, ptr %__struct6, align 4
+  %v2 = alloca { i64, i64, i64 }, align 8
+  store { i64, i64, i64 } { i64 4, i64 5, i64 6 }, ptr %v2, align 4
+  %v11 = load { i64, i64, i64 }, ptr %v1, align 4
+  %v22 = load { i64, i64, i64 }, ptr %v2, align 4
+  %call = call i64 @dot({ i64, i64, i64 } %v11, { i64, i64, i64 } %v22)
+  %d = alloca i64, align 8
+  store i64 %call, ptr %d, align 4
+  %d3 = load i64, ptr %d, align 4
+  %ts = call { ptr, i64 } @forge_int_to_string(i64 %d3)
   call void @forge_println_string({ ptr, i64 } %ts)
-  %p3 = load { i64, i64 }, ptr %p, align 4
-  %y = extractvalue { i64, i64 } %p3, 1
-  %__pt3 = alloca i64, align 8
-  store i64 %y, ptr %__pt3, align 4
-  %__pt34 = load i64, ptr %__pt3, align 4
-  %ts5 = call { ptr, i64 } @forge_int_to_string(i64 %__pt34)
-  call void @forge_println_string({ ptr, i64 } %ts5)
-  %p6 = load { i64, i64 }, ptr %p, align 4
-  %x7 = extractvalue { i64, i64 } %p6, 0
-  %__pt4 = alloca i64, align 8
-  store i64 %x7, ptr %__pt4, align 4
-  %p8 = load { i64, i64 }, ptr %p, align 4
-  %y9 = extractvalue { i64, i64 } %p8, 1
-  %__pt5 = alloca i64, align 8
-  store i64 %y9, ptr %__pt5, align 4
-  %__pt410 = load i64, ptr %__pt4, align 4
-  %__pt511 = load i64, ptr %__pt5, align 4
-  %add = add i64 %__pt410, %__pt511
-  %__bt6 = alloca i64, align 8
-  store i64 %add, ptr %__bt6, align 4
-  %__bt612 = load i64, ptr %__bt6, align 4
-  %ts13 = call { ptr, i64 } @forge_int_to_string(i64 %__bt612)
+  %v14 = load { i64, i64, i64 }, ptr %v1, align 4
+  %x = extractvalue { i64, i64, i64 } %v14, 0
+  %__pt7 = alloca i64, align 8
+  store i64 %x, ptr %__pt7, align 4
+  %v15 = load { i64, i64, i64 }, ptr %v1, align 4
+  %y = extractvalue { i64, i64, i64 } %v15, 1
+  %__pt8 = alloca i64, align 8
+  store i64 %y, ptr %__pt8, align 4
+  %__pt76 = load i64, ptr %__pt7, align 4
+  %__pt87 = load i64, ptr %__pt8, align 4
+  %add = add i64 %__pt76, %__pt87
+  %v18 = load { i64, i64, i64 }, ptr %v1, align 4
+  %z = extractvalue { i64, i64, i64 } %v18, 2
+  %__pt9 = alloca i64, align 8
+  store i64 %z, ptr %__pt9, align 4
+  %__pt99 = load i64, ptr %__pt9, align 4
+  %add10 = add i64 %add, %__pt99
+  %__bt10 = alloca i64, align 8
+  store i64 %add10, ptr %__bt10, align 4
+  %__bt1011 = load i64, ptr %__bt10, align 4
+  %sum = alloca i64, align 8
+  store i64 %__bt1011, ptr %sum, align 4
+  %sum12 = load i64, ptr %sum, align 4
+  %ts13 = call { ptr, i64 } @forge_int_to_string(i64 %sum12)
   call void @forge_println_string({ ptr, i64 } %ts13)
   %str = call { ptr, i64 } @forge_string_new(ptr @str, i64 5)
   call void @forge_println_string({ ptr, i64 } %str)
