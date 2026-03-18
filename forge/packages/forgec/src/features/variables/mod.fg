@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -93,6 +93,10 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
                 mut cg = codegen_new()
                 cg.define_var(var_name, var_type, val)
             }
+        }
+        // Register map variable name for reliable lookup
+        if is_map {
+            CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
         }
         // Reset flags for next expression
         CG_LAST_IS_STR = 0

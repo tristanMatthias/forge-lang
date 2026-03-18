@@ -47,6 +47,7 @@ mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
 mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
+export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
 
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
@@ -514,7 +515,7 @@ impl Codegen {
     fn define_var(self, name: string, ty: Type, value: ptr) {
         // Use CG_STR alloca for string values, CG_I64 for everything else
         let is_str = ty is .String
-        let is_map = ty is .MapType
+        let is_map = CG_LAST_IS_MAP == 1
         let alloca_ty = if is_str { CG_STR } else { CG_I64 }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
@@ -525,12 +526,13 @@ impl Codegen {
     }
 
     fn is_map_var(self, name: string) -> bool {
-        mut vi = CG_VAR_NAMES.length - 1
-        while vi >= 0 {
-            if CG_VAR_NAMES[vi] == name {
-                return CG_VAR_IS_MAP[vi] == 1
+        // Search the dedicated map names list (more reliable than parallel int list)
+        mut mi = CG_MAP_VAR_NAMES.length - 1
+        while mi >= 0 {
+            if CG_MAP_VAR_NAMES[mi] == name {
+                return true
             }
-            vi = vi - 1
+            mi = mi - 1
         }
         false
     }

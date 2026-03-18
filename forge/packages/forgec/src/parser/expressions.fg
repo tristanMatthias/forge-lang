@@ -423,7 +423,16 @@ impl Parser {
         if tok.kind_id == 6 {
             // TemplateLiteral / DollarString
             let span = self.advance().span
-            return Expr.StringLit("(template)", span)
+            if CG_ACTIVE {
+                // Parse raw template text and emit LLVM IR for string interpolation
+                let result = emit_template_expr(tok.text)
+                CG_LAST_IS_STR = 1
+                CG_LAST_VAL = result
+                CG_HAS_LAST_VAL = 1
+                return Expr.StringLit(tok.text, span)
+            }
+            CG_LAST_IS_STR = 1
+            return Expr.StringLit(tok.text, span)
         }
         if tok.kind_id == 1 {
             // Identifier
@@ -945,7 +954,8 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)
@@ -996,6 +1006,134 @@ fn call_rt_2_ss(fn_ref: ptr, arg1: ptr, arg2: ptr, ret_ty: ptr, name: string) ->
     llvm.type_array_free(param_types)
     let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
     llvm.value_array_free(args)
+    result
+}
+
+// ─── String Template Codegen ─────────────────────
+
+mut TPL_COUNTER: int = 0
+
+// Emit a raw string literal as a ForgeString LLVM value: forge_string_new(ptr, len)
+fn emit_str_lit(text: string) -> ptr {
+    let raw = llvm.build_global_string_ptr(CG_B, text, "tpl_s")
+    let len = llvm.const_int(CG_I64, text.length, 0)
+    call_rt_2(CG_RT_SNEW, CG_PTR, CG_STR, raw, len, "tpl_snew")
+}
+
+// Look up a variable by name. Returns its loaded value.
+// Sets tpl_var_is_str flag: 1 = string, 0 = int.
+mut TPL_VAR_IS_STR: int = 0
+fn tpl_load_var(name: string) -> ptr {
+    // Search in reverse for most recent definition
+    mut vi = CG_VAR_NAMES.length - 1
+    while vi >= 0 {
+        if CG_VAR_NAMES[vi] == name {
+            TPL_VAR_IS_STR = CG_VAR_IS_STR[vi]
+            let load_ty = if CG_VAR_IS_STR[vi] == 1 { CG_STR } else { CG_I64 }
+            return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+        }
+        vi = vi - 1
+    }
+    // Fallback: return 0 as i64
+    TPL_VAR_IS_STR = 0
+    llvm.const_int(CG_I64, 0, 0)
+}
+
+// Convert a value to ForgeString if it isn't already one.
+fn tpl_to_string(val: ptr, is_str: int) -> ptr {
+    if is_str == 1 {
+        return val
+    }
+    // Assume int — call forge_int_to_string
+    call_rt_1(CG_RT_I2S, CG_I64, CG_STR, val, "tpl_i2s")
+}
+
+// Concatenate two ForgeString values.
+fn tpl_concat(a: ptr, b: ptr) -> ptr {
+    call_rt_2_ss(CG_RT_SCONCAT, a, b, CG_STR, "tpl_cat")
+}
+
+// Parse template text and emit LLVM IR for string interpolation.
+// Template text is the raw content (without outer quotes), e.g. "hello ${name}".
+// Splits on ${ and } to find literal and variable segments.
+// Only handles simple variable references like ${name} (single identifiers).
+fn emit_template_expr(text: string) -> ptr {
+    mut result: ptr = null
+    mut has_result = false
+    mut pos = 0
+    let len = text.length
+
+    while pos < len {
+        // Look for ${ starting from pos
+        mut found_dollar = false
+        mut dollar_pos = pos
+        while dollar_pos < len - 1 {
+            if text[dollar_pos] == "$" && text[dollar_pos + 1] == "{" {
+                found_dollar = true
+                break
+            }
+            dollar_pos = dollar_pos + 1
+        }
+
+        if found_dollar {
+            // Emit literal segment before ${
+            if dollar_pos > pos {
+                let lit = text.substring(pos, dollar_pos)
+                let lit_val = emit_str_lit(lit)
+                if has_result {
+                    result = tpl_concat(result, lit_val)
+                } else {
+                    result = lit_val
+                    has_result = true
+                }
+            }
+
+            // Find matching }
+            let expr_start = dollar_pos + 2
+            mut close_pos = expr_start
+            while close_pos < len {
+                if text[close_pos] == "}" {
+                    break
+                }
+                close_pos = close_pos + 1
+            }
+
+            // Extract variable name (trim whitespace for safety)
+            let var_name = text.substring(expr_start, close_pos)
+
+            // Load variable and convert to string
+            let var_val = tpl_load_var(var_name)
+            let str_val = tpl_to_string(var_val, TPL_VAR_IS_STR)
+
+            if has_result {
+                result = tpl_concat(result, str_val)
+            } else {
+                result = str_val
+                has_result = true
+            }
+
+            pos = close_pos + 1
+        } else {
+            // No more ${...} — emit remaining literal
+            if pos < len {
+                let lit = text.substring(pos, len)
+                let lit_val = emit_str_lit(lit)
+                if has_result {
+                    result = tpl_concat(result, lit_val)
+                } else {
+                    result = lit_val
+                    has_result = true
+                }
+            }
+            pos = len
+        }
+    }
+
+    // Handle empty template
+    if !has_result {
+        result = emit_str_lit("")
+    }
+
     result
 }
 

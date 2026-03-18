@@ -1,10 +1,7 @@
 fn main() {
     mut m = {}
     m["x"] = 42
-    m["y"] = 99
-    println(m.has("x"))
-    println(m.has("z"))
     println(m["x"])
-    println(m["y"])
+    println(m.has("x"))
     println("done!")
 }
