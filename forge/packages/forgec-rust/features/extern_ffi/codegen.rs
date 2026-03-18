@@ -31,8 +31,9 @@ impl<'ctx> Codegen<'ctx> {
                 match ret_name.as_str() {
                     "void" => self.context.void_type().fn_type(&param_types, false),
                     "string" | "cstring" => {
-                        // Return ForgeString struct {ptr, i64} — not raw ptr
-                        self.string_type().fn_type(&param_types, false)
+                        // Extern fns return raw C pointers (*const c_char),
+                        // not ForgeString. Call sites auto-wrap ptr→ForgeString.
+                        self.context.ptr_type(AddressSpace::default()).fn_type(&param_types, false)
                     }
                     "ptr" => {
                         self.context.ptr_type(AddressSpace::default()).fn_type(&param_types, false)

@@ -31,11 +31,9 @@ impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a tagged template via the Feature dispatch system.
     pub(crate) fn infer_tagged_template_feature_type(&self, fe: &FeatureExpr) -> Type {
         if let Some(data) = feature_data!(fe, TaggedTemplateData) {
-            if let Some(tp) = &data.type_param {
-                self.type_checker.resolve_type_expr(tp)
-            } else {
-                self.infer_tagged_template_type(&data.tag)
-            }
+            // Always infer from the tag function's return type.
+            // type_param is metadata for the tag function, not the result type.
+            self.infer_tagged_template_type(&data.tag)
         } else {
             Type::Unknown
         }

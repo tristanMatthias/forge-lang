@@ -38,11 +38,11 @@ fn err_c() -> *mut c_char {
 // ── File operations ──
 
 #[no_mangle]
-pub extern "C" fn forge_fs_read(path: *const c_char) -> ForgeString {
+pub extern "C" fn forge_fs_read(path: *const c_char) -> *mut c_char {
     let path = cstr(path);
     match fs::read_to_string(&path) {
-        Ok(content) => to_forge_string(&content),
-        Err(_) => err_forge_string(),
+        Ok(content) => to_c(&content),
+        Err(_) => err_c(),
     }
 }
 

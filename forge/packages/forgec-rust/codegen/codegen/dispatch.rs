@@ -108,9 +108,10 @@ impl<'ctx> Codegen<'ctx> {
                                 }
                             }
 
-                            // NEVER wrap ptr→ForgeString in static method dispatch.
-                            // The export wrapper functions handle conversion.
-                            // Wrapping here double-wraps and corrupts the value.
+                            // Wrap ptr→ForgeString when the extern fn is declared with -> string
+                            if let Some(Type::String) = self.fn_return_types.get(fn_name.as_str()) {
+                                return self.wrap_ptr_as_string(ptr_val);
+                            }
                             return Some(ptr_val.into());
                         }
                     }

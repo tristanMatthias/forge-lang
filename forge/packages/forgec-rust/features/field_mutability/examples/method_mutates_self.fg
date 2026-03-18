@@ -1,0 +1,30 @@
+/// # Method mutates self via pointer
+/// Methods on types with mut fields receive self by pointer,
+/// so mutations are visible to the caller
+/// expect: 1
+/// expect: 2
+/// expect: 10
+
+type Counter = { mut count: int }
+
+impl Counter {
+  fn increment(self) {
+    self.count = self.count + 1
+  }
+  fn add(self, n: int) {
+    self.count = self.count + n
+  }
+  fn value(self) -> int {
+    self.count
+  }
+}
+
+fn main() {
+  let c = Counter { count: 0 }
+  c.increment()
+  println(string(c.value()))
+  c.increment()
+  println(string(c.value()))
+  c.add(8)
+  println(string(c.value()))
+}

@@ -200,11 +200,17 @@ impl<'ctx> Codegen<'ctx> {
         let i64_type = self.context.i64_type();
         let index = i64_type.const_zero();
 
-        let field_types: Vec<BasicTypeEnum<'ctx>> = fields
-            .iter()
-            .map(|(_, ty)| self.type_to_llvm_basic(ty))
-            .collect();
-        let struct_type = self.context.struct_type(&field_types, false);
+        // Use named struct type if available to match the outer struct's field type
+        let struct_type = if let Some(name) = _name {
+            let ty = Type::Struct { name: Some(name.to_string()), fields: fields.to_vec() };
+            self.type_to_llvm_basic(&ty).into_struct_type()
+        } else {
+            let field_types: Vec<BasicTypeEnum<'ctx>> = fields
+                .iter()
+                .map(|(_, ty)| self.type_to_llvm_basic(ty))
+                .collect();
+            self.context.struct_type(&field_types, false)
+        };
         let mut struct_val = struct_type.get_undef();
 
         for (i, (field_name, field_type)) in fields.iter().enumerate() {
