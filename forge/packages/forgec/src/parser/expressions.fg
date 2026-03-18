@@ -151,6 +151,21 @@ impl Parser {
                         val = llvm.build_icmp(CG_B, 32, val, llvm.const_int(CG_I64, 0, 0), "neq")
                         val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "neq_ext")
                     }
+                } else if (op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq") && (result_is_str || rhs_is_str) {
+                    // String ordering: forge_string_compare(a, b) → i64 (-1, 0, 1)
+                    let cmp_val = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "str_cmp")
+                    let zero = llvm.const_int(CG_I64, 0, 0)
+                    // Compare result with 0 using appropriate predicate
+                    if op_key == "Lt" {
+                        val = llvm.build_icmp(CG_B, 40, cmp_val, zero, "str_lt") // slt
+                    } else if op_key == "LtEq" {
+                        val = llvm.build_icmp(CG_B, 41, cmp_val, zero, "str_le") // sle
+                    } else if op_key == "Gt" {
+                        val = llvm.build_icmp(CG_B, 38, cmp_val, zero, "str_gt") // sgt
+                    } else {
+                        val = llvm.build_icmp(CG_B, 39, cmp_val, zero, "str_ge") // sge
+                    }
+                    val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "str_cmp_ext")
                 } else {
                     val = emit_binop(lhs, op_key, rhs)
                 }
@@ -1409,7 +1424,7 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {

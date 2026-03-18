@@ -30,6 +30,7 @@ mut CG_RT_SLEN: ptr = null
 mut CG_RT_SEQ: ptr = null
 mut CG_RT_SSUBSTR: ptr = null
 mut CG_RT_SINDEXOF: ptr = null
+mut CG_RT_SCMP: ptr = null
 mut CG_RT_ALLOC: ptr = null
 mut CG_RT_MEMCPY: ptr = null
 
@@ -309,6 +310,7 @@ fn cg_init_runtime() {
     CG_RT_SCHARAT = llvm.add_function(CG_MOD, "forge_string_char_at", make_fn_type(CG_STR, [CG_STR, CG_I64]))
     CG_RT_SLEN = llvm.add_function(CG_MOD, "forge_string_length", make_fn_type(CG_I64, [CG_STR]))
     CG_RT_SEQ = llvm.add_function(CG_MOD, "forge_string_eq", make_fn_type(CG_I8, [CG_STR, CG_STR]))
+    CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", make_fn_type(CG_I64, [CG_STR, CG_STR]))
     CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type(CG_STR, [CG_STR, CG_I64, CG_I64]))
     CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
     // Memory
