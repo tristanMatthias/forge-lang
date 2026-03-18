@@ -11,6 +11,11 @@ use checker.TypeChecker
 use codegen.{Codegen, CG_CTX, CG_B, CG_I64, codegen_new}
 use @std.llvm
 
+// Global to propagate parser position back after free-function parse calls
+// (bootstrap workaround: Parser is pass-by-value, pos changes lost)
+// Shared by ALL feature parse functions
+export mut PARSE_END_POS: int = -1
+
 export fn parse_while(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'while'
     p.skip_newlines()
@@ -63,6 +68,7 @@ export fn parse_while(p: Parser) -> Statement? {
         let body = p.parse_block()
     }
 
+    PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("while_loops", "while", id, start)
 }

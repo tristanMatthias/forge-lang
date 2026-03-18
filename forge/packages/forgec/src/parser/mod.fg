@@ -14,6 +14,7 @@ use core.ast.{
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{CG_B, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use features.while_loops.PARSE_END_POS
 use @std.llvm
 
 // ─── Param Type ────────────────────────────────
@@ -217,15 +218,37 @@ impl Parser {
         let tok = self.peek()
 
         // Hardcoded feature dispatch (bootstrap can't store fn ptrs in Maps)
+        // All feature parse fns receive Parser by value — PARSE_END_POS syncs pos back.
         match tok.kind {
-            .Let -> { return parse_let(self) }
-            .Mut -> { return parse_mut(self) }
-            .Const -> { return parse_const(self) }
-            .Fn -> { return parse_fn(self) }
-            .Export -> { return parse_export(self) }
+            .Let -> {
+                let r = parse_let(self)
+                self.sync_pos()
+                return r
+            }
+            .Mut -> {
+                let r = parse_mut(self)
+                self.sync_pos()
+                return r
+            }
+            .Const -> {
+                let r = parse_const(self)
+                self.sync_pos()
+                return r
+            }
+            .Fn -> {
+                let r = parse_fn(self)
+                self.sync_pos()
+                return r
+            }
+            .Export -> {
+                let r = parse_export(self)
+                self.sync_pos()
+                return r
+            }
             .While -> {
-                eprintln("[parse] while matched!")
-                return parse_while(self)
+                let r = parse_while(self)
+                self.sync_pos()
+                return r
             }
             _ -> {}
         }
@@ -234,6 +257,13 @@ impl Parser {
         match tok.kind {
             .Return -> self.parse_return()
             _ -> self.parse_expr_or_assign()
+        }
+    }
+
+    fn sync_pos(self) {
+        if PARSE_END_POS >= 0 {
+            self.pos = PARSE_END_POS
+            PARSE_END_POS = -1
         }
     }
 
@@ -317,6 +347,7 @@ impl Parser {
 
         // Emit expression statement inline during codegen
         if CG_B != null {
+            eprintln("[inline_expr] pos=${self.pos} emitting expr stmt")
             mut cg = codegen_new()
             cg.emit_expr(expr!)
         }

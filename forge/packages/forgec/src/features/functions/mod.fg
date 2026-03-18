@@ -11,6 +11,7 @@ use lexer.{lexer_new}
 use checker.TypeChecker
 use codegen.Codegen
 use features.variables.{parse_var_binding, VarKind}
+use features.while_loops.PARSE_END_POS
 
 // ─── Side Table ──────────────────────────────────
 
@@ -67,6 +68,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         store_fn_param_name(param.name)
     }
 
+    PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }

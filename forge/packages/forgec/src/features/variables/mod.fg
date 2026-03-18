@@ -9,6 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
 use codegen.{Codegen, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use features.while_loops.PARSE_END_POS
 use @std.llvm
 
 // ─── Side Table ──────────────────────────────────
@@ -69,6 +70,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         cg.define_var(var_name, Type.Int, val)
     }
 
+    PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("variables", "let_decl", id, start)
 }
