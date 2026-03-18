@@ -1,6 +1,7 @@
 // ─── For Loops Feature ─────────────────────────
 // for item in iterable { body }
-// for i in 0..10 { body }
+// Desugars to a while loop with index counter.
+// Emits LLVM IR inline during parsing (bootstrap workaround).
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
@@ -8,28 +9,16 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use features.while_loops.PARSE_END_POS
+use @std.llvm
 
-mut FOR_DATA: Map<string, ForData> = {}
-
-type ForData = {
-    var_name: string,
-    iterable: Expr,
-    body: Block,
-    span: Span,
-}
-
-fn get_for(id: int) -> ForData? {
-    let key = "${id}"
-    if FOR_DATA.has(key) { FOR_DATA[key] } else { null }
-}
-
-fn parse_for(p: Parser) -> Statement? {
+export fn parse_for(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'for'
     p.skip_newlines()
 
     let var_name = p.expect_ident()
-    if var_name == null {
+    if var_name == "" {
         p.error("expected variable name after 'for'")
         return null
     }
@@ -40,49 +29,96 @@ fn parse_for(p: Parser) -> Statement? {
     }
 
     p.skip_newlines()
-    let iterable = p.parse_expr()
-    if iterable == null { return null }
 
-    p.skip_newlines()
-    let body = p.parse_block()
-    if body == null { return null }
+    // If codegen is active, desugar to a while loop inline:
+    //   mut __for_i = 0
+    //   while __for_i < list.length {
+    //       let item = list[__for_i]
+    //       body
+    //       __for_i = __for_i + 1
+    //   }
+    if CG_ACTIVE {
+        // Parse the iterable expression (inline emit fires)
+        let iterable = p.parse_expr()
+        if iterable == null { return null }
+        p.skip_newlines()
 
+        // --- Emit: mut __for_i = 0 ---
+        let idx_name = "__for_i"
+        let zero = llvm.const_int(CG_I64, 0, 0)
+        let idx_alloca = llvm.build_alloca(CG_B, CG_I64, idx_name)
+        llvm.build_store(CG_B, zero, idx_alloca)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(idx_name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(idx_alloca)
+
+        // --- Set up while loop blocks ---
+        let current_bb = llvm.get_insert_block(CG_B)
+        let current_fn = llvm.get_basic_block_parent(current_bb)
+
+        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.cond")
+        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.body")
+        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.end")
+
+        // Jump to condition
+        llvm.build_br(CG_B, cond_bb)
+
+        // --- Condition: __for_i < length (STUBBED: length = 0) ---
+        llvm.position_at_end(CG_B, cond_bb)
+        let idx_val = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i")
+        // STUB: list.length → i64 0 (will be wired to runtime call later)
+        let length_val = llvm.const_int(CG_I64, 0, 0)
+        let cond_val = llvm.build_icmp(CG_B, 40, idx_val, length_val, "forcond")
+        llvm.build_cond_br(CG_B, cond_val, body_bb, end_bb)
+
+        // --- Body ---
+        llvm.position_at_end(CG_B, body_bb)
+
+        // let item = list[__for_i] (STUBBED: item = i64 0)
+        // STUB: list[i] → i64 0 (will be wired to runtime call later)
+        let elem_val = llvm.const_int(CG_I64, 0, 0)
+        let item_alloca = llvm.build_alloca(CG_B, CG_I64, var_name)
+        llvm.build_store(CG_B, elem_val, item_alloca)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(item_alloca)
+
+        // Parse body block (inline emit fires into body_bb)
+        let body = p.parse_block()
+
+        // __for_i = __for_i + 1
+        let cur_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i_cur")
+        let one = llvm.const_int(CG_I64, 1, 0)
+        let next_idx = llvm.build_add(CG_B, cur_idx, one, "for_i_next")
+        llvm.build_store(CG_B, next_idx, idx_alloca)
+
+        // Loop back to condition (only if body didn't terminate)
+        if !llvm.block_has_terminator(CG_B) {
+            llvm.build_br(CG_B, cond_bb)
+        }
+
+        // Continue after loop
+        llvm.position_at_end(CG_B, end_bb)
+    } else {
+        // Not in codegen — just parse and discard
+        let iterable = p.parse_expr()
+        p.skip_newlines()
+        let body = p.parse_block()
+    }
+
+    PARSE_END_POS = p.pos
     let id = next_node_id()
-    FOR_DATA["${id}"] = ForData { var_name: var_name!, iterable: iterable!, body: body!, span: start }
     feature_stmt("for_loops", "for", id, start)
 }
 
 fn check_for(tc: TypeChecker, node: NodeRef) {
-    let d = get_for(node.node_id)
-    if d == null { return }
-    let data = d!
-
-    let iter_type = tc.infer_expr(data.iterable)
-
-    tc.env.push_scope()
-    // Bind loop variable — element type depends on iterable
-    let elem_type = match iter_type {
-        .ListType(elem) -> elem
-        .Range(elem) -> elem
-        _ -> Type.Unknown
-    }
-    tc.env.define(data.var_name, elem_type, false)
-    tc.check_block(data.body)
-    tc.env.pop_scope()
+    // TODO: type check iterable and body
 }
 
 fn emit_for(cg: Codegen, node: NodeRef) {
-    // TODO: for-in codegen depends on iterable type
-    // Range: emit counter loop
-    // List: emit index loop with length check
-    let d = get_for(node.node_id)
-    if d == null { return }
-    // Placeholder: just emit body once
-    cg.emit_block(d!.body)
+    // No-op: for loops are emitted inline during parsing
+    return
 }
 
 // Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
-// Old: register_feature(FeatureRegistration { id: "for_loops", ... })
 reg_parser("for", parse_for)
 reg_check_stmt("for_loops", check_for)
 reg_emit_stmt("for_loops", emit_for)

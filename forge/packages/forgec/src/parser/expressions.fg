@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_B, CG_CTX, codegen_new}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_B, CG_CTX, codegen_new}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -200,6 +200,10 @@ impl Parser {
         if expr == null { return null }
 
         mut result = expr!
+        // Track LLVM value for inline emit (same pattern as parse_binary_level)
+        mut result_is_llvm = false
+        mut result_llvm: ptr = null
+        mut result_is_str = false  // track if result is ForgeString type
 
         while !self.is_at_end() {
             // Function call: expr(args...)
@@ -209,10 +213,11 @@ impl Parser {
                 let close = self.expect(TokenKind.RParen)
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
+                result_is_llvm = false
                 continue
             }
 
-            // Member access: expr.field
+            // Member access: expr.field or expr.method(args)
             if self.check(TokenKind.Dot) {
                 self.advance()
                 // Numeric tuple access: expr.0
@@ -221,12 +226,45 @@ impl Parser {
                     let field_span = self.advance().span
                     let span = self.merge_spans(self.current_span(), field_span)
                     result = Expr.Index(result, Expr.IntLit(parse_int(pk.text), field_span), span)
+                    result_is_llvm = false
                     continue
                 }
                 let field = self.expect_ident()
                 if field == "" { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+
+                // In codegen mode: handle known properties and methods inline
+                if CG_ACTIVE {
+                    mut cg = codegen_new()
+                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+
+                    // Check for method call: field followed by (
+                    if self.check(TokenKind.LParen) {
+                        // Method call: obj.method(args)
+                        self.advance() // consume (
+                        let method_result = self.emit_method_call_inline(obj_val, field)
+                        self.expect(TokenKind.RParen)
+                        result_is_llvm = true
+                        result_llvm = method_result
+                        // Track return type: most string methods return strings, indexOf returns int
+                        result_is_str = method != "indexOf" && method != "length"
+                        result = Expr.IntLit(0, span)
+                        continue
+                    }
+
+                    // Property access
+                    if field == "length" {
+                        let len_val = call_rt_1(CG_RT_SLEN, CG_STR, CG_I64, obj_val, "len")
+                        result_is_llvm = true
+                        result_llvm = len_val
+                        result_is_str = false  // length returns int
+                        result = Expr.IntLit(0, span)
+                        continue
+                    }
+                }
+
                 result = Expr.MemberAccess(result, field, span)
+                result_is_llvm = false
                 continue
             }
 
@@ -246,12 +284,40 @@ impl Parser {
                 if index == null { return null }
                 if self.expect(TokenKind.RBracket) == null { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+
+                // In codegen mode: emit string indexing inline
+                if CG_ACTIVE {
+                    mut cg = codegen_new()
+                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    let idx_val = cg.emit_expr(index!)
+                    // Call forge_string_char_at(str, idx) → ForgeString
+                    let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "charat")
+                    result_is_llvm = true
+                    result_llvm = char_val
+                    result_is_str = true  // char_at returns ForgeString
+                    result = Expr.IntLit(0, span)
+                    continue
+                }
+
                 result = Expr.Index(result, index!, span)
+                result_is_llvm = false
                 continue
             }
 
             break
         }
+
+        // If we tracked an LLVM value, store it in a temp var
+        if result_is_llvm {
+            mut cg = codegen_new()
+            BINOP_COUNTER = BINOP_COUNTER + 1
+            let tmp = "__pt${BINOP_COUNTER}"
+            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            cg.define_var(tmp, tmp_ty, result_llvm)
+            CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
+            return Expr.Ident(tmp, self.current_span())
+        }
+        CG_LAST_IS_STR = 0
 
         result
     }
@@ -637,6 +703,95 @@ impl Parser {
             col: a.col,
         }
     }
+}
+
+// ─── Method Call Inline Emit ─────────────────────
+
+impl Parser {
+    fn emit_method_call_inline(self, obj_val: ptr, method: string) -> ptr {
+        // Parse args
+        let args = self.parse_call_args()
+
+        if method == "substring" {
+            // string.substring(start, end) → forge_string_substring(str, start, end)
+            if args.length >= 2 {
+                mut cg = codegen_new()
+                let start_val = cg.emit_expr(args[0])
+                let end_val = cg.emit_expr(args[1])
+                let call_args = llvm.value_array_new(3)
+                llvm.value_array_set(call_args, 0, obj_val)
+                llvm.value_array_set(call_args, 1, start_val)
+                llvm.value_array_set(call_args, 2, end_val)
+                let param_types = llvm.type_array_new(3)
+                llvm.type_array_set(param_types, 0, CG_STR)
+                llvm.type_array_set(param_types, 1, CG_I64)
+                llvm.type_array_set(param_types, 2, CG_I64)
+                let ft = llvm.function_type(CG_STR, param_types, 3, 0)
+                llvm.type_array_free(param_types)
+                let result = llvm.build_call(CG_B, ft, CG_RT_SSUBSTR, call_args, 3, "substr")
+                llvm.value_array_free(call_args)
+                return result
+            }
+        }
+
+        if method == "indexOf" {
+            // string.indexOf(sub) → forge_string_index_of(str, sub)
+            if args.length >= 1 {
+                mut cg = codegen_new()
+                let sub_val = cg.emit_expr(args[0])
+                return call_rt_2_ss(CG_RT_SINDEXOF, obj_val, sub_val, CG_I64, "indexof")
+            }
+        }
+
+        // Default: return 0
+        llvm.const_int(CG_I64, 0, 0)
+    }
+}
+
+// ─── Runtime Call Helpers ────────────────────────
+
+use codegen.{CG_RT_SCONCAT, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_STR, CG_I64, CG_I8, CG_VOID}
+
+fn call_rt_1(fn_ref: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
+    let args = llvm.value_array_new(1)
+    llvm.value_array_set(args, 0, arg)
+    let param_types = llvm.type_array_new(1)
+    llvm.type_array_set(param_types, 0, arg_ty)
+    let ft = llvm.function_type(ret_ty, param_types, 1, 0)
+    llvm.type_array_free(param_types)
+    let result = llvm.build_call(CG_B, ft, fn_ref, args, 1, name)
+    llvm.value_array_free(args)
+    result
+}
+
+fn call_rt_2(fn_ref: ptr, arg1_ty: ptr, ret_ty: ptr, arg1: ptr, arg2: ptr, name: string) -> ptr {
+    let args = llvm.value_array_new(2)
+    llvm.value_array_set(args, 0, arg1)
+    llvm.value_array_set(args, 1, arg2)
+    let param_types = llvm.type_array_new(2)
+    llvm.type_array_set(param_types, 0, arg1_ty)
+    // Infer second arg type from the function — use i64 as default
+    llvm.type_array_set(param_types, 1, llvm.int64_type(CG_CTX))
+    let ft = llvm.function_type(ret_ty, param_types, 2, 0)
+    llvm.type_array_free(param_types)
+    let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
+    llvm.value_array_free(args)
+    result
+}
+
+fn call_rt_2_ss(fn_ref: ptr, arg1: ptr, arg2: ptr, ret_ty: ptr, name: string) -> ptr {
+    // Call with two ForgeString args
+    let args = llvm.value_array_new(2)
+    llvm.value_array_set(args, 0, arg1)
+    llvm.value_array_set(args, 1, arg2)
+    let param_types = llvm.type_array_new(2)
+    llvm.type_array_set(param_types, 0, CG_STR)
+    llvm.type_array_set(param_types, 1, CG_STR)
+    let ft = llvm.function_type(ret_ty, param_types, 2, 0)
+    llvm.type_array_free(param_types)
+    let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
+    llvm.value_array_free(args)
+    result
 }
 
 // ─── Binary Op Inline Emit ──────────────────────

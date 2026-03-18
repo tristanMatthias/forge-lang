@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -67,7 +67,18 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     if CG_ACTIVE {
         mut cg = codegen_new()
         let val = cg.emit_expr(value!)
-        cg.define_var(var_name, Type.Int, val)
+        // Detect string type: from literal, or from CG_LAST_IS_STR flag
+        let is_str = CG_LAST_IS_STR == 1
+        let var_type = if is_str { Type.String } else { Type.Int }
+        // Also check if value expression is a string literal
+        match value! {
+            .StringLit(v, s) -> {
+                cg.define_var(var_name, Type.String, val)
+            }
+            _ -> {
+                cg.define_var(var_name, var_type, val)
+            }
+        }
     }
 
     PARSE_END_POS = p.pos

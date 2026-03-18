@@ -24,13 +24,23 @@ mut CG_STR: ptr = null
 mut CG_RT_PRINTLN: ptr = null
 mut CG_RT_I2S: ptr = null
 mut CG_RT_SNEW: ptr = null
+mut CG_RT_SCONCAT: ptr = null
+mut CG_RT_SCHARAT: ptr = null
+mut CG_RT_SLEN: ptr = null
+mut CG_RT_SEQ: ptr = null
+mut CG_RT_SSUBSTR: ptr = null
+mut CG_RT_SINDEXOF: ptr = null
 
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
+mut CG_VAR_IS_STR: List<int> = []  // 1 = string type, 0 = int type
 
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
+
+// Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
+export mut CG_LAST_IS_STR: int = 0
 
 export type Codegen = {
     mut current_fn: ptr?,
@@ -106,10 +116,17 @@ fn cg_init_str() {
 }
 
 fn cg_init_runtime() {
-    // forge_println_string takes a ForgeString struct {ptr, i64}
+    // Core
     CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println_string", make_fn_type(CG_VOID, [CG_STR]))
     CG_RT_I2S = llvm.add_function(CG_MOD, "forge_int_to_string", make_fn_type(CG_STR, [CG_I64]))
     CG_RT_SNEW = llvm.add_function(CG_MOD, "forge_string_new", make_fn_type(CG_STR, [CG_PTR, CG_I64]))
+    // String operations
+    CG_RT_SCONCAT = llvm.add_function(CG_MOD, "forge_string_concat", make_fn_type(CG_STR, [CG_STR, CG_STR]))
+    CG_RT_SCHARAT = llvm.add_function(CG_MOD, "forge_string_char_at", make_fn_type(CG_STR, [CG_STR, CG_I64]))
+    CG_RT_SLEN = llvm.add_function(CG_MOD, "forge_string_length", make_fn_type(CG_I64, [CG_STR]))
+    CG_RT_SEQ = llvm.add_function(CG_MOD, "forge_string_eq", make_fn_type(CG_I8, [CG_STR, CG_STR]))
+    CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type(CG_STR, [CG_STR, CG_I64, CG_I64]))
+    CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
 }
 
 fn cg_cleanup() {
@@ -300,7 +317,8 @@ impl Codegen {
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
-                return llvm.build_load(CG_B, CG_I64, CG_VAR_PTRS[vi], name)
+                let load_ty = if CG_VAR_IS_STR[vi] == 1 { CG_STR } else { CG_I64 }
+                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
         }
@@ -378,6 +396,17 @@ impl Codegen {
         r
     }
 
+    fn is_string_var(self, name: string) -> bool {
+        mut vi = CG_VAR_NAMES.length - 1
+        while vi >= 0 {
+            if CG_VAR_NAMES[vi] == name {
+                return CG_VAR_IS_STR[vi] == 1
+            }
+            vi = vi - 1
+        }
+        false
+    }
+
     fn emit_println(self, args: List<Expr>) -> ptr {
         for arg in args {
             // Check if arg is a string literal — pass ForgeString directly
@@ -385,6 +414,14 @@ impl Codegen {
                 .StringLit(value, span) -> {
                     let str_val = self.emit_string(value)
                     self.emit_println_str(str_val)
+                }
+                .Ident(name, span) -> {
+                    let val = self.emit_ident(name)
+                    if self.is_string_var(name) {
+                        self.emit_println_str(val)
+                    } else {
+                        self.emit_println_int(val)
+                    }
                 }
                 _ -> {
                     let val = self.emit_expr(arg)
@@ -440,9 +477,13 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        let alloca = llvm.build_alloca(CG_B, CG_I64, name)
+        // Use CG_STR alloca for string values, CG_I64 for everything else
+        let is_str = ty is .String
+        let alloca_ty = if is_str { CG_STR } else { CG_I64 }
+        let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
     }
 }

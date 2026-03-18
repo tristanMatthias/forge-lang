@@ -250,6 +250,11 @@ impl Parser {
                 self.sync_pos()
                 return r
             }
+            .For -> {
+                let r = parse_for(self)
+                self.sync_pos()
+                return r
+            }
             _ -> {}
         }
 
