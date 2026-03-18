@@ -1419,7 +1419,13 @@ impl Parser {
             // List.push(item) → allocate new array, copy old, append, return new list
             if args.length >= 1 {
                 mut cg = codegen_new()
-                let item_val = cg.emit_expr(args[0])
+                // Use CG_LAST_VAL if available (struct literals set this)
+                let item_val = if CG_HAS_LAST_VAL == 1 {
+                    CG_HAS_LAST_VAL = 0
+                    CG_LAST_VAL
+                } else {
+                    cg.emit_expr(args[0])
+                }
                 let elem_ty = list_elem_llvm_type(obj_var_name)
                 return emit_list_push_typed(obj_val, item_val, elem_ty)
             }

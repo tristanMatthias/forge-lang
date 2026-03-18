@@ -1,4 +1,4 @@
-// Minimal struct list index test
+// Debug: check peek_id behavior
 
 type Token = {
     kind_id: int,
@@ -6,25 +6,43 @@ type Token = {
 }
 
 mut TOKENS: List<Token> = []
+mut POS: int = 0
 
 fn add_token(kid: int, txt: string) {
     TOKENS = TOKENS.push(Token { kind_id: kid, text: txt })
+}
+
+fn peek_id() -> int {
+    if POS < TOKENS.length {
+        let tok = TOKENS[POS]
+        return tok.kind_id
+    }
+    return 99
+}
+
+fn advance_tok() {
+    POS = POS + 1
 }
 
 fn main() {
     add_token(4, "fn")
     add_token(0, "main")
     add_token(6, "(")
+    add_token(7, ")")
     println(TOKENS.length)
+    println(POS)
 
-    // Direct access
-    let t0 = TOKENS[0]
-    println(t0.kind_id)
-    println(t0.text)
+    // Direct peek
+    let id1 = peek_id()
+    println(id1)
 
-    let t1 = TOKENS[1]
-    println(t1.kind_id)
-    println(t1.text)
+    advance_tok()
+    let id2 = peek_id()
+    println(id2)
 
-    println("struct list access done")
+    advance_tok()
+    let id3 = peek_id()
+    println(id3)
+
+    println("done")
 }
