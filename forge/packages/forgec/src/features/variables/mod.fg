@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, CG_LIST_VAR_CSV, CG_STR_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, CG_NULLABLE_VAR_NAMES, CG_NULLABLE_VAR_INNER, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, CG_LIST_VAR_CSV, CG_STR_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, CG_NULLABLE_VAR_NAMES, CG_NULLABLE_VAR_INNER, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -158,6 +158,11 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             }
             CG_LAST_LIST_ELEM_IS_STR = 0
             CG_LAST_IS_LIST = 0
+        }
+        // Register enum variable
+        if CG_LAST_ENUM_TYPE != "" {
+            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + ",${var_name}:${CG_LAST_ENUM_TYPE},"
+            CG_LAST_ENUM_TYPE = ""
         }
         // Register nullable variable for null comparison and unwrap
         if CG_LAST_IS_NULLABLE == 1 {

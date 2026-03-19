@@ -7,7 +7,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, featur
 use core.types.{Type, EnumVariantType, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
-use parser.expressions.{register_enum_variant}
+use parser.expressions.{register_enum_variant, register_enum_type}
 use checker.TypeChecker
 use codegen.Codegen
 use features.while_loops.PARSE_END_POS
@@ -73,6 +73,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
     p.skip_newlines()
 
     mut tag = 0
+    mut max_fc = 0
     while !p.check(TokenKind.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         let variant_name = p.expect_ident()
@@ -81,19 +82,22 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         // Register this variant's tag in the global registry
         register_enum_variant(name, variant_name, tag)
 
-        // Skip optional fields: Variant(field: Type, ...)
+        // Parse optional fields and count them
+        mut fc = 0
         if p.check(TokenKind.LParen) {
             p.advance()
             while !p.check(TokenKind.RParen) && !p.is_at_end() {
-                p.expect_ident()  // field name or type name
+                p.expect_ident()
                 if p.check(TokenKind.Colon) {
                     p.advance()
                     p.parse_type_expr()
                 }
+                fc = fc + 1
                 if p.check(TokenKind.Comma) { p.advance() }
             }
             p.expect(TokenKind.RParen)
         }
+        if fc > max_fc { max_fc = fc }
 
         tag = tag + 1
         p.skip_newlines()
@@ -103,7 +107,8 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    // Enum declarations don't emit any LLVM IR — they just register variant tags.
+    register_enum_type(name, max_fc)
+    // Enum declarations register tags + max field count.
     PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("enums", "enum_decl", id, start)

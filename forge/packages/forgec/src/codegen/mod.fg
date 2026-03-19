@@ -310,6 +310,80 @@ export fn list_elem_llvm_type(name: string) -> ptr {
     CG_I64
 }
 
+// ─── Enum Tagged Union Helpers ───────────────────
+export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
+export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxfields,"
+export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
+
+export fn cg_enum_max_fields(name: string) -> int {
+    let needle = ",${name}:"
+    let nl = needle.length
+    let cl = CG_ENUM_TYPE_CSV.length
+    mut i = 0
+    while i <= cl - nl {
+        mut ok = true
+        mut j = 0
+        while j < nl {
+            if CG_ENUM_TYPE_CSV[i + j] != needle[j] { ok = false }
+            j = j + 1
+        }
+        if ok {
+            mut ns = ""
+            mut k = i + nl
+            while k < cl && CG_ENUM_TYPE_CSV[k] != "," {
+                ns = ns + CG_ENUM_TYPE_CSV[k]
+                k = k + 1
+            }
+            if ns.length > 0 { return int(ns) }
+            return 0
+        }
+        i = i + 1
+    }
+    0
+}
+
+export fn cg_make_enum_type(name: string) -> ptr {
+    let mf = cg_enum_max_fields(name)
+    if mf == 0 { return null }
+    let fc = mf + 1
+    let fields = llvm.type_array_new(fc)
+    llvm.type_array_set(fields, 0, CG_I8)
+    mut fi = 0
+    while fi < mf {
+        llvm.type_array_set(fields, fi + 1, CG_I64)
+        fi = fi + 1
+    }
+    let ety = llvm.struct_type(CG_CTX, fields, fc, 0)
+    llvm.type_array_free(fields)
+    ety
+}
+
+export fn cg_var_enum_type(name: string) -> string {
+    let needle = ",${name}:"
+    let nl = needle.length
+    let cl = CG_ENUM_VAR_CSV.length
+    mut i = 0
+    while i <= cl - nl {
+        mut ok = true
+        mut j = 0
+        while j < nl {
+            if CG_ENUM_VAR_CSV[i + j] != needle[j] { ok = false }
+            j = j + 1
+        }
+        if ok {
+            mut r = ""
+            mut k = i + nl
+            while k < cl && CG_ENUM_VAR_CSV[k] != "," {
+                r = r + CG_ENUM_VAR_CSV[k]
+                k = k + 1
+            }
+            return r
+        }
+        i = i + 1
+    }
+    ""
+}
+
 // ─── Nullable Type Helpers ───────────────────────
 
 export mut CG_FN_RETURNS_NULLABLE: int = 0
@@ -745,10 +819,15 @@ impl Codegen {
                     }
                     si = si - 1
                 }
+                // Check enum type
+                let vet = cg_var_enum_type(name)
+                if vet != "" {
+                    let ety = cg_make_enum_type(vet)
+                    if ety != null { load_ty = ety }
+                }
                 // Check struct type
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
-                    // Search from END to find entry with LLVM type
                     mut sti = CG_STRUCT_NAMES.length - 1
                     while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == struct_type_name {
@@ -1085,6 +1164,11 @@ impl Codegen {
         if CG_LAST_IS_NULLABLE == 1 {
             let inner_ty = if is_str { CG_STR } else { CG_I64 }
             alloca_ty = make_nullable_type(inner_ty)
+        }
+        // For enum tagged union types
+        if CG_LAST_ENUM_TYPE != "" {
+            let ety = cg_make_enum_type(CG_LAST_ENUM_TYPE)
+            if ety != null { alloca_ty = ety }
         }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {

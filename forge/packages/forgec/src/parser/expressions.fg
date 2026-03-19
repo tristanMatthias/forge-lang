@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -376,12 +376,42 @@ impl Parser {
                         continue
                     }
 
-                    // Enum variant construction: Color.Green -> tag integer
-                    let enum_full = "${LAST_IDENT_NAME}.${field}"
+                    // Enum variant construction: Color.Green or Expr.IntLit(42, span)
+                    let enum_cname = LAST_IDENT_NAME
+                    let enum_full = "${enum_cname}.${field}"
                     let enum_tag = match_enum_tag(enum_full)
                     if enum_tag >= 0 {
-                        result_is_llvm = true
-                        result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
+                        let emf = csv_enum_max_fields(enum_cname)
+                        if emf > 0 {
+                            let ety = make_enum_llvm_type(enum_cname)
+                            // Tagged union: {i8 tag, payload...}
+                            mut eval = llvm.get_undef(ety)
+                            eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, enum_tag, 0), 0, "etag")
+                            // Parse constructor args if present
+                            if self.check(TokenKind.LParen) {
+                                self.advance()
+                                mut ai = 0
+                                while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                                    mut cg = codegen_new()
+                                    let aexpr = self.parse_expr()
+                                    if aexpr != null {
+                                        let aval = cg.emit_expr(aexpr!)
+                                        eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                        ai = ai + 1
+                                    }
+                                    if self.check(TokenKind.Comma) { self.advance() }
+                                    self.skip_newlines()
+                                }
+                                self.advance() // consume )
+                            }
+                            result_is_llvm = true
+                            result_llvm = eval
+                            CG_LAST_ENUM_TYPE = enum_cname
+                        } else {
+                            // Unit-only enum: plain i64 tag
+                            result_is_llvm = true
+                            result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
+                        }
                         result_is_str = false
                         result = Expr.IntLit(enum_tag, span)
                         continue
@@ -1198,8 +1228,9 @@ impl Parser {
         let scrutinee = self.parse_expr()
         if scrutinee == null { return null }
 
-        // Track whether scrutinee is a string
+        // Track scrutinee type
         let scrutinee_is_str = CG_LAST_IS_STR == 1
+        let scrutinee_var = LAST_IDENT_NAME
 
         self.skip_newlines()
         if self.expect(TokenKind.LBrace) == null { return null }
@@ -1208,6 +1239,9 @@ impl Parser {
             // Emit scrutinee value once
             mut cg = codegen_new()
             let subj_val = cg.emit_expr(scrutinee!)
+            // Detect if scrutinee is a tagged union enum
+            let scr_etype = csv_var_enum_type(scrutinee_var)
+            let scrutinee_is_enum = scr_etype != ""
 
             let current_bb = llvm.get_insert_block(CG_B)
             let current_fn = llvm.get_basic_block_parent(current_bb)
@@ -1272,76 +1306,56 @@ impl Parser {
                 }
 
                 if is_dot_variant {
-                    // .Variant or .Variant(bindings) -> body
+                    // .Variant -> body — compare tag (scrutinee is an int tag for simple enums)
                     self.advance() // consume .
                     let variant_name = self.expect_ident()
-
                     // Capture binding names from sub-pattern
                     mut binding_names: List<string> = []
                     if self.check(TokenKind.LParen) {
                         self.advance()
                         while !self.check(TokenKind.RParen) && !self.is_at_end() {
                             let bname = self.expect_ident()
-                            if bname != "" {
-                                binding_names = binding_names.push(bname)
-                            }
+                            if bname != "" { binding_names = binding_names.push(bname) }
                             if self.check(TokenKind.Comma) { self.advance() }
                             self.skip_newlines()
                         }
-                        // while loop confirmed RParen
-                        self.advance()
+                        self.advance() // consume )
                     }
 
                     self.skip_newlines()
                     if self.check(TokenKind.Arrow) { self.advance() }
                     self.skip_newlines()
 
-                    // Look up enum tag for this variant
                     let tag = match_enum_tag(variant_name)
-
-                    // Create arm body block and next check block
                     let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.arm")
                     let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.next")
 
-                    // Compare: scrutinee == tag (for i64 tags)
-                    // For struct scrutinees (tagged unions), extract tag byte first
+                    // Compare: extract tag for tagged unions, direct compare for i64
                     let tag_val = llvm.const_int(CG_I64, tag, 0)
-                    let cmp = if scrutinee_is_str {
-                        // Tagged union: extract i8 tag, zext to i64, compare
-                        let stag = llvm.build_extract_value(CG_B, subj_val, 0, "enum_tag")
-                        let stag_ext = llvm.build_zext(CG_B, stag, llvm.int64_type(CG_CTX), "tag_ext")
-                        llvm.build_icmp(CG_B, 32, stag_ext, tag_val, "match_cmp")
+                    mut cmp: ptr = null
+                    if scrutinee_is_enum {
+                        let stag = llvm.build_extract_value(CG_B, subj_val, 0, "etag")
+                        let stag_ext = llvm.build_zext(CG_B, stag, llvm.int64_type(CG_CTX), "tagext")
+                        cmp = llvm.build_icmp(CG_B, 32, stag_ext, tag_val, "match_cmp")
                     } else {
-                        llvm.build_icmp(CG_B, 32, subj_val, tag_val, "match_cmp")
+                        cmp = llvm.build_icmp(CG_B, 32, subj_val, tag_val, "match_cmp")
                     }
                     llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
 
                     // Emit arm body
                     llvm.position_at_end(CG_B, arm_bb)
-
-                    // Define bindings from destructured variant payload
-                    if binding_names.length > 0 {
+                    // Define bindings from payload
+                    if binding_names.length > 0 && scrutinee_is_enum {
                         mut bi = 0
                         for bname in binding_names {
-                            // Extract field bi+1 from the scrutinee (field 0 is tag)
-                            // For i64 scrutinees, use const 0 as placeholder
-                            if scrutinee_is_str {
-                                let field_val = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
-                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
-                                llvm.build_store(CG_B, field_val, alloca)
-                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                            } else {
-                                // Simple i64 enum — no payload, define as 0
-                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
-                                llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), alloca)
-                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                            }
+                            let fv = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
+                            let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
+                            llvm.build_store(CG_B, fv, alloca)
+                            CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
                             bi = bi + 1
                         }
                     }
-
                     let prev_match2 = IN_MATCH_ARM
                     IN_MATCH_ARM = true
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
@@ -2000,6 +2014,83 @@ export fn register_enum_variant(enum_name: string, variant_name: string, tag: in
     // Also register short name (just variant)
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
+}
+
+export fn register_enum_type(name: string, max_fields: int) {
+    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_fields},"
+}
+
+// CSV lookup: get max field count for enum. Returns 0 if not found.
+fn csv_enum_max_fields(name: string) -> int {
+    let needle = ",${name}:"
+    let nl = needle.length
+    let cl = CG_ENUM_TYPE_CSV.length
+    mut i = 0
+    while i <= cl - nl {
+        mut ok = true
+        mut j = 0
+        while j < nl {
+            if CG_ENUM_TYPE_CSV[i + j] != needle[j] { ok = false }
+            j = j + 1
+        }
+        if ok {
+            mut ns = ""
+            mut k = i + nl
+            while k < cl && CG_ENUM_TYPE_CSV[k] != "," {
+                ns = ns + CG_ENUM_TYPE_CSV[k]
+                k = k + 1
+            }
+            if ns.length > 0 { return int(ns) }
+            return 0
+        }
+        i = i + 1
+    }
+    0
+}
+
+// Create LLVM type {i8, i64 * max_fields} for an enum. Returns null for unit-only.
+fn make_enum_llvm_type(name: string) -> ptr {
+    let mf = csv_enum_max_fields(name)
+    if mf == 0 { return null }
+    if !CG_ACTIVE { return null }
+    let fc = mf + 1
+    let fields = llvm.type_array_new(fc)
+    llvm.type_array_set(fields, 0, CG_I8)
+    mut fi = 0
+    while fi < mf {
+        llvm.type_array_set(fields, fi + 1, CG_I64)
+        fi = fi + 1
+    }
+    let ety = llvm.struct_type(CG_CTX, fields, fc, 0)
+    llvm.type_array_free(fields)
+    ety
+}
+
+// CSV lookup: get enum type name for a variable. Returns "" if not enum.
+fn csv_var_enum_type(name: string) -> string {
+    let needle = ",${name}:"
+    let nl = needle.length
+    let cl = CG_ENUM_VAR_CSV.length
+    mut i = 0
+    while i <= cl - nl {
+        mut ok = true
+        mut j = 0
+        while j < nl {
+            if CG_ENUM_VAR_CSV[i + j] != needle[j] { ok = false }
+            j = j + 1
+        }
+        if ok {
+            mut r = ""
+            mut k = i + nl
+            while k < cl && CG_ENUM_VAR_CSV[k] != "," {
+                r = r + CG_ENUM_VAR_CSV[k]
+                k = k + 1
+            }
+            return r
+        }
+        i = i + 1
+    }
+    ""
 }
 
 // Look up enum variant tag by name. Returns -1 if not found.
