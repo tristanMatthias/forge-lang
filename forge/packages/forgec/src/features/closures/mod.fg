@@ -53,11 +53,7 @@ fn check_closure(tc: TypeChecker, node: NodeRef) -> Type {
     // Define params in scope, infer types where annotated
     mut param_types: List<Type> = []
     for p in data.params {
-        let ty = if p.type_ann != null {
-            Type.Unknown // TODO: tc.resolve_type_expr(p.type_ann!)
-        } else {
-            Type.Unknown
-        }
+        let ty = Type.Unknown
         tc.env.define(p.name, ty, false)
         param_types = param_types.push(ty)
     }

@@ -45,12 +45,13 @@ export fn parse_for(p: Parser) -> Statement? {
         p.skip_newlines()
 
         // Get list value: use CG_LAST_VAL if available (avoids Ident boxing corruption)
-        let list_val = if CG_HAS_LAST_VAL == 1 {
+        mut list_val: ptr = null
+        if CG_HAS_LAST_VAL == 1 {
             CG_HAS_LAST_VAL = 0
-            CG_LAST_VAL
+            list_val = CG_LAST_VAL
         } else {
             mut cg = codegen_new()
-            cg.emit_expr(iterable!)
+            list_val = cg.emit_expr(iterable!)
         }
 
         // --- Emit: mut __for_i = 0 ---
@@ -73,7 +74,8 @@ export fn parse_for(p: Parser) -> Statement? {
 
         // --- Determine element type before setting up blocks ---
         let list_name = LAST_IDENT_NAME
-        let elem_ty = if is_list_var(list_name) { list_elem_llvm_type(list_name) } else { CG_I64 }
+        mut elem_ty = CG_I64
+        if is_list_var(list_name) { elem_ty = list_elem_llvm_type(list_name) }
         let elem_is_str = is_str_list_var(list_name)
 
         // --- Set up loop blocks ---

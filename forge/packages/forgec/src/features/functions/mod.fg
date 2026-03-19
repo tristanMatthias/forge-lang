@@ -112,35 +112,30 @@ fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 fn parse_export(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'export'
 
-    match p.peek().kind {
-        .Fn -> parse_fn_decl(p, true)
-        .Let -> parse_var_binding(p, .Let, true)
-        .Mut -> parse_var_binding(p, .Mut, true)
-        .Const -> parse_var_binding(p, .Const, true)
-        .TypeKw -> {
-            // export type — treat same as type
-            parse_type_decl(p)
-        }
-        .Enum -> {
-            // export enum — treat same as enum
-            parse_enum_decl(p)
-        }
-        .Trait -> {
-            // export trait — skip (trait is no-op for codegen)
-            p.advance() // consume 'trait'
-            p.expect_ident() // trait name
-            if p.check(TokenKind.LBrace) {
-                p.parse_block() // skip body
-            }
-            PARSE_END_POS = p.pos
-            let id = next_node_id()
-            feature_stmt("functions", "noop", id, start)
-        }
-        _ -> {
-            p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
-            null
-        }
+    let kind = p.peek().kind
+    if kind is .Fn { return parse_fn_decl(p, true) }
+    if kind is .Let { return parse_var_binding(p, .Let, true) }
+    if kind is .Mut { return parse_var_binding(p, .Mut, true) }
+    if kind is .Const { return parse_var_binding(p, .Const, true) }
+    if kind is .TypeKw {
+        return parse_type_decl(p)
     }
+    if kind is .Enum {
+        return parse_enum_decl(p)
+    }
+    if kind is .Trait {
+        // export trait — skip (trait is no-op for codegen)
+        p.advance() // consume 'trait'
+        p.expect_ident() // trait name
+        if p.check(TokenKind.LBrace) {
+            p.parse_block() // skip body
+        }
+        PARSE_END_POS = p.pos
+        let id = next_node_id()
+        return feature_stmt("functions", "noop", id, start)
+    }
+    p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
+    null
 }
 
 // ─── Check ──────────────────────────────────────
@@ -564,9 +559,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_LAST_IS_NULLABLE = 0
 
         // Set nullable return tracking for this function
-        CG_FN_RETURNS_NULLABLE = if fn_is_nullable { 1 } else { 0 }
+        CG_FN_RETURNS_NULLABLE = 0
+        if fn_is_nullable { CG_FN_RETURNS_NULLABLE = 1 }
         CG_FN_NULLABLE_INNER_TY = fn_nullable_inner
-        CG_FN_NULLABLE_RET_TY = if fn_is_nullable { ret_ty } else { null }
+        CG_FN_NULLABLE_RET_TY = null
+        if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
         // Re-lex and re-parse the body source text
         if body_src != "" {
@@ -638,7 +635,8 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
         }
         fi = fi + 1
     }
-    let pc = if fi < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fi] } else { 0 }
+    mut pc = 0
+    if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
     mut pi = 0
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]

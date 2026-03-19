@@ -148,90 +148,85 @@ fn parse_pattern(p: Parser) -> Pattern? {
 fn parse_simple_pattern(p: Parser) -> Pattern? {
     let tok = p.peek()
 
-    match tok.kind {
-        // Wildcard: _
-        .Underscore -> {
-            let span = p.advance().span
-            Pattern.Wildcard(span)
-        }
+    // Wildcard: _
+    if tok.kind is .Underscore {
+        let span = p.advance().span
+        return Pattern.Wildcard(span)
+    }
 
-        // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
-        .Dot -> {
-            let start = p.advance().span
-            let name = p.expect_ident()
-            if name == null { return null }
+    // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
+    if tok.kind is .Dot {
+        let start = p.advance().span
+        let name = p.expect_ident()
+        if name == null { return null }
 
-            // Optional sub-patterns: .Variant(p1, p2)
-            if p.check(.LParen) {
-                p.advance()
-                mut fields: List<Pattern> = []
-                while !p.check(.RParen) && !p.is_at_end() {
-                    p.skip_newlines()
-                    let sub = parse_pattern(p)
-                    if sub != null {
-                        fields = fields.push(sub!)
-                    }
-                    p.skip_newlines()
-                    if p.check(.Comma) { p.advance() }
-                }
-                p.expect(.RParen)
-                Pattern.EnumVariant(name!, fields, start)
-            } else {
-                // Simple variant: .Variant (no fields)
-                Pattern.EnumVariant(name!, [], start)
-            }
-        }
-
-        // Literal patterns: int, float, string, bool, null
-        .IntLiteral(value) -> {
-            let span = p.advance().span
-            Pattern.Literal(Expr.IntLit(value, span))
-        }
-        .FloatLiteral(value) -> {
-            let span = p.advance().span
-            Pattern.Literal(Expr.FloatLit(value, span))
-        }
-        .StringLiteral(value) -> {
-            let span = p.advance().span
-            Pattern.Literal(Expr.StringLit(value, span))
-        }
-        .BoolLiteral(value) -> {
-            let span = p.advance().span
-            Pattern.Literal(Expr.BoolLit(value, span))
-        }
-        .NullLiteral -> {
-            let span = p.advance().span
-            Pattern.Literal(Expr.NullLit(span))
-        }
-
-        // Identifier binding or tuple pattern
-        .Ident(name) -> {
-            let span = p.advance().span
-            Pattern.Ident(name, span)
-        }
-
-        // Tuple pattern: (p1, p2, ...)
-        .LParen -> {
-            let start = p.advance().span
-            mut elements: List<Pattern> = []
+        // Optional sub-patterns: .Variant(p1, p2)
+        if p.check(.LParen) {
+            p.advance()
+            mut fields: List<Pattern> = []
             while !p.check(.RParen) && !p.is_at_end() {
                 p.skip_newlines()
                 let sub = parse_pattern(p)
                 if sub != null {
-                    elements = elements.push(sub!)
+                    fields = fields.push(sub!)
                 }
                 p.skip_newlines()
                 if p.check(.Comma) { p.advance() }
             }
             p.expect(.RParen)
-            Pattern.Tuple(elements, start)
-        }
-
-        _ -> {
-            p.error("expected pattern")
-            null
+            return Pattern.EnumVariant(name!, fields, start)
+        } else {
+            return Pattern.EnumVariant(name!, [], start)
         }
     }
+
+    // Literal patterns: int, float, string, bool, null
+    if tok.kind is .IntLiteral {
+        let span = p.advance().span
+        return Pattern.Literal(Expr.IntLit(0, span))
+    }
+    if tok.kind is .FloatLiteral {
+        let span = p.advance().span
+        return Pattern.Literal(Expr.FloatLit(0.0, span))
+    }
+    if tok.kind is .StringLiteral {
+        let span = p.advance().span
+        return Pattern.Literal(Expr.StringLit("", span))
+    }
+    if tok.kind is .BoolLiteral {
+        let span = p.advance().span
+        return Pattern.Literal(Expr.BoolLit(false, span))
+    }
+    if tok.kind is .NullLiteral {
+        let span = p.advance().span
+        return Pattern.Literal(Expr.NullLit(span))
+    }
+
+    // Identifier binding
+    if tok.kind is .Ident {
+        let span = p.advance().span
+        return Pattern.Ident(tok.text, span)
+    }
+
+    // Tuple pattern: (p1, p2, ...)
+    if tok.kind is .LParen {
+        let start = p.advance().span
+        mut elements: List<Pattern> = []
+        while !p.check(.RParen) && !p.is_at_end() {
+            p.skip_newlines()
+            let sub = parse_pattern(p)
+            if sub != null {
+                elements = elements.push(sub!)
+            }
+            p.skip_newlines()
+            if p.check(.Comma) { p.advance() }
+        }
+        p.expect(.RParen)
+        return Pattern.Tuple(elements, start)
+    }
+
+    p.error("expected pattern")
+    null
 }
 
 // ─── Check ──────────────────────────────────────
@@ -306,12 +301,12 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
 impl Pattern {
     fn span(self) -> Span {
         match self {
-            .Wildcard(span) -> span
-            .Ident(_, span) -> span
-            .Literal(expr) -> expr.span()
-            .EnumVariant(_, _, span) -> span
-            .Tuple(_, span) -> span
-            .Or(_, span) -> span
+            .Wildcard(span) -> { return span }
+            .Ident(_, span) -> { return span }
+            .Literal(expr) -> { return expr.span() }
+            .EnumVariant(_, _, span) -> { return span }
+            .Tuple(_, span) -> { return span }
+            .Or(_, span) -> { return span }
         }
     }
 }
