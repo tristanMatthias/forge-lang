@@ -48,6 +48,9 @@ export mut VAR_GLOBAL_IS_STR: int = 0
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
+    // Reset CG_HAS_LAST_VAL so we don't use a stale value from a
+    // preceding expression (e.g., if condition) for this variable's init
+    if CG_ACTIVE { CG_HAS_LAST_VAL = 0 }
 
     let var_name = p.expect_ident()
     if var_name == "" {

@@ -800,6 +800,8 @@ impl Parser {
                 if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
             }
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
+            CG_LAST_VAL = result_llvm
+            CG_HAS_LAST_VAL = 1
             return Expr.Ident(tmp, self.current_span())
         }
         // Don't clear CG_LAST_IS_STR — it was already set correctly by
