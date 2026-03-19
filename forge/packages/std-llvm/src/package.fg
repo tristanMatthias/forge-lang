@@ -611,6 +611,12 @@ export fn set_global_constant(global: ptr, is_constant: int) {
     forge_llvm_set_global_constant(global, is_constant)
 }
 
+/// Set linkage for a global variable (0=External, 3=LinkOnceODR, 7=Common).
+extern fn forge_llvm_set_linkage(global: ptr, linkage: int)
+export fn set_linkage(global: ptr, linkage: int) {
+    forge_llvm_set_linkage(global, linkage)
+}
+
 /// Create a constant struct value.
 export fn const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr {
     forge_llvm_const_struct(ctx, values, count, packed)

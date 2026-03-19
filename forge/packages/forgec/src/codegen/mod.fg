@@ -148,9 +148,8 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         mut gty = CG_I64
         if is_str { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
-        mut zero = llvm.const_int(CG_I64, 0, 0)
-        if is_str { zero = llvm.const_null(gty) }
-        llvm.set_initializer(gv, zero)
+        llvm.set_initializer(gv, llvm.const_null(gty))
+        llvm.set_linkage(gv, 3)  // LinkOnceODR: merge duplicates
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         mut str_flag = 0
@@ -201,14 +200,8 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         else if type_name == "map" { gty = CG_PTR }
 
         let gv = llvm.add_global(CG_MOD, gty, name)
-        // Bootstrap workaround: if-as-expression returns corrupt ptr values
-        mut zero = llvm.const_int(CG_I64, 0, 0)
-        if type_name == "string" || is_list {
-            zero = llvm.const_null(gty)
-        } else if type_name == "map" {
-            zero = llvm.const_null(CG_PTR)
-        }
-        llvm.set_initializer(gv, zero)
+        llvm.set_initializer(gv, llvm.const_null(gty))
+        llvm.set_linkage(gv, 3)  // LinkOnceODR: merge duplicates
 
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)

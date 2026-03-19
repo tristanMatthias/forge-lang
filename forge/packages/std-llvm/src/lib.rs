@@ -84,6 +84,7 @@ extern "C" {
     fn LLVMAddGlobal(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMSetInitializer(global: LLVMPtr, val: LLVMPtr);
     fn LLVMSetGlobalConstant(global: LLVMPtr, is_constant: c_int);
+    fn LLVMSetLinkage(global: LLVMPtr, linkage: c_uint);
 
     // Print module to file
     fn LLVMPrintModuleToFile(m: LLVMPtr, filename: *const c_char, error_message: *mut *mut c_char) -> c_int;
@@ -683,6 +684,11 @@ pub extern "C" fn forge_llvm_set_initializer(global: LLVMPtr, val: LLVMPtr) {
 #[no_mangle]
 pub extern "C" fn forge_llvm_set_global_constant(global: LLVMPtr, is_constant: c_int) {
     unsafe { LLVMSetGlobalConstant(global, is_constant) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_set_linkage(global: LLVMPtr, linkage: c_int) {
+    unsafe { LLVMSetLinkage(global, linkage as c_uint) }
 }
 
 // ── Builder/Block Operations ──
