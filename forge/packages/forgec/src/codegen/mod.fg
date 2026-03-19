@@ -92,6 +92,7 @@ export mut CG_LAST_VAL: ptr = null
 export mut CG_HAS_LAST_VAL: int = 0
 export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
+export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
 // Set when the last expression was a map index access (for map[key] = value)
 export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
 export mut CG_MAP_INDEX_KEY: ptr = null   // the key ForgeString value

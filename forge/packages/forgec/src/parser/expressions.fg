@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -974,14 +974,17 @@ impl Parser {
             let max_elems = 64  // max list literal size
             let vals = llvm.value_array_new(max_elems)
             mut count = 0
+            mut first_elem_is_str = 0
 
             self.skip_newlines()
             while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+                CG_LAST_IS_STR = 0
                 mut cg = codegen_new()
                 let elem = self.parse_expr()
                 if elem != null {
                     let val = cg.emit_expr(elem!)
                     llvm.value_array_set(vals, count, val)
+                    if count == 0 { first_elem_is_str = CG_LAST_IS_STR }
                     count = count + 1
                 }
                 self.skip_newlines()
@@ -989,12 +992,16 @@ impl Parser {
                 self.skip_newlines()
             }
             self.expect(TokenKind.RBracket)
+            CG_LAST_LIST_ELEM_IS_STR = first_elem_is_str
 
             let count_val = llvm.const_int(CG_I64, count, 0)
 
-            // Allocate buffer: forge_alloc(count * 8)
-            let eight = llvm.const_int(CG_I64, 8, 0)
-            let size = llvm.build_mul(CG_B, count_val, eight, "list_size")
+            // Determine element type and size
+            let elem_ty = if first_elem_is_str == 1 { CG_STR } else { CG_I64 }
+            let elem_size_val = llvm.const_int(CG_I64, if first_elem_is_str == 1 { 16 } else { 8 }, 0)
+
+            // Allocate buffer: forge_alloc(count * elem_size)
+            let size = llvm.build_mul(CG_B, count_val, elem_size_val, "list_size")
             let data_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, size, "list_data")
 
             // Store each element via GEP
@@ -1003,7 +1010,7 @@ impl Parser {
                 let idx = llvm.const_int(CG_I64, i, 0)
                 let indices = llvm.value_array_new(1)
                 llvm.value_array_set(indices, 0, idx)
-                let elem_ptr = llvm.build_gep2(CG_B, CG_I64, data_ptr, indices, 1, "ep")
+                let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "ep")
                 llvm.value_array_free(indices)
                 // Retrieve the pre-emitted value
                 let val = llvm.value_array_get(vals, i)

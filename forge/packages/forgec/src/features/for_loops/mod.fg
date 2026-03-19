@@ -9,9 +9,9 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new, is_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use parser.expressions.LAST_IDENT_NAME
-use features.while_loops.PARSE_END_POS
+use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 export fn parse_for(p: Parser) -> Statement? {
@@ -71,13 +71,27 @@ export fn parse_for(p: Parser) -> Statement? {
         let length_val = llvm.build_call(CG_B, len_ft, CG_RT_SLEN, len_args, 1, "list_len")
         llvm.value_array_free(len_args)
 
-        // --- Set up while loop blocks ---
+        // --- Determine element type before setting up blocks ---
+        let list_name = LAST_IDENT_NAME
+        let elem_ty = if is_list_var(list_name) { list_elem_llvm_type(list_name) } else { CG_I64 }
+        let elem_is_str = is_str_list_var(list_name)
+
+        // --- Set up loop blocks ---
         let current_bb = llvm.get_insert_block(CG_B)
         let current_fn = llvm.get_basic_block_parent(current_bb)
 
         let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.cond")
         let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.body")
+        let incr_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.incr")
         let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.end")
+
+        // Save outer loop blocks and set current loop blocks (for break/continue)
+        // continue -> incr_bb (increment then re-check condition)
+        // break -> end_bb
+        let outer_cond = WHILE_COND_BB
+        let outer_end = WHILE_END_BB
+        WHILE_COND_BB = incr_bb
+        WHILE_END_BB = end_bb
 
         // Jump to condition
         llvm.build_br(CG_B, cond_bb)
@@ -92,7 +106,6 @@ export fn parse_for(p: Parser) -> Statement? {
         llvm.position_at_end(CG_B, body_bb)
 
         // let item = list[__for_i] — use correct element type
-        let elem_ty = if is_list_var(LAST_IDENT_NAME) { list_elem_llvm_type(LAST_IDENT_NAME) } else { CG_I64 }
         let body_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i_body")
         let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "list_data")
         let indices = llvm.value_array_new(1)
@@ -100,24 +113,34 @@ export fn parse_for(p: Parser) -> Statement? {
         let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "elem_ptr")
         llvm.value_array_free(indices)
         let elem_val = llvm.build_load(CG_B, elem_ty, elem_ptr, var_name)
-        let item_alloca = llvm.build_alloca(CG_B, CG_I64, var_name)
+        let item_alloca = llvm.build_alloca(CG_B, elem_ty, var_name)
         llvm.build_store(CG_B, elem_val, item_alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(item_alloca)
+        // Track string loop variable so emit_ident loads with CG_STR type
+        if elem_is_str {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(var_name)
+        }
 
         // Parse body block (inline emit fires into body_bb)
         let body = p.parse_block()
 
-        // __for_i = __for_i + 1
+        // Fall through to increment block (only if body didn't terminate via break/return)
+        if !llvm.block_has_terminator(CG_B) {
+            llvm.build_br(CG_B, incr_bb)
+        }
+
+        // --- Increment block: __for_i = __for_i + 1, then back to cond ---
+        llvm.position_at_end(CG_B, incr_bb)
         let cur_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i_cur")
         let one = llvm.const_int(CG_I64, 1, 0)
         let next_idx = llvm.build_add(CG_B, cur_idx, one, "for_i_next")
         llvm.build_store(CG_B, next_idx, idx_alloca)
+        llvm.build_br(CG_B, cond_bb)
 
-        // Loop back to condition (only if body didn't terminate)
-        if !llvm.block_has_terminator(CG_B) {
-            llvm.build_br(CG_B, cond_bb)
-        }
+        // Restore outer loop blocks
+        WHILE_COND_BB = outer_cond
+        WHILE_END_BB = outer_end
 
         // Continue after loop
         llvm.position_at_end(CG_B, end_bb)
