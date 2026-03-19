@@ -387,12 +387,19 @@ impl Parser {
                                 let aexpr = self.parse_expr()
                                 if aexpr != null {
                                     mut aval = cg2.emit_expr(aexpr!)
-                                    // Box enum args as pointers (like Rust's Box<T>)
+                                    // Box enum/struct args as pointers (like Rust's Box<T>)
                                     if CG_LAST_ENUM_TYPE != "" {
                                         let ebox2 = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "ebox")
                                         llvm.build_store(CG_B, aval, ebox2)
                                         aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "eptr")
                                         CG_LAST_ENUM_TYPE = ""
+                                    }
+                                    // Also box struct args (FeatureStmt, FeatureExpr, etc.)
+                                    if CG_LAST_STRUCT_TYPE != "" {
+                                        let sbox = llvm.build_alloca(CG_B, resolve_type_to_llvm(CG_LAST_STRUCT_TYPE), "sbox")
+                                        llvm.build_store(CG_B, aval, sbox)
+                                        aval = llvm.build_ptr_to_int(CG_B, sbox, CG_I64, "sptr")
+                                        CG_LAST_STRUCT_TYPE = ""
                                     }
                                     // Store field via memory (handles any type including strings)
                                     let slot_off = cg_enum_field_slot_offset(vft, ai)

@@ -160,9 +160,28 @@ export fn severity_label(sev_int: int) -> string {
     return "info"
 }
 
-// NOTE: render_diagnostic(d: Diagnostic, ...) removed — Diagnostic struct is
-// too large (>8 register slots) for ARM64 function parameters. Callers should
-// use bag_add_raw + render_at instead.
+// NOTE: render_diagnostic takes a Diagnostic but the struct may be large.
+// For bootstrap compatibility, we extract fields and call render_fields.
+
+export fn render_fields(code: string, message: string, sev_int: int, line: int, col: int, help: string, note: string, filename: string) -> string {
+    let sev = severity_label(sev_int)
+    mut msg = sev + "[" + code + "]: " + message
+    msg = msg + "\n  --> " + filename + ":" + string(line) + ":" + string(col)
+    if help != "" {
+        msg = msg + "\n  help: " + help
+    }
+    if note != "" {
+        msg = msg + "\n  note: " + note
+    }
+    msg
+}
+
+export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
+    mut sev_int = 2
+    if d.severity is .Error { sev_int = 0 }
+    if d.severity is .Warning { sev_int = 1 }
+    render_fields(d.code, d.message, sev_int, d.span.line, d.span.col, d.help, d.note, filename)
+}
 
 export fn render_at(idx: int, filename: string) -> string {
     let sev = severity_label(DIAG_SEVS[idx])

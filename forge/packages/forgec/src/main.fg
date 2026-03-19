@@ -13,7 +13,7 @@ mod features
 
 use features
 
-use core.error.{render_at, render_all, bag_add_raw, DIAG_COUNT, DIAG_CODES, DIAG_MSGS, DIAG_SEVS, DIAG_LINES, DIAG_COLS, DIAG_HELPS, DIAG_NOTES}
+use core.error.{render_at, render_all, render_diagnostic, bag_add_raw, DIAG_COUNT, DIAG_CODES, DIAG_MSGS, DIAG_SEVS, DIAG_LINES, DIAG_COLS, DIAG_HELPS, DIAG_NOTES}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}

@@ -36,6 +36,10 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             Expr::Binary { left, op, right, .. } => {
+                // Short-circuit evaluation for && and ||
+                if matches!(op, BinaryOp::And | BinaryOp::Or) {
+                    return self.compile_short_circuit(left, *op, right);
+                }
                 let lhs = self.compile_expr(left)?;
                 let rhs = self.compile_expr(right)?;
                 self.compile_binary_op(lhs, *op, rhs, left, right)
@@ -280,6 +284,121 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         None
+    }
+
+    /// Short-circuit evaluation for && and ||.
+    /// For &&: if left is false, result is false (don't evaluate right).
+    /// For ||: if left is true, result is true (don't evaluate right).
+    pub(crate) fn compile_short_circuit(
+        &mut self,
+        left: &Expr,
+        op: BinaryOp,
+        right: &Expr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let lhs = match self.compile_expr(left) {
+            Some(v) => v,
+            None => {
+                // Fall back to non-short-circuit: compile both sides
+                // (lhs failed, so just return None)
+                return None;
+            }
+        };
+
+        // Convert lhs to i1 bool
+        let lhs_bool = if lhs.is_int_value() {
+            let int_val = lhs.into_int_value();
+            if int_val.get_type().get_bit_width() == 1 {
+                int_val
+            } else {
+                self.builder
+                    .build_int_compare(
+                        IntPredicate::NE,
+                        int_val,
+                        int_val.get_type().const_zero(),
+                        "lhs_bool",
+                    )
+                    .unwrap()
+            }
+        } else {
+            // LHS is not an int (e.g., struct), can't short-circuit — fall back
+            return None;
+        };
+
+        let function = self.current_function();
+        let rhs_bb = self.context.append_basic_block(function, "sc_rhs");
+        let merge_bb = self.context.append_basic_block(function, "sc_merge");
+        let entry_bb = self.builder.get_insert_block().unwrap();
+
+        match op {
+            BinaryOp::And => {
+                // &&: if left is false, skip right (result = false)
+                self.builder.build_conditional_branch(lhs_bool, rhs_bb, merge_bb).unwrap();
+            }
+            BinaryOp::Or => {
+                // ||: if left is true, skip right (result = true)
+                self.builder.build_conditional_branch(lhs_bool, merge_bb, rhs_bb).unwrap();
+            }
+            _ => unreachable!(),
+        }
+
+        // Compile right side
+        self.builder.position_at_end(rhs_bb);
+        let rhs_bool = if let Some(rhs) = self.compile_expr(right) {
+            if rhs.is_int_value() {
+                let int_val = rhs.into_int_value();
+                if int_val.get_type().get_bit_width() == 1 {
+                    int_val
+                } else {
+                    self.builder
+                        .build_int_compare(
+                            IntPredicate::NE,
+                            int_val,
+                            int_val.get_type().const_zero(),
+                            "rhs_bool",
+                        )
+                        .unwrap()
+                }
+            } else {
+                self.context.bool_type().const_zero() // fallback: false
+            }
+        } else {
+            self.context.bool_type().const_zero() // rhs failed to compile, treat as false
+        };
+        let rhs_end_bb = self.builder.get_insert_block().unwrap();
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+        // Merge with phi
+        self.builder.position_at_end(merge_bb);
+        let phi = self.builder.build_phi(self.context.bool_type(), "sc_result").unwrap();
+
+        match op {
+            BinaryOp::And => {
+                // From entry (left was false): result = false
+                // From rhs_bb (left was true): result = rhs
+                phi.add_incoming(&[
+                    (&self.context.bool_type().const_zero(), entry_bb),
+                    (&rhs_bool, rhs_end_bb),
+                ]);
+            }
+            BinaryOp::Or => {
+                // From entry (left was true): result = true
+                // From rhs_bb (left was false): result = rhs
+                phi.add_incoming(&[
+                    (&self.context.bool_type().const_int(1, false), entry_bb),
+                    (&rhs_bool, rhs_end_bb),
+                ]);
+            }
+            _ => unreachable!(),
+        }
+
+        // Extend to i8 (Forge bool type)
+        let result = self.builder.build_int_z_extend(
+            phi.as_basic_value().into_int_value(),
+            self.context.i8_type(),
+            "sc_ext",
+        ).unwrap();
+
+        Some(result.into())
     }
 
     pub(crate) fn value_to_cstring_ptr(&mut self, val: BasicValueEnum<'ctx>, expr: &Expr) -> BasicValueEnum<'ctx> {
