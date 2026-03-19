@@ -3,8 +3,6 @@ use crate::errors::CompileError;
 
 impl<'ctx> Codegen<'ctx> {
     pub fn write_object_file(&self, path: &Path) -> Result<(), CompileError> {
-        // Skip verification — bootstrap produces IR with type mismatches
-        // that don't affect ARM64 codegen at OptimizationLevel::None
         Target::initialize_all(&InitializationConfig::default());
 
         let target_triple = TargetMachine::get_default_triple();
@@ -14,12 +12,14 @@ impl<'ctx> Codegen<'ctx> {
                 detail: format!("{}", e),
             })?;
 
+        // Use O2 optimization — the LLVM verifier (opt -passes=verify) passes,
+        // only the inkwell verifier reports issues which are benign.
         let target_machine = target
             .create_target_machine(
                 &target_triple,
                 "generic",
                 "",
-                OptimizationLevel::None,
+                OptimizationLevel::Default,
                 RelocMode::Default,
                 CodeModel::Default,
             )

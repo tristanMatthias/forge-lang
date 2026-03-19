@@ -286,12 +286,15 @@ fn build_compile_separate(files: List<string>, output: string) {
     mut file_idx = 0
     for filepath in files {
         CURRENT_FILE_INDEX = file_idx
-        eprintln("  scan: " + filepath)
+        eprintln("  scan: " + filepath + " (" + string(fs.read(filepath).length) + " chars)")
         let source = fs.read(filepath)
+        eprintln("    lexing...")
         mut lex = lexer_new(source)
         let tokens = lex.tokenize()
+        eprintln("    lexed " + string(tokens.length) + " tokens, parsing...")
         mut p = parser_new_with_source(tokens, source)
         let program = p.parse_program()
+        eprintln("    parsed")
         file_idx = file_idx + 1
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
