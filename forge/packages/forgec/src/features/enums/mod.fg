@@ -7,9 +7,9 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, featur
 use core.types.{Type, EnumVariantType, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
-use parser.expressions.{register_enum_variant, register_enum_type}
+use parser.expressions.{register_enum_variant}
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_ENUM_TYPE_CSV}
 use features.while_loops.PARSE_END_POS
 
 // ─── Side Tables ────────────────────────────────
@@ -107,7 +107,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    register_enum_type(name, max_fc)
+    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_fc},"
     // Enum declarations register tags + max field count.
     PARSE_END_POS = p.pos
     let id = next_node_id()

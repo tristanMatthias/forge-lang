@@ -352,6 +352,55 @@ impl Parser {
                     mut cg = codegen_new()
                     let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
 
+                    // Check if this is an enum constructor BEFORE method call
+                    let maybe_enum_full = "${LAST_IDENT_NAME}.${field}"
+                    let maybe_enum_tag = match_enum_tag(maybe_enum_full)
+                    if maybe_enum_tag >= 0 {
+                        // This is an enum variant, handle constructor
+                        if self.check(TokenKind.LParen) {
+                            // Data variant — sized to enum's max fields
+                            let emf = csv_enum_max_fields(LAST_IDENT_NAME)
+                            let efc = if emf > 0 { emf + 1 } else { 2 }
+                            let ef = llvm.type_array_new(efc)
+                            llvm.type_array_set(ef, 0, CG_I8)
+                            mut efi = 1
+                            while efi < efc {
+                                llvm.type_array_set(ef, efi, CG_I64)
+                                efi = efi + 1
+                            }
+                            let ety = llvm.struct_type(CG_CTX, ef, efc, 0)
+                            llvm.type_array_free(ef)
+                            mut eval = llvm.get_undef(ety)
+                            eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, maybe_enum_tag, 0), 0, "etag")
+                            self.advance() // consume (
+                            mut ai = 0
+                            while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                                mut cg2 = codegen_new()
+                                let aexpr = self.parse_expr()
+                                if aexpr != null {
+                                    let aval = cg2.emit_expr(aexpr!)
+                                    eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                    ai = ai + 1
+                                }
+                                if self.check(TokenKind.Comma) { self.advance() }
+                                self.skip_newlines()
+                            }
+                            self.advance() // consume )
+                            result_is_llvm = true
+                            result_llvm = eval
+                            CG_LAST_ENUM_TYPE = LAST_IDENT_NAME
+                            CG_LAST_VAL = eval
+                            CG_HAS_LAST_VAL = 1
+                        } else {
+                            // Unit variant: just the tag
+                            result_is_llvm = true
+                            result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
+                        }
+                        result_is_str = false
+                        result = Expr.IntLit(maybe_enum_tag, span)
+                        continue
+                    }
+
                     // Check for method call: field followed by (
                     if self.check(TokenKind.LParen) {
                         // Method call: obj.method(args)
@@ -381,9 +430,14 @@ impl Parser {
                     let enum_full = "${enum_cname}.${field}"
                     let enum_tag = match_enum_tag(enum_full)
                     if enum_tag >= 0 {
-                        let emf = csv_enum_max_fields(enum_cname)
-                        if emf > 0 {
-                            let ety = make_enum_llvm_type(enum_cname)
+                        // Check if this constructor has args (data variant)
+                        if self.check(TokenKind.LParen) {
+                            // Create tagged union type inline: {i8, i64}
+                            let ef = llvm.type_array_new(2)
+                            llvm.type_array_set(ef, 0, CG_I8)
+                            llvm.type_array_set(ef, 1, CG_I64)
+                            let ety = llvm.struct_type(CG_CTX, ef, 2, 0)
+                            llvm.type_array_free(ef)
                             // Tagged union: {i8 tag, payload...}
                             mut eval = llvm.get_undef(ety)
                             eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, enum_tag, 0), 0, "etag")
@@ -407,6 +461,8 @@ impl Parser {
                             result_is_llvm = true
                             result_llvm = eval
                             CG_LAST_ENUM_TYPE = enum_cname
+                            CG_LAST_VAL = eval
+                            CG_HAS_LAST_VAL = 1
                         } else {
                             // Unit-only enum: plain i64 tag
                             result_is_llvm = true
