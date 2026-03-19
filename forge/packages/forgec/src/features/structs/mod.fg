@@ -8,7 +8,7 @@ use core.types.{Type, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, TypeField}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, register_struct_type, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, codegen_new}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -228,10 +228,19 @@ fn emit_struct_lit(cg: Codegen, node: NodeRef) -> ptr {
     if d == null { return llvm.const_int(CG_I64, 0, 0) }
     let data = d!
 
+    // Look up the registered LLVM struct type by name
+    mut struct_ty: ptr = null
+    mut si = CG_STRUCT_NAMES.length - 1
+    while si >= 0 {
+        if CG_STRUCT_NAMES[si] == data.type_name {
+            struct_ty = CG_STRUCT_TYPES[si]
+            break
+        }
+        si = si - 1
+    }
+    if struct_ty == null { return llvm.const_int(CG_I64, 0, 0) }
+
     // Build LLVM struct value with insert_value
-    // Start with undef, insert each field
-    // TODO: look up actual struct LLVM type
-    let struct_ty = CG_I64 // placeholder
     mut val = llvm.get_undef(struct_ty)
 
     mut i = 0
@@ -240,6 +249,15 @@ fn emit_struct_lit(cg: Codegen, node: NodeRef) -> ptr {
         val = llvm.build_insert_value(CG_B, val, field_val, i, f.name)
         i = i + 1
     }
+
+    // Store in alloca and register as struct variable
+    let alloca = llvm.build_alloca(CG_B, struct_ty, data.type_name)
+    llvm.build_store(CG_B, val, alloca)
+
+    // Set struct type tracking for variable binding
+    CG_LAST_STRUCT_TYPE = data.type_name
+    CG_LAST_VAL = val
+    CG_HAS_LAST_VAL = 1
 
     val
 }

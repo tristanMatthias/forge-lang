@@ -521,7 +521,7 @@ impl Codegen {
             .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
             .Unary(op, operand, span) -> { return self.emit_expr(operand) }
             .Call(callee, args, span) -> { return self.emit_call(callee, args) }
-            .MemberAccess(obj, field, span) -> { return llvm.const_int(CG_I64, 0, 0) }
+            .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Block(block) -> { return self.emit_block(block) }
             .Feature(fe) -> {
@@ -1015,5 +1015,68 @@ impl Codegen {
             mi = mi - 1
         }
         false
+    }
+
+    fn emit_member_access(self, obj: Expr, field: string) -> ptr {
+        // Handle obj.field: extract the variable name from obj, look up struct type, extract field
+        mut var_name = ""
+        match obj {
+            .Ident(name, span) -> { var_name = name }
+            _ -> { return llvm.const_int(CG_I64, 0, 0) }
+        }
+        if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Special case: .length property
+        if field == "length" {
+            let obj_val = self.emit_ident(var_name)
+            let ca = llvm.value_array_new(1)
+            llvm.value_array_set(ca, 0, obj_val)
+            let ft = make_fn_type(CG_I64, [CG_STR])
+            let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+            llvm.value_array_free(ca)
+            return result
+        }
+
+        // Look up the variable's struct type
+        let struct_type_name = var_struct_type(var_name)
+        if struct_type_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Find the field index in the struct's field list
+        let fidx = struct_field_index(struct_type_name, field)
+        if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Load the struct value and extract the field
+        let obj_val = self.emit_ident(var_name)
+        let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
+
+        // Set string flag if this field is a string type
+        mut si = 0
+        while si < CG_STRUCT_NAMES.length {
+            if CG_STRUCT_NAMES[si] == struct_type_name {
+                let field_strs = CG_STRUCT_FIELD_IS_STR[si]
+                mut idx = 0
+                mut current = ""
+                mut fi = 0
+                while fi < field_strs.length {
+                    let ch = field_strs[fi]
+                    if ch == "," {
+                        if idx == fidx {
+                            if current == "1" { CG_LAST_IS_STR = 1 }
+                        }
+                        idx = idx + 1
+                        current = ""
+                    } else {
+                        current = current + ch
+                    }
+                    fi = fi + 1
+                }
+                if idx == fidx {
+                    if current == "1" { CG_LAST_IS_STR = 1 }
+                }
+                break
+            }
+            si = si + 1
+        }
+        field_val
     }
 }
