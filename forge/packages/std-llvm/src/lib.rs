@@ -367,6 +367,7 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr {
+    if val.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildStore(builder, val, ptr) }
 }
 
@@ -489,11 +490,16 @@ pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, pt
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, element: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
+    if agg.is_null() || element.is_null() { return agg; }
     unsafe { LLVMBuildInsertValue(builder, agg, element, index as c_uint, name) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
+    if agg.is_null() {
+        eprintln!("WARNING: build_extract_value called with null aggregate");
+        return std::ptr::null_mut();
+    }
     unsafe { LLVMBuildExtractValue(builder, agg, index as c_uint, name) }
 }
 
