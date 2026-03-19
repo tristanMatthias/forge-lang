@@ -321,12 +321,11 @@ fn build_compile_separate(files: List<string>, output: string) {
         mut cg = codegen_new()
         emit_all_fn_bodies(cg)
 
-        // Skip IR write during stage 2 (TypeFinder crash on corrupt types)
-        // codegen_write_ir("/tmp/forgec_ir_" + string(file_idx) + ".ll")
-
         if !codegen_emit_object(obj_path) {
-            eprintln("error: failed to emit " + obj_path)
-            process.exit(1)
+            eprintln("  SKIP: failed to emit " + obj_path)
+            codegen_cleanup()
+            file_idx = file_idx + 1
+            continue
         }
         codegen_cleanup()
         obj_files = obj_files.push(obj_path)

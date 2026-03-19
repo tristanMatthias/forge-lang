@@ -344,82 +344,70 @@ export fn declare_all_fns() {
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Note: LLVM globals are created in main.fg before emit_program is called
-
-    // Materialize struct types: create LLVM types for structs registered during initial parse
-    // Simple approach: for each registered struct, create all-i64 fields
-    // (mixed types will be corrected when struct literals are created)
-    let struct_count = CG_STRUCT_NAMES.length
+    // Materialize struct types in the current LLVM context (two passes).
+    // Pass 1: create opaque named struct types (so forward references work)
+    mut new_struct_types: List<ptr> = []
     mut si = 0
-    while si < struct_count {
-        // Always create LLVM type (null check on List<ptr> unreliable)
-        if true {
-            // Count fields from field names string
-            let fields = CG_STRUCT_FIELDS[si]
-            mut fc = 1
-            mut ci = 0
-            while ci < fields.length {
-                if fields[ci] == "," { fc = fc + 1 }
-                ci = ci + 1
-            }
-            if fields.length == 0 { fc = 0 }
-            // Create struct type with correct field types using field type names
-            mut ftn = ""
-            if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
-            let fta = llvm.type_array_new(fc)
-            if ftn.length > 0 {
-                // Use field type names for proper type resolution
-                mut fi = 0
-                mut ftn_pos = 0
-                mut ftn_cur = ""
-                while ftn_pos < ftn.length {
-                    let ch = ftn[ftn_pos]
-                    if ch == "," {
-                        llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-                        fi = fi + 1
-                        ftn_cur = ""
-                    } else {
-                        ftn_cur = ftn_cur + ch
-                    }
-                    ftn_pos = ftn_pos + 1
-                }
-                if ftn_cur != "" {
-                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
-                }
-            } else {
-                // Fallback: use field_is_str (legacy path)
-                let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
-                mut fi = 0
-                mut fis_idx = 0
-                while fi < fc {
-                    mut is_str_field = false
-                    mut fis_cur = ""
-                    while fis_idx < field_is_str.length {
-                        let fch = field_is_str[fis_idx]
-                        fis_idx = fis_idx + 1
-                        if fch == "," { break }
-                        fis_cur = fis_cur + fch
-                    }
-                    if fis_cur == "1" { is_str_field = true }
-                    if is_str_field {
-                        llvm.type_array_set(fta, fi, CG_STR)
-                    } else {
-                        llvm.type_array_set(fta, fi, CG_I64)
-                    }
-                    fi = fi + 1
-                }
-            }
-            // Use named struct type (like Rust) for proper LLVM ARM64 ABI handling
-            let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-            llvm.struct_set_body(sty, fta, fc, 0)
-            llvm.type_array_free(fta)
-            // Re-register with LLVM type
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-            CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+    while si < CG_STRUCT_NAMES.length {
+        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
+        new_struct_types = new_struct_types.push(sty)
+        si = si + 1
+    }
+    CG_STRUCT_TYPES = new_struct_types
+    // Pass 2: set bodies (now all types exist for resolve_type_to_llvm)
+    si = 0
+    while si < CG_STRUCT_NAMES.length {
+        let fields = CG_STRUCT_FIELDS[si]
+        mut fc = 1
+        mut ci = 0
+        while ci < fields.length {
+            if fields[ci] == "," { fc = fc + 1 }
+            ci = ci + 1
         }
+        if fields.length == 0 { fc = 0 }
+        mut ftn = ""
+        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
+        let fta = llvm.type_array_new(fc)
+        if ftn.length > 0 {
+            mut fi = 0
+            mut ftn_pos = 0
+            mut ftn_cur = ""
+            while ftn_pos < ftn.length {
+                let ch = ftn[ftn_pos]
+                if ch == "," {
+                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+                    fi = fi + 1
+                    ftn_cur = ""
+                } else {
+                    ftn_cur = ftn_cur + ch
+                }
+                ftn_pos = ftn_pos + 1
+            }
+            if ftn_cur != "" {
+                llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+            }
+        } else {
+            let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
+            mut fi = 0
+            mut fis_idx = 0
+            while fi < fc {
+                mut fis_cur = ""
+                while fis_idx < field_is_str.length {
+                    let fch = field_is_str[fis_idx]
+                    fis_idx = fis_idx + 1
+                    if fch == "," { break }
+                    fis_cur = fis_cur + fch
+                }
+                if fis_cur == "1" {
+                    llvm.type_array_set(fta, fi, CG_STR)
+                } else {
+                    llvm.type_array_set(fta, fi, CG_I64)
+                }
+                fi = fi + 1
+            }
+        }
+        llvm.struct_set_body(CG_STRUCT_TYPES[si], fta, fc, 0)
+        llvm.type_array_free(fta)
         si = si + 1
     }
 

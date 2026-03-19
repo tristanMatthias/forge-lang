@@ -698,6 +698,9 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
+    // Enum type cache must be cleared (old types from previous context are dangling)
+    CG_ENUM_TYPE_CACHE_NAMES = []
+    CG_ENUM_TYPE_CACHE_PTRS = []
     CG_ACTIVE = true
 }
 
