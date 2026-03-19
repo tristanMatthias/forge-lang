@@ -366,13 +366,13 @@ impl Parser {
                     let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
 
                     // Check if this is an enum constructor BEFORE method call
-                    let maybe_enum_full = "${LAST_IDENT_NAME}.${field}"
+                    let enum_type_name = LAST_IDENT_NAME  // save before arg parsing overwrites
+                    let maybe_enum_full = "${enum_type_name}.${field}"
                     let maybe_enum_tag = match_enum_tag(maybe_enum_full)
                     if maybe_enum_tag >= 0 {
                         // This is an enum variant, handle constructor
                         if self.check(TokenKind.LParen) {
-                            // Per-enum type (like Rust: sized to largest variant)
-                            let ety = cg_get_enum_ty_for(LAST_IDENT_NAME)
+                            let ety = cg_get_enum_ty_for(enum_type_name)
                             // Use alloca+store approach (handles string fields correctly)
                             let enum_alloca = llvm.build_alloca(CG_B, ety, "enum_tmp")
                             llvm.build_store(CG_B, llvm.const_null(ety), enum_alloca)
@@ -381,7 +381,7 @@ impl Parser {
                             llvm.build_store(CG_B, llvm.const_int(CG_I8, maybe_enum_tag, 0), tag_ptr)
                             // Get payload pointer (index 1 = first i64 slot)
                             let payload_ptr = llvm.build_struct_gep2(CG_B, ety, enum_alloca, 1, "payload_ptr")
-                            let vft = cg_enum_variant_field_types(LAST_IDENT_NAME, field)
+                            let vft = cg_enum_variant_field_types(enum_type_name, field)
                             self.advance() // consume (
                             mut ai = 0
                             while !self.check(TokenKind.RParen) && !self.is_at_end() {
@@ -422,7 +422,7 @@ impl Parser {
                             let eval = llvm.build_load(CG_B, ety, enum_alloca, "enum_val")
                             result_is_llvm = true
                             result_llvm = eval
-                            CG_LAST_ENUM_TYPE = LAST_IDENT_NAME
+                            CG_LAST_ENUM_TYPE = enum_type_name
                             CG_LAST_VAL = eval
                             CG_HAS_LAST_VAL = 1
                         } else {

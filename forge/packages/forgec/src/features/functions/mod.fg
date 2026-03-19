@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -476,6 +476,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
 
         // Set scope boundary: emit_ident should only find globals + current function's vars
         CG_VAR_SCOPE_START = CG_VAR_NAMES.length
+        // Clear per-function type tracking (prevents cross-function contamination)
+        CG_STR_VAR_NAMES = []
+        CG_STRUCT_VAR_NAMES = []
+        CG_STRUCT_VAR_TYPES = []
+        CG_STRUCT_VAR_FIELDS = []
 
         // Reset type tracking flags BEFORE param definition
         CG_LAST_IS_STR = 0
