@@ -1335,14 +1335,10 @@ impl Codegen {
         // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
-        // Bootstrap workaround: if-as-expression returns corrupt ptr values.
-        // Use explicit mut + if assignment instead.
-        mut alloca_ty = CG_I64
-        if is_str { alloca_ty = CG_STR }
+        mut alloca_ty = if is_str { CG_STR } else { CG_I64 }
         // For nullable types, use the {i8, T} struct type
         if CG_LAST_IS_NULLABLE == 1 {
-            mut inner_ty = CG_I64
-            if is_str { inner_ty = CG_STR }
+            let inner_ty = if is_str { CG_STR } else { CG_I64 }
             alloca_ty = make_nullable_type(inner_ty)
         }
         // For enum tagged union types — per-enum sizing
@@ -1368,12 +1364,8 @@ impl Codegen {
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        mut str_flag = 0
-        if is_str { str_flag = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(str_flag)
-        mut map_flag = 0
-        if is_map { map_flag = 1 }
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(map_flag)
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
