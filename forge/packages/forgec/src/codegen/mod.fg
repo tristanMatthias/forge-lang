@@ -345,7 +345,7 @@ export fn cg_enum_max_fields(name: string) -> int {
 
 export fn cg_get_enum_ty() -> ptr {
     if CG_UNIVERSAL_ENUM_TY != null { return CG_UNIVERSAL_ENUM_TY }
-    let fc = 10
+    let fc = 16
     let fields = llvm.type_array_new(fc)
     llvm.type_array_set(fields, 0, CG_I8)
     mut fi = 1

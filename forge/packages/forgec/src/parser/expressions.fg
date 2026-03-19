@@ -363,7 +363,7 @@ impl Parser {
                         if self.check(TokenKind.LParen) {
                             // Use the universal cached enum type
                             if CG_UNIVERSAL_ENUM_TY == null {
-                                let efc = 10
+                                let efc = 16
                                 let ef = llvm.type_array_new(efc)
                                 llvm.type_array_set(ef, 0, CG_I8)
                                 mut efi = 1
@@ -445,7 +445,7 @@ impl Parser {
                         if self.check(TokenKind.LParen) {
                             // Use the universal enum type (cached singleton)
                             if CG_UNIVERSAL_ENUM_TY == null {
-                                let efc = 10
+                                let efc = 16
                                 let ef = llvm.type_array_new(efc)
                                 llvm.type_array_set(ef, 0, CG_I8)
                                 mut efi = 1
