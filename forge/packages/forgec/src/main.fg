@@ -87,6 +87,9 @@ fn build_compile(source: string, filename: string, output: string) {
     mut cg = codegen_new()
     cg.emit_program(program)
 
+    // Write IR for debugging
+    codegen_write_ir("output.ll")
+
     // Emit object file
     let obj_path = output + ".o"
     if !codegen_emit_object(obj_path) {

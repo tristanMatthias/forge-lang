@@ -541,19 +541,23 @@ impl Codegen {
 
     fn emit_return(self, value: Expr) {
         match value {
-            .NullLit(span) -> { llvm.build_ret_void(CG_B) }
-            .IntLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .FloatLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .StringLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .BoolLit(v, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Ident(n, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Binary(l, o, r, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Unary(o, e, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Call(c, a, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .MemberAccess(o, f, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Index(o, i, s) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Block(b) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
-            .Feature(fe) -> { llvm.build_ret(CG_B, self.emit_expr(value)) }
+            .NullLit(span) -> {
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    llvm.build_ret(CG_B, make_null_value(CG_FN_NULLABLE_INNER_TY))
+                } else {
+                    llvm.build_ret_void(CG_B)
+                }
+            }
+            _ -> { self.emit_ret_value(value) }
+        }
+    }
+
+    fn emit_ret_value(self, value: Expr) {
+        let val = self.emit_expr(value)
+        if CG_FN_RETURNS_NULLABLE == 1 && CG_LAST_IS_NULLABLE != 1 {
+            llvm.build_ret(CG_B, wrap_nullable(CG_FN_NULLABLE_INNER_TY, val))
+        } else {
+            llvm.build_ret(CG_B, val)
         }
     }
 
@@ -575,7 +579,13 @@ impl Codegen {
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
-            .NullLit(span) -> { return llvm.const_null(CG_PTR) }
+            .NullLit(span) -> {
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    CG_LAST_IS_NULLABLE = 1
+                    return make_null_value(CG_FN_NULLABLE_INNER_TY)
+                }
+                return llvm.const_null(CG_PTR)
+            }
             .Ident(name, span) -> { return self.emit_ident(name) }
             .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
             .Unary(op, operand, span) -> { return self.emit_expr(operand) }
@@ -716,8 +726,16 @@ impl Codegen {
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {
-                // Determine load type: string, struct, or int
+                // Determine load type: nullable, string, struct, or int
                 mut load_ty = CG_I64
+                CG_LAST_IS_NULLABLE = 0
+                // Check nullable first (takes precedence)
+                if is_nullable_var(name) {
+                    let inner_name = nullable_var_inner_type(name)
+                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
+                    load_ty = make_nullable_type(inner_ty)
+                    CG_LAST_IS_NULLABLE = 1
+                }
                 // Check string
                 mut si = CG_STR_VAR_NAMES.length - 1
                 while si >= 0 {
@@ -750,10 +768,17 @@ impl Codegen {
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
                 mut load_ty = CG_I64
+                CG_LAST_IS_NULLABLE = 0
+                if is_nullable_var(name) {
+                    let inner_name = nullable_var_inner_type(name)
+                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
+                    load_ty = make_nullable_type(inner_ty)
+                    CG_LAST_IS_NULLABLE = 1
+                }
                 mut si = CG_STR_VAR_NAMES.length - 1
                 while si >= 0 {
                     if CG_STR_VAR_NAMES[si] == name {
-                        load_ty = CG_STR
+                        if !is_nullable_var(name) { load_ty = CG_STR }
                         break
                     }
                     si = si - 1
@@ -841,11 +866,18 @@ impl Codegen {
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
                     // Set type flags based on function return type
+                    CG_LAST_IS_NULLABLE = 0
                     mut fi = 0
                     while fi < FN_NAMES.length {
                         if FN_NAMES[fi] == name {
                             if fi < FN_RETURN_TYPES.length {
-                                let rtn = FN_RETURN_TYPES[fi]
+                                mut rtn = FN_RETURN_TYPES[fi]
+                                // Detect nullable return (ends with ?)
+                                let rtn_len = rtn.length
+                                if rtn_len > 1 && rtn[rtn_len - 1] == "?" {
+                                    CG_LAST_IS_NULLABLE = 1
+                                    rtn = rtn.substring(0, rtn_len - 1)
+                                }
                                 if rtn == "string" {
                                     CG_LAST_IS_STR = 1
                                 } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
@@ -917,11 +949,18 @@ impl Codegen {
         }
         // Look up return type from FN_RETURN_TYPES
         mut call_ret_ty = CG_I64
+        mut call_is_nullable = false
         mut fi = 0
         while fi < FN_NAMES.length {
             if FN_NAMES[fi] == fn_name {
                 if fi < FN_RETURN_TYPES.length {
-                    let rtn = FN_RETURN_TYPES[fi]
+                    mut rtn = FN_RETURN_TYPES[fi]
+                    // Detect nullable return type
+                    let rtn_len = rtn.length
+                    if rtn_len > 1 && rtn[rtn_len - 1] == "?" {
+                        call_is_nullable = true
+                        rtn = rtn.substring(0, rtn_len - 1)
+                    }
                     if rtn == "string" {
                         call_ret_ty = CG_STR
                     } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
@@ -940,6 +979,10 @@ impl Codegen {
                 break
             }
             fi = fi + 1
+        }
+        // Wrap return type for nullable
+        if call_is_nullable {
+            call_ret_ty = make_nullable_type(call_ret_ty)
         }
         let ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0)
         llvm.type_array_free(param_arr)
@@ -1038,6 +1081,11 @@ impl Codegen {
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
         mut alloca_ty = if is_str { CG_STR } else { CG_I64 }
+        // For nullable types, use the {i8, T} struct type
+        if CG_LAST_IS_NULLABLE == 1 {
+            let inner_ty = if is_str { CG_STR } else { CG_I64 }
+            alloca_ty = make_nullable_type(inner_ty)
+        }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {
             // Search from END to find the most recent entry (with LLVM type)

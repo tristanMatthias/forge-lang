@@ -698,11 +698,17 @@ impl Parser {
             let span = self.advance().span
             LAST_IDENT_NAME = name
 
-            // Track string/map/struct type for this ident
+            // Track string/map/struct/nullable type for this ident
             if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Check struct type
                 let st = var_struct_type(name)
+                // Check nullable
+                if is_nullable_var(name) {
+                    CG_LAST_IS_NULLABLE = 1
+                } else {
+                    CG_LAST_IS_NULLABLE = 0
+                }
                 // Use st later for field access
                 if cg.is_string_var(name) {
                     CG_LAST_IS_STR = 1
