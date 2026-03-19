@@ -317,7 +317,10 @@ export fn list_elem_llvm_type(name: string) -> ptr {
 export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxfields,"
 export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
-export mut CG_UNIVERSAL_ENUM_TY: ptr = null // cached {i8, i64 x 9} type
+export mut CG_UNIVERSAL_ENUM_TY: ptr = null // DEPRECATED — use per-enum types
+// Per-enum type cache: ",Name:ptrval," — stores pointer-as-int for cached LLVM types
+mut CG_ENUM_TYPE_CACHE_NAMES: List<string> = []
+mut CG_ENUM_TYPE_CACHE_PTRS: List<ptr> = []
 
 export fn cg_enum_max_fields(name: string) -> int {
     let needle = "," + name + ":"
@@ -347,9 +350,19 @@ export fn cg_enum_max_fields(name: string) -> int {
     0
 }
 
-export fn cg_get_enum_ty() -> ptr {
-    if CG_UNIVERSAL_ENUM_TY != null { return CG_UNIVERSAL_ENUM_TY }
-    let fc = 16
+// Get or create the LLVM type for a specific enum (per-enum sizing like Rust)
+export fn cg_get_enum_ty_for(name: string) -> ptr {
+    // Check cache first
+    mut ci = 0
+    while ci < CG_ENUM_TYPE_CACHE_NAMES.length {
+        if CG_ENUM_TYPE_CACHE_NAMES[ci] == name {
+            return CG_ENUM_TYPE_CACHE_PTRS[ci]
+        }
+        ci = ci + 1
+    }
+    // Create: {i8, i64 x max_fields}
+    let mf = cg_enum_max_fields(name)
+    let fc = if mf > 0 { mf + 1 } else { 2 }  // minimum {i8, i64}
     let fields = llvm.type_array_new(fc)
     llvm.type_array_set(fields, 0, CG_I8)
     mut fi = 1
@@ -357,15 +370,18 @@ export fn cg_get_enum_ty() -> ptr {
         llvm.type_array_set(fields, fi, CG_I64)
         fi = fi + 1
     }
-    CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, fields, fc, 0)
+    let ty = llvm.struct_type(CG_CTX, fields, fc, 0)
     llvm.type_array_free(fields)
-    CG_UNIVERSAL_ENUM_TY
+    // Cache it
+    CG_ENUM_TYPE_CACHE_NAMES = CG_ENUM_TYPE_CACHE_NAMES.push(name)
+    CG_ENUM_TYPE_CACHE_PTRS = CG_ENUM_TYPE_CACHE_PTRS.push(ty)
+    ty
 }
 
 export fn cg_make_enum_type(name: string) -> ptr {
     let mf = cg_enum_max_fields(name)
     if mf == 0 { return null }
-    cg_get_enum_ty()
+    cg_get_enum_ty_for(name)
 }
 
 export fn cg_var_enum_type(name: string) -> string {
@@ -520,6 +536,8 @@ export fn codegen_init(name: string) {
     CG_LAST_STRUCT_TYPE = ""
     CG_HAS_LAST_VAL = 0
     CG_UNIVERSAL_ENUM_TY = null
+    CG_ENUM_TYPE_CACHE_NAMES = []
+    CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
     CG_NULLABLE_STR_TY = null
     DECLARED_FNS = {}
@@ -856,7 +874,8 @@ impl Codegen {
                 CG_LAST_ENUM_TYPE = ""
                 let vet = cg_var_enum_type(name)
                 if vet != "" {
-                    if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
+                    let ety = cg_get_enum_ty_for(vet)
+                    if ety != null { load_ty = ety }
                     CG_LAST_ENUM_TYPE = vet
                 }
                 // Check struct type
@@ -1215,11 +1234,10 @@ impl Codegen {
             let inner_ty = if is_str { CG_STR } else { CG_I64 }
             alloca_ty = make_nullable_type(inner_ty)
         }
-        // For enum tagged union types — use CG_UNIVERSAL_ENUM_TY (no function call)
+        // For enum tagged union types — per-enum sizing
         if CG_LAST_ENUM_TYPE != "" {
-            if CG_UNIVERSAL_ENUM_TY != null {
-                alloca_ty = CG_UNIVERSAL_ENUM_TY
-            }
+            let ety = cg_get_enum_ty_for(CG_LAST_ENUM_TYPE)
+            if ety != null { alloca_ty = ety }
         }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {

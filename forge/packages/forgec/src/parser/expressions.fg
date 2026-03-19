@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_UNIVERSAL_ENUM_TY, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -361,20 +361,8 @@ impl Parser {
                     if maybe_enum_tag >= 0 {
                         // This is an enum variant, handle constructor
                         if self.check(TokenKind.LParen) {
-                            // Use the universal cached enum type
-                            if CG_UNIVERSAL_ENUM_TY == null {
-                                let efc = 16
-                                let ef = llvm.type_array_new(efc)
-                                llvm.type_array_set(ef, 0, CG_I8)
-                                mut efi = 1
-                                while efi < efc {
-                                    llvm.type_array_set(ef, efi, CG_I64)
-                                    efi = efi + 1
-                                }
-                                CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, ef, efc, 0)
-                                llvm.type_array_free(ef)
-                            }
-                            let ety = CG_UNIVERSAL_ENUM_TY
+                            // Per-enum type (like Rust: sized to largest variant)
+                            let ety = cg_get_enum_ty_for(LAST_IDENT_NAME)
                             mut eval = llvm.get_undef(ety)
                             eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, maybe_enum_tag, 0), 0, "etag")
                             self.advance() // consume (
@@ -384,8 +372,9 @@ impl Parser {
                                 let aexpr = self.parse_expr()
                                 if aexpr != null {
                                     mut aval = cg2.emit_expr(aexpr!)
+                                    // Box enum args as pointers (like Rust's Box<T>)
                                     if CG_LAST_ENUM_TYPE != "" {
-                                        let ebox2 = llvm.build_alloca(CG_B, CG_UNIVERSAL_ENUM_TY, "ebox")
+                                        let ebox2 = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "ebox")
                                         llvm.build_store(CG_B, aval, ebox2)
                                         aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "eptr")
                                         CG_LAST_ENUM_TYPE = ""
@@ -444,24 +433,10 @@ impl Parser {
                     if enum_tag >= 0 {
                         // Check if this constructor has args (data variant)
                         if self.check(TokenKind.LParen) {
-                            // Use the universal enum type (cached singleton)
-                            if CG_UNIVERSAL_ENUM_TY == null {
-                                let efc = 16
-                                let ef = llvm.type_array_new(efc)
-                                llvm.type_array_set(ef, 0, CG_I8)
-                                mut efi = 1
-                                while efi < efc {
-                                    llvm.type_array_set(ef, efi, CG_I64)
-                                    efi = efi + 1
-                                }
-                                CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, ef, efc, 0)
-                                llvm.type_array_free(ef)
-                            }
-                            let ety = CG_UNIVERSAL_ENUM_TY
-                            // Tagged union: {i8 tag, payload...}
+                            // Per-enum type (like Rust)
+                            let ety = cg_get_enum_ty_for(enum_cname)
                             mut eval = llvm.get_undef(ety)
                             eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, enum_tag, 0), 0, "etag")
-                            // Parse constructor args if present
                             if self.check(TokenKind.LParen) {
                                 self.advance()
                                 mut ai = 0
@@ -470,9 +445,9 @@ impl Parser {
                                     let aexpr = self.parse_expr()
                                     if aexpr != null {
                                         mut aval = cg.emit_expr(aexpr!)
-                                        // If arg is enum, box it: store in alloca, pass ptr as i64
+                                        // Box enum args as pointers (like Rust's Box<T>)
                                         if CG_LAST_ENUM_TYPE != "" {
-                                            let ebox = llvm.build_alloca(CG_B, CG_UNIVERSAL_ENUM_TY, "ebox")
+                                            let ebox = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "ebox")
                                             llvm.build_store(CG_B, aval, ebox)
                                             aval = llvm.build_ptr_to_int(CG_B, ebox, CG_I64, "eptr")
                                             CG_LAST_ENUM_TYPE = ""
@@ -1367,6 +1342,8 @@ impl Parser {
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check(TokenKind.LBrace) {
                         arm_result = self.parse_block_for_value(cg)
+                    } else if self.check(TokenKind.Return) {
+                        self.parse_return()
                     } else {
                         let _body = self.parse_expr()
                         if _body != null {
@@ -1429,15 +1406,17 @@ impl Parser {
                     // Emit arm body
                     llvm.position_at_end(CG_B, arm_bb)
                     // Define bindings from payload
-                    if binding_names.length > 0 && scrutinee_is_enum {
-                        mut bi = 0
-                        for bname in binding_names {
-                            let fv = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
-                            let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
-                            llvm.build_store(CG_B, fv, alloca)
-                            CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                            bi = bi + 1
+                    if binding_names.length > 0 {
+                        if scrutinee_is_enum {
+                            mut bi = 0
+                            for bname in binding_names {
+                                let fv = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
+                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
+                                llvm.build_store(CG_B, fv, alloca)
+                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                bi = bi + 1
+                            }
                         }
                     }
                     let prev_match2 = IN_MATCH_ARM
@@ -1445,6 +1424,9 @@ impl Parser {
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check(TokenKind.LBrace) {
                         arm_result = self.parse_block_for_value(cg)
+                    } else if self.check(TokenKind.Return) {
+                        // Handle return statement in match arm body
+                        self.parse_return()
                     } else {
                         let _body = self.parse_expr()
                         if _body != null { arm_result = cg.emit_expr(_body!) }
@@ -1501,6 +1483,8 @@ impl Parser {
                 mut arm_result = llvm.const_int(CG_I64, 0, 0)
                 if self.check(TokenKind.LBrace) {
                     arm_result = self.parse_block_for_value(cg)
+                } else if self.check(TokenKind.Return) {
+                    self.parse_return()
                 } else {
                     let _body = self.parse_expr()
                     if _body != null { arm_result = cg.emit_expr(_body!) }
@@ -2237,11 +2221,11 @@ fn make_enum_llvm_type(name: string) -> ptr {
 
 // CSV lookup: get enum type name for a variable. Returns "" if not enum.
 fn csv_var_enum_type(name: string) -> string {
-    let needle = ",${name}:"
+    let needle = "," + name + ":"
     let nl = needle.length
     let cl = CG_ENUM_VAR_CSV.length
     mut i = 0
-    while i <= cl - nl {
+    while i + nl <= cl {
         mut ok = true
         mut j = 0
         while j < nl {
@@ -2251,7 +2235,8 @@ fn csv_var_enum_type(name: string) -> string {
         if ok {
             mut r = ""
             mut k = i + nl
-            while k < cl && CG_ENUM_VAR_CSV[k] != "," {
+            while k < cl {
+                if CG_ENUM_VAR_CSV[k] == "," { break }
                 r = r + CG_ENUM_VAR_CSV[k]
                 k = k + 1
             }
