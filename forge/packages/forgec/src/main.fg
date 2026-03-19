@@ -98,11 +98,27 @@ fn build_compile(source: string, filename: string, output: string) {
         return
     }
 
-    // Also write IR for debugging
-    codegen_write_ir("output.ll")
     codegen_cleanup()
-    println("compiled: ${obj_path}")
-    println("link with: cc ${obj_path} runtime.o -o ${output}")
+
+    // Compile runtime if needed
+    let runtime_obj = "/tmp/forgec_runtime.o"
+    let runtime_src = "stdlib/runtime.c"
+    let rt_result = process.run("cc", ["-c", "-O0", runtime_src, "-o", runtime_obj])
+    if !rt_result.contains("\"code\":0") {
+        eprintln("error: failed to compile runtime (${runtime_src})")
+        eprintln(rt_result)
+        process.exit(1)
+    }
+
+    // Link: cc -o output obj_path runtime_obj -lm
+    let link_result = process.run("cc", ["-o", output, obj_path, runtime_obj, "-lm"])
+    if !link_result.contains("\"code\":0") {
+        eprintln("error: linker failed")
+        eprintln(link_result)
+        process.exit(1)
+    }
+
+    println("compiled: ${output}")
 }
 
 fn main() {
