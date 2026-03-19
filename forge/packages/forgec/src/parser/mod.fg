@@ -236,10 +236,12 @@ impl Parser {
         let tok = self.peek()
 
         // Reset type flags at statement boundary to prevent cross-statement leakage
+        // NOTE: CG_HAS_LAST_VAL is NOT reset here — it's preserved so that the
+        // last expression in a block can be used as the implicit return value.
+        // It gets reset when a new non-expression statement is parsed.
         if CG_ACTIVE {
             CG_LAST_IS_STR = 0
             CG_LAST_IS_MAP = 0
-            CG_HAS_LAST_VAL = 0
             CG_IS_MAP_INDEX = 0
         }
 
@@ -346,6 +348,11 @@ impl Parser {
                 let result = self.parse_expr_or_assign()
                 // Track last expression value for implicit function returns
                 if CG_ACTIVE && result != null {
+                    // Check if the result is a Call expression — if so, emit it
+                    // through codegen to capture the actual call result value.
+                    // The inline parser only builds the AST node for calls; it
+                    // doesn't emit the LLVM call instruction.
+                    let r = result!
                     // The inline emit stored the value — set the flag so
                     // emit_all_fn_bodies can build an implicit ret
                     CG_HAS_LAST_VAL = 1
@@ -364,6 +371,9 @@ impl Parser {
 
     fn parse_return(self) -> Statement? {
         let start = self.advance().span // consume 'return'
+        // Reset CG_HAS_LAST_VAL — the return needs to evaluate its own expression,
+        // not use a stale value from a prior expression (e.g., if condition)
+        if CG_ACTIVE { CG_HAS_LAST_VAL = 0 }
 
         // Check if there's a value (not at end of statement)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
