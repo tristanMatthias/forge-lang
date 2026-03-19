@@ -420,8 +420,9 @@ impl Parser {
                         self.expect(TokenKind.RParen)
                         result_is_llvm = true
                         result_llvm = method_result
-                        // Track return type: most string methods return strings, indexOf returns int
-                        result_is_str = method != "indexOf" && method != "length"
+                        // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
+                        // For built-in string methods, most return strings except indexOf/length
+                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { method != "indexOf" && method != "length" && CG_LAST_STRUCT_TYPE == "" }
                         result = Expr.IntLit(0, span)
                         continue
                     }
@@ -1578,7 +1579,8 @@ impl Parser {
 
 // ─── Struct Field Helpers ────────────────────────
 
-use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type}
+use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
+use features.functions.{FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS}
 
 fn var_struct_type_for_expr(expr: Expr) -> string {
     // For now only handle Ident expressions
@@ -1700,6 +1702,22 @@ impl Parser {
             let mangled = "${obj_type}__${method}"
             let fn_ref = llvm.get_named_function(CG_MOD, mangled)
             if fn_ref != null {
+                // Find function index and param offset for the mangled name
+                mut fn_idx = -1
+                mut fn_param_offset = 0
+                mut fi = 0
+                while fi < FN_NAMES.length {
+                    if FN_NAMES[fi] == mangled {
+                        fn_idx = fi
+                        break
+                    }
+                    if fi < FN_PARAM_COUNTS.length {
+                        fn_param_offset = fn_param_offset + FN_PARAM_COUNTS[fi]
+                    }
+                    fi = fi + 1
+                }
+                let fn_pc = if fn_idx >= 0 && fn_idx < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fn_idx] } else { args.length + 1 }
+
                 // Call TypeName__method(self, args...)
                 let total_args = args.length + 1
                 let call_args = llvm.value_array_new(total_args)
@@ -1718,18 +1736,84 @@ impl Parser {
                     sti = sti - 1
                 }
                 llvm.type_array_set(call_pts, 0, self_ty)
-                // Remaining args
+                // Remaining args — look up actual param types
                 mut ai = 0
                 while ai < args.length {
                     mut cg2 = codegen_new()
                     llvm.value_array_set(call_args, ai + 1, cg2.emit_expr(args[ai]))
-                    llvm.type_array_set(call_pts, ai + 1, CG_I64)
+                    // Look up param type from registry (offset +1 to skip self)
+                    mut pty = CG_I64
+                    let pt_idx = fn_param_offset + ai + 1
+                    if pt_idx < FN_ALL_PARAM_TYPES.length {
+                        let ptn = FN_ALL_PARAM_TYPES[pt_idx]
+                        if ptn == "string" {
+                            pty = CG_STR
+                        } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
+                            let call_emf = cg_enum_max_fields(ptn)
+                            if call_emf > 0 {
+                                pty = cg_make_enum_type(ptn)
+                            }
+                            if call_emf == 0 {
+                                mut psti = CG_STRUCT_NAMES.length - 1
+                                while psti >= 0 {
+                                    if CG_STRUCT_NAMES[psti] == ptn {
+                                        let psty = CG_STRUCT_TYPES[psti]
+                                        if psty != null { pty = psty }
+                                        break
+                                    }
+                                    psti = psti - 1
+                                }
+                            }
+                        }
+                    }
+                    llvm.type_array_set(call_pts, ai + 1, pty)
                     ai = ai + 1
                 }
-                let call_ft = llvm.function_type(CG_I64, call_pts, total_args, 0)
+                // Look up return type from FN_RETURN_TYPES
+                mut call_ret_ty = CG_I64
+                CG_LAST_IS_STR = 0
+                CG_LAST_STRUCT_TYPE = ""
+                CG_LAST_IS_NULLABLE = 0
+                if fn_idx >= 0 && fn_idx < FN_RETURN_TYPES.length {
+                    mut rtn = FN_RETURN_TYPES[fn_idx]
+                    let rtn_len = rtn.length
+                    if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
+                        CG_LAST_IS_NULLABLE = 1
+                        rtn = rtn.substring(0, rtn_len - 1)
+                    } }
+                    if rtn == "string" {
+                        call_ret_ty = CG_STR
+                        CG_LAST_IS_STR = 1
+                    } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
+                        // Check enum return type
+                        let ret_emf = cg_enum_max_fields(rtn)
+                        if ret_emf > 0 {
+                            call_ret_ty = cg_make_enum_type(rtn)
+                        }
+                        // Struct return type
+                        if ret_emf == 0 {
+                            mut rsti = CG_STRUCT_NAMES.length - 1
+                            while rsti >= 0 {
+                                if CG_STRUCT_NAMES[rsti] == rtn {
+                                    let rsty = CG_STRUCT_TYPES[rsti]
+                                    if rsty != null { call_ret_ty = rsty }
+                                    break
+                                }
+                                rsti = rsti - 1
+                            }
+                            CG_LAST_STRUCT_TYPE = rtn
+                        }
+                    }
+                    if CG_LAST_IS_NULLABLE == 1 {
+                        call_ret_ty = make_nullable_type(call_ret_ty)
+                    }
+                }
+                let call_ft = llvm.function_type(call_ret_ty, call_pts, total_args, 0)
                 llvm.type_array_free(call_pts)
                 let call_result = llvm.build_call(CG_B, call_ft, fn_ref, call_args, total_args, "mcall")
                 llvm.value_array_free(call_args)
+                CG_LAST_VAL = call_result
+                CG_HAS_LAST_VAL = 1
                 return call_result
             }
         }
@@ -1971,11 +2055,13 @@ fn tpl_emit_interpolation(expr_src: string) -> ptr {
         return emit_str_lit("")
     }
 
-    let saved_is_str = CG_LAST_IS_STR
+    // Capture string flag set by parse_expr's inline codegen (e.g. struct field access)
+    let parse_is_str = CG_LAST_IS_STR
     CG_LAST_IS_STR = 0
     mut cg = codegen_new()
     let val = cg.emit_expr(expr!)
-    let is_str = CG_LAST_IS_STR
+    // Use emit_expr's flag if it set one, otherwise fall back to parse_expr's flag
+    let is_str = if CG_LAST_IS_STR == 1 { 1 } else { parse_is_str }
 
     let str_val = tpl_to_string(val, is_str)
     CG_LAST_IS_STR = 1
