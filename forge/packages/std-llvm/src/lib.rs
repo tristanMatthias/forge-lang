@@ -818,8 +818,9 @@ pub extern "C" fn forge_llvm_emit_object_file(m: LLVMPtr, filename: *const c_cha
 
         let cpu = b"generic\0".as_ptr() as *const c_char;
         let features = b"\0".as_ptr() as *const c_char;
-        // OptLevel=2 (Default), Reloc=0 (Default), CodeModel=0 (Default)
-        let tm = LLVMCreateTargetMachine(target, triple, cpu, features, 2, 0, 0);
+        // OptLevel=0 (None), Reloc=0 (Default), CodeModel=0 (Default)
+        // Using O0 to avoid LLVM optimizer crashes on complex IR from self-hosted compiler
+        let tm = LLVMCreateTargetMachine(target, triple, cpu, features, 0, 0, 0);
         if tm.is_null() { return 2; }
 
         err = std::ptr::null_mut();

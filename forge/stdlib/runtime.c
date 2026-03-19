@@ -417,12 +417,25 @@ static void forge_string_bounds_check(ForgeString s, int64_t index, const char* 
     }
 }
 
+// Static lookup table for single ASCII characters — avoids malloc per char_at
+static char ascii_chars[128][2]; // [char][0] = char, [1] = '\0'
+static int ascii_chars_init = 0;
+static void ensure_ascii_chars(void) {
+    if (ascii_chars_init) return;
+    for (int i = 0; i < 128; i++) {
+        ascii_chars[i][0] = (char)i;
+        ascii_chars[i][1] = '\0';
+    }
+    ascii_chars_init = 1;
+}
+
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {
     forge_string_bounds_check(s, index, "char_at");
     unsigned char c = (unsigned char)s.ptr[index];
-    // ASCII byte — single-byte character
+    // ASCII byte — return pointer to static char (no malloc!)
     if (c < 0x80) {
-        return forge_string_new(s.ptr + index, 1);
+        ensure_ascii_chars();
+        return (ForgeString){ ascii_chars[c], 1 };
     }
     // UTF-8 multi-byte: determine sequence length from leading byte
     int64_t seq_len = 1;
