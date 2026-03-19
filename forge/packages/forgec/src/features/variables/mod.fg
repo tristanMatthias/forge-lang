@@ -48,9 +48,17 @@ export mut VAR_GLOBAL_IS_STR: int = 0
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
-    // Reset CG_HAS_LAST_VAL so we don't use a stale value from a
-    // preceding expression (e.g., if condition) for this variable's init
-    if CG_ACTIVE { CG_HAS_LAST_VAL = 0 }
+    // Reset ALL codegen tracking flags so we don't use stale values from
+    // preceding expressions (e.g., if condition, struct literal, list push)
+    if CG_ACTIVE {
+        CG_HAS_LAST_VAL = 0
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_LAST_IS_LIST = 0
+        CG_LAST_IS_NULLABLE = 0
+        CG_LAST_STRUCT_TYPE = ""
+        CG_LAST_ENUM_TYPE = ""
+    }
 
     let var_name = p.expect_ident()
     if var_name == "" {
