@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <signal.h>
+#include <execinfo.h>
 
 // ---- Signal handlers ----
 
@@ -15,18 +16,31 @@ static void forge_signal_handler(int signum) {
         case SIGBUS:  name = "bus error"; break;
         default:      name = "unknown signal"; break;
     }
-    // Use write() instead of fprintf to be async-signal-safe
     const char* prefix = "forge: fatal error — ";
     write(STDERR_FILENO, prefix, strlen(prefix));
     write(STDERR_FILENO, name, strlen(name));
     write(STDERR_FILENO, "\n", 1);
+
+    // Print backtrace for debugging
+    void* frames[32];
+    int nframes = backtrace(frames, 32);
+    if (nframes > 0) {
+        const char* bt_hdr = "\nBacktrace:\n";
+        write(STDERR_FILENO, bt_hdr, strlen(bt_hdr));
+        backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+    }
+
     _exit(128 + signum);
 }
 
 __attribute__((constructor)) static void forge_install_signal_handlers(void) {
-    signal(SIGSEGV, forge_signal_handler);
-    signal(SIGABRT, forge_signal_handler);
-    signal(SIGBUS, forge_signal_handler);
+    struct sigaction sa;
+    sa.sa_handler = forge_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
 }
 
 // ---- Reference counting ----
