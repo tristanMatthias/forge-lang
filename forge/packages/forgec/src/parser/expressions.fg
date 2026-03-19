@@ -526,8 +526,11 @@ impl Parser {
             // `is` keyword: expr is .Variant / expr is not .Variant
             if self.check(TokenKind.Is) {
                 self.advance() // consume 'is'
-                // Check for 'not'
-                let negated = self.check(TokenKind.Not)
+                // Check for 'not' (! token) or 'not' (ident keyword)
+                mut negated = self.check(TokenKind.Not)
+                if !negated && self.peek().kind_id == 1 && self.peek().text == "not" {
+                    negated = true
+                }
                 if negated { self.advance() }
 
                 // Expect .Variant
