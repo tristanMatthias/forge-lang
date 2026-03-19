@@ -788,16 +788,8 @@ impl Codegen {
         }
     }
 
-    // Like emit_statement but returns the value for expression statements.
-    // Used for implicit function returns where CG_LAST_VAL global might
-    // not persist across function boundaries in the compiled binary.
-    fn emit_statement_value(self, stmt: Statement) -> ptr {
-        match stmt {
-            .Expr(expr) -> { return self.emit_expr(expr) }
-            _ -> {}
-        }
-        llvm.const_int(CG_I64, 0, 0)
-    }
+    // emit_statement_value removed — match destructuring for Statement
+    // doesn't work reliably in the bootstrap-compiled binary
 
     fn emit_return(self, value: Expr) {
         match value {

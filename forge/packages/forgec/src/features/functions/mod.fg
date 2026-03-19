@@ -604,22 +604,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 llvm.build_ret(CG_B, CG_LAST_VAL)
                 did_ret = true
             }
-            // Fallback: if no CG_LAST_VAL, try emitting the last statement
-            // through the codegen to capture Call expression return values.
-            // Uses emit_statement_value which returns the value directly,
-            // bypassing the CG_LAST_VAL global (which may not persist).
-            if !did_ret {
-                let stmts = body_block.statements
-                if stmts.length > 0 {
-                    let last_stmt = stmts[stmts.length - 1]
-                    mut cg = codegen_new()
-                    let fallback_val = cg.emit_statement_value(last_stmt)
-                    if fallback_val != null {
-                        llvm.build_ret(CG_B, fallback_val)
-                        did_ret = true
-                    }
-                }
-            }
             if !did_ret {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }
