@@ -414,29 +414,14 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
         llvm.position_at_end(CG_B, arm_bb)
         // Bind pattern variables (e.g., .Variant(x, y) binds x, y)
         bind_pattern_runtime(cg, arm.pattern, subject_val, subject_enum_type)
-        // Retrieve arm body source text from CSV and re-parse+emit
-        let body_needle = "${match_id}:${arm_idx}="
-        mut arm_val = llvm.const_int(CG_I64, 0, 0)
-        let bni = MATCH_ARM_BODY_CSV.index_of(body_needle)
-        if bni >= 0 {
-            // Extract body source after "="
-            mut bi = bni + body_needle.length
-            mut body_src = ""
-            while bi < MATCH_ARM_BODY_CSV.length && MATCH_ARM_BODY_CSV[bi] != "\n" {
-                body_src = body_src + MATCH_ARM_BODY_CSV[bi]
-                bi = bi + 1
-            }
-            if body_src != "" {
-                mut body_lex = lexer_new(body_src)
-                let body_tokens = body_lex.tokenize()
-                mut body_parser = parser_new(body_tokens)
-                CG_ACTIVE = false
-                let body_expr = body_parser.parse_expr()
-                CG_ACTIVE = true
-                if body_expr != null {
-                    arm_val = cg.emit_expr(body_expr!)
-                }
-            }
+        // Emit arm body — try original path first (works for int/string literals)
+        // then fall back to CSV re-parse for complex bodies
+        mut arm_val = cg.emit_expr(arm.body)
+        // Check if the arm body produced a valid value
+        // For bool literals, emit_expr might return i8 which needs zext
+        let val_ty = llvm.type_of(arm_val)
+        if val_ty == CG_I8 && result_ty == CG_I64 {
+            arm_val = llvm.build_zext(CG_B, arm_val, CG_I64, "bool_ext")
         }
         let arm_is_str = CG_LAST_IS_STR == 1
 
@@ -445,14 +430,7 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
             if arm_is_str { result_ty = CG_STR }
         }
 
-        // Coerce values to match the phi node type
-        // Bool (i8) values need zext to i64
-        let val_ty = llvm.type_of(arm_val)
-        if val_ty != result_ty {
-            if val_ty == CG_I8 && result_ty == CG_I64 {
-                arm_val = llvm.build_zext(CG_B, arm_val, CG_I64, "bool_ext")
-            }
-        }
+        // (bool zext handled above)
 
         let arm_end = llvm.get_insert_block(CG_B)
         if !llvm.block_has_terminator(CG_B) {
