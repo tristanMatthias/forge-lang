@@ -165,14 +165,11 @@ fn resolve_modules(filepath: string) -> string {
                         if c2 == "d" {
                             if c3 == " " {
                                 // Extract module name
-                                mut name_start = pos + 4
-                                mut name_end = name_start
-                                while name_end < source.length {
-                                    let ch = source[name_end]
-                                    if ch == "\n" || ch == " " || ch == "\r" { break }
-                                    name_end = name_end + 1
-                                }
-                                let mod_name = source.substring(name_start, name_end)
+                                // Find end of mod name using indexOf
+                                let rest_str = source.substring(pos + 4, source.length)
+                                let nl_pos = rest_str.index_of("\n")
+                                mut mod_name = rest_str
+                                if nl_pos >= 0 { mod_name = rest_str.substring(0, nl_pos) }
 
                                 // Try: dir/name/mod.fg then dir/name.fg
                                 let mod_path1 = dir + mod_name + "/mod.fg"
@@ -198,6 +195,8 @@ fn resolve_modules(filepath: string) -> string {
 
     // Append this file's source AFTER modules
     result = result + source + "\n"
+    // Also track file paths for separate compilation
+    MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
     result
 }
 
@@ -218,35 +217,41 @@ fn collect_module_paths(filepath: string) {
     }
     if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
 
-    // Find mod declarations and recursively resolve
+    // Find mod declarations — same logic as resolve_modules (which works)
     mut pos = 0
     while pos < source.length {
         mut at_line_start = pos == 0
         if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
         if at_line_start {
             if pos + 4 < source.length {
-                if source[pos] == "m" { if source[pos + 1] == "o" { if source[pos + 2] == "d" { if source[pos + 3] == " " {
-                    mut name_end = pos + 4
-                    while name_end < source.length {
-                        let ch = source[name_end]
-                        if ch == "\n" { break }
-                        if ch == " " { break }
-                        if ch == "\r" { break }
-                        name_end = name_end + 1
-                    }
-                    let mod_name = source.substring(pos + 4, name_end)
-                    let mod_path1 = dir + mod_name + "/mod.fg"
-                    let mod_path2 = dir + mod_name + ".fg"
-                    let mod_src1 = fs.read(mod_path1)
-                    if mod_src1.length > 0 {
-                        collect_module_paths(mod_path1)
-                    } else {
-                        let mod_src2 = fs.read(mod_path2)
-                        if mod_src2.length > 0 {
-                            collect_module_paths(mod_path2)
+                let c0 = source[pos]
+                let c1 = source[pos + 1]
+                let c2 = source[pos + 2]
+                let c3 = source[pos + 3]
+                if c0 == "m" {
+                    if c1 == "o" {
+                        if c2 == "d" {
+                            if c3 == " " {
+                                // Find end of mod name using indexOf
+                                let rest_str = source.substring(pos + 4, source.length)
+                                let nl_pos = rest_str.index_of("\n")
+                                mut mod_name = rest_str
+                                if nl_pos >= 0 { mod_name = rest_str.substring(0, nl_pos) }
+                                let mod_path1 = dir + mod_name + "/mod.fg"
+                                let mod_path2 = dir + mod_name + ".fg"
+                                let mod_src1 = fs.read(mod_path1)
+                                if mod_src1.length > 0 {
+                                    collect_module_paths(mod_path1)
+                                } else {
+                                    let mod_src2 = fs.read(mod_path2)
+                                    if mod_src2.length > 0 {
+                                        collect_module_paths(mod_path2)
+                                    }
+                                }
+                            }
                         }
                     }
-                } } } }
+                }
             }
         }
         pos = pos + 1
@@ -257,7 +262,8 @@ fn collect_module_paths(filepath: string) {
 
 fn resolve_module_paths(filepath: string) -> List<string> {
     MODULE_PATHS_CSV = ""
-    collect_module_paths(filepath)
+    // Use resolve_modules which has proven character comparison logic
+    let _source = resolve_modules(filepath)
     // Parse CSV into list
     mut paths: List<string> = []
     mut start = 0
