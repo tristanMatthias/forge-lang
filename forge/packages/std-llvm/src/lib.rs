@@ -563,6 +563,16 @@ pub extern "C" fn forge_llvm_build_bitcast(builder: LLVMPtr, val: LLVMPtr, dest_
 }
 
 #[no_mangle]
+pub extern "C" fn forge_llvm_build_ptrtoint(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_build_inttoptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, name) }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, name) }
 }

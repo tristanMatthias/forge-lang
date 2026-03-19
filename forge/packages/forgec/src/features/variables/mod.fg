@@ -161,7 +161,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         }
         // Register enum variable
         if CG_LAST_ENUM_TYPE != "" {
-            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + ",${var_name}:${CG_LAST_ENUM_TYPE},"
+            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + var_name + ":" + CG_LAST_ENUM_TYPE + ","
             CG_LAST_ENUM_TYPE = ""
         }
         // Register nullable variable for null comparison and unwrap

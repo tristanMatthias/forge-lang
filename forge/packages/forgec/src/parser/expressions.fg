@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_UNIVERSAL_ENUM_TY, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -361,18 +361,20 @@ impl Parser {
                     if maybe_enum_tag >= 0 {
                         // This is an enum variant, handle constructor
                         if self.check(TokenKind.LParen) {
-                            // Data variant — sized to enum's max fields
-                            let emf = csv_enum_max_fields(LAST_IDENT_NAME)
-                            let efc = if emf > 0 { emf + 1 } else { 2 }
-                            let ef = llvm.type_array_new(efc)
-                            llvm.type_array_set(ef, 0, CG_I8)
-                            mut efi = 1
-                            while efi < efc {
-                                llvm.type_array_set(ef, efi, CG_I64)
-                                efi = efi + 1
+                            // Use the universal cached enum type
+                            if CG_UNIVERSAL_ENUM_TY == null {
+                                let efc = 10
+                                let ef = llvm.type_array_new(efc)
+                                llvm.type_array_set(ef, 0, CG_I8)
+                                mut efi = 1
+                                while efi < efc {
+                                    llvm.type_array_set(ef, efi, CG_I64)
+                                    efi = efi + 1
+                                }
+                                CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, ef, efc, 0)
+                                llvm.type_array_free(ef)
                             }
-                            let ety = llvm.struct_type(CG_CTX, ef, efc, 0)
-                            llvm.type_array_free(ef)
+                            let ety = CG_UNIVERSAL_ENUM_TY
                             mut eval = llvm.get_undef(ety)
                             eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, maybe_enum_tag, 0), 0, "etag")
                             self.advance() // consume (
@@ -381,7 +383,13 @@ impl Parser {
                                 mut cg2 = codegen_new()
                                 let aexpr = self.parse_expr()
                                 if aexpr != null {
-                                    let aval = cg2.emit_expr(aexpr!)
+                                    mut aval = cg2.emit_expr(aexpr!)
+                                    if CG_LAST_ENUM_TYPE != "" {
+                                        let ebox2 = llvm.build_alloca(CG_B, CG_UNIVERSAL_ENUM_TY, "ebox")
+                                        llvm.build_store(CG_B, aval, ebox2)
+                                        aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "eptr")
+                                        CG_LAST_ENUM_TYPE = ""
+                                    }
                                     eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
                                     ai = ai + 1
                                 }
@@ -435,17 +443,20 @@ impl Parser {
                     if enum_tag >= 0 {
                         // Check if this constructor has args (data variant)
                         if self.check(TokenKind.LParen) {
-                            // Universal enum type: {i8, i64 x 9} — fits any enum including nested
-                            let efc = 10
-                            let ef = llvm.type_array_new(efc)
-                            llvm.type_array_set(ef, 0, CG_I8)
-                            mut efi = 1
-                            while efi < efc {
-                                llvm.type_array_set(ef, efi, CG_I64)
-                                efi = efi + 1
+                            // Use the universal enum type (cached singleton)
+                            if CG_UNIVERSAL_ENUM_TY == null {
+                                let efc = 10
+                                let ef = llvm.type_array_new(efc)
+                                llvm.type_array_set(ef, 0, CG_I8)
+                                mut efi = 1
+                                while efi < efc {
+                                    llvm.type_array_set(ef, efi, CG_I64)
+                                    efi = efi + 1
+                                }
+                                CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, ef, efc, 0)
+                                llvm.type_array_free(ef)
                             }
-                            let ety = llvm.struct_type(CG_CTX, ef, efc, 0)
-                            llvm.type_array_free(ef)
+                            let ety = CG_UNIVERSAL_ENUM_TY
                             // Tagged union: {i8 tag, payload...}
                             mut eval = llvm.get_undef(ety)
                             eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, enum_tag, 0), 0, "etag")
@@ -457,13 +468,15 @@ impl Parser {
                                     mut cg = codegen_new()
                                     let aexpr = self.parse_expr()
                                     if aexpr != null {
-                                        let aval = cg.emit_expr(aexpr!)
-                                        // Skip insertvalue if arg is a struct type (enum inside enum)
-                                        // — LLVM crashes on type mismatch. Store 0 as placeholder.
-                                        // The self-hosted compiler only needs the outer tag to be correct.
-                                        if CG_LAST_ENUM_TYPE == "" {
-                                            eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                        mut aval = cg.emit_expr(aexpr!)
+                                        // If arg is enum, box it: store in alloca, pass ptr as i64
+                                        if CG_LAST_ENUM_TYPE != "" {
+                                            let ebox = llvm.build_alloca(CG_B, CG_UNIVERSAL_ENUM_TY, "ebox")
+                                            llvm.build_store(CG_B, aval, ebox)
+                                            aval = llvm.build_ptr_to_int(CG_B, ebox, CG_I64, "eptr")
+                                            CG_LAST_ENUM_TYPE = ""
                                         }
+                                        eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
                                         ai = ai + 1
                                     }
                                     if self.check(TokenKind.Comma) { self.advance() }

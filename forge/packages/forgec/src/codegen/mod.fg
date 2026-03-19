@@ -314,13 +314,14 @@ export fn list_elem_llvm_type(name: string) -> ptr {
 export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxfields,"
 export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
+export mut CG_UNIVERSAL_ENUM_TY: ptr = null // cached {i8, i64 x 9} type
 
 export fn cg_enum_max_fields(name: string) -> int {
     let needle = ",${name}:"
     let nl = needle.length
     let cl = CG_ENUM_TYPE_CSV.length
     mut i = 0
-    while i <= cl - nl {
+    while i + nl <= cl {
         mut ok = true
         mut j = 0
         while j < nl {
@@ -342,20 +343,25 @@ export fn cg_enum_max_fields(name: string) -> int {
     0
 }
 
+export fn cg_get_enum_ty() -> ptr {
+    if CG_UNIVERSAL_ENUM_TY != null { return CG_UNIVERSAL_ENUM_TY }
+    let fc = 10
+    let fields = llvm.type_array_new(fc)
+    llvm.type_array_set(fields, 0, CG_I8)
+    mut fi = 1
+    while fi < fc {
+        llvm.type_array_set(fields, fi, CG_I64)
+        fi = fi + 1
+    }
+    CG_UNIVERSAL_ENUM_TY = llvm.struct_type(CG_CTX, fields, fc, 0)
+    llvm.type_array_free(fields)
+    CG_UNIVERSAL_ENUM_TY
+}
+
 export fn cg_make_enum_type(name: string) -> ptr {
     let mf = cg_enum_max_fields(name)
     if mf == 0 { return null }
-    let fc = mf + 1
-    let fields = llvm.type_array_new(fc)
-    llvm.type_array_set(fields, 0, CG_I8)
-    mut fi = 0
-    while fi < mf {
-        llvm.type_array_set(fields, fi + 1, CG_I64)
-        fi = fi + 1
-    }
-    let ety = llvm.struct_type(CG_CTX, fields, fc, 0)
-    llvm.type_array_free(fields)
-    ety
+    cg_get_enum_ty()
 }
 
 export fn cg_var_enum_type(name: string) -> string {
@@ -363,7 +369,7 @@ export fn cg_var_enum_type(name: string) -> string {
     let nl = needle.length
     let cl = CG_ENUM_VAR_CSV.length
     mut i = 0
-    while i <= cl - nl {
+    while i + nl <= cl {
         mut ok = true
         mut j = 0
         while j < nl {
@@ -820,10 +826,11 @@ impl Codegen {
                     si = si - 1
                 }
                 // Check enum type
+                CG_LAST_ENUM_TYPE = ""
                 let vet = cg_var_enum_type(name)
                 if vet != "" {
-                    let ety = cg_make_enum_type(vet)
-                    if ety != null { load_ty = ety }
+                    if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
+                    CG_LAST_ENUM_TYPE = vet
                 }
                 // Check struct type
                 let struct_type_name = var_struct_type(name)
@@ -1174,10 +1181,11 @@ impl Codegen {
             let inner_ty = if is_str { CG_STR } else { CG_I64 }
             alloca_ty = make_nullable_type(inner_ty)
         }
-        // For enum tagged union types
+        // For enum tagged union types — use CG_UNIVERSAL_ENUM_TY (no function call)
         if CG_LAST_ENUM_TYPE != "" {
-            let ety = cg_make_enum_type(CG_LAST_ENUM_TYPE)
-            if ety != null { alloca_ty = ety }
+            if CG_UNIVERSAL_ENUM_TY != null {
+                alloca_ty = CG_UNIVERSAL_ENUM_TY
+            }
         }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {
