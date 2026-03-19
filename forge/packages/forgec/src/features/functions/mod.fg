@@ -359,16 +359,51 @@ export fn declare_all_fns() {
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
     // Materialize struct types in the current LLVM context (two passes).
-    // Pass 1: create opaque named struct types (so forward references work)
-    mut new_struct_types: List<ptr> = []
-    mut si = 0
-    while si < CG_STRUCT_NAMES.length {
-        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-        new_struct_types = new_struct_types.push(sty)
-        si = si + 1
+    // First deduplicate: keep only the LAST entry for each struct name
+    // (scan phase re-registers structs from each file).
+    mut dedup_names: List<string> = []
+    mut dedup_indices: List<int> = []
+    mut si = CG_STRUCT_NAMES.length - 1
+    while si >= 0 {
+        let sname = CG_STRUCT_NAMES[si]
+        mut already = false
+        mut di = 0
+        while di < dedup_names.length {
+            if dedup_names[di] == sname { already = true }
+            di = di + 1
+        }
+        if !already {
+            dedup_names = dedup_names.push(sname)
+            dedup_indices = dedup_indices.push(si)
+        }
+        si = si - 1
     }
+    // Pass 1: create opaque named struct types
+    mut new_struct_names: List<string> = []
+    mut new_struct_types: List<ptr> = []
+    mut new_struct_fields: List<string> = []
+    mut new_struct_fis: List<string> = []
+    mut new_struct_ftn: List<string> = []
+    si = dedup_names.length - 1
+    while si >= 0 {
+        let idx = dedup_indices[si]
+        let sname = dedup_names[si]
+        let sty = llvm.struct_create_named(CG_CTX, sname)
+        new_struct_names = new_struct_names.push(sname)
+        new_struct_types = new_struct_types.push(sty)
+        new_struct_fields = new_struct_fields.push(CG_STRUCT_FIELDS[idx])
+        new_struct_fis = new_struct_fis.push(CG_STRUCT_FIELD_IS_STR[idx])
+        mut ftn_val = ""
+        if idx < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn_val = CG_STRUCT_FIELD_TYPE_NAMES[idx] }
+        new_struct_ftn = new_struct_ftn.push(ftn_val)
+        si = si - 1
+    }
+    CG_STRUCT_NAMES = new_struct_names
     CG_STRUCT_TYPES = new_struct_types
-    // Pass 2: set bodies (now all types exist for resolve_type_to_llvm)
+    CG_STRUCT_FIELDS = new_struct_fields
+    CG_STRUCT_FIELD_IS_STR = new_struct_fis
+    CG_STRUCT_FIELD_TYPE_NAMES = new_struct_ftn
+    // Pass 2: set bodies
     si = 0
     while si < CG_STRUCT_NAMES.length {
         let fields = CG_STRUCT_FIELDS[si]
