@@ -434,6 +434,12 @@ static void ensure_ascii_chars(void) {
     ascii_chars_init = 1;
 }
 
+// Fast byte access — returns ASCII code as int (no string allocation)
+int64_t forge_string_byte_at(ForgeString s, int64_t index) {
+    if (index < 0 || index >= s.len) return 0;
+    return (int64_t)(unsigned char)s.ptr[index];
+}
+
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {
     forge_string_bounds_check(s, index, "char_at");
     unsigned char c = (unsigned char)s.ptr[index];
@@ -452,10 +458,7 @@ ForgeString forge_string_char_at(ForgeString s, int64_t index) {
     return forge_string_new(s.ptr + index, seq_len);
 }
 
-int64_t forge_string_byte_at(ForgeString s, int64_t index) {
-    forge_string_bounds_check(s, index, "byte_at");
-    return (int64_t)(unsigned char)s.ptr[index];
-}
+
 
 int64_t forge_string_bytes(ForgeString s, void** out_data) {
     int64_t* arr = (int64_t*)malloc(s.len * sizeof(int64_t));
