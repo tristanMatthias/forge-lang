@@ -1147,7 +1147,20 @@ impl Parser {
                 fti = fti + 1
                 ftpos = ftpos + 2  // skip comma
             }
-            let struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
+            // Use the REGISTERED named struct type (not anonymous)
+            mut struct_ty: ptr = null
+            mut sti = CG_STRUCT_TYPES.length - 1
+            while sti >= 0 {
+                if CG_STRUCT_NAMES[sti] == struct_name {
+                    struct_ty = CG_STRUCT_TYPES[sti]
+                    break
+                }
+                sti = sti - 1
+            }
+            // Fallback to anonymous type if not found
+            if struct_ty == null {
+                struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
+            }
             llvm.type_array_free(ft)
             mut struct_val = llvm.get_undef(struct_ty)
             mut fi = 0
