@@ -22,6 +22,7 @@ extern "C" {
 
     // Size
     fn LLVMSizeOf(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMTypeOf(val: LLVMPtr) -> LLVMPtr;
 
     // Types
     fn LLVMInt1TypeInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -654,6 +655,11 @@ pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_size_of(ty: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMSizeOf(ty) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMTypeOf(val) }
 }
 
 #[no_mangle]

@@ -11,12 +11,24 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.Parser
 use checker.TypeChecker
 use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_STR, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, codegen_new, cg_get_enum_ty_for, cg_enum_max_fields, cg_enum_variant_field_types, cg_enum_field_slot_offset, resolve_type_to_llvm}
+use lexer.{lexer_new}
+use parser.{parser_new}
 use parser.expressions.{match_enum_tag, ENUM_VARIANT_NAMES, ENUM_VARIANT_TAGS}
 use @std.llvm
 
 // ─── Side Table ─────────────────────────────────
 
 mut MATCH_EXPRS: Map<string, MatchData> = {}
+
+// Arm body source text stored in flat CSV for reliable cross-function access
+// Format: "match_id:arm_idx=body_src\n" entries
+export mut MATCH_ARM_BODY_CSV: string = ""
+export mut MATCH_ARM_COUNT_CSV: string = ""  // "match_id:count\n"
+export mut MATCH_NEXT_ID: int = 0
+// Flat lists for arm metadata
+export mut MATCH_ARM_MATCH_ID: List<int> = []
+mut MATCH_NODE_IDS: List<int> = []
+mut MATCH_IDS: List<int> = []
 
 // ─── Data Types ─────────────────────────────────
 
@@ -53,6 +65,10 @@ fn get_match_data(id: int) -> MatchData? {
 fn make_match_expr(subject: Expr, arms: List<MatchArm>, span: Span) -> Expr {
     let id = next_node_id()
     MATCH_EXPRS["${id}"] = MatchData { subject, arms, span }
+    // Store node_id → match_id mapping
+    MATCH_NODE_IDS = MATCH_NODE_IDS.push(id)
+    MATCH_IDS = MATCH_IDS.push(MATCH_NEXT_ID)
+    MATCH_NEXT_ID = MATCH_NEXT_ID + 1
     feature_expr("pattern_matching", "match_expr", id, span)
 }
 
@@ -72,6 +88,7 @@ fn parse_match(p: Parser) -> Expr? {
     p.skip_newlines()
 
     mut arms: List<MatchArm> = []
+    let current_match_id = MATCH_NEXT_ID
 
     while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
@@ -110,7 +127,10 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     p.skip_newlines()
 
     // Body: block or expression
-    // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
+    // Capture source text for arm body (for re-parsing during codegen —
+    // List<MatchArm> corrupts the Expr body field)
+    let body_start_pos = p.pos
+    let body_start_span = p.current_span()
     mut body: Expr? = null
     if p.check(.LBrace) {
         let block = p.parse_block()
@@ -120,6 +140,59 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     }
 
     if body == null { return null }
+
+    // Store arm body source text for reliable codegen re-parsing
+    // (both List<MatchArm> and Map<string, Expr> corrupt complex Expr values)
+    // Reconstruct source text from tokens in the body range
+    // Reconstruct body source from tokens
+    mut body_text = ""
+    mut ti = body_start_pos
+    while ti < body_end_pos {
+        if ti < p.tokens.length {
+            let tok = p.tokens[ti]
+            if body_text != "" { body_text = body_text + " " }
+            body_text = body_text + tok.text
+        }
+        ti = ti + 1
+    }
+    // Parse arm count from CSV
+    mut arm_idx_for_store = 0
+    let count_needle = "${MATCH_NEXT_ID}:"
+    let cni = MATCH_ARM_COUNT_CSV.index_of(count_needle)
+    if cni >= 0 {
+        // Extract count after the needle
+        mut ci = cni + count_needle.length
+        mut count_str = ""
+        while ci < MATCH_ARM_COUNT_CSV.length && MATCH_ARM_COUNT_CSV[ci] != "\n" {
+            count_str = count_str + MATCH_ARM_COUNT_CSV[ci]
+            ci = ci + 1
+        }
+        if count_str != "" {
+            // Simple int parse
+            mut cv = 0
+            mut cj = 0
+            while cj < count_str.length {
+                let d = count_str[cj]
+                if d == "0" { cv = cv * 10 }
+                else if d == "1" { cv = cv * 10 + 1 }
+                else if d == "2" { cv = cv * 10 + 2 }
+                else if d == "3" { cv = cv * 10 + 3 }
+                else if d == "4" { cv = cv * 10 + 4 }
+                else if d == "5" { cv = cv * 10 + 5 }
+                else if d == "6" { cv = cv * 10 + 6 }
+                else if d == "7" { cv = cv * 10 + 7 }
+                else if d == "8" { cv = cv * 10 + 8 }
+                else if d == "9" { cv = cv * 10 + 9 }
+                cj = cj + 1
+            }
+            arm_idx_for_store = cv
+        }
+    }
+    // Store body text in CSV: "match_id:arm_idx=body_text\n"
+    MATCH_ARM_BODY_CSV = MATCH_ARM_BODY_CSV + "${MATCH_NEXT_ID}:${arm_idx_for_store}=${body_text}\n"
+    // Update count
+    // Remove old entry and add new
+    MATCH_ARM_COUNT_CSV = MATCH_ARM_COUNT_CSV + "${MATCH_NEXT_ID}:${arm_idx_for_store + 1}\n"
 
     MatchArm { pattern: pattern!, guard, body: body!, span: start }
 }
@@ -284,6 +357,17 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     if d == null { return llvm.const_int(CG_I64, 0, 0) }
     let data = d!
 
+    // Look up match_id from node_id
+    mut match_id = -1
+    mut mi = 0
+    while mi < MATCH_NODE_IDS.length {
+        if MATCH_NODE_IDS[mi] == node.node_id {
+            match_id = MATCH_IDS[mi]
+            break
+        }
+        mi = mi + 1
+    }
+
     // Emit subject value
     let subject_val = cg.emit_expr(data.subject)
     let subject_is_str = CG_LAST_IS_STR == 1
@@ -326,16 +410,48 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
             llvm.build_br(CG_B, arm_bb)
         }
 
-        // Emit arm body
+        // Emit arm body by re-parsing source text (List<MatchArm> corrupts Expr fields)
         llvm.position_at_end(CG_B, arm_bb)
         // Bind pattern variables (e.g., .Variant(x, y) binds x, y)
         bind_pattern_runtime(cg, arm.pattern, subject_val, subject_enum_type)
-        let arm_val = cg.emit_expr(arm.body)
+        // Retrieve arm body source text from CSV and re-parse+emit
+        let body_needle = "${match_id}:${arm_idx}="
+        mut arm_val = llvm.const_int(CG_I64, 0, 0)
+        let bni = MATCH_ARM_BODY_CSV.index_of(body_needle)
+        if bni >= 0 {
+            // Extract body source after "="
+            mut bi = bni + body_needle.length
+            mut body_src = ""
+            while bi < MATCH_ARM_BODY_CSV.length && MATCH_ARM_BODY_CSV[bi] != "\n" {
+                body_src = body_src + MATCH_ARM_BODY_CSV[bi]
+                bi = bi + 1
+            }
+            if body_src != "" {
+                mut body_lex = lexer_new(body_src)
+                let body_tokens = body_lex.tokenize()
+                mut body_parser = parser_new(body_tokens)
+                CG_ACTIVE = false
+                let body_expr = body_parser.parse_expr()
+                CG_ACTIVE = true
+                if body_expr != null {
+                    arm_val = cg.emit_expr(body_expr!)
+                }
+            }
+        }
         let arm_is_str = CG_LAST_IS_STR == 1
 
         // Set result type from first arm
         if arm_idx == 0 {
             if arm_is_str { result_ty = CG_STR }
+        }
+
+        // Coerce values to match the phi node type
+        // Bool (i8) values need zext to i64
+        let val_ty = llvm.type_of(arm_val)
+        if val_ty != result_ty {
+            if val_ty == CG_I8 && result_ty == CG_I64 {
+                arm_val = llvm.build_zext(CG_B, arm_val, CG_I64, "bool_ext")
+            }
         }
 
         let arm_end = llvm.get_insert_block(CG_B)
