@@ -501,6 +501,28 @@ export fn var_struct_type(name: string) -> string {
 }
 
 export fn codegen_init(name: string) {
+    // Reset per-module LLVM state (preserves metadata from scan phase)
+    CG_VAR_NAMES = []
+    CG_VAR_PTRS = []
+    CG_VAR_IS_STR = []
+    CG_STR_VAR_NAMES = []
+    CG_VAR_IS_MAP = []
+    CG_MAP_VAR_NAMES = []
+    CG_STRUCT_VAR_NAMES = []
+    CG_STRUCT_VAR_TYPES = []
+    CG_STRUCT_VAR_FIELDS = []
+    CG_VAR_SCOPE_START = 0
+    CG_LAST_IS_STR = 0
+    CG_LAST_IS_MAP = 0
+    CG_LAST_IS_LIST = 0
+    CG_LAST_IS_NULLABLE = 0
+    CG_LAST_ENUM_TYPE = ""
+    CG_LAST_STRUCT_TYPE = ""
+    CG_HAS_LAST_VAL = 0
+    CG_UNIVERSAL_ENUM_TY = null
+    CG_NULLABLE_INT_TY = null
+    CG_NULLABLE_STR_TY = null
+    DECLARED_FNS = {}
     cg_init_ctx(name)
     cg_init_int_types()
     cg_init_other_types()
