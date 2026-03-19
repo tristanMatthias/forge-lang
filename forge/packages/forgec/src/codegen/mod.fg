@@ -1203,23 +1203,7 @@ impl Codegen {
                 if ptn == "string" {
                     pty = CG_STR
                 } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
-                    // Check enum param type
-                    let call_emf = cg_enum_max_fields(ptn)
-                    if call_emf > 0 {
-                        pty = cg_make_enum_type(ptn)
-                    }
-                    // Struct param type
-                    if call_emf == 0 {
-                    mut sti = CG_STRUCT_NAMES.length - 1
-                    while sti >= 0 {
-                        if CG_STRUCT_NAMES[sti] == ptn {
-                            let sty = CG_STRUCT_TYPES[sti]
-                            if sty != null { pty = sty }
-                            break
-                        }
-                        sti = sti - 1
-                    }
-                    }
+                    pty = resolve_type_to_llvm(ptn)
                 }
             }
             llvm.type_array_set(param_arr, i, pty)
@@ -1241,28 +1225,10 @@ impl Codegen {
                     } }
                     if rtn == "string" {
                         call_ret_ty = CG_STR
-                    } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                        // Check enum return type first
-                        let call_ret_emf = cg_enum_max_fields(rtn)
-                        if call_ret_emf > 0 {
-                            let call_ret_ety = cg_make_enum_type(rtn)
-                            if call_ret_ety != null {
-                                call_ret_ty = call_ret_ety
-                                CG_LAST_ENUM_TYPE = rtn
-                            }
-                        }
-                        // Struct return — search from end
-                        if call_ret_emf == 0 {
-                            mut sti = CG_STRUCT_NAMES.length - 1
-                            while sti >= 0 {
-                                if CG_STRUCT_NAMES[sti] == rtn {
-                                    let sty = CG_STRUCT_TYPES[sti]
-                                    if sty != null { call_ret_ty = sty }
-                                    break
-                                }
-                                sti = sti - 1
-                            }
-                        }
+                    } else if rtn != "" {
+                        call_ret_ty = resolve_type_to_llvm(rtn)
+                        let ret_emf = cg_enum_max_fields(rtn)
+                        if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
                     }
                 }
                 break

@@ -423,29 +423,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
                 let type_name = FN_ALL_PARAM_TYPES[pt_idx]
-                if type_name == "string" {
-                    param_ty = CG_STR
-                } else if type_name != "int" && type_name != "float" && type_name != "bool" && type_name != "ptr" {
-                    // Check enum type first
-                    let pemf = cg_enum_max_fields(type_name)
-                    if pemf > 0 {
-                        param_ty = cg_make_enum_type(type_name)
-                    }
-                    // Might be a struct type — search from end
-                    if pemf == 0 {
-                    mut sti = CG_STRUCT_NAMES.length - 1
-                    while sti >= 0 {
-                        if CG_STRUCT_NAMES[sti] == type_name {
-                            let sty = CG_STRUCT_TYPES[sti]
-                            if sty != null {
-                                param_ty = sty
-                            }
-                            break
-                        }
-                        sti = sti - 1
-                    }
-                    }
-                }
+                param_ty = resolve_type_to_llvm(type_name)
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -465,25 +443,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             if rtn == "string" {
                 fn_nullable_inner = CG_STR
                 ret_ty = CG_STR
-            } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                // Check enum type first
-                let ret_emf = cg_enum_max_fields(rtn)
-                if ret_emf > 0 {
-                    let ret_ety = cg_make_enum_type(rtn)
-                    if ret_ety != null { ret_ty = ret_ety }
-                }
-                // If not enum, check struct type
-                if ret_emf == 0 {
-                    mut sti = CG_STRUCT_NAMES.length - 1
-                    while sti >= 0 {
-                        if CG_STRUCT_NAMES[sti] == rtn {
-                            let sty = CG_STRUCT_TYPES[sti]
-                            if sty != null { ret_ty = sty }
-                            break
-                        }
-                        sti = sti - 1
-                    }
-                }
+            } else if rtn != "" {
+                ret_ty = resolve_type_to_llvm(rtn)
             }
             // If nullable, create the {i8, T} struct type as the actual return type
             if fn_is_nullable {

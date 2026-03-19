@@ -562,6 +562,8 @@ impl Parser {
                                 let struct_type_name = CG_STRUCT_VAR_TYPES[svi]
                                 result_is_str = is_struct_field_str(struct_type_name, fidx)
                                 result_is_map = false
+                                // Clear struct type — we extracted a single field, not a struct
+                                CG_LAST_STRUCT_TYPE = ""
                                 result = Expr.IntLit(0, span)
                                 break
                             }
