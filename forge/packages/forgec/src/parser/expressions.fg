@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -1024,6 +1024,7 @@ impl Parser {
             mut cg = codegen_new()
             cg.define_var(tmp, Type.String, s2)
             CG_LAST_IS_STR = 1
+            CG_LAST_IS_LIST = 1
             CG_LAST_VAL = s2
             CG_HAS_LAST_VAL = 1
             return Expr.Ident(tmp, start)
