@@ -2454,7 +2454,7 @@ fn csv_var_enum_type(name: string) -> string {
 }
 
 // Look up enum variant tag by name. Returns -1 if not found.
-fn match_enum_tag(variant_name: string) -> int {
+export fn match_enum_tag(variant_name: string) -> int {
     mut vi = ENUM_VARIANT_NAMES.length - 1
     while vi >= 0 {
         if ENUM_VARIANT_NAMES[vi] == variant_name {

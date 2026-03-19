@@ -10,7 +10,9 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_STR, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, codegen_new, cg_get_enum_ty_for, cg_enum_max_fields, cg_enum_variant_field_types, cg_enum_field_slot_offset, resolve_type_to_llvm}
+use parser.expressions.{match_enum_tag, ENUM_VARIANT_NAMES, ENUM_VARIANT_TAGS}
+use @std.llvm
 
 // ─── Side Table ─────────────────────────────────
 
@@ -282,18 +284,211 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     if d == null { return llvm.const_int(CG_I64, 0, 0) }
     let data = d!
 
-    // Emit subject
+    // Emit subject value
     let subject_val = cg.emit_expr(data.subject)
+    let subject_is_str = CG_LAST_IS_STR == 1
+    let subject_enum_type = CG_LAST_ENUM_TYPE
 
-    // For now, compile as if-else chain
-    // TODO: proper tag-based dispatch for enum patterns, phi merging
+    let current_fn = cg.current_fn
+    if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
 
-    // Simple fallback: evaluate first arm's body
-    if data.arms.length > 0 {
-        return cg.emit_expr(data.arms[0].body)
+    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "match_end")
+
+    // Collect arm results for phi node: (value, block) pairs
+    // Bootstrap workaround: use parallel lists instead of List<{ptr, ptr}>
+    mut arm_vals: List<ptr> = []
+    mut arm_bbs: List<ptr> = []
+    mut result_ty: ptr = CG_I64  // LLVM type for the result
+
+    mut arm_idx = 0
+    let num_arms = data.arms.length
+
+    while arm_idx < num_arms {
+        let arm = data.arms[arm_idx]
+        let is_last = arm_idx == num_arms - 1
+
+        let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "arm")
+        mut next_bb = arm_bb
+        if !is_last {
+            next_bb = llvm.append_basic_block(CG_CTX, current_fn, "arm_next")
+        }
+
+        // Check pattern
+        let matched = emit_pattern_check(arm.pattern, subject_val, subject_enum_type)
+
+        if is_last {
+            // Last arm: unconditional branch (catch-all)
+            llvm.build_br(CG_B, arm_bb)
+        } else if matched != null {
+            llvm.build_cond_br(CG_B, matched, arm_bb, next_bb)
+        } else {
+            // Wildcard/ident — always matches
+            llvm.build_br(CG_B, arm_bb)
+        }
+
+        // Emit arm body
+        llvm.position_at_end(CG_B, arm_bb)
+        // Bind pattern variables (e.g., .Variant(x, y) binds x, y)
+        bind_pattern_runtime(cg, arm.pattern, subject_val, subject_enum_type)
+        let arm_val = cg.emit_expr(arm.body)
+        let arm_is_str = CG_LAST_IS_STR == 1
+
+        // Set result type from first arm
+        if arm_idx == 0 {
+            if arm_is_str { result_ty = CG_STR }
+        }
+
+        let arm_end = llvm.get_insert_block(CG_B)
+        if !llvm.block_has_terminator(CG_B) {
+            arm_vals = arm_vals.push(arm_val)
+            arm_bbs = arm_bbs.push(arm_end)
+            llvm.build_br(CG_B, merge_bb)
+        }
+
+        if !is_last {
+            llvm.position_at_end(CG_B, next_bb)
+        }
+        arm_idx = arm_idx + 1
+    }
+
+    // Position at merge block
+    llvm.position_at_end(CG_B, merge_bb)
+
+    // Build phi node
+    if arm_vals.length > 0 {
+        let phi = llvm.build_phi(CG_B, result_ty, "match_result")
+        mut pi = 0
+        while pi < arm_vals.length {
+            llvm.add_incoming(phi, arm_vals[pi], arm_bbs[pi])
+            pi = pi + 1
+        }
+        CG_LAST_IS_STR = if result_ty == CG_STR { 1 } else { 0 }
+        return phi
     }
 
     llvm.const_int(CG_I64, 0, 0)
+}
+
+// Check if a pattern matches the subject value.
+// Returns an i1 condition, or null for always-match (wildcard/ident).
+fn emit_pattern_check(pat: Pattern, subject_val: ptr, enum_type: string) -> ptr {
+    match pat {
+        .Wildcard(span) -> { return null }
+        .Ident(name, span) -> { return null }
+        .EnumVariant(variant, fields, span) -> {
+            // Extract tag from subject (field 0 of the enum struct)
+            let tag = llvm.build_extract_value(CG_B, subject_val, 0, "ptag")
+            // Look up expected tag index
+            mut expected_tag = -1
+            if enum_type != "" {
+                let full_name = enum_type + "." + variant
+                expected_tag = match_enum_tag(full_name)
+                if expected_tag < 0 {
+                    expected_tag = match_enum_tag(variant)
+                }
+            } else {
+                expected_tag = match_enum_tag(variant)
+            }
+            if expected_tag < 0 { return null }
+            let expected = llvm.const_int(CG_I8, expected_tag, 0)
+            return llvm.build_icmp(CG_B, 32, tag, expected, "tag_eq")
+        }
+        .Literal(expr) -> {
+            // Compare subject to literal value
+            mut cg = codegen_new()
+            let lit_val = cg.emit_expr(expr)
+            return llvm.build_icmp(CG_B, 32, subject_val, lit_val, "lit_eq")
+        }
+        .Or(alternatives, span) -> {
+            // Any alternative matches → OR the conditions
+            mut result: ptr = null
+            mut ai = 0
+            while ai < alternatives.length {
+                let alt = alternatives[ai]
+                let check = emit_pattern_check(alt, subject_val, enum_type)
+                if check != null {
+                    if result == null { result = check }
+                    else { result = llvm.build_or(CG_B, result, check, "or_pat") }
+                } else {
+                    // Wildcard/ident in or-pattern → always matches
+                    return null
+                }
+                ai = ai + 1
+            }
+            return result
+        }
+        .Tuple(elements, span) -> { return null }
+    }
+    null
+}
+
+// Bind pattern variables in the current scope.
+// For .Ident(name), bind the subject value directly.
+// For .EnumVariant(variant, [field_patterns]), extract fields and bind.
+fn bind_pattern_runtime(cg: Codegen, pat: Pattern, subject_val: ptr, enum_type: string) {
+    match pat {
+        .Ident(name, span) -> {
+            // Bind subject value to name
+            cg.define_var(name, Type.Int, subject_val)
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name) // might be string
+        }
+        .EnumVariant(variant, fields, span) -> {
+            // Extract variant fields and bind to sub-pattern names
+            if fields.length == 0 { return }
+            let field_types = cg_enum_variant_field_types(enum_type, variant)
+            if field_types == "" { return }
+
+            mut fi = 0
+            while fi < fields.length {
+                let field_pat = fields[fi]
+                // Get slot offset for this field
+                let slot_offset = cg_enum_field_slot_offset(field_types, fi)
+                let slot_idx = 1 + slot_offset  // +1 for tag
+
+                match field_pat {
+                    .Ident(fname, fspan) -> {
+                        // Extract the field value from the enum struct
+                        let field_val = llvm.build_extract_value(CG_B, subject_val, slot_idx, fname)
+                        // Determine type from field_types CSV
+                        let ft_char = get_field_type_char(field_types, fi)
+                        if ft_char == "s" {
+                            // String field — need to reconstruct from 2 slots
+                            // slot_idx = ptr, slot_idx+1 = len
+                            let str_ptr = llvm.build_extract_value(CG_B, subject_val, slot_idx, "sp")
+                            let str_len = llvm.build_extract_value(CG_B, subject_val, slot_idx + 1, "sl")
+                            let undef = llvm.get_undef(CG_STR)
+                            let s1 = llvm.build_insert_value(CG_B, undef, str_ptr, 0, "si1")
+                            let s2 = llvm.build_insert_value(CG_B, s1, str_len, 1, "si2")
+                            cg.define_var(fname, Type.String, s2)
+                            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(fname)
+                        } else {
+                            cg.define_var(fname, Type.Int, field_val)
+                        }
+                    }
+                    .Wildcard(ws) -> {} // skip
+                    _ -> {} // other patterns not yet supported for binding
+                }
+                fi = fi + 1
+            }
+        }
+        _ -> {} // wildcard, literal, tuple, or — no bindings needed
+    }
+}
+
+// Helper: get the type character at index fi from a field_types string like "i,s,i"
+fn get_field_type_char(field_types: string, fi: int) -> string {
+    mut idx = 0
+    mut comma_count = 0
+    while idx < field_types.length {
+        if comma_count == fi {
+            return field_types[idx]
+        }
+        if field_types[idx] == "," {
+            comma_count = comma_count + 1
+        }
+        idx = idx + 1
+    }
+    "i"  // default to int
 }
 
 // ─── Pattern Span Access ────────────────────────
