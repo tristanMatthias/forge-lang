@@ -230,7 +230,7 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 // Global parallel lists for function data (bootstrap can't use Map<string, struct>)
 mut FN_NAMES: List<string> = []
 mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
-mut FN_BODIES: List<string> = []       // legacy: unused, kept for compat
+// FN_BODIES removed — was dead code causing LLVM verification errors
 mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
 mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
 mut FN_ALL_PARAM_TYPES: List<string> = [] // flat list of ALL param type names
@@ -307,90 +307,9 @@ export fn declare_all_fns() {
     }
 }
 
-// Phase 2: Emit one function body at a time from FN_BODIES
-// Each call pops the front body to avoid stale data
-mut FN_EMIT_IDX: int = 0
-
-export fn emit_next_fn_body(cg: Codegen) {
-    if FN_EMIT_IDX >= FN_NAMES.length { return }
-    let i = FN_EMIT_IDX
-    let name = FN_NAMES[i]
-    let body = FN_BODIES[i]
-    let is_main = name == "main"
-    let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
-
-    if !DECLARED_FNS.has(name) {
-        FN_EMIT_IDX = FN_EMIT_IDX + 1
-        return
-    }
-    let fn_val = DECLARED_FNS[name]
-    cg.current_fn = fn_val
-
-    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
-    llvm.position_at_end(CG_B, entry)
-
-    // Define params
-    mut param_offset = 0
-    mut fi = 0
-    while fi < i {
-        if fi < FN_PARAM_COUNTS.length {
-            param_offset = param_offset + FN_PARAM_COUNTS[fi]
-        }
-        fi = fi + 1
-    }
-    mut pi = 0
-    while pi < pc {
-        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
-        let param_val = llvm.get_param(fn_val, pi)
-        cg.define_var(pname, Type.Int, param_val)
-        pi = pi + 1
-    }
-
-    cg.emit_block(body)
-
-    if is_main {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    } else {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-    }
-    FN_EMIT_IDX = FN_EMIT_IDX + 1
-}
-
-// Materialize LLVM types for structs registered during initial parse
-fn materialize_struct_types() {
-    // Simple approach: for each registered struct, create an all-i64 struct type
-    // (works for Point { x: int, y: int } and similar simple structs)
-    let count = CG_STRUCT_NAMES.length
-    mut si = 0
-    while si < count {
-        // Count commas in fields to determine field count
-        let fields = CG_STRUCT_FIELDS[si]
-        mut fc = 1
-        mut ci = 0
-        while ci < fields.length {
-            if fields[ci] == "," { fc = fc + 1 }
-            ci = ci + 1
-        }
-        if fields.length == 0 { fc = 0 }
-
-        // Create {i64, i64, ...} struct type (all fields as i64 for now)
-        let ft = llvm.type_array_new(fc)
-        mut fi = 0
-        while fi < fc {
-            llvm.type_array_set(ft, fi, CG_I64)
-            fi = fi + 1
-        }
-        let sty = llvm.struct_type(CG_CTX, ft, fc, 0)
-        llvm.type_array_free(ft)
-
-        // Append with LLVM type (lookups search from end)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
-        si = si + 1
-    }
-}
+// emit_next_fn_body and materialize_struct_types removed — dead code that
+// caused LLVM verification errors (FN_BODIES was List<string> but emit_block expects Block).
+// All function emission goes through emit_all_fn_bodies which re-parses from source text.
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {

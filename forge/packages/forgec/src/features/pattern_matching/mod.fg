@@ -92,10 +92,12 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     if pattern == null { return null }
 
     // Optional guard: if condition
-    let guard = if p.check(.If) {
+    // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
+    mut guard: Expr? = null
+    if p.check(.If) {
         p.advance()
-        p.parse_expr()
-    } else { null }
+        guard = p.parse_expr()
+    }
 
     // Expect -> body
     p.skip_newlines()
@@ -106,11 +108,13 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     p.skip_newlines()
 
     // Body: block or expression
-    let body = if p.check(.LBrace) {
+    // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
+    mut body: Expr? = null
+    if p.check(.LBrace) {
         let block = p.parse_block()
-        if block != null { Expr.Block(block!) } else { null }
+        if block != null { body = Expr.Block(block!) }
     } else {
-        p.parse_expr()
+        body = p.parse_expr()
     }
 
     if body == null { return null }

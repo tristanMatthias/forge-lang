@@ -156,6 +156,21 @@ impl Parser {
         }
     }
 
+    // Skip tokens until matching closing brace (handles nesting).
+    // Assumes opening { was already consumed. Consumes the closing }.
+    fn skip_to_matching_brace(self) {
+        mut depth = 1
+        while depth > 0 && !self.is_at_end() {
+            if self.check(TokenKind.LBrace) {
+                depth = depth + 1
+            }
+            if self.check(TokenKind.RBrace) {
+                depth = depth - 1
+            }
+            self.advance()
+        }
+    }
+
     fn current_span(self) -> Span {
         self.peek().span
     }

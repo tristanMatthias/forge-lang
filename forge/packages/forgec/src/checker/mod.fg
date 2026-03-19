@@ -100,13 +100,11 @@ impl TypeChecker {
         self.expect_assignable(target_type, value_type, span)
     }
 
-    fn check_return(self, value: Expr?, span: Span) {
+    fn check_return(self, value: Expr, span: Span) {
         let expected = self.env.current_return_type()
-        if value != null {
-            let actual = self.infer_expr(value!)
-            if expected != null {
-                self.expect_assignable(expected!, actual, span)
-            }
+        let actual = self.infer_expr(value)
+        if expected != null {
+            self.expect_assignable(expected!, actual, span)
         }
     }
 

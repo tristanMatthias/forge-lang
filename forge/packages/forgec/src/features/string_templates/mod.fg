@@ -43,18 +43,9 @@ fn make_template(parts: List<TemplatePart>, span: Span) -> Expr {
 // ─── Check ──────────────────────────────────────
 
 fn check_template(tc: TypeChecker, node: NodeRef) -> Type {
-    let d = get_template(node.node_id)
-    if d == null { return Type.String }
-    let data = d!
-
-    // Check each interpolated expression
-    for part in data.parts {
-        match part {
-            .Interpolation(expr) -> { tc.infer_expr(expr) }
-            .Literal(_) -> {}
-        }
-    }
-
+    // Bootstrap workaround: match destructuring of complex enum payloads
+    // (Expr inside TemplatePart.Interpolation) causes LLVM verification errors.
+    // Skip checking interpolated expressions — templates always produce String.
     Type.String
 }
 

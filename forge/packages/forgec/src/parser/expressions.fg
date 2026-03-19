@@ -1344,7 +1344,9 @@ impl Parser {
                 llvm.build_br(CG_B, merge_bb)
             }
 
-            self.expect(TokenKind.RBrace)
+            // Bootstrap workaround: expect() returns nullable which causes domination errors.
+            // The while loop already confirmed RBrace is next, so just advance().
+            self.advance()
             llvm.position_at_end(CG_B, merge_bb)
 
             // Build phi node so match can be used as an expression
@@ -1364,37 +1366,9 @@ impl Parser {
         }
 
         // Not in codegen — just parse and discard
-        self.skip_newlines()
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
-            self.skip_newlines()
-            if self.check(TokenKind.Underscore) {
-                self.advance()
-            } else if self.check(TokenKind.Dot) {
-                self.advance()
-                self.expect_ident()
-                if self.check(TokenKind.LParen) {
-                    self.advance()
-                    while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                        self.parse_expr()
-                        if self.check(TokenKind.Comma) { self.advance() }
-                    }
-                    self.expect(TokenKind.RParen)
-                }
-            } else {
-                self.parse_expr()
-            }
-            self.skip_newlines()
-            if self.check(TokenKind.Arrow) { self.advance() }
-            self.skip_newlines()
-            if self.check(TokenKind.LBrace) {
-                self.parse_block()
-            } else {
-                self.parse_expr()
-            }
-            self.skip_newlines()
-        }
-
-        self.expect(TokenKind.RBrace)
+        // Bootstrap workaround: avoid function calls as last expression in if-blocks
+        // (causes domination errors). Use skip_to_matching_brace which is simpler.
+        self.skip_to_matching_brace()
         Expr.IntLit(0, start)
     }
 

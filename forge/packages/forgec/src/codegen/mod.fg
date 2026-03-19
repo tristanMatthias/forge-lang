@@ -548,15 +548,17 @@ impl Codegen {
 
     fn emit_if_from_block(self, block: Block) -> ptr {
         // block.statements[0] = marker, [1] = condition, [2] = then block
+        // Bootstrap workaround: avoid match-as-expression for Expr (returns i64 instead of Expr).
+        // Use match arms directly — destructured values used in-arm work correctly.
         let cond_stmt = block.statements[1]
         let then_stmt = block.statements[2]
 
-        // Extract condition expression
-        let cond_expr = match cond_stmt {
-            .Expr(e) -> e
-            _ -> Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
+        // Emit condition: match arm uses destructured Expr directly
+        mut cond_val = llvm.const_int(CG_I64, 0, 0)
+        match cond_stmt {
+            .Expr(e) -> { cond_val = self.emit_expr(e) }
+            _ -> {}
         }
-        let cond_val = self.emit_expr(cond_expr)
         let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
 
         let current_fn = self.current_fn
@@ -569,11 +571,10 @@ impl Codegen {
 
         // Emit then block
         llvm.position_at_end(CG_B, then_bb)
-        let then_expr = match then_stmt {
-            .Expr(e) -> e
-            _ -> Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
+        match then_stmt {
+            .Expr(e) -> { self.emit_expr(e) }
+            _ -> {}
         }
-        self.emit_expr(then_expr)
         llvm.build_br(CG_B, merge_bb)
 
         // Continue at merge

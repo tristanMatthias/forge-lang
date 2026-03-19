@@ -23,6 +23,7 @@ export enum Type {
     Range(element: Type)
     Channel(element: Type)
     TypeVar(id: int)
+    Trait(name: string)
     Unknown
     Error
 }
@@ -135,6 +136,7 @@ export fn type_to_string(t: Type) -> string {
         .Range(element) -> "Range<${type_to_string(element)}>"
         .Channel(element) -> "Channel<${type_to_string(element)}>"
         .TypeVar(id) -> "T${id}"
+        .Trait(name) -> "trait ${name}"
         .Unknown -> "unknown"
         .Error -> "error"
     }
