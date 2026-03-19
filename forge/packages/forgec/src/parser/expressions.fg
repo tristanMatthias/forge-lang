@@ -1088,38 +1088,41 @@ impl Parser {
                     if field_count > 0 { parsed_fields = parsed_fields + "," }
                     parsed_fields = parsed_fields + fname
                     self.advance() // consume field name
+                    // Reset type flags before emitting field value
+                    CG_LAST_ENUM_TYPE = ""
+                    CG_LAST_IS_STR = 0
+                    CG_LAST_IS_LIST = 0
+                    CG_LAST_STRUCT_TYPE = ""
+                    mut cg = codegen_new()
                     if self.check(TokenKind.Colon) {
                         self.advance() // consume :
-                        // Reset type flags before emitting field value
-                        CG_LAST_ENUM_TYPE = ""
-                        CG_LAST_IS_STR = 0
-                        CG_LAST_IS_LIST = 0
-                        CG_LAST_STRUCT_TYPE = ""
-                        mut cg = codegen_new()
                         let expr_val = self.parse_expr()
                         let val = cg.emit_expr(expr_val!)
                         llvm.value_array_set(vals, field_count, val)
-                        // Track field type
-                        if field_count > 0 { parsed_field_types = parsed_field_types + "," }
-                        if CG_LAST_ENUM_TYPE != "" {
-                            parsed_field_types = parsed_field_types + "e"
-                            field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
-                        } else if CG_LAST_STRUCT_TYPE != "" {
-                            // Struct-typed field: use the struct type name
-                            parsed_field_types = parsed_field_types + "t"
-                            field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
-                        } else if CG_LAST_IS_STR == 1 {
-                            parsed_field_types = parsed_field_types + "s"
-                            field_enum_names = field_enum_names.push("")
-                        } else if CG_LAST_IS_LIST == 1 {
-                            parsed_field_types = parsed_field_types + "l"
-                            field_enum_names = field_enum_names.push("")
-                        } else {
-                            parsed_field_types = parsed_field_types + "i"
-                            field_enum_names = field_enum_names.push("")
-                        }
-                        field_count = field_count + 1
+                    } else {
+                        // Shorthand: { field } means { field: field }
+                        let val = cg.emit_ident(fname)
+                        llvm.value_array_set(vals, field_count, val)
                     }
+                    // Track field type
+                    if field_count > 0 { parsed_field_types = parsed_field_types + "," }
+                    if CG_LAST_ENUM_TYPE != "" {
+                        parsed_field_types = parsed_field_types + "e"
+                        field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
+                    } else if CG_LAST_STRUCT_TYPE != "" {
+                        parsed_field_types = parsed_field_types + "t"
+                        field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
+                    } else if CG_LAST_IS_STR == 1 {
+                        parsed_field_types = parsed_field_types + "s"
+                        field_enum_names = field_enum_names.push("")
+                    } else if CG_LAST_IS_LIST == 1 {
+                        parsed_field_types = parsed_field_types + "l"
+                        field_enum_names = field_enum_names.push("")
+                    } else {
+                        parsed_field_types = parsed_field_types + "i"
+                        field_enum_names = field_enum_names.push("")
+                    }
+                    field_count = field_count + 1
                 } else {
                     break
                 }
