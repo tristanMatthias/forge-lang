@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -126,6 +126,24 @@ impl Parser {
             let op = self.binop_from_key(op_key)
             self.advance()
             self.skip_newlines()
+
+            // Null comparison fast-path: x == null or x != null
+            let rhs_key = self.kind_to_key(self.peek().kind)
+            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
+                self.advance() // consume 'null'
+                mut cg = codegen_new()
+                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                let tag = llvm.build_extract_value(CG_B, lhs, 0, "null_tag")
+                let zero_tag = llvm.const_int(CG_I8, 0, 0)
+                let pred = if op_key == "Eq" { 32 } else { 33 }
+                let cmp = llvm.build_icmp(CG_B, pred, tag, zero_tag, "null_cmp")
+                let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "null_ext")
+                result_is_llvm = true
+                result_llvm = ext
+                result_is_str = false
+                result = Expr.IntLit(0, self.current_span())
+                continue
+            }
 
             // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
             if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
@@ -500,9 +518,27 @@ impl Parser {
                 continue
             }
 
-            // Force unwrap: expr! (no-op in self-hosted — nullable is compile-time only)
+            // Force unwrap: expr! — extract inner value from nullable {i8, T}
             if self.check(TokenKind.Not) {
                 self.advance()
+                if CG_ACTIVE {
+                    mut cg = codegen_new()
+                    let nullable_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    let var_is_nullable = is_nullable_var(LAST_IDENT_NAME)
+                    if var_is_nullable || CG_LAST_IS_NULLABLE == 1 {
+                        let inner_val = llvm.build_extract_value(CG_B, nullable_val, 1, "unwrap")
+                        result_is_llvm = true
+                        result_llvm = inner_val
+                        if var_is_nullable {
+                            let inner_type = nullable_var_inner_type(LAST_IDENT_NAME)
+                            result_is_str = inner_type == "string"
+                        } else {
+                            result_is_str = CG_LAST_IS_STR == 1
+                        }
+                        CG_LAST_IS_NULLABLE = 0
+                        result = Expr.IntLit(0, self.current_span())
+                    }
+                }
                 continue
             }
 
