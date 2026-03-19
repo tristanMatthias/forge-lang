@@ -52,8 +52,9 @@ fn check_template(tc: TypeChecker, node: NodeRef) -> Type {
 // ─── Emit ───────────────────────────────────────
 
 fn emit_template(cg: Codegen, node: NodeRef) -> ptr {
-    // TODO: emit string concat of literal parts + stringified interpolations
-    // For now, placeholder empty string
+    // Template codegen is handled inline in parse_primary_expr (expressions.fg)
+    // via emit_template_expr() + tpl_emit_interpolation(). This dispatch path
+    // is only reached for FeatureExpr nodes, which templates don't produce.
     llvm.const_int(CG_I64, 0, 0)
 }
 

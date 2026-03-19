@@ -21,7 +21,8 @@ use core.token.{Token, TokenKind, Span, TemplatePart}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.types.Type
 use core.error.E_SYNTAX
-use lexer.{parse_int, parse_float}
+use lexer.{parse_int, parse_float, lexer_new}
+use parser.{parser_new}
 use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use @std.llvm
 
@@ -1697,27 +1698,31 @@ fn emit_template_expr(text: string) -> ptr {
                 }
             }
 
-            // Find matching }
+            // Find matching } with brace balancing for nested expressions
             let expr_start = dollar_pos + 2
             mut close_pos = expr_start
-            while close_pos < len {
-                if text[close_pos] == "}" {
-                    break
+            mut brace_depth = 1
+            while close_pos < len && brace_depth > 0 {
+                if text[close_pos] == "{" {
+                    brace_depth = brace_depth + 1
+                } else if text[close_pos] == "}" {
+                    brace_depth = brace_depth - 1
                 }
-                close_pos = close_pos + 1
+                if brace_depth > 0 {
+                    close_pos = close_pos + 1
+                }
             }
 
-            // Extract variable name (trim whitespace for safety)
-            let var_name = text.substring(expr_start, close_pos)
+            // Extract the expression source text
+            let expr_src = text.substring(expr_start, close_pos)
 
-            // Load variable and convert to string
-            let var_val = tpl_load_var(var_name)
-            let str_val = tpl_to_string(var_val, TPL_VAR_IS_STR)
+            // Emit the interpolated expression via re-lex + re-parse + emit
+            let expr_val = tpl_emit_interpolation(expr_src)
 
             if has_result {
-                result = tpl_concat(result, str_val)
+                result = tpl_concat(result, expr_val)
             } else {
-                result = str_val
+                result = expr_val
                 has_result = true
             }
 
@@ -1744,6 +1749,50 @@ fn emit_template_expr(text: string) -> ptr {
     }
 
     result
+}
+
+// Emit an interpolated expression from template string.
+// Re-lexes and re-parses the expression source, emits LLVM IR,
+// and auto-stringifies non-string results.
+fn tpl_emit_interpolation(expr_src: string) -> ptr {
+    // Fast path: simple identifier (no operators/dots/parens)
+    mut is_simple = expr_src.length > 0
+    mut ci = 0
+    while ci < expr_src.length && is_simple {
+        let ch = expr_src[ci]
+        if ch == "." || ch == "(" || ch == ")" || ch == "[" || ch == "]" || ch == "+" || ch == "-" || ch == "*" || ch == "/" || ch == "%" || ch == " " || ch == "!" || ch == "<" || ch == ">" || ch == "=" {
+            is_simple = false
+        }
+        ci = ci + 1
+    }
+
+    if is_simple {
+        let var_val = tpl_load_var(expr_src)
+        return tpl_to_string(var_val, TPL_VAR_IS_STR)
+    }
+
+    // Full expression: re-lex → re-parse → emit
+    mut lex = lexer_new(expr_src)
+    let tokens = lex.tokenize()
+    if tokens.length == 0 {
+        return emit_str_lit("")
+    }
+
+    mut p = parser_new(tokens)
+    let expr = p.parse_expr()
+    if expr == null {
+        return emit_str_lit("")
+    }
+
+    let saved_is_str = CG_LAST_IS_STR
+    CG_LAST_IS_STR = 0
+    mut cg = codegen_new()
+    let val = cg.emit_expr(expr!)
+    let is_str = CG_LAST_IS_STR
+
+    let str_val = tpl_to_string(val, is_str)
+    CG_LAST_IS_STR = 1
+    str_val
 }
 
 // ─── List Operations ────────────────────────────
