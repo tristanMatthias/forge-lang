@@ -342,7 +342,16 @@ impl Parser {
                 }
                 Statement.Expr(Expr.IntLit(0, tok.span))
             }
-            _ -> self.parse_expr_or_assign()
+            _ -> {
+                let result = self.parse_expr_or_assign()
+                // Track last expression value for implicit function returns
+                if CG_ACTIVE && result != null {
+                    // The inline emit stored the value — set the flag so
+                    // emit_all_fn_bodies can build an implicit ret
+                    CG_HAS_LAST_VAL = 1
+                }
+                result
+            }
         }
     }
 

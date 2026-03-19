@@ -469,7 +469,11 @@ impl Codegen {
 
     fn emit_statement(self, stmt: Statement) {
         match stmt {
-            .Expr(expr) -> { self.emit_expr(expr) }
+            .Expr(expr) -> {
+                let val = self.emit_expr(expr)
+                CG_LAST_VAL = val
+                CG_HAS_LAST_VAL = 1
+            }
             .Assign(target, value, span) -> { self.emit_assign(target, value) }
             .Return(value, span) -> { self.emit_return(value) }
             .Feature(fe) -> { self.dispatch_stmt(fe) }
@@ -605,6 +609,34 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
+    fn emit_string_concat(self, lhs: ptr, lhs_is_str: int, rhs: ptr, rhs_is_str: int) -> ptr {
+        // Auto-stringify non-string operands
+        mut l = lhs
+        mut r = rhs
+        if lhs_is_str != 1 {
+            let ca = llvm.value_array_new(1)
+            llvm.value_array_set(ca, 0, lhs)
+            let ft = make_fn_type(CG_STR, [CG_I64])
+            l = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "l2s")
+            llvm.value_array_free(ca)
+        }
+        if rhs_is_str != 1 {
+            let ca = llvm.value_array_new(1)
+            llvm.value_array_set(ca, 0, rhs)
+            let ft = make_fn_type(CG_STR, [CG_I64])
+            r = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "r2s")
+            llvm.value_array_free(ca)
+        }
+        let ca = llvm.value_array_new(2)
+        llvm.value_array_set(ca, 0, l)
+        llvm.value_array_set(ca, 1, r)
+        let ft = make_fn_type(CG_STR, [CG_STR, CG_STR])
+        let result = llvm.build_call(CG_B, ft, CG_RT_SCONCAT, ca, 2, "concat")
+        llvm.value_array_free(ca)
+        CG_LAST_IS_STR = 1
+        result
+    }
+
     fn emit_string(self, value: string) -> ptr {
         let raw = llvm.build_global_string_ptr(CG_B, value, "str")
         let len = llvm.const_int(CG_I64, value.length, 0)
@@ -690,10 +722,20 @@ impl Codegen {
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
+        // Check if left is a string before emitting right (emit_expr resets flags)
         let lhs = self.emit_expr(left)
+        let lhs_is_str = CG_LAST_IS_STR
+        CG_LAST_IS_STR = 0
         let rhs = self.emit_expr(right)
+        let rhs_is_str = CG_LAST_IS_STR
+        CG_LAST_IS_STR = 0
         match op {
-            .Add -> { return llvm.build_add(CG_B, lhs, rhs, "add") }
+            .Add -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    return self.emit_string_concat(lhs, lhs_is_str, rhs, rhs_is_str)
+                }
+                return llvm.build_add(CG_B, lhs, rhs, "add")
+            }
             .Sub -> { return llvm.build_sub(CG_B, lhs, rhs, "sub") }
             .Mul -> { return llvm.build_mul(CG_B, lhs, rhs, "mul") }
             .Div -> { return llvm.build_sdiv(CG_B, lhs, rhs, "div") }
@@ -721,6 +763,20 @@ impl Codegen {
             .Ident(name, span) -> {
                 if name == "println" { return self.emit_println(args) }
                 if name == "print" { return self.emit_println(args) }
+                if name == "eprintln" { return self.emit_println(args) }
+                if name == "eprint" { return self.emit_println(args) }
+                // Cast functions: string(x), int(x), float(x), bool(x)
+                if name == "string" && args.length > 0 {
+                    let val = self.emit_expr(args[0])
+                    // Call forge_int_to_string(val) → ForgeString
+                    CG_LAST_IS_STR = 1
+                    let ca = llvm.value_array_new(1)
+                    llvm.value_array_set(ca, 0, val)
+                    let ft = make_fn_type(CG_STR, [CG_I64])
+                    let result = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "i2s")
+                    llvm.value_array_free(ca)
+                    return result
+                }
                 // Look up function by name in the LLVM module (not Map — Map ptrs are corrupt)
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {

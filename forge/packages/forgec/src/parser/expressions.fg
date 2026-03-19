@@ -246,6 +246,9 @@ impl Parser {
             let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
+            // Track for implicit function returns
+            CG_LAST_VAL = result_llvm
+            CG_HAS_LAST_VAL = 1
             return Expr.Ident(tmp, self.current_span())
         }
         result
