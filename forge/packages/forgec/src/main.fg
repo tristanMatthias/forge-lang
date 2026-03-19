@@ -17,8 +17,9 @@ use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
-use codegen.{codegen_new, create_globals_typed}
+use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup}
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
+use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, emit_all_fn_bodies}
 
 fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
@@ -200,6 +201,117 @@ fn resolve_modules(filepath: string) -> string {
     result
 }
 
+// ─── Module Path Resolution ────────────────────
+// Returns list of .fg file paths in dependency order (modules first)
+
+fn resolve_module_paths(filepath: string) -> List<string> {
+    let source = fs.read(filepath)
+    mut dir = ""
+    mut last_slash = -1
+    mut ci = 0
+    while ci < filepath.length {
+        if filepath[ci] == "/" { last_slash = ci }
+        ci = ci + 1
+    }
+    if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
+
+    mut paths: List<string> = []
+
+    // Find mod declarations and recursively resolve
+    mut pos = 0
+    while pos < source.length {
+        mut at_line_start = pos == 0
+        if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
+        if at_line_start {
+            if pos + 4 < source.length {
+                if source[pos] == "m" { if source[pos + 1] == "o" { if source[pos + 2] == "d" { if source[pos + 3] == " " {
+                    mut name_end = pos + 4
+                    while name_end < source.length {
+                        let ch = source[name_end]
+                        if ch == "\n" { break }
+                        if ch == " " { break }
+                        if ch == "\r" { break }
+                        name_end = name_end + 1
+                    }
+                    let mod_name = source.substring(pos + 4, name_end)
+                    let mod_path1 = dir + mod_name + "/mod.fg"
+                    let mod_path2 = dir + mod_name + ".fg"
+                    let mod_src1 = fs.read(mod_path1)
+                    if mod_src1.length > 0 {
+                        let sub = resolve_module_paths(mod_path1)
+                        for sp in sub { paths = paths.push(sp) }
+                    } else {
+                        let mod_src2 = fs.read(mod_path2)
+                        if mod_src2.length > 0 {
+                            let sub2 = resolve_module_paths(mod_path2)
+                            for sp2 in sub2 { paths = paths.push(sp2) }
+                        }
+                    }
+                } } } }
+            }
+        }
+        pos = pos + 1
+    }
+    // This file comes after its modules
+    paths = paths.push(filepath)
+    paths
+}
+
+// ─── Per-File Compilation ──────────────────────
+
+fn build_compile_separate(files: List<string>, output: string) {
+    // Phase 1: Scan ALL files (collect metadata, no codegen)
+    mut file_idx = 0
+    for filepath in files {
+        CURRENT_FILE_INDEX = file_idx
+        let source = fs.read(filepath)
+        mut lex = lexer_new(source)
+        let tokens = lex.tokenize()
+        mut p = parser_new_with_source(tokens, source)
+        let program = p.parse_program()
+        file_idx = file_idx + 1
+    }
+    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " functions")
+
+    // Phase 2: Compile each file to .o
+    mut obj_files: List<string> = []
+    file_idx = 0
+    for filepath in files {
+        let source = fs.read(filepath)
+        let obj_path = "/tmp/forgec_obj_" + string(file_idx) + ".o"
+
+        codegen_init(filepath)
+        create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+        EMIT_FILE_IDX = file_idx
+        mut cg = codegen_new()
+        emit_all_fn_bodies(cg)
+
+        if !codegen_emit_object(obj_path) {
+            eprintln("error: failed to emit " + obj_path)
+            process.exit(1)
+        }
+        codegen_cleanup()
+        obj_files = obj_files.push(obj_path)
+        eprintln("  compiled: " + filepath + " -> " + obj_path)
+        file_idx = file_idx + 1
+    }
+
+    // Phase 3: Compile runtime
+    let runtime_obj = "/tmp/forgec_runtime.o"
+    let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", runtime_obj])
+
+    // Phase 4: Link all .o files
+    mut link_args: List<string> = ["-o", output]
+    for obj in obj_files {
+        link_args = link_args.push(obj)
+    }
+    link_args = link_args.push(runtime_obj)
+    link_args = link_args.push("-lm")
+    let link_result = process.run("cc", link_args)
+
+    println("compiled: ${output}")
+}
+
 fn main() {
     init_features()
     let args = process.args()
@@ -213,17 +325,26 @@ fn main() {
     let command = args[1]
     let input = args[2]
 
-    // Resolve modules: concatenate all .fg files into one source
-    let source = resolve_modules(input)
+    // Resolve all module file paths
+    let files = resolve_module_paths(input)
 
     if command == "check" {
+        // For check: concatenate and check as one unit
+        let source = resolve_modules(input)
         if !check(source, input) {
             process.exit(1)
         }
         println("OK")
     } else if command == "build" {
         let output = if args.length > 3 { args[3] } else { "a.out" }
-        build_compile(source, input, output)
+        if files.length > 1 {
+            // Multi-file: separate compilation
+            build_compile_separate(files, output)
+        } else {
+            // Single file: original path (faster)
+            let source = resolve_modules(input)
+            build_compile(source, input, output)
+        }
     } else {
         eprintln("unknown command")
         process.exit(1)

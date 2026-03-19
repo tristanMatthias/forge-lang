@@ -239,18 +239,22 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
 // ─── Emit All Functions (bypass enum dispatch) ──
 
 // Global parallel lists for function data (bootstrap can't use Map<string, struct>)
-mut FN_NAMES: List<string> = []
+export mut FN_NAMES: List<string> = []
 mut FN_BODY_SOURCES: List<string> = []  // body source text for re-parsing
 // FN_BODIES removed — was dead code causing LLVM verification errors
 mut FN_PARAM_COUNTS: List<int> = []     // param count per fn
 mut FN_ALL_PARAM_NAMES: List<string> = [] // flat list of ALL param names
 mut FN_ALL_PARAM_TYPES: List<string> = [] // flat list of ALL param type names
 mut FN_RETURN_TYPES: List<string> = []    // return type name per function
+export mut FN_FILE_INDEX: List<int> = []        // which file each function belongs to
+export mut CURRENT_FILE_INDEX: int = 0           // set before scanning each file
+export mut EMIT_FILE_IDX: int = -1               // -1 = all files, >= 0 = only this file
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
     FN_NAMES = FN_NAMES.push(name)
     FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
+    FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
 }
 
 export fn store_fn_param_count(count: int) {
@@ -459,6 +463,18 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let fn_val = llvm.add_function(CG_MOD, name, fn_type)
         // Store in global for function calls (Map<string, ptr>)
         DECLARED_FNS[name] = fn_val
+
+        // Per-file mode: skip body for functions from other files (extern declaration only)
+        if EMIT_FILE_IDX >= 0 {
+            if i < FN_FILE_INDEX.length {
+                if FN_FILE_INDEX[i] != EMIT_FILE_IDX {
+                    param_offset = param_offset + pc
+                    i = i + 1
+                    continue
+                }
+            }
+        }
+
         cg.current_fn = fn_val
 
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
