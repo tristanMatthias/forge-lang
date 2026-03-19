@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr}
 use parser.expressions.{register_enum_variant}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ENUM_TYPE_CSV}
+use codegen.{Codegen, CG_ENUM_TYPE_CSV, register_enum_variant_fields}
 use features.while_loops.PARSE_END_POS
 
 // ─── Side Tables ────────────────────────────────
@@ -73,7 +73,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
     p.skip_newlines()
 
     mut tag = 0
-    mut max_fc = 0
+    mut max_slots = 0
     while !p.check(TokenKind.RBrace) && !p.is_at_end() {
         p.skip_newlines()
         let variant_name = p.expect_ident()
@@ -82,22 +82,46 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         // Register this variant's tag in the global registry
         register_enum_variant(name, variant_name, tag)
 
-        // Parse optional fields and count them
-        mut fc = 0
+        // Parse optional fields, track types, and count slots
+        mut variant_slots = 0
+        mut field_types_str = ""
         if p.check(TokenKind.LParen) {
             p.advance()
             while !p.check(TokenKind.RParen) && !p.is_at_end() {
                 p.expect_ident()
+                mut field_slots = 1  // default: 1 slot (int, bool, ptr, etc.)
+                mut field_code = "i"
                 if p.check(TokenKind.Colon) {
                     p.advance()
+                    // Check the type name BEFORE parse_type_expr consumes it
+                    let type_text = p.peek().text
+                    // string and List<T> are 2 i64 slots ({ptr, i64})
+                    if type_text == "string" {
+                        field_slots = 2
+                        field_code = "s"
+                    }
+                    if type_text == "List" {
+                        field_slots = 2
+                        field_code = "l"
+                    }
+                    // Span is a struct with 4 int fields = 4 slots
+                    if type_text == "Span" {
+                        field_slots = 4
+                        field_code = "4"
+                    }
                     p.parse_type_expr()
                 }
-                fc = fc + 1
+                variant_slots = variant_slots + field_slots
+                field_types_str = field_types_str + field_code
                 if p.check(TokenKind.Comma) { p.advance() }
             }
             p.expect(TokenKind.RParen)
         }
-        if fc > max_fc { max_fc = fc }
+        if variant_slots > max_slots { max_slots = variant_slots }
+        // Register per-variant field type info
+        if field_types_str.length > 0 {
+            register_enum_variant_fields(name, variant_name, field_types_str)
+        }
 
         tag = tag + 1
         p.skip_newlines()
@@ -107,7 +131,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_fc},"
+    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
     // Enum declarations register tags + max field count.
     PARSE_END_POS = p.pos
     let id = next_node_id()

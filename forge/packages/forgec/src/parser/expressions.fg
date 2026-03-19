@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -373,8 +373,15 @@ impl Parser {
                         if self.check(TokenKind.LParen) {
                             // Per-enum type (like Rust: sized to largest variant)
                             let ety = cg_get_enum_ty_for(LAST_IDENT_NAME)
-                            mut eval = llvm.get_undef(ety)
-                            eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, maybe_enum_tag, 0), 0, "etag")
+                            // Use alloca+store approach (handles string fields correctly)
+                            let enum_alloca = llvm.build_alloca(CG_B, ety, "enum_tmp")
+                            llvm.build_store(CG_B, llvm.const_null(ety), enum_alloca)
+                            // Store tag
+                            let tag_ptr = llvm.build_struct_gep2(CG_B, ety, enum_alloca, 0, "tag_ptr")
+                            llvm.build_store(CG_B, llvm.const_int(CG_I8, maybe_enum_tag, 0), tag_ptr)
+                            // Get payload pointer (index 1 = first i64 slot)
+                            let payload_ptr = llvm.build_struct_gep2(CG_B, ety, enum_alloca, 1, "payload_ptr")
+                            let vft = cg_enum_variant_field_types(LAST_IDENT_NAME, field)
                             self.advance() // consume (
                             mut ai = 0
                             while !self.check(TokenKind.RParen) && !self.is_at_end() {
@@ -389,13 +396,30 @@ impl Parser {
                                         aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "eptr")
                                         CG_LAST_ENUM_TYPE = ""
                                     }
-                                    eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                    // Store field via memory (handles any type including strings)
+                                    let slot_off = cg_enum_field_slot_offset(vft, ai)
+                                    let idx_arr = llvm.value_array_new(1)
+                                    llvm.value_array_set(idx_arr, 0, llvm.const_int(CG_I64, slot_off, 0))
+                                    let field_ptr = llvm.build_gep2(CG_B, CG_I64, payload_ptr, idx_arr, 1, "fptr")
+                                    llvm.value_array_free(idx_arr)
+                                    // Multi-slot types (string, list, Span) need bitcast to ptr
+                                    mut is_multi_slot = false
+                                    if ai < vft.length {
+                                        if vft[ai] != "i" { is_multi_slot = true }
+                                    }
+                                    if is_multi_slot {
+                                        let typed_fptr = llvm.build_bitcast(CG_B, field_ptr, llvm.pointer_type(CG_CTX), "typed_fptr")
+                                        llvm.build_store(CG_B, aval, typed_fptr)
+                                    } else {
+                                        llvm.build_store(CG_B, aval, field_ptr)
+                                    }
                                     ai = ai + 1
                                 }
                                 if self.check(TokenKind.Comma) { self.advance() }
                                 self.skip_newlines()
                             }
                             self.advance() // consume )
+                            let eval = llvm.build_load(CG_B, ety, enum_alloca, "enum_val")
                             result_is_llvm = true
                             result_llvm = eval
                             CG_LAST_ENUM_TYPE = LAST_IDENT_NAME
@@ -443,10 +467,14 @@ impl Parser {
                     if enum_tag >= 0 {
                         // Check if this constructor has args (data variant)
                         if self.check(TokenKind.LParen) {
-                            // Per-enum type (like Rust)
+                            // Per-enum type (like Rust) — use alloca+store for safe field storage
                             let ety = cg_get_enum_ty_for(enum_cname)
-                            mut eval = llvm.get_undef(ety)
-                            eval = llvm.build_insert_value(CG_B, eval, llvm.const_int(CG_I8, enum_tag, 0), 0, "etag")
+                            let enum_alloca2 = llvm.build_alloca(CG_B, ety, "enum_tmp2")
+                            llvm.build_store(CG_B, llvm.const_null(ety), enum_alloca2)
+                            let tag_ptr2 = llvm.build_struct_gep2(CG_B, ety, enum_alloca2, 0, "tag_ptr2")
+                            llvm.build_store(CG_B, llvm.const_int(CG_I8, enum_tag, 0), tag_ptr2)
+                            let payload_ptr2 = llvm.build_struct_gep2(CG_B, ety, enum_alloca2, 1, "payload_ptr2")
+                            let vft2 = cg_enum_variant_field_types(enum_cname, field)
                             if self.check(TokenKind.LParen) {
                                 self.advance()
                                 mut ai = 0
@@ -462,7 +490,22 @@ impl Parser {
                                             aval = llvm.build_ptr_to_int(CG_B, ebox, CG_I64, "eptr")
                                             CG_LAST_ENUM_TYPE = ""
                                         }
-                                        eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                        // Store field via memory (handles any type including strings)
+                                        let slot_off2 = cg_enum_field_slot_offset(vft2, ai)
+                                        let idx_arr2 = llvm.value_array_new(1)
+                                        llvm.value_array_set(idx_arr2, 0, llvm.const_int(CG_I64, slot_off2, 0))
+                                        let field_ptr2 = llvm.build_gep2(CG_B, CG_I64, payload_ptr2, idx_arr2, 1, "fptr2")
+                                        llvm.value_array_free(idx_arr2)
+                                        mut is_multi_slot2 = false
+                                        if ai < vft2.length {
+                                            if vft2[ai] != "i" { is_multi_slot2 = true }
+                                        }
+                                        if is_multi_slot2 {
+                                            let typed_fptr2 = llvm.build_bitcast(CG_B, field_ptr2, llvm.pointer_type(CG_CTX), "typed_fptr2")
+                                            llvm.build_store(CG_B, aval, typed_fptr2)
+                                        } else {
+                                            llvm.build_store(CG_B, aval, field_ptr2)
+                                        }
                                         ai = ai + 1
                                     }
                                     if self.check(TokenKind.Comma) { self.advance() }
@@ -470,6 +513,7 @@ impl Parser {
                                 }
                                 self.advance() // consume )
                             }
+                            let eval = llvm.build_load(CG_B, ety, enum_alloca2, "enum_val2")
                             result_is_llvm = true
                             result_llvm = eval
                             CG_LAST_ENUM_TYPE = enum_cname
@@ -702,6 +746,10 @@ impl Parser {
             let tmp = "__pt${BINOP_COUNTER}"
             let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
+            // If result is an enum, register in enum var tracking
+            if CG_LAST_ENUM_TYPE != "" {
+                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + tmp + ":" + CG_LAST_ENUM_TYPE + ","
+            }
             // If result is a struct, register temp var in struct tracking
             if CG_LAST_STRUCT_TYPE != "" {
                 CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
@@ -991,7 +1039,8 @@ impl Parser {
             let vals = llvm.value_array_new(32)
             mut field_count = 0
             mut parsed_fields = ""
-            mut parsed_field_types = ""  // comma-separated "s" (string) or "i" (int)
+            mut parsed_field_types = ""  // comma-separated "s" (string), "i" (int), "l" (list), or "e:EnumName" (enum)
+            mut field_enum_names: List<string> = []  // enum type names per field (empty if not enum)
 
             while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                 self.skip_newlines()
@@ -1003,16 +1052,33 @@ impl Parser {
                     self.advance() // consume field name
                     if self.check(TokenKind.Colon) {
                         self.advance() // consume :
+                        // Reset type flags before emitting field value
+                        CG_LAST_ENUM_TYPE = ""
+                        CG_LAST_IS_STR = 0
+                        CG_LAST_IS_LIST = 0
+                        CG_LAST_STRUCT_TYPE = ""
                         mut cg = codegen_new()
                         let expr_val = self.parse_expr()
                         let val = cg.emit_expr(expr_val!)
                         llvm.value_array_set(vals, field_count, val)
-                        // Track if this field is a string
+                        // Track field type
                         if field_count > 0 { parsed_field_types = parsed_field_types + "," }
-                        if CG_LAST_IS_STR == 1 {
+                        if CG_LAST_ENUM_TYPE != "" {
+                            parsed_field_types = parsed_field_types + "e"
+                            field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
+                        } else if CG_LAST_STRUCT_TYPE != "" {
+                            // Struct-typed field: use the struct type name
+                            parsed_field_types = parsed_field_types + "t"
+                            field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
+                        } else if CG_LAST_IS_STR == 1 {
                             parsed_field_types = parsed_field_types + "s"
+                            field_enum_names = field_enum_names.push("")
+                        } else if CG_LAST_IS_LIST == 1 {
+                            parsed_field_types = parsed_field_types + "l"
+                            field_enum_names = field_enum_names.push("")
                         } else {
                             parsed_field_types = parsed_field_types + "i"
+                            field_enum_names = field_enum_names.push("")
                         }
                         field_count = field_count + 1
                     }
@@ -1027,14 +1093,53 @@ impl Parser {
 
             // Create struct type with correct field types
             let ft = llvm.type_array_new(field_count)
-            // Parse field_types string to set LLVM types
             mut fti = 0
             mut ftpos = 0
             while fti < field_count && ftpos < parsed_field_types.length {
                 let ftch = parsed_field_types[ftpos]
                 if ftch == "s" {
                     llvm.type_array_set(ft, fti, CG_STR)
-                } else if ftch == "i" {
+                } else if ftch == "e" {
+                    // Enum field: use the named enum LLVM type
+                    if fti < field_enum_names.length {
+                        let ename = field_enum_names[fti]
+                        if ename != "" {
+                            let ety = cg_get_enum_ty_for(ename)
+                            llvm.type_array_set(ft, fti, ety)
+                        } else {
+                            llvm.type_array_set(ft, fti, CG_I64)
+                        }
+                    } else {
+                        llvm.type_array_set(ft, fti, CG_I64)
+                    }
+                } else if ftch == "t" {
+                    // Struct-typed field: look up the struct's LLVM type
+                    if fti < field_enum_names.length {
+                        let sname = field_enum_names[fti]
+                        mut found_sty = false
+                        if sname != "" {
+                            mut sti = CG_STRUCT_NAMES.length - 1
+                            while sti >= 0 {
+                                if CG_STRUCT_NAMES[sti] == sname {
+                                    let sty = CG_STRUCT_TYPES[sti]
+                                    if sty != null {
+                                        llvm.type_array_set(ft, fti, sty)
+                                        found_sty = true
+                                    }
+                                    break
+                                }
+                                sti = sti - 1
+                            }
+                        }
+                        if !found_sty {
+                            llvm.type_array_set(ft, fti, CG_I64)
+                        }
+                    } else {
+                        llvm.type_array_set(ft, fti, CG_I64)
+                    }
+                } else if ftch == "l" {
+                    llvm.type_array_set(ft, fti, CG_LIST)
+                } else {
                     llvm.type_array_set(ft, fti, CG_I64)
                 }
                 fti = fti + 1
@@ -1415,16 +1520,53 @@ impl Parser {
 
                     // Emit arm body
                     llvm.position_at_end(CG_B, arm_bb)
-                    // Define bindings from payload
+                    // Define bindings from payload via memory (handles string fields)
                     if binding_names.length > 0 {
                         if scrutinee_is_enum {
+                            // Alloca and store the enum to get a pointer for GEP
+                            let ext_ety = cg_get_enum_ty_for(scr_etype)
+                            let ext_alloca = llvm.build_alloca(CG_B, ext_ety, "match_tmp")
+                            llvm.build_store(CG_B, subj_val, ext_alloca)
+                            let ext_payload = llvm.build_struct_gep2(CG_B, ext_ety, ext_alloca, 1, "m_payload")
+                            let ext_vft = cg_enum_variant_field_types(scr_etype, variant_name)
                             mut bi = 0
                             for bname in binding_names {
-                                let fv = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
-                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
-                                llvm.build_store(CG_B, fv, alloca)
-                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                let slot_off3 = cg_enum_field_slot_offset(ext_vft, bi)
+                                let idx_arr3 = llvm.value_array_new(1)
+                                llvm.value_array_set(idx_arr3, 0, llvm.const_int(CG_I64, slot_off3, 0))
+                                let bind_ptr = llvm.build_gep2(CG_B, CG_I64, ext_payload, idx_arr3, 1, "bptr")
+                                llvm.value_array_free(idx_arr3)
+                                // Determine field type and load appropriately
+                                mut bind_fc = "i"
+                                if bi < ext_vft.length {
+                                    bind_fc = ext_vft[bi]
+                                }
+                                if bind_fc == "s" {
+                                    // String field: load ForgeString through bitcasted ptr
+                                    let str_bptr = llvm.build_bitcast(CG_B, bind_ptr, llvm.pointer_type(CG_CTX), "str_bptr")
+                                    let fv = llvm.build_load(CG_B, CG_STR, str_bptr, bname)
+                                    let alloca = llvm.build_alloca(CG_B, CG_STR, bname)
+                                    llvm.build_store(CG_B, fv, alloca)
+                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bname)
+                                    CG_LAST_IS_STR = 1
+                                } else if bind_fc == "l" {
+                                    // List field: load {ptr, i64} through bitcasted ptr
+                                    let list_bptr = llvm.build_bitcast(CG_B, bind_ptr, llvm.pointer_type(CG_CTX), "list_bptr")
+                                    let fv = llvm.build_load(CG_B, CG_LIST, list_bptr, bname)
+                                    let alloca = llvm.build_alloca(CG_B, CG_LIST, bname)
+                                    llvm.build_store(CG_B, fv, alloca)
+                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                } else {
+                                    // Int/ptr/other: load i64 directly
+                                    let fv = llvm.build_load(CG_B, CG_I64, bind_ptr, bname)
+                                    let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
+                                    llvm.build_store(CG_B, fv, alloca)
+                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                }
                                 bi = bi + 1
                             }
                         }

@@ -8,7 +8,7 @@ use core.types.{Type, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, TypeField}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_LIST, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, register_struct_type_full, codegen_new, cg_enum_max_fields, cg_make_enum_type}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -126,11 +126,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
             while ftype_pos < field_types_str.length {
                 let ch = field_types_str[ftype_pos]
                 if ch == "," {
-                    if ftype_cur == "string" {
-                        llvm.type_array_set(field_types_arr, fi, CG_STR)
-                    } else {
-                        llvm.type_array_set(field_types_arr, fi, CG_I64)
-                    }
+                    llvm.type_array_set(field_types_arr, fi, resolve_field_llvm_type(ftype_cur))
                     fi = fi + 1
                     ftype_cur = ""
                 } else {
@@ -139,18 +135,14 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 ftype_pos = ftype_pos + 1
             }
             if ftype_cur != "" {
-                if ftype_cur == "string" {
-                    llvm.type_array_set(field_types_arr, fi, CG_STR)
-                } else {
-                    llvm.type_array_set(field_types_arr, fi, CG_I64)
-                }
+                llvm.type_array_set(field_types_arr, fi, resolve_field_llvm_type(ftype_cur))
             }
             let struct_ty = llvm.struct_type(CG_CTX, field_types_arr, field_count, 0)
             llvm.type_array_free(field_types_arr)
-            register_struct_type(name, field_names, field_is_str, struct_ty)
+            register_struct_type_full(name, field_names, field_is_str, field_types_str, struct_ty)
         } else {
             // Store string info for lazy LLVM type creation later
-            register_struct_type(name, field_names, field_is_str, null)
+            register_struct_type_full(name, field_names, field_is_str, field_types_str, null)
         }
     } else {
         // Non-struct type alias — skip
@@ -160,6 +152,44 @@ fn parse_type_decl(p: Parser) -> Statement? {
     PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("structs", "type_decl", id, start)
+}
+
+// Resolve a type name to its LLVM type for struct fields
+fn resolve_field_llvm_type(type_name: string) -> ptr {
+    if type_name == "string" { return CG_STR }
+    if type_name == "int" { return CG_I64 }
+    if type_name == "float" { return CG_I64 }  // float is still i64-sized
+    if type_name == "bool" { return CG_I64 }
+    if type_name == "ptr" { return CG_I64 }
+    // Check if it starts with "List<" — list is {ptr, i64}
+    if type_name.length > 5 {
+        if type_name[0] == "L" {
+            if type_name[1] == "i" {
+                if type_name[2] == "s" {
+                    if type_name[3] == "t" {
+                        return CG_LIST
+                    }
+                }
+            }
+        }
+    }
+    // Check enum type
+    let emf = cg_enum_max_fields(type_name)
+    if emf > 0 {
+        let ety = cg_make_enum_type(type_name)
+        if ety != null { return ety }
+    }
+    // Check struct type
+    mut sti = CG_STRUCT_NAMES.length - 1
+    while sti >= 0 {
+        if CG_STRUCT_NAMES[sti] == type_name {
+            let sty = CG_STRUCT_TYPES[sti]
+            if sty != null { return sty }
+        }
+        sti = sti - 1
+    }
+    // Default: i64
+    CG_I64
 }
 
 // ─── Struct Literal Construction ────────────────
