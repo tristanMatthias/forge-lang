@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_VAR_SCOPE_START}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -56,7 +56,18 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         if ret_tok.kind_id == 1 {
             return_type_name = ret_tok.text
         }
-        p.parse_type_expr()
+        let parsed_ret = p.parse_type_expr()
+        // Check if the parsed type is Nullable (T?) and update return_type_name
+        if parsed_ret != null {
+            match parsed_ret! {
+                .Nullable(inner, span) -> {
+                    // Append ? to signal nullable return
+                    return_type_name = return_type_name + "?"
+                }
+                _ -> {}
+            }
+        }
+        parsed_ret
     } else { null }
 
     // Capture body source by reconstructing from token positions
@@ -389,9 +400,19 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         }
         // Determine return type
         mut ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        mut fn_is_nullable = false
+        mut fn_nullable_inner = CG_I64
         if !is_main && i < FN_RETURN_TYPES.length {
-            let rtn = FN_RETURN_TYPES[i]
+            mut rtn = FN_RETURN_TYPES[i]
+            // Check for nullable return type (ends with ?)
+            let rtn_len = rtn.length
+            if rtn_len > 1 && rtn[rtn_len - 1] == "?" {
+                fn_is_nullable = true
+                // Strip trailing ? to get inner type name
+                rtn = rtn.substring(0, rtn_len - 1)
+            }
             if rtn == "string" {
+                fn_nullable_inner = CG_STR
                 ret_ty = CG_STR
             } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
                 mut sti = CG_STRUCT_NAMES.length - 1
@@ -403,6 +424,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     }
                     sti = sti - 1
                 }
+            }
+            // If nullable, create the {i8, T} struct type as the actual return type
+            if fn_is_nullable {
+                fn_nullable_inner = ret_ty
+                ret_ty = make_nullable_type(ret_ty)
             }
         }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
@@ -470,6 +496,12 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_HAS_LAST_VAL = 0
         CG_IS_MAP_INDEX = 0
         CG_LAST_STRUCT_TYPE = ""
+        CG_LAST_IS_NULLABLE = 0
+
+        // Set nullable return tracking for this function
+        CG_FN_RETURNS_NULLABLE = if fn_is_nullable { 1 } else { 0 }
+        CG_FN_NULLABLE_INNER_TY = fn_nullable_inner
+        CG_FN_NULLABLE_RET_TY = if fn_is_nullable { ret_ty } else { null }
 
         // Re-lex and re-parse the body source text
         if body_src != "" {
@@ -484,6 +516,20 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         if !llvm.block_has_terminator(CG_B) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
+            } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
+                // Nullable function with a last value
+                CG_HAS_LAST_VAL = 0
+                // If the last value is already nullable (e.g., null literal), use directly
+                if CG_LAST_IS_NULLABLE == 1 {
+                    llvm.build_ret(CG_B, CG_LAST_VAL)
+                } else {
+                    let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
+                    llvm.build_ret(CG_B, wrapped_ret)
+                }
+            } else if fn_is_nullable {
+                // Nullable function with no last value — return null
+                let null_ret = make_null_value(fn_nullable_inner)
+                llvm.build_ret(CG_B, null_ret)
             } else if CG_HAS_LAST_VAL == 1 {
                 // Return the last expression value (e.g., match-as-expression)
                 CG_HAS_LAST_VAL = 0
@@ -492,6 +538,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }
         }
+        // Reset nullable tracking
+        CG_FN_RETURNS_NULLABLE = 0
+        CG_FN_NULLABLE_INNER_TY = null
+        CG_FN_NULLABLE_RET_TY = null
         i = i + 1
     }
 }

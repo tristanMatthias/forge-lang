@@ -50,6 +50,9 @@ mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELI
 export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
 export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
+// Track nullable variable names (for null comparison and unwrap)
+export mut CG_NULLABLE_VAR_NAMES: List<string> = []
+export mut CG_NULLABLE_VAR_INNER: List<string> = []  // inner type name ("int", "string")
 // Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
 export mut CG_LIST_VAR_CSV: string = ""        // all list vars
 export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
@@ -93,6 +96,7 @@ export mut CG_HAS_LAST_VAL: int = 0
 export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
 export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
+export mut CG_LAST_IS_NULLABLE: int = 0  // set to 1 when last expr was nullable
 // Set when the last expression was a map index access (for map[key] = value)
 export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
 export mut CG_MAP_INDEX_KEY: ptr = null   // the key ForgeString value
@@ -304,6 +308,59 @@ export fn list_elem_llvm_type(name: string) -> ptr {
         si = si - 1
     }
     CG_I64
+}
+
+// ─── Nullable Type Helpers ───────────────────────
+
+export mut CG_FN_RETURNS_NULLABLE: int = 0
+export mut CG_FN_NULLABLE_INNER_TY: ptr = null
+export mut CG_FN_NULLABLE_RET_TY: ptr = null
+export mut CG_NULLABLE_INT_TY: ptr = null
+export mut CG_NULLABLE_STR_TY: ptr = null
+
+export fn make_nullable_type(inner_ty: ptr) -> ptr {
+    if inner_ty == CG_I64 && CG_NULLABLE_INT_TY != null { return CG_NULLABLE_INT_TY }
+    if inner_ty == CG_STR && CG_NULLABLE_STR_TY != null { return CG_NULLABLE_STR_TY }
+    let fields = llvm.type_array_new(2)
+    llvm.type_array_set(fields, 0, CG_I8)
+    llvm.type_array_set(fields, 1, inner_ty)
+    let nullable_ty = llvm.struct_type(CG_CTX, fields, 2, 0)
+    llvm.type_array_free(fields)
+    if inner_ty == CG_I64 { CG_NULLABLE_INT_TY = nullable_ty }
+    if inner_ty == CG_STR { CG_NULLABLE_STR_TY = nullable_ty }
+    nullable_ty
+}
+
+export fn wrap_nullable(inner_ty: ptr, value: ptr) -> ptr {
+    let nullable_ty = make_nullable_type(inner_ty)
+    let undef = llvm.get_undef(nullable_ty)
+    let s1 = llvm.build_insert_value(CG_B, undef, llvm.const_int(CG_I8, 1, 0), 0, "wrap_tag")
+    llvm.build_insert_value(CG_B, s1, value, 1, "wrap_val")
+}
+
+export fn make_null_value(inner_ty: ptr) -> ptr {
+    let nullable_ty = make_nullable_type(inner_ty)
+    let undef = llvm.get_undef(nullable_ty)
+    let s1 = llvm.build_insert_value(CG_B, undef, llvm.const_int(CG_I8, 0, 0), 0, "null_tag")
+    llvm.build_insert_value(CG_B, s1, llvm.const_null(inner_ty), 1, "null_val")
+}
+
+export fn is_nullable_var(name: string) -> bool {
+    mut i = CG_NULLABLE_VAR_NAMES.length - 1
+    while i >= 0 {
+        if CG_NULLABLE_VAR_NAMES[i] == name { return true }
+        i = i - 1
+    }
+    false
+}
+
+export fn nullable_var_inner_type(name: string) -> string {
+    mut i = CG_NULLABLE_VAR_NAMES.length - 1
+    while i >= 0 {
+        if CG_NULLABLE_VAR_NAMES[i] == name { return CG_NULLABLE_VAR_INNER[i] }
+        i = i - 1
+    }
+    "int"
 }
 
 // ─── Codegen Methods ───────────────────────────

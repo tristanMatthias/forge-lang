@@ -13,7 +13,7 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, wrap_nullable, make_null_value}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
@@ -367,9 +367,30 @@ impl Parser {
 
         // Check if there's a value (not at end of statement)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
-            // Bare return — emit void return inline if codegen active
+            // Bare return — emit void/null return inline if codegen active
             if CG_ACTIVE {
-                llvm.build_ret_void(CG_B)
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    let nv = make_null_value(CG_FN_NULLABLE_INNER_TY)
+                    llvm.build_ret(CG_B, nv)
+                } else {
+                    llvm.build_ret_void(CG_B)
+                }
+            }
+            return Statement.Expr(Expr.IntLit(0, start))
+        }
+
+        // Check for 'return null' — handle before parse_expr to avoid type mismatch
+        let pk = self.peek()
+        let pk_key = self.kind_to_key(pk.kind)
+        if pk_key == "NullLiteral" {
+            self.advance() // consume 'null'
+            if CG_ACTIVE {
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    let nv = make_null_value(CG_FN_NULLABLE_INNER_TY)
+                    llvm.build_ret(CG_B, nv)
+                } else {
+                    llvm.build_ret_void(CG_B)
+                }
             }
             return Statement.Expr(Expr.IntLit(0, start))
         }
@@ -387,11 +408,21 @@ impl Parser {
             // Use CG_LAST_VAL if set (struct literal or function call result)
             if CG_HAS_LAST_VAL == 1 {
                 CG_HAS_LAST_VAL = 0
-                llvm.build_ret(CG_B, CG_LAST_VAL)
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    let wr = wrap_nullable(CG_FN_NULLABLE_INNER_TY, CG_LAST_VAL)
+                    llvm.build_ret(CG_B, wr)
+                } else {
+                    llvm.build_ret(CG_B, CG_LAST_VAL)
+                }
             } else {
                 mut cg = codegen_new()
                 let ret_val = cg.emit_expr(value!)
-                llvm.build_ret(CG_B, ret_val)
+                if CG_FN_RETURNS_NULLABLE == 1 {
+                    let wr = wrap_nullable(CG_FN_NULLABLE_INNER_TY, ret_val)
+                    llvm.build_ret(CG_B, wr)
+                } else {
+                    llvm.build_ret(CG_B, ret_val)
+                }
             }
         }
         Statement.Expr(Expr.IntLit(0, start))
