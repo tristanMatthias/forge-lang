@@ -59,7 +59,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Capture type annotation info for global type detection
     mut ann_is_list = 0
     mut ann_elem_name = ""
-    let type_ann = if p.check(TokenKind.Colon) {
+    mut type_ann: TypeExpr? = null
+    if p.check(TokenKind.Colon) {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
@@ -71,8 +72,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
                 ann_elem_name = elem_tok.text
             }
         }
-        p.parse_type_expr()
-    } else { null }
+        type_ann = p.parse_type_expr()
+    }
 
     // Expect = value
     if p.expect(TokenKind.Eq) == null {
@@ -111,22 +112,22 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)
     if CG_ACTIVE {
         // Check if parse_list_literal or postfix set a pre-computed LLVM value
-        let val = if CG_HAS_LAST_VAL == 1 {
+        mut val = null
+        if CG_HAS_LAST_VAL == 1 {
             CG_HAS_LAST_VAL = 0
-            CG_LAST_VAL
+            val = CG_LAST_VAL
         } else {
             mut cg = codegen_new()
-            cg.emit_expr(value!)
+            val = cg.emit_expr(value!)
         }
         // Detect string/list/map type
         let is_str = CG_LAST_IS_STR == 1
         let is_map = CG_LAST_IS_MAP == 1
-        let var_type = if is_map {
-            Type.MapType(Type.String, Type.Int)
+        mut var_type = Type.Int
+        if is_map {
+            var_type = Type.MapType(Type.String, Type.Int)
         } else if is_str {
-            Type.String
-        } else {
-            Type.Int
+            var_type = Type.String
         }
         // Also check if value expression is a string literal
         match value! {
@@ -167,7 +168,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         // Register nullable variable for null comparison and unwrap
         if CG_LAST_IS_NULLABLE == 1 {
             CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(var_name)
-            let inner_type_name = if is_str { "string" } else { "int" }
+            mut inner_type_name = "int"
+            if is_str { inner_type_name = "string" }
             CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner_type_name)
         }
         // Register struct variable type + copy field info from temp
@@ -207,10 +209,7 @@ fn check_var(tc: TypeChecker, node: NodeRef) {
     let data = d!
 
     let val_type = tc.infer_expr(data.value)
-    let ty = if data.type_ann != null {
-        // TODO: resolve type annotation
-        val_type
-    } else { val_type }
+    let ty = val_type
 
     let mutable = data.var_kind is .Mut
     tc.env.define(data.name, ty, mutable)

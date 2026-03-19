@@ -105,12 +105,11 @@ impl Lexer {
         self.pos >= self.chars.length
     }
 
-    fn peek(self) -> string? {
+    fn peek(self) -> string {
         if self.pos < self.chars.length {
-            self.chars[self.pos]
-        } else {
-            null
+            return self.chars[self.pos]
         }
+        return ""
     }
 
     // Non-nullable peek — returns "" at end. Use in while conditions
@@ -123,13 +122,12 @@ impl Lexer {
         }
     }
 
-    fn peek_at(self, offset: int) -> string? {
+    fn peek_at(self, offset: int) -> string {
         let idx = self.pos + offset
         if idx < self.chars.length {
-            self.chars[idx]
-        } else {
-            null
+            return self.chars[idx]
         }
+        return ""
     }
 
     // Non-nullable peek_at (returns "" at end). Use instead of peek_at
@@ -329,8 +327,8 @@ impl Lexer {
 
     fn lex_number(self, start_pos: int, start_line: int, start_col: int) -> Token {
         // Check for base prefixes
-        if self.peek_ch() == "0" && self.peek_at(1) != null {
-            let next = self.peek_at(1)!
+        if self.peek_ch() == "0" {
+            let next = self.peek_at(1)
             if next == "x" || next == "X" {
                 self.advance()
                 self.advance()
@@ -366,7 +364,7 @@ impl Lexer {
 
         // Decimal point (only if followed by a digit, and not .. range)
         if !self.is_at_end() && self.peek_ch() == "." {
-            if self.peek_at(1) != null && is_digit(self.peek_at(1)!) {
+            if self.peek_at(1) != "" { if is_digit(self.peek_at(1)) {
                 // Make sure it's not .. (range operator)
                 is_float = true
                 text = text + self.advance() // consume .
@@ -380,7 +378,7 @@ impl Lexer {
                         break
                     }
                 }
-            }
+            } }
         }
 
         let span = self.make_span(start_pos, start_line, start_col)
@@ -534,7 +532,8 @@ impl Lexer {
 
         // Unterminated
         let span = self.make_span(start_pos, start_line, start_col)
-        let err_code = if close_ch == "\"" { E_UNTERMINATED_STRING } else { E_UNTERMINATED_TEMPLATE }
+        mut err_code = E_UNTERMINATED_TEMPLATE
+        if close_ch == "\"" { err_code = E_UNTERMINATED_STRING }
         self.add_error("F0002", "unterminated string literal", span)
         if text.length > 0 {
             parts = parts.push(TemplatePart.Literal(text))

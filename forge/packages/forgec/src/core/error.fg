@@ -2,7 +2,7 @@
 // All compiler errors go through this system. No raw eprintln!
 // This is the self-hosted equivalent of CompileError + render().
 
-use core.token.Span
+// NOTE: Span type is expected from core/token.fg (concatenated during bootstrap)
 
 // ─── Severity ──────────────────────────────────
 
@@ -39,7 +39,8 @@ export fn new_diagnostic_bag() -> DiagnosticBag {
 
 export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
     bag.diagnostics.push(d)
-    if d.severity == .Error {
+    let sev = d.severity
+    if sev == .Error {
         bag.has_errors = true
     }
 }
@@ -47,7 +48,8 @@ export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
 export fn bag_error_count(bag: DiagnosticBag) -> int {
     mut count = 0
     for d in bag.diagnostics {
-        if d.severity == .Error {
+        let sev = d.severity
+        if sev == .Error {
             count = count + 1
         }
     }
@@ -118,29 +120,39 @@ export let E_ICE = "F9999"
 // ─── Rendering ─────────────────────────────────
 
 export fn severity_to_string(s: Severity) -> string {
-    match s {
-        .Error -> "error"
-        .Warning -> "warning"
-        .Info -> "info"
+    if s == .Error {
+        return "error"
     }
+    if s == .Warning {
+        return "warning"
+    }
+    return "info"
 }
 
 export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
     // Build the primary message line: severity[code]: message
     let sev = severity_to_string(d.severity)
-    mut msg = "${sev}[${d.code}]: ${d.message}"
+    let code = d.code
+    let message = d.message
+    mut msg = sev + "[" + code + "]: " + message
 
     // Location line
-    msg = "${msg}\n  --> ${filename}:${d.span.line}:${d.span.col}"
+    let line = d.span.line
+    let col = d.span.col
+    let line_str = "" + line
+    let col_str = "" + col
+    msg = msg + "\n  --> " + filename + ":" + line_str + ":" + col_str
 
     // Help text if present
-    if d.help != "" {
-        msg = msg + "\n  help: " + d.help
+    let help = d.help
+    if help != "" {
+        msg = msg + "\n  help: " + help
     }
 
     // Note if present
-    if d.note != "" {
-        msg = msg + "\n  note: " + d.note
+    let note = d.note
+    if note != "" {
+        msg = msg + "\n  note: " + note
     }
 
     // TODO: implement rich source context rendering with line excerpts,
@@ -153,9 +165,10 @@ export fn render_all(bag: DiagnosticBag, source: string, filename: string) -> st
     mut output = ""
     for d in bag.diagnostics {
         if output != "" {
-            output = "${output}\n\n"
+            output = output + "\n\n"
         }
-        output = "${output}${render_diagnostic(d, source, filename)}"
+        let rendered = render_diagnostic(d, source, filename)
+        output = output + rendered
     }
     output
 }
