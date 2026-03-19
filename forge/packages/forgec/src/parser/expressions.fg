@@ -723,13 +723,21 @@ impl Parser {
                         let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                         let tag = match_enum_tag(variant_name)
                         let tag_val = llvm.const_int(CG_I64, tag, 0)
-                        // Compare: eq for 'is', ne for 'is not'
-                        let pred = if negated { 33 } else { 32 }  // 32=eq, 33=ne
-                        let cmp = llvm.build_icmp(CG_B, pred, obj_val, tag_val, "is_cmp")
+                        // For named enum types, extract tag byte first
+                        mut cmp_lhs = obj_val
+                        if CG_LAST_ENUM_TYPE != "" {
+                            let etag = llvm.build_extract_value(CG_B, obj_val, 0, "is_tag")
+                            cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "is_tagext")
+                        }
+                        let pred = if negated { 33 } else { 32 }
+                        let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "is_cmp")
                         let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "is_ext")
                         result_is_llvm = true
                         result_llvm = ext
                         result_is_str = false
+                        // Result is boolean, not enum
+                        CG_LAST_ENUM_TYPE = ""
+                        CG_LAST_STRUCT_TYPE = ""
                     }
                     result = Expr.IntLit(0, self.current_span())
                     continue

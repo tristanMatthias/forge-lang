@@ -182,6 +182,7 @@ export fn token_string(value: string, span: Span) -> Token {
 }
 
 export fn token_bool(value: bool, span: Span) -> Token {
-    let t = if value { "true" } else { "false" }
+    mut t = "false"
+    if value { t = "true" }
     Token { kind: TokenKind.BoolLiteral(value), span: span, text: t, kind_id: 5 }
 }
