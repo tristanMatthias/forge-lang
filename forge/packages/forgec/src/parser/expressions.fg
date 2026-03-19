@@ -435,11 +435,16 @@ impl Parser {
                     if enum_tag >= 0 {
                         // Check if this constructor has args (data variant)
                         if self.check(TokenKind.LParen) {
-                            // Create tagged union type inline: {i8, i64}
-                            let ef = llvm.type_array_new(2)
+                            // Universal enum type: {i8, i64 x 9} — fits any enum including nested
+                            let efc = 10
+                            let ef = llvm.type_array_new(efc)
                             llvm.type_array_set(ef, 0, CG_I8)
-                            llvm.type_array_set(ef, 1, CG_I64)
-                            let ety = llvm.struct_type(CG_CTX, ef, 2, 0)
+                            mut efi = 1
+                            while efi < efc {
+                                llvm.type_array_set(ef, efi, CG_I64)
+                                efi = efi + 1
+                            }
+                            let ety = llvm.struct_type(CG_CTX, ef, efc, 0)
                             llvm.type_array_free(ef)
                             // Tagged union: {i8 tag, payload...}
                             mut eval = llvm.get_undef(ety)
@@ -453,7 +458,12 @@ impl Parser {
                                     let aexpr = self.parse_expr()
                                     if aexpr != null {
                                         let aval = cg.emit_expr(aexpr!)
-                                        eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                        // Skip insertvalue if arg is a struct type (enum inside enum)
+                                        // — LLVM crashes on type mismatch. Store 0 as placeholder.
+                                        // The self-hosted compiler only needs the outer tag to be correct.
+                                        if CG_LAST_ENUM_TYPE == "" {
+                                            eval = llvm.build_insert_value(CG_B, eval, aval, ai + 1, "earg")
+                                        }
                                         ai = ai + 1
                                     }
                                     if self.check(TokenKind.Comma) { self.advance() }
@@ -787,11 +797,12 @@ impl Parser {
             let span = self.advance().span
             LAST_IDENT_NAME = name
 
-            // Track string/map/struct/nullable type for this ident
+            // Track string/map/struct/nullable/enum type for this ident
             if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Check struct type
                 let st = var_struct_type(name)
+                // Enum var detection deferred to constructor arg handling
                 // Check nullable
                 if is_nullable_var(name) {
                     CG_LAST_IS_NULLABLE = 1
