@@ -13,7 +13,7 @@ mod features
 
 use features
 
-use core.error.{render_diagnostic, render_all}
+use core.error.{render_at, render_all, bag_add_raw, DIAG_COUNT, DIAG_CODES, DIAG_MSGS, DIAG_SEVS, DIAG_LINES, DIAG_COLS, DIAG_HELPS, DIAG_NOTES}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
@@ -317,6 +317,9 @@ fn build_compile_separate(files: List<string>, output: string) {
         EMIT_FILE_IDX = file_idx
         mut cg = codegen_new()
         emit_all_fn_bodies(cg)
+
+        // Write IR for debugging before emit (emit can crash)
+        codegen_write_ir("/tmp/forgec_ir_" + string(file_idx) + ".ll")
 
         if !codegen_emit_object(obj_path) {
             eprintln("error: failed to emit " + obj_path)

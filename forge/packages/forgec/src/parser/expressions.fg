@@ -132,7 +132,8 @@ impl Parser {
             if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
                 self.advance() // consume 'null'
                 mut cg = codegen_new()
-                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                mut lhs = result_llvm
+                    if !result_is_llvm { lhs = cg.emit_expr(result) }
                 let tag = llvm.build_extract_value(CG_B, lhs, 0, "null_tag")
                 let zero_tag = llvm.const_int(CG_I8, 0, 0)
                 let pred = if op_key == "Eq" { 32 } else { 33 }
@@ -148,7 +149,8 @@ impl Parser {
             // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
             if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
                 mut cg = codegen_new()
-                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                mut lhs = result_llvm
+                    if !result_is_llvm { lhs = cg.emit_expr(result) }
                 // Truncate LHS to i1
                 let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sc_lhs")
                 let current_bb = llvm.get_insert_block(CG_B)
@@ -175,11 +177,8 @@ impl Parser {
                 llvm.position_at_end(CG_B, merge_bb)
                 // For &&: from lhs_bb → 0, from rhs_bb → rhs result
                 // For ||: from lhs_bb → 1, from rhs_bb → rhs result
-                let short_val = if op_key == "And" {
-                    llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
-                } else {
-                    llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
-                }
+                mut short_val = llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
+                if op_key != "And" { short_val = llvm.const_int(llvm.int1_type(CG_CTX), 1, 0) }
                 let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sc_phi")
                 llvm.add_incoming(phi, short_val, current_bb)
                 llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
@@ -199,11 +198,8 @@ impl Parser {
             if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Get LHS: either from tracked LLVM value or emit AST
-                let lhs = if result_is_llvm {
-                    result_llvm
-                } else {
-                    cg.emit_expr(result)
-                }
+                mut lhs = result_llvm
+                if !result_is_llvm { lhs = cg.emit_expr(result) }
                 let rhs = cg.emit_expr(right!)
                 // Re-check rhs_is_str after emit (string() sets it during emit)
                 if CG_LAST_IS_STR == 1 { rhs_is_str = true }
@@ -363,7 +359,9 @@ impl Parser {
                 // In codegen mode: handle known properties and methods inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    // Bootstrap workaround: if-as-expression returns corrupt ptr
+                    mut obj_val = result_llvm
+                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
 
                     // Check if this is an enum constructor BEFORE method call
                     let enum_type_name = LAST_IDENT_NAME  // save before arg parsing overwrites
@@ -601,7 +599,8 @@ impl Parser {
                 // In codegen mode: emit indexing inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    mut obj_val = result_llvm
+                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
                     let idx_val = cg.emit_expr(index!)
 
                     // Check if this is a list variable (needs GEP, not char_at)
@@ -637,7 +636,8 @@ impl Parser {
                     } else {
                         // List/array indexing: GEP + load from data pointer
                         // Use correct element type (int=8B, string=16B, struct=varies)
-                        let elem_ty = if is_list { list_elem_llvm_type(index_obj_name) } else { CG_I64 }
+                        mut elem_ty = CG_I64
+                        if is_list { elem_ty = list_elem_llvm_type(index_obj_name) }
                         let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "list_data")
                         let indices = llvm.value_array_new(1)
                         llvm.value_array_set(indices, 0, idx_val)
@@ -667,7 +667,8 @@ impl Parser {
                 self.advance()
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let nullable_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    mut nullable_val = result_llvm
+                    if !result_is_llvm { nullable_val = cg.emit_expr(result) }
                     let var_is_nullable = is_nullable_var(LAST_IDENT_NAME)
                     if var_is_nullable || CG_LAST_IS_NULLABLE == 1 {
                         let inner_val = llvm.build_extract_value(CG_B, nullable_val, 1, "unwrap")
@@ -720,7 +721,8 @@ impl Parser {
 
                     if CG_ACTIVE {
                         mut cg = codegen_new()
-                        let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                        mut obj_val = result_llvm
+                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
                         let tag = match_enum_tag(variant_name)
                         let tag_val = llvm.const_int(CG_I64, tag, 0)
                         // For named enum types, extract tag byte first
@@ -1269,7 +1271,8 @@ impl Parser {
             let count_val = llvm.const_int(CG_I64, count, 0)
 
             // Determine element type and size
-            let elem_ty = if first_elem_is_str == 1 { CG_STR } else { CG_I64 }
+            mut elem_ty = CG_I64
+            if first_elem_is_str == 1 { elem_ty = CG_STR }
             let elem_size_val = llvm.const_int(CG_I64, if first_elem_is_str == 1 { 16 } else { 8 }, 0)
 
             // Allocate buffer: forge_alloc(count * elem_size)
@@ -1703,7 +1706,8 @@ impl Parser {
 
             // Build phi node so match can be used as an expression
             if arm_vals.length > 0 {
-                let phi_ty = if match_arms_are_str { CG_STR } else { CG_I64 }
+                mut phi_ty = CG_I64
+                if match_arms_are_str { phi_ty = CG_STR }
                 let phi = llvm.build_phi(CG_B, phi_ty, "match.val")
                 mut phi_i = 0
                 while phi_i < arm_vals.length {
@@ -1823,11 +1827,13 @@ impl Parser {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 // Use CG_LAST_VAL if available (struct literals set this)
-                let item_val = if CG_HAS_LAST_VAL == 1 {
+                // Bootstrap workaround: if-as-expression returns corrupt ptr
+                mut item_val: ptr = null
+                if CG_HAS_LAST_VAL == 1 {
                     CG_HAS_LAST_VAL = 0
-                    CG_LAST_VAL
+                    item_val = CG_LAST_VAL
                 } else {
-                    cg.emit_expr(args[0])
+                    item_val = cg.emit_expr(args[0])
                 }
                 let elem_ty = list_elem_llvm_type(obj_var_name)
                 return emit_list_push_typed(obj_val, item_val, elem_ty)
@@ -2069,7 +2075,8 @@ fn tpl_load_var(name: string) -> ptr {
     while vi >= 0 {
         if CG_VAR_NAMES[vi] == name {
             TPL_VAR_IS_STR = is_str
-            let load_ty = if is_str == 1 { CG_STR } else { CG_I64 }
+            mut load_ty = CG_I64
+            if is_str == 1 { load_ty = CG_STR }
             return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
         }
         vi = vi - 1

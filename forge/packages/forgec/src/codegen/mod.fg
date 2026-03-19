@@ -144,13 +144,18 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
             shift = shift + 1
         }
         let is_str = (str_mask / bit) % 2 == 1
-        mut gty = if is_str { CG_STR } else { CG_I64 }
+        // Bootstrap workaround: if-as-expression returns corrupt ptr values
+        mut gty = CG_I64
+        if is_str { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = if is_str { llvm.const_null(gty) } else { llvm.const_int(CG_I64, 0, 0) }
+        mut zero = llvm.const_int(CG_I64, 0, 0)
+        if is_str { zero = llvm.const_null(gty) }
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        mut str_flag = 0
+        if is_str { str_flag = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(str_flag)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
@@ -196,20 +201,24 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         else if type_name == "map" { gty = CG_PTR }
 
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = if type_name == "string" || is_list {
-            llvm.const_null(gty)
+        // Bootstrap workaround: if-as-expression returns corrupt ptr values
+        mut zero = llvm.const_int(CG_I64, 0, 0)
+        if type_name == "string" || is_list {
+            zero = llvm.const_null(gty)
         } else if type_name == "map" {
-            llvm.const_null(CG_PTR)
-        } else {
-            llvm.const_int(CG_I64, 0, 0)
+            zero = llvm.const_null(CG_PTR)
         }
         llvm.set_initializer(gv, zero)
 
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if type_name == "string" || is_list { 1 } else { 0 })
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if type_name == "map" { 1 } else { 0 })
+        mut sf = 0
+        if type_name == "string" || is_list { sf = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(sf)
+        mut mf = 0
+        if type_name == "map" { mf = 1 }
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(mf)
         if type_name == "string" || is_list {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
@@ -979,7 +988,9 @@ impl Codegen {
                 // Check nullable first (takes precedence)
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
+                    // Bootstrap workaround: if-as-expression returns corrupt ptr
+                    mut inner_ty = CG_I64
+                    if inner_name == "string" { inner_ty = CG_STR }
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
@@ -1027,7 +1038,9 @@ impl Codegen {
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
+                    // Bootstrap workaround: if-as-expression returns corrupt ptr
+                    mut inner_ty = CG_I64
+                    if inner_name == "string" { inner_ty = CG_STR }
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
