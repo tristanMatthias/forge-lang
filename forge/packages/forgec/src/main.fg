@@ -124,6 +124,82 @@ fn build_compile(source: string, filename: string, output: string) {
     println("compiled: ${output}")
 }
 
+// ─── Module Resolution ─────────────────────────
+// Reads a .fg file, finds `mod` declarations, recursively loads
+// all module files, and returns concatenated source.
+
+fn resolve_modules(filepath: string) -> string {
+    let source = fs.read(filepath)
+    // Find the directory of this file
+    mut dir = ""
+    mut last_slash = -1
+    mut ci = 0
+    while ci < filepath.length {
+        if filepath[ci] == "/" { last_slash = ci }
+        ci = ci + 1
+    }
+    if last_slash >= 0 {
+        dir = filepath.substring(0, last_slash + 1)
+    }
+
+    // Collect all source: start with this file
+    // Modules go BEFORE the file that imports them (forward declaration)
+    mut result = ""
+
+    // Scan for `mod <name>` lines and recursively load
+    mut pos = 0
+    while pos < source.length {
+        // Find next line starting with "mod "
+        // Skip to start of line
+        mut at_line_start = pos == 0
+        if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
+        if at_line_start {
+            if pos + 4 < source.length {
+                let c0 = source[pos]
+                let c1 = source[pos + 1]
+                let c2 = source[pos + 2]
+                let c3 = source[pos + 3]
+                if c0 == "m" {
+                    if c1 == "o" {
+                        if c2 == "d" {
+                            if c3 == " " {
+                                // Extract module name
+                                mut name_start = pos + 4
+                                mut name_end = name_start
+                                while name_end < source.length {
+                                    let ch = source[name_end]
+                                    if ch == "\n" || ch == " " || ch == "\r" { break }
+                                    name_end = name_end + 1
+                                }
+                                let mod_name = source.substring(name_start, name_end)
+
+                                // Try: dir/name/mod.fg then dir/name.fg
+                                let mod_path1 = dir + mod_name + "/mod.fg"
+                                let mod_path2 = dir + mod_name + ".fg"
+
+                                let mod_src1 = fs.read(mod_path1)
+                                if mod_src1.length > 0 {
+                                    result = result + resolve_modules(mod_path1)
+                                } else {
+                                    let mod_src2 = fs.read(mod_path2)
+                                    if mod_src2.length > 0 {
+                                        result = result + resolve_modules(mod_path2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pos = pos + 1
+    }
+
+    // Append this file's source AFTER modules
+    result = result + source + "\n"
+    result
+}
+
 fn main() {
     init_features()
     let args = process.args()
@@ -137,14 +213,15 @@ fn main() {
     let command = args[1]
     let input = args[2]
 
+    // Resolve modules: concatenate all .fg files into one source
+    let source = resolve_modules(input)
+
     if command == "check" {
-        let source = fs.read(input)
         if !check(source, input) {
             process.exit(1)
         }
         println("OK")
     } else if command == "build" {
-        let source = fs.read(input)
         let output = if args.length > 3 { args[3] } else { "a.out" }
         build_compile(source, input, output)
     } else {
