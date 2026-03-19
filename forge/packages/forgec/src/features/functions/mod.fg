@@ -413,11 +413,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             mut rtn = FN_RETURN_TYPES[i]
             // Check for nullable return type (ends with ?)
             let rtn_len = rtn.length
-            if rtn_len > 1 && rtn[rtn_len - 1] == "?" {
+            if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
                 fn_is_nullable = true
-                // Strip trailing ? to get inner type name
                 rtn = rtn.substring(0, rtn_len - 1)
-            }
+            } }
             if rtn == "string" {
                 fn_nullable_inner = CG_STR
                 ret_ty = CG_STR
