@@ -458,14 +458,18 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         // Store in global for function calls (Map<string, ptr>)
         DECLARED_FNS[name] = fn_val
 
-        // Per-file mode: skip body for functions from other files (extern declaration only)
+        // Per-file mode: skip body for functions from other files
         if EMIT_FILE_IDX >= 0 {
+            mut should_skip = false
             if i < FN_FILE_INDEX.length {
                 if FN_FILE_INDEX[i] != EMIT_FILE_IDX {
-                    param_offset = param_offset + pc
-                    i = i + 1
-                    continue
+                    should_skip = true
                 }
+            }
+            if should_skip {
+                param_offset = param_offset + pc
+                i = i + 1
+                continue
             }
         }
 

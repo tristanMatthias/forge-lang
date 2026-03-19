@@ -85,6 +85,8 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 field_is_str = field_is_str + ","
                 field_types_str = field_types_str + ","
             }
+            // Skip 'mut' keyword on struct fields
+            if p.check(TokenKind.Mut) { p.advance() }
             let fname = p.expect_ident()
             p.expect(TokenKind.Colon)
             // Parse type — might be generic like List<Token>
