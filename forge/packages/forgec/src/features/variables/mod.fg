@@ -112,7 +112,9 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)
     if CG_ACTIVE {
         // Check if parse_list_literal or postfix set a pre-computed LLVM value
-        mut val = null
+        // Bootstrap fix: `mut val = null` infers nullable {i8,i64} type.
+        // Use explicit ptr type to avoid type mismatch when passing to define_var.
+        mut val: ptr = null
         if CG_HAS_LAST_VAL == 1 {
             CG_HAS_LAST_VAL = 0
             val = CG_LAST_VAL
