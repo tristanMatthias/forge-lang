@@ -321,8 +321,8 @@ fn build_compile_separate(files: List<string>, output: string) {
         mut cg = codegen_new()
         emit_all_fn_bodies(cg)
 
-        // Write IR for debugging before emit (emit can crash)
-        codegen_write_ir("/tmp/forgec_ir_" + string(file_idx) + ".ll")
+        // Skip IR write during stage 2 (TypeFinder crash on corrupt types)
+        // codegen_write_ir("/tmp/forgec_ir_" + string(file_idx) + ".ll")
 
         if !codegen_emit_object(obj_path) {
             eprintln("error: failed to emit " + obj_path)
