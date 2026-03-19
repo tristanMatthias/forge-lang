@@ -170,7 +170,8 @@ export fn create_llvm_globals_from(csv: string, count: int) {
     while pos < csv_len {
         // Read name (until :)
         mut name = ""
-        while pos < csv_len && csv[pos] != ":" {
+        while pos < csv_len {
+            if csv[pos] == ":" { break }
             name = name + csv[pos]
             pos = pos + 1
         }
@@ -178,7 +179,8 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         pos = pos + 1 // skip :
         // Read type (until \n)
         mut type_name = ""
-        while pos < csv_len && csv[pos] != "\n" {
+        while pos < csv_len {
+            if csv[pos] == "\n" { break }
             type_name = type_name + csv[pos]
             pos = pos + 1
         }
@@ -283,7 +285,8 @@ export fn list_elem_type(name: string) -> string {
             // Found — extract type until next comma
             mut type_start = i + nl
             mut type_end = type_start
-            while type_end < cl && CG_LIST_ELEM_TYPE_CSV[type_end] != "," {
+            while type_end < cl {
+                if CG_LIST_ELEM_TYPE_CSV[type_end] == "," { break }
                 type_end = type_end + 1
             }
             return CG_LIST_ELEM_TYPE_CSV.substring(type_start, type_end)
@@ -317,7 +320,7 @@ export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
 export mut CG_UNIVERSAL_ENUM_TY: ptr = null // cached {i8, i64 x 9} type
 
 export fn cg_enum_max_fields(name: string) -> int {
-    let needle = ",${name}:"
+    let needle = "," + name + ":"
     let nl = needle.length
     let cl = CG_ENUM_TYPE_CSV.length
     mut i = 0
@@ -331,7 +334,8 @@ export fn cg_enum_max_fields(name: string) -> int {
         if ok {
             mut ns = ""
             mut k = i + nl
-            while k < cl && CG_ENUM_TYPE_CSV[k] != "," {
+            while k < cl {
+                if CG_ENUM_TYPE_CSV[k] == "," { break }
                 ns = ns + CG_ENUM_TYPE_CSV[k]
                 k = k + 1
             }
@@ -365,7 +369,7 @@ export fn cg_make_enum_type(name: string) -> ptr {
 }
 
 export fn cg_var_enum_type(name: string) -> string {
-    let needle = ",${name}:"
+    let needle = "," + name + ":"
     let nl = needle.length
     let cl = CG_ENUM_VAR_CSV.length
     mut i = 0
@@ -379,7 +383,8 @@ export fn cg_var_enum_type(name: string) -> string {
         if ok {
             mut r = ""
             mut k = i + nl
-            while k < cl && CG_ENUM_VAR_CSV[k] != "," {
+            while k < cl {
+                if CG_ENUM_VAR_CSV[k] == "," { break }
                 r = r + CG_ENUM_VAR_CSV[k]
                 k = k + 1
             }
@@ -868,6 +873,13 @@ impl Codegen {
                         break
                     }
                     si = si - 1
+                }
+                // Check enum type
+                CG_LAST_ENUM_TYPE = ""
+                let g_vet = cg_var_enum_type(name)
+                if g_vet != "" {
+                    if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
+                    CG_LAST_ENUM_TYPE = g_vet
                 }
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {

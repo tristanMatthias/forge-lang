@@ -343,11 +343,28 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 ci = ci + 1
             }
             if fields.length == 0 { fc = 0 }
-            // Create all-i64 struct type (conservative)
+            // Create struct type with correct field types (string = CG_STR, others = CG_I64)
+            let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
             let fta = llvm.type_array_new(fc)
             mut fi = 0
+            mut fis_idx = 0
+            mut fis_cur = ""
             while fi < fc {
-                llvm.type_array_set(fta, fi, CG_I64)
+                // Parse the next "0" or "1" from field_is_str (comma-separated)
+                mut is_str_field = false
+                fis_cur = ""
+                while fis_idx < field_is_str.length {
+                    let fch = field_is_str[fis_idx]
+                    fis_idx = fis_idx + 1
+                    if fch == "," { break }
+                    fis_cur = fis_cur + fch
+                }
+                if fis_cur == "1" { is_str_field = true }
+                if is_str_field {
+                    llvm.type_array_set(fta, fi, CG_STR)
+                } else {
+                    llvm.type_array_set(fta, fi, CG_I64)
+                }
                 fi = fi + 1
             }
             let sty = llvm.struct_type(CG_CTX, fta, fc, 0)
@@ -477,7 +494,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     // Enum type — register as enum var
                     CG_LAST_ENUM_TYPE = param_type_name
                     cg.define_var(pname, Type.Int, param_val)
-                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + ",${pname}:${param_type_name},"
+                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
                     CG_LAST_ENUM_TYPE = ""
                 } else {
                 // Struct type — set the flag so define_var uses correct alloca
