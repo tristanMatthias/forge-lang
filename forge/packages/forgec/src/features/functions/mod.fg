@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value}
+use codegen.{Codegen, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -381,7 +381,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 if type_name == "string" {
                     param_ty = CG_STR
                 } else if type_name != "int" && type_name != "float" && type_name != "bool" && type_name != "ptr" {
+                    // Check enum type first
+                    let pemf = cg_enum_max_fields(type_name)
+                    if pemf > 0 {
+                        param_ty = cg_make_enum_type(type_name)
+                    }
                     // Might be a struct type — search from end
+                    if pemf == 0 {
                     mut sti = CG_STRUCT_NAMES.length - 1
                     while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == type_name {
@@ -392,6 +398,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                             break
                         }
                         sti = sti - 1
+                    }
                     }
                 }
             }
@@ -465,10 +472,21 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             if param_type_name == "string" {
                 cg.define_var(pname, Type.String, param_val)
             } else if param_type_name != "int" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr" {
+                // Check if it's an enum type
+                let emf = cg_enum_max_fields(param_type_name)
+                if emf > 0 {
+                    // Enum type — register as enum var
+                    CG_LAST_ENUM_TYPE = param_type_name
+                    cg.define_var(pname, Type.Int, param_val)
+                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + ",${pname}:${param_type_name},"
+                    CG_LAST_ENUM_TYPE = ""
+                } else {
                 // Struct type — set the flag so define_var uses correct alloca
                 CG_LAST_STRUCT_TYPE = param_type_name
                 cg.define_var(pname, Type.Int, param_val)
-                // Register as struct variable
+                }
+                // Register as struct variable (for both struct and non-enum types)
+                if emf == 0 {
                 CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
                 CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
                 // Get field info from struct registry
@@ -483,6 +501,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 }
                 CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
                 CG_LAST_STRUCT_TYPE = ""
+                }
             } else {
                 cg.define_var(pname, Type.Int, param_val)
             }
