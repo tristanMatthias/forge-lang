@@ -491,7 +491,17 @@ pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, pt
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, element: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
     if agg.is_null() || element.is_null() { return agg; }
-    unsafe { LLVMBuildInsertValue(builder, agg, element, index as c_uint, name) }
+    unsafe {
+        // Verify type compatibility before insert
+        let agg_ty = LLVMTypeOf(agg);
+        let n = LLVMCountStructElementTypes(agg_ty);
+        if (index as c_uint) >= n {
+            let name_s = if name.is_null() { "<null>" } else { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") };
+            eprintln!("WARNING: insertvalue index {} >= struct field count {} for {}", index, n, name_s);
+            return agg;
+        }
+        LLVMBuildInsertValue(builder, agg, element, index as c_uint, name)
+    }
 }
 
 #[no_mangle]

@@ -131,7 +131,11 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
+    // Register at least 1 slot for unit-only enums so they're recognized
+    // by cg_enum_max_fields (callers check > 0 to detect enum types)
+    mut reg_slots = max_slots
+    if reg_slots == 0 { reg_slots = 1 }
+    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${reg_slots},"
     // Enum declarations register tags + max field count.
     PARSE_END_POS = p.pos
     let id = next_node_id()
