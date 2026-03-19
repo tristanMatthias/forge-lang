@@ -315,6 +315,7 @@ export fn declare_all_functions(cg: Codegen) {
 
 // Phase 1: Declare all functions (called before any body emission)
 export fn declare_all_fns() {
+    mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
         let name = FN_NAMES[i]
@@ -322,18 +323,31 @@ export fn declare_all_fns() {
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
 
+        // Use actual parameter types (not all i64)
         let param_arr = llvm.type_array_new(pc)
         mut pi = 0
         while pi < pc {
-            llvm.type_array_set(param_arr, pi, CG_I64)
+            let pt_idx = param_offset + pi
+            mut pty = CG_I64
+            if pt_idx < FN_ALL_PARAM_TYPES.length {
+                pty = resolve_type_to_llvm(FN_ALL_PARAM_TYPES[pt_idx])
+            }
+            llvm.type_array_set(param_arr, pi, pty)
             pi = pi + 1
         }
+        // Use actual return type
         mut ret_ty = CG_I64
         if is_main { ret_ty = CG_I32 }
+        if !is_main && i < FN_RETURN_TYPES.length {
+            let rtn = FN_RETURN_TYPES[i]
+            if rtn == "string" { ret_ty = CG_STR }
+            else if rtn != "" { ret_ty = resolve_type_to_llvm(rtn) }
+        }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
         let fn_val = llvm.add_function(CG_MOD, name, fn_type)
         DECLARED_FNS[name] = fn_val
+        param_offset = param_offset + pc
         i = i + 1
     }
 }

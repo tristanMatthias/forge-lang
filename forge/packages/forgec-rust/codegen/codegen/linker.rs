@@ -28,6 +28,10 @@ impl<'ctx> Codegen<'ctx> {
                 detail: "failed to create target machine for current platform".to_string(),
             })?;
 
+        // Set data layout from target machine (critical for correct ABI on ARM64)
+        let data_layout = target_machine.get_target_data().get_data_layout();
+        self.module.set_data_layout(&data_layout);
+
         target_machine
             .write_to_file(&self.module, FileType::Object, path)
             .map_err(|e| CompileError::ObjectWriteFailed {
