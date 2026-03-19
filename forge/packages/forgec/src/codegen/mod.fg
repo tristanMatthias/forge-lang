@@ -627,6 +627,35 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
     return -1
 }
 
+// Get the type name of a struct field at a given index
+export fn struct_field_type_name(struct_name: string, fidx: int) -> string {
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_NAMES[si] == struct_name {
+            let type_names = CG_STRUCT_FIELD_TYPE_NAMES[si]
+            if type_names == "" { return "" }
+            mut idx = 0
+            mut current = ""
+            mut ti = 0
+            while ti < type_names.length {
+                let ch = type_names[ti]
+                if ch == "," {
+                    if idx == fidx { return current }
+                    idx = idx + 1
+                    current = ""
+                } else {
+                    current = current + ch
+                }
+                ti = ti + 1
+            }
+            if idx == fidx { return current }
+            return ""
+        }
+        si = si + 1
+    }
+    return ""
+}
+
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
     mut vi = CG_STRUCT_VAR_NAMES.length - 1
@@ -1397,10 +1426,36 @@ impl Codegen {
     fn emit_member_access(self, obj: Expr, field: string) -> ptr {
         // Handle obj.field: extract the variable name from obj, look up struct type, extract field
         mut var_name = ""
+        mut nested_struct_type = ""
+        mut nested_val: ptr = null
         match obj {
             .Ident(name, span) -> { var_name = name }
+            .MemberAccess(inner_obj, inner_field, span) -> {
+                // Nested: inner_obj.inner_field.field — recursively emit inner
+                nested_val = self.emit_member_access(inner_obj, inner_field)
+                nested_struct_type = CG_LAST_STRUCT_TYPE
+            }
             _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
+
+        // Handle nested member access: obj.inner.field
+        if nested_val != null && nested_struct_type != "" {
+            let fidx = struct_field_index(nested_struct_type, field)
+            if fidx >= 0 {
+                let fv = llvm.build_extract_value(CG_B, nested_val, fidx, field)
+                // Check if this field is itself a struct
+                let field_type_name = struct_field_type_name(nested_struct_type, fidx)
+                CG_LAST_STRUCT_TYPE = field_type_name
+                CG_LAST_IS_STR = 0
+                if is_struct_field_str(nested_struct_type, fidx) {
+                    CG_LAST_IS_STR = 1
+                    CG_LAST_STRUCT_TYPE = ""
+                }
+                return fv
+            }
+            return llvm.const_int(CG_I64, 0, 0)
+        }
+
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
         // Special case: .length property
@@ -1454,6 +1509,10 @@ impl Codegen {
             }
             si = si + 1
         }
+        // Track struct type of the extracted field for nested access
+        let ftn = struct_field_type_name(struct_type_name, fidx)
+        CG_LAST_STRUCT_TYPE = ftn
+        if CG_LAST_IS_STR == 1 { CG_LAST_STRUCT_TYPE = "" }
         field_val
     }
 }
