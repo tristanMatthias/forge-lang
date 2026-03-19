@@ -111,6 +111,9 @@ ForgeString forge_string_new(const char* data, int64_t len) {
 }
 
 ForgeString forge_string_concat(ForgeString a, ForgeString b) {
+    // Fast path: empty + anything = anything (no alloc)
+    if (a.len == 0) return b;
+    if (b.len == 0) return a;
     int64_t new_len = a.len + b.len;
     char* buf = (char*)forge_string_alloc(new_len + 1);
     memcpy(buf, a.ptr, a.len);
@@ -391,6 +394,8 @@ double forge_string_parse_float(ForgeString s) {
 
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
     if (a.len != b.len) return 0;
+    // Fast path for single-char comparison (common in lexer)
+    if (a.len == 1) return a.ptr[0] == b.ptr[0] ? 1 : 0;
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
 
