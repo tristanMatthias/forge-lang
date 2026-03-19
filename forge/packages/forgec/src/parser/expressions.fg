@@ -328,6 +328,9 @@ impl Parser {
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
                 result_is_llvm = false
+                // Clear HAS_LAST_VAL — args consumed by call, not by var binding
+                CG_HAS_LAST_VAL = 0
+                // Don't clear CG_LAST_ENUM_TYPE here — the emit_call will clear it
                 continue
             }
 

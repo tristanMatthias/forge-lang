@@ -944,8 +944,10 @@ impl Codegen {
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
-                    // Set type flags based on function return type
+                    // Reset type flags — the call consumed the enum arg
                     CG_LAST_IS_NULLABLE = 0
+                    CG_LAST_ENUM_TYPE = ""
+                    CG_HAS_LAST_VAL = 0
                     mut fi = 0
                     while fi < FN_NAMES.length {
                         if FN_NAMES[fi] == name {
@@ -1011,7 +1013,13 @@ impl Codegen {
                 if ptn == "string" {
                     pty = CG_STR
                 } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
+                    // Check enum param type
+                    let call_emf = cg_enum_max_fields(ptn)
+                    if call_emf > 0 {
+                        pty = cg_make_enum_type(ptn)
+                    }
                     // Struct param type
+                    if call_emf == 0 {
                     mut sti = CG_STRUCT_NAMES.length - 1
                     while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == ptn {
@@ -1020,6 +1028,7 @@ impl Codegen {
                             break
                         }
                         sti = sti - 1
+                    }
                     }
                 }
             }
