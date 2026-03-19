@@ -1272,18 +1272,24 @@ impl Parser {
                 }
 
                 if is_dot_variant {
-                    // .Variant -> body — compare tag (scrutinee is an int tag for simple enums)
+                    // .Variant or .Variant(bindings) -> body
                     self.advance() // consume .
                     let variant_name = self.expect_ident()
-                    // For now, .Variant patterns need enum tag lookup
-                    // Skip sub-patterns if present
+
+                    // Capture binding names from sub-pattern
+                    mut binding_names: List<string> = []
                     if self.check(TokenKind.LParen) {
                         self.advance()
                         while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                            self.parse_expr()
+                            let bname = self.expect_ident()
+                            if bname != "" {
+                                binding_names = binding_names.push(bname)
+                            }
                             if self.check(TokenKind.Comma) { self.advance() }
+                            self.skip_newlines()
                         }
-                        self.expect(TokenKind.RParen)
+                        // while loop confirmed RParen
+                        self.advance()
                     }
 
                     self.skip_newlines()
@@ -1297,13 +1303,45 @@ impl Parser {
                     let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.arm")
                     let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "match.next")
 
-                    // Compare: scrutinee == tag
+                    // Compare: scrutinee == tag (for i64 tags)
+                    // For struct scrutinees (tagged unions), extract tag byte first
                     let tag_val = llvm.const_int(CG_I64, tag, 0)
-                    let cmp = llvm.build_icmp(CG_B, 32, subj_val, tag_val, "match_cmp")
+                    let cmp = if scrutinee_is_str {
+                        // Tagged union: extract i8 tag, zext to i64, compare
+                        let stag = llvm.build_extract_value(CG_B, subj_val, 0, "enum_tag")
+                        let stag_ext = llvm.build_zext(CG_B, stag, llvm.int64_type(CG_CTX), "tag_ext")
+                        llvm.build_icmp(CG_B, 32, stag_ext, tag_val, "match_cmp")
+                    } else {
+                        llvm.build_icmp(CG_B, 32, subj_val, tag_val, "match_cmp")
+                    }
                     llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
 
                     // Emit arm body
                     llvm.position_at_end(CG_B, arm_bb)
+
+                    // Define bindings from destructured variant payload
+                    if binding_names.length > 0 {
+                        mut bi = 0
+                        for bname in binding_names {
+                            // Extract field bi+1 from the scrutinee (field 0 is tag)
+                            // For i64 scrutinees, use const 0 as placeholder
+                            if scrutinee_is_str {
+                                let field_val = llvm.build_extract_value(CG_B, subj_val, bi + 1, bname)
+                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
+                                llvm.build_store(CG_B, field_val, alloca)
+                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                            } else {
+                                // Simple i64 enum — no payload, define as 0
+                                let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
+                                llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), alloca)
+                                CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
+                                CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                            }
+                            bi = bi + 1
+                        }
+                    }
+
                     let prev_match2 = IN_MATCH_ARM
                     IN_MATCH_ARM = true
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
