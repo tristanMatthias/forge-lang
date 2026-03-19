@@ -14,11 +14,8 @@
 // for ARM64 register-passing when used as `self` parameter. Use the
 // standalone helper functions (node_ref_kind, etc.) instead.
 
-export trait AstData {
-    fn kind(self) -> string
-    fn feature_id(self) -> string
-    fn span(self) -> Span
-}
+// trait AstData removed for bootstrap (causes codegen crash)
+// Original: trait AstData { fn kind, fn feature_id, fn span }
 
 
 // ─── Node Reference (bridge for trait-object downcast) ─────────────
