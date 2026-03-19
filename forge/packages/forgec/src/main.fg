@@ -262,8 +262,7 @@ fn collect_module_paths(filepath: string) {
 
 fn resolve_module_paths(filepath: string) -> List<string> {
     MODULE_PATHS_CSV = ""
-    // Use resolve_modules which has proven character comparison logic
-    let _source = resolve_modules(filepath)
+    collect_module_paths(filepath)
     // Parse CSV into list
     mut paths: List<string> = []
     mut start = 0

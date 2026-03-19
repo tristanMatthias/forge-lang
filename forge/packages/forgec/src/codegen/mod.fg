@@ -370,7 +370,9 @@ export fn cg_get_enum_ty_for(name: string) -> ptr {
         llvm.type_array_set(fields, fi, CG_I64)
         fi = fi + 1
     }
-    let ty = llvm.struct_type(CG_CTX, fields, fc, 0)
+    // Named enum type (like Rust) for proper LLVM ABI handling
+    let ty = llvm.struct_create_named(CG_CTX, name)
+    llvm.struct_set_body(ty, fields, fc, 0)
     llvm.type_array_free(fields)
     // Cache it
     CG_ENUM_TYPE_CACHE_NAMES = CG_ENUM_TYPE_CACHE_NAMES.push(name)
@@ -582,10 +584,12 @@ fn cg_init_other_types() {
 }
 
 fn cg_init_str() {
+    // Named type %ForgeString = { ptr, i64 } — matches bootstrap's layout
+    CG_STR = llvm.struct_create_named(CG_CTX, "ForgeString")
     let sf = llvm.type_array_new(2)
     llvm.type_array_set(sf, 0, CG_PTR)
     llvm.type_array_set(sf, 1, CG_I64)
-    CG_STR = llvm.struct_type(CG_CTX, sf, 2, 0)
+    llvm.struct_set_body(CG_STR, sf, 2, 0)
     llvm.type_array_free(sf)
 }
 

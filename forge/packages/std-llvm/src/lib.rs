@@ -33,6 +33,8 @@ extern "C" {
     fn LLVMPointerTypeInContext(ctx: LLVMPtr, address_space: c_uint) -> LLVMPtr;
     fn LLVMFunctionType(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_uint, is_vararg: c_int) -> LLVMPtr;
     fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
+    fn LLVMStructCreateNamed(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMStructSetBody(struct_type: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int);
     fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
 
@@ -449,6 +451,16 @@ pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, bloc
 #[no_mangle]
 pub extern "C" fn forge_llvm_struct_type(ctx: LLVMPtr, element_types: *mut LLVMPtr, count: c_int, packed: c_int) -> LLVMPtr {
     unsafe { LLVMStructTypeInContext(ctx, element_types, count as c_uint, packed) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_struct_create_named(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMStructCreateNamed(ctx, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_struct_set_body(struct_type: LLVMPtr, element_types: *mut LLVMPtr, count: c_int, packed: c_int) {
+    unsafe { LLVMStructSetBody(struct_type, element_types, count as c_uint, packed) }
 }
 
 #[no_mangle]

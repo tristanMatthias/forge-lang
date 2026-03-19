@@ -387,6 +387,18 @@ export fn struct_type(ctx: ptr, element_types: ptr, count: int, packed: int) -> 
     forge_llvm_struct_type(ctx, element_types, count, packed)
 }
 
+/// Create a named struct type (like Rust's %Token = type {...}).
+extern fn forge_llvm_struct_create_named(ctx: ptr, name: string) -> ptr
+extern fn forge_llvm_struct_set_body(struct_type: ptr, element_types: ptr, count: int, packed: int)
+
+export fn struct_create_named(ctx: ptr, name: string) -> ptr {
+    forge_llvm_struct_create_named(ctx, name)
+}
+
+export fn struct_set_body(struct_type: ptr, element_types: ptr, count: int, packed: int) {
+    forge_llvm_struct_set_body(struct_type, element_types, count, packed)
+}
+
 /// Get the type of a struct element at the given index.
 export fn struct_get_type_at_index(struct_type: ptr, index: int) -> ptr {
     forge_llvm_struct_get_type_at_index(struct_type, index)

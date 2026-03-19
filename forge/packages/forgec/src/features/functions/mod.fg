@@ -347,16 +347,15 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 ci = ci + 1
             }
             if fields.length == 0 { fc = 0 }
-            // Create struct type with correct field types (string = CG_STR, others = CG_I64)
+            // Create struct type with correct field types
+            // Use CG_STR (named %ForgeString) for string fields — LLVM handles named types correctly
             let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
             let fta = llvm.type_array_new(fc)
             mut fi = 0
             mut fis_idx = 0
-            mut fis_cur = ""
             while fi < fc {
-                // Parse the next "0" or "1" from field_is_str (comma-separated)
                 mut is_str_field = false
-                fis_cur = ""
+                mut fis_cur = ""
                 while fis_idx < field_is_str.length {
                     let fch = field_is_str[fis_idx]
                     fis_idx = fis_idx + 1
@@ -371,7 +370,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 }
                 fi = fi + 1
             }
-            let sty = llvm.struct_type(CG_CTX, fta, fc, 0)
+            // Use named struct type (like Rust) for proper LLVM ARM64 ABI handling
+            let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
+            llvm.struct_set_body(sty, fta, fc, 0)
             llvm.type_array_free(fta)
             // Re-register with LLVM type
             CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
