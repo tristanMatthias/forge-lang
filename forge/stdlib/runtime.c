@@ -1680,3 +1680,17 @@ ForgeString forge_mini_run(ForgeString cmd, ForgeString args_json) {
         total, out, exit_code);
     return forge_string_new(result, rlen);
 }
+
+// Write a large ForgeString to file — workaround for potential ABI issues
+void forge_mini_write_file(ForgeString path, ForgeString content) {
+    char cpath[4096];
+    if (path.len >= sizeof(cpath)) return;
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+    FILE* f = fopen(cpath, "wb");
+    if (!f) return;
+    if (content.ptr && content.len > 0) {
+        fwrite(content.ptr, 1, content.len, f);
+    }
+    fclose(f);
+}
