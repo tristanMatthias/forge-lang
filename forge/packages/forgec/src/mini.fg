@@ -286,6 +286,10 @@ mut EFIELD_NAMES: List<string> = []
 mut EFIELD_TYPES: List<string> = []
 
 mut LAST_ENUM_TYPE: string = ""
+mut LAST_IS_LIST: int = 0
+mut LAST_LIST_ELEM_TYPE: string = "i64"  // element LLVM type for last list expr
+// Per-variable list element type: "" for non-lists
+mut VAR_LIST_ELEM_TYPE: List<string> = []
 
 // Function forward declarations
 mut FN_NAMES: List<string> = []
@@ -352,6 +356,12 @@ fn struct_field_count(struct_idx: int) -> int {
 
 fn struct_llvm_type(name: string) -> string {
     "%" + name
+}
+
+fn starts_with_list(s: string) -> bool {
+    if s.length < 5 { return false }
+    if s.substring(0, 5) == "list:" { return true }
+    false
 }
 
 // ─── Enum helpers ─────────────────────────────────
@@ -590,15 +600,20 @@ fn find_var(name: string) -> int {
     -1
 }
 
-fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
+fn push_var_full(name: string, reg_name: string, ty: string, stype: string, lelem: string) {
     VAR_NAMES = VAR_NAMES.push(name)
     VAR_REGS = VAR_REGS.push(reg_name)
     VAR_TYPES = VAR_TYPES.push(ty)
     VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push(stype)
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push(lelem)
+}
+
+fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
+    push_var_full(name, reg_name, ty, stype, "")
 }
 
 fn push_var(name: string, reg_name: string, ty: string) {
-    push_var_with_struct(name, reg_name, ty, "")
+    push_var_full(name, reg_name, ty, "", "")
 }
 
 fn find_fn_ret(name: string) -> string {
@@ -861,7 +876,61 @@ fn parse_postfix() -> string {
         } else if check(".") {
             advance()
             let field = advance().text
-            if field == "length" && val_is_str == 1 {
+            // List methods
+            if field == "length" && LAST_IS_LIST == 1 {
+                let r = new_reg()
+                ir_line(r + " = extractvalue { ptr, i64 } " + val + ", 1")
+                val = r
+                LAST_IS_LIST = 0
+                LAST_IS_STR = 0
+                val_is_str = 0
+            } else if field == "push" && LAST_IS_LIST == 1 && check("(") {
+                // list.push(elem) → allocate new array, copy, add element
+                let saved_elem_ty = LAST_LIST_ELEM_TYPE
+                advance()
+                skip_nl()
+                LAST_IS_STR = 0
+                let elem = parse_expr()
+                skip_nl()
+                expect(")")
+                // Infer element type from pushed value
+                mut elem_ty = saved_elem_ty
+                if LAST_IS_STR == 1 {
+                    elem_ty = "%ForgeString"
+                }
+                LAST_LIST_ELEM_TYPE = elem_ty
+                // Get old data and length
+                let old_data = new_reg()
+                ir_line(old_data + " = extractvalue { ptr, i64 } " + val + ", 0")
+                let old_len = new_reg()
+                ir_line(old_len + " = extractvalue { ptr, i64 } " + val + ", 1")
+                // New length = old_len + 1
+                let new_len = new_reg()
+                ir_line(new_len + " = add i64 " + old_len + ", 1")
+                // Alloc new array: new_len * elem_size
+                let elem_size = new_reg()
+                ir_line(elem_size + " = ptrtoint ptr getelementptr (" + elem_ty + ", ptr null, i32 1) to i64")
+                let total = new_reg()
+                ir_line(total + " = mul i64 " + elem_size + ", " + new_len)
+                let new_data = new_reg()
+                ir_line(new_data + " = call ptr @forge_alloc(i64 " + total + ")")
+                // Copy old data: memcpy(new_data, old_data, old_len * elem_size)
+                let copy_size = new_reg()
+                ir_line(copy_size + " = mul i64 " + elem_size + ", " + old_len)
+                ir_line("call void @llvm.memcpy.p0.p0.i64(ptr " + new_data + ", ptr " + old_data + ", i64 " + copy_size + ", i1 false)")
+                // Store new element at new_data[old_len]
+                let elem_ptr = new_reg()
+                ir_line(elem_ptr + " = getelementptr " + elem_ty + ", ptr " + new_data + ", i64 " + old_len)
+                ir_line("store " + elem_ty + " " + elem + ", ptr " + elem_ptr)
+                // Build new list struct
+                let ls1 = new_reg()
+                ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + new_data + ", 0")
+                let ls2 = new_reg()
+                ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + new_len + ", 1")
+                val = ls2
+                LAST_IS_LIST = 1
+                val_is_str = 0
+            } else if field == "length" && val_is_str == 1 {
                 let r = new_reg()
                 ir_line(r + " = call i64 @forge_string_length(%ForgeString " + val + ")")
                 val = r
@@ -941,8 +1010,25 @@ fn parse_postfix() -> string {
                 val = r
                 val_is_str = 1
                 LAST_IS_STR = 1
+            } else if LAST_IS_LIST == 1 {
+                // List indexing: list[i] → GEP + load
+                let ety = LAST_LIST_ELEM_TYPE
+                let data_ptr = new_reg()
+                ir_line(data_ptr + " = extractvalue { ptr, i64 } " + val + ", 0")
+                let elem_ptr = new_reg()
+                ir_line(elem_ptr + " = getelementptr " + ety + ", ptr " + data_ptr + ", i64 " + idx)
+                let elem_val = new_reg()
+                ir_line(elem_val + " = load " + ety + ", ptr " + elem_ptr)
+                val = elem_val
+                LAST_IS_LIST = 0
+                if ety == "%ForgeString" {
+                    val_is_str = 1
+                    LAST_IS_STR = 1
+                } else {
+                    val_is_str = 0
+                    LAST_IS_STR = 0
+                }
             }
-            val = val
         } else {
             break
         }
@@ -958,6 +1044,24 @@ fn parse_primary() -> string {
     if tok.kind == 2 {
         advance()
         return tok.text
+    }
+
+    // List literal: []
+    if tok.text == "[" {
+        advance()
+        skip_nl()
+        expect("]")
+        // Empty list: { ptr alloc(0), i64 0 }
+        let data_r = new_reg()
+        ir_line(data_r + " = call ptr @forge_alloc(i64 0)")
+        let ls1 = new_reg()
+        ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data_r + ", 0")
+        let ls2 = new_reg()
+        ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 0, 1")
+        LAST_IS_LIST = 1
+        LAST_IS_STR = 0
+        LAST_LIST_ELEM_TYPE = "i64"
+        return ls2
     }
 
     // String literal
@@ -1118,11 +1222,19 @@ fn parse_primary() -> string {
         let idx = find_var(name)
         if idx >= 0 {
             let vty = VAR_TYPES[idx]
-            let r = new_reg()
-            ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
             LAST_IS_STR = 0
+            LAST_IS_LIST = 0
             LAST_STRUCT_TYPE = ""
             LAST_ENUM_TYPE = ""
+            let r = new_reg()
+            // Check for list type
+            if vty == "{ ptr, i64 }" {
+                ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
+                LAST_IS_LIST = 1
+                // Keep LAST_LIST_ELEM_TYPE from previous push (persistent per function)
+                return r
+            }
+            ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
             if vty == "%ForgeString" {
                 LAST_IS_STR = 1
             }
@@ -1174,6 +1286,7 @@ fn parse_stmt() -> bool {
         expect("=")
         skip_nl()
         LAST_IS_STR = 0
+        LAST_IS_LIST = 0
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
         let val = parse_expr()
@@ -1190,6 +1303,10 @@ fn parse_stmt() -> bool {
             ir_line(alloca + " = alloca " + ety)
             ir_line("store " + ety + " " + val + ", ptr " + alloca)
             push_var(name, alloca, ety)
+        } else if LAST_IS_LIST == 1 {
+            ir_line(alloca + " = alloca { ptr, i64 }")
+            ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
+            push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
         } else if LAST_IS_STR == 1 {
             ir_line(alloca + " = alloca %ForgeString")
             ir_line("store %ForgeString " + val + ", ptr " + alloca)
@@ -1449,7 +1566,12 @@ fn parse_stmt() -> bool {
         // Store to the variable that was on the LHS
         let var_idx = find_var(lhs_name)
         if var_idx >= 0 {
-            ir_line("store " + VAR_TYPES[var_idx] + " " + rhs + ", ptr " + VAR_REGS[var_idx])
+            let store_ty = VAR_TYPES[var_idx]
+            if store_ty == "{ ptr, i64 }" {
+                ir_line("store { ptr, i64 } " + rhs + ", ptr " + VAR_REGS[var_idx])
+            } else {
+                ir_line("store " + store_ty + " " + rhs + ", ptr " + VAR_REGS[var_idx])
+            }
         }
         return false
     }
@@ -1708,6 +1830,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_string_eq(%ForgeString, %ForgeString)")
     ir_raw("declare ptr @forge_alloc(i64)")
     ir_raw("declare i32 @puts(ptr)")
+    ir_raw("declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)")
     ir_raw("")
 
     // Parse top-level
