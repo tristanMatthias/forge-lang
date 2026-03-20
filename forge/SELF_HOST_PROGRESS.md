@@ -2,6 +2,10 @@
 
 **Status: 8% (3/37 files compile in Stage 2)**
 
+> Phase 1 scan: DONE (2s for all 37 files, 385 functions)
+> Phase 2 compile: 3/37 files produce valid .o files
+> Current blocker: error.fg crashes during Diagnostic struct literal with Span field
+
 Last updated: 2026-03-19
 
 ## Pipeline
@@ -46,7 +50,14 @@ When the Rust bootstrap compiles `match stmt { .Expr(expr) -> { ... } }`, the ex
 2. The inline-emit path works around this by emitting LLVM IR during parsing (no extraction needed)
 3. But inline emit has its own bugs (stale CG_LAST_VAL, etc.) that cause crashes in complex files
 
-**Fix needed:** `packages/forgec-rust/features/pattern_matching/codegen.rs` → `extract_enum_variant_fields()` needs to correctly preserve nested enum types during field extraction from tagged unions.
+**Partially fixed:** Bootstrap `type_to_llvm_basic` now updates stale cached enum types.
+The Expr type correctly shows 10 LLVM fields during extraction.
+
+**Remaining issue:** The inline-emit crash in error.fg is NOT from the bootstrap match
+extraction — it's from the self-hosted compiler's inline struct literal codegen. When
+building `Diagnostic { ..., span: span, ... }`, the `span` parameter's LLVM type
+doesn't match the Diagnostic's field type because the struct type deduplication changes
+indices between scan and codegen phases.
 
 ## Completed Work
 
