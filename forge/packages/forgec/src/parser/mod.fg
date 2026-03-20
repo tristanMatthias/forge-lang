@@ -713,14 +713,30 @@ impl Parser {
         }
 
         // Consume > or >>
+        // Consume > or >> (avoid if-as-expression which creates bad phi)
         let gt = self.peek().text
-        if gt == ">>" || self.check(TokenKind.ShiftRight) {
+        mut consumed_gt = false
+        if gt == ">>" {
             self.advance()
-        } else if gt == ">" || self.check(TokenKind.Gt) {
-            self.advance()
+            consumed_gt = true
+        }
+        if !consumed_gt {
+            if self.check(TokenKind.ShiftRight) {
+                self.advance()
+                consumed_gt = true
+            }
+        }
+        if !consumed_gt {
+            if gt == ">" {
+                self.advance()
+                consumed_gt = true
+            }
+        }
+        if !consumed_gt {
+            if self.check(TokenKind.Gt) { self.advance() }
         }
 
-        args
+        return args
     }
 
     fn parse_function_type(self) -> TypeExpr? {
