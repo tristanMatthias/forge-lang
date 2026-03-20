@@ -1477,6 +1477,9 @@ fn parse_let_stmt() -> bool {
 fn parse_stmt() -> bool {
     skip_nl()
     let tok = peek()
+    // Reset member tracking to prevent stale field names from previous statements
+    LAST_MEMBER_FIELD = ""
+    LAST_MEMBER_OBJ_NAME = ""
 
     // let / mut
     if tok.text == "let" || tok.text == "mut" {
