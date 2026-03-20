@@ -45,6 +45,7 @@ export mut VAR_GLOBAL_NAMES: List<string> = []
 // Bitmask: bit i = 1 if global i is string/list type
 export mut VAR_GLOBAL_STR_MASK: int = 0  // Legacy bitmask (only works for first 64 globals)
 export mut VAR_GLOBAL_IS_STR: List<int> = []  // 0/1 per global (replaces bitmask)
+export mut VAR_GLOBAL_TYPE_CSV: string = ""    // "name:ann_is_list:value_tok_kind\n" per global
 export mut VAR_GLOBAL_IS_STR: int = 0
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
@@ -76,12 +77,14 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
-        if type_tok.kind_id == 1 && type_tok.text == "List" {
-            ann_is_list = 1
-            // Element type is 2 tokens ahead: List < ElementType >
-            let elem_tok = p.peek_at(2)
-            if elem_tok.kind_id == 1 {
-                ann_elem_name = elem_tok.text
+        if type_tok.kind_id == 1 {
+            if type_tok.text == "List" {
+                ann_is_list = 1
+                // Element type is 2 tokens ahead: List < ElementType >
+                let elem_tok = p.peek_at(2)
+                if elem_tok.kind_id == 1 {
+                    ann_elem_name = elem_tok.text
+                }
             }
         }
         type_ann = p.parse_type_expr()
@@ -108,7 +111,16 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Register top-level globals with type detection from value token
     if IN_FUNCTION_BODY != 1 {
         // Track if this global is a string/list/map type
-        if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
+        // Use token TEXT instead of kind match (bootstrap match on 100+ variant
+        // TokenKind enum has issues with high variant indices)
+        // Detect string/list/map globals
+        // Store ann_is_list as numeric flag in CSV (avoids bootstrap if-condition bug)
+        VAR_GLOBAL_TYPE_CSV = VAR_GLOBAL_TYPE_CSV + var_name + ":" + string(ann_is_list) + ":" + string(value_tok_kind) + "\n"
+        // Use CSV-based detection instead of bitmask/list (both unreliable with bootstrap bugs)
+        mut is_list_or_str = false
+        if value_tok_kind == 4 { is_list_or_str = true }
+        // ann_is_list detection deferred to create_globals_typed via CSV
+        if is_list_or_str {
             VAR_GLOBAL_IS_STR = VAR_GLOBAL_IS_STR.push(1)
             // Legacy bitmask (only for first 64)
             if VAR_GLOBAL_COUNT < 64 {

@@ -133,27 +133,31 @@ export fn store_toplevel_source(src: string) {
 // Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
-    // Import the per-global type list
-    let is_str_list = VAR_GLOBAL_IS_STR
+    // Use CSV-based type detection (avoids bitmask overflow and bootstrap if-condition bugs)
+    let type_csv = VAR_GLOBAL_TYPE_CSV
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Use per-global list if available (supports >64 globals)
+        // Look up in CSV: "name:ann_is_list:value_tok_kind\n"
         mut is_str = false
-        if i < is_str_list.length {
-            is_str = is_str_list[i] == 1
-        } else if i < 64 {
-            // Fallback to bitmask for first 64
-            mut bit = 1
-            mut shift = 0
-            while shift < i {
-                bit = bit * 2
-                shift = shift + 1
+        let needle = name + ":"
+        let ni = type_csv.index_of(needle)
+        if ni >= 0 {
+            // Parse ann_is_list (first number after name:)
+            let after_name = ni + needle.length
+            if after_name < type_csv.length {
+                let ann_char = type_csv[after_name]
+                if ann_char == "1" { is_str = true }  // ann_is_list == 1
+                // Also check value_tok_kind (after second :)
+                if after_name + 2 < type_csv.length {
+                    let vtk_char = type_csv[after_name + 2]
+                    if vtk_char == "4" { is_str = true }  // StringLit
+                }
             }
-            is_str = (str_mask / bit) % 2 == 1
         }
         mut gty = CG_I64
         if is_str { gty = CG_STR }
+
         let gv = llvm.add_global(CG_MOD, gty, name)
         llvm.set_initializer(gv, llvm.const_null(gty))
         llvm.set_linkage(gv, 3)
