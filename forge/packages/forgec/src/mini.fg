@@ -378,6 +378,35 @@ fn struct_llvm_type(name: string) -> string {
     "%" + name
 }
 
+fn try_load_list(name: string, idx: int, vty: string) -> string {
+    if is_list_type(vty) {
+        return load_list_var(name, idx, vty)
+    }
+    ""
+}
+
+fn load_list_var(name: string, idx: int, vty: string) -> string {
+    let r = new_reg()
+    ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
+    LAST_IS_LIST = 1
+    LAST_IS_STR = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    LAST_LIST_ELEM_TYPE = vty.substring(5, vty.length)
+    r
+}
+
+fn is_list_type(ty: string) -> bool {
+    if ty.length < 6 { return false }
+    // Check "list_" prefix char by char
+    if ty.substring(0, 1) != "l" { return false }
+    if ty.substring(1, 2) != "i" { return false }
+    if ty.substring(2, 3) != "s" { return false }
+    if ty.substring(3, 4) != "t" { return false }
+    if ty.substring(4, 5) != "_" { return false }
+    true
+}
+
 fn clear_last_ident() {
     LAST_IDENT_NAME = ""
 }
@@ -647,6 +676,7 @@ fn find_var(name: string) -> int {
 }
 
 fn push_var_full(name: string, reg_name: string, ty: string, stype: string, lelem: string) {
+    eprintln("  [push_var] " + name + " ty=" + ty)
     VAR_NAMES = VAR_NAMES.push(name)
     VAR_REGS = VAR_REGS.push(reg_name)
     VAR_TYPES = VAR_TYPES.push(ty)
@@ -871,6 +901,8 @@ fn parse_unary() -> string {
 fn parse_postfix() -> string {
     mut val = parse_primary()
     mut val_is_str = LAST_IS_STR
+    mut val_is_list = LAST_IS_LIST
+    mut val_list_elem = LAST_LIST_ELEM_TYPE
     mut val_struct = LAST_STRUCT_TYPE
     while true {
         if check("(") {
@@ -941,16 +973,16 @@ fn parse_postfix() -> string {
             advance()
             let field = advance().text
             // List methods
-            if field == "length" && LAST_IS_LIST == 1 {
+            if field == "length" && val_is_list == 1 {
                 let r = new_reg()
                 ir_line(r + " = extractvalue { ptr, i64 } " + val + ", 1")
                 val = r
                 LAST_IS_LIST = 0
                 LAST_IS_STR = 0
                 val_is_str = 0
-            } else if field == "push" && LAST_IS_LIST == 1 && check("(") {
+            } else if field == "push" && val_is_list == 1 && check("(") {
                 // list.push(elem) → allocate new array, copy, add element
-                let saved_elem_ty = LAST_LIST_ELEM_TYPE
+                let saved_elem_ty = val_list_elem
                 advance()
                 skip_nl()
                 LAST_IS_STR = 0
@@ -1075,9 +1107,9 @@ fn parse_postfix() -> string {
                 val = r
                 val_is_str = 1
                 LAST_IS_STR = 1
-            } else if LAST_IS_LIST == 1 {
+            } else if val_is_list == 1 {
                 // List indexing: list[i] → GEP + load
-                let ety = LAST_LIST_ELEM_TYPE
+                let ety = val_list_elem
                 let data_ptr = new_reg()
                 ir_line(data_ptr + " = extractvalue { ptr, i64 } " + val + ", 0")
                 let elem_ptr = new_reg()
@@ -1085,6 +1117,7 @@ fn parse_postfix() -> string {
                 let elem_val = new_reg()
                 ir_line(elem_val + " = load " + ety + ", ptr " + elem_ptr)
                 val = elem_val
+                val_is_list = 0
                 LAST_IS_LIST = 0
                 if ety == "%ForgeString" {
                     val_is_str = 1
@@ -1092,6 +1125,13 @@ fn parse_postfix() -> string {
                 } else {
                     val_is_str = 0
                     LAST_IS_STR = 0
+                    // If element is a struct/enum, set tracking
+                    if ety.length > 1 {
+                        if ety.substring(0, 1) == "%" {
+                            val_struct = ety.substring(1, ety.length)
+                            LAST_STRUCT_TYPE = val_struct
+                        }
+                    }
                 }
             }
         } else {
@@ -1099,6 +1139,176 @@ fn parse_postfix() -> string {
         }
     }
     val
+}
+
+fn parse_ident_expr() -> string {
+    advance()
+    let name = peek_prev_text()
+    LAST_IDENT_NAME = name
+
+    // Check for struct literal
+    let si = find_struct(name)
+    if si >= 0 && check("{") {
+        advance()
+        skip_nl()
+        let sty = struct_llvm_type(name)
+        let nfields = struct_field_count(si)
+        mut cur = "undef"
+        while !check("}") {
+            let fname = advance().text
+            mut fval = ""
+            if check(":") {
+                advance()
+                skip_nl()
+                fval = parse_expr()
+            } else {
+                let vi = find_var(fname)
+                if vi >= 0 {
+                    fval = new_reg()
+                    ir_line(fval + " = load " + VAR_TYPES[vi] + ", ptr " + VAR_REGS[vi])
+                } else {
+                    fval = "0"
+                }
+            }
+            let fidx = struct_field_index(si, fname)
+            if fidx >= 0 {
+                let fty = struct_field_type(si, fidx)
+                let nr = new_reg()
+                ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
+                cur = nr
+            }
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+        }
+        expect("}")
+        LAST_STRUCT_TYPE = name
+        LAST_IS_STR = 0
+        return cur
+    }
+
+    // Check for enum construction
+    let ei = find_enum(name)
+    if ei >= 0 && check(".") {
+        advance()
+        let vname = advance().text
+        let vidx = enum_variant_index(ei, vname)
+        let ety = "%" + name
+        let tag_r = new_reg()
+        ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
+        let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+        let fc = EVAR_FIELD_COUNTS[gvi]
+        mut cur = tag_r
+        if fc > 0 && check("(") {
+            advance()
+            skip_nl()
+            let fs = EVAR_FIELD_STARTS[gvi]
+            mut fi = 0
+            while fi < fc {
+                let fval = parse_expr()
+                let slot = fi + 1
+                let nr = new_reg()
+                ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
+                cur = nr
+                fi = fi + 1
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+        }
+        LAST_ENUM_TYPE = name
+        LAST_STRUCT_TYPE = ""
+        LAST_IS_STR = 0
+        return cur
+    }
+
+    // Check for string() conversion
+    if name == "string" && check("(") {
+        advance()
+        skip_nl()
+        let arg = parse_expr()
+        skip_nl()
+        expect(")")
+        let r = new_reg()
+        ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
+        LAST_IS_STR = 1
+        return r
+    }
+
+    // Check for int() conversion
+    if name == "int" && check("(") {
+        advance()
+        skip_nl()
+        let arg = parse_expr()
+        skip_nl()
+        expect(")")
+        return arg
+    }
+
+    // Check for println/eprintln
+    if (name == "println" || name == "eprintln") && check("(") {
+        advance()
+        skip_nl()
+        let arg = parse_expr()
+        skip_nl()
+        expect(")")
+        if name == "println" {
+            ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
+        } else {
+            ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
+        }
+        return "0"
+    }
+
+    // Variable lookup
+    let idx = find_var(name)
+    if idx >= 0 {
+        let vty = VAR_TYPES[idx]
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        let r = new_reg()
+        // Check for list type
+        if is_list_type(vty) {
+            ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
+            LAST_IS_LIST = 1
+            LAST_LIST_ELEM_TYPE = vty.substring(5, vty.length)
+            return r
+        }
+        ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
+        if vty == "%ForgeString" {
+            LAST_IS_STR = 1
+        }
+        // Derive struct/enum type from LLVM type name
+        if vty.length > 1 {
+            let first_ch = vty.substring(0, 1)
+            if first_ch == "%" {
+                if vty != "%ForgeString" {
+                    let tname = vty.substring(1, vty.length)
+                    if find_struct(tname) >= 0 {
+                        LAST_STRUCT_TYPE = tname
+                    }
+                    if find_enum(tname) >= 0 {
+                        LAST_ENUM_TYPE = tname
+                    }
+                }
+            }
+        }
+        return r
+    }
+
+    // Function reference
+    "@" + name
+}
+
+fn peek_prev_text() -> string {
+    // Return text of the token we just advanced past
+    if POS > 0 {
+        return TOKENS[POS - 1].text
+    }
+    ""
 }
 
 fn parse_primary() -> string {
@@ -1156,178 +1366,11 @@ fn parse_primary() -> string {
         return val
     }
 
-    // Identifier — load from variable or return function ref
+    // Identifier — delegate to separate function to reduce size
     if tok.kind == 1 {
-        advance()
-        let name = tok.text
-        LAST_IDENT_NAME = name
-
-        // Check for struct literal: TypeName { field: val, ... }
-        let si = find_struct(name)
-        if si >= 0 && check("{") {
-            advance()
-            skip_nl()
-            let sty = struct_llvm_type(name)
-            let nfields = struct_field_count(si)
-            // Start with undef
-            mut cur = "undef"
-            // Parse fields
-            while !check("}") {
-                let fname = advance().text
-                // Shorthand: { field } means { field: field }
-                mut fval = ""
-                if check(":") {
-                    advance()
-                    skip_nl()
-                    fval = parse_expr()
-                } else {
-                    // Shorthand — load the variable with same name
-                    let vi = find_var(fname)
-                    if vi >= 0 {
-                        fval = new_reg()
-                        ir_line(fval + " = load " + VAR_TYPES[vi] + ", ptr " + VAR_REGS[vi])
-                    } else {
-                        fval = "0"
-                    }
-                }
-                let fidx = struct_field_index(si, fname)
-                if fidx >= 0 {
-                    let r = new_reg()
-                    let fty = struct_field_type(si, fidx)
-                    ir_line(r + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
-                    cur = r
-                }
-                skip_nl()
-                if check(",") { advance() }
-                skip_nl()
-            }
-            expect("}")
-            LAST_STRUCT_TYPE = name
-            LAST_IS_STR = 0
-            return cur
-        }
-
-        // Check for enum construction: EnumName.Variant or EnumName.Variant(args)
-        let ei = find_enum(name)
-        if ei >= 0 && check(".") {
-            advance() // consume .
-            let vname = advance().text
-            let vidx = enum_variant_index(ei, vname)
-            let ety = "%" + name
-            // Build enum value: { i8 tag, payload... }
-            let tag_r = new_reg()
-            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
-            // Check for data-carrying variant
-            let gvi = ENUM_VARIANT_STARTS[ei] + vidx
-            let fc = EVAR_FIELD_COUNTS[gvi]
-            mut cur = tag_r
-            if fc > 0 && check("(") {
-                advance()
-                skip_nl()
-                let fs = EVAR_FIELD_STARTS[gvi]
-                mut fi = 0
-                while fi < fc {
-                    let fval = parse_expr()
-                    let slot = fi + 1  // slot 0 is tag
-                    let nr = new_reg()
-                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
-                    cur = nr
-                    fi = fi + 1
-                    skip_nl()
-                    if check(",") { advance() }
-                    skip_nl()
-                }
-                expect(")")
-            }
-            LAST_ENUM_TYPE = name
-            LAST_STRUCT_TYPE = ""
-            LAST_IS_STR = 0
-            return cur
-        }
-
-        // Check for string() conversion
-        if name == "string" && check("(") {
-            advance()
-            skip_nl()
-            let arg = parse_expr()
-            skip_nl()
-            expect(")")
-            let r = new_reg()
-            ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
-            LAST_IS_STR = 1
-            return r
-        }
-
-        // Check for int() conversion
-        if name == "int" && check("(") {
-            advance()
-            skip_nl()
-            let arg = parse_expr()
-            skip_nl()
-            expect(")")
-            return arg // TODO: actual string->int conversion
-        }
-
-        // Check for println/eprintln
-        if (name == "println" || name == "eprintln") && check("(") {
-            advance()
-            skip_nl()
-            let arg = parse_expr()
-            skip_nl()
-            expect(")")
-            if name == "println" {
-                ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
-            } else {
-                ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
-            }
-            return "0"
-        }
-
-        // Variable lookup
-        let idx = find_var(name)
-        if idx >= 0 {
-            let vty = VAR_TYPES[idx]
-            LAST_IS_STR = 0
-            LAST_IS_LIST = 0
-            LAST_STRUCT_TYPE = ""
-            LAST_ENUM_TYPE = ""
-            let r = new_reg()
-            // Check for list type
-            if vty == "{ ptr, i64 }" {
-                ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
-                LAST_IS_LIST = 1
-                // Read per-variable element type
-                let vet = VAR_LIST_ELEM_TYPE[idx]
-                if vet != "" {
-                    LAST_LIST_ELEM_TYPE = vet
-                }
-                return r
-            }
-            ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
-            if vty == "%ForgeString" {
-                LAST_IS_STR = 1
-            }
-            // Derive struct/enum type from LLVM type name
-            if vty.length > 1 {
-                let first_ch = vty.substring(0, 1)
-                if first_ch == "%" {
-                    if vty != "%ForgeString" {
-                        let tname = vty.substring(1, vty.length)
-                        if find_struct(tname) >= 0 {
-                            LAST_STRUCT_TYPE = tname
-                        }
-                        if find_enum(tname) >= 0 {
-                            LAST_ENUM_TYPE = tname
-                        }
-                    }
-                }
-            }
-            return r
-        }
-
-        // Function reference
-        return "@" + name
+        return parse_ident_expr()
     }
+    // (ident code moved to parse_ident_expr)
 
     eprintln("unexpected token: '" + tok.text + "' kind=" + string(tok.kind) + " line " + string(tok.line))
     advance()
@@ -1402,11 +1445,11 @@ fn parse_let_stmt() -> bool {
         if ann_generic == "int" { elet = "i64" }
         if find_struct(ann_generic) >= 0 { elet = "%" + ann_generic }
         if find_enum(ann_generic) >= 0 { elet = "%" + ann_generic }
-        push_var_full(name, alloca, "{ ptr, i64 }", "", elet)
+        push_var(name, alloca, "list_" + elet)
     } else if LAST_IS_LIST == 1 {
         ir_line(alloca + " = alloca { ptr, i64 }")
         ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-        push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
+        push_var(name, alloca, "list_" + LAST_LIST_ELEM_TYPE)
     } else if LAST_IS_STR == 1 {
         ir_line(alloca + " = alloca %ForgeString")
         ir_line("store %ForgeString " + val + ", ptr " + alloca)
@@ -1416,7 +1459,7 @@ fn parse_let_stmt() -> bool {
         if last_fn_ret == "{ ptr, i64 }" {
             ir_line(alloca + " = alloca { ptr, i64 }")
             ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-            push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
+            push_var(name, alloca, "list_" + LAST_LIST_ELEM_TYPE)
         } else if last_fn_ret.length > 1 && last_fn_ret.substring(0, 1) == "%" && last_fn_ret != "%ForgeString" {
             ir_line(alloca + " = alloca " + last_fn_ret)
             ir_line("store " + last_fn_ret + " " + val + ", ptr " + alloca)
@@ -1799,7 +1842,7 @@ fn parse_stmt() -> bool {
             let var_idx = find_var(lhs_name)
             if var_idx >= 0 {
                 let store_ty = VAR_TYPES[var_idx]
-                if store_ty == "{ ptr, i64 }" {
+                if store_ty.length > 5 && store_ty.substring(0, 5) == "list_" {
                     ir_line("store { ptr, i64 } " + rhs + ", ptr " + VAR_REGS[var_idx])
                 } else {
                     ir_line("store " + store_ty + " " + rhs + ", ptr " + VAR_REGS[var_idx])
@@ -1808,6 +1851,7 @@ fn parse_stmt() -> bool {
         }
         LAST_MEMBER_OBJ_NAME = ""
         LAST_MEMBER_FIELD = ""
+        clear_last_ident()
         return false
     }
     false
