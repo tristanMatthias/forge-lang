@@ -84,9 +84,24 @@ impl<'ctx> Codegen<'ctx> {
 
         self.builder.position_at_end(merge_bb);
 
-        // If both branches produce values, create a phi node
+        // Only create phi if both branches reach the merge block.
+        // If a branch terminates with return, it won't branch to merge,
+        // so its values don't dominate the merge block.
+        // Simple check: did we add the unconditional branch to merge? (line 69/82 above)
+        // If the block had a terminator BEFORE we added ours, we didn't add one.
+        // We can check: the then_end_bb/else_end_bb terminators — if they're Return, skip phi.
+        let then_returns = then_end_bb.get_terminator().map_or(false, |t| {
+            t.get_opcode() == inkwell::values::InstructionOpcode::Return
+        });
+        let else_returns = else_end_bb.get_terminator().map_or(false, |t| {
+            t.get_opcode() == inkwell::values::InstructionOpcode::Return
+        });
+
         if let (Some(tv), Some(ev)) = (&then_val, &else_val) {
-            if tv.get_type() == ev.get_type() {
+            // Also skip phi for struct types in if-without-else (common source of domination errors)
+            let is_struct_type = tv.is_struct_value();
+            let has_else = else_branch.is_some();
+            if tv.get_type() == ev.get_type() && !then_returns && !else_returns && (!is_struct_type || has_else) {
                 let phi = self.builder.build_phi(tv.get_type(), "if_result").unwrap();
                 phi.add_incoming(&[(tv, then_end_bb), (ev, else_end_bb)]);
                 return Some(phi.as_basic_value());
@@ -162,21 +177,28 @@ impl<'ctx> Codegen<'ctx> {
     /// ends with a non-expression statement.
     pub(crate) fn compile_block_for_value(&mut self, block: &Block) -> Option<BasicValueEnum<'ctx>> {
         let mut last_val = None;
-        let mut last_val_bb = None;
+        let entry_bb = self.builder.get_insert_block();
         for stmt in &block.statements {
+            // If block already terminated (return/break), stop compiling
+            if let Some(bb) = self.builder.get_insert_block() {
+                if bb.get_terminator().is_some() {
+                    break;
+                }
+            }
             match stmt {
                 Statement::Expr(expr) => {
-                    let before_bb = self.builder.get_insert_block();
                     last_val = self.compile_expr(expr);
-                    let after_bb = self.builder.get_insert_block();
-                    last_val_bb = after_bb;
-                    // If the builder moved blocks, the last value might not dominate.
-                    // We leave it here — the phi creation in compile_if has safeguards.
                 }
                 _ => {
                     self.compile_statement(stmt);
                     last_val = None;
                 }
+            }
+        }
+        // If the builder ended up in a terminated block, don't return a value
+        if let Some(bb) = self.builder.get_insert_block() {
+            if bb.get_terminator().is_some() {
+                return None;
             }
         }
         last_val
