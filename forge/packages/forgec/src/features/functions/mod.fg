@@ -617,18 +617,20 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_FN_NULLABLE_RET_TY = null
         if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
-        // Re-lex and re-parse the body source text (CG_ACTIVE=false: pure AST, no inline emit)
+        // Re-lex and re-parse with CG_ACTIVE=true (inline emit during parse).
+        // We tried AST-based codegen (Option B) but the bootstrap's match
+        // destructuring corrupts nested Expr values extracted from Statement
+        // enums, making the AST path unusable. Inline emit avoids this by
+        // emitting LLVM IR directly during parsing without storing/extracting
+        // complex Expr values.
         mut body_block = Block { statements: [], span: Span { line: 0, col: 0, start: 0, end: 0 } }
         if body_src != "" {
-            let prev_active = CG_ACTIVE
-            CG_ACTIVE = false  // Parse builds AST only, no LLVM emit
+            CG_ACTIVE = true
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
             mut body_parser = parser_new(body_tokens)
             body_block = body_parser.parse_block()
-            CG_ACTIVE = prev_active
-            // Emit the AST through the codegen path
-            cg.emit_block(body_block)
+            // All code emitted inline during parsing
         }
 
         // Add implicit return only if the block doesn't already terminate
