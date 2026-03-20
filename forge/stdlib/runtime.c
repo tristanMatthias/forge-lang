@@ -1694,3 +1694,16 @@ void forge_mini_write_file(ForgeString path, ForgeString content) {
     }
     fclose(f);
 }
+
+// Debug: write ForgeString to file, print debug info
+void forge_mini_write_debug(ForgeString path, ForgeString content) {
+    char cpath[4096];
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+    fprintf(stderr, "  [write_debug] path='%s' ptr=%p len=%lld\n", cpath, content.ptr, (long long)content.len);
+    FILE* f = fopen(cpath, "wb");
+    if (!f) { fprintf(stderr, "  [write_debug] fopen failed\n"); return; }
+    size_t w = fwrite(content.ptr, 1, content.len, f);
+    fclose(f);
+    fprintf(stderr, "  [write_debug] wrote %zu bytes\n", w);
+}

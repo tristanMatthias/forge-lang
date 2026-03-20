@@ -823,6 +823,7 @@ fn new_str_const(text: string) -> string {
     STR_N = STR_N + 1
     let name = "@.str." + string(STR_N)
     let escaped = ir_escape(text)
+    // Store string constants separately (inline makes IR too large to write)
     STR_DECLS = STR_DECLS + name + " = private unnamed_addr constant [" + string(text.length + 1) + " x i8] c\"" + escaped + "\\00\"\n"
     name
 }
@@ -855,21 +856,29 @@ fn find_var(name: string) -> int {
     -1
 }
 
-fn push_var_full(name: string, reg_name: string, ty: string, stype: string, lelem: string) {
-    eprintln("  [push_var] " + name + " ty=" + ty)
+// Split into 2 calls to stay under ARM64's 8-register limit
+fn push_var(name: string, reg_name: string, ty: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push("")
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push("")
+}
+
+fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
     VAR_NAMES = VAR_NAMES.push(name)
     VAR_REGS = VAR_REGS.push(reg_name)
     VAR_TYPES = VAR_TYPES.push(ty)
     VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push(stype)
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push("")
+}
+
+fn push_var_list(name: string, reg_name: string, ty: string, lelem: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push("")
     VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push(lelem)
-}
-
-fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
-    push_var_full(name, reg_name, ty, stype, "")
-}
-
-fn push_var(name: string, reg_name: string, ty: string) {
-    push_var_full(name, reg_name, ty, "", "")
 }
 
 mut FIND_FN_RET_RESULT: string = "i64"
@@ -1528,8 +1537,9 @@ fn parse_ident_expr() -> string {
             // Convert list to JSON string for forge_mini_run
             // For simplicity, just call with the cmd and args as ForgeStrings
             let r = new_reg()
-            ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", %ForgeString " + args_val + ")")
+            ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", { ptr, i64 } " + args_val + ")")
             LAST_IS_STR = 1
+            LAST_IS_LIST = 0
             return r
         }
         return "0"
@@ -1571,7 +1581,10 @@ fn parse_ident_expr() -> string {
         return r
     }
 
-    // Function reference
+    // Function reference — warn if common variable name
+    if name == "i" || name == "pos" || name == "idx" {
+        eprintln("  WARN: '" + name + "' not found as variable, treating as function ref")
+    }
     "@" + name
 }
 
@@ -1740,11 +1753,11 @@ fn parse_let_stmt() -> bool {
         if ann_generic == "int" { elet = "i64" }
         if find_struct(ann_generic) >= 0 { elet = "%" + ann_generic }
         if find_enum(ann_generic) >= 0 { elet = "%" + ann_generic }
-        push_var(name, alloca, "list_" + elet)
+        push_var_list(name, alloca, "list_" + elet, elet)
     } else if LAST_IS_LIST == 1 {
         ir_line(alloca + " = alloca { ptr, i64 }")
         ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-        push_var(name, alloca, "list_" + LAST_LIST_ELEM_TYPE)
+        push_var_list(name, alloca, "list_" + LAST_LIST_ELEM_TYPE, LAST_LIST_ELEM_TYPE)
     } else if LAST_IS_STR == 1 {
         ir_line(alloca + " = alloca %ForgeString")
         ir_line("store %ForgeString " + val + ", ptr " + alloca)
@@ -1752,7 +1765,12 @@ fn parse_let_stmt() -> bool {
     } else {
         ir_line(alloca + " = alloca i64")
         ir_line("store i64 " + val + ", ptr " + alloca)
-        push_var(name, alloca, "i64")
+        // Inline push_var to avoid function call depth issues
+        VAR_NAMES = VAR_NAMES.push(name)
+        VAR_REGS = VAR_REGS.push(alloca)
+        VAR_TYPES = VAR_TYPES.push("i64")
+        VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push("")
+        VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push("")
     }
     clear_last_ident()
     false
@@ -2223,11 +2241,11 @@ fn parse_fn_decl() {
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(param_count)
     // Build CSV of param types
     mut pt_csv = ""
-    i = 0
-    while i < param_count {
-        if i > 0 { pt_csv = pt_csv + "," }
-        pt_csv = pt_csv + param_types[i]
-        i = i + 1
+    mut pti = 0
+    while pti < param_count {
+        if pti > 0 { pt_csv = pt_csv + "," }
+        pt_csv = pt_csv + param_types[pti]
+        pti = pti + 1
     }
     FN_PARAM_TYPES = FN_PARAM_TYPES.push(pt_csv)
 
@@ -2278,7 +2296,7 @@ fn parse_fn_decl() {
     VAR_LIST_ELEM_TYPE = gle
 
     // Create param allocas
-    i = 0
+    mut i = 0
     while i < param_count {
         let alloca = new_reg()
         let pty = param_types[i]
@@ -2536,13 +2554,14 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_mini_set_args(i32, ptr)")
     ir_raw("declare i64 @forge_mini_argc()")
     ir_raw("declare %ForgeString @forge_mini_argv(i64)")
-    ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
     ir_raw("declare void @forge_exit(i64)")
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
+    ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("")
 
     // Parse top-level
@@ -2589,17 +2608,7 @@ fn compile(source: string) -> string {
         skip_nl()
     }
 
-    // Post-process IR: add unreachable to empty blocks
-    let fixed_ir = fix_empty_blocks(IR)
-    let combined = fixed_ir + "\n" + STR_DECLS
-    fs.write("/tmp/mini_output.ll", combined)
-    // Fallback: if combined write failed, write IR alone
-    let check_len = fs.read("/tmp/mini_output.ll")
-    if check_len.length == 0 {
-        // Write just IR (string consts will be missing but functions are there)
-        fs.write("/tmp/mini_output.ll", IR)
-    }
-    let final_ir = combined
+    let final_ir = IR + "\n" + STR_DECLS
     final_ir
 }
 
@@ -2627,10 +2636,16 @@ fn main() {
 
     eprintln("  lex + parse + codegen: " + input)
     let ir_text = compile(source)
-    eprintln("  IR: " + string(ir_text.length) + " chars")
+    eprintln("  IR: " + string(IR.length) + " chars")
 
-    // IR was written by compile() directly
+    // Write IR functions and string constants separately (fs.write limit ~460K)
     let ir_path = "/tmp/mini_output.ll"
+    fs.write("/tmp/mini_ir_fns.ll", IR)
+    fs.write("/tmp/mini_ir_strs.ll", STR_DECLS)
+    eprintln("  wrote fns=" + string(IR.length) + " strs=" + string(STR_DECLS.length))
+    // Append STR_DECLS by reading back
+    let ir_so_far = fs.read(ir_path)
+    fs.write(ir_path, ir_so_far + "\n" + STR_DECLS)
 
     // Compile
     mut output = "a.out"
