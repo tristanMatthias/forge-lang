@@ -250,34 +250,14 @@ impl<'ctx> Codegen<'ctx> {
                 for _ in 0..max_slots {
                     field_types.push(self.context.i64_type().into());
                 }
-                // Use named LLVM struct type for enums
-                // If the actual_variants were stubs (empty), don't cache the type —
-                // it would have wrong slot count. Only cache with full variant info.
-                let is_stub_based = variants.is_empty() && actual_variants.is_empty();
-                if is_stub_based {
-                    // Return anonymous struct (don't pollute the named type cache)
-                    let anon = self.context.struct_type(
-                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                        false,
-                    );
-                    return anon.into();
-                }
-                if let Some(existing) = self.context.get_struct_type(name) {
-                    // If cached version has fewer fields than we need, recreate
-                    if existing.count_fields() < field_types.len() as u32 {
-                        existing.set_body(
-                            &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                            false,
-                        );
-                    }
-                    return existing.into();
-                }
-                let st = self.context.opaque_struct_type(name);
-                st.set_body(
+                // Always create fresh anonymous struct for enums.
+                // Named type caching causes stale types when nested enums
+                // are first seen as stubs and later with full variants.
+                let anon = self.context.struct_type(
                     &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
                     false,
                 );
-                st.into()
+                anon.into()
             }
             Type::DynTrait(_) => {
                 // Fat pointer: { data_ptr, vtable_ptr }

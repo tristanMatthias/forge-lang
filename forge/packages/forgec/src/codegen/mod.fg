@@ -830,9 +830,15 @@ impl Codegen {
                 CG_LAST_VAL = val
                 CG_HAS_LAST_VAL = 1
             }
-            .Assign(target, value, span) -> { self.emit_assign(target, value) }
-            .Return(value, span) -> { self.emit_return(value) }
-            .Feature(fe) -> { self.dispatch_stmt(fe) }
+            .Assign(target, value, span) -> {
+                self.emit_assign(target, value)
+            }
+            .Return(value, span) -> {
+                self.emit_return(value)
+            }
+            .Feature(fe) -> {
+                self.dispatch_stmt(fe)
+            }
         }
     }
 
@@ -875,7 +881,9 @@ impl Codegen {
 
     fn emit_expr(self, expr: Expr) -> ptr {
         match expr {
-            .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
+            .IntLit(value, span) -> {
+                return llvm.const_int(CG_I64, value, 0)
+            }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
