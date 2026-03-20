@@ -378,6 +378,10 @@ fn struct_llvm_type(name: string) -> string {
     "%" + name
 }
 
+fn clear_last_ident() {
+    LAST_IDENT_NAME = ""
+}
+
 fn check_list_annotation(ann: string, generic: string) {
     if ann == "List" {
         LAST_IS_LIST = 1
@@ -681,163 +685,163 @@ fn find_fn_ret(name: string) -> string {
 // Returns the SSA register name holding the result
 
 fn parse_expr() -> string {
-    parse_or()
-}
-
-fn parse_or() -> string {
-    mut lhs = parse_and()
-    while check("||") {
-        advance()
-        skip_nl()
-        let rhs = parse_and()
-        let l1 = new_reg()
-        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
-        let r1 = new_reg()
-        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
-        let r = new_reg()
-        ir_line(r + " = or i1 " + l1 + ", " + r1)
-        let r2 = new_reg()
-        ir_line(r2 + " = zext i1 " + r + " to i64")
-        lhs = r2
+    // Handles ||, && (lowest precedence)
+    mut lhs = parse_compare()
+    while true {
+        if check("||") {
+            advance()
+            skip_nl()
+            let rhs = parse_compare()
+            let l1 = new_reg()
+            ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+            let r1 = new_reg()
+            ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+            let r = new_reg()
+            ir_line(r + " = or i1 " + l1 + ", " + r1)
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i1 " + r + " to i64")
+            lhs = r2
+        } else if check("&&") {
+            advance()
+            skip_nl()
+            let rhs = parse_compare()
+            let l1 = new_reg()
+            ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+            let r1 = new_reg()
+            ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+            let r = new_reg()
+            ir_line(r + " = and i1 " + l1 + ", " + r1)
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i1 " + r + " to i64")
+            lhs = r2
+        } else {
+            break
+        }
     }
     lhs
 }
 
-fn parse_and() -> string {
-    mut lhs = parse_eq()
-    while check("&&") {
-        advance()
-        skip_nl()
-        let rhs = parse_eq()
-        let l1 = new_reg()
-        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
-        let r1 = new_reg()
-        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
-        let r = new_reg()
-        ir_line(r + " = and i1 " + l1 + ", " + r1)
-        let r2 = new_reg()
-        ir_line(r2 + " = zext i1 " + r + " to i64")
-        lhs = r2
-    }
-    lhs
-}
-
-fn parse_eq() -> string {
-    mut lhs = parse_cmp()
-    mut lhs_str = LAST_IS_STR
-    while check("==") || check("!=") {
-        let op = advance().text
-        skip_nl()
-        let rhs = parse_cmp()
-        if lhs_str == 1 {
-            // String equality via forge_string_eq
-            let eq_r = new_reg()
-            ir_line(eq_r + " = call i8 @forge_string_eq(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
-            let ext = new_reg()
-            ir_line(ext + " = zext i8 " + eq_r + " to i64")
-            if op == "!=" {
-                // Negate
-                let neg = new_reg()
-                ir_line(neg + " = icmp eq i64 " + ext + ", 0")
-                let neg2 = new_reg()
-                ir_line(neg2 + " = zext i1 " + neg + " to i64")
-                lhs = neg2
+fn parse_compare() -> string {
+    mut lhs = parse_arith()
+    while true {
+        if check("==") || check("!=") {
+            let op = advance().text
+            skip_nl()
+            let lhs_str = LAST_IS_STR
+            let rhs = parse_arith()
+            if lhs_str == 1 {
+                let eq_r = new_reg()
+                ir_line(eq_r + " = call i8 @forge_string_eq(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+                let ext = new_reg()
+                ir_line(ext + " = zext i8 " + eq_r + " to i64")
+                if op == "!=" {
+                    let neg = new_reg()
+                    ir_line(neg + " = icmp eq i64 " + ext + ", 0")
+                    let neg2 = new_reg()
+                    ir_line(neg2 + " = zext i1 " + neg + " to i64")
+                    lhs = neg2
+                } else {
+                    lhs = ext
+                }
             } else {
-                lhs = ext
+                mut pred = "eq"
+                if op == "!=" { pred = "ne" }
+                let r = new_reg()
+                ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+                let r2 = new_reg()
+                ir_line(r2 + " = zext i1 " + r + " to i64")
+                lhs = r2
             }
-        } else {
-            mut pred = "eq"
-            if op == "!=" { pred = "ne" }
-            let r = new_reg()
-            ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
-            let r2 = new_reg()
-            ir_line(r2 + " = zext i1 " + r + " to i64")
-            lhs = r2
-        }
-        lhs_str = 0
-        LAST_IS_STR = 0
-    }
-    lhs
-}
-
-fn parse_cmp() -> string {
-    mut lhs = parse_add()
-    mut lhs_str = LAST_IS_STR
-    while check("<") || check(">") || check("<=") || check(">=") {
-        let op = advance().text
-        skip_nl()
-        let rhs = parse_add()
-        if lhs_str == 1 {
-            // String comparison via forge_string_compare (returns -1/0/1)
-            let cmp_r = new_reg()
-            ir_line(cmp_r + " = call i64 @forge_string_compare(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
-            mut pred = "slt"
-            if op == ">" { pred = "sgt" }
-            if op == "<=" { pred = "sle" }
-            if op == ">=" { pred = "sge" }
-            let r = new_reg()
-            ir_line(r + " = icmp " + pred + " i64 " + cmp_r + ", 0")
-            let r2 = new_reg()
-            ir_line(r2 + " = zext i1 " + r + " to i64")
-            lhs = r2
-        } else {
-            mut pred = "slt"
-            if op == ">" { pred = "sgt" }
-            if op == "<=" { pred = "sle" }
-            if op == ">=" { pred = "sge" }
-            let r = new_reg()
-            ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
-            let r2 = new_reg()
-            ir_line(r2 + " = zext i1 " + r + " to i64")
-            lhs = r2
-        }
-        lhs_str = 0
-        LAST_IS_STR = 0
-    }
-    lhs
-}
-
-fn parse_add() -> string {
-    mut lhs = parse_mul()
-    mut lhs_is_str = LAST_IS_STR
-    while check("+") || check("-") {
-        let op = advance().text
-        skip_nl()
-        let rhs = parse_mul()
-        let r = new_reg()
-        if op == "+" && lhs_is_str == 1 {
-            ir_line(r + " = call %ForgeString @forge_string_concat(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
-            LAST_IS_STR = 1
-            lhs_is_str = 1
-        } else if op == "+" {
-            ir_line(r + " = add i64 " + lhs + ", " + rhs)
             LAST_IS_STR = 0
-            lhs_is_str = 0
-        } else {
-            ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+        } else if check("<") || check(">") || check("<=") || check(">=") {
+            let op = advance().text
+            skip_nl()
+            let lhs_str = LAST_IS_STR
+            let rhs = parse_arith()
+            if lhs_str == 1 {
+                let cmp_r = new_reg()
+                ir_line(cmp_r + " = call i64 @forge_string_compare(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+                mut pred = "slt"
+                if op == ">" { pred = "sgt" }
+                if op == "<=" { pred = "sle" }
+                if op == ">=" { pred = "sge" }
+                let r = new_reg()
+                ir_line(r + " = icmp " + pred + " i64 " + cmp_r + ", 0")
+                let r2 = new_reg()
+                ir_line(r2 + " = zext i1 " + r + " to i64")
+                lhs = r2
+            } else {
+                mut pred = "slt"
+                if op == ">" { pred = "sgt" }
+                if op == "<=" { pred = "sle" }
+                if op == ">=" { pred = "sge" }
+                let r = new_reg()
+                ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+                let r2 = new_reg()
+                ir_line(r2 + " = zext i1 " + r + " to i64")
+                lhs = r2
+            }
             LAST_IS_STR = 0
-            lhs_is_str = 0
+        } else {
+            break
         }
-        lhs = r
     }
     lhs
 }
 
-fn parse_mul() -> string {
+// parse_arith: combined +, -, *, /, % (reduces call depth)
+fn parse_arith() -> string {
     mut lhs = parse_unary()
-    while check("*") || check("/") || check("%") {
-        let op = advance().text
-        skip_nl()
-        let rhs = parse_unary()
-        let r = new_reg()
-        if op == "*" {
+    mut lhs_is_str = LAST_IS_STR
+    while true {
+        if check("+") {
+            advance()
+            skip_nl()
+            let rhs = parse_unary()
+            let r = new_reg()
+            if lhs_is_str == 1 {
+                ir_line(r + " = call %ForgeString @forge_string_concat(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+                LAST_IS_STR = 1
+                lhs_is_str = 1
+            } else {
+                ir_line(r + " = add i64 " + lhs + ", " + rhs)
+                LAST_IS_STR = 0
+                lhs_is_str = 0
+            }
+            lhs = r
+        } else if check("-") {
+            advance()
+            skip_nl()
+            let rhs = parse_unary()
+            let r = new_reg()
+            ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+            lhs = r
+            LAST_IS_STR = 0
+            lhs_is_str = 0
+        } else if check("*") {
+            advance()
+            skip_nl()
+            let rhs = parse_unary()
+            let r = new_reg()
             ir_line(r + " = mul i64 " + lhs + ", " + rhs)
-        } else if op == "/" {
+            lhs = r
+        } else if check("/") {
+            advance()
+            skip_nl()
+            let rhs = parse_unary()
+            let r = new_reg()
             ir_line(r + " = sdiv i64 " + lhs + ", " + rhs)
-        } else {
+            lhs = r
+        } else if check("%") {
+            advance()
+            skip_nl()
+            let rhs = parse_unary()
+            let r = new_reg()
             ir_line(r + " = srem i64 " + lhs + ", " + rhs)
+            lhs = r
+        } else {
+            break
         }
-        lhs = r
     }
     lhs
 }
@@ -1292,7 +1296,11 @@ fn parse_primary() -> string {
             if vty == "{ ptr, i64 }" {
                 ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
                 LAST_IS_LIST = 1
-                // Keep LAST_LIST_ELEM_TYPE from previous push (persistent per function)
+                // Read per-variable element type
+                let vet = VAR_LIST_ELEM_TYPE[idx]
+                if vet != "" {
+                    LAST_LIST_ELEM_TYPE = vet
+                }
                 return r
             }
             ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
@@ -1329,103 +1337,107 @@ fn parse_primary() -> string {
 // ─── Statement parsing + IR emission ──────────────
 // Returns true if statement terminates (return/break/continue)
 
+fn parse_let_stmt() -> bool {
+    advance() // consume let/mut
+    let name = advance().text
+    mut ann_type = ""
+    mut ann_generic = ""
+    if check(":") {
+        advance()
+        skip_nl()
+        ann_type = peek().text
+        advance()
+        if check("<") {
+            advance()
+            ann_generic = peek().text
+            mut tdepth = 1
+            while tdepth > 0 && POS < TOKENS.length {
+                if check("<") { tdepth = tdepth + 1 }
+                if check(">") { tdepth = tdepth - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+    }
+    expect("=")
+    skip_nl()
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    check_list_annotation(ann_type, ann_generic)
+    let val = parse_expr()
+    let alloca = new_reg()
+    mut saved_struct = LAST_STRUCT_TYPE
+    if ann_type != "" {
+        if find_struct(ann_type) >= 0 { saved_struct = ann_type }
+        if find_enum(ann_type) >= 0 { saved_struct = ann_type }
+    }
+    if saved_struct == "" {
+        let fn_ret = find_fn_ret(LAST_IDENT_NAME)
+        if fn_ret.length > 1 {
+            let fr_first = fn_ret.substring(0, 1)
+            if fr_first == "%" {
+                if fn_ret != "%ForgeString" {
+                    saved_struct = fn_ret.substring(1, fn_ret.length)
+                }
+            }
+        }
+    }
+    if saved_struct != "" {
+        let sty = struct_llvm_type(saved_struct)
+        ir_line(alloca + " = alloca " + sty)
+        ir_line("store " + sty + " " + val + ", ptr " + alloca)
+        push_var_with_struct(name, alloca, sty, saved_struct)
+    } else if LAST_ENUM_TYPE != "" {
+        let ety = "%" + LAST_ENUM_TYPE
+        ir_line(alloca + " = alloca " + ety)
+        ir_line("store " + ety + " " + val + ", ptr " + alloca)
+        push_var(name, alloca, ety)
+    } else if ann_type == "List" {
+        ir_line(alloca + " = alloca { ptr, i64 }")
+        ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
+        mut elet = LAST_LIST_ELEM_TYPE
+        if ann_generic == "string" { elet = "%ForgeString" }
+        if ann_generic == "int" { elet = "i64" }
+        if find_struct(ann_generic) >= 0 { elet = "%" + ann_generic }
+        if find_enum(ann_generic) >= 0 { elet = "%" + ann_generic }
+        push_var_full(name, alloca, "{ ptr, i64 }", "", elet)
+    } else if LAST_IS_LIST == 1 {
+        ir_line(alloca + " = alloca { ptr, i64 }")
+        ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
+        push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
+    } else if LAST_IS_STR == 1 {
+        ir_line(alloca + " = alloca %ForgeString")
+        ir_line("store %ForgeString " + val + ", ptr " + alloca)
+        push_var(name, alloca, "%ForgeString")
+    } else {
+        let last_fn_ret = find_fn_ret(LAST_IDENT_NAME)
+        if last_fn_ret == "{ ptr, i64 }" {
+            ir_line(alloca + " = alloca { ptr, i64 }")
+            ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
+            push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
+        } else if last_fn_ret.length > 1 && last_fn_ret.substring(0, 1) == "%" && last_fn_ret != "%ForgeString" {
+            ir_line(alloca + " = alloca " + last_fn_ret)
+            ir_line("store " + last_fn_ret + " " + val + ", ptr " + alloca)
+            push_var_with_struct(name, alloca, last_fn_ret, last_fn_ret.substring(1, last_fn_ret.length))
+        } else {
+            ir_line(alloca + " = alloca i64")
+            ir_line("store i64 " + val + ", ptr " + alloca)
+            push_var(name, alloca, "i64")
+        }
+    }
+    clear_last_ident()
+    false
+}
+
 fn parse_stmt() -> bool {
     skip_nl()
     let tok = peek()
 
     // let / mut
     if tok.text == "let" || tok.text == "mut" {
-        advance()
-        let name = advance().text // identifier
-        // Optional type annotation — capture it
-        mut ann_type = ""
-        mut ann_generic = ""
-        if check(":") {
-            advance()
-            skip_nl()
-            ann_type = peek().text
-            advance() // consume type name
-            if check("<") {
-                advance()
-                ann_generic = peek().text
-                // Skip rest of type annotation
-                mut tdepth = 1
-                while tdepth > 0 && POS < TOKENS.length {
-                    if check("<") { tdepth = tdepth + 1 }
-                    if check(">") { tdepth = tdepth - 1 }
-                    advance()
-                }
-            }
-            if check("?") { advance() }
-        }
-        expect("=")
-        skip_nl()
-        LAST_IS_STR = 0
-        LAST_IS_LIST = 0
-        LAST_STRUCT_TYPE = ""
-        LAST_ENUM_TYPE = ""
-        let val = parse_expr()
-        let alloca = new_reg()
-        // Determine struct type from: annotation, LAST_STRUCT_TYPE, or function return type
-        mut saved_struct = LAST_STRUCT_TYPE
-        if ann_type != "" {
-            if find_struct(ann_type) >= 0 { saved_struct = ann_type }
-            if find_enum(ann_type) >= 0 { saved_struct = ann_type }
-        }
-        // If still empty, check function return type directly
-        if saved_struct == "" {
-            let fn_ret = find_fn_ret(LAST_IDENT_NAME)
-            if fn_ret.length > 1 {
-                let fr_first = fn_ret.substring(0, 1)
-                if fr_first == "%" {
-                    if fn_ret != "%ForgeString" {
-                        saved_struct = fn_ret.substring(1, fn_ret.length)
-                    }
-                }
-            }
-        }
-        // Force list detection from annotation
-        check_list_annotation(ann_type, ann_generic)
-        if saved_struct != "" {
-            let sty = struct_llvm_type(saved_struct)
-            ir_line(alloca + " = alloca " + sty)
-            ir_line("store " + sty + " " + val + ", ptr " + alloca)
-            push_var_with_struct(name, alloca, sty, saved_struct)
-        } else if LAST_ENUM_TYPE != "" {
-            let ety = "%" + LAST_ENUM_TYPE
-            ir_line(alloca + " = alloca " + ety)
-            ir_line("store " + ety + " " + val + ", ptr " + alloca)
-            push_var(name, alloca, ety)
-        } else if LAST_IS_LIST == 1 {
-            // Set element type from annotation if available
-            if ann_generic != "" {
-                LAST_LIST_ELEM_TYPE = type_to_llvm(ann_generic)
-            }
-            ir_line(alloca + " = alloca { ptr, i64 }")
-            ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-            push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
-        } else if LAST_IS_STR == 1 {
-            ir_line(alloca + " = alloca %ForgeString")
-            ir_line("store %ForgeString " + val + ", ptr " + alloca)
-            push_var(name, alloca, "%ForgeString")
-        } else {
-            // Last resort: check function return type for struct/list
-            let last_fn_ret = find_fn_ret(LAST_IDENT_NAME)
-            if last_fn_ret == "{ ptr, i64 }" {
-                ir_line(alloca + " = alloca { ptr, i64 }")
-                ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-                push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
-            } else if last_fn_ret.length > 1 && last_fn_ret.substring(0, 1) == "%" && last_fn_ret != "%ForgeString" {
-                ir_line(alloca + " = alloca " + last_fn_ret)
-                ir_line("store " + last_fn_ret + " " + val + ", ptr " + alloca)
-                push_var_with_struct(name, alloca, last_fn_ret, last_fn_ret.substring(1, last_fn_ret.length))
-            } else {
-                ir_line(alloca + " = alloca i64")
-                ir_line("store i64 " + val + ", ptr " + alloca)
-                push_var(name, alloca, "i64")
-            }
-        }
-        return false
+        return parse_let_stmt()
     }
 
     // return
