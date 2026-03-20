@@ -74,25 +74,38 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     mut ann_elem_name = ""
     mut ann_type_text = ""  // The raw type name text from the annotation
     mut type_ann: TypeExpr? = null
-    // Check for type annotation by looking ahead for ":"
-    // Bootstrap workaround: check() and kind_to_key fail for high-index TokenKind
-    // variants loaded from List<Token>. Use kind_id == 0 to detect non-data tokens,
-    // and peek at text to distinguish ":" from other operators.
-    let maybe_colon = p.peek()
-    if maybe_colon.kind_id == 0 && maybe_colon.text == ":" {
-        p.advance()
-        // Peek: if next is "List", capture element type name
-        let type_tok = p.peek()
-        ann_type_text = type_tok.text
-        if type_tok.kind_id == 1 {
-            if type_tok.text == "List" {
-                ann_is_list = 1
-                let elem_tok = p.peek_at(2)
-                if elem_tok.kind_id == 1 {
-                    ann_elem_name = elem_tok.text
-                }
+    // Detect type annotation from source text (token list unreliable in bootstrap)
+    // Scan source from current position for ": List" or ": string" pattern
+    if p.source.length > 0 {
+        // Find the `=` in the source to know where the value starts
+        let cur_span = p.current_span()
+        mut scan_pos = cur_span.start
+        // Look for `:` before `=`
+        mut found_colon = false
+        while scan_pos < p.source.length {
+            let sc = p.source[scan_pos]
+            if sc == "=" { break }
+            if sc == ":" { found_colon = true; break }
+            scan_pos = scan_pos + 1
+        }
+        if found_colon {
+            // Extract type name after `: ` (skip whitespace)
+            mut type_start = scan_pos + 1
+            while type_start < p.source.length && p.source[type_start] == " " { type_start = type_start + 1 }
+            mut type_end = type_start
+            while type_end < p.source.length {
+                let tc = p.source[type_end]
+                if tc == "<" || tc == " " || tc == "=" || tc == "?" { break }
+                type_end = type_end + 1
+            }
+            if type_end > type_start {
+                ann_type_text = p.source.substring(type_start, type_end)
             }
         }
+    }
+    // Now use the standard parser for the type annotation
+    if p.check(TokenKind.Colon) {
+        p.advance()
         type_ann = p.parse_type_expr()
     }
 
