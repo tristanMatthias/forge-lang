@@ -48,16 +48,8 @@ pub extern "C" fn forge_fs_read(path: *const c_char) -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn forge_fs_write(path: *const c_char, content: *const c_char) -> i8 {
-    if content.is_null() {
-        eprintln!("  [fs_write] content is NULL!");
-        return 0;
-    }
-    // Check first few bytes of content
-    let first_byte = unsafe { *content as u8 };
-    eprintln!("  [fs_write] content_ptr={:p} first_byte={}", content, first_byte);
     let path = cstr(path);
     let content = cstr(content);
-    eprintln!("  [fs_write] path='{}' content_len={}", path, content.len());
     if fs::write(&path, &content).is_ok() { 1 } else { 0 }
 }
 

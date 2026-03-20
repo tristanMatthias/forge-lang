@@ -8,6 +8,16 @@ impl<'ctx> Codegen<'ctx> {
         args: &[CallArg],
         type_args: &[TypeExpr],
     ) -> Option<BasicValueEnum<'ctx>> {
+        // Handle fs.read/fs.write via runtime functions (ForgeString ABI, not ptr)
+        if let Expr::Ident(name, _) = object {
+            if name == "fs" {
+                match method {
+                    "read" => return self.compile_read_file(args),
+                    "write" => return self.compile_write_file(args),
+                    _ => {}
+                }
+            }
+        }
         // Handle json.parse() and json.stringify() intrinsics
         if let Expr::Ident(name, _) = object {
             if crate::registry::BuiltinFnRegistry::get_namespace_method(name, method).map_or(false, |m| m.feature_id == "json_builtins") {

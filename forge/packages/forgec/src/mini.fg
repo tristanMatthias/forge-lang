@@ -88,6 +88,15 @@ fn emit_merge(label: string, then_t: int, else_t: int) {
     ir_raw(label + ":")
 }
 
+fn check_both_terminated(a: int, b: int) -> int {
+    if a == 1 {
+        if b == 1 {
+            return 1
+        }
+    }
+    0
+}
+
 fn infer_struct_from_fn(fn_name: string) -> string {
     // Only infer struct type if LAST_WAS_FIELD_ACCESS is 0
     // Since globals at depth are unreliable, use a heuristic:
@@ -471,9 +480,9 @@ fn set_terminated() {
 }
 
 fn mark_if_terminated(terminated: bool) {
-    // Bootstrap workaround: can't assign globals inside if blocks
-    // This function uses the bool directly — assignment at top level works
-    if terminated { BLOCK_TERMINATED = 1 }
+    if terminated {
+        BLOCK_TERMINATED = 1
+    }
 }
 
 fn parse_block_stmt() {
@@ -823,9 +832,65 @@ fn new_str_const(text: string) -> string {
     STR_N = STR_N + 1
     let name = "@.str." + string(STR_N)
     let escaped = ir_escape(text)
-    // Emit string constant directly into IR (before any function that uses it)
-    ir_raw(name + " = private unnamed_addr constant [" + string(text.length + 1) + " x i8] c\"" + escaped + "\\00\"")
+    // Collect string constants in STR_DECLS (emitted at top of IR)
+    // Size = escaped byte count + 1 (for NUL). Each \XX escape = 1 byte, regular char = 1 byte.
+    let byte_len = count_ir_bytes(escaped)
+    STR_DECLS = STR_DECLS + name + " = private unnamed_addr constant [" + string(byte_len + 1) + " x i8] c\"" + escaped + "\\00\"\n"
     name
+}
+
+fn hex_digit(n: int) -> string {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 10 { return "A" }
+    if n == 11 { return "B" }
+    if n == 12 { return "C" }
+    if n == 13 { return "D" }
+    if n == 14 { return "E" }
+    if n == 15 { return "F" }
+    "0"
+}
+
+fn count_ir_bytes(escaped: string) -> int {
+    // Count actual bytes in an IR escaped string
+    // \XX (hex escape) = 1 byte (3 chars)
+    // \\ (literal backslash) = 1 byte (2 chars)
+    // regular char = 1 byte (1 char)
+    mut bytes = 0
+    mut i = 0
+    while i < escaped.length {
+        let c = escaped.byte_at(i)
+        if c == 92 {
+            // Backslash: check next char
+            if i + 1 < escaped.length {
+                let next = escaped.byte_at(i + 1)
+                if next == 92 {
+                    // \\ = literal backslash = 1 byte
+                    bytes = bytes + 1
+                    i = i + 2
+                } else {
+                    // \XX = hex escape = 1 byte
+                    bytes = bytes + 1
+                    i = i + 3
+                }
+            } else {
+                bytes = bytes + 1
+                i = i + 1
+            }
+        } else {
+            bytes = bytes + 1
+            i = i + 1
+        }
+    }
+    bytes
 }
 
 fn ir_escape(s: string) -> string {
@@ -833,12 +898,24 @@ fn ir_escape(s: string) -> string {
     mut i = 0
     while i < s.length {
         let ch = s[i]
-        if ch == "\n" {
+        let byte = s.byte_at(i)
+        if byte == 10 {
             r = r + "\\0A"
-        } else if ch == "\\" {
+        } else if byte == 9 {
+            r = r + "\\09"
+        } else if byte == 13 {
+            r = r + "\\0D"
+        } else if byte == 92 {
             r = r + "\\\\"
-        } else if ch == "\"" {
+        } else if byte == 34 {
             r = r + "\\22"
+        } else if byte == 0 {
+            r = r + "\\00"
+        } else if byte < 32 || byte > 126 {
+            // Non-printable or non-ASCII: hex escape
+            let hi = byte / 16
+            let lo = byte - hi * 16
+            r = r + "\\" + hex_digit(hi) + hex_digit(lo)
         } else {
             r = r + ch
         }
@@ -1588,7 +1665,7 @@ fn parse_ident_expr() -> string {
 
     // Function reference — warn if common variable name
     if name == "i" || name == "pos" || name == "idx" {
-        eprintln("  WARN: '" + name + "' not found as variable, treating as function ref")
+        // Variable not found — treating as function reference
     }
     "@" + name
 }
@@ -1829,6 +1906,7 @@ fn parse_stmt() -> bool {
         }
         expect("}")
         let then_term = BLOCK_TERMINATED
+
         if then_term == 0 { ir_line("br label %" + merge_l) }
 
         ir_raw(else_l + ":")
@@ -1850,10 +1928,15 @@ fn parse_stmt() -> bool {
             }
         }
         let else_term = BLOCK_TERMINATED
+
         if else_term == 0 { ir_line("br label %" + merge_l) }
 
-        // Only emit merge if at least one branch reaches it
-        emit_merge(merge_l, then_term, else_term)
+        // Always emit merge label, add unreachable if both branches returned
+        ir_raw(merge_l + ":")
+        let both_term = check_both_terminated(then_term, else_term)
+        if both_term == 1 {
+            ir_line("unreachable")
+        }
         return false
     }
 
@@ -2376,7 +2459,7 @@ fn scan_fn_sig() {
     while !check("{") && POS < TOKENS.length { advance() }
     skip_block()
     // Register
-    eprintln("  [scan] " + name + " -> " + ret_ty)
+    // scan registered
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
@@ -2576,8 +2659,7 @@ fn compile(source: string) -> string {
         let tok: Tok = peek()
 
         if tok.text == "fn" {
-            let fn_name_dbg = TOKENS[POS + 1].text
-            eprintln("  [compile] " + fn_name_dbg + " at pos=" + string(POS))
+            // compile function
             parse_fn_decl()
         } else if tok.text == "export" {
             advance()
@@ -2614,7 +2696,10 @@ fn compile(source: string) -> string {
         skip_nl()
     }
 
-    let final_ir = IR + "\n" + STR_DECLS
+    // Build final IR: header + string constants + functions
+    // The header is already at the top of IR. Insert STR_DECLS after header, before functions.
+    // Since we can't easily split, just prepend STR_DECLS to the function definitions.
+    let final_ir = STR_DECLS + "\n" + IR
     final_ir
 }
 
@@ -2626,7 +2711,7 @@ fn main() {
     let args = process.args()
 
     if args.length < 3 {
-        eprintln("mini-forge v0.1 — minimal self-hosted compiler")
+        eprintln("mini-forge v0.1 - minimal self-hosted compiler")
         eprintln("Usage: mini build <file.fg> [output]")
         process.exit(1)
     }
@@ -2641,17 +2726,15 @@ fn main() {
     }
 
     eprintln("  lex + parse + codegen: " + input)
-    let ir_text = compile(source)
-    eprintln("  IR: " + string(IR.length) + " chars")
+    compile(source)
+    eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " chars")
 
-    // Write IR functions and string constants separately (fs.write limit ~460K)
+    // Write combined IR: string constants + header + functions
     let ir_path = "/tmp/mini_output.ll"
-    fs.write("/tmp/mini_ir_fns.ll", IR)
-    fs.write("/tmp/mini_ir_strs.ll", STR_DECLS)
-    eprintln("  wrote fns=" + string(IR.length) + " strs=" + string(STR_DECLS.length))
-    // Append STR_DECLS by reading back
-    let ir_so_far = fs.read(ir_path)
-    fs.write(ir_path, ir_so_far + "\n" + STR_DECLS)
+    let full_ir = IR + "\n" + STR_DECLS
+    fs.write(ir_path, full_ir)
+    let written = fs.read(ir_path)
+    eprintln("  wrote " + string(written.length) + " chars to " + ir_path)
 
     // Compile
     mut output = "a.out"
