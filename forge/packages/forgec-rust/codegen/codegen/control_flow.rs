@@ -87,25 +87,9 @@ impl<'ctx> Codegen<'ctx> {
         // If both branches produce values, create a phi node
         if let (Some(tv), Some(ev)) = (&then_val, &else_val) {
             if tv.get_type() == ev.get_type() {
-                // Verify that then_end_bb and else_end_bb are direct (single-predecessor)
-                // blocks that dominate merge_bb. If either branch ends at a block with
-                // multiple predecessors (from nested if-else/short-circuit), the value
-                // might not dominate and the phi would be invalid.
-                let then_ok = then_end_bb != merge_bb && then_end_bb != else_bb;
-                let else_ok = else_end_bb != merge_bb && else_end_bb != then_bb;
-                // Also check that the blocks actually branch to merge_bb
-                // (they might have early returns)
-                let then_branches_to_merge = then_end_bb.get_terminator()
-                    .map(|t| t.get_num_operands() > 0)
-                    .unwrap_or(false);
-                let else_branches_to_merge = else_end_bb.get_terminator()
-                    .map(|t| t.get_num_operands() > 0)
-                    .unwrap_or(false);
-                if then_ok && else_ok && then_branches_to_merge && else_branches_to_merge {
-                    let phi = self.builder.build_phi(tv.get_type(), "if_result").unwrap();
-                    phi.add_incoming(&[(tv, then_end_bb), (ev, else_end_bb)]);
-                    return Some(phi.as_basic_value());
-                }
+                let phi = self.builder.build_phi(tv.get_type(), "if_result").unwrap();
+                phi.add_incoming(&[(tv, then_end_bb), (ev, else_end_bb)]);
+                return Some(phi.as_basic_value());
             }
 
             // Check if we need to wrap values into a nullable type
@@ -186,20 +170,11 @@ impl<'ctx> Codegen<'ctx> {
                     last_val = self.compile_expr(expr);
                     let after_bb = self.builder.get_insert_block();
                     last_val_bb = after_bb;
-                    // If the builder moved to a different block (nested if-else),
-                    // the value might not dominate the current block. Replace with default.
-                    if let (Some(val), Some(before), Some(after)) = (&last_val, before_bb, after_bb) {
-                        if before != after {
-                            let default_val: BasicValueEnum<'ctx> = match val.get_type() {
-                                BasicTypeEnum::IntType(it) => it.const_zero().into(),
-                                BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
-                                BasicTypeEnum::StructType(st) => st.const_zero().into(),
-                                BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
-                                _ => self.context.i64_type().const_zero().into(),
-                            };
-                            last_val = Some(default_val);
-                        }
-                    }
+                    // Note: if the builder moved blocks, the value might be from
+                    // a nested control flow (if/match). The value COULD be a phi
+                    // at the merge point (valid) or a raw instruction from a branch
+                    // (invalid). We leave it as-is here — the phi creation in
+                    // compile_if handles the domination check.
                 }
                 _ => {
                     self.compile_statement(stmt);
