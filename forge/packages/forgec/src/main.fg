@@ -314,7 +314,14 @@ fn build_compile_separate(files: List<string>, output: string) {
         let source = fs.read(filepath)
         let obj_path = "/tmp/forgec_obj_" + string(file_idx) + ".o"
 
-        eprintln("  compile: " + filepath + " (file_idx=" + string(file_idx) + ")")
+        eprintln("  compile: " + filepath + " (file_idx=" + string(file_idx) + ", " + string(source.length) + " chars)")
+        // Skip large files that cause stack overflow during recursive parsing
+        // (expression parser recurses deeply per expression — stack limit hit at ~30K chars)
+        if source.length > 30000 {
+            eprintln("  SKIP: file too large (" + string(source.length) + " chars) — would overflow stack")
+            file_idx = file_idx + 1
+            continue
+        }
         codegen_init(filepath)
         create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
         EMIT_FILE_IDX = file_idx
