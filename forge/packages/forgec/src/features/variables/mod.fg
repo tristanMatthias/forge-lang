@@ -74,8 +74,12 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     mut ann_elem_name = ""
     mut ann_type_text = ""  // The raw type name text from the annotation
     mut type_ann: TypeExpr? = null
-    // Use text check instead of kind check (bootstrap match on large TokenKind fails)
-    if p.peek().text == ":" {
+    // Check for type annotation by looking ahead for ":"
+    // Bootstrap workaround: check() and kind_to_key fail for high-index TokenKind
+    // variants loaded from List<Token>. Use kind_id == 0 to detect non-data tokens,
+    // and peek at text to distinguish ":" from other operators.
+    let maybe_colon = p.peek()
+    if maybe_colon.kind_id == 0 && maybe_colon.text == ":" {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
@@ -83,7 +87,6 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         if type_tok.kind_id == 1 {
             if type_tok.text == "List" {
                 ann_is_list = 1
-                // Element type is 2 tokens ahead: List < ElementType >
                 let elem_tok = p.peek_at(2)
                 if elem_tok.kind_id == 1 {
                     ann_elem_name = elem_tok.text

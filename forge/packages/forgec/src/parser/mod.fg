@@ -110,11 +110,78 @@ impl Parser {
     }
 
     fn check(self, kind: TokenKind) -> bool {
-        // Bootstrap workaround: == on tagged unions compares full payload bytes.
-        // Use string key comparison instead.
-        let a = self.kind_to_key(self.peek().kind)
-        let b = self.kind_to_key(kind)
-        a != "" && a == b
+        // Bootstrap workaround: TokenKind i8 tag gets corrupted when Token structs
+        // are loaded from List<Token>. Use TWO strategies:
+        // 1. kind_to_key on EXPECTED kind (freshly created, not from list) → reliable
+        // 2. Compare expected key against token TEXT (text is reliable for simple tokens)
+        let expected_key = self.kind_to_key(kind)
+        if expected_key == "" { return false }
+        let tok = self.peek()
+        // Strategy 1: kind_to_key on both (works for low-index variants)
+        let tok_key = self.kind_to_key(tok.kind)
+        if tok_key == expected_key { return true }
+        // Strategy 2: map expected key to token text
+        // Keywords: text matches the keyword name in lowercase
+        if tok.text == "let" && expected_key == "Let" { return true }
+        if tok.text == "mut" && expected_key == "Mut" { return true }
+        if tok.text == "const" && expected_key == "Const" { return true }
+        if tok.text == "fn" && expected_key == "Fn" { return true }
+        if tok.text == "return" && expected_key == "Return" { return true }
+        if tok.text == "if" && expected_key == "If" { return true }
+        if tok.text == "else" && expected_key == "Else" { return true }
+        if tok.text == "match" && expected_key == "Match" { return true }
+        if tok.text == "while" && expected_key == "While" { return true }
+        if tok.text == "for" && expected_key == "For" { return true }
+        if tok.text == "in" && expected_key == "In" { return true }
+        if tok.text == "break" && expected_key == "Break" { return true }
+        if tok.text == "continue" && expected_key == "Continue" { return true }
+        if tok.text == "enum" && expected_key == "Enum" { return true }
+        if tok.text == "type" && expected_key == "TypeKw" { return true }
+        if tok.text == "use" && expected_key == "Use" { return true }
+        if tok.text == "mod" && expected_key == "Mod" { return true }
+        if tok.text == "export" && expected_key == "Export" { return true }
+        if tok.text == "impl" && expected_key == "Impl" { return true }
+        if tok.text == "trait" && expected_key == "Trait" { return true }
+        if tok.text == "as" && expected_key == "As" { return true }
+        if tok.text == "is" && expected_key == "Is" { return true }
+        if tok.text == "on" && expected_key == "On" { return true }
+        if tok.text == "loop" && expected_key == "Loop" { return true }
+        // Operators and delimiters: text matches the symbol
+        if tok.text == "=" && expected_key == "Eq" { return true }
+        if tok.text == "==" && expected_key == "EqEq" { return true }
+        if tok.text == "!=" && expected_key == "NotEq" { return true }
+        if tok.text == ":" && expected_key == "Colon" { return true }
+        if tok.text == "," && expected_key == "Comma" { return true }
+        if tok.text == "." && expected_key == "Dot" { return true }
+        if tok.text == "->" && expected_key == "Arrow" { return true }
+        if tok.text == "(" && expected_key == "LParen" { return true }
+        if tok.text == ")" && expected_key == "RParen" { return true }
+        if tok.text == "{" && expected_key == "LBrace" { return true }
+        if tok.text == "}" && expected_key == "RBrace" { return true }
+        if tok.text == "[" && expected_key == "LBracket" { return true }
+        if tok.text == "]" && expected_key == "RBracket" { return true }
+        if tok.text == "<" && expected_key == "Lt" { return true }
+        if tok.text == ">" && expected_key == "Gt" { return true }
+        if tok.text == ">>" && expected_key == "ShiftRight" { return true }
+        if tok.text == ";" && expected_key == "Semicolon" { return true }
+        if tok.text == "|" && expected_key == "Bar" { return true }
+        if tok.text == "?" && expected_key == "Question" { return true }
+        if tok.text == "!" && expected_key == "Bang" { return true }
+        if tok.text == "_" && expected_key == "Underscore" { return true }
+        if tok.text == "+" && expected_key == "Plus" { return true }
+        if tok.text == "-" && expected_key == "Minus" { return true }
+        if tok.text == "*" && expected_key == "Star" { return true }
+        if tok.text == "/" && expected_key == "Slash" { return true }
+        if tok.text == "%" && expected_key == "Percent" { return true }
+        if tok.text == "<=" && expected_key == "LtEq" { return true }
+        if tok.text == ">=" && expected_key == "GtEq" { return true }
+        if tok.text == "&&" && expected_key == "And" { return true }
+        if tok.text == "||" && expected_key == "Or" { return true }
+        if tok.text == "&" && expected_key == "Ampersand" { return true }
+        if tok.text == "^" && expected_key == "Caret" { return true }
+        if tok.text == "|>" && expected_key == "Pipe" { return true }
+        if tok.text == "\n" && expected_key == "Newline" { return true }
+        false
     }
 
     fn expect(self, kind: TokenKind) -> Token? {
@@ -631,24 +698,27 @@ impl Parser {
         if self.expect(TokenKind.Lt) == null { return null }
         mut args: List<TypeExpr> = []
 
-        while !self.check(TokenKind.Gt) && !self.is_at_end() {
+        // Use text check for > (TokenKind.Gt check fails due to list tag corruption)
+        while self.peek().text != ">" && self.peek().text != ">>" && !self.check(TokenKind.Gt) && !self.is_at_end() {
             self.skip_newlines()
+            // Safety: if we hit = or { or other non-type tokens, stop
+            let pt = self.peek().text
+            if pt == "=" || pt == "{" || pt == "}" || pt == ")" { break }
             let ty = self.parse_type_expr()
             if ty != null {
                 args = args.push(ty!)
             }
-            if self.check(TokenKind.Comma) {
+            if self.check(TokenKind.Comma) || self.peek().text == "," {
                 self.advance()
             }
         }
 
-        // Handle >> as > >
-        if self.check(TokenKind.ShiftRight) {
-            // Split >> into two > tokens — consume one
-            // TODO: proper token splitting
+        // Consume > or >>
+        let gt = self.peek().text
+        if gt == ">>" || self.check(TokenKind.ShiftRight) {
             self.advance()
-        } else {
-            if self.expect(TokenKind.Gt) == null { return null }
+        } else if gt == ">" || self.check(TokenKind.Gt) {
+            self.advance()
         }
 
         args
