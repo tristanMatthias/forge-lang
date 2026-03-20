@@ -170,11 +170,8 @@ impl<'ctx> Codegen<'ctx> {
                     last_val = self.compile_expr(expr);
                     let after_bb = self.builder.get_insert_block();
                     last_val_bb = after_bb;
-                    // Note: if the builder moved blocks, the value might be from
-                    // a nested control flow (if/match). The value COULD be a phi
-                    // at the merge point (valid) or a raw instruction from a branch
-                    // (invalid). We leave it as-is here — the phi creation in
-                    // compile_if handles the domination check.
+                    // If the builder moved blocks, the last value might not dominate.
+                    // We leave it here — the phi creation in compile_if has safeguards.
                 }
                 _ => {
                     self.compile_statement(stmt);

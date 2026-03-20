@@ -364,6 +364,9 @@ impl Driver {
                 // The bootstrap produces IR with type mismatches that don't
                 // affect correctness on ARM64 with OptimizationLevel::None.
                 eprintln!("  (skipping LLVM verification errors)");
+                // Print first 3000 chars of the actual error
+                let truncated = if detail.len() > 3000 { &detail[..3000] } else { &detail };
+                eprintln!("{}", truncated);
             }
 
             // Write object file

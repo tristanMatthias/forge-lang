@@ -627,15 +627,14 @@ impl Parser {
     // Parse a block or wrap a single statement in a block
     fn parse_block_or_stmt(self) -> Block? {
         if self.check(TokenKind.LBrace) {
-            self.parse_block()
-        } else {
-            let start = self.current_span()
-            let stmt = self.parse_statement()
-            if stmt == null { return null }
-            Block {
-                statements: [stmt!],
-                span: start,
-            }
+            return self.parse_block()
+        }
+        let start = self.current_span()
+        let stmt = self.parse_statement()
+        if stmt == null { return null }
+        return Block {
+            statements: [stmt!],
+            span: start,
         }
     }
 

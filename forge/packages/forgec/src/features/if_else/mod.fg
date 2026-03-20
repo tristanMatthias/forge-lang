@@ -198,7 +198,6 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
         }
 
         llvm.position_at_end(CG_B, merge_bb)
-        llvm.const_int(CG_I64, 0, 0)
     } else {
         llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
 
@@ -209,8 +208,8 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
         }
 
         llvm.position_at_end(CG_B, merge_bb)
-        llvm.const_int(CG_I64, 0, 0)
     }
+    return llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ────────────────────────────────

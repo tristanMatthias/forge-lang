@@ -226,15 +226,10 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.position_at_end(arm_bb);
             self.push_scope();
             self.bind_pattern_vars(&arm.pattern, &subject_val, &subject_type);
-            let before_arm_bb = self.builder.get_insert_block();
             let arm_val = self.compile_expr(&arm.body);
             self.pop_scope();
 
             let arm_end_bb = self.builder.get_insert_block().unwrap();
-            // Note: if the arm body created new blocks, arm_val might be
-            // from a nested branch. If it's a phi at the merge point, it's
-            // valid. We keep the value as-is — the phi creation below will
-            // use arm_end_bb (the actual merge) as the predecessor.
             if arm_end_bb.get_terminator().is_none() {
                 if let Some(val) = arm_val {
                     if result_type.is_none() {
