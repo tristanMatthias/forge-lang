@@ -258,6 +258,7 @@ mut VAR_SCOPE: int = 0
 mut FN_NAMES: List<string> = []
 mut FN_RETTYPES: List<string> = []
 mut FN_PARAMCOUNTS: List<int> = []
+mut FN_PARAM_TYPES: List<string> = []  // CSV per function: "i64,%ForgeString,i64"
 
 // Loop labels for break/continue
 mut LOOP_COND: List<string> = []
@@ -434,35 +435,75 @@ fn parse_and() -> string {
 
 fn parse_eq() -> string {
     mut lhs = parse_cmp()
+    mut lhs_str = LAST_IS_STR
     while check("==") || check("!=") {
         let op = advance().text
         skip_nl()
         let rhs = parse_cmp()
-        let pred = if op == "==" { "eq" } else { "ne" }
-        let r = new_reg()
-        ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
-        let r2 = new_reg()
-        ir_line(r2 + " = zext i1 " + r + " to i64")
-        lhs = r2
+        if lhs_str == 1 {
+            // String equality via forge_string_eq
+            let eq_r = new_reg()
+            ir_line(eq_r + " = call i8 @forge_string_eq(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+            let ext = new_reg()
+            ir_line(ext + " = zext i8 " + eq_r + " to i64")
+            if op == "!=" {
+                // Negate
+                let neg = new_reg()
+                ir_line(neg + " = icmp eq i64 " + ext + ", 0")
+                let neg2 = new_reg()
+                ir_line(neg2 + " = zext i1 " + neg + " to i64")
+                lhs = neg2
+            } else {
+                lhs = ext
+            }
+        } else {
+            mut pred = "eq"
+            if op == "!=" { pred = "ne" }
+            let r = new_reg()
+            ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i1 " + r + " to i64")
+            lhs = r2
+        }
+        lhs_str = 0
+        LAST_IS_STR = 0
     }
     lhs
 }
 
 fn parse_cmp() -> string {
     mut lhs = parse_add()
+    mut lhs_str = LAST_IS_STR
     while check("<") || check(">") || check("<=") || check(">=") {
         let op = advance().text
         skip_nl()
         let rhs = parse_add()
-        mut pred = "slt"
-        if op == ">" { pred = "sgt" }
-        if op == "<=" { pred = "sle" }
-        if op == ">=" { pred = "sge" }
-        let r = new_reg()
-        ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
-        let r2 = new_reg()
-        ir_line(r2 + " = zext i1 " + r + " to i64")
-        lhs = r2
+        if lhs_str == 1 {
+            // String comparison via forge_string_compare (returns -1/0/1)
+            let cmp_r = new_reg()
+            ir_line(cmp_r + " = call i64 @forge_string_compare(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+            mut pred = "slt"
+            if op == ">" { pred = "sgt" }
+            if op == "<=" { pred = "sle" }
+            if op == ">=" { pred = "sge" }
+            let r = new_reg()
+            ir_line(r + " = icmp " + pred + " i64 " + cmp_r + ", 0")
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i1 " + r + " to i64")
+            lhs = r2
+        } else {
+            mut pred = "slt"
+            if op == ">" { pred = "sgt" }
+            if op == "<=" { pred = "sle" }
+            if op == ">=" { pred = "sge" }
+            let r = new_reg()
+            ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i1 " + r + " to i64")
+            lhs = r2
+        }
+        lhs_str = 0
+        LAST_IS_STR = 0
     }
     lhs
 }
@@ -539,29 +580,52 @@ fn parse_postfix() -> string {
     mut val_is_str = LAST_IS_STR
     while true {
         if check("(") {
-            // Function call — val should be a function name
-            // For simplicity, we track the last ident parsed
+            // Function call — save function name before parsing args
+            let call_fn_name = LAST_IDENT_NAME
             advance()
             skip_nl()
             mut args: List<string> = []
+            mut arg_types: List<string> = []
             while !check(")") {
+                LAST_IS_STR = 0
                 let a = parse_expr()
                 args = args.push(a)
+                if LAST_IS_STR == 1 {
+                    arg_types = arg_types.push("%ForgeString")
+                } else {
+                    arg_types = arg_types.push("i64")
+                }
                 skip_nl()
                 if check(",") { advance() }
                 skip_nl()
             }
             expect(")")
-            // Build call
+            // Look up return type
+            mut call_ret = "i64"
+            mut fi = 0
+            while fi < FN_NAMES.length {
+                if FN_NAMES[fi] == call_fn_name {
+                    call_ret = FN_RETTYPES[fi]
+                }
+                fi = fi + 1
+            }
+            // Build call args with inferred types
             mut arg_str = ""
             mut i = 0
             while i < args.length {
                 if i > 0 { arg_str = arg_str + ", " }
-                arg_str = arg_str + "i64 " + args[i]
+                arg_str = arg_str + arg_types[i] + " " + args[i]
                 i = i + 1
             }
             let r = new_reg()
-            ir_line(r + " = call i64 " + val + "(" + arg_str + ")")
+            ir_line(r + " = call " + call_ret + " " + val + "(" + arg_str + ")")
+            if call_ret == "%ForgeString" {
+                LAST_IS_STR = 1
+                val_is_str = 1
+            } else {
+                LAST_IS_STR = 0
+                val_is_str = 0
+            }
             val = r
         } else if check(".") {
             advance()
@@ -935,13 +999,18 @@ fn parse_fn_decl() {
     expect("(")
     skip_nl()
     mut param_names: List<string> = []
+    mut param_types: List<string> = []
     mut param_count = 0
     while !check(")") {
         let pname = advance().text
         expect(":")
         skip_nl()
+        let pty = peek().text
         parse_type_ann()
         param_names = param_names.push(pname)
+        mut llvm_pty = "i64"
+        if pty == "string" { llvm_pty = "%ForgeString" }
+        param_types = param_types.push(llvm_pty)
         param_count = param_count + 1
         skip_nl()
         if check(",") { advance() }
@@ -973,13 +1042,22 @@ fn parse_fn_decl() {
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(param_count)
+    // Build CSV of param types
+    mut pt_csv = ""
+    i = 0
+    while i < param_count {
+        if i > 0 { pt_csv = pt_csv + "," }
+        pt_csv = pt_csv + param_types[i]
+        i = i + 1
+    }
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push(pt_csv)
 
     // Build param list string
     mut param_str = ""
     mut i = 0
     while i < param_count {
         if i > 0 { param_str = param_str + ", " }
-        param_str = param_str + "i64 %" + param_names[i] + ".arg"
+        param_str = param_str + param_types[i] + " %" + param_names[i] + ".arg"
         i = i + 1
     }
 
@@ -997,9 +1075,10 @@ fn parse_fn_decl() {
     i = 0
     while i < param_count {
         let alloca = new_reg()
-        ir_line(alloca + " = alloca i64")
-        ir_line("store i64 %" + param_names[i] + ".arg, ptr " + alloca)
-        push_var(param_names[i], alloca, "i64")
+        let pty = param_types[i]
+        ir_line(alloca + " = alloca " + pty)
+        ir_line("store " + pty + " %" + param_names[i] + ".arg, ptr " + alloca)
+        push_var(param_names[i], alloca, pty)
         i = i + 1
     }
 
@@ -1073,7 +1152,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
     ir_raw("declare i64 @forge_string_index_of(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_compare(%ForgeString, %ForgeString)")
-    ir_raw("declare i8 @forge_string_eq(%ForgeString, i64)")
+    ir_raw("declare i8 @forge_string_eq(%ForgeString, %ForgeString)")
     ir_raw("declare ptr @forge_alloc(i64)")
     ir_raw("declare i32 @puts(ptr)")
     ir_raw("")
