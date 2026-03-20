@@ -134,28 +134,27 @@ export fn store_toplevel_source(src: string) {
 // Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
-    // Use CSV-based type detection (avoids bitmask overflow and bootstrap if-condition bugs)
+    // Use CSV-based type detection
+    // Detect list/string globals by searching for "name:1:" (ann_is_list=1) in CSV
+    // Avoid nested ifs (bootstrap has bugs with mut vars in nested if scopes)
     let type_csv = VAR_GLOBAL_TYPE_CSV
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Look up in CSV: "name:ann_is_list:value_tok_kind\n"
-        mut is_str = false
-        let needle = name + ":"
-        let ni = type_csv.index_of(needle)
-        if ni >= 0 {
-            // Parse ann_is_list (first number after name:)
-            let after_name = ni + needle.length
-            if after_name < type_csv.length {
-                let ann_char = type_csv[after_name]
-                if ann_char == "1" { is_str = true }  // ann_is_list == 1
-                // Also check value_tok_kind (after second :)
-                if after_name + 2 < type_csv.length {
-                    let vtk_char = type_csv[after_name + 2]
-                    if vtk_char == "4" { is_str = true }  // StringLit
-                }
-            }
-        }
+        // Search for "name:1:" (list annotation) or "name:0:4" (StringLit value)
+        // Check type from CSV: "name:typetext:kind\n"
+        // typetext is "List", "string", "Map", "int", "bool", etc.
+        let list_needle = name + ":List:"
+        let str_needle = name + ":string:"
+        let map_needle = name + ":Map:"
+        let list_idx = type_csv.index_of(list_needle)
+        let str_idx = type_csv.index_of(str_needle)
+        let map_idx = type_csv.index_of(map_needle)
+        // Also check for ":0:4" (StringLit kind_id) for untyped string literals
+        let slit_needle = name + "::4"
+        let slit_idx = type_csv.index_of(slit_needle)
+        // Any >= 0 means this is a string/list/map type
+        let is_str = (list_idx + str_idx + map_idx + slit_idx + 4) > 0
         mut gty = CG_I64
         if is_str { gty = CG_STR }
 
@@ -1117,6 +1116,7 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
+                let is_str_load = load_ty == CG_STR
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1

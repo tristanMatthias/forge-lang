@@ -72,11 +72,14 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Capture type annotation info for global type detection
     mut ann_is_list = 0
     mut ann_elem_name = ""
+    mut ann_type_text = ""  // The raw type name text from the annotation
     mut type_ann: TypeExpr? = null
-    if p.check(TokenKind.Colon) {
+    // Use text check instead of kind check (bootstrap match on large TokenKind fails)
+    if p.peek().text == ":" {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
+        ann_type_text = type_tok.text
         if type_tok.kind_id == 1 {
             if type_tok.text == "List" {
                 ann_is_list = 1
@@ -114,18 +117,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         // Use token TEXT instead of kind match (bootstrap match on 100+ variant
         // TokenKind enum has issues with high variant indices)
         // Detect string/list/map globals
-        // Store type info in CSV. Use the raw type token text instead of ann_is_list
-        // (bootstrap has bugs with mut variables modified inside if blocks)
-        mut type_hint = "int"
-        if type_ann != null {
-            // We stored the type tok text in the check above. But since ann_is_list
-            // is unreliable, use the raw type token text which was peeked before
-            // parse_type_expr consumed it. If the type starts with "List", it's a list.
-        }
-        // Detect from token kind: 4 = StringLit value
-        // Detect from type annotation text by re-checking the global name pattern
-        // (all lists are initialized with [] which is LBracket)
-        VAR_GLOBAL_TYPE_CSV = VAR_GLOBAL_TYPE_CSV + var_name + ":" + string(value_tok_kind) + "\n"
+        // Store type info in CSV using the annotation text
+        VAR_GLOBAL_TYPE_CSV = VAR_GLOBAL_TYPE_CSV + var_name + ":" + ann_type_text + ":" + string(value_tok_kind) + "\n"
         // Use CSV-based detection instead of bitmask/list (both unreliable with bootstrap bugs)
         mut is_list_or_str = false
         if value_tok_kind == 4 { is_list_or_str = true }
