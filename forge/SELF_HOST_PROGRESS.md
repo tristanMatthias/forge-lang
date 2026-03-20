@@ -2,9 +2,10 @@
 
 **Status: 8% (3/37 files compile in Stage 2)**
 
-> Phase 1 scan: DONE (2s for all 37 files, 385 functions)
+> Phase 1 scan: DONE (2s for all 37 files, 386 functions)
 > Phase 2 compile: 3/37 files produce valid .o files
-> Current blocker: error.fg crashes during Diagnostic struct literal with Span field
+> Current blocker: error.fg crashes in bag_error_count accessing DIAG_SEVS[i]
+> The global list type is correctly detected (CSV) but emit_ident loads it as i64
 
 Last updated: 2026-03-19
 
