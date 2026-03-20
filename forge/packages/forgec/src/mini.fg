@@ -270,6 +270,23 @@ mut SFIELD_TYPES: List<string> = []
 mut VAR_STRUCT_TYPE: List<string> = []
 mut LAST_STRUCT_TYPE: string = ""
 
+// Enum tracking
+// ENUM_NAMES[i] = "Color"
+// ENUM_VARIANT_STARTS[i] = index into EVAR_* arrays
+// ENUM_VARIANT_COUNTS[i] = number of variants
+mut ENUM_NAMES: List<string> = []
+mut ENUM_VARIANT_STARTS: List<int> = []
+mut ENUM_VARIANT_COUNTS: List<int> = []
+// Flat arrays of variant names/field info
+mut EVAR_NAMES: List<string> = []
+// For data-carrying variants: field starts/counts into EFIELD_* arrays
+mut EVAR_FIELD_STARTS: List<int> = []
+mut EVAR_FIELD_COUNTS: List<int> = []
+mut EFIELD_NAMES: List<string> = []
+mut EFIELD_TYPES: List<string> = []
+
+mut LAST_ENUM_TYPE: string = ""
+
 // Function forward declarations
 mut FN_NAMES: List<string> = []
 mut FN_RETTYPES: List<string> = []
@@ -337,6 +354,70 @@ fn struct_llvm_type(name: string) -> string {
     "%" + name
 }
 
+// ─── Enum helpers ─────────────────────────────────
+
+fn find_enum(name: string) -> int {
+    mut i = 0
+    while i < ENUM_NAMES.length {
+        if ENUM_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn enum_variant_index(enum_idx: int, variant_name: string) -> int {
+    let start = ENUM_VARIANT_STARTS[enum_idx]
+    let count = ENUM_VARIANT_COUNTS[enum_idx]
+    mut i = 0
+    while i < count {
+        if EVAR_NAMES[start + i] == variant_name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// Compute max payload size across all variants (in i64 slots)
+fn enum_max_slots(enum_idx: int) -> int {
+    let start = ENUM_VARIANT_STARTS[enum_idx]
+    let count = ENUM_VARIANT_COUNTS[enum_idx]
+    mut max_slots = 0
+    mut i = 0
+    while i < count {
+        let fc = EVAR_FIELD_COUNTS[start + i]
+        // Each field takes 1 slot (i64-sized)
+        // Strings take 2 slots ({ptr, i64})
+        let fs = EVAR_FIELD_STARTS[start + i]
+        mut slots = 0
+        mut j = 0
+        while j < fc {
+            let fty = EFIELD_TYPES[fs + j]
+            if fty == "%ForgeString" {
+                slots = slots + 2
+            } else {
+                slots = slots + 1
+            }
+            j = j + 1
+        }
+        if slots > max_slots { max_slots = slots }
+        i = i + 1
+    }
+    if max_slots == 0 { max_slots = 1 }
+    max_slots
+}
+
+fn enum_llvm_type_str(enum_idx: int) -> string {
+    let ms = enum_max_slots(enum_idx)
+    // { i8, i64, i64, ... } — tag + payload slots
+    mut ty = "{ i8"
+    mut i = 0
+    while i < ms {
+        ty = ty + ", i64"
+        i = i + 1
+    }
+    ty = ty + " }"
+    ty
+}
+
 fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "int" { return "i64" }
     if ty_name == "bool" { return "i64" }
@@ -345,7 +426,51 @@ fn type_to_llvm(ty_name: string) -> string {
     // Check if it's a known struct
     let si = find_struct(ty_name)
     if si >= 0 { return "%" + ty_name }
+    // Check if it's a known enum
+    let ei = find_enum(ty_name)
+    if ei >= 0 { return "%" + ty_name }
     "i64"
+}
+
+fn parse_enum_decl_top() {
+    expect("enum")
+    let name = advance().text
+    expect("{")
+    skip_nl()
+    let vstart = EVAR_NAMES.length
+    mut vcount = 0
+    while !check("}") && POS < TOKENS.length {
+        let vname = advance().text
+        let fstart = EFIELD_NAMES.length
+        mut fcount = 0
+        if check("(") {
+            advance()
+            skip_nl()
+            while !check(")") && POS < TOKENS.length {
+                let fname = advance().text
+                expect(":")
+                skip_nl()
+                let ftname = peek().text
+                parse_type_ann()
+                EFIELD_NAMES = EFIELD_NAMES.push(fname)
+                EFIELD_TYPES = EFIELD_TYPES.push(type_to_llvm(ftname))
+                fcount = fcount + 1
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+        }
+        EVAR_NAMES = EVAR_NAMES.push(vname)
+        EVAR_FIELD_STARTS = EVAR_FIELD_STARTS.push(fstart)
+        EVAR_FIELD_COUNTS = EVAR_FIELD_COUNTS.push(fcount)
+        vcount = vcount + 1
+        skip_nl()
+    }
+    expect("}")
+    ENUM_NAMES = ENUM_NAMES.push(name)
+    ENUM_VARIANT_STARTS = ENUM_VARIANT_STARTS.push(vstart)
+    ENUM_VARIANT_COUNTS = ENUM_VARIANT_COUNTS.push(vcount)
 }
 
 fn parse_type_decl_top() {
@@ -686,10 +811,16 @@ fn parse_postfix() -> string {
             mut arg_types: List<string> = []
             while !check(")") {
                 LAST_IS_STR = 0
+                LAST_ENUM_TYPE = ""
+                LAST_STRUCT_TYPE = ""
                 let a = parse_expr()
                 args = args.push(a)
                 if LAST_IS_STR == 1 {
                     arg_types = arg_types.push("%ForgeString")
+                } else if LAST_ENUM_TYPE != "" {
+                    arg_types = arg_types.push("%" + LAST_ENUM_TYPE)
+                } else if LAST_STRUCT_TYPE != "" {
+                    arg_types = arg_types.push("%" + LAST_STRUCT_TYPE)
                 } else {
                     arg_types = arg_types.push("i64")
                 }
@@ -717,6 +848,8 @@ fn parse_postfix() -> string {
             }
             let r = new_reg()
             ir_line(r + " = call " + call_ret + " " + val + "(" + arg_str + ")")
+            LAST_ENUM_TYPE = ""
+            LAST_STRUCT_TYPE = ""
             if call_ret == "%ForgeString" {
                 LAST_IS_STR = 1
                 val_is_str = 1
@@ -905,6 +1038,44 @@ fn parse_primary() -> string {
             return cur
         }
 
+        // Check for enum construction: EnumName.Variant or EnumName.Variant(args)
+        let ei = find_enum(name)
+        if ei >= 0 && check(".") {
+            advance() // consume .
+            let vname = advance().text
+            let vidx = enum_variant_index(ei, vname)
+            let ety = "%" + name
+            // Build enum value: { i8 tag, payload... }
+            let tag_r = new_reg()
+            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
+            // Check for data-carrying variant
+            let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+            let fc = EVAR_FIELD_COUNTS[gvi]
+            mut cur = tag_r
+            if fc > 0 && check("(") {
+                advance()
+                skip_nl()
+                let fs = EVAR_FIELD_STARTS[gvi]
+                mut fi = 0
+                while fi < fc {
+                    let fval = parse_expr()
+                    let slot = fi + 1  // slot 0 is tag
+                    let nr = new_reg()
+                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
+                    cur = nr
+                    fi = fi + 1
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+                expect(")")
+            }
+            LAST_ENUM_TYPE = name
+            LAST_STRUCT_TYPE = ""
+            LAST_IS_STR = 0
+            return cur
+        }
+
         // Check for string() conversion
         if name == "string" && check("(") {
             advance()
@@ -951,15 +1122,22 @@ fn parse_primary() -> string {
             ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
             LAST_IS_STR = 0
             LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
             if vty == "%ForgeString" {
                 LAST_IS_STR = 1
             }
-            // Derive struct type from LLVM type name (e.g. "%Point" → "Point")
+            // Derive struct/enum type from LLVM type name
             if vty.length > 1 {
                 let first_ch = vty.substring(0, 1)
                 if first_ch == "%" {
                     if vty != "%ForgeString" {
-                        LAST_STRUCT_TYPE = vty.substring(1, vty.length)
+                        let tname = vty.substring(1, vty.length)
+                        if find_struct(tname) >= 0 {
+                            LAST_STRUCT_TYPE = tname
+                        }
+                        if find_enum(tname) >= 0 {
+                            LAST_ENUM_TYPE = tname
+                        }
                     }
                 }
             }
@@ -997,6 +1175,7 @@ fn parse_stmt() -> bool {
         skip_nl()
         LAST_IS_STR = 0
         LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
         let val = parse_expr()
         let alloca = new_reg()
         let saved_struct = LAST_STRUCT_TYPE
@@ -1006,6 +1185,11 @@ fn parse_stmt() -> bool {
             ir_line(alloca + " = alloca " + sty)
             ir_line("store " + sty + " " + val + ", ptr " + alloca)
             push_var_with_struct(name, alloca, sty, saved_struct)
+        } else if LAST_ENUM_TYPE != "" {
+            let ety = "%" + LAST_ENUM_TYPE
+            ir_line(alloca + " = alloca " + ety)
+            ir_line("store " + ety + " " + val + ", ptr " + alloca)
+            push_var(name, alloca, ety)
         } else if LAST_IS_STR == 1 {
             ir_line(alloca + " = alloca %ForgeString")
             ir_line("store %ForgeString " + val + ", ptr " + alloca)
@@ -1085,9 +1269,9 @@ fn parse_stmt() -> bool {
     if tok.text == "while" {
         advance()
         skip_nl()
-        let cond_l = new_label("while.cond")
-        let body_l = new_label("while.body")
-        let end_l = new_label("while.end")
+        let cond_l = new_label("while_cond")
+        let body_l = new_label("while_body")
+        let end_l = new_label("while_end")
 
         LOOP_COND = LOOP_COND.push(cond_l)
         LOOP_END = LOOP_END.push(end_l)
@@ -1143,6 +1327,114 @@ fn parse_stmt() -> bool {
             ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
         }
         return true
+    }
+
+    // match
+    if tok.text == "match" {
+        advance()
+        skip_nl()
+        let scrutinee = parse_expr()
+        let scrut_enum = LAST_ENUM_TYPE
+        skip_nl()
+        expect("{")
+        skip_nl()
+        // Extract tag
+        let tag_r = new_reg()
+        let ei = find_enum(scrut_enum)
+        if ei >= 0 {
+            ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
+        }
+        let merge_l = new_label("match_end")
+        // Parse arms
+        while !check("}") && POS < TOKENS.length {
+            skip_nl()
+            if check("_") {
+                // Wildcard — already in the fallthrough block
+                advance()
+                expect("->")
+                skip_nl()
+                if check("{") {
+                    expect("{")
+                    skip_nl()
+                    while !check("}") {
+                        parse_block_stmt()
+                        skip_nl()
+                    }
+                    expect("}")
+                } else {
+                    parse_stmt()
+                }
+                if BLOCK_TERMINATED == 0 {
+                    ir_line("br label %" + merge_l)
+                }
+            } else if check(".") {
+                // .Variant pattern
+                advance()
+                let vname = advance().text
+                // Check for binding: .Variant(x, y)
+                mut bindings: List<string> = []
+                if check("(") {
+                    advance()
+                    skip_nl()
+                    while !check(")") {
+                        let bname = advance().text
+                        bindings = bindings.push(bname)
+                        skip_nl()
+                        if check(",") { advance() }
+                        skip_nl()
+                    }
+                    expect(")")
+                }
+                expect("->")
+                skip_nl()
+                let vidx = enum_variant_index(ei, vname)
+                let arm_l = new_label("match_arm")
+                let next_l = new_label("match_next")
+                // Compare tag
+                let cmp = new_reg()
+                ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
+                ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
+                ir_raw(arm_l + ":")
+                // Bind variant fields
+                let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+                mut bi = 0
+                while bi < bindings.length {
+                    let bval = new_reg()
+                    let slot = bi + 1
+                    ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
+                    let balloca = new_reg()
+                    ir_line(balloca + " = alloca i64")
+                    ir_line("store i64 " + bval + ", ptr " + balloca)
+                    push_var(bindings[bi], balloca, "i64")
+                    bi = bi + 1
+                }
+                BLOCK_TERMINATED = 0
+                if check("{") {
+                    expect("{")
+                    skip_nl()
+                    while !check("}") {
+                        parse_block_stmt()
+                        skip_nl()
+                    }
+                    expect("}")
+                } else {
+                    parse_stmt()
+                }
+                if BLOCK_TERMINATED == 0 {
+                    ir_line("br label %" + merge_l)
+                }
+                ir_raw(next_l + ":")
+            } else {
+                // Skip unknown pattern
+                advance()
+            }
+            skip_nl()
+        }
+        expect("}")
+        // Default: branch to merge if we fall through
+        ir_line("br label %" + merge_l)
+        ir_raw(merge_l + ":")
+        return false
     }
 
     // Expression statement (or assignment)
@@ -1201,6 +1493,8 @@ fn parse_fn_decl() {
         param_names = param_names.push(pname)
         mut llvm_pty = "i64"
         if pty == "string" { llvm_pty = "%ForgeString" }
+        if find_struct(pty) >= 0 { llvm_pty = "%" + pty }
+        if find_enum(pty) >= 0 { llvm_pty = "%" + pty }
         param_types = param_types.push(llvm_pty)
         param_count = param_count + 1
         skip_nl()
@@ -1323,6 +1617,14 @@ fn compile(source: string) -> string {
     STRUCT_FIELD_COUNTS = []
     SFIELD_NAMES = []
     SFIELD_TYPES = []
+    ENUM_NAMES = []
+    ENUM_VARIANT_STARTS = []
+    ENUM_VARIANT_COUNTS = []
+    EVAR_NAMES = []
+    EVAR_FIELD_STARTS = []
+    EVAR_FIELD_COUNTS = []
+    EFIELD_NAMES = []
+    EFIELD_TYPES = []
 
     // Pass 1: scan for type declarations only
     skip_nl()
@@ -1333,10 +1635,11 @@ fn compile(source: string) -> string {
             skip_nl()
             if check("type") {
                 parse_type_decl_top()
+            } else if check("enum") {
+                parse_enum_decl_top()
             } else if check("fn") {
                 advance()
                 advance() // skip name
-                // Skip to end of function
                 while !check("{") && POS < TOKENS.length { advance() }
                 skip_block()
             } else {
@@ -1350,9 +1653,7 @@ fn compile(source: string) -> string {
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
         } else if tok.text == "enum" {
-            advance()
-            while !check("}") && POS < TOKENS.length { advance() }
-            if check("}") { advance() }
+            parse_enum_decl_top()
         } else if tok.text == "impl" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
@@ -1384,6 +1685,13 @@ fn compile(source: string) -> string {
         }
         ir_raw("%" + sname + " = type { " + fields_ir + " }")
         sti = sti + 1
+    }
+    // Emit enum type declarations
+    mut ei = 0
+    while ei < ENUM_NAMES.length {
+        let ename = ENUM_NAMES[ei]
+        ir_raw("%" + ename + " = type " + enum_llvm_type_str(ei))
+        ei = ei + 1
     }
     ir_raw("")
     ir_raw("declare %ForgeString @forge_string_new(ptr, i64)")
@@ -1428,7 +1736,11 @@ fn compile(source: string) -> string {
             } else if tok.text == "type" {
                 parse_type_decl_top()
             } else if tok.text == "enum" {
-                advance()
+                // Already parsed in pass 1, skip
+                advance() // enum
+                advance() // name
+                expect("{")
+                skip_nl()
                 while !check("}") && POS < TOKENS.length { advance() }
                 if check("}") { advance() }
             } else {
