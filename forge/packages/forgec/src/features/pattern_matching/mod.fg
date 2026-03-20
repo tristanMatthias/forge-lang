@@ -494,22 +494,10 @@ fn emit_pattern_check(pat: Pattern, subject_val: ptr, enum_type: string) -> ptr 
             return llvm.build_icmp(CG_B, 32, subject_val, lit_val, "lit_eq")
         }
         .Or(alternatives, span) -> {
-            // Any alternative matches → OR the conditions
-            mut result: ptr = null
-            mut ai = 0
-            while ai < alternatives.length {
-                let alt = alternatives[ai]
-                let check = emit_pattern_check(alt, subject_val, enum_type)
-                if check != null {
-                    if result == null { result = check }
-                    else { result = llvm.build_or(CG_B, result, check, "or_pat") }
-                } else {
-                    // Wildcard/ident in or-pattern → always matches
-                    return null
-                }
-                ai = ai + 1
-            }
-            return result
+            // Or patterns: treat as always-match for now
+            // (recursive emit_pattern_check on List<Pattern> elements causes
+            // type mismatch in bootstrap — Pattern loaded as i64 from list)
+            return null
         }
         .Tuple(elements, span) -> { return null }
     }
@@ -523,8 +511,13 @@ fn bind_pattern_runtime(cg: Codegen, pat: Pattern, subject_val: ptr, enum_type: 
     match pat {
         .Ident(name, span) -> {
             // Bind subject value to name
-            cg.define_var(name, Type.Int, subject_val)
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name) // might be string
+            // Use alloca+store directly instead of define_var
+            // (bootstrap miscompiles define_var call with match-extracted name)
+            let alloca = llvm.build_alloca(CG_B, CG_I64, name)
+            llvm.build_store(CG_B, subject_val, alloca)
+            CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         .EnumVariant(variant, fields, span) -> {
             // Extract variant fields and bind to sub-pattern names
@@ -546,17 +539,22 @@ fn bind_pattern_runtime(cg: Codegen, pat: Pattern, subject_val: ptr, enum_type: 
                         // Determine type from field_types CSV
                         let ft_char = get_field_type_char(field_types, fi)
                         if ft_char == "s" {
-                            // String field — need to reconstruct from 2 slots
-                            // slot_idx = ptr, slot_idx+1 = len
                             let str_ptr = llvm.build_extract_value(CG_B, subject_val, slot_idx, "sp")
                             let str_len = llvm.build_extract_value(CG_B, subject_val, slot_idx + 1, "sl")
                             let undef = llvm.get_undef(CG_STR)
                             let s1 = llvm.build_insert_value(CG_B, undef, str_ptr, 0, "si1")
                             let s2 = llvm.build_insert_value(CG_B, s1, str_len, 1, "si2")
-                            cg.define_var(fname, Type.String, s2)
+                            // Direct alloca+store (avoid define_var with match-extracted name)
+                            let alloca = llvm.build_alloca(CG_B, CG_STR, fname)
+                            llvm.build_store(CG_B, s2, alloca)
+                            CG_VAR_NAMES = CG_VAR_NAMES.push(fname)
+                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
                             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(fname)
                         } else {
-                            cg.define_var(fname, Type.Int, field_val)
+                            let alloca = llvm.build_alloca(CG_B, CG_I64, fname)
+                            llvm.build_store(CG_B, field_val, alloca)
+                            CG_VAR_NAMES = CG_VAR_NAMES.push(fname)
+                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
                         }
                     }
                     .Wildcard(ws) -> {} // skip

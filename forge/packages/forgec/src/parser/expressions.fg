@@ -269,8 +269,9 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__bt${BINOP_COUNTER}"
-            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            let tmp = "__bt" + string(BINOP_COUNTER)
+            mut tmp_ty = Type.Int
+            if result_is_str { tmp_ty = Type.String }
             cg.define_var(tmp, tmp_ty, result_llvm)
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
             // Track for implicit function returns
@@ -621,25 +622,9 @@ impl Parser {
                                 }
                                 if ftype_is_complex {
                                     CG_LAST_STRUCT_TYPE = ftype
-                                    // Register temp as struct var for further chained access
-                                    BINOP_COUNTER = BINOP_COUNTER + 1
-                                    let stmp = "__sf${BINOP_COUNTER}"
-                                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(stmp)
-                                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(ftype)
-                                    // Copy field info from struct registry
-                                    mut sri = CG_STRUCT_NAMES.length - 1
-                                    while sri >= 0 {
-                                        if CG_STRUCT_NAMES[sri] == ftype {
-                                            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_FIELDS[sri])
-                                            break
-                                        }
-                                        sri = sri - 1
-                                    }
-                                    if sri < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
-                                    // Store value in a variable so emit_ident can find it
-                                    mut cg2 = codegen_new()
-                                    cg2.define_var(stmp, Type.Int, field_val)
-                                    LAST_IDENT_NAME = stmp
+                                    // Note: nested struct field access (a.b.c) is handled
+                                    // by emit_member_access in the codegen path.
+                                    // The inline emit stores the value directly.
                                 } else {
                                     CG_LAST_STRUCT_TYPE = ""
                                 }
@@ -836,8 +821,9 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__pt${BINOP_COUNTER}"
-            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            let tmp = "__pt" + string(BINOP_COUNTER)
+            mut tmp_ty = Type.Int
+            if result_is_str { tmp_ty = Type.String }
             cg.define_var(tmp, tmp_ty, result_llvm)
             // If result is an enum, register in enum var tracking
             if CG_LAST_ENUM_TYPE != "" {
