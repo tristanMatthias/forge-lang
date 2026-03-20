@@ -1931,7 +1931,7 @@ impl Parser {
             }
         }
 
-        if method == "indexOf" {
+        if method == "indexOf" || method == "index_of" {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let sub_val = cg.emit_expr(args[0])

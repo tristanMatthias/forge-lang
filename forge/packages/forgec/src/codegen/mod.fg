@@ -153,26 +153,25 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         // Also check for ":0:4" (StringLit kind_id) for untyped string literals
         let slit_needle = name + "::4"
         let slit_idx = type_csv.index_of(slit_needle)
-        // Any >= 0 means this is a string/list/map type
-        let is_str = (list_idx + str_idx + map_idx + slit_idx + 4) > 0
-        mut gty = CG_I64
-        if is_str { gty = CG_STR }
+        // Detect list/string/map by checking CSV needle positions.
+        // Bootstrap workaround: `if idx >= 0 { gty = X }` doesn't work
+        // reliably for mut variables. Use a function call instead.
+        // Use the function return value DIRECTLY to select the type.
+        // Bootstrap bug: `if bool_var { mut_var = X }` doesn't set mut_var.
+        // Workaround: use a function that returns the LLVM type directly.
+        mut gty = select_global_type(type_csv, list_needle, str_needle, map_needle, slit_needle)
+        let is_str = gty == CG_STR
 
         let gv = llvm.add_global(CG_MOD, gty, name)
         llvm.set_initializer(gv, llvm.const_null(gty))
         llvm.set_linkage(gv, 3)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        mut str_flag = 0
-        if is_str { str_flag = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(str_flag)
+        // Bootstrap workaround: `if is_str { ... }` doesn't work because
+        // the bootstrap's compiled `if bool { mut_assign }` is broken.
+        // Use a helper function with early return instead.
+        register_global_type(name, gty)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        if is_str {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
-        }
         i = i + 1
     }
 }
@@ -246,6 +245,43 @@ export fn create_llvm_globals_from(csv: string, count: int) {
 }
 
 // Check if a name is in a comma-separated string (e.g., ",NAMES,IDS,")
+// Check if csv contains any of the 4 needles (returns true if ANY found)
+// Returns CG_STR if any needle is found in csv, else CG_I64
+// Register a global variable's type info (avoiding if-on-bool which is broken in bootstrap)
+fn register_global_type(name: string, gty: ptr) {
+    // Use early return to avoid if-on-bool assignment (bootstrap bug)
+    if gty != CG_STR {
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(0)
+        return
+    }
+    // Is a string/list type
+    CG_VAR_IS_STR = CG_VAR_IS_STR.push(1)
+    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+    CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+}
+
+fn select_global_type(csv: string, n1: string, n2: string, n3: string, n4: string) -> ptr {
+    if csv.index_of(n1) >= 0 { return CG_STR }
+    if csv.index_of(n2) >= 0 { return CG_STR }
+    if csv.index_of(n3) >= 0 { return CG_STR }
+    if csv.index_of(n4) >= 0 { return CG_STR }
+    return CG_I64
+}
+
+fn csv_has_any(csv: string, n1: string, n2: string, n3: string, n4: string) -> bool {
+    let i1 = csv.index_of(n1)
+    if i1 >= 0 {
+        eprintln("    [csv_has_any] FOUND n1='" + n1 + "' → returning true")
+        return true
+    }
+    if csv.index_of(n2) >= 0 { return true }
+    if csv.index_of(n3) >= 0 { return true }
+    if csv.index_of(n4) >= 0 { return true }
+    return false
+}
+
 fn csv_contains(csv: string, name: string) -> bool {
     let needle = ",${name},"
     let nl = needle.length
@@ -1130,6 +1166,7 @@ impl Codegen {
                     }
                 }
                 let is_str_load = load_ty == CG_STR
+                if name == "DIAG_SEVS" || name == "DIAG_COUNT" { eprintln("  [emit_ident_global] " + name + " is_str=" + string(is_str_load)) }
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
