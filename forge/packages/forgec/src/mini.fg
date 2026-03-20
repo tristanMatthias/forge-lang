@@ -266,6 +266,7 @@ mut LOOP_END: List<string> = []
 // Current function return type
 mut CUR_RET_TY: string = "i64"
 mut LAST_EXPR_VAL: string = "0"
+mut LAST_IDENT_NAME: string = ""
 mut BLOCK_TERMINATED: int = 0
 
 fn set_terminated() {
@@ -611,6 +612,7 @@ fn parse_primary() -> string {
     if tok.kind == 1 {
         advance()
         let name = tok.text
+        LAST_IDENT_NAME = name
 
         // Check for string() conversion
         if name == "string" && check("(") {
@@ -642,9 +644,9 @@ fn parse_primary() -> string {
             skip_nl()
             expect(")")
             if name == "println" {
-                ir_line("call void @forge_println(%ForgeString " + arg + ")")
+                ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
             } else {
-                ir_line("call void @forge_eprintln(%ForgeString " + arg + ")")
+                ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
             }
             return "0"
         }
@@ -826,10 +828,15 @@ fn parse_stmt() -> bool {
     LAST_EXPR_VAL = val
     skip_nl()
     if check("=") {
+        let lhs_name = LAST_IDENT_NAME
         advance()
         skip_nl()
         let rhs = parse_expr()
-        // TODO: proper lvalue handling
+        // Store to the variable that was on the LHS
+        let var_idx = find_var(lhs_name)
+        if var_idx >= 0 {
+            ir_line("store " + VAR_TYPES[var_idx] + " " + rhs + ", ptr " + VAR_REGS[var_idx])
+        }
         return false
     }
     false
@@ -992,9 +999,9 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_length(%ForgeString)")
     ir_raw("declare %ForgeString @forge_int_to_string(i64)")
-    ir_raw("declare void @forge_print(%ForgeString)")
-    ir_raw("declare void @forge_println(%ForgeString)")
-    ir_raw("declare void @forge_eprintln(%ForgeString)")
+    ir_raw("declare void @forge_print_string(%ForgeString)")
+    ir_raw("declare void @forge_println_string(%ForgeString)")
+    ir_raw("declare void @forge_eprintln_string(%ForgeString)")
     ir_raw("declare ptr @forge_alloc(i64)")
     ir_raw("declare i32 @puts(ptr)")
     ir_raw("")
