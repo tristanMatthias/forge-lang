@@ -43,7 +43,8 @@ export mut IN_FUNCTION_BODY: int = 0
 export mut VAR_GLOBAL_COUNT: int = 0
 export mut VAR_GLOBAL_NAMES: List<string> = []
 // Bitmask: bit i = 1 if global i is string/list type
-export mut VAR_GLOBAL_STR_MASK: int = 0
+export mut VAR_GLOBAL_STR_MASK: int = 0  // Legacy bitmask (only works for first 64 globals)
+export mut VAR_GLOBAL_IS_STR: List<int> = []  // 0/1 per global (replaces bitmask)
 export mut VAR_GLOBAL_IS_STR: int = 0
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
@@ -106,15 +107,21 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     // Register top-level globals with type detection from value token
     if IN_FUNCTION_BODY != 1 {
-        // Set bit in bitmask if this is a string/list/map global
+        // Track if this global is a string/list/map type
         if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
-            mut bit = 1
-            mut shift = 0
-            while shift < VAR_GLOBAL_COUNT {
-                bit = bit * 2
-                shift = shift + 1
+            VAR_GLOBAL_IS_STR = VAR_GLOBAL_IS_STR.push(1)
+            // Legacy bitmask (only for first 64)
+            if VAR_GLOBAL_COUNT < 64 {
+                mut bit = 1
+                mut shift = 0
+                while shift < VAR_GLOBAL_COUNT {
+                    bit = bit * 2
+                    shift = shift + 1
+                }
+                VAR_GLOBAL_STR_MASK = VAR_GLOBAL_STR_MASK + bit
             }
-            VAR_GLOBAL_STR_MASK = VAR_GLOBAL_STR_MASK + bit
+        } else {
+            VAR_GLOBAL_IS_STR = VAR_GLOBAL_IS_STR.push(0)
         }
         VAR_GLOBAL_COUNT = VAR_GLOBAL_COUNT + 1
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)

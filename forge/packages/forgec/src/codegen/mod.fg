@@ -133,23 +133,30 @@ export fn store_toplevel_source(src: string) {
 // Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
+    // Import the per-global type list
+    let is_str_list = VAR_GLOBAL_IS_STR
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Check bitmask: bit i set = string/list type
-        mut bit = 1
-        mut shift = 0
-        while shift < i {
-            bit = bit * 2
-            shift = shift + 1
+        // Use per-global list if available (supports >64 globals)
+        mut is_str = false
+        if i < is_str_list.length {
+            is_str = is_str_list[i] == 1
+        } else if i < 64 {
+            // Fallback to bitmask for first 64
+            mut bit = 1
+            mut shift = 0
+            while shift < i {
+                bit = bit * 2
+                shift = shift + 1
+            }
+            is_str = (str_mask / bit) % 2 == 1
         }
-        let is_str = (str_mask / bit) % 2 == 1
-        // Bootstrap workaround: if-as-expression returns corrupt ptr values
         mut gty = CG_I64
         if is_str { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
         llvm.set_initializer(gv, llvm.const_null(gty))
-        llvm.set_linkage(gv, 3)  // LinkOnceODR: merge duplicates
+        llvm.set_linkage(gv, 3)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         mut str_flag = 0
@@ -1384,21 +1391,27 @@ impl Codegen {
         }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {
-            // Search from END to find the most recent entry (with LLVM type)
             mut si = CG_STRUCT_NAMES.length - 1
+            mut found_struct = false
             while si >= 0 {
                 if CG_STRUCT_NAMES[si] == CG_LAST_STRUCT_TYPE {
                     let found_ty = CG_STRUCT_TYPES[si]
                     if found_ty != null {
                         alloca_ty = found_ty
+                        found_struct = true
                     }
                     break
                 }
                 si = si - 1
             }
+            if !found_struct {
+                eprintln("        [define_var] WARN: struct type '" + CG_LAST_STRUCT_TYPE + "' not found in " + string(CG_STRUCT_NAMES.length) + " entries")
+            }
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
-        llvm.build_store(CG_B, value, alloca)
+        if value != null {
+            llvm.build_store(CG_B, value, alloca)
+        }
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
@@ -1506,10 +1519,19 @@ impl Codegen {
             }
             si = si + 1
         }
-        // Track struct type of the extracted field for nested access
+        // Track type of the extracted field for nested access / var binding
         let ftn = struct_field_type_name(struct_type_name, fidx)
-        CG_LAST_STRUCT_TYPE = ftn
-        if CG_LAST_IS_STR == 1 { CG_LAST_STRUCT_TYPE = "" }
+        CG_LAST_STRUCT_TYPE = ""
+        CG_LAST_ENUM_TYPE = ""
+        if CG_LAST_IS_STR != 1 && ftn != "" && ftn != "int" && ftn != "float" && ftn != "bool" && ftn != "ptr" && ftn != "string" {
+            // Check if it's an enum or struct
+            let emf = cg_enum_max_fields(ftn)
+            if emf > 0 {
+                CG_LAST_ENUM_TYPE = ftn
+            } else {
+                CG_LAST_STRUCT_TYPE = ftn
+            }
+        }
         field_val
     }
 }

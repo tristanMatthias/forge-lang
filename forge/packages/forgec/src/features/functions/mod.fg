@@ -632,6 +632,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             body_block = body_parser.parse_block()
             // All code emitted inline during parsing
         }
+        eprintln("    done: " + name)
 
         // Add implicit return only if the block doesn't already terminate
         if !llvm.block_has_terminator(CG_B) {
