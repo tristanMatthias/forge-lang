@@ -197,15 +197,32 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
         }
         // Register list variable for for-loop element type detection + indexing
-        if value_tok_key == "LBracket" || ann_is_list == 1 || CG_LAST_IS_LIST == 1 {
+        if value_tok_key == "LBracket" || ann_is_list == 1 || CG_LAST_IS_LIST == 1 || ann_type_text == "List" {
             CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${var_name},"
             // Determine element type from annotation or first element
-            let elem_is_str_detected = ann_elem_name == "string" || ann_elem_name == "String" || CG_LAST_LIST_ELEM_IS_STR == 1
-            if elem_is_str_detected {
+            // Use ann_elem_name if available, else try to extract from source
+            mut elem_type = ann_elem_name
+            if elem_type == "" {
+                // Try to extract from source: find "List<" then read until ">"
+                let list_marker = "List<"
+                let lm_idx = p.source.index_of(list_marker)
+                if lm_idx >= 0 {
+                    let after_lt = lm_idx + list_marker.length
+                    mut end_gt = after_lt
+                    while end_gt < p.source.length && p.source[end_gt] != ">" {
+                        end_gt = end_gt + 1
+                    }
+                    if end_gt > after_lt {
+                        elem_type = p.source.substring(after_lt, end_gt)
+                    }
+                }
+            }
+            let elem_is_str = elem_type == "string" || elem_type == "String" || CG_LAST_LIST_ELEM_IS_STR == 1
+            if elem_is_str {
                 CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${var_name},"
                 CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:string,"
-            } else if ann_elem_name != "" {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:${ann_elem_name},"
+            } else if elem_type != "" {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:${elem_type},"
             } else {
                 CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:int,"
             }

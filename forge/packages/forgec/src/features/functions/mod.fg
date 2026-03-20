@@ -628,7 +628,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             CG_ACTIVE = true
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
-            mut body_parser = parser_new(body_tokens)
+            mut body_parser = parser_new_with_source(body_tokens, body_src)
             body_block = body_parser.parse_block()
             // All code emitted inline during parsing
         }
