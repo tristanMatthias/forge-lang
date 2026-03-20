@@ -74,6 +74,10 @@ fn lex_is_ws(c: string) -> bool {
     false
 }
 
+fn is_quote(c: string) -> bool {
+    c == "\""
+}
+
 fn is_slash(c: string) -> bool {
     c.substring(0, 1) == "/"
 }
@@ -181,7 +185,7 @@ fn lex_next() -> Tok {
     }
 
     // String literal
-    if ch == "\"" {
+    if is_quote(ch) {
         let s = lex_read_string()
         return Tok { kind: 3, text: s, line: line }
     }
@@ -610,7 +614,11 @@ fn advance() -> Tok {
 
 fn check(text: string) -> bool {
     if POS >= TOKENS.length { return false }
-    TOKENS[POS].text == text
+    let t = TOKENS[POS]
+    // Don't match string literals or numbers as keywords/symbols
+    if t.kind == 3 { return false }
+    if t.kind == 2 { return false }
+    t.text == text
 }
 
 fn check_kind(k: int) -> bool {
