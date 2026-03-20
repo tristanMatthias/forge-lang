@@ -59,6 +59,8 @@ fn is_quote(c: string) -> bool {
     c == "\""
 }
 
+// ─── Codegen helpers (defined early for forward reference) ────────
+
 fn ir_block_terminated() -> int {
     // Check if the last emitted IR instruction is a terminator (ret/br/unreachable)
     // Scan backwards in IR for last non-empty line
@@ -272,20 +274,8 @@ fn tokenize(source: string) -> List<Tok> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PARSER — builds simple AST as encoded strings
-// ═══════════════════════════════════════════════════════════════════
-//
-//   "BOOL:<0|1>"
-//   "IDENT:<name>"
-//   "BINOP:<op>"  (followed by two sub-expressions on a stack)
-//   "CALL:<name>:<nargs>"
-//   etc.
-//
-// during parsing (but as TEXT, not LLVM API calls). This avoids
-// needing an AST at all.
-
-// ═══════════════════════════════════════════════════════════════════
-// DIRECT IR EMISSION DURING PARSE (text-based)
+// CODEGEN STATE
+// Parser globals, IR emission, variable/struct/enum tracking
 // ═══════════════════════════════════════════════════════════════════
 
 mut TOKENS: List<Tok> = []
