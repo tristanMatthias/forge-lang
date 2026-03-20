@@ -267,6 +267,7 @@ mut LOOP_END: List<string> = []
 mut CUR_RET_TY: string = "i64"
 mut LAST_EXPR_VAL: string = "0"
 mut LAST_IDENT_NAME: string = ""
+mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
 mut BLOCK_TERMINATED: int = 0
 
 fn set_terminated() {
@@ -468,15 +469,24 @@ fn parse_cmp() -> string {
 
 fn parse_add() -> string {
     mut lhs = parse_mul()
+    mut lhs_is_str = LAST_IS_STR
     while check("+") || check("-") {
         let op = advance().text
         skip_nl()
         let rhs = parse_mul()
         let r = new_reg()
-        if op == "+" {
+        if op == "+" && lhs_is_str == 1 {
+            ir_line(r + " = call %ForgeString @forge_string_concat(%ForgeString " + lhs + ", %ForgeString " + rhs + ")")
+            LAST_IS_STR = 1
+            lhs_is_str = 1
+        } else if op == "+" {
             ir_line(r + " = add i64 " + lhs + ", " + rhs)
+            LAST_IS_STR = 0
+            lhs_is_str = 0
         } else {
             ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+            LAST_IS_STR = 0
+            lhs_is_str = 0
         }
         lhs = r
     }
@@ -588,6 +598,7 @@ fn parse_primary() -> string {
         let sc = new_str_const(tok.text)
         let r = new_reg()
         ir_line(r + " = call %ForgeString @forge_string_new(ptr " + sc + ", i64 " + string(tok.text.length) + ")")
+        LAST_IS_STR = 1
         return r
     }
 
@@ -623,6 +634,7 @@ fn parse_primary() -> string {
             expect(")")
             let r = new_reg()
             ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
+            LAST_IS_STR = 1
             return r
         }
 
@@ -656,6 +668,11 @@ fn parse_primary() -> string {
         if idx >= 0 {
             let r = new_reg()
             ir_line(r + " = load " + VAR_TYPES[idx] + ", ptr " + VAR_REGS[idx])
+            if VAR_TYPES[idx] == "%ForgeString" {
+                LAST_IS_STR = 1
+            } else {
+                LAST_IS_STR = 0
+            }
             return r
         }
 
@@ -688,11 +705,18 @@ fn parse_stmt() -> bool {
         }
         expect("=")
         skip_nl()
+        LAST_IS_STR = 0
         let val = parse_expr()
         let alloca = new_reg()
-        ir_line(alloca + " = alloca i64")
-        ir_line("store i64 " + val + ", ptr " + alloca)
-        push_var(name, alloca, "i64")
+        if LAST_IS_STR == 1 {
+            ir_line(alloca + " = alloca %ForgeString")
+            ir_line("store %ForgeString " + val + ", ptr " + alloca)
+            push_var(name, alloca, "%ForgeString")
+        } else {
+            ir_line(alloca + " = alloca i64")
+            ir_line("store i64 " + val + ", ptr " + alloca)
+            push_var(name, alloca, "i64")
+        }
         return false
     }
 
