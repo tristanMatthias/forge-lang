@@ -3,9 +3,9 @@
 **Status: 8% (3/37 files compile in Stage 2)**
 
 > Phase 1 scan: DONE (2s for all 37 files, 386 functions)
-> Phase 2 compile: 3/37 files produce valid .o files
-> Current blocker: error.fg crashes in bag_error_count accessing DIAG_SEVS[i]
-> The global list type is correctly detected (CSV) but emit_ident loads it as i64
+> Phase 2 compile: 3/37 files produce valid .o files (token.fg, ast.fg, types.fg)
+> Current blocker: error.fg list global type detection fails because `check(TokenKind.Colon)` can't detect `:` for type annotations (Token text corrupted from list storage)
+> AST-based codegen blocked by Token text corruption in List<Token>
 
 Last updated: 2026-03-19
 
