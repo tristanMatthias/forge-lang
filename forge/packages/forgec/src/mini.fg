@@ -1262,6 +1262,8 @@ fn postfix_loop(val_init: string, str_init: int, list_init: int, elem_init: stri
                 args = args.push(a)
                 if LAST_IS_STR == 1 {
                     arg_types = arg_types.push("%ForgeString")
+                } else if LAST_IS_LIST == 1 {
+                    arg_types = arg_types.push("{ ptr, i64 }")
                 } else if LAST_ENUM_TYPE != "" {
                     arg_types = arg_types.push("%" + LAST_ENUM_TYPE)
                 } else if LAST_STRUCT_TYPE != "" {
@@ -2582,6 +2584,389 @@ fn parse_global_decl() {
 fn skip_to_newline() {
     while !check("\n") && POS < TOKENS.length { advance() }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// AST PARSER — builds Expr/Stmt trees (no IR emission)
+// ═══════════════════════════════════════════════════════════════════
+
+fn ast_parse_expr() -> Expr {
+    ast_parse_or()
+}
+
+fn ast_parse_or() -> Expr {
+    mut left = ast_parse_and()
+    while check("||") {
+        advance()
+        skip_nl()
+        let right = ast_parse_and()
+        left = expr_binary("||", left, right)
+    }
+    left
+}
+
+fn ast_parse_and() -> Expr {
+    mut left = ast_parse_compare()
+    while check("&&") {
+        advance()
+        skip_nl()
+        let right = ast_parse_compare()
+        left = expr_binary("&&", left, right)
+    }
+    left
+}
+
+fn ast_parse_compare() -> Expr {
+    mut left = ast_parse_arith()
+    while check("==") || check("!=") || check("<") || check(">") || check("<=") || check(">=") {
+        let op = advance().text
+        skip_nl()
+        let right = ast_parse_arith()
+        left = expr_binary(op, left, right)
+    }
+    left
+}
+
+fn ast_parse_arith() -> Expr {
+    mut left = ast_parse_unary()
+    while check("+") || check("-") || check("*") || check("/") || check("%") {
+        let op = advance().text
+        skip_nl()
+        let right = ast_parse_unary()
+        left = expr_binary(op, left, right)
+    }
+    left
+}
+
+fn ast_parse_unary() -> Expr {
+    if check("!") {
+        advance()
+        let operand = ast_parse_unary()
+        return expr_unary("!", operand)
+    }
+    if check("-") {
+        advance()
+        let operand = ast_parse_unary()
+        return expr_unary("-", operand)
+    }
+    ast_parse_postfix()
+}
+
+fn ast_parse_postfix() -> Expr {
+    mut node = ast_parse_primary()
+    while true {
+        if check("(") {
+            // Function call
+            let callee = node.str_val
+            advance()
+            skip_nl()
+            mut args: List<Expr> = []
+            while not_at_paren() {
+                args = args.push(ast_parse_expr())
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+            node = expr_call(callee, args)
+        } else if check(".") {
+            advance()
+            let field = advance().text
+            if check("(") {
+                // Method call: obj.method(args) → treat as call with obj as context
+                advance()
+                skip_nl()
+                mut args: List<Expr> = []
+                args = args.push(node)  // obj is first arg
+                while not_at_paren() {
+                    args = args.push(ast_parse_expr())
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+                expect(")")
+                node = expr_call(field, args)
+                node.str_val = field
+                // Encode as member call: kind=Call, str_val=method, children[0]=obj
+            } else {
+                node = expr_member(node, field)
+            }
+        } else if check("[") {
+            advance()
+            skip_nl()
+            let idx = ast_parse_expr()
+            skip_nl()
+            expect("]")
+            node = expr_index(node, idx)
+        } else {
+            break
+        }
+    }
+    node
+}
+
+fn ast_parse_primary() -> Expr {
+    skip_nl()
+    let tok: Tok = peek()
+
+    // Int literal
+    if tok.kind == 2 {
+        advance()
+        return expr_int(int(tok.text))
+    }
+
+    // String literal
+    if tok.kind == 3 {
+        advance()
+        return expr_str(tok.text)
+    }
+
+    // Bool literal
+    if tok.kind == 6 {
+        advance()
+        return expr_bool(tok.text == "true")
+    }
+
+    // Null
+    if tok.text == "null" {
+        advance()
+        return expr_null()
+    }
+
+    // Parenthesized expression
+    if tok.text == "(" {
+        advance()
+        skip_nl()
+        let inner = ast_parse_expr()
+        skip_nl()
+        expect(")")
+        return inner
+    }
+
+    // List literal: [a, b, c]
+    if tok.text == "[" && tok.kind == 5 {
+        advance()
+        skip_nl()
+        mut items: List<Expr> = []
+        while !check("]") && not_at_end() {
+            items = items.push(ast_parse_expr())
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+        }
+        expect("]")
+        return expr_list(items)
+    }
+
+    // Identifier
+    if tok.kind == 1 {
+        advance()
+        let name = tok.text
+
+        // Struct literal: TypeName { field: val, ... }
+        let si = find_struct(name)
+        if si >= 0 && check("{") {
+            advance()
+            skip_nl()
+            mut fields: List<Expr> = []
+            // Store field names in str_val as CSV
+            mut field_names = ""
+            while not_at_brace() {
+                let fname = advance().text
+                if check(":") {
+                    advance()
+                    skip_nl()
+                    fields = fields.push(ast_parse_expr())
+                } else {
+                    fields = fields.push(expr_ident(fname))
+                }
+                if field_names.length > 0 { field_names = field_names + "," }
+                field_names = field_names + fname
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect("}")
+            mut node = expr_struct(name, fields)
+            node.str_val = name
+            // Store field names as secondary info
+            node.int_val = fields.length
+            return node
+        }
+
+        // Enum construction: EnumName.Variant(args)
+        let ei = find_enum(name)
+        if ei >= 0 && check(".") {
+            advance()
+            let vname = advance().text
+            mut args: List<Expr> = []
+            if check("(") {
+                advance()
+                skip_nl()
+                while not_at_paren() {
+                    args = args.push(ast_parse_expr())
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+                expect(")")
+            }
+            return expr_enum(name + "." + vname, args)
+        }
+
+        return expr_ident(name)
+    }
+
+    // Fallback
+    advance()
+    expr_int(0)
+}
+
+// ─── AST Statement Parser ─────────────────────────────────────────
+
+fn ast_parse_block() -> List<Stmt> {
+    mut stmts: List<Stmt> = []
+    expect("{")
+    skip_nl()
+    while not_at_brace() {
+        stmts = stmts.push(ast_parse_stmt())
+        skip_nl()
+    }
+    expect("}")
+    stmts
+}
+
+fn ast_parse_stmt() -> Stmt {
+    skip_nl()
+    let tok: Tok = peek()
+
+    // let / mut
+    if tok.text == "let" || tok.text == "mut" {
+        let is_mut = tok.text == "mut"
+        advance()
+        let name = advance().text
+        mut type_ann = ""
+        if check(":") {
+            advance()
+            skip_nl()
+            type_ann = peek().text
+            // Skip full type annotation
+            advance()
+            if check("<") {
+                mut td = 1
+                while td > 0 && POS < TOKENS.length {
+                    if check("<") { td = td + 1 }
+                    if check(">") { td = td - 1 }
+                    advance()
+                }
+            }
+            if check("?") { advance() }
+        }
+        expect("=")
+        skip_nl()
+        let value = ast_parse_expr()
+        return stmt_let(name, type_ann, value, is_mut)
+    }
+
+    // return
+    if tok.text == "return" {
+        advance()
+        skip_nl()
+        if check("}") || check_kind(4) || !not_at_end() {
+            return stmt_return(expr_null())
+        }
+        let value = ast_parse_expr()
+        return stmt_return(value)
+    }
+
+    // if
+    if tok.text == "if" {
+        advance()
+        skip_nl()
+        let cond = ast_parse_expr()
+        skip_nl()
+        let then_body = ast_parse_block()
+        skip_nl()
+        mut else_stmts: List<Stmt> = []
+        if check("else") {
+            advance()
+            skip_nl()
+            if check("if") {
+                // else if → wrap in list
+                else_stmts = else_stmts.push(ast_parse_stmt())
+            } else {
+                else_stmts = ast_parse_block()
+            }
+        }
+        return stmt_if(cond, then_body, else_stmts)
+    }
+
+    // while
+    if tok.text == "while" {
+        advance()
+        skip_nl()
+        let cond = ast_parse_expr()
+        skip_nl()
+        let body = ast_parse_block()
+        return stmt_while(cond, body)
+    }
+
+    // for
+    if tok.text == "for" {
+        advance()
+        let var_name = advance().text
+        expect("in")
+        skip_nl()
+        let iterable = ast_parse_expr()
+        skip_nl()
+        let body = ast_parse_block()
+        return stmt_for(var_name, iterable, body)
+    }
+
+    // break / continue
+    if tok.text == "break" {
+        advance()
+        return stmt_break()
+    }
+    if tok.text == "continue" {
+        advance()
+        return stmt_continue()
+    }
+
+    // match — parse but store as if-chain for now
+    if tok.text == "match" {
+        // TODO: parse match into AST
+        advance()
+        skip_nl()
+        let scrutinee = ast_parse_expr()
+        skip_nl()
+        expect("{")
+        skip_nl()
+        // Skip match body for now
+        mut depth = 1
+        while depth > 0 && POS < TOKENS.length {
+            if check("{") { depth = depth + 1 }
+            if check("}") { depth = depth - 1 }
+            if depth > 0 { advance() }
+        }
+        expect("}")
+        return stmt_expr(scrutinee)
+    }
+
+    // Expression statement (or assignment)
+    let expr = ast_parse_expr()
+    skip_nl()
+    if check("=") {
+        advance()
+        skip_nl()
+        let value = ast_parse_expr()
+        return stmt_assign(expr, value)
+    }
+    stmt_expr(expr)
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPILE + MAIN
+// ═══════════════════════════════════════════════════════════════════
 
 fn compile(source: string) -> string {
     TOKENS = tokenize(source)
