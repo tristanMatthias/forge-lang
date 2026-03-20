@@ -346,6 +346,14 @@ impl<'a> Lexer<'a> {
                             self.advance();
                             s.push('\t');
                         }
+                        Some('r') => {
+                            self.advance();
+                            s.push('\r');
+                        }
+                        Some('0') => {
+                            self.advance();
+                            s.push('\0');
+                        }
                         Some('\\') => {
                             self.advance();
                             s.push('\\');
@@ -450,6 +458,14 @@ impl<'a> Lexer<'a> {
                         Some('t') => {
                             self.advance();
                             current.push('\t');
+                        }
+                        Some('r') => {
+                            self.advance();
+                            current.push('\r');
+                        }
+                        Some('0') => {
+                            self.advance();
+                            current.push('\0');
                         }
                         Some('\\') => {
                             self.advance();
@@ -615,6 +631,8 @@ impl<'a> Lexer<'a> {
                         Some('$') => { self.advance(); current.push('$'); }
                         Some('n') => { self.advance(); current.push('\n'); }
                         Some('t') => { self.advance(); current.push('\t'); }
+                        Some('r') => { self.advance(); current.push('\r'); }
+                        Some('0') => { self.advance(); current.push('\0'); }
                         Some(c) => { self.advance(); current.push('\\'); current.push(c); }
                         None => {}
                     }
@@ -676,6 +694,8 @@ impl<'a> Lexer<'a> {
                         Some('$') => { self.advance(); current.push('$'); }
                         Some('n') => { self.advance(); current.push('\n'); }
                         Some('t') => { self.advance(); current.push('\t'); }
+                        Some('r') => { self.advance(); current.push('\r'); }
+                        Some('0') => { self.advance(); current.push('\0'); }
                         Some(c) => { self.advance(); current.push('\\'); current.push(c); }
                         None => {}
                     }

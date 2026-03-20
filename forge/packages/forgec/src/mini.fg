@@ -1,0 +1,1096 @@
+// ─── Mini Forge Compiler ──────────────────────────────────────────
+// Fully self-contained. NO imports except @std.
+// Lex → Parse → Emit LLVM IR as text → llc → cc
+//
+// Bootstrap constraints:
+// - No semicolons (Forge doesn't use them)
+// - No if-as-expression for complex types
+// - Avoid matching on large enums (>90 variants)
+// - Keep functions small to avoid stack overflow
+// - Use token text/kind_id, not TokenKind variant matching
+
+use @std.process
+use @std.fs
+
+// ═══════════════════════════════════════════════════════════════════
+// SIMPLE LEXER — token kind as int, text as string
+// ═══════════════════════════════════════════════════════════════════
+// kind: 0=eof, 1=ident, 2=int, 3=string, 4=newline,
+//       5=symbol (text has the symbol), 6=bool
+
+type Tok = {
+    kind: int,
+    text: string,
+    line: int,
+}
+
+mut LEX_SRC: string = ""
+mut LEX_POS: int = 0
+mut LEX_LINE: int = 1
+
+fn lex_peek() -> string {
+    if LEX_POS >= LEX_SRC.length { return "" }
+    lex_char_at(LEX_POS)
+}
+
+fn lex_inc_line() {
+    LEX_LINE = LEX_LINE + 1
+}
+
+fn lex_advance() -> string {
+    if LEX_POS >= LEX_SRC.length { return "" }
+    let ch = lex_char_at(LEX_POS)
+    LEX_POS = LEX_POS + 1
+    ch
+}
+
+fn lex_is_alpha(ch: string) -> bool {
+    if ch == "_" { return true }
+    if ch >= "a" && ch <= "z" { return true }
+    if ch >= "A" && ch <= "Z" { return true }
+    false
+}
+
+fn lex_is_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "9"
+}
+
+fn lex_is_alnum(ch: string) -> bool {
+    if lex_is_alpha(ch) { return true }
+    lex_is_digit(ch)
+}
+
+fn is_space(ch: string) -> bool {
+    if ch == " " { return true }
+    if ch == "\t" { return true }
+    if ch == "\r" { return true }
+    false
+}
+
+fn lex_is_ws(c: string) -> bool {
+    if c == " " { return true }
+    if c == "\t" { return true }
+    if c == "\r" { return true }
+    false
+}
+
+fn lex_char_at(pos: int) -> string {
+    LEX_SRC.substring(pos, pos + 1)
+}
+
+fn lex_is_space_at(pos: int) -> bool {
+    if pos >= LEX_SRC.length { return false }
+    let c = LEX_SRC.substring(pos, pos + 1)
+    if c == " " { return true }
+    if c == "\t" { return true }
+    if c == "\r" { return true }
+    false
+}
+
+fn lex_skip_whitespace() {
+    while LEX_POS < LEX_SRC.length {
+        let c = lex_peek()
+        if c == " " {
+            lex_advance()
+        } else if c == "\t" {
+            lex_advance()
+        } else if c == "\r" {
+            lex_advance()
+        } else {
+            return
+        }
+    }
+}
+
+fn lex_skip_comments() {
+    // Skip // comments (not in simplified version)
+}
+
+fn lex_read_string() -> string {
+    lex_advance() // consume opening "
+    mut result = ""
+    while LEX_POS < LEX_SRC.length && lex_peek() != "\"" {
+        let ch = lex_advance()
+        if ch == "\\" && LEX_POS < LEX_SRC.length {
+            let esc = lex_advance()
+            if esc == "n" {
+                result = result + "\n"
+            } else if esc == "t" {
+                result = result + "\t"
+            } else if esc == "\\" {
+                result = result + "\\"
+            } else if esc == "\"" {
+                result = result + "\""
+            } else {
+                result = result + "\\" + esc
+            }
+        } else {
+            result = result + ch
+        }
+    }
+    if LEX_POS < LEX_SRC.length { lex_advance() } // consume closing "
+    result
+}
+
+fn lex_next() -> Tok {
+    let pre_ws = LEX_POS
+    lex_skip_whitespace()
+    if LEX_POS < LEX_SRC.length {
+        let dbg_ch = lex_char_at(LEX_POS)
+        eprintln("  [lex] pre=" + string(pre_ws) + " post=" + string(LEX_POS) + " ch='" + dbg_ch + "'")
+        if pre_ws == 41 {
+            // Debug the chars around position 49
+            eprintln("    [debug] pos48='" + lex_char_at(48) + "' pos49='" + lex_char_at(49) + "' pos50='" + lex_char_at(50) + "'")
+        }
+    }
+    if LEX_POS >= LEX_SRC.length {
+        return Tok { kind: 0, text: "", line: LEX_LINE }
+    }
+
+    let ch = lex_peek()
+    let line = LEX_LINE
+
+    // Newline
+    if ch == "\n" {
+        lex_advance()
+        return Tok { kind: 4, text: "\n", line: line }
+    }
+
+    // String literal
+    if ch == "\"" {
+        let s = lex_read_string()
+        return Tok { kind: 3, text: s, line: line }
+    }
+
+    // Number
+    if lex_is_digit(ch) {
+        mut num = ""
+        while LEX_POS < LEX_SRC.length && lex_is_digit(lex_peek()) {
+            num = num + lex_advance()
+        }
+        return Tok { kind: 2, text: num, line: line }
+    }
+
+    // Identifier / keyword
+    if lex_is_alpha(ch) {
+        mut word = ""
+        while LEX_POS < LEX_SRC.length {
+            let wch = lex_char_at(LEX_POS)
+            if !lex_is_alnum(wch) { break }
+            word = word + wch
+            LEX_POS = LEX_POS + 1
+        }
+        // Check for bool literals
+        if word == "true" || word == "false" {
+            return Tok { kind: 6, text: word, line: line }
+        }
+        return Tok { kind: 1, text: word, line: line }
+    }
+
+    // Two-character operators
+    if LEX_POS + 1 < LEX_SRC.length {
+        let ch2 = lex_char_at(LEX_POS + 1)
+        mut two = ch + ch2
+        if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "->" {
+            lex_advance()
+            lex_advance()
+            return Tok { kind: 5, text: two, line: line }
+        }
+    }
+
+    // Single-character symbols
+    lex_advance()
+    Tok { kind: 5, text: ch, line: line }
+}
+
+fn tokenize(source: string) -> List<Tok> {
+    LEX_SRC = source
+    LEX_POS = 0
+    LEX_LINE = 1
+    mut tokens: List<Tok> = []
+    while true {
+        let tok = lex_next()
+        tokens = tokens.push(tok)
+        if tok.kind == 0 { break }
+    }
+    tokens
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PARSER — builds simple AST as encoded strings
+// ═══════════════════════════════════════════════════════════════════
+// Instead of enum AST (bootstrap can't match on them correctly),
+// we encode the AST as strings that the codegen directly processes.
+// This avoids ALL bootstrap enum bugs.
+//
+// Encoding:
+//   "INT:<value>"
+//   "STR:<value>"
+//   "BOOL:<0|1>"
+//   "IDENT:<name>"
+//   "BINOP:<op>"  (followed by two sub-expressions on a stack)
+//   "CALL:<name>:<nargs>"
+//   etc.
+//
+// Actually, let's use a simpler approach: just emit IR directly
+// during parsing (but as TEXT, not LLVM API calls). This avoids
+// needing an AST at all.
+
+// ═══════════════════════════════════════════════════════════════════
+// DIRECT IR EMISSION DURING PARSE (text-based)
+// ═══════════════════════════════════════════════════════════════════
+
+mut TOKENS: List<Tok> = []
+mut POS: int = 0
+mut IR: string = ""
+mut REG_N: int = 0
+mut LBL_N: int = 0
+mut STR_N: int = 0
+mut STR_DECLS: string = ""
+
+// Variable tracking — flat lists
+mut VAR_NAMES: List<string> = []
+mut VAR_REGS: List<string> = []
+mut VAR_TYPES: List<string> = [] // "i64", "%ForgeString", etc.
+mut VAR_SCOPE: int = 0
+
+// Function forward declarations
+mut FN_NAMES: List<string> = []
+mut FN_RETTYPES: List<string> = []
+mut FN_PARAMCOUNTS: List<int> = []
+
+// Loop labels for break/continue
+mut LOOP_COND: List<string> = []
+mut LOOP_END: List<string> = []
+
+// Current function return type
+mut CUR_RET_TY: string = "i64"
+mut LAST_EXPR_VAL: string = "0"
+mut BLOCK_TERMINATED: int = 0
+
+fn set_terminated() {
+    BLOCK_TERMINATED = 1
+}
+
+fn mark_if_terminated(terminated: bool) {
+    // Bootstrap workaround: can't assign globals inside if blocks
+    // This function uses the bool directly — assignment at top level works
+    if terminated { BLOCK_TERMINATED = 1 }
+}
+
+fn parse_block_stmt() {
+    let t = parse_stmt()
+    mark_if_terminated(t)
+}
+
+fn peek() -> Tok {
+    if POS >= TOKENS.length { return Tok { kind: 0, text: "", line: 0 } }
+    TOKENS[POS]
+}
+
+fn advance() -> Tok {
+    let tok = peek()
+    POS = POS + 1
+    tok
+}
+
+fn check(text: string) -> bool {
+    if POS >= TOKENS.length { return false }
+    TOKENS[POS].text == text
+}
+
+fn check_kind(k: int) -> bool {
+    if POS >= TOKENS.length { return false }
+    TOKENS[POS].kind == k
+}
+
+fn expect(text: string) {
+    if !check(text) {
+        eprintln("error: expected '" + text + "' got '" + peek().text + "' line " + string(peek().line))
+        process.exit(1)
+    }
+    advance()
+}
+
+fn skip_nl() {
+    while check("\n") { advance() }
+}
+
+fn ir_line(s: string) {
+    IR = IR + "  " + s + "\n"
+}
+
+fn ir_raw(s: string) {
+    IR = IR + s + "\n"
+}
+
+fn new_reg() -> string {
+    REG_N = REG_N + 1
+    "%r" + string(REG_N)
+}
+
+fn new_label(prefix: string) -> string {
+    LBL_N = LBL_N + 1
+    prefix + string(LBL_N)
+}
+
+fn new_str_const(text: string) -> string {
+    STR_N = STR_N + 1
+    let name = "@.str." + string(STR_N)
+    let escaped = ir_escape(text)
+    STR_DECLS = STR_DECLS + name + " = private unnamed_addr constant [" + string(text.length + 1) + " x i8] c\"" + escaped + "\\00\"\n"
+    name
+}
+
+fn ir_escape(s: string) -> string {
+    mut r = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        if ch == "\n" {
+            r = r + "\\0A"
+        } else if ch == "\\" {
+            r = r + "\\\\"
+        } else if ch == "\"" {
+            r = r + "\\22"
+        } else {
+            r = r + ch
+        }
+        i = i + 1
+    }
+    r
+}
+
+fn find_var(name: string) -> int {
+    mut i = VAR_NAMES.length - 1
+    while i >= 0 {
+        if VAR_NAMES[i] == name { return i }
+        i = i - 1
+    }
+    -1
+}
+
+fn push_var(name: string, reg_name: string, ty: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+}
+
+fn find_fn_ret(name: string) -> string {
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name { return FN_RETTYPES[i] }
+        i = i + 1
+    }
+    "i64"
+}
+
+// ─── Expression parsing + IR emission ─────────────
+// Returns the SSA register name holding the result
+
+fn parse_expr() -> string {
+    parse_or()
+}
+
+fn parse_or() -> string {
+    mut lhs = parse_and()
+    while check("||") {
+        advance()
+        skip_nl()
+        let rhs = parse_and()
+        let l1 = new_reg()
+        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+        let r1 = new_reg()
+        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+        let r = new_reg()
+        ir_line(r + " = or i1 " + l1 + ", " + r1)
+        let r2 = new_reg()
+        ir_line(r2 + " = zext i1 " + r + " to i64")
+        lhs = r2
+    }
+    lhs
+}
+
+fn parse_and() -> string {
+    mut lhs = parse_eq()
+    while check("&&") {
+        advance()
+        skip_nl()
+        let rhs = parse_eq()
+        let l1 = new_reg()
+        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+        let r1 = new_reg()
+        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+        let r = new_reg()
+        ir_line(r + " = and i1 " + l1 + ", " + r1)
+        let r2 = new_reg()
+        ir_line(r2 + " = zext i1 " + r + " to i64")
+        lhs = r2
+    }
+    lhs
+}
+
+fn parse_eq() -> string {
+    mut lhs = parse_cmp()
+    while check("==") || check("!=") {
+        let op = advance().text
+        skip_nl()
+        let rhs = parse_cmp()
+        let pred = if op == "==" { "eq" } else { "ne" }
+        let r = new_reg()
+        ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+        let r2 = new_reg()
+        ir_line(r2 + " = zext i1 " + r + " to i64")
+        lhs = r2
+    }
+    lhs
+}
+
+fn parse_cmp() -> string {
+    mut lhs = parse_add()
+    while check("<") || check(">") || check("<=") || check(">=") {
+        let op = advance().text
+        skip_nl()
+        let rhs = parse_add()
+        mut pred = "slt"
+        if op == ">" { pred = "sgt" }
+        if op == "<=" { pred = "sle" }
+        if op == ">=" { pred = "sge" }
+        let r = new_reg()
+        ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+        let r2 = new_reg()
+        ir_line(r2 + " = zext i1 " + r + " to i64")
+        lhs = r2
+    }
+    lhs
+}
+
+fn parse_add() -> string {
+    mut lhs = parse_mul()
+    while check("+") || check("-") {
+        let op = advance().text
+        skip_nl()
+        let rhs = parse_mul()
+        let r = new_reg()
+        if op == "+" {
+            ir_line(r + " = add i64 " + lhs + ", " + rhs)
+        } else {
+            ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+        }
+        lhs = r
+    }
+    lhs
+}
+
+fn parse_mul() -> string {
+    mut lhs = parse_unary()
+    while check("*") || check("/") || check("%") {
+        let op = advance().text
+        skip_nl()
+        let rhs = parse_unary()
+        let r = new_reg()
+        if op == "*" {
+            ir_line(r + " = mul i64 " + lhs + ", " + rhs)
+        } else if op == "/" {
+            ir_line(r + " = sdiv i64 " + lhs + ", " + rhs)
+        } else {
+            ir_line(r + " = srem i64 " + lhs + ", " + rhs)
+        }
+        lhs = r
+    }
+    lhs
+}
+
+fn parse_unary() -> string {
+    if check("!") {
+        advance()
+        let val = parse_unary()
+        let t = new_reg()
+        ir_line(t + " = trunc i64 " + val + " to i1")
+        let n = new_reg()
+        ir_line(n + " = xor i1 " + t + ", true")
+        let r = new_reg()
+        ir_line(r + " = zext i1 " + n + " to i64")
+        return r
+    }
+    if check("-") {
+        advance()
+        let val = parse_unary()
+        let r = new_reg()
+        ir_line(r + " = sub i64 0, " + val)
+        return r
+    }
+    parse_postfix()
+}
+
+fn parse_postfix() -> string {
+    mut val = parse_primary()
+    while true {
+        if check("(") {
+            // Function call — val should be a function name
+            // For simplicity, we track the last ident parsed
+            advance()
+            skip_nl()
+            mut args: List<string> = []
+            while !check(")") {
+                let a = parse_expr()
+                args = args.push(a)
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+            // Build call
+            mut arg_str = ""
+            mut i = 0
+            while i < args.length {
+                if i > 0 { arg_str = arg_str + ", " }
+                arg_str = arg_str + "i64 " + args[i]
+                i = i + 1
+            }
+            let r = new_reg()
+            ir_line(r + " = call i64 " + val + "(" + arg_str + ")")
+            val = r
+        } else if check(".") {
+            advance()
+            let field = advance().text
+            // TODO: struct member access
+            val = val
+        } else if check("[") {
+            advance()
+            skip_nl()
+            let idx = parse_expr()
+            skip_nl()
+            expect("]")
+            // TODO: array indexing
+            val = val
+        } else {
+            break
+        }
+    }
+    val
+}
+
+fn parse_primary() -> string {
+    skip_nl()
+    let tok = peek()
+
+    // Integer literal
+    if tok.kind == 2 {
+        advance()
+        return tok.text
+    }
+
+    // String literal
+    if tok.kind == 3 {
+        advance()
+        let sc = new_str_const(tok.text)
+        let r = new_reg()
+        ir_line(r + " = call %ForgeString @forge_string_new(ptr " + sc + ", i64 " + string(tok.text.length) + ")")
+        return r
+    }
+
+    // Bool literal
+    if tok.kind == 6 {
+        advance()
+        if tok.text == "true" { return "1" }
+        return "0"
+    }
+
+    // Parenthesized expression
+    if tok.text == "(" {
+        advance()
+        skip_nl()
+        let val = parse_expr()
+        skip_nl()
+        expect(")")
+        return val
+    }
+
+    // Identifier — load from variable or return function ref
+    if tok.kind == 1 {
+        advance()
+        let name = tok.text
+
+        // Check for string() conversion
+        if name == "string" && check("(") {
+            advance()
+            skip_nl()
+            let arg = parse_expr()
+            skip_nl()
+            expect(")")
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
+            return r
+        }
+
+        // Check for int() conversion
+        if name == "int" && check("(") {
+            advance()
+            skip_nl()
+            let arg = parse_expr()
+            skip_nl()
+            expect(")")
+            return arg // TODO: actual string->int conversion
+        }
+
+        // Check for println/eprintln
+        if (name == "println" || name == "eprintln") && check("(") {
+            advance()
+            skip_nl()
+            let arg = parse_expr()
+            skip_nl()
+            expect(")")
+            if name == "println" {
+                ir_line("call void @forge_println(%ForgeString " + arg + ")")
+            } else {
+                ir_line("call void @forge_eprintln(%ForgeString " + arg + ")")
+            }
+            return "0"
+        }
+
+        // Variable lookup
+        let idx = find_var(name)
+        if idx >= 0 {
+            let r = new_reg()
+            ir_line(r + " = load " + VAR_TYPES[idx] + ", ptr " + VAR_REGS[idx])
+            return r
+        }
+
+        // Function reference
+        return "@" + name
+    }
+
+    eprintln("unexpected token: '" + tok.text + "' kind=" + string(tok.kind) + " line " + string(tok.line))
+    advance()
+    "0"
+}
+
+// ─── Statement parsing + IR emission ──────────────
+// Returns true if statement terminates (return/break/continue)
+
+fn parse_stmt() -> bool {
+    skip_nl()
+    let tok = peek()
+
+    // let / mut
+    if tok.text == "let" || tok.text == "mut" {
+        advance()
+        let name = advance().text // identifier
+        // Optional type annotation
+        if check(":") {
+            advance()
+            skip_nl()
+            // Skip type — we infer from value
+            parse_type_ann()
+        }
+        expect("=")
+        skip_nl()
+        let val = parse_expr()
+        let alloca = new_reg()
+        ir_line(alloca + " = alloca i64")
+        ir_line("store i64 " + val + ", ptr " + alloca)
+        push_var(name, alloca, "i64")
+        return false
+    }
+
+    // return
+    if tok.text == "return" {
+        advance()
+        skip_nl()
+        if check("}") || check("\n") || POS >= TOKENS.length {
+            ir_line("ret void")
+            return true
+        }
+        let val = parse_expr()
+        ir_line("ret " + CUR_RET_TY + " " + val)
+        return true
+    }
+
+    // if
+    if tok.text == "if" {
+        advance()
+        skip_nl()
+        let cond = parse_expr()
+        skip_nl()
+        let cond_i1 = new_reg()
+        ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+        let then_l = new_label("then")
+        let else_l = new_label("else")
+        let merge_l = new_label("merge")
+        ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
+
+        ir_raw(then_l + ":")
+        BLOCK_TERMINATED = 0
+        expect("{")
+        skip_nl()
+        while !check("}") {
+            parse_block_stmt()
+            skip_nl()
+        }
+        expect("}")
+        let then_term = BLOCK_TERMINATED
+        if then_term == 0 { ir_line("br label %" + merge_l) }
+
+        ir_raw(else_l + ":")
+        BLOCK_TERMINATED = 0
+        skip_nl()
+        if check("else") {
+            advance()
+            skip_nl()
+            if check("if") {
+                parse_block_stmt()
+            } else {
+                expect("{")
+                skip_nl()
+                while !check("}") {
+                    parse_block_stmt()
+                    skip_nl()
+                }
+                expect("}")
+            }
+        }
+        let else_term = BLOCK_TERMINATED
+        if else_term == 0 { ir_line("br label %" + merge_l) }
+
+        ir_raw(merge_l + ":")
+        return false
+    }
+
+    // while
+    if tok.text == "while" {
+        advance()
+        skip_nl()
+        let cond_l = new_label("while.cond")
+        let body_l = new_label("while.body")
+        let end_l = new_label("while.end")
+
+        LOOP_COND = LOOP_COND.push(cond_l)
+        LOOP_END = LOOP_END.push(end_l)
+
+        ir_line("br label %" + cond_l)
+        ir_raw(cond_l + ":")
+        let cond = parse_expr()
+        skip_nl()
+        let cond_i1 = new_reg()
+        ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+        ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
+
+        ir_raw(body_l + ":")
+        expect("{")
+        skip_nl()
+        mut body_term = false
+        while !check("}") {
+            if parse_stmt() { body_term = true }
+            skip_nl()
+        }
+        expect("}")
+        if !body_term { ir_line("br label %" + cond_l) }
+
+        // Pop loop labels
+        mut new_cond: List<string> = []
+        mut new_end: List<string> = []
+        mut li = 0
+        while li < LOOP_COND.length - 1 {
+            new_cond = new_cond.push(LOOP_COND[li])
+            new_end = new_end.push(LOOP_END[li])
+            li = li + 1
+        }
+        LOOP_COND = new_cond
+        LOOP_END = new_end
+
+        ir_raw(end_l + ":")
+        return false
+    }
+
+    // break
+    if tok.text == "break" {
+        advance()
+        if LOOP_END.length > 0 {
+            ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
+        }
+        return true
+    }
+
+    // continue
+    if tok.text == "continue" {
+        advance()
+        if LOOP_COND.length > 0 {
+            ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
+        }
+        return true
+    }
+
+    // Expression statement (or assignment)
+    let val = parse_expr()
+    LAST_EXPR_VAL = val
+    skip_nl()
+    if check("=") {
+        advance()
+        skip_nl()
+        let rhs = parse_expr()
+        // TODO: proper lvalue handling
+        return false
+    }
+    false
+}
+
+fn parse_type_ann() {
+    // Consume a type annotation (skip it)
+    advance() // type name
+    if check("<") {
+        advance()
+        parse_type_ann()
+        if check(",") {
+            advance()
+            skip_nl()
+            parse_type_ann()
+        }
+        expect(">")
+    }
+    if check("?") { advance() }
+}
+
+// ─── Top-level parsing ────────────────────────────
+
+fn parse_fn_decl() {
+    expect("fn")
+    let name = advance().text
+
+    // Params
+    expect("(")
+    skip_nl()
+    mut param_names: List<string> = []
+    mut param_count = 0
+    while !check(")") {
+        let pname = advance().text
+        expect(":")
+        skip_nl()
+        parse_type_ann()
+        param_names = param_names.push(pname)
+        param_count = param_count + 1
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect(")")
+    skip_nl()
+
+    // Return type
+    mut ret_ty = "void"
+    if check("->") {
+        advance()
+        skip_nl()
+        let rt = advance().text
+        if rt == "int" { ret_ty = "i64" }
+        if rt == "bool" { ret_ty = "i64" }
+        if rt == "string" { ret_ty = "%ForgeString" }
+        // Skip generic params
+        if check("<") {
+            advance()
+            parse_type_ann()
+            expect(">")
+        }
+        if check("?") { advance() }
+    }
+    skip_nl()
+
+    CUR_RET_TY = ret_ty
+    FN_NAMES = FN_NAMES.push(name)
+    FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(param_count)
+
+    // Build param list string
+    mut param_str = ""
+    mut i = 0
+    while i < param_count {
+        if i > 0 { param_str = param_str + ", " }
+        param_str = param_str + "i64 %" + param_names[i] + ".arg"
+        i = i + 1
+    }
+
+    ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
+    ir_raw("entry:")
+
+    // Reset registers and scope
+    REG_N = 0
+    LAST_EXPR_VAL = "0"
+    VAR_NAMES = []
+    VAR_REGS = []
+    VAR_TYPES = []
+
+    // Create param allocas
+    i = 0
+    while i < param_count {
+        let alloca = new_reg()
+        ir_line(alloca + " = alloca i64")
+        ir_line("store i64 %" + param_names[i] + ".arg, ptr " + alloca)
+        push_var(param_names[i], alloca, "i64")
+        i = i + 1
+    }
+
+    // Parse body
+    expect("{")
+    skip_nl()
+    mut terminated = false
+    while !check("}") {
+        if parse_stmt() { terminated = true }
+        skip_nl()
+    }
+    expect("}")
+
+    // Implicit return — use last expression value
+    if !terminated {
+        if ret_ty == "void" {
+            ir_line("ret void")
+        } else {
+            ir_line("ret " + ret_ty + " " + LAST_EXPR_VAL)
+        }
+    }
+
+    ir_raw("}")
+    ir_raw("")
+}
+
+fn skip_block() {
+    // Skip a { ... } block including nested blocks
+    if !check("{") { return }
+    advance()
+    mut depth = 1
+    while depth > 0 && POS < TOKENS.length {
+        if check("{") { depth = depth + 1 }
+        if check("}") { depth = depth - 1 }
+        advance()
+    }
+}
+
+fn skip_to_newline() {
+    while !check("\n") && POS < TOKENS.length { advance() }
+}
+
+fn compile(source: string) -> string {
+    TOKENS = tokenize(source)
+    POS = 0
+    IR = ""
+    STR_DECLS = ""
+    STR_N = 0
+
+    // Debug: dump tokens
+    mut di = 0
+    while di < TOKENS.length {
+        let dt = TOKENS[di]
+        eprintln("  tok[" + string(di) + "] kind=" + string(dt.kind) + " '" + dt.text + "'")
+        di = di + 1
+    }
+
+    // IR header
+    ir_raw("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"")
+    ir_raw("")
+    ir_raw("%ForgeString = type { ptr, i64 }")
+    ir_raw("")
+    ir_raw("declare %ForgeString @forge_string_new(ptr, i64)")
+    ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_string_length(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_int_to_string(i64)")
+    ir_raw("declare void @forge_print(%ForgeString)")
+    ir_raw("declare void @forge_println(%ForgeString)")
+    ir_raw("declare void @forge_eprintln(%ForgeString)")
+    ir_raw("declare ptr @forge_alloc(i64)")
+    ir_raw("declare i32 @puts(ptr)")
+    ir_raw("")
+
+    // Parse top-level
+    skip_nl()
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok = peek()
+
+        if tok.text == "fn" {
+            parse_fn_decl()
+        } else if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("fn") {
+                parse_fn_decl()
+            } else {
+                skip_to_newline()
+            }
+        } else if tok.text == "use" || tok.text == "mod" || tok.text == "type" || tok.text == "enum" || tok.text == "impl" || tok.text == "let" || tok.text == "mut" {
+            // Skip declarations we don't handle yet
+            if tok.text == "impl" {
+                advance()
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else if tok.text == "type" {
+                advance()
+                while !check("}") && POS < TOKENS.length { advance() }
+                if check("}") { advance() }
+            } else if tok.text == "enum" {
+                advance()
+                while !check("}") && POS < TOKENS.length { advance() }
+                if check("}") { advance() }
+            } else {
+                skip_to_newline()
+            }
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+
+    // Append string constants
+    IR + "\n" + STR_DECLS
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════
+
+fn main() {
+    let args = process.args()
+
+    if args.length < 3 {
+        eprintln("mini-forge v0.1 — minimal self-hosted compiler")
+        eprintln("Usage: mini build <file.fg> [output]")
+        process.exit(1)
+    }
+
+    let command = args[1]
+    let input = args[2]
+    let source = fs.read(input)
+
+    if source.length == 0 {
+        eprintln("error: could not read " + input)
+        process.exit(1)
+    }
+
+    eprintln("  lex + parse + codegen: " + input)
+    let ir_text = compile(source)
+    eprintln("  IR: " + string(ir_text.length) + " chars")
+
+    // Write IR
+    let ir_path = "/tmp/mini_output.ll"
+    fs.write(ir_path, ir_text)
+
+    // Compile
+    mut output = "a.out"
+    if args.length > 3 { output = args[3] }
+
+    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", ["-O2", "-filetype=obj", ir_path, "-o", "/tmp/mini_output.o"])
+    if !llc_result.contains("\"code\":0") {
+        eprintln("error: llc failed")
+        eprintln(llc_result)
+        // Write IR for debugging
+        eprintln("IR written to " + ir_path)
+        process.exit(1)
+    }
+
+    let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", "/tmp/mini_runtime.o"])
+    let link_result = process.run("cc", ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"])
+    if !link_result.contains("\"code\":0") {
+        eprintln("error: linker failed")
+        eprintln(link_result)
+        process.exit(1)
+    }
+
+    println("compiled: " + output)
+}
