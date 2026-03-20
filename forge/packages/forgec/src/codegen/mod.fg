@@ -8,6 +8,7 @@ use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use @std.llvm
+use @std.process
 
 // ─── LLVM state (globals) ──────────────────────
 
@@ -720,8 +721,12 @@ export fn codegen_write_ir(path: string) {
 }
 
 export fn codegen_emit_object(path: string) -> bool {
-    let result = llvm.emit_object_file(CG_MOD, path)
-    result == 0
+    // Write IR then use llc for object emission (our LLVM C API wrapper
+    // produces incorrect code for structs with enum fields in some cases)
+    let ir_path = path + ".ll"
+    codegen_write_ir(ir_path)
+    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", ["-O0", "-filetype=obj", ir_path, "-o", path])
+    llc_result.contains("\"code\":0")
 }
 
 export fn codegen_cleanup() {

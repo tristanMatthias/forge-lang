@@ -446,9 +446,20 @@ impl Parser {
                             CG_LAST_VAL = eval
                             CG_HAS_LAST_VAL = 1
                         } else {
-                            // Unit variant: just the tag
-                            result_is_llvm = true
-                            result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
+                            // Unit variant: wrap in enum struct type
+                            let uety = cg_get_enum_ty_for(enum_type_name)
+                            if uety != null {
+                                let tag_i8 = llvm.const_int(CG_I8, maybe_enum_tag, 0)
+                                mut uev = llvm.get_undef(uety)
+                                uev = llvm.build_insert_value(CG_B, uev, tag_i8, 0, "utag")
+                                uev = llvm.build_insert_value(CG_B, uev, llvm.const_int(CG_I64, 0, 0), 1, "uslot")
+                                result_is_llvm = true
+                                result_llvm = uev
+                            } else {
+                                result_is_llvm = true
+                                result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
+                            }
+                            CG_LAST_ENUM_TYPE = enum_type_name
                         }
                         result_is_str = false
                         result = Expr.IntLit(maybe_enum_tag, span)
@@ -540,9 +551,20 @@ impl Parser {
                             CG_LAST_VAL = eval
                             CG_HAS_LAST_VAL = 1
                         } else {
-                            // Unit-only enum: plain i64 tag
-                            result_is_llvm = true
-                            result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
+                            // Unit-only enum: wrap in enum struct type
+                            let uety2 = cg_get_enum_ty_for(enum_cname)
+                            if uety2 != null {
+                                let tag_i8b = llvm.const_int(CG_I8, enum_tag, 0)
+                                mut uev2 = llvm.get_undef(uety2)
+                                uev2 = llvm.build_insert_value(CG_B, uev2, tag_i8b, 0, "utag2")
+                                uev2 = llvm.build_insert_value(CG_B, uev2, llvm.const_int(CG_I64, 0, 0), 1, "uslot2")
+                                result_is_llvm = true
+                                result_llvm = uev2
+                            } else {
+                                result_is_llvm = true
+                                result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
+                            }
+                            CG_LAST_ENUM_TYPE = enum_cname
                         }
                         result_is_str = false
                         result = Expr.IntLit(enum_tag, span)
@@ -1238,10 +1260,39 @@ impl Parser {
             llvm.type_array_free(ft)
             mut struct_val = llvm.get_undef(struct_ty)
             mut fi = 0
+            mut ft_pos = 0
             while fi < field_count {
-                let v = llvm.value_array_get(vals, fi)
+                mut v = llvm.value_array_get(vals, fi)
+                // Check if this field is an enum type — if so, wrap the i64 tag
+                // in the proper enum struct type ({i8, i64, ...})
+                mut ft_char = "i"
+                if ft_pos < parsed_field_types.length {
+                    ft_char = parsed_field_types[ft_pos]
+                }
+                if ft_char == "e" {
+                    if fi < field_enum_names.length {
+                        let ename = field_enum_names[fi]
+                        if ename != "" {
+                            let ety = cg_get_enum_ty_for(ename)
+                            if ety != null {
+                                // Check if v is already the enum type (loaded from enum-typed alloca)
+                                let vty = llvm.type_of(v)
+                                if vty != ety {
+                                    // Wrap: create {i8 tag, i64 0} from the i64 value
+                                    let tag_i8 = llvm.build_trunc(CG_B, v, CG_I8, "etag")
+                                    mut ev = llvm.get_undef(ety)
+                                    ev = llvm.build_insert_value(CG_B, ev, tag_i8, 0, "et")
+                                    ev = llvm.build_insert_value(CG_B, ev, llvm.const_int(CG_I64, 0, 0), 1, "ep")
+                                    v = ev
+                                }
+                                // else: v is already %Big type, use directly
+                            }
+                        }
+                    }
+                }
                 struct_val = llvm.build_insert_value(CG_B, struct_val, v, fi, "sf")
                 fi = fi + 1
+                ft_pos = ft_pos + 2  // skip comma in parsed_field_types
             }
             llvm.value_array_free(vals)
 
@@ -1900,6 +1951,9 @@ impl Parser {
                     item_val = cg.emit_expr(args[0])
                 }
                 let elem_ty = list_elem_llvm_type(obj_var_name)
+                // Clear struct type — push result is {ptr, i64} list, not the element struct
+                CG_LAST_STRUCT_TYPE = ""
+                CG_LAST_ENUM_TYPE = ""
                 return emit_list_push_typed(obj_val, item_val, elem_ty)
             }
         }

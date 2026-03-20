@@ -23,6 +23,8 @@ extern "C" {
     // Size
     fn LLVMSizeOf(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMTypeOf(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetHostCPUName() -> *mut c_char;
+    fn LLVMGetHostCPUFeatures() -> *mut c_char;
 
     // Types
     fn LLVMInt1TypeInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -832,10 +834,12 @@ pub extern "C" fn forge_llvm_emit_object_file(m: LLVMPtr, filename: *const c_cha
             return 1;
         }
 
-        let cpu = b"generic\0".as_ptr() as *const c_char;
-        let features = b"\0".as_ptr() as *const c_char;
+        let cpu = LLVMGetHostCPUName();
+        let features = LLVMGetHostCPUFeatures();
         // OptLevel=0 (None), Reloc=0 (Default), CodeModel=0 (Default)
         let tm = LLVMCreateTargetMachine(target, triple, cpu, features, 0, 0, 0);
+        LLVMDisposeMessage(cpu);
+        LLVMDisposeMessage(features);
         if tm.is_null() { return 2; }
 
         // Set data layout from target machine (critical for correct ABI)
