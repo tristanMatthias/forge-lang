@@ -378,6 +378,15 @@ fn struct_llvm_type(name: string) -> string {
     "%" + name
 }
 
+fn check_list_annotation(ann: string, generic: string) {
+    if ann == "List" {
+        LAST_IS_LIST = 1
+        if generic != "" {
+            LAST_LIST_ELEM_TYPE = type_to_llvm(generic)
+        }
+    }
+}
+
 fn set_type_from_llvm(ty: string) {
     // Given an LLVM return type like "%Tok", set LAST_STRUCT_TYPE/LAST_ENUM_TYPE
     if ty.length > 1 {
@@ -649,13 +658,23 @@ fn push_var(name: string, reg_name: string, ty: string) {
     push_var_full(name, reg_name, ty, "", "")
 }
 
-fn find_fn_ret(name: string) -> string {
+mut FIND_FN_RET_RESULT: string = "i64"
+
+fn do_find_fn_ret(name: string) {
+    FIND_FN_RET_RESULT = "i64"
     mut i = 0
     while i < FN_NAMES.length {
-        if FN_NAMES[i] == name { return FN_RETTYPES[i] }
+        if FN_NAMES[i] == name {
+            FIND_FN_RET_RESULT = FN_RETTYPES[i]
+            return
+        }
         i = i + 1
     }
-    "i64"
+}
+
+fn find_fn_ret(name: string) -> string {
+    do_find_fn_ret(name)
+    FIND_FN_RET_RESULT
 }
 
 // ─── Expression parsing + IR emission ─────────────
@@ -877,15 +896,8 @@ fn parse_postfix() -> string {
                 skip_nl()
             }
             expect(")")
-            // Look up return type
-            mut call_ret = "i64"
-            mut fi = 0
-            while fi < FN_NAMES.length {
-                if FN_NAMES[fi] == call_fn_name {
-                    call_ret = FN_RETTYPES[fi]
-                }
-                fi = fi + 1
-            }
+            // Look up return type via helper (avoids deep nesting issues)
+            let call_ret = find_fn_ret(call_fn_name)
             // Build call args with inferred types
             mut arg_str = ""
             mut i = 0
@@ -1327,11 +1339,24 @@ fn parse_stmt() -> bool {
         let name = advance().text // identifier
         // Optional type annotation — capture it
         mut ann_type = ""
+        mut ann_generic = ""
         if check(":") {
             advance()
             skip_nl()
             ann_type = peek().text
-            parse_type_ann()
+            advance() // consume type name
+            if check("<") {
+                advance()
+                ann_generic = peek().text
+                // Skip rest of type annotation
+                mut tdepth = 1
+                while tdepth > 0 && POS < TOKENS.length {
+                    if check("<") { tdepth = tdepth + 1 }
+                    if check(">") { tdepth = tdepth - 1 }
+                    advance()
+                }
+            }
+            if check("?") { advance() }
         }
         expect("=")
         skip_nl()
@@ -1359,7 +1384,8 @@ fn parse_stmt() -> bool {
                 }
             }
         }
-        // Debug removed
+        // Force list detection from annotation
+        check_list_annotation(ann_type, ann_generic)
         if saved_struct != "" {
             let sty = struct_llvm_type(saved_struct)
             ir_line(alloca + " = alloca " + sty)
@@ -1371,6 +1397,10 @@ fn parse_stmt() -> bool {
             ir_line("store " + ety + " " + val + ", ptr " + alloca)
             push_var(name, alloca, ety)
         } else if LAST_IS_LIST == 1 {
+            // Set element type from annotation if available
+            if ann_generic != "" {
+                LAST_LIST_ELEM_TYPE = type_to_llvm(ann_generic)
+            }
             ir_line(alloca + " = alloca { ptr, i64 }")
             ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
             push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
@@ -1379,9 +1409,21 @@ fn parse_stmt() -> bool {
             ir_line("store %ForgeString " + val + ", ptr " + alloca)
             push_var(name, alloca, "%ForgeString")
         } else {
-            ir_line(alloca + " = alloca i64")
-            ir_line("store i64 " + val + ", ptr " + alloca)
-            push_var(name, alloca, "i64")
+            // Last resort: check function return type for struct/list
+            let last_fn_ret = find_fn_ret(LAST_IDENT_NAME)
+            if last_fn_ret == "{ ptr, i64 }" {
+                ir_line(alloca + " = alloca { ptr, i64 }")
+                ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
+                push_var_full(name, alloca, "{ ptr, i64 }", "", LAST_LIST_ELEM_TYPE)
+            } else if last_fn_ret.length > 1 && last_fn_ret.substring(0, 1) == "%" && last_fn_ret != "%ForgeString" {
+                ir_line(alloca + " = alloca " + last_fn_ret)
+                ir_line("store " + last_fn_ret + " " + val + ", ptr " + alloca)
+                push_var_with_struct(name, alloca, last_fn_ret, last_fn_ret.substring(1, last_fn_ret.length))
+            } else {
+                ir_line(alloca + " = alloca i64")
+                ir_line("store i64 " + val + ", ptr " + alloca)
+                push_var(name, alloca, "i64")
+            }
         }
         return false
     }
@@ -1926,6 +1968,41 @@ fn skip_block() {
     }
 }
 
+fn scan_fn_sig() {
+    advance() // consume 'fn'
+    let name = advance().text
+    // scan fn sig
+    // Skip params
+    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+    mut ret_ty = "void"
+    if check("->") {
+        advance()
+        skip_nl()
+        let rt = advance().text
+        if rt == "int" { ret_ty = "i64" }
+        if rt == "bool" { ret_ty = "i64" }
+        if rt == "string" { ret_ty = "%ForgeString" }
+        if find_struct(rt) >= 0 { ret_ty = "%" + rt }
+        if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+        if rt == "List" { ret_ty = "{ ptr, i64 }" }
+        // Skip generic params
+        if check("<") {
+            while !check(">") && POS < TOKENS.length { advance() }
+            if check(">") { advance() }
+        }
+        if check("?") { advance() }
+    }
+    // Skip to body and skip it
+    while !check("{") && POS < TOKENS.length { advance() }
+    skip_block()
+    // Register
+    eprintln("  [scan] " + name + " -> " + ret_ty)
+    FN_NAMES = FN_NAMES.push(name)
+    FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+}
+
 // Global variable tracking for pass 1
 mut GLOBAL_NAMES: List<string> = []
 mut GLOBAL_TYPES: List<string> = []  // LLVM types
@@ -2001,10 +2078,7 @@ fn compile(source: string) -> string {
             } else if check("enum") {
                 parse_enum_decl_top()
             } else if check("fn") {
-                advance()
-                advance() // skip name
-                while !check("{") && POS < TOKENS.length { advance() }
-                skip_block()
+                scan_fn_sig()
             } else if check("mut") || check("let") {
                 parse_global_decl()
             } else {
@@ -2013,10 +2087,7 @@ fn compile(source: string) -> string {
         } else if tok.text == "type" {
             parse_type_decl_top()
         } else if tok.text == "fn" {
-            advance()
-            advance() // skip name
-            while !check("{") && POS < TOKENS.length { advance() }
-            skip_block()
+            scan_fn_sig()
         } else if tok.text == "enum" {
             parse_enum_decl_top()
         } else if tok.text == "mut" || tok.text == "let" {
