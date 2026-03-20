@@ -628,6 +628,9 @@ fn check_kind(k: int) -> bool {
 
 fn expect(text: string) {
     if !check(text) {
+        if POS > 2 {
+            eprintln("  ctx: [" + string(POS - 2) + "]='" + TOKENS[POS - 2].text + "' [" + string(POS - 1) + "]='" + TOKENS[POS - 1].text + "'")
+        }
         eprintln("error: expected '" + text + "' got '" + peek().text + "' line " + string(peek().line) + " pos=" + string(POS))
         process.exit(1)
     }
@@ -2227,11 +2230,25 @@ fn parse_global_decl() {
         advance()
         skip_nl()
         let ty_name = peek().text
-        parse_type_ann()
+        advance()
+        // Capture generic param for List<T>
+        mut gen_param = ""
+        if check("<") {
+            advance()
+            gen_param = peek().text
+            // Skip rest of type
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
         gty = type_to_llvm(ty_name)
-        // Check for List<T>
         if ty_name == "List" {
-            gty = "{ ptr, i64 }"
+            let ety = type_to_llvm(gen_param)
+            gty = "list_" + ety
         }
     }
     // Skip = and initial value (we just zero-init globals)
@@ -2347,8 +2364,12 @@ fn compile(source: string) -> string {
     while gi < GLOBAL_NAMES.length {
         let gname = GLOBAL_NAMES[gi]
         let gty = GLOBAL_TYPES[gi]
-        ir_raw("@" + gname + " = global " + gty + " zeroinitializer")
-        // Register as variable (ptr = @name)
+        // For list types, emit { ptr, i64 } but register with list_elemtype
+        mut emit_ty = gty
+        if is_list_type(gty) {
+            emit_ty = "{ ptr, i64 }"
+        }
+        ir_raw("@" + gname + " = global " + emit_ty + " zeroinitializer")
         push_var(gname, "@" + gname, gty)
         gi = gi + 1
     }
