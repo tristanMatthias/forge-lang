@@ -823,8 +823,8 @@ fn new_str_const(text: string) -> string {
     STR_N = STR_N + 1
     let name = "@.str." + string(STR_N)
     let escaped = ir_escape(text)
-    // Store string constants separately (inline makes IR too large to write)
-    STR_DECLS = STR_DECLS + name + " = private unnamed_addr constant [" + string(text.length + 1) + " x i8] c\"" + escaped + "\\00\"\n"
+    // Emit string constant directly into IR (before any function that uses it)
+    ir_raw(name + " = private unnamed_addr constant [" + string(text.length + 1) + " x i8] c\"" + escaped + "\\00\"")
     name
 }
 
@@ -1093,7 +1093,12 @@ fn parse_unary() -> string {
     postfix_loop(val, val_is_str, val_is_list, val_list_elem, val_struct)
 }
 
-fn postfix_loop(mut val: string, mut val_is_str: int, mut val_is_list: int, mut val_list_elem: string, mut val_struct: string) -> string {
+fn postfix_loop(val_init: string, str_init: int, list_init: int, elem_init: string, struct_init: string) -> string {
+    mut val = val_init
+    mut val_is_str = str_init
+    mut val_is_list = list_init
+    mut val_list_elem = elem_init
+    mut val_struct = struct_init
     // Read type info from globals — use helper to ensure correct reading
     mut val_is_str = read_last_is_str()
     mut val_is_list = read_last_is_list()
@@ -2562,6 +2567,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
+    ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
     ir_raw("")
 
     // Parse top-level
