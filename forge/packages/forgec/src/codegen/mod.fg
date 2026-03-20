@@ -824,6 +824,11 @@ impl Codegen {
     }
 
     fn emit_statement(self, stmt: Statement) {
+        // Use match — the bootstrap's pattern matching extracts fields correctly
+        // The Expr data appears as all-zeros, but that's because the Statement
+        // was constructed with Statement.Expr(Expr.IntLit(0,span)) as a PLACEHOLDER
+        // during the inline-emit-during-parse path. The actual code was already
+        // emitted inline; this match just needs to handle Feature (side-table) stmts.
         match stmt {
             .Expr(expr) -> {
                 let val = self.emit_expr(expr)
@@ -1375,12 +1380,22 @@ impl Codegen {
 
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
-        for stmt in block.statements {
+        mut si = 0
+        while si < block.statements.length {
             if llvm.block_has_terminator(CG_B) { break }
+            let stmt = block.statements[si]
+            // Debug: check statement variant tag
+            match stmt {
+                .Expr(e) -> { eprintln("        [block] stmt[" + string(si) + "] = Expr") }
+                .Assign(t, v, s) -> { eprintln("        [block] stmt[" + string(si) + "] = Assign") }
+                .Return(v, s) -> { eprintln("        [block] stmt[" + string(si) + "] = Return") }
+                .Feature(fe) -> { eprintln("        [block] stmt[" + string(si) + "] = Feature:" + fe.data.feature) }
+            }
             self.emit_statement(stmt)
             if CG_HAS_LAST_VAL > 0 {
                 last = CG_LAST_VAL
             }
+            si = si + 1
         }
         last
     }

@@ -617,14 +617,16 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_FN_NULLABLE_RET_TY = null
         if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
-        // Inline emit: parse with CG_ACTIVE=true, all LLVM IR emitted during parsing
+        // AST-based codegen: parse WITHOUT inline emit, then walk AST
         mut body_block = Block { statements: [], span: Span { line: 0, col: 0, start: 0, end: 0 } }
         if body_src != "" {
-            CG_ACTIVE = true
+            CG_ACTIVE = false
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
             mut body_parser = parser_new_with_source(body_tokens, body_src)
             body_block = body_parser.parse_block()
+            CG_ACTIVE = true
+            cg.emit_block(body_block)
         }
 
         // Add implicit return only if the block doesn't already terminate
