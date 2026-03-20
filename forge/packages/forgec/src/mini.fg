@@ -254,6 +254,22 @@ mut VAR_REGS: List<string> = []
 mut VAR_TYPES: List<string> = [] // "i64", "%ForgeString", etc.
 mut VAR_SCOPE: int = 0
 
+// Struct type tracking
+// Flat representation: all fields from all structs in order
+// STRUCT_NAMES[i] = "Tok"
+// STRUCT_FIELD_STARTS[i] = index into SFIELD_* arrays
+// STRUCT_FIELD_COUNTS[i] = number of fields
+mut STRUCT_NAMES: List<string> = []
+mut STRUCT_FIELD_STARTS: List<int> = []
+mut STRUCT_FIELD_COUNTS: List<int> = []
+// Flat arrays of all struct fields
+mut SFIELD_NAMES: List<string> = []
+mut SFIELD_TYPES: List<string> = []
+
+// Track which variables hold struct values: VAR_STRUCT_TYPE[i] = "Tok" or ""
+mut VAR_STRUCT_TYPE: List<string> = []
+mut LAST_STRUCT_TYPE: string = ""
+
 // Function forward declarations
 mut FN_NAMES: List<string> = []
 mut FN_RETTYPES: List<string> = []
@@ -284,6 +300,82 @@ fn mark_if_terminated(terminated: bool) {
 fn parse_block_stmt() {
     let t = parse_stmt()
     mark_if_terminated(t)
+}
+
+// ─── Struct helpers ───────────────────────────────
+
+fn find_struct(name: string) -> int {
+    mut i = 0
+    while i < STRUCT_NAMES.length {
+        if STRUCT_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn struct_field_index(struct_idx: int, field_name: string) -> int {
+    let start = STRUCT_FIELD_STARTS[struct_idx]
+    let count = STRUCT_FIELD_COUNTS[struct_idx]
+    mut i = 0
+    while i < count {
+        if SFIELD_NAMES[start + i] == field_name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn struct_field_type(struct_idx: int, field_idx: int) -> string {
+    let start = STRUCT_FIELD_STARTS[struct_idx]
+    SFIELD_TYPES[start + field_idx]
+}
+
+fn struct_field_count(struct_idx: int) -> int {
+    STRUCT_FIELD_COUNTS[struct_idx]
+}
+
+fn struct_llvm_type(name: string) -> string {
+    "%" + name
+}
+
+fn type_to_llvm(ty_name: string) -> string {
+    if ty_name == "int" { return "i64" }
+    if ty_name == "bool" { return "i64" }
+    if ty_name == "string" { return "%ForgeString" }
+    if ty_name == "float" { return "double" }
+    // Check if it's a known struct
+    let si = find_struct(ty_name)
+    if si >= 0 { return "%" + ty_name }
+    "i64"
+}
+
+fn parse_type_decl_top() {
+    expect("type")
+    let name = advance().text
+    expect("=")
+    skip_nl()
+    expect("{")
+    skip_nl()
+    let start_idx = SFIELD_NAMES.length
+    mut count = 0
+    while !check("}") && POS < TOKENS.length {
+        if check("mut") { advance() }
+        let fname = advance().text
+        expect(":")
+        skip_nl()
+        let ftype_name = peek().text
+        parse_type_ann()
+        let ftype = type_to_llvm(ftype_name)
+        SFIELD_NAMES = SFIELD_NAMES.push(fname)
+        SFIELD_TYPES = SFIELD_TYPES.push(ftype)
+        count = count + 1
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect("}")
+    STRUCT_NAMES = STRUCT_NAMES.push(name)
+    STRUCT_FIELD_STARTS = STRUCT_FIELD_STARTS.push(start_idx)
+    STRUCT_FIELD_COUNTS = STRUCT_FIELD_COUNTS.push(count)
 }
 
 fn peek() -> Tok {
@@ -373,10 +465,15 @@ fn find_var(name: string) -> int {
     -1
 }
 
-fn push_var(name: string, reg_name: string, ty: string) {
+fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
     VAR_NAMES = VAR_NAMES.push(name)
     VAR_REGS = VAR_REGS.push(reg_name)
     VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push(stype)
+}
+
+fn push_var(name: string, reg_name: string, ty: string) {
+    push_var_with_struct(name, reg_name, ty, "")
 }
 
 fn find_fn_ret(name: string) -> string {
@@ -578,6 +675,7 @@ fn parse_unary() -> string {
 fn parse_postfix() -> string {
     mut val = parse_primary()
     mut val_is_str = LAST_IS_STR
+    mut val_struct = LAST_STRUCT_TYPE
     while true {
         if check("(") {
             // Function call — save function name before parsing args
@@ -663,8 +761,38 @@ fn parse_postfix() -> string {
                 val_is_str = 0
                 LAST_IS_STR = 0
             } else {
-                // TODO: struct member access
-                val = val
+                // Struct member access: obj.field → extractvalue
+                // Look up struct type from the variable we just loaded
+                let struct_name = val_struct
+                let si = find_struct(struct_name)
+                // Debug removed
+                if si >= 0 {
+                    let fi = struct_field_index(si, field)
+                    if fi >= 0 {
+                        let fty = struct_field_type(si, fi)
+                        let r = new_reg()
+                        ir_line(r + " = extractvalue %" + val_struct + " " + val + ", " + string(fi))
+                        val = r
+                        if fty == "%ForgeString" {
+                            val_is_str = 1
+                            LAST_IS_STR = 1
+                            val_struct = ""
+                            LAST_STRUCT_TYPE = ""
+                        } else {
+                            val_is_str = 0
+                            LAST_IS_STR = 0
+                            // Check if field type is another struct
+                            mut next_struct = ""
+                            if fty.length > 1 {
+                                if fty.substring(0, 1) == "%" {
+                                    next_struct = fty.substring(1, fty.length)
+                                }
+                            }
+                            val_struct = next_struct
+                            LAST_STRUCT_TYPE = next_struct
+                        }
+                    }
+                }
             }
         } else if check("[") {
             advance()
@@ -732,6 +860,51 @@ fn parse_primary() -> string {
         let name = tok.text
         LAST_IDENT_NAME = name
 
+        // Check for struct literal: TypeName { field: val, ... }
+        let si = find_struct(name)
+        if si >= 0 && check("{") {
+            advance()
+            skip_nl()
+            let sty = struct_llvm_type(name)
+            let nfields = struct_field_count(si)
+            // Start with undef
+            mut cur = "undef"
+            // Parse fields
+            while !check("}") {
+                let fname = advance().text
+                // Shorthand: { field } means { field: field }
+                mut fval = ""
+                if check(":") {
+                    advance()
+                    skip_nl()
+                    fval = parse_expr()
+                } else {
+                    // Shorthand — load the variable with same name
+                    let vi = find_var(fname)
+                    if vi >= 0 {
+                        fval = new_reg()
+                        ir_line(fval + " = load " + VAR_TYPES[vi] + ", ptr " + VAR_REGS[vi])
+                    } else {
+                        fval = "0"
+                    }
+                }
+                let fidx = struct_field_index(si, fname)
+                if fidx >= 0 {
+                    let r = new_reg()
+                    let fty = struct_field_type(si, fidx)
+                    ir_line(r + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
+                    cur = r
+                }
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect("}")
+            LAST_STRUCT_TYPE = name
+            LAST_IS_STR = 0
+            return cur
+        }
+
         // Check for string() conversion
         if name == "string" && check("(") {
             advance()
@@ -773,12 +946,22 @@ fn parse_primary() -> string {
         // Variable lookup
         let idx = find_var(name)
         if idx >= 0 {
+            let vty = VAR_TYPES[idx]
             let r = new_reg()
-            ir_line(r + " = load " + VAR_TYPES[idx] + ", ptr " + VAR_REGS[idx])
-            if VAR_TYPES[idx] == "%ForgeString" {
+            ir_line(r + " = load " + vty + ", ptr " + VAR_REGS[idx])
+            LAST_IS_STR = 0
+            LAST_STRUCT_TYPE = ""
+            if vty == "%ForgeString" {
                 LAST_IS_STR = 1
-            } else {
-                LAST_IS_STR = 0
+            }
+            // Derive struct type from LLVM type name (e.g. "%Point" → "Point")
+            if vty.length > 1 {
+                let first_ch = vty.substring(0, 1)
+                if first_ch == "%" {
+                    if vty != "%ForgeString" {
+                        LAST_STRUCT_TYPE = vty.substring(1, vty.length)
+                    }
+                }
             }
             return r
         }
@@ -813,9 +996,17 @@ fn parse_stmt() -> bool {
         expect("=")
         skip_nl()
         LAST_IS_STR = 0
+        LAST_STRUCT_TYPE = ""
         let val = parse_expr()
         let alloca = new_reg()
-        if LAST_IS_STR == 1 {
+        let saved_struct = LAST_STRUCT_TYPE
+        // Debug removed
+        if saved_struct != "" {
+            let sty = struct_llvm_type(saved_struct)
+            ir_line(alloca + " = alloca " + sty)
+            ir_line("store " + sty + " " + val + ", ptr " + alloca)
+            push_var_with_struct(name, alloca, sty, saved_struct)
+        } else if LAST_IS_STR == 1 {
             ir_line(alloca + " = alloca %ForgeString")
             ir_line("store %ForgeString " + val + ", ptr " + alloca)
             push_var(name, alloca, "%ForgeString")
@@ -1127,19 +1318,73 @@ fn compile(source: string) -> string {
     IR = ""
     STR_DECLS = ""
     STR_N = 0
+    STRUCT_NAMES = []
+    STRUCT_FIELD_STARTS = []
+    STRUCT_FIELD_COUNTS = []
+    SFIELD_NAMES = []
+    SFIELD_TYPES = []
 
-    // Debug: dump tokens
-    mut di = 0
-    while di < TOKENS.length {
-        let dt = TOKENS[di]
-        eprintln("  tok[" + string(di) + "] kind=" + string(dt.kind) + " '" + dt.text + "'")
-        di = di + 1
+    // Pass 1: scan for type declarations only
+    skip_nl()
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok = peek()
+        if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("type") {
+                parse_type_decl_top()
+            } else if check("fn") {
+                advance()
+                advance() // skip name
+                // Skip to end of function
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else {
+                skip_to_newline()
+            }
+        } else if tok.text == "type" {
+            parse_type_decl_top()
+        } else if tok.text == "fn" {
+            advance()
+            advance() // skip name
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else if tok.text == "enum" {
+            advance()
+            while !check("}") && POS < TOKENS.length { advance() }
+            if check("}") { advance() }
+        } else if tok.text == "impl" {
+            advance()
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else {
+            advance()
+        }
+        skip_nl()
     }
+
+    // Pass 2: reset and compile functions
+    POS = 0
 
     // IR header
     ir_raw("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"")
     ir_raw("")
     ir_raw("%ForgeString = type { ptr, i64 }")
+    // Emit struct type declarations
+    mut sti = 0
+    while sti < STRUCT_NAMES.length {
+        let sname = STRUCT_NAMES[sti]
+        let nf = struct_field_count(sti)
+        mut fields_ir = ""
+        mut fi = 0
+        while fi < nf {
+            if fi > 0 { fields_ir = fields_ir + ", " }
+            fields_ir = fields_ir + struct_field_type(sti, fi)
+            fi = fi + 1
+        }
+        ir_raw("%" + sname + " = type { " + fields_ir + " }")
+        sti = sti + 1
+    }
     ir_raw("")
     ir_raw("declare %ForgeString @forge_string_new(ptr, i64)")
     ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
@@ -1169,6 +1414,8 @@ fn compile(source: string) -> string {
             skip_nl()
             if check("fn") {
                 parse_fn_decl()
+            } else if check("type") {
+                parse_type_decl_top()
             } else {
                 skip_to_newline()
             }
@@ -1179,9 +1426,7 @@ fn compile(source: string) -> string {
                 while !check("{") && POS < TOKENS.length { advance() }
                 skip_block()
             } else if tok.text == "type" {
-                advance()
-                while !check("}") && POS < TOKENS.length { advance() }
-                if check("}") { advance() }
+                parse_type_decl_top()
             } else if tok.text == "enum" {
                 advance()
                 while !check("}") && POS < TOKENS.length { advance() }
