@@ -118,9 +118,31 @@ indices between scan and codegen phases.
 - Tokens with unique Span values per element get corrupted in some cases
 - Large file lexing is slow (~10s for 113KB) even with O2
 
+## ACTUAL Root Cause (Discovered 2026-03-19)
+
+**The bootstrap's match codegen for large (100+) variant enums is broken.**
+
+TokenKind has ~120 variants. When the bootstrap compiles `kind_to_key(kind)` or
+`check(TokenKind.Gt)`, the match on TokenKind doesn't correctly find high variant
+indices. All variants after some threshold (~90?) fall through to the default arm.
+
+This breaks:
+- `parse_type_args`: can't find `>` to close `List<int>` → consumes past `=` and `[]`
+- `check(TokenKind.LBracket)`: fails → list globals not detected
+- `kind_to_key`: returns `""` for many token kinds → string comparisons fail
+
+**Impact**: Type annotations like `List<int>` aren't parsed correctly. Global
+variables with list types aren't detected. The parser overconsumes tokens.
+This cascades into ALL compilation of files that use list/map globals.
+
+**Fix needed**: In the bootstrap's pattern matching codegen, the variant index
+comparison for large enums must work for ALL variant indices, not just low ones.
+The issue is likely in how the i8 tag is compared — the tag value might overflow
+or the comparison constants might be truncated.
+
 ## Next Steps (Priority Order)
-1. **Fix bootstrap extract_enum_variant_fields** — root cause of nested enum corruption
-2. **Fix error.fg crash** — Severity enum constructor in Diagnostic struct literal
+1. **Fix bootstrap match for large enums** — THE critical blocker
+2. **Fix error.fg crash** — Severity enum + Diagnostic struct literal
 3. **Get remaining 34 files compiling** — most share the same root causes
 4. **Link Stage 2 binary** — link all .o files + runtime
 5. **Test Stage 2** — run the Stage 2 binary on simple programs
