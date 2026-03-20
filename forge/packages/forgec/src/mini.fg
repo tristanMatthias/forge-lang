@@ -74,6 +74,26 @@ fn lex_is_ws(c: string) -> bool {
     false
 }
 
+fn is_slash(c: string) -> bool {
+    c.substring(0, 1) == "/"
+}
+
+fn not_at_end() -> bool {
+    POS < TOKENS.length
+}
+
+fn not_at_brace() -> bool {
+    if POS >= TOKENS.length { return false }
+    if TOKENS[POS].text == "}" { return false }
+    true
+}
+
+fn not_at_paren() -> bool {
+    if POS >= TOKENS.length { return false }
+    if TOKENS[POS].text == ")" { return false }
+    true
+}
+
 fn lex_char_at(pos: int) -> string {
     LEX_SRC.substring(pos, pos + 1)
 }
@@ -96,11 +116,9 @@ fn lex_skip_whitespace() {
             lex_advance()
         } else if c == "\r" {
             lex_advance()
-        } else if c == "/" {
-            // Check for // comment
+        } else if is_slash(c) {
             if LEX_POS + 1 < LEX_SRC.length {
-                if lex_char_at(LEX_POS + 1) == "/" {
-                    // Skip until newline
+                if is_slash(lex_char_at(LEX_POS + 1)) {
                     while LEX_POS < LEX_SRC.length {
                         if lex_peek() == "\n" { return }
                         lex_advance()
@@ -148,16 +166,7 @@ fn lex_read_string() -> string {
 }
 
 fn lex_next() -> Tok {
-    let pre_ws = LEX_POS
     lex_skip_whitespace()
-    if LEX_POS < LEX_SRC.length {
-        let dbg_ch = lex_char_at(LEX_POS)
-        eprintln("  [lex] pre=" + string(pre_ws) + " post=" + string(LEX_POS) + " ch='" + dbg_ch + "'")
-        if pre_ws == 41 {
-            // Debug the chars around position 49
-            eprintln("    [debug] pos48='" + lex_char_at(48) + "' pos49='" + lex_char_at(49) + "' pos50='" + lex_char_at(50) + "'")
-        }
-    }
     if LEX_POS >= LEX_SRC.length {
         return Tok { kind: 0, text: "", line: LEX_LINE }
     }
@@ -524,14 +533,14 @@ fn parse_enum_decl_top() {
     skip_nl()
     let vstart = EVAR_NAMES.length
     mut vcount = 0
-    while !check("}") && POS < TOKENS.length {
+    while not_at_brace() {
         let vname = advance().text
         let fstart = EFIELD_NAMES.length
         mut fcount = 0
         if check("(") {
             advance()
             skip_nl()
-            while !check(")") && POS < TOKENS.length {
+            while not_at_paren() {
                 let fname = advance().text
                 expect(":")
                 skip_nl()
@@ -567,7 +576,7 @@ fn parse_type_decl_top() {
     skip_nl()
     let start_idx = SFIELD_NAMES.length
     mut count = 0
-    while !check("}") && POS < TOKENS.length {
+    while not_at_brace() {
         if check("mut") { advance() }
         let fname = advance().text
         expect(":")
@@ -611,14 +620,14 @@ fn check_kind(k: int) -> bool {
 
 fn expect(text: string) {
     if !check(text) {
-        eprintln("error: expected '" + text + "' got '" + peek().text + "' line " + string(peek().line))
+        eprintln("error: expected '" + text + "' got '" + peek().text + "' line " + string(peek().line) + " pos=" + string(POS))
         process.exit(1)
     }
     advance()
 }
 
 fn skip_nl() {
-    while check("\n") { advance() }
+    while check_kind(4) { advance() }
 }
 
 fn ir_line(s: string) {
@@ -1491,7 +1500,12 @@ fn parse_primary() -> string {
     }
     // (ident code moved to parse_ident_expr)
 
-    eprintln("unexpected token: '" + tok.text + "' kind=" + string(tok.kind) + " line " + string(tok.line))
+    // Print surrounding tokens for debug
+    if POS > 2 {
+        eprintln("  prev tokens: [" + string(POS - 3) + "]='" + TOKENS[POS - 3].text + "' [" + string(POS - 2) + "]='" + TOKENS[POS - 2].text + "' [" + string(POS - 1) + "]='" + TOKENS[POS - 1].text + "'")
+        eprintln("  next tokens: [" + string(POS) + "]='" + TOKENS[POS].text + "' [" + string(POS + 1) + "]='" + TOKENS[POS + 1].text + "' [" + string(POS + 2) + "]='" + TOKENS[POS + 2].text + "'")
+    }
+    eprintln("unexpected token: '" + tok.text + "' kind=" + string(tok.kind) + " line " + string(tok.line) + " pos=" + string(POS))
     advance()
     "0"
 }
@@ -1832,7 +1846,7 @@ fn parse_stmt() -> bool {
         }
         let merge_l = new_label("match_end")
         // Parse arms
-        while !check("}") && POS < TOKENS.length {
+        while not_at_brace() {
             skip_nl()
             if check("_") {
                 // Wildcard — already in the fallthrough block
@@ -2074,6 +2088,8 @@ fn parse_fn_decl() {
 
     // Special handling for main: accept (i32 argc, ptr argv) for arg access
     if name == "main" {
+        ret_ty = "i32"
+        CUR_RET_TY = "i32"
         ir_raw("define i32 @main(i32 %argc, ptr %argv) {")
         ir_raw("entry:")
         ir_line("call void @forge_mini_set_args(i32 %argc, ptr %argv)")
@@ -2361,6 +2377,8 @@ fn compile(source: string) -> string {
         let tok = peek()
 
         if tok.text == "fn" {
+            let fn_name_dbg = TOKENS[POS + 1].text
+            eprintln("  [compile] " + fn_name_dbg + " at pos=" + string(POS))
             parse_fn_decl()
         } else if tok.text == "export" {
             advance()
@@ -2386,7 +2404,7 @@ fn compile(source: string) -> string {
                 advance() // name
                 expect("{")
                 skip_nl()
-                while !check("}") && POS < TOKENS.length { advance() }
+                while not_at_brace() { advance() }
                 if check("}") { advance() }
             } else {
                 skip_to_newline()
