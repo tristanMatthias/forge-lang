@@ -1,0 +1,116 @@
+# Self-Hosting Progress
+
+**Status: 8% (3/37 files compile in Stage 2)**
+
+Last updated: 2026-03-19
+
+## Pipeline
+
+```
+Bootstrap (Rust) ──→ Stage 1 binary ──→ Stage 2 binary ──→ Stage 2' (fixed point)
+       ✅                  ✅              IN PROGRESS           ❌
+```
+
+## Stage 2 File Compilation (3/37)
+
+Phase 1 (scan all 37 files): **DONE** (2s)
+Phase 2 (compile each file to .o):
+
+| # | File | Status | Blocker |
+|---|------|--------|---------|
+| 0 | core/token.fg | ✅ | |
+| 1 | core/ast.fg | ✅ | |
+| 2 | core/types.fg | ✅ | |
+| 3 | core/error.fg | ❌ CRASH | extractvalue on Severity enum in Diagnostic struct literal |
+| 4 | core/registry.fg | ⏳ blocked | waiting on #3 |
+| 5 | core/mod.fg | ⏳ blocked | waiting on #3 |
+| 6 | lexer/mod.fg | ⏳ blocked | LLVM DAGTypeLegalizer crash (type mismatch in IR) |
+| 7 | parser/expressions.fg | ⏳ blocked | |
+| 8 | parser/mod.fg | ⏳ blocked | |
+| 9 | checker/env.fg | ⏳ blocked | |
+| 10 | checker/mod.fg | ⏳ blocked | |
+| 11 | codegen/mod.fg | ⏳ blocked | |
+| 12-35 | features/*.fg | ⏳ blocked | |
+| 36 | main.fg | ⏳ blocked | |
+
+Phase 3 (link all .o + runtime): ❌ not reached
+Phase 4 (run Stage 2 binary): ❌ not reached
+
+## Root Cause Blocking Most Files
+
+**Bootstrap match destructuring of nested enums is broken.**
+
+When the Rust bootstrap compiles `match stmt { .Expr(expr) -> { ... } }`, the extracted `expr` (a nested Expr enum inside Statement) has a corrupted variant tag. This means:
+
+1. The AST-based codegen path (Option B) can't work — emit_expr receives garbage
+2. The inline-emit path works around this by emitting LLVM IR during parsing (no extraction needed)
+3. But inline emit has its own bugs (stale CG_LAST_VAL, etc.) that cause crashes in complex files
+
+**Fix needed:** `packages/forgec-rust/features/pattern_matching/codegen.rs` → `extract_enum_variant_fields()` needs to correctly preserve nested enum types during field extraction from tagged unions.
+
+## Completed Work
+
+### Bootstrap Fixes
+- [x] `&&`/`||` short-circuit evaluation (was evaluating both sides)
+- [x] O2 optimization in write_object_file (was O0, making self-hosted binary 6000x slower)
+- [x] LLVM data layout set from target machine (fixes ARM64 ABI for large struct returns)
+
+### Self-Hosted Compiler Codegen
+- [x] Match expression codegen (tag extraction, variant dispatch, field binding, phi merge)
+- [x] Implicit function returns (call expressions as last statement)
+- [x] Return inside if blocks (CG_HAS_LAST_VAL reset)
+- [x] Inline call emission with CALL_DEPTH tracking
+- [x] CG_LAST_VAL tracking in parse_postfix_expr
+- [x] Stale value prevention in variable bindings
+- [x] Nested struct member access (a.b.c)
+- [x] Struct literal shorthand syntax ({ field } = { field: field })
+- [x] List return type fix (resolve_type_to_llvm for "List")
+- [x] Unit enum min 1 slot registration
+- [x] render_diagnostic restored in error.fg
+
+### Separate Compilation
+- [x] Two-pass struct type materialization (opaque first, then bodies)
+- [x] Struct type deduplication (scan phase registers duplicates)
+- [x] Enum type cache cleared per module
+- [x] Function declarations with correct param/return types
+- [x] Brace-balancing scan (skip function body parsing during scan phase)
+
+### Runtime Performance
+- [x] Static ASCII char table in forge_string_char_at (no malloc per char)
+- [x] forge_string_eq fast path for single-char comparisons
+- [x] forge_string_concat fast path for empty strings
+- [x] forge_string_byte_at added (int return, no allocation)
+- [x] Lexer: eliminate O(n²) string_to_chars — use source[pos] directly
+
+### LLVM Bindings
+- [x] LLVMTypeOf wrapper
+- [x] Null guards in build_extract_value, build_store, build_insert_value
+- [x] Bounds check in build_insert_value
+- [x] emit_object_file sets data layout from target machine
+
+### Attempted but Reverted
+- [x] AST-based codegen (Option B) — blocked by bootstrap match bug
+- [x] Match arm body re-parsing via CSV — blocked by global persistence
+- [x] Various CG_LAST_VAL persistence workarounds
+
+## What Works (Programs compiled by self-hosted compiler)
+- Fibonacci, factorial, FizzBuzz
+- Enum match with field extraction (int, string fields)
+- Struct construction, field access, nested access (a.b.c)
+- List<Struct> operations
+- Multi-file separate compilation
+- Mini lexer (enums + structs + match + lists + function constructors)
+- Token type with 36+ enum variants
+
+## Known Limitations
+- Match arms returning bool produce 0 (BoolLit value corrupted in List<MatchArm>)
+- Tokens with unique Span values per element get corrupted in some cases
+- Large file lexing is slow (~10s for 113KB) even with O2
+
+## Next Steps (Priority Order)
+1. **Fix bootstrap extract_enum_variant_fields** — root cause of nested enum corruption
+2. **Fix error.fg crash** — Severity enum constructor in Diagnostic struct literal
+3. **Get remaining 34 files compiling** — most share the same root causes
+4. **Link Stage 2 binary** — link all .o files + runtime
+5. **Test Stage 2** — run the Stage 2 binary on simple programs
+6. **Fixed point** — Stage 2 compiles itself to identical Stage 2'

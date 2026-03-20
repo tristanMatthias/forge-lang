@@ -223,12 +223,16 @@ impl<'ctx> Codegen<'ctx> {
             Type::Enum { name, variants, .. } => {
                 // If variants is empty, this is a stub — look up the full type
                 let actual_variants = if variants.is_empty() {
-                    self.type_checker.env.enum_types.get(name)
+                    let looked_up = self.type_checker.env.enum_types.get(name)
                         .and_then(|t| match t {
                             Type::Enum { variants: v, .. } => Some(v.clone()),
                             _ => None,
                         })
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    if looked_up.is_empty() {
+                        eprintln!("  [type_to_llvm] WARNING: enum '{}' has empty variants (stub) and lookup failed", name);
+                    }
+                    looked_up
                 } else {
                     variants.clone()
                 };
@@ -247,7 +251,25 @@ impl<'ctx> Codegen<'ctx> {
                     field_types.push(self.context.i64_type().into());
                 }
                 // Use named LLVM struct type for enums
+                // If the actual_variants were stubs (empty), don't cache the type —
+                // it would have wrong slot count. Only cache with full variant info.
+                let is_stub_based = variants.is_empty() && actual_variants.is_empty();
+                if is_stub_based {
+                    // Return anonymous struct (don't pollute the named type cache)
+                    let anon = self.context.struct_type(
+                        &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                        false,
+                    );
+                    return anon.into();
+                }
                 if let Some(existing) = self.context.get_struct_type(name) {
+                    // If cached version has fewer fields than we need, recreate
+                    if existing.count_fields() < field_types.len() as u32 {
+                        existing.set_body(
+                            &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                            false,
+                        );
+                    }
                     return existing.into();
                 }
                 let st = self.context.opaque_struct_type(name);

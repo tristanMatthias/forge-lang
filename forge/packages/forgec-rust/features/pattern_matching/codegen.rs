@@ -437,6 +437,9 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         let enum_llvm_ty = self.type_to_llvm_basic(subject_type).into_struct_type();
+        let enum_field_count = enum_llvm_ty.count_fields();
+        eprintln!("  [extract_enum_fields] variant={}, fields={}, enum_llvm_fields={}, boxed={:?}",
+            v.name, v.fields.len(), enum_field_count, v.boxed_fields);
         let enum_alloca = self.builder.build_alloca(enum_llvm_ty, "nested_extract_tmp").unwrap();
         self.builder.build_store(enum_alloca, *subject_val).unwrap();
 
@@ -446,15 +449,30 @@ impl<'ctx> Codegen<'ctx> {
 
         let variant_field_types: Vec<BasicTypeEnum<'ctx>> = v.fields.iter()
             .enumerate()
-            .map(|(i, (_, ty))| {
+            .map(|(i, (name, ty))| {
                 if v.boxed_fields.contains(&i) {
                     self.context.i64_type().into()
                 } else {
-                    self.type_to_llvm_basic(ty)
+                    let llvm_ty = self.type_to_llvm_basic(ty);
+                    if let Type::Enum { name: enum_name, variants, .. } = ty {
+                        eprintln!("    field '{}' type={} variants={} llvm_fields={}",
+                            name, enum_name, variants.len(),
+                            if llvm_ty.is_struct_type() { llvm_ty.into_struct_type().count_fields() } else { 1 });
+                    }
+                    llvm_ty
                 }
             })
             .collect();
         let variant_struct_type = self.context.struct_type(&variant_field_types, false);
+
+        // Debug: check if variant struct fits in the payload
+        let variant_field_count = variant_struct_type.count_fields();
+        let payload_slots = enum_field_count - 1; // minus tag
+        eprintln!("    variant_struct_fields={}, payload_slots={}", variant_field_count, payload_slots);
+        for (i, ft) in variant_field_types.iter().enumerate() {
+            let slots = if ft.is_struct_type() { ft.into_struct_type().count_fields() } else { 1 };
+            eprintln!("      field[{}]: {} LLVM fields", i, slots);
+        }
 
         let typed_ptr = self.builder.build_bit_cast(
             payload_ptr,
