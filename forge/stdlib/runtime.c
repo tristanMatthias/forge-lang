@@ -1587,19 +1587,14 @@ int8_t forge_write_file(ForgeString path, ForgeString content) {
     memcpy(cpath, path.ptr, path.len);
     cpath[path.len] = '\0';
 
-    fprintf(stderr, "  [C:write_file] path='%s' content.ptr=%p content.len=%lld\n",
-            cpath, content.ptr, (long long)content.len);
-
     FILE* f = fopen(cpath, "wb");
     free(cpath);
     if (!f) {
-        fprintf(stderr, "  [C:write_file] fopen FAILED\n");
         return 0;
     }
 
     size_t written = fwrite(content.ptr, 1, content.len, f);
     fclose(f);
-    fprintf(stderr, "  [C:write_file] written=%zu\n", written);
     return (written == (size_t)content.len) ? 1 : 0;
 }
 
