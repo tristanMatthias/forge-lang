@@ -85,7 +85,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         while scan_pos < p.source.length {
             let sc = p.source[scan_pos]
             if sc == "=" { break }
-            if sc == ":" { found_colon = true; break }
+            if sc == ":" { found_colon = true
+                break }
             scan_pos = scan_pos + 1
         }
         if found_colon {
