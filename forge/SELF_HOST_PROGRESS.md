@@ -1,12 +1,12 @@
 # Self-Hosting Progress
 
-**Status: 8% (3/37 files compile in Stage 2)**
+**Status: 19% (7/37 files processed, 3 compiled in Stage 2)**
 
 > **ZERO LLVM verification errors** in self-hosted compiler IR!
 > `if bool { mut = val }` pattern NOW WORKS in compiled binary
 > Phase 1 scan: DONE (2s for all 37 files, 386 functions)
-> Phase 2 compile: 3/37 files produce valid .o files (token.fg, ast.fg, types.fg)
-> Current blocker: error.fg global list push crashes (inline emit issue)
+> Phase 2: 7/37 files processed (3 compiled .o, 4 SKIP-IR errors)
+> Current blocker: expressions.fg (file 7) crashes during compilation
 > Current blocker: error.fg list global type detection fails because `check(TokenKind.Colon)` can't detect `:` for type annotations (Token text corrupted from list storage)
 > AST-based codegen blocked by Token text corruption in List<Token>
 
