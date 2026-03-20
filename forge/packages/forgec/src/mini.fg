@@ -288,6 +288,10 @@ mut EFIELD_TYPES: List<string> = []
 mut LAST_ENUM_TYPE: string = ""
 mut LAST_IS_LIST: int = 0
 mut LAST_LIST_ELEM_TYPE: string = "i64"  // element LLVM type for last list expr
+// For struct field assignment: track the object being accessed
+mut LAST_MEMBER_OBJ_NAME: string = ""  // variable name of the struct object
+mut LAST_MEMBER_FIELD: string = ""     // field name that was accessed
+mut LAST_MEMBER_OBJ_REG: string = ""   // the loaded struct value register
 // Per-variable list element type: "" for non-lists
 mut VAR_LIST_ELEM_TYPE: List<string> = []
 
@@ -964,10 +968,11 @@ fn parse_postfix() -> string {
                 LAST_IS_STR = 0
             } else {
                 // Struct member access: obj.field → extractvalue
-                // Look up struct type from the variable we just loaded
                 let struct_name = val_struct
                 let si = find_struct(struct_name)
-                // Debug removed
+                LAST_MEMBER_OBJ_NAME = LAST_IDENT_NAME
+                LAST_MEMBER_FIELD = field
+                LAST_MEMBER_OBJ_REG = val
                 if si >= 0 {
                     let fi = struct_field_index(si, field)
                     if fi >= 0 {
@@ -1446,6 +1451,89 @@ fn parse_stmt() -> bool {
         return true
     }
 
+    // for
+    if tok.text == "for" {
+        advance()
+        let var_name = advance().text
+        expect("in")
+        skip_nl()
+        LAST_IS_LIST = 0
+        let list_val = parse_expr()
+        let elem_ty = LAST_LIST_ELEM_TYPE
+        skip_nl()
+        // Get list data ptr and length
+        let data_ptr = new_reg()
+        ir_line(data_ptr + " = extractvalue { ptr, i64 } " + list_val + ", 0")
+        let list_len = new_reg()
+        ir_line(list_len + " = extractvalue { ptr, i64 } " + list_val + ", 1")
+        // Create index variable
+        let idx_alloca = new_reg()
+        ir_line(idx_alloca + " = alloca i64")
+        ir_line("store i64 0, ptr " + idx_alloca)
+        // Loop blocks
+        let cond_l = new_label("for_cond")
+        let body_l = new_label("for_body")
+        let incr_l = new_label("for_incr")
+        let end_l = new_label("for_end")
+        LOOP_COND = LOOP_COND.push(incr_l)
+        LOOP_END = LOOP_END.push(end_l)
+        // Cond: idx < len
+        ir_line("br label %" + cond_l)
+        ir_raw(cond_l + ":")
+        let idx_val = new_reg()
+        ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+        let cmp = new_reg()
+        ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + list_len)
+        ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
+        // Body: load element, bind variable
+        ir_raw(body_l + ":")
+        let body_idx = new_reg()
+        ir_line(body_idx + " = load i64, ptr " + idx_alloca)
+        let elem_ptr = new_reg()
+        ir_line(elem_ptr + " = getelementptr " + elem_ty + ", ptr " + data_ptr + ", i64 " + body_idx)
+        let elem_val = new_reg()
+        ir_line(elem_val + " = load " + elem_ty + ", ptr " + elem_ptr)
+        let item_alloca = new_reg()
+        ir_line(item_alloca + " = alloca " + elem_ty)
+        ir_line("store " + elem_ty + " " + elem_val + ", ptr " + item_alloca)
+        push_var(var_name, item_alloca, elem_ty)
+        // Parse body
+        BLOCK_TERMINATED = 0
+        expect("{")
+        skip_nl()
+        while !check("}") {
+            parse_block_stmt()
+            skip_nl()
+        }
+        expect("}")
+        let body_term = BLOCK_TERMINATED
+        if body_term == 0 {
+            ir_line("br label %" + incr_l)
+        }
+        // Increment
+        ir_raw(incr_l + ":")
+        let cur_idx = new_reg()
+        ir_line(cur_idx + " = load i64, ptr " + idx_alloca)
+        let next_idx = new_reg()
+        ir_line(next_idx + " = add i64 " + cur_idx + ", 1")
+        ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
+        ir_line("br label %" + cond_l)
+        // End
+        // Pop loop labels
+        mut new_cond: List<string> = []
+        mut new_end: List<string> = []
+        mut li = 0
+        while li < LOOP_COND.length - 1 {
+            new_cond = new_cond.push(LOOP_COND[li])
+            new_end = new_end.push(LOOP_END[li])
+            li = li + 1
+        }
+        LOOP_COND = new_cond
+        LOOP_END = new_end
+        ir_raw(end_l + ":")
+        return false
+    }
+
     // match
     if tok.text == "match" {
         advance()
@@ -1560,19 +1648,50 @@ fn parse_stmt() -> bool {
     skip_nl()
     if check("=") {
         let lhs_name = LAST_IDENT_NAME
+        let member_obj = LAST_MEMBER_OBJ_NAME
+        let member_field = LAST_MEMBER_FIELD
+        let member_obj_reg = LAST_MEMBER_OBJ_REG
         advance()
         skip_nl()
         let rhs = parse_expr()
-        // Store to the variable that was on the LHS
-        let var_idx = find_var(lhs_name)
-        if var_idx >= 0 {
-            let store_ty = VAR_TYPES[var_idx]
-            if store_ty == "{ ptr, i64 }" {
-                ir_line("store { ptr, i64 } " + rhs + ", ptr " + VAR_REGS[var_idx])
-            } else {
-                ir_line("store " + store_ty + " " + rhs + ", ptr " + VAR_REGS[var_idx])
+        // Check if LHS was a member access (obj.field = value)
+        if member_field != "" && member_obj != "" {
+            // Struct field assignment: load struct, insertvalue, store back
+            let obj_idx = find_var(member_obj)
+            if obj_idx >= 0 {
+                let sty_name = VAR_TYPES[obj_idx]
+                // Find struct and field index
+                let st_name = sty_name.substring(1, sty_name.length)
+                let si = find_struct(st_name)
+                if si >= 0 {
+                    let fi = struct_field_index(si, member_field)
+                    if fi >= 0 {
+                        let fty = struct_field_type(si, fi)
+                        // Load current struct
+                        let cur = new_reg()
+                        ir_line(cur + " = load " + sty_name + ", ptr " + VAR_REGS[obj_idx])
+                        // Insert new field value
+                        let updated = new_reg()
+                        ir_line(updated + " = insertvalue " + sty_name + " " + cur + ", " + fty + " " + rhs + ", " + string(fi))
+                        // Store back
+                        ir_line("store " + sty_name + " " + updated + ", ptr " + VAR_REGS[obj_idx])
+                    }
+                }
+            }
+        } else {
+            // Simple variable assignment
+            let var_idx = find_var(lhs_name)
+            if var_idx >= 0 {
+                let store_ty = VAR_TYPES[var_idx]
+                if store_ty == "{ ptr, i64 }" {
+                    ir_line("store { ptr, i64 } " + rhs + ", ptr " + VAR_REGS[var_idx])
+                } else {
+                    ir_line("store " + store_ty + " " + rhs + ", ptr " + VAR_REGS[var_idx])
+                }
             }
         }
+        LAST_MEMBER_OBJ_NAME = ""
+        LAST_MEMBER_FIELD = ""
         return false
     }
     false
