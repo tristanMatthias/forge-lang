@@ -626,6 +626,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             mut body_parser = parser_new_with_source(body_tokens, body_src)
             body_block = body_parser.parse_block()
             CG_ACTIVE = true
+            mut first_tok_text = ""
+            if body_tokens.length > 0 { first_tok_text = body_tokens[0].text }
+            eprintln("    body: " + string(body_block.statements.length) + " stmts, tokens=" + string(body_tokens.length) + " first='" + first_tok_text + "'")
             cg.emit_block(body_block)
         }
 

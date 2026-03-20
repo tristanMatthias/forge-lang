@@ -187,13 +187,17 @@ impl<'ctx> Codegen<'ctx> {
                     let after_bb = self.builder.get_insert_block();
                     last_val_bb = after_bb;
                     // If the builder moved to a different block (nested if-else),
-                    // the value might not dominate the current block. Discard it.
-                    if let (Some(_val), Some(before), Some(after)) = (&last_val, before_bb, after_bb) {
+                    // the value might not dominate the current block. Replace with default.
+                    if let (Some(val), Some(before), Some(after)) = (&last_val, before_bb, after_bb) {
                         if before != after {
-                            // The expression created new basic blocks (nested if/match/etc).
-                            // The value was likely produced in a branch that doesn't
-                            // dominate the merge. Discard to avoid phi domination errors.
-                            last_val = None;
+                            let default_val: BasicValueEnum<'ctx> = match val.get_type() {
+                                BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                                BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                                BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                                BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                                _ => self.context.i64_type().const_zero().into(),
+                            };
+                            last_val = Some(default_val);
                         }
                     }
                 }

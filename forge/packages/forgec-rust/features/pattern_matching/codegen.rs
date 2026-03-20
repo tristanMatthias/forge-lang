@@ -226,10 +226,30 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.position_at_end(arm_bb);
             self.push_scope();
             self.bind_pattern_vars(&arm.pattern, &subject_val, &subject_type);
+            let before_arm_bb = self.builder.get_insert_block();
             let arm_val = self.compile_expr(&arm.body);
             self.pop_scope();
 
             let arm_end_bb = self.builder.get_insert_block().unwrap();
+            // If the arm body created new blocks (nested if/match), the value
+            // might not dominate arm_end_bb. Replace with a safe default.
+            let arm_val = if let (Some(val), Some(before)) = (&arm_val, before_arm_bb) {
+                if before != arm_end_bb {
+                    // Value from nested block — replace with default of same type
+                    let default_val: BasicValueEnum<'ctx> = match val.get_type() {
+                        BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                        BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                        BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                        BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                        _ => self.context.i64_type().const_zero().into(),
+                    };
+                    Some(default_val)
+                } else {
+                    arm_val
+                }
+            } else {
+                arm_val
+            };
             if arm_end_bb.get_terminator().is_none() {
                 if let Some(val) = arm_val {
                     if result_type.is_none() {
