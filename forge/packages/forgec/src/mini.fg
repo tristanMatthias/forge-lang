@@ -1,13 +1,12 @@
 // ─── Mini Forge Compiler ──────────────────────────────────────────
-// Fully self-contained. NO imports except @std.
-// Lex → Parse → Emit LLVM IR as text → llc → cc
+// Self-contained single-file compiler. Emits LLVM IR as text.
+// Lex → Parse → Emit IR → llc → cc
 //
-// Bootstrap constraints:
-// - No semicolons (Forge doesn't use them)
-// - No if-as-expression for complex types
-// - Avoid matching on large enums (>90 variants)
-// - Keep functions small to avoid stack overflow
-// - Use token text/kind_id, not TokenKind variant matching
+// Architecture:
+// - Own lexer (token kind as int, text as string)
+// - Direct IR emission during parsing (no AST)
+// - Type tracking via globals (LAST_IS_STR, LAST_STRUCT_TYPE, etc.)
+// - String constants collected in STR_DECLS, appended after functions
 
 use @std.process
 use @std.fs
@@ -33,10 +32,6 @@ fn lex_peek() -> string {
     lex_char_at(LEX_POS)
 }
 
-fn lex_inc_line() {
-    LEX_LINE = LEX_LINE + 1
-}
-
 fn lex_advance() -> string {
     if LEX_POS >= LEX_SRC.length { return "" }
     let ch = lex_char_at(LEX_POS)
@@ -60,32 +55,8 @@ fn lex_is_alnum(ch: string) -> bool {
     lex_is_digit(ch)
 }
 
-fn is_space(ch: string) -> bool {
-    if ch == " " { return true }
-    if ch == "\t" { return true }
-    if ch == "\r" { return true }
-    false
-}
-
-fn lex_is_ws(c: string) -> bool {
-    if c == " " { return true }
-    if c == "\t" { return true }
-    if c == "\r" { return true }
-    false
-}
-
 fn is_quote(c: string) -> bool {
     c == "\""
-}
-
-fn write_large_file(path: string, content: string) {
-    // Call C helper directly — forge_write_file has ABI issues with 500K+ strings
-    // The declaration is in the IR output
-    fs.write(path, content)
-}
-
-fn emit_merge(label: string, then_t: int, else_t: int) {
-    ir_raw(label + ":")
 }
 
 fn ir_block_terminated() -> int {
@@ -112,54 +83,6 @@ fn ir_block_terminated() -> int {
     0
 }
 
-fn check_both_terminated(a: int, b: int) -> int {
-    if a == 1 {
-        if b == 1 {
-            return 1
-        }
-    }
-    0
-}
-
-fn infer_struct_from_fn(fn_name: string) -> string {
-    // Only infer struct type if LAST_WAS_FIELD_ACCESS is 0
-    // Since globals at depth are unreliable, use a heuristic:
-    // Check if fn return type is a struct AND LAST_IS_STR is 0
-    if LAST_IS_STR == 1 { return "" }
-    if LAST_WAS_FIELD_ACCESS == 1 { return "" }
-    let fn_ret = find_fn_ret(fn_name)
-    if fn_ret.length > 1 {
-        if fn_ret.substring(0, 1) == "%" {
-            if fn_ret != "%ForgeString" {
-                return fn_ret.substring(1, fn_ret.length)
-            }
-        }
-    }
-    ""
-}
-
-fn ir_ends_with_extractvalue() -> bool {
-    // Check if the last emitted IR line was an extractvalue
-    let len = IR.length
-    if len < 15 { return false }
-    // Scan backwards for last newline
-    mut i = len - 2
-    while i > 0 {
-        if IR.substring(i, i + 1) == "\n" {
-            let line = IR.substring(i + 1, len - 1)
-            if line.contains("extractvalue") { return true }
-            return false
-        }
-        i = i - 1
-    }
-    false
-}
-
-fn check_let_struct(s: string) -> string {
-    if LAST_IS_STR == 1 { return "" }
-    s
-}
-
 fn set_field_type(fty: string) {
     LAST_IS_STR = 0
     LAST_STRUCT_TYPE = ""
@@ -178,38 +101,6 @@ fn set_field_type(fty: string) {
     }
 }
 
-fn fix_empty_blocks(ir: string) -> string {
-    // Scan for labels followed immediately by another label (no instructions between)
-    // Insert "unreachable" between them
-    mut result = ""
-    mut i = 0
-    let len = ir.length
-    mut line_start = 0
-    mut prev_was_label = false
-    while i < len {
-        let ch = ir.substring(i, i + 1)
-        if ch == "\n" {
-            let line = ir.substring(line_start, i)
-            // Check if line is a label (ends with ":")
-            let is_label = line.length > 0 && line.substring(line.length - 1, line.length) == ":"
-            // If previous was a label and this is also a label, insert unreachable
-            if prev_was_label && is_label {
-                result = result + "  unreachable\n"
-            }
-            result = result + line + "\n"
-            prev_was_label = is_label
-            line_start = i + 1
-        }
-        i = i + 1
-    }
-    // Handle last line
-    if line_start < len {
-        let line = ir.substring(line_start, len)
-        result = result + line
-    }
-    result
-}
-
 fn is_ann_list(ann: string) -> bool {
     ann == "List"
 }
@@ -226,14 +117,6 @@ fn byte_at_pos(pos: int) -> int {
     // Get raw byte value at position (avoids string comparison issues)
     // 34 = double quote, 10 = newline
     LEX_SRC.byte_at(pos)
-}
-
-fn try_lex_string(ch: string, line: int) -> Tok {
-    if is_quote(ch) {
-        let s = lex_read_string()
-        return Tok { kind: 3, text: s, line: line }
-    }
-    Tok { kind: -1, text: "", line: line }
 }
 
 fn is_slash(c: string) -> bool {
@@ -258,15 +141,6 @@ fn not_at_paren() -> bool {
 
 fn lex_char_at(pos: int) -> string {
     LEX_SRC.substring(pos, pos + 1)
-}
-
-fn lex_is_space_at(pos: int) -> bool {
-    if pos >= LEX_SRC.length { return false }
-    let c = LEX_SRC.substring(pos, pos + 1)
-    if c == " " { return true }
-    if c == "\t" { return true }
-    if c == "\r" { return true }
-    false
 }
 
 fn lex_skip_whitespace() {
@@ -295,10 +169,6 @@ fn lex_skip_whitespace() {
             return
         }
     }
-}
-
-fn lex_skip_comments() {
-    // Skip // comments (not in simplified version)
 }
 
 fn lex_read_string() -> string {
@@ -404,20 +274,13 @@ fn tokenize(source: string) -> List<Tok> {
 // ═══════════════════════════════════════════════════════════════════
 // PARSER — builds simple AST as encoded strings
 // ═══════════════════════════════════════════════════════════════════
-// Instead of enum AST (bootstrap can't match on them correctly),
-// we encode the AST as strings that the codegen directly processes.
-// This avoids ALL bootstrap enum bugs.
 //
-// Encoding:
-//   "INT:<value>"
-//   "STR:<value>"
 //   "BOOL:<0|1>"
 //   "IDENT:<name>"
 //   "BINOP:<op>"  (followed by two sub-expressions on a stack)
 //   "CALL:<name>:<nargs>"
 //   etc.
 //
-// Actually, let's use a simpler approach: just emit IR directly
 // during parsing (but as TEXT, not LLVM API calls). This avoids
 // needing an AST at all.
 
@@ -437,7 +300,6 @@ mut STR_DECLS: string = ""
 mut VAR_NAMES: List<string> = []
 mut VAR_REGS: List<string> = []
 mut VAR_TYPES: List<string> = [] // "i64", "%ForgeString", etc.
-mut VAR_SCOPE: int = 0
 
 // Struct type tracking
 // Flat representation: all fields from all structs in order
@@ -474,11 +336,9 @@ mut LAST_ENUM_TYPE: string = ""
 mut LAST_IS_LIST: int = 0
 mut LAST_LIST_ELEM_TYPE: string = "i64"  // element LLVM type for last list expr
 // For struct field assignment: track the object being accessed
-mut LAST_WAS_FIELD_ACCESS: int = 0     // 1 if last expr was struct field extraction
 mut LAST_MEMBER_OBJ_NAME: string = ""  // variable name of the struct object
 mut LAST_MEMBER_FIELD: string = ""     // field name that was accessed
 mut LAST_MEMBER_OBJ_REG: string = ""   // the loaded struct value register
-mut LAST_CALL_RET_TYPE: string = ""    // return type of last function call
 // Per-variable list element type: "" for non-lists
 mut VAR_LIST_ELEM_TYPE: List<string> = []
 
@@ -498,10 +358,6 @@ mut LAST_EXPR_VAL: string = "0"
 mut LAST_IDENT_NAME: string = ""
 mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
 mut BLOCK_TERMINATED: int = 0
-
-fn set_terminated() {
-    BLOCK_TERMINATED = 1
-}
 
 fn mark_if_terminated(terminated: bool) {
     if terminated {
@@ -547,13 +403,6 @@ fn struct_field_count(struct_idx: int) -> int {
 
 fn struct_llvm_type(name: string) -> string {
     "%" + name
-}
-
-fn try_load_list(name: string, idx: int, vty: string) -> string {
-    if is_list_type(vty) {
-        return load_list_var(name, idx, vty)
-    }
-    ""
 }
 
 fn load_var_by_type(name: string, idx: int, vty: string) -> string {
@@ -638,14 +487,6 @@ fn set_type_from_llvm(ty: string) {
         }
     }
 }
-
-fn starts_with_list(s: string) -> bool {
-    if s.length < 5 { return false }
-    if s.substring(0, 5) == "list:" { return true }
-    false
-}
-
-// ─── Enum helpers ─────────────────────────────────
 
 fn find_enum(name: string) -> int {
     mut i = 0
@@ -1397,7 +1238,6 @@ fn postfix_loop(val_init: string, str_init: int, list_init: int, elem_init: stri
                         let r = new_reg()
                         ir_line(r + " = extractvalue %" + val_struct + " " + val + ", " + string(fi))
                         val = r
-                        LAST_WAS_FIELD_ACCESS = 1
                         set_field_type(fty)
                         val_is_str = LAST_IS_STR
                         val_struct = LAST_STRUCT_TYPE
@@ -1689,7 +1529,7 @@ fn parse_ident_expr() -> string {
 
     // Function reference — warn if common variable name
     if name == "i" || name == "pos" || name == "idx" {
-        // Variable not found — treating as function reference
+        
     }
     "@" + name
 }
@@ -2480,7 +2320,7 @@ fn scan_fn_sig() {
     while !check("{") && POS < TOKENS.length { advance() }
     skip_block()
     // Register
-    // scan registered
+    
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
@@ -2680,7 +2520,7 @@ fn compile(source: string) -> string {
         let tok: Tok = peek()
 
         if tok.text == "fn" {
-            // compile function
+            
             parse_fn_decl()
         } else if tok.text == "export" {
             advance()
