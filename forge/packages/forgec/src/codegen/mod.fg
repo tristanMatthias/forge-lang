@@ -171,7 +171,7 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         // the bootstrap's compiled `if bool { mut_assign }` is broken.
         // Use a helper function with early return instead.
         register_global_type(name, gty)
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        register_global_map(name, gty)
         i = i + 1
     }
 }
@@ -261,10 +261,21 @@ fn register_global_type(name: string, gty: ptr) {
     CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
 }
 
+// Bootstrap workaround: register map globals via early-return function
+// (same pattern as register_global_type — avoids `if bool { mut_assign }` bug)
+fn register_global_map(name: string, gty: ptr) {
+    if gty != CG_PTR {
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        return
+    }
+    CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(1)
+    CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
+}
+
 fn select_global_type(csv: string, n1: string, n2: string, n3: string, n4: string) -> ptr {
     if csv.index_of(n1) >= 0 { return CG_STR }
     if csv.index_of(n2) >= 0 { return CG_STR }
-    if csv.index_of(n3) >= 0 { return CG_STR }
+    if csv.index_of(n3) >= 0 { return CG_PTR }  // Map uses ptr, not ForgeString
     if csv.index_of(n4) >= 0 { return CG_STR }
     return CG_I64
 }
@@ -1104,6 +1115,12 @@ impl Codegen {
                     if ety != null { load_ty = ety }
                     CG_LAST_ENUM_TYPE = vet
                 }
+                // Check map type
+                CG_LAST_IS_MAP = 0
+                if self.is_map_var(name) {
+                    load_ty = CG_PTR
+                    CG_LAST_IS_MAP = 1
+                }
                 // Check struct type
                 CG_LAST_STRUCT_TYPE = ""
                 let struct_type_name = var_struct_type(name)
@@ -1151,6 +1168,12 @@ impl Codegen {
                 if g_vet != "" {
                     if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
                     CG_LAST_ENUM_TYPE = g_vet
+                }
+                // Check map type
+                CG_LAST_IS_MAP = 0
+                if self.is_map_var(name) {
+                    load_ty = CG_PTR
+                    CG_LAST_IS_MAP = 1
                 }
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {

@@ -129,6 +129,29 @@ impl Parser {
             self.advance()
             self.skip_newlines()
 
+            // Dot-variant comparison fast-path: x == .Variant or x != .Variant
+            // The LHS is an enum value (struct with tag at index 0); extract tag and compare as i64
+            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && self.check(TokenKind.Dot) {
+                self.advance() // consume .
+                let dv_name = self.expect_ident()
+                let dv_tag = match_enum_tag(dv_name)
+                mut cg = codegen_new()
+                mut lhs = result_llvm
+                    if !result_is_llvm { lhs = cg.emit_expr(result) }
+                // Extract tag byte (i8 at struct index 0), zext to i64
+                let etag = llvm.build_extract_value(CG_B, lhs, 0, "dv_tag")
+                let etag_ext = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "dv_tagext")
+                let dv_const = llvm.const_int(CG_I64, dv_tag, 0)
+                let dv_pred = if op_key == "Eq" { 32 } else { 33 }
+                let dv_cmp = llvm.build_icmp(CG_B, dv_pred, etag_ext, dv_const, "dv_cmp")
+                let dv_ext = llvm.build_zext(CG_B, dv_cmp, llvm.int64_type(CG_CTX), "dv_ext")
+                result_is_llvm = true
+                result_llvm = dv_ext
+                result_is_str = false
+                result = Expr.IntLit(0, self.current_span())
+                continue
+            }
+
             // Null comparison fast-path: x == null or x != null
             let rhs_key = self.kind_to_key(self.peek().kind)
             if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
