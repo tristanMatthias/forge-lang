@@ -9,7 +9,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, cg_reset_last_val, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use parser.expressions.LAST_IDENT_NAME
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
@@ -144,7 +144,9 @@ export fn parse_for(p: Parser) -> Statement? {
         WHILE_COND_BB = outer_cond
         WHILE_END_BB = outer_end
 
-        // Continue after loop
+        // Continue after loop — reset CG_HAS_LAST_VAL since loop body values
+        // don't dominate for.end (stale values would cause verification errors)
+        cg_reset_last_val()
         llvm.position_at_end(CG_B, end_bb)
     } else {
         // Not in codegen — just parse and discard

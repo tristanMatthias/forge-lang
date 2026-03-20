@@ -779,6 +779,12 @@ export fn codegen_cleanup() {
     cg_cleanup()
 }
 
+// Bootstrap workaround: direct assignment to CG_HAS_LAST_VAL inside
+// conditionals doesn't work. Use this function instead.
+export fn cg_reset_last_val() {
+    CG_HAS_LAST_VAL = 0
+}
+
 fn cg_init_ctx(name: string) {
     CG_CTX = llvm.context_create()
     CG_MOD = llvm.module_create(name, CG_CTX)

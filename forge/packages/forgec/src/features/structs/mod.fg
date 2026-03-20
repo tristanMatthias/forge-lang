@@ -163,8 +163,9 @@ fn resolve_field_llvm_type(type_name: string) -> ptr {
     if type_name == "float" { return CG_I64 }  // float is still i64-sized
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
-    // Check if it starts with "List<" — list is {ptr, i64}
-    if type_name.length > 5 {
+    // Check if it starts with "List" — list is {ptr, i64}
+    // Note: type_name may be just "List" (length 4) when generic args are stripped
+    if type_name.length >= 4 {
         if type_name[0] == "L" {
             if type_name[1] == "i" {
                 if type_name[2] == "s" {

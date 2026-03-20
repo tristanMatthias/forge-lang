@@ -1,16 +1,13 @@
 # Self-Hosting Progress
 
-**Status: 19% (7/37 files processed, 3 compiled in Stage 2)**
+**Status: 19% (7/37 files processed, 6 compiled in Stage 2)**
 
-> **ZERO LLVM verification errors** in self-hosted compiler IR!
-> `if bool { mut = val }` pattern NOW WORKS in compiled binary
-> Phase 1 scan: DONE (2s for all 37 files, 386 functions)
-> Phase 2: 7/37 files processed (3 compiled .o, 4 SKIP-IR errors)
-> Current blocker: expressions.fg (file 7) crashes during compilation
-> Current blocker: error.fg list global type detection fails because `check(TokenKind.Colon)` can't detect `:` for type annotations (Token text corrupted from list storage)
-> AST-based codegen blocked by Token text corruption in List<Token>
+> Phase 1 scan: DONE (2s for all 37 files, 391 functions)
+> Phase 2: 7/37 files processed (6 compiled .o, 1 SKIP-IR error)
+> Current blocker: expressions.fg (file 7) stack overflow during compilation (117KB file)
+> Current blocker: lexer.fg double-typed value in `||` short-circuit chain
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Pipeline
 
@@ -19,7 +16,7 @@ Bootstrap (Rust) ──→ Stage 1 binary ──→ Stage 2 binary ──→ Sta
        ✅                  ✅              IN PROGRESS           ❌
 ```
 
-## Stage 2 File Compilation (3/37)
+## Stage 2 File Compilation (6/37)
 
 Phase 1 (scan all 37 files): **DONE** (2s)
 Phase 2 (compile each file to .o):
@@ -29,11 +26,11 @@ Phase 2 (compile each file to .o):
 | 0 | core/token.fg | ✅ | |
 | 1 | core/ast.fg | ✅ | |
 | 2 | core/types.fg | ✅ | |
-| 3 | core/error.fg | ❌ CRASH | extractvalue on Severity enum in Diagnostic struct literal |
-| 4 | core/registry.fg | ⏳ blocked | waiting on #3 |
-| 5 | core/mod.fg | ⏳ blocked | waiting on #3 |
-| 6 | lexer/mod.fg | ⏳ blocked | LLVM DAGTypeLegalizer crash (type mismatch in IR) |
-| 7 | parser/expressions.fg | ⏳ blocked | |
+| 3 | core/error.fg | ✅ | |
+| 4 | core/registry.fg | ✅ | |
+| 5 | core/mod.fg | ✅ | |
+| 6 | lexer/mod.fg | ❌ SKIP | `double` in `||` short-circuit chain (is_alpha etc.) |
+| 7 | parser/expressions.fg | ❌ CRASH | Stack overflow — 117KB file too deep for recursive parser |
 | 8 | parser/mod.fg | ⏳ blocked | |
 | 9 | checker/env.fg | ⏳ blocked | |
 | 10 | checker/mod.fg | ⏳ blocked | |

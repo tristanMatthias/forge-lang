@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, cg_reset_last_val, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -1162,10 +1162,20 @@ impl Parser {
                     CG_LAST_IS_LIST = 0
                     CG_LAST_STRUCT_TYPE = ""
                     mut cg = codegen_new()
+                    CG_HAS_LAST_VAL = 0
                     if self.check(TokenKind.Colon) {
                         self.advance() // consume :
                         let expr_val = self.parse_expr()
-                        let val = cg.emit_expr(expr_val!)
+                        // Use CG_LAST_VAL if set (list literals, struct literals, calls
+                        // emit inline and set CG_LAST_VAL — re-emitting via emit_expr
+                        // can produce a corrupt value in the bootstrap compiler)
+                        mut val: ptr = null
+                        if CG_HAS_LAST_VAL == 1 {
+                            val = CG_LAST_VAL
+                            CG_HAS_LAST_VAL = 0
+                        } else {
+                            val = cg.emit_expr(expr_val!)
+                        }
                         llvm.value_array_set(vals, field_count, val)
                     } else {
                         // Shorthand: { field } means { field: field }
@@ -1525,6 +1535,10 @@ impl Parser {
             }
 
             llvm.position_at_end(CG_B, merge_bb)
+            // Reset CG_HAS_LAST_VAL — values from then/else blocks don't
+            // dominate the merge block, so using them for implicit return would
+            // cause LLVM verification errors
+            cg_reset_last_val()
             return Expr.IntLit(0, start)
         }
 
