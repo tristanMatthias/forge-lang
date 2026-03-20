@@ -1,0 +1,9 @@
+fn main() {
+    let args: List<string> = process.args()
+    println("argc: " + string(args.length))
+    if args.length > 1 {
+        println("arg1: " + args[1])
+    }
+    let src = fs.read("test_mini_args.fg")
+    println("src len: " + string(src.length))
+}

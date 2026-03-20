@@ -1,0 +1,7 @@
+fn main() {
+    let result = process.run("echo", "hello from subprocess")
+    println("result: " + result)
+    if result.contains("code\":0") {
+        println("success!")
+    }
+}

@@ -1058,6 +1058,19 @@ fn parse_postfix() -> string {
                 val = r
                 val_is_str = 0
                 LAST_IS_STR = 0
+            } else if field == "contains" && val_is_str == 1 && check("(") {
+                advance()
+                skip_nl()
+                let needle = parse_expr()
+                skip_nl()
+                expect(")")
+                let r = new_reg()
+                ir_line(r + " = call i8 @forge_string_contains(%ForgeString " + val + ", %ForgeString " + needle + ")")
+                let r2 = new_reg()
+                ir_line(r2 + " = zext i8 " + r + " to i64")
+                val = r2
+                val_is_str = 0
+                LAST_IS_STR = 0
             } else {
                 // Struct member access: obj.field → extractvalue
                 let struct_name = val_struct
@@ -1257,6 +1270,112 @@ fn parse_ident_expr() -> string {
             ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
         } else {
             ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
+        }
+        return "0"
+    }
+
+    // process.* and fs.* built-ins
+    if name == "process" && check(".") {
+        advance()
+        let method = advance().text
+        if method == "args" && check("(") {
+            advance()
+            expect(")")
+            // Build List<string> from argc/argv
+            let argc_r = new_reg()
+            ir_line(argc_r + " = call i64 @forge_mini_argc()")
+            // Allocate array
+            let sz = new_reg()
+            ir_line(sz + " = mul i64 " + argc_r + ", 16") // ForgeString = 16 bytes
+            let data = new_reg()
+            ir_line(data + " = call ptr @forge_alloc(i64 " + sz + ")")
+            // Fill array
+            let idx_a = new_reg()
+            ir_line(idx_a + " = alloca i64")
+            ir_line("store i64 0, ptr " + idx_a)
+            let loop_l = new_label("args_loop")
+            let done_l = new_label("args_done")
+            ir_line("br label %" + loop_l)
+            ir_raw(loop_l + ":")
+            let ci = new_reg()
+            ir_line(ci + " = load i64, ptr " + idx_a)
+            let cmp = new_reg()
+            ir_line(cmp + " = icmp slt i64 " + ci + ", " + argc_r)
+            ir_line("br i1 " + cmp + ", label %" + loop_l + "_body, label %" + done_l)
+            ir_raw(loop_l + "_body:")
+            let arg_s = new_reg()
+            ir_line(arg_s + " = call %ForgeString @forge_mini_argv(i64 " + ci + ")")
+            let ep = new_reg()
+            ir_line(ep + " = getelementptr %ForgeString, ptr " + data + ", i64 " + ci)
+            ir_line("store %ForgeString " + arg_s + ", ptr " + ep)
+            let ni = new_reg()
+            ir_line(ni + " = add i64 " + ci + ", 1")
+            ir_line("store i64 " + ni + ", ptr " + idx_a)
+            ir_line("br label %" + loop_l)
+            ir_raw(done_l + ":")
+            let ls1 = new_reg()
+            ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
+            let ls2 = new_reg()
+            ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + argc_r + ", 1")
+            LAST_IS_LIST = 1
+            LAST_LIST_ELEM_TYPE = "%ForgeString"
+            LAST_IS_STR = 0
+            return ls2
+        }
+        if method == "exit" && check("(") {
+            advance()
+            skip_nl()
+            let code = parse_expr()
+            skip_nl()
+            expect(")")
+            ir_line("call void @forge_exit(i64 " + code + ")")
+            ir_line("unreachable")
+            return "0"
+        }
+        if method == "run" && check("(") {
+            advance()
+            skip_nl()
+            let cmd = parse_expr()
+            expect(",")
+            skip_nl()
+            // Args is a list — for now just pass as JSON string
+            let args_val = parse_expr()
+            skip_nl()
+            expect(")")
+            // Convert list to JSON string for forge_mini_run
+            // For simplicity, just call with the cmd and args as ForgeStrings
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", %ForgeString " + args_val + ")")
+            LAST_IS_STR = 1
+            return r
+        }
+        return "0"
+    }
+    if name == "fs" && check(".") {
+        advance()
+        let method = advance().text
+        if method == "read" && check("(") {
+            advance()
+            skip_nl()
+            let path = parse_expr()
+            skip_nl()
+            expect(")")
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_read_file(%ForgeString " + path + ")")
+            LAST_IS_STR = 1
+            return r
+        }
+        if method == "write" && check("(") {
+            advance()
+            skip_nl()
+            let path = parse_expr()
+            expect(",")
+            skip_nl()
+            let content = parse_expr()
+            skip_nl()
+            expect(")")
+            ir_line("call i8 @forge_write_file(%ForgeString " + path + ", %ForgeString " + content + ")")
+            return "0"
         }
         return "0"
     }
@@ -1953,8 +2072,15 @@ fn parse_fn_decl() {
         i = i + 1
     }
 
-    ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
-    ir_raw("entry:")
+    // Special handling for main: accept (i32 argc, ptr argv) for arg access
+    if name == "main" {
+        ir_raw("define i32 @main(i32 %argc, ptr %argv) {")
+        ir_raw("entry:")
+        ir_line("call void @forge_mini_set_args(i32 %argc, ptr %argv)")
+    } else {
+        ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
+        ir_raw("entry:")
+    }
 
     // Reset registers and scope (keep globals)
     REG_N = 0
@@ -2002,9 +2128,11 @@ fn parse_fn_decl() {
     }
     expect("}")
 
-    // Implicit return — use last expression value
+    // Implicit return
     if !terminated {
-        if ret_ty == "void" {
+        if name == "main" {
+            ir_line("ret i32 0")
+        } else if ret_ty == "void" {
             ir_line("ret void")
         } else {
             ir_line("ret " + ret_ty + " " + LAST_EXPR_VAL)
@@ -2216,6 +2344,15 @@ fn compile(source: string) -> string {
     ir_raw("declare ptr @forge_alloc(i64)")
     ir_raw("declare i32 @puts(ptr)")
     ir_raw("declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)")
+    // Mini compiler helpers
+    ir_raw("declare void @forge_mini_set_args(i32, ptr)")
+    ir_raw("declare i64 @forge_mini_argc()")
+    ir_raw("declare %ForgeString @forge_mini_argv(i64)")
+    ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, %ForgeString)")
+    ir_raw("declare void @forge_exit(i64)")
+    ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
+    ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
+    ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("")
 
     // Parse top-level

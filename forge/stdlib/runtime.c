@@ -1616,3 +1616,67 @@ ForgeString forge_query_like(ForgeString pattern) {
     free(buf);
     return result;
 }
+
+// ---- Mini compiler helpers ----
+// These support the self-hosted mini compiler directly.
+
+static int g_argc = 0;
+static char** g_argv = NULL;
+
+void forge_mini_set_args(int argc, char** argv) {
+    g_argc = argc;
+    g_argv = argv;
+}
+
+int64_t forge_mini_argc() {
+    return (int64_t)g_argc;
+}
+
+ForgeString forge_mini_argv(int64_t idx) {
+    if (idx < 0 || idx >= g_argc) return forge_string_new("", 0);
+    return forge_string_new(g_argv[idx], strlen(g_argv[idx]));
+}
+
+ForgeString forge_mini_run(ForgeString cmd, ForgeString args_json) {
+    // Simple: build command string and run with popen
+    char cmd_buf[4096];
+    int off = snprintf(cmd_buf, sizeof(cmd_buf), "%.*s", (int)cmd.len, cmd.ptr);
+    // Parse JSON array of args: ["a","b","c"]
+    const char* p = args_json.ptr;
+    int64_t plen = args_json.len;
+    int64_t i = 0;
+    while (i < plen) {
+        if (p[i] == '"') {
+            i++;
+            int start = i;
+            while (i < plen && p[i] != '"') {
+                if (p[i] == '\\') i++; // skip escape
+                i++;
+            }
+            off += snprintf(cmd_buf + off, sizeof(cmd_buf) - off, " %.*s", (int)(i - start), p + start);
+            i++; // skip closing "
+        } else {
+            i++;
+        }
+    }
+    FILE* fp = popen(cmd_buf, "r");
+    if (!fp) {
+        char err[] = "{\"stdout\":\"\",\"stderr\":\"popen failed\",\"code\":1}";
+        return forge_string_new(err, strlen(err));
+    }
+    char out[65536] = {0};
+    int total = 0;
+    while (total < (int)sizeof(out) - 1) {
+        int n = fread(out + total, 1, sizeof(out) - 1 - total, fp);
+        if (n <= 0) break;
+        total += n;
+    }
+    int code = pclose(fp);
+    int exit_code = WEXITSTATUS(code);
+    // Build JSON result
+    char result[131072];
+    int rlen = snprintf(result, sizeof(result), 
+        "{\"stdout\":\"%.*s\",\"stderr\":\"\",\"code\":%d}",
+        total, out, exit_code);
+    return forge_string_new(result, rlen);
+}
