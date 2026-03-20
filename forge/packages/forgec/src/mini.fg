@@ -78,6 +78,39 @@ fn is_quote(c: string) -> bool {
     c == "\""
 }
 
+fn write_large_file(path: string, content: string) {
+    // Write in small pieces to work around potential large-string issues
+    let len = content.length
+    fs.write(path, "")  // create/truncate file
+    mut pos = 0
+    while pos < len {
+        mut end = pos + 4000
+        if end > len { end = len }
+        let chunk = content.substring(pos, end)
+        let existing = fs.read(path)
+        fs.write(path, existing + chunk)
+        pos = pos + 4000
+    }
+}
+
+fn is_ann_list(ann: string) -> bool {
+    ann == "List"
+}
+
+fn read_last_is_str() -> int {
+    LAST_IS_STR
+}
+
+fn read_last_is_list() -> int {
+    LAST_IS_LIST
+}
+
+fn byte_at_pos(pos: int) -> int {
+    // Get raw byte value at position (avoids string comparison issues)
+    // 34 = double quote, 10 = newline
+    LEX_SRC.byte_at(pos)
+}
+
 fn try_lex_string(ch: string, line: int) -> Tok {
     if is_quote(ch) {
         let s = lex_read_string()
@@ -154,7 +187,7 @@ fn lex_skip_comments() {
 fn lex_read_string() -> string {
     lex_advance() // consume opening "
     mut result = ""
-    while LEX_POS < LEX_SRC.length && lex_peek() != "\"" {
+    while LEX_POS < LEX_SRC.length && byte_at_pos(LEX_POS) != 34 {
         let ch = lex_advance()
         if ch == "\\" && LEX_POS < LEX_SRC.length {
             let esc = lex_advance()
@@ -185,17 +218,16 @@ fn lex_next() -> Tok {
 
     let ch = lex_peek()
     let line = LEX_LINE
+    let ch_byte = byte_at_pos(LEX_POS)
 
-    // Newline
-    if ch == "\n" {
+    // Newline (byte 10)
+    if ch_byte == 10 {
         lex_advance()
         return Tok { kind: 4, text: "\n", line: line }
     }
-
-    // String literal — use helper to avoid if-depth bug
-    let str_tok = try_lex_string(ch, line)
-    if str_tok.kind == 3 {
-        return str_tok
+    if ch_byte == 34 {
+        let s = lex_read_string()
+        return Tok { kind: 3, text: s, line: line }
     }
 
     // Number
@@ -958,13 +990,19 @@ fn parse_unary() -> string {
         ir_line(r + " = sub i64 0, " + val)
         return r
     }
-    parse_postfix()
+    // Inline postfix to avoid extra call depth
+    mut val = parse_primary()
+    mut val_is_str = read_last_is_str()
+    mut val_is_list = read_last_is_list()
+    mut val_list_elem = LAST_LIST_ELEM_TYPE
+    mut val_struct = LAST_STRUCT_TYPE
+    postfix_loop(val, val_is_str, val_is_list, val_list_elem, val_struct)
 }
 
-fn parse_postfix() -> string {
-    mut val = parse_primary()
-    mut val_is_str = LAST_IS_STR
-    mut val_is_list = LAST_IS_LIST
+fn postfix_loop(mut val: string, mut val_is_str: int, mut val_is_list: int, mut val_list_elem: string, mut val_struct: string) -> string {
+    // Read type info from globals — use helper to ensure correct reading
+    mut val_is_str = read_last_is_str()
+    mut val_is_list = read_last_is_list()
     mut val_list_elem = LAST_LIST_ELEM_TYPE
     mut val_struct = LAST_STRUCT_TYPE
     while true {
@@ -1118,6 +1156,17 @@ fn parse_postfix() -> string {
                 expect(")")
                 let r = new_reg()
                 ir_line(r + " = call i64 @forge_string_index_of(%ForgeString " + val + ", %ForgeString " + needle + ")")
+                val = r
+                val_is_str = 0
+                LAST_IS_STR = 0
+            } else if field == "byte_at" && val_is_str == 1 && check("(") {
+                advance()
+                skip_nl()
+                let ba_idx = parse_expr()
+                skip_nl()
+                expect(")")
+                let r = new_reg()
+                ir_line(r + " = call i64 @forge_string_byte_at(%ForgeString " + val + ", i64 " + ba_idx + ")")
                 val = r
                 val_is_str = 0
                 LAST_IS_STR = 0
@@ -1474,20 +1523,46 @@ fn parse_primary() -> string {
     }
 
     // List literal: []
-    if tok.text == "[" {
+    if tok.text == "[" && tok.kind == 5 {
         advance()
         skip_nl()
+        // Collect elements
+        mut elems: List<string> = []
+        mut elem_type = "i64"
+        while !check("]") && not_at_end() {
+            LAST_IS_STR = 0
+            let e = parse_expr()
+            elems = elems.push(e)
+            if LAST_IS_STR == 1 { elem_type = "%ForgeString" }
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+        }
         expect("]")
-        // Empty list: { ptr alloc(0), i64 0 }
+        let count = elems.length
+        // Allocate array
+        let esize = new_reg()
+        ir_line(esize + " = ptrtoint ptr getelementptr (" + elem_type + ", ptr null, i32 1) to i64")
+        let total = new_reg()
+        ir_line(total + " = mul i64 " + esize + ", " + string(count))
         let data_r = new_reg()
-        ir_line(data_r + " = call ptr @forge_alloc(i64 0)")
+        ir_line(data_r + " = call ptr @forge_alloc(i64 " + total + ")")
+        // Store elements
+        mut ei = 0
+        while ei < count {
+            let ep = new_reg()
+            ir_line(ep + " = getelementptr " + elem_type + ", ptr " + data_r + ", i64 " + string(ei))
+            ir_line("store " + elem_type + " " + elems[ei] + ", ptr " + ep)
+            ei = ei + 1
+        }
+        // Build list struct
         let ls1 = new_reg()
         ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data_r + ", 0")
         let ls2 = new_reg()
-        ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 0, 1")
+        ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + string(count) + ", 1")
         LAST_IS_LIST = 1
         LAST_IS_STR = 0
-        LAST_LIST_ELEM_TYPE = "i64"
+        LAST_LIST_ELEM_TYPE = elem_type
         return ls2
     }
 
@@ -1594,7 +1669,7 @@ fn parse_let_stmt() -> bool {
         ir_line(alloca + " = alloca " + ety)
         ir_line("store " + ety + " " + val + ", ptr " + alloca)
         push_var(name, alloca, ety)
-    } else if ann_type == "List" {
+    } else if is_ann_list(ann_type) {
         ir_line(alloca + " = alloca { ptr, i64 }")
         ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
         mut elet = LAST_LIST_ELEM_TYPE
@@ -2046,6 +2121,8 @@ fn parse_fn_decl() {
     mut param_types: List<string> = []
     mut param_count = 0
     while !check(")") {
+        // Skip 'mut' keyword before param names
+        if check("mut") { advance() }
         let pname = advance().text
         expect(":")
         skip_nl()
@@ -2411,6 +2488,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("")
 
     // Parse top-level
@@ -2457,8 +2535,11 @@ fn compile(source: string) -> string {
         skip_nl()
     }
 
-    // Append string constants
-    IR + "\n" + STR_DECLS
+    // Append string constants and write
+    let final_ir = IR + "\n" + STR_DECLS
+    write_large_file("/tmp/mini_output.ll", final_ir)
+    eprintln("  [compile] wrote " + string(final_ir.length) + " chars")
+    final_ir
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2487,9 +2568,8 @@ fn main() {
     let ir_text = compile(source)
     eprintln("  IR: " + string(ir_text.length) + " chars")
 
-    // Write IR
+    // IR was written by compile() directly
     let ir_path = "/tmp/mini_output.ll"
-    fs.write(ir_path, ir_text)
 
     // Compile
     mut output = "a.out"
