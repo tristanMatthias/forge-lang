@@ -617,14 +617,18 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_FN_NULLABLE_RET_TY = null
         if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
-        // Re-lex and re-parse the body source text
+        // Re-lex and re-parse the body source text (CG_ACTIVE=false: pure AST, no inline emit)
         mut body_block = Block { statements: [], span: Span { line: 0, col: 0, start: 0, end: 0 } }
         if body_src != "" {
+            let prev_active = CG_ACTIVE
+            CG_ACTIVE = false  // Parse builds AST only, no LLVM emit
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
             mut body_parser = parser_new(body_tokens)
             body_block = body_parser.parse_block()
-            // No cg.emit_block — all code emitted inline during parsing
+            CG_ACTIVE = prev_active
+            // Emit the AST through the codegen path
+            cg.emit_block(body_block)
         }
 
         // Add implicit return only if the block doesn't already terminate

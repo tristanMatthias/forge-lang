@@ -22,8 +22,16 @@ use @std.llvm
 type IfExprData = {
     condition: Expr,
     then_block: Block,
-    else_block: Block?,
+    else_block: Block,
+    has_else: bool,
     span: Span,
+}
+
+mut IF_EXPR_DATA: Map<string, IfExprData> = {}
+
+fn get_if_data(node_id: int) -> IfExprData? {
+    let key = "${node_id}"
+    if IF_EXPR_DATA.has(key) { IF_EXPR_DATA[key] } else { null }
 }
 
 // ─── Current If Data ─────────────────────────────
@@ -45,6 +53,13 @@ export fn make_if_expr(condition: Expr, then_block: Block, else_block: Block?, s
 }
 
 export fn make_if_with_else(condition: Expr, then_block: Block, else_block: Block, span: Span) -> Expr {
+    // Store for codegen path (emit_if_expr reads these globals)
+    CURRENT_IF_COND = condition
+    CURRENT_IF_THEN = then_block
+    CURRENT_IF_HAS_ELSE = true
+    CURRENT_IF_ELSE = else_block
+    PENDING_IF = true
+
     if CG_ACTIVE {
         let cond_val = emit_if_cond(condition)
         let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
@@ -66,10 +81,19 @@ export fn make_if_with_else(condition: Expr, then_block: Block, else_block: Bloc
 
         llvm.position_at_end(CG_B, merge_bb)
     }
-    Expr.IntLit(0, span)
+
+    let id = next_node_id()
+    IF_EXPR_DATA["${id}"] = IfExprData { condition, then_block, else_block: else_block, has_else: true, span }
+    feature_expr("if_else", "if_expr", id, span)
 }
 
 export fn make_if_no_else(condition: Expr, then_block: Block, span: Span) -> Expr {
+    // Store for codegen path
+    CURRENT_IF_COND = condition
+    CURRENT_IF_THEN = then_block
+    CURRENT_IF_HAS_ELSE = false
+    PENDING_IF = true
+
     if CG_ACTIVE {
         let cond_val = emit_if_cond(condition)
         let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
@@ -86,7 +110,11 @@ export fn make_if_no_else(condition: Expr, then_block: Block, span: Span) -> Exp
 
         llvm.position_at_end(CG_B, merge_bb)
     }
-    Expr.IntLit(0, span)
+
+    let empty_block = Block { statements: [], span }
+    let id = next_node_id()
+    IF_EXPR_DATA["${id}"] = IfExprData { condition, then_block, else_block: empty_block, has_else: false, span }
+    feature_expr("if_else", "if_expr", id, span)
 }
 
 // ─── Inline Emit Helpers ────────────────────────
@@ -134,31 +162,40 @@ fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {
 // ─── Emit ───────────────────────────────────────
 
 fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
-    eprintln("[emit_if] called! node_id=${node.node_id}")
-    // Use globals set by make_if_expr (data from most recent parse)
-    let cond_val = cg.emit_expr(CURRENT_IF_COND)
-    eprintln("[emit_if] cond emitted")
+    eprintln("          [emit_if] node_id=" + string(node.node_id))
+    let d = get_if_data(node.node_id)
+    if d == null {
+        eprintln("          [emit_if] NO DATA FOUND")
+        return llvm.const_int(CG_I64, 0, 0)
+    }
+    let data = d!
 
-    // Truncate to i1 (condition might be i1 from icmp, or i8, or i64)
+    let cond_val = cg.emit_expr(data.condition)
+
+    // Truncate to i1
     let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
 
     let current_fn = cg.current_fn
     if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
 
-    let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "then")
-    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ifcont")
+    let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
+    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
 
-    if CURRENT_IF_HAS_ELSE {
-        let else_bb = llvm.append_basic_block(CG_CTX, current_fn!, "else")
+    if data.has_else {
+        let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
         llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
 
         llvm.position_at_end(CG_B, then_bb)
-        cg.emit_block(CURRENT_IF_THEN)
-        llvm.build_br(CG_B, merge_bb)
+        cg.emit_block(data.then_block)
+        if !llvm.block_has_terminator(CG_B) {
+            llvm.build_br(CG_B, merge_bb)
+        }
 
         llvm.position_at_end(CG_B, else_bb)
-        cg.emit_block(CURRENT_IF_ELSE)
-        llvm.build_br(CG_B, merge_bb)
+        cg.emit_block(data.else_block)
+        if !llvm.block_has_terminator(CG_B) {
+            llvm.build_br(CG_B, merge_bb)
+        }
 
         llvm.position_at_end(CG_B, merge_bb)
         llvm.const_int(CG_I64, 0, 0)
@@ -166,8 +203,10 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
         llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
 
         llvm.position_at_end(CG_B, then_bb)
-        cg.emit_block(CURRENT_IF_THEN)
-        llvm.build_br(CG_B, merge_bb)
+        cg.emit_block(data.then_block)
+        if !llvm.block_has_terminator(CG_B) {
+            llvm.build_br(CG_B, merge_bb)
+        }
 
         llvm.position_at_end(CG_B, merge_bb)
         llvm.const_int(CG_I64, 0, 0)

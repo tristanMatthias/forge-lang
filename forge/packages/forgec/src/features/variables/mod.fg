@@ -207,6 +207,15 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     PARSE_END_POS = p.pos
     let id = next_node_id()
+    // Store in side table for codegen path (emit_var)
+    VAR_DECLS["${id}"] = VarDeclData {
+        var_kind: kind,
+        name: var_name,
+        type_ann: type_ann,
+        value: value!,
+        exported: exported,
+        span: start,
+    }
     feature_stmt("variables", "let_decl", id, start)
 }
 
@@ -236,8 +245,75 @@ fn top_level_var(tc: TypeChecker, node: NodeRef) {
 // ─── Emit ───────────────────────────────────────
 
 fn emit_var(cg: Codegen, node: NodeRef) {
-    // No-op: variables are emitted inline during parsing
-    return
+    let d = get_var_decl(node.node_id)
+    if d == null { return }
+    let data = d!
+    let var_name = data.name
+
+    // Emit the value expression
+    let val = cg.emit_expr(data.value)
+
+    // Detect type from the emitted value's type flags
+    let is_str = CG_LAST_IS_STR == 1
+    let is_map = CG_LAST_IS_MAP == 1
+    mut var_type = Type.Int
+    if is_map {
+        var_type = Type.MapType(Type.String, Type.Int)
+    } else if is_str {
+        var_type = Type.String
+    }
+
+    // Define the variable (alloca + store + register)
+    cg.define_var(var_name, var_type, val)
+
+    // Register map variable
+    if is_map {
+        CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
+    }
+    // Register list variable
+    if CG_LAST_IS_LIST == 1 {
+        CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${var_name},"
+        if CG_LAST_LIST_ELEM_IS_STR == 1 {
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${var_name},"
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:string,"
+        } else {
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:int,"
+        }
+    }
+    // Register struct variable
+    if CG_LAST_STRUCT_TYPE != "" {
+        CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(var_name)
+        CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+        mut field_info = ""
+        mut sri = CG_STRUCT_FIELDS.length - 1
+        while sri >= 0 {
+            if CG_STRUCT_NAMES[sri] == CG_LAST_STRUCT_TYPE {
+                field_info = CG_STRUCT_FIELDS[sri]
+                break
+            }
+            sri = sri - 1
+        }
+        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
+    }
+    // Register enum variable
+    if CG_LAST_ENUM_TYPE != "" {
+        CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + ",${var_name}:${CG_LAST_ENUM_TYPE},"
+    }
+    // Register nullable variable
+    if CG_LAST_IS_NULLABLE == 1 {
+        CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(var_name)
+        mut inner = "int"
+        if is_str { inner = "string" }
+        CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner)
+    }
+    // Reset type flags
+    CG_LAST_IS_STR = 0
+    CG_LAST_IS_MAP = 0
+    CG_LAST_IS_LIST = 0
+    CG_LAST_IS_NULLABLE = 0
+    CG_LAST_STRUCT_TYPE = ""
+    CG_LAST_ENUM_TYPE = ""
+    CG_HAS_LAST_VAL = 0
 }
 
 // ─── Registration ───────────────────────────────

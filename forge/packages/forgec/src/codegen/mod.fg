@@ -811,13 +811,23 @@ impl Codegen {
     fn emit_statement(self, stmt: Statement) {
         match stmt {
             .Expr(expr) -> {
+                eprintln("        [stmt] Expr")
                 let val = self.emit_expr(expr)
                 CG_LAST_VAL = val
                 CG_HAS_LAST_VAL = 1
             }
-            .Assign(target, value, span) -> { self.emit_assign(target, value) }
-            .Return(value, span) -> { self.emit_return(value) }
-            .Feature(fe) -> { self.dispatch_stmt(fe) }
+            .Assign(target, value, span) -> {
+                eprintln("        [stmt] Assign")
+                self.emit_assign(target, value)
+            }
+            .Return(value, span) -> {
+                eprintln("        [stmt] Return")
+                self.emit_return(value)
+            }
+            .Feature(fe) -> {
+                eprintln("        [stmt] Feature: " + fe.data.feature)
+                self.dispatch_stmt(fe)
+            }
         }
     }
 
@@ -882,6 +892,7 @@ impl Codegen {
                 return self.dispatch_expr(fe)
             }
         }
+        eprintln("          [emit_expr] UNMATCHED expr variant — fell through match")
         llvm.const_int(CG_I64, 0, 0)
     }
 
@@ -1349,19 +1360,15 @@ impl Codegen {
     }
 
     fn emit_block(self, block: Block) -> ptr {
+        eprintln("      [emit_block] " + string(block.statements.length) + " stmts")
         mut last = llvm.const_int(CG_I64, 0, 0)
         for stmt in block.statements {
-            match stmt {
-                .Expr(expr) -> {
-                    last = self.emit_expr(expr)
-                }
-                .Assign(t, v, s) -> {}
-                .Return(v, s) -> {
-                    self.emit_return(v)
-                }
-                .Feature(fe) -> {
-                    self.dispatch_stmt(fe)
-                }
+            // Skip if current block already has a terminator (after return/break)
+            if llvm.block_has_terminator(CG_B) { break }
+            self.emit_statement(stmt)
+            // Track last expression value for implicit returns
+            if CG_HAS_LAST_VAL > 0 {
+                last = CG_LAST_VAL
             }
         }
         last
