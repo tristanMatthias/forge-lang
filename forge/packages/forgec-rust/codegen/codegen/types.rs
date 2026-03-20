@@ -467,9 +467,9 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" => Type::String,
+                            "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" | "substring" => Type::String,
                             "contains" | "starts_with" | "ends_with" => Type::Bool,
-                            "length" | "parse_int" | "byte_at" => Type::Int,
+                            "length" | "parse_int" | "byte_at" | "index_of" | "indexOf" => Type::Int,
                             "split" | "chars" => Type::List(Box::new(Type::String)),
                             "bytes" => Type::List(Box::new(Type::Int)),
                             _ => Type::Unknown,
@@ -643,9 +643,9 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" => Type::String,
+                "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" | "substring" => Type::String,
                 "contains" | "starts_with" | "ends_with" => Type::Bool,
-                "length" | "parse_int" | "byte_at" => Type::Int,
+                "length" | "parse_int" | "byte_at" | "index_of" | "indexOf" => Type::Int,
                 "split" | "chars" => Type::List(Box::new(Type::String)),
                 "bytes" => Type::List(Box::new(Type::Int)),
                 _ => Type::Unknown,

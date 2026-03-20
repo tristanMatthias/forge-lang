@@ -96,6 +96,21 @@ fn lex_skip_whitespace() {
             lex_advance()
         } else if c == "\r" {
             lex_advance()
+        } else if c == "/" {
+            // Check for // comment
+            if LEX_POS + 1 < LEX_SRC.length {
+                if lex_char_at(LEX_POS + 1) == "/" {
+                    // Skip until newline
+                    while LEX_POS < LEX_SRC.length {
+                        if lex_peek() == "\n" { return }
+                        lex_advance()
+                    }
+                } else {
+                    return
+                }
+            } else {
+                return
+            }
         } else {
             return
         }
@@ -292,6 +307,7 @@ mut LAST_LIST_ELEM_TYPE: string = "i64"  // element LLVM type for last list expr
 mut LAST_MEMBER_OBJ_NAME: string = ""  // variable name of the struct object
 mut LAST_MEMBER_FIELD: string = ""     // field name that was accessed
 mut LAST_MEMBER_OBJ_REG: string = ""   // the loaded struct value register
+mut LAST_CALL_RET_TYPE: string = ""    // return type of last function call
 // Per-variable list element type: "" for non-lists
 mut VAR_LIST_ELEM_TYPE: List<string> = []
 
@@ -360,6 +376,19 @@ fn struct_field_count(struct_idx: int) -> int {
 
 fn struct_llvm_type(name: string) -> string {
     "%" + name
+}
+
+fn set_type_from_llvm(ty: string) {
+    // Given an LLVM return type like "%Tok", set LAST_STRUCT_TYPE/LAST_ENUM_TYPE
+    if ty.length > 1 {
+        if ty.substring(0, 1) == "%" {
+            if ty != "%ForgeString" {
+                let tname = ty.substring(1, ty.length)
+                LAST_STRUCT_TYPE = tname
+                LAST_ENUM_TYPE = tname
+            }
+        }
+    }
 }
 
 fn starts_with_list(s: string) -> bool {
@@ -865,18 +894,33 @@ fn parse_postfix() -> string {
                 arg_str = arg_str + arg_types[i] + " " + args[i]
                 i = i + 1
             }
-            let r = new_reg()
-            ir_line(r + " = call " + call_ret + " " + val + "(" + arg_str + ")")
             LAST_ENUM_TYPE = ""
             LAST_STRUCT_TYPE = ""
-            if call_ret == "%ForgeString" {
-                LAST_IS_STR = 1
-                val_is_str = 1
-            } else {
+            if call_ret == "void" {
+                ir_line("call void " + val + "(" + arg_str + ")")
+                val = "0"
                 LAST_IS_STR = 0
                 val_is_str = 0
+            } else {
+                let r = new_reg()
+                ir_line(r + " = call " + call_ret + " " + val + "(" + arg_str + ")")
+                if call_ret == "%ForgeString" {
+                    LAST_IS_STR = 1
+                    val_is_str = 1
+                } else if call_ret == "{ ptr, i64 }" {
+                    LAST_IS_LIST = 1
+                    val_is_str = 0
+                    LAST_IS_STR = 0
+                } else {
+                    LAST_IS_STR = 0
+                    val_is_str = 0
+                }
+                val = r
+                val_struct = ""
+                // Set struct/enum type from known return types
+                set_type_from_llvm(call_ret)
+                val_struct = LAST_STRUCT_TYPE
             }
-            val = r
         } else if check(".") {
             advance()
             let field = advance().text
@@ -1281,11 +1325,12 @@ fn parse_stmt() -> bool {
     if tok.text == "let" || tok.text == "mut" {
         advance()
         let name = advance().text // identifier
-        // Optional type annotation
+        // Optional type annotation — capture it
+        mut ann_type = ""
         if check(":") {
             advance()
             skip_nl()
-            // Skip type — we infer from value
+            ann_type = peek().text
             parse_type_ann()
         }
         expect("=")
@@ -1296,7 +1341,24 @@ fn parse_stmt() -> bool {
         LAST_ENUM_TYPE = ""
         let val = parse_expr()
         let alloca = new_reg()
-        let saved_struct = LAST_STRUCT_TYPE
+        // Determine struct type from: annotation, LAST_STRUCT_TYPE, or function return type
+        mut saved_struct = LAST_STRUCT_TYPE
+        if ann_type != "" {
+            if find_struct(ann_type) >= 0 { saved_struct = ann_type }
+            if find_enum(ann_type) >= 0 { saved_struct = ann_type }
+        }
+        // If still empty, check function return type directly
+        if saved_struct == "" {
+            let fn_ret = find_fn_ret(LAST_IDENT_NAME)
+            if fn_ret.length > 1 {
+                let fr_first = fn_ret.substring(0, 1)
+                if fr_first == "%" {
+                    if fn_ret != "%ForgeString" {
+                        saved_struct = fn_ret.substring(1, fn_ret.length)
+                    }
+                }
+            }
+        }
         // Debug removed
         if saved_struct != "" {
             let sty = struct_llvm_type(saved_struct)
@@ -1754,6 +1816,9 @@ fn parse_fn_decl() {
         if rt == "int" { ret_ty = "i64" }
         if rt == "bool" { ret_ty = "i64" }
         if rt == "string" { ret_ty = "%ForgeString" }
+        if find_struct(rt) >= 0 { ret_ty = "%" + rt }
+        if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+        if rt == "List" { ret_ty = "{ ptr, i64 }" }
         // Skip generic params
         if check("<") {
             advance()
@@ -1790,12 +1855,30 @@ fn parse_fn_decl() {
     ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
     ir_raw("entry:")
 
-    // Reset registers and scope
+    // Reset registers and scope (keep globals)
     REG_N = 0
     LAST_EXPR_VAL = "0"
-    VAR_NAMES = []
-    VAR_REGS = []
-    VAR_TYPES = []
+    // Truncate var lists to just globals
+    let gc = GLOBAL_NAMES.length
+    mut gn: List<string> = []
+    mut gr: List<string> = []
+    mut gt: List<string> = []
+    mut gs: List<string> = []
+    mut gle: List<string> = []
+    mut gi2 = 0
+    while gi2 < gc {
+        gn = gn.push(VAR_NAMES[gi2])
+        gr = gr.push(VAR_REGS[gi2])
+        gt = gt.push(VAR_TYPES[gi2])
+        gs = gs.push(VAR_STRUCT_TYPE[gi2])
+        gle = gle.push(VAR_LIST_ELEM_TYPE[gi2])
+        gi2 = gi2 + 1
+    }
+    VAR_NAMES = gn
+    VAR_REGS = gr
+    VAR_TYPES = gt
+    VAR_STRUCT_TYPE = gs
+    VAR_LIST_ELEM_TYPE = gle
 
     // Create param allocas
     i = 0
@@ -1843,6 +1926,43 @@ fn skip_block() {
     }
 }
 
+// Global variable tracking for pass 1
+mut GLOBAL_NAMES: List<string> = []
+mut GLOBAL_TYPES: List<string> = []  // LLVM types
+
+fn parse_global_decl() {
+    // mut NAME: TYPE = VALUE  or  let NAME: TYPE = VALUE
+    advance() // consume mut/let
+    let name = advance().text
+    mut gty = "i64"
+    if check(":") {
+        advance()
+        skip_nl()
+        let ty_name = peek().text
+        parse_type_ann()
+        gty = type_to_llvm(ty_name)
+        // Check for List<T>
+        if ty_name == "List" {
+            gty = "{ ptr, i64 }"
+        }
+    }
+    // Skip = and initial value (we just zero-init globals)
+    if check("=") {
+        advance()
+        skip_nl()
+        // Skip the value expression — consume until newline
+        mut depth = 0
+        while POS < TOKENS.length {
+            if check("\n") && depth == 0 { break }
+            if check("{") || check("[") || check("(") { depth = depth + 1 }
+            if check("}") || check("]") || check(")") { depth = depth - 1 }
+            advance()
+        }
+    }
+    GLOBAL_NAMES = GLOBAL_NAMES.push(name)
+    GLOBAL_TYPES = GLOBAL_TYPES.push(gty)
+}
+
 fn skip_to_newline() {
     while !check("\n") && POS < TOKENS.length { advance() }
 }
@@ -1866,6 +1986,8 @@ fn compile(source: string) -> string {
     EVAR_FIELD_COUNTS = []
     EFIELD_NAMES = []
     EFIELD_TYPES = []
+    GLOBAL_NAMES = []
+    GLOBAL_TYPES = []
 
     // Pass 1: scan for type declarations only
     skip_nl()
@@ -1883,6 +2005,8 @@ fn compile(source: string) -> string {
                 advance() // skip name
                 while !check("{") && POS < TOKENS.length { advance() }
                 skip_block()
+            } else if check("mut") || check("let") {
+                parse_global_decl()
             } else {
                 skip_to_newline()
             }
@@ -1895,6 +2019,8 @@ fn compile(source: string) -> string {
             skip_block()
         } else if tok.text == "enum" {
             parse_enum_decl_top()
+        } else if tok.text == "mut" || tok.text == "let" {
+            parse_global_decl()
         } else if tok.text == "impl" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
@@ -1933,6 +2059,16 @@ fn compile(source: string) -> string {
         let ename = ENUM_NAMES[ei]
         ir_raw("%" + ename + " = type " + enum_llvm_type_str(ei))
         ei = ei + 1
+    }
+    // Emit global variable declarations
+    mut gi = 0
+    while gi < GLOBAL_NAMES.length {
+        let gname = GLOBAL_NAMES[gi]
+        let gty = GLOBAL_TYPES[gi]
+        ir_raw("@" + gname + " = global " + gty + " zeroinitializer")
+        // Register as variable (ptr = @name)
+        push_var(gname, "@" + gname, gty)
+        gi = gi + 1
     }
     ir_raw("")
     ir_raw("declare %ForgeString @forge_string_new(ptr, i64)")
