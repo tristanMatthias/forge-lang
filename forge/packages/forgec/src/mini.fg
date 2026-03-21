@@ -1938,10 +1938,6 @@ fn parse_let_stmt() -> bool {
         if find_struct(ann_generic) >= 0 { elet = "%" + ann_generic }
         if find_enum(ann_generic) >= 0 { elet = "%" + ann_generic }
         push_var_list(name, alloca, "list_" + elet, elet)
-    } else if LAST_IS_LIST == 1 {
-        ir_line(alloca + " = alloca { ptr, i64 }")
-        ir_line("store { ptr, i64 } " + val + ", ptr " + alloca)
-        push_var_list(name, alloca, "list_" + LAST_LIST_ELEM_TYPE, LAST_LIST_ELEM_TYPE)
     } else if LAST_IS_STR == 1 {
         ir_line(alloca + " = alloca %ForgeString")
         ir_line("store %ForgeString " + val + ", ptr " + alloca)
@@ -2943,7 +2939,7 @@ fn ast_parse_stmt() -> Stmt {
         skip_nl()
         let cond = ast_parse_expr()
         skip_nl()
-        let then_body = ast_parse_block()
+        let then_body: List<Stmt> = ast_parse_block()
         skip_nl()
         mut else_stmts: List<Stmt> = []
         if check("else") {
@@ -2965,7 +2961,7 @@ fn ast_parse_stmt() -> Stmt {
         skip_nl()
         let cond = ast_parse_expr()
         skip_nl()
-        let body = ast_parse_block()
+        let body: List<Stmt> = ast_parse_block()
         return stmt_while(cond, body)
     }
 
@@ -2977,7 +2973,7 @@ fn ast_parse_stmt() -> Stmt {
         skip_nl()
         let iterable = ast_parse_expr()
         skip_nl()
-        let body = ast_parse_block()
+        let body: List<Stmt> = ast_parse_block()
         return stmt_for(var_name, iterable, body)
     }
 
@@ -3397,11 +3393,11 @@ fn gen_stmt(s: Stmt) -> bool {
             ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
             // Then
             ir_raw(then_l + ":")
-            let then_ended = gen_block(s.body)
+            let then_ended = gen_stmts(s.body)
             if then_ended == 0 { ir_line("br label %" + merge_l) }
             // Else
             ir_raw(else_l + ":")
-            let else_ended = gen_block(s.else_body)
+            let else_ended = gen_stmts(s.else_body)
             if else_ended == 0 { ir_line("br label %" + merge_l) }
             // Merge
             ir_raw(merge_l + ":")
@@ -3424,7 +3420,7 @@ fn gen_stmt(s: Stmt) -> bool {
             ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
             ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
             ir_raw(body_l + ":")
-            let body_ended = gen_block(s.body)
+            let body_ended = gen_stmts(s.body)
             if body_ended == 0 { ir_line("br label %" + cond_l) }
             // Pop loop labels
             mut new_cond: List<string> = []
@@ -3474,6 +3470,10 @@ fn gen_stmt(s: Stmt) -> bool {
         }
     }
     false
+}
+
+fn gen_stmts(stmts: List<Stmt>) -> int {
+    gen_block(stmts)
 }
 
 fn gen_block(stmts: List<Stmt>) -> int {
@@ -3680,7 +3680,7 @@ fn compile(source: string) -> string {
 // ═══════════════════════════════════════════════════════════════════
 
 fn main() {
-    let args = process.args()
+    let args: List<string> = process.args()
 
     if args.length < 3 {
         eprintln("mini-forge v0.1 - minimal self-hosted compiler")
