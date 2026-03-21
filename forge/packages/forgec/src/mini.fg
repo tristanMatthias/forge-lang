@@ -313,7 +313,9 @@ fn set_field_type(fty: string) {
     if fty.length > 1 {
         if fty.substring(0, 1) == "%" {
             if fty != "%ForgeString" {
-                LAST_STRUCT_TYPE = fty.substring(1, fty.length)
+                let tname = fty.substring(1, fty.length)
+                LAST_STRUCT_TYPE = tname
+                LAST_ENUM_TYPE = tname
             }
         }
     }
@@ -2375,6 +2377,7 @@ fn parse_fn_decl() {
     skip_nl()
     mut param_names: List<string> = []
     mut param_types: List<string> = []
+    mut param_generics: List<string> = []
     mut param_count = 0
     while !check(")") {
         // Skip 'mut' keyword before param names
@@ -2383,11 +2386,27 @@ fn parse_fn_decl() {
         expect(":")
         skip_nl()
         let pty = peek().text
-        parse_type_ann()
+        advance()
+        // Capture generic param for List<T>
+        mut pty_generic = ""
+        if check("<") {
+            advance()
+            pty_generic = peek().text
+            mut ptd = 1
+            while ptd > 0 && POS < TOKENS.length {
+                if check("<") { ptd = ptd + 1 }
+                if check(">") { ptd = ptd - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
         param_names = param_names.push(pname)
+        param_generics = param_generics.push(pty_generic)
         mut llvm_pty = "i64"
         if pty == "string" { llvm_pty = "%ForgeString" }
-        if pty == "List" { llvm_pty = "{ ptr, i64 }" }
+        if pty == "List" {
+            llvm_pty = "{ ptr, i64 }"
+        }
         if find_struct(pty) >= 0 { llvm_pty = "%" + pty }
         if find_enum(pty) >= 0 { llvm_pty = "%" + pty }
         param_types = param_types.push(llvm_pty)
@@ -2486,9 +2505,15 @@ fn parse_fn_decl() {
     while i < param_count {
         let alloca = new_reg()
         let pty = param_types[i]
+        let pgen = param_generics[i]
         ir_line(alloca + " = alloca " + pty)
         ir_line("store " + pty + " %" + param_names[i] + ".arg, ptr " + alloca)
-        push_var(param_names[i], alloca, pty)
+        // For List<T> params, register with list_ELEMTYPE for proper indexing
+        mut var_ty = pty
+        if pty == "{ ptr, i64 }" && pgen != "" {
+            var_ty = "list_" + type_to_llvm(pgen)
+        }
+        push_var(param_names[i], alloca, var_ty)
         i = i + 1
     }
 
@@ -3002,14 +3027,18 @@ fn ast_parse_stmt() -> Stmt {
 // AST CODEGEN — walks Expr/Stmt trees and emits IR text
 // ═══════════════════════════════════════════════════════════════════
 
-fn gen_expr_child(parent: Expr, idx: int) -> string {
-    let child: Expr = parent.children[idx]
+// Access child Expr from a List<Expr>
+fn gen_child(children: List<Expr>, idx: int) -> string {
+    let child: Expr = children[idx]
     gen_expr(child)
 }
 
+fn gen_expr_child(parent: Expr, idx: int) -> string {
+    gen_child(parent.children, idx)
+}
+
 fn gen_expr_from(s: Stmt, idx: int) -> string {
-    let child: Expr = s.exprs[idx]
-    gen_expr(child)
+    gen_child(s.exprs, idx)
 }
 
 fn gen_expr(e: Expr) -> string {
