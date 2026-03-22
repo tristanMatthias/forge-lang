@@ -3821,6 +3821,64 @@ fn gen_stmt(s: Stmt) -> bool {
             ir_raw(end_l + ":")
             return false
         }
+        .For -> {
+            // for var_name in iterable { body }
+            let var_name = s.str_val
+            LAST_IS_LIST = 0
+            let iterable = gen_expr_from(s, 0)
+            let elem_ty = LAST_LIST_ELEM_TYPE
+            // Get length
+            let len_r = new_reg()
+            ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
+            let data_r = new_reg()
+            ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+            // Index variable
+            let idx_alloca = new_reg()
+            ir_line(idx_alloca + " = alloca i64")
+            ir_line("store i64 0, ptr " + idx_alloca)
+            // Loop element variable
+            let elem_alloca = new_reg()
+            ir_line(elem_alloca + " = alloca " + elem_ty)
+            push_var(var_name, elem_alloca, elem_ty)
+            let cond_l = new_label("for_cond")
+            let body_l = new_label("for_body")
+            let end_l = new_label("for_end")
+            LOOP_COND = LOOP_COND.push(cond_l)
+            LOOP_END = LOOP_END.push(end_l)
+            ir_line("br label %" + cond_l)
+            ir_raw(cond_l + ":")
+            let idx_val = new_reg()
+            ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+            let cmp = new_reg()
+            ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
+            ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
+            ir_raw(body_l + ":")
+            // Load element
+            let ep = new_reg()
+            ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
+            let ev = new_reg()
+            ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
+            ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+            let body_ended = gen_stmts(s.body)
+            // Increment index
+            let next_idx = new_reg()
+            ir_line(next_idx + " = add i64 " + idx_val + ", 1")
+            ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
+            if body_ended == 0 { ir_line("br label %" + cond_l) }
+            // Pop loop labels
+            mut new_cond: List<string> = []
+            mut new_end: List<string> = []
+            mut li = 0
+            while li < LOOP_COND.length - 1 {
+                new_cond = new_cond.push(LOOP_COND[li])
+                new_end = new_end.push(LOOP_END[li])
+                li = li + 1
+            }
+            LOOP_COND = new_cond
+            LOOP_END = new_end
+            ir_raw(end_l + ":")
+            return false
+        }
         .Break -> {
             if LOOP_END.length > 0 {
                 ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
