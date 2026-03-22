@@ -232,6 +232,18 @@ fn stmt_continue() -> Stmt {
     Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], is_mut: false }
 }
 
+// Match arm: str_val = variant name (or "_"), str2 = binding names CSV, body = arm statements
+fn stmt_match_arm(variant: string, bindings: string, body: List<Stmt>) -> Stmt {
+    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], is_mut: false }
+}
+
+// Match: exprs[0] = scrutinee, body = list of arm stmts
+fn stmt_match(scrutinee: Expr, arms: List<Stmt>) -> Stmt {
+    mut exprs: List<Expr> = []
+    exprs = exprs.push(scrutinee)
+    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], is_mut: false }
+}
+
 mut LEX_SRC: string = ""
 mut LEX_POS: int = 0
 mut LEX_LINE: int = 1
@@ -777,6 +789,8 @@ fn type_to_llvm(ty_name: string) -> string {
     // Check if it's a known enum
     let ei = find_enum(ty_name)
     if ei >= 0 { return "%" + ty_name }
+    // Check pre-scanned type names (for self-referential types)
+    if is_known_type(ty_name) { return "%" + ty_name }
     "i64"
 }
 
@@ -2987,24 +3001,64 @@ fn ast_parse_stmt() -> Stmt {
         return stmt_continue()
     }
 
-    // match — parse but store as if-chain for now
+    // match
     if tok.text == "match" {
-        // TODO: parse match into AST
         advance()
         skip_nl()
         let scrutinee = ast_parse_expr()
         skip_nl()
         expect("{")
         skip_nl()
-        // Skip match body for now
-        mut depth = 1
-        while depth > 0 && POS < TOKENS.length {
-            if check("{") { depth = depth + 1 }
-            if check("}") { depth = depth - 1 }
-            if depth > 0 { advance() }
+        mut arms: List<Stmt> = []
+        while not_at_brace() {
+            skip_nl()
+            if check("_") {
+                // Wildcard arm
+                advance()
+                expect("->")
+                skip_nl()
+                if check("{") {
+                    let body: List<Stmt> = ast_parse_block()
+                    arms = arms.push(stmt_match_arm("_", "", body))
+                } else {
+                    mut body: List<Stmt> = []
+                    body = body.push(ast_parse_stmt())
+                    arms = arms.push(stmt_match_arm("_", "", body))
+                }
+            } else if check(".") {
+                // .Variant pattern
+                advance()
+                let vname = advance().text
+                mut bindings = ""
+                if check("(") {
+                    advance()
+                    skip_nl()
+                    while !check(")") {
+                        if bindings.length > 0 { bindings = bindings + "," }
+                        bindings = bindings + advance().text
+                        skip_nl()
+                        if check(",") { advance() }
+                        skip_nl()
+                    }
+                    expect(")")
+                }
+                expect("->")
+                skip_nl()
+                if check("{") {
+                    let body: List<Stmt> = ast_parse_block()
+                    arms = arms.push(stmt_match_arm(vname, bindings, body))
+                } else {
+                    mut body: List<Stmt> = []
+                    body = body.push(ast_parse_stmt())
+                    arms = arms.push(stmt_match_arm(vname, bindings, body))
+                }
+            } else {
+                advance()
+            }
+            skip_nl()
         }
         expect("}")
-        return stmt_expr(scrutinee)
+        return stmt_match(scrutinee, arms)
     }
 
     // Expression statement (or assignment)
@@ -3908,6 +3962,93 @@ fn gen_stmt(s: Stmt) -> bool {
             }
             return false
         }
+        .Match -> {
+            // Compile match as if-chain over enum tag
+            LAST_ENUM_TYPE = ""
+            let scrutinee = gen_expr_from(s, 0)
+            let scrut_enum = LAST_ENUM_TYPE
+            let ei = find_enum(scrut_enum)
+            let merge_l = new_label("match_end")
+            // Match result alloca (for implicit return / expression result)
+            let match_result = new_reg()
+            ir_line(match_result + " = alloca " + CUR_RET_TY)
+            // Extract tag
+            let tag_r = new_reg()
+            if ei >= 0 {
+                ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
+            }
+            // Process arms
+            mut ai = 0
+            while ai < s.body.length {
+                let arm: Stmt = s.body[ai]
+                let vname = arm.str_val
+                if vname == "_" {
+                    // Wildcard arm
+                    let ended = gen_stmts(arm.body)
+                    if ended == 0 {
+                        if CUR_RET_TY != "void" {
+                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                        }
+                        ir_line("br label %" + merge_l)
+                    }
+                } else if ei >= 0 {
+                    // .Variant arm
+                    let vidx = enum_variant_index(ei, vname)
+                    let arm_l = new_label("match_arm")
+                    let next_l = new_label("match_next")
+                    let cmp = new_reg()
+                    ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
+                    ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
+                    ir_raw(arm_l + ":")
+                    // Bind variant fields
+                    if arm.str2.length > 0 {
+                        mut bi = 0
+                        mut bstart = 0
+                        mut bpos = 0
+                        while bpos <= arm.str2.length {
+                            mut is_comma = false
+                            if bpos < arm.str2.length {
+                                if arm.str2.substring(bpos, bpos + 1) == "," {
+                                    is_comma = true
+                                }
+                            }
+                            if is_comma || bpos == arm.str2.length {
+                                let bname = arm.str2.substring(bstart, bpos)
+                                let bval = new_reg()
+                                let slot = bi + 1
+                                ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
+                                let balloca = new_reg()
+                                ir_line(balloca + " = alloca i64")
+                                ir_line("store i64 " + bval + ", ptr " + balloca)
+                                push_var(bname, balloca, "i64")
+                                bi = bi + 1
+                                bstart = bpos + 1
+                            }
+                            bpos = bpos + 1
+                        }
+                    }
+                    let ended = gen_stmts(arm.body)
+                    if ended == 0 {
+                        if CUR_RET_TY != "void" {
+                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                        }
+                        ir_line("br label %" + merge_l)
+                    }
+                    ir_raw(next_l + ":")
+                }
+                ai = ai + 1
+            }
+            // Default fallthrough
+            ir_line("br label %" + merge_l)
+            ir_raw(merge_l + ":")
+            // Load match result
+            if CUR_RET_TY != "void" {
+                let mr = new_reg()
+                ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
+                LAST_EXPR_VAL = mr
+            }
+            return false
+        }
         _ -> {
             return false
         }
@@ -4065,6 +4206,59 @@ fn gen_fn_decl(f: FnDecl) {
     ir_raw("")
 }
 
+// Known type names (pre-scanned for forward references)
+mut KNOWN_TYPE_NAMES: List<string> = []
+
+// Pass 0: pre-scan type/enum names so self-referential types resolve
+fn scan_type_names() {
+    let saved_pos = POS
+    POS = 0
+    skip_nl()
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok: Tok = peek()
+        if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("type") {
+                advance()
+                KNOWN_TYPE_NAMES = KNOWN_TYPE_NAMES.push(advance().text)
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else if check("enum") {
+                advance()
+                KNOWN_TYPE_NAMES = KNOWN_TYPE_NAMES.push(advance().text)
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else {
+                skip_to_newline()
+            }
+        } else if tok.text == "type" {
+            advance()
+            KNOWN_TYPE_NAMES = KNOWN_TYPE_NAMES.push(advance().text)
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else if tok.text == "enum" {
+            advance()
+            KNOWN_TYPE_NAMES = KNOWN_TYPE_NAMES.push(advance().text)
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+    POS = saved_pos
+}
+
+fn is_known_type(name: string) -> bool {
+    mut i = 0
+    while i < KNOWN_TYPE_NAMES.length {
+        if KNOWN_TYPE_NAMES[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
 fn ast_compile(source: string) -> string {
     TOKENS = tokenize(source)
     POS = 0
@@ -4086,6 +4280,10 @@ fn ast_compile(source: string) -> string {
     EFIELD_TYPES = []
     GLOBAL_NAMES = []
     GLOBAL_TYPES = []
+    KNOWN_TYPE_NAMES = []
+
+    // Pass 0: pre-scan type/enum names
+    scan_type_names()
 
     // Pass 1: scan for type declarations, enum decls, fn sigs, globals
     skip_nl()
@@ -4235,6 +4433,10 @@ fn compile(source: string) -> string {
     EFIELD_TYPES = []
     GLOBAL_NAMES = []
     GLOBAL_TYPES = []
+    KNOWN_TYPE_NAMES = []
+
+    // Pass 0: pre-scan type/enum names
+    scan_type_names()
 
     // Pass 1: scan for type declarations only
     skip_nl()
