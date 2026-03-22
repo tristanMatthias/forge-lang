@@ -78,24 +78,22 @@ type Stmt = {
     is_mut: bool,
 }
 
+type Param = {
+    name: string,
+    type_name: string,
+}
+
+type VariantDecl = {
+    name: string,
+    fields: List<Param>,
+}
+
 type FnDecl = {
     name: string,
     params: List<Param>,
     return_type: string,
     body: List<Stmt>,
     exported: bool,
-}
-
-type Param = {
-    name: string,
-    type_name: string,
-}
-
-type Program = {
-    functions: List<FnDecl>,
-    types: List<TypeDecl>,
-    enums: List<EnumDecl>,
-    globals: List<Stmt>,
 }
 
 type TypeDecl = {
@@ -108,9 +106,11 @@ type EnumDecl = {
     variants: List<VariantDecl>,
 }
 
-type VariantDecl = {
-    name: string,
-    fields: List<Param>,
+type Program = {
+    functions: List<FnDecl>,
+    types: List<TypeDecl>,
+    enums: List<EnumDecl>,
+    globals: List<Stmt>,
 }
 
 // ─── AST constructors ─────────────────────────────────────────────
@@ -2841,9 +2841,8 @@ fn ast_parse_primary() -> Expr {
                 skip_nl()
             }
             expect("}")
-            mut node = expr_struct(name, fields)
-            node.str_val = name
-            // Store field names as secondary info
+            // Encode type name and field names as "TypeName|field1,field2,..."
+            mut node = expr_struct(name + "|" + field_names, fields)
             node.int_val = fields.length
             return node
         }
@@ -2907,6 +2906,7 @@ fn ast_parse_stmt() -> Stmt {
             // Skip full type annotation
             advance()
             if check("<") {
+                advance()
                 mut td = 1
                 while td > 0 && POS < TOKENS.length {
                     if check("<") { td = td + 1 }
@@ -3020,6 +3020,114 @@ fn ast_parse_stmt() -> Stmt {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// AST PARSE — top-level: fn decls, program
+// ═══════════════════════════════════════════════════════════════════
+
+fn ast_parse_fn_decl() -> FnDecl {
+    expect("fn")
+    let name = advance().text
+
+    // Parse params
+    expect("(")
+    skip_nl()
+    mut params: List<Param> = []
+    while !check(")") {
+        if check("mut") { advance() }
+        let pname = advance().text
+        expect(":")
+        skip_nl()
+        mut pty_name = advance().text
+        // Capture generic params like <T> — encode as "List<int>"
+        if check("<") {
+            advance()
+            let gen = peek().text
+            pty_name = pty_name + "<" + gen + ">"
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+        params = params.push(Param { name: pname, type_name: pty_name })
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect(")")
+    skip_nl()
+
+    // Parse return type
+    mut ret_type = "void"
+    if check("->") {
+        advance()
+        skip_nl()
+        ret_type = advance().text
+        if check("<") {
+            advance()
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+    }
+    skip_nl()
+
+    // Parse body
+    let body: List<Stmt> = ast_parse_block()
+    FnDecl { name: name, params: params, return_type: ret_type, body: body, exported: false }
+}
+
+fn ast_parse_program() -> List<FnDecl> {
+    mut fns: List<FnDecl> = []
+    skip_nl()
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok: Tok = peek()
+
+        if tok.text == "fn" {
+            fns = fns.push(ast_parse_fn_decl())
+        } else if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("fn") {
+                mut f = ast_parse_fn_decl()
+                f.exported = true
+                fns = fns.push(f)
+            } else if check("type") {
+                // Already parsed in pass 1
+                parse_type_decl_top()
+            } else {
+                skip_to_newline()
+            }
+        } else if tok.text == "type" {
+            parse_type_decl_top()
+        } else if tok.text == "enum" {
+            // Already parsed in pass 1, skip
+            advance()
+            advance()
+            expect("{")
+            skip_nl()
+            while not_at_brace() { advance() }
+            if check("}") { advance() }
+        } else if tok.text == "impl" {
+            advance()
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else if tok.text == "use" || tok.text == "mod" || tok.text == "let" || tok.text == "mut" {
+            skip_to_newline()
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+    fns
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // AST CODEGEN — walks Expr/Stmt trees and emits IR text
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3110,6 +3218,85 @@ fn gen_expr(e: Expr) -> string {
             }
             return obj
         }
+        .StructLit -> {
+            // str_val = "TypeName|field1,field2,..."
+            let pipe_idx = e.str_val.index_of("|")
+            let sname = e.str_val.substring(0, pipe_idx)
+            let field_csv = e.str_val.substring(pipe_idx + 1, e.str_val.length)
+            let si = find_struct(sname)
+            let sty = struct_llvm_type(sname)
+            mut cur = "undef"
+            mut fi = 0
+            while fi < e.children.length {
+                // Get field name from CSV
+                mut fname = field_csv
+                if fi == 0 {
+                    let comma_idx = field_csv.index_of(",")
+                    if comma_idx >= 0 { fname = field_csv.substring(0, comma_idx) }
+                } else {
+                    // Find the fi-th comma-separated entry
+                    mut ci = 0
+                    mut start = 0
+                    mut end = field_csv.length
+                    mut pos = 0
+                    while pos < field_csv.length {
+                        if field_csv.substring(pos, pos + 1) == "," {
+                            if ci == fi - 1 { start = pos + 1 }
+                            if ci == fi { end = pos }
+                            ci = ci + 1
+                        }
+                        pos = pos + 1
+                    }
+                    if ci == fi - 1 { start = pos }
+                    fname = field_csv.substring(start, end)
+                }
+                let fval = gen_expr_child(e, fi)
+                let fidx = struct_field_index(si, fname)
+                if fidx >= 0 {
+                    let fty = struct_field_type(si, fidx)
+                    let nr = new_reg()
+                    ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
+                    cur = nr
+                }
+                fi = fi + 1
+            }
+            LAST_STRUCT_TYPE = sname
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_ENUM_TYPE = ""
+            return cur
+        }
+        .EnumLit -> {
+            // str_val = "EnumName.VariantName"
+            let dot_idx = e.str_val.index_of(".")
+            let ename = e.str_val.substring(0, dot_idx)
+            let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
+            let ei = find_enum(ename)
+            let vidx = enum_variant_index(ei, vname)
+            let ety = "%" + ename
+            let tag_r = new_reg()
+            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
+            let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+            let fc = EVAR_FIELD_COUNTS[gvi]
+            mut cur = tag_r
+            if fc > 0 {
+                let fs = EVAR_FIELD_STARTS[gvi]
+                mut fi = 0
+                while fi < fc && fi < e.children.length {
+                    let fval = gen_expr_child(e, fi)
+                    let slot = fi + 1
+                    let nr = new_reg()
+                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
+                    cur = nr
+                    fi = fi + 1
+                }
+            }
+            LAST_ENUM_TYPE = ename
+            LAST_STRUCT_TYPE = ""
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            return cur
+        }
         .ListLit -> {
             let count = e.children.length
             mut elem_type = "i64"
@@ -3147,11 +3334,93 @@ fn gen_expr(e: Expr) -> string {
             LAST_LIST_ELEM_TYPE = elem_type
             return ls2
         }
+        .StructLit -> {
+            // str_val = "TypeName|field1,field2,..."
+            let encoded = e.str_val
+            let pipe_idx = encoded.index_of("|")
+            let type_name = encoded.substring(0, pipe_idx)
+            let field_csv = encoded.substring(pipe_idx + 1, encoded.length)
+            let si = find_struct(type_name)
+            if si < 0 { return "0" }
+            let sty = struct_llvm_type(type_name)
+            mut cur = "undef"
+            mut fi = 0
+            while fi < e.children.length {
+                let fval = gen_expr_child(e, fi)
+                let fname = csv_field(field_csv, fi)
+                let fidx = struct_field_index(si, fname)
+                if fidx >= 0 {
+                    let fty = struct_field_type(si, fidx)
+                    let nr = new_reg()
+                    ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
+                    cur = nr
+                }
+                fi = fi + 1
+            }
+            LAST_STRUCT_TYPE = type_name
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_ENUM_TYPE = ""
+            return cur
+        }
+        .EnumLit -> {
+            // str_val = "EnumName.VariantName"
+            let dot_idx = e.str_val.index_of(".")
+            let enum_name = e.str_val.substring(0, dot_idx)
+            let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
+            let ei = find_enum(enum_name)
+            if ei < 0 { return "0" }
+            let ety = "%" + enum_name
+            let vidx = enum_variant_index(ei, vname)
+            let tag_r = new_reg()
+            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
+            let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+            let fc = EVAR_FIELD_COUNTS[gvi]
+            mut cur = tag_r
+            if fc > 0 {
+                let fs = EVAR_FIELD_STARTS[gvi]
+                mut fi = 0
+                while fi < fc && fi < e.children.length {
+                    let fval = gen_expr_child(e, fi)
+                    let slot = fi + 1
+                    let nr = new_reg()
+                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
+                    cur = nr
+                    fi = fi + 1
+                }
+            }
+            LAST_ENUM_TYPE = enum_name
+            LAST_STRUCT_TYPE = ""
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            return cur
+        }
         _ -> {
             return "0"
         }
     }
     "0"
+}
+
+// Extract the Nth comma-separated field from a CSV string
+fn csv_field(csv: string, idx: int) -> string {
+    mut start = 0
+    mut count = 0
+    mut i = 0
+    while i < csv.length {
+        if csv[i] == "," {
+            if count == idx {
+                return csv.substring(start, i)
+            }
+            count = count + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if count == idx {
+        return csv.substring(start, csv.length)
+    }
+    ""
 }
 
 fn gen_ident(name: string) -> string {
@@ -3262,6 +3531,36 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
     r2
 }
 
+fn gen_list_push(list_val: string, elem: string, elem_ty: string, saved_elem: string) -> string {
+    LAST_LIST_ELEM_TYPE = saved_elem
+    if elem_ty != "i64" { LAST_LIST_ELEM_TYPE = elem_ty }
+    let old_data = new_reg()
+    ir_line(old_data + " = extractvalue { ptr, i64 } " + list_val + ", 0")
+    let old_len = new_reg()
+    ir_line(old_len + " = extractvalue { ptr, i64 } " + list_val + ", 1")
+    let new_len = new_reg()
+    ir_line(new_len + " = add i64 " + old_len + ", 1")
+    let elem_size = new_reg()
+    ir_line(elem_size + " = ptrtoint ptr getelementptr (" + elem_ty + ", ptr null, i32 1) to i64")
+    let total = new_reg()
+    ir_line(total + " = mul i64 " + elem_size + ", " + new_len)
+    let new_data = new_reg()
+    ir_line(new_data + " = call ptr @forge_alloc(i64 " + total + ")")
+    let copy_size = new_reg()
+    ir_line(copy_size + " = mul i64 " + elem_size + ", " + old_len)
+    ir_line("call void @llvm.memcpy.p0.p0.i64(ptr " + new_data + ", ptr " + old_data + ", i64 " + copy_size + ", i1 false)")
+    let elem_ptr = new_reg()
+    ir_line(elem_ptr + " = getelementptr " + elem_ty + ", ptr " + new_data + ", i64 " + old_len)
+    ir_line("store " + elem_ty + " " + elem + ", ptr " + elem_ptr)
+    let ls1 = new_reg()
+    ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + new_data + ", 0")
+    let ls2 = new_reg()
+    ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + new_len + ", 1")
+    LAST_IS_LIST = 1
+    LAST_IS_STR = 0
+    ls2
+}
+
 fn gen_call(e: Expr) -> string {
     let name = e.str_val
     // Built-in: string(x)
@@ -3272,6 +3571,12 @@ fn gen_call(e: Expr) -> string {
         LAST_IS_STR = 1
         return r
     }
+    // Built-in: int(x)
+    if name == "int" && e.children.length == 1 {
+        let arg = gen_expr_child(e, 0)
+        // If arg is string, could parse — for now just pass through
+        return arg
+    }
     // Built-in: println/eprintln
     if name == "println" || name == "eprintln" {
         let arg = gen_expr_child(e, 0)
@@ -3280,7 +3585,61 @@ fn gen_call(e: Expr) -> string {
         } else {
             ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
         }
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
         return "0"
+    }
+    // Method calls: children[0] is the object
+    // List.push(elem) — obj.push(val) where obj is list
+    if name == "push" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_LIST == 1 {
+            let saved_elem = LAST_LIST_ELEM_TYPE
+            let elem = gen_expr_child(e, 1)
+            mut ety = "i64"
+            if LAST_IS_STR == 1 { ety = "%ForgeString" }
+            if LAST_STRUCT_TYPE != "" { ety = "%" + LAST_STRUCT_TYPE }
+            if LAST_ENUM_TYPE != "" { ety = "%" + LAST_ENUM_TYPE }
+            return gen_list_push(obj, elem, ety, saved_elem)
+        }
+    }
+    // String.contains(s)
+    if name == "contains" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            let arg = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i8 @forge_string_contains(%ForgeString " + obj + ", %ForgeString " + arg + ")")
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i8 " + r + " to i64")
+            LAST_IS_STR = 0
+            return r2
+        }
+    }
+    // String.substring(start, end)
+    if name == "substring" && e.children.length == 3 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            let start = gen_expr_child(e, 1)
+            let end = gen_expr_child(e, 2)
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_string_substring(%ForgeString " + obj + ", i64 " + start + ", i64 " + end + ")")
+            LAST_IS_STR = 1
+            return r
+        }
+    }
+    // String.index_of(s)
+    if name == "index_of" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            let arg = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i64 @forge_string_index_of(%ForgeString " + obj + ", %ForgeString " + arg + ")")
+            LAST_IS_STR = 0
+            return r
+        }
     }
     // Regular function call
     let call_ret = find_fn_ret(name)
@@ -3353,23 +3712,49 @@ fn gen_member(obj: string, field: string) -> string {
 fn gen_stmt(s: Stmt) -> bool {
     match s.kind {
         .Let -> {
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
             let val = gen_expr_from(s, 0)
             let alloca = new_reg()
             let name = s.str_val
             // Determine type from annotation or inference
             mut ty = "i64"
+            mut is_list = false
+            mut list_elem = LAST_LIST_ELEM_TYPE
+            mut stype = ""
             if LAST_IS_STR == 1 { ty = "%ForgeString" }
-            if LAST_IS_LIST == 1 { ty = "{ ptr, i64 }" }
-            if LAST_STRUCT_TYPE != "" { ty = "%" + LAST_STRUCT_TYPE }
+            if LAST_IS_LIST == 1 {
+                ty = "{ ptr, i64 }"
+                is_list = true
+            }
+            if LAST_STRUCT_TYPE != "" {
+                ty = "%" + LAST_STRUCT_TYPE
+                stype = LAST_STRUCT_TYPE
+            }
             if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
             // Prefer annotation
             if s.str2 == "string" { ty = "%ForgeString" }
-            if s.str2 == "List" { ty = "{ ptr, i64 }" }
-            if find_struct(s.str2) >= 0 { ty = "%" + s.str2 }
+            if s.str2 == "int" || s.str2 == "bool" { ty = "i64" }
+            if s.str2 == "List" {
+                ty = "{ ptr, i64 }"
+                is_list = true
+            }
+            if find_struct(s.str2) >= 0 {
+                ty = "%" + s.str2
+                stype = s.str2
+            }
             if find_enum(s.str2) >= 0 { ty = "%" + s.str2 }
             ir_line(alloca + " = alloca " + ty)
             ir_line("store " + ty + " " + val + ", ptr " + alloca)
-            push_var(name, alloca, ty)
+            if is_list {
+                push_var_list(name, alloca, "list_" + list_elem, list_elem)
+            } else if stype != "" {
+                push_var_with_struct(name, alloca, ty, stype)
+            } else {
+                push_var(name, alloca, ty)
+            }
             clear_last_ident()
             return false
         }
@@ -3490,7 +3875,285 @@ fn gen_block(stmts: List<Stmt>) -> int {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// COMPILE + MAIN
+// AST CODEGEN — top-level: fn decls, ast_compile
+// ═══════════════════════════════════════════════════════════════════
+
+fn gen_fn_decl(f: FnDecl) {
+    let name = f.name
+
+    // Resolve param types to LLVM
+    mut param_types: List<string> = []
+    mut param_generics: List<string> = []
+    mut i = 0
+    while i < f.params.length {
+        let p: Param = f.params[i]
+        // Parse "List<int>" format
+        let lt_idx = p.type_name.index_of("<")
+        mut base_type = p.type_name
+        mut generic = ""
+        if lt_idx >= 0 {
+            base_type = p.type_name.substring(0, lt_idx)
+            generic = p.type_name.substring(lt_idx + 1, p.type_name.length - 1)
+        }
+        let pty = type_to_llvm(base_type)
+        param_types = param_types.push(pty)
+        param_generics = param_generics.push(generic)
+        i = i + 1
+    }
+    let param_count = f.params.length
+
+    // Resolve return type (strip generic: "List<int>" → "List")
+    mut ret_ty = "void"
+    if f.return_type != "void" {
+        let ret_lt = f.return_type.index_of("<")
+        if ret_lt >= 0 {
+            ret_ty = type_to_llvm(f.return_type.substring(0, ret_lt))
+        } else {
+            ret_ty = type_to_llvm(f.return_type)
+        }
+    }
+
+    CUR_RET_TY = ret_ty
+
+    // Register fn signature (already done in pass 1, but update for safety)
+
+    // Build param list string
+    mut param_str = ""
+    i = 0
+    while i < param_count {
+        let p: Param = f.params[i]
+        if i > 0 { param_str = param_str + ", " }
+        param_str = param_str + param_types[i] + " %" + p.name + ".arg"
+        i = i + 1
+    }
+
+    // Emit function header
+    if name == "main" {
+        ret_ty = "i32"
+        CUR_RET_TY = "i32"
+        ir_raw("define i32 @main(i32 %argc, ptr %argv) {")
+        ir_raw("entry:")
+        ir_line("call void @forge_mini_set_args(i32 %argc, ptr %argv)")
+    } else {
+        ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
+        ir_raw("entry:")
+    }
+
+    // Reset registers, type tracking, and scope (keep globals)
+    REG_N = 0
+    LAST_EXPR_VAL = "0"
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    LAST_LIST_ELEM_TYPE = "i64"
+    let gc = GLOBAL_NAMES.length
+    mut gn: List<string> = []
+    mut gr: List<string> = []
+    mut gt: List<string> = []
+    mut gs: List<string> = []
+    mut gle: List<string> = []
+    mut gi2 = 0
+    while gi2 < gc {
+        gn = gn.push(VAR_NAMES[gi2])
+        gr = gr.push(VAR_REGS[gi2])
+        gt = gt.push(VAR_TYPES[gi2])
+        gs = gs.push(VAR_STRUCT_TYPE[gi2])
+        gle = gle.push(VAR_LIST_ELEM_TYPE[gi2])
+        gi2 = gi2 + 1
+    }
+    VAR_NAMES = gn
+    VAR_REGS = gr
+    VAR_TYPES = gt
+    VAR_STRUCT_TYPE = gs
+    VAR_LIST_ELEM_TYPE = gle
+
+    // Create param allocas
+    i = 0
+    while i < param_count {
+        let p: Param = f.params[i]
+        let alloca = new_reg()
+        let pty = param_types[i]
+        let pgen = param_generics[i]
+        ir_line(alloca + " = alloca " + pty)
+        ir_line("store " + pty + " %" + p.name + ".arg, ptr " + alloca)
+        if pty == "{ ptr, i64 }" && pgen != "" {
+            let elem_ty = type_to_llvm(pgen)
+            push_var_list(p.name, alloca, "list_" + elem_ty, elem_ty)
+        } else if pty.length > 1 && pty.substring(0, 1) == "%" {
+            let sname = pty.substring(1, pty.length)
+            push_var_with_struct(p.name, alloca, pty, sname)
+        } else {
+            push_var(p.name, alloca, pty)
+        }
+        i = i + 1
+    }
+
+    // Generate body
+    let terminated = gen_stmts(f.body)
+
+    // Implicit return
+    if terminated == 0 {
+        if name == "main" {
+            ir_line("ret i32 0")
+        } else if ret_ty == "void" {
+            ir_line("ret void")
+        } else {
+            ir_line("ret " + ret_ty + " " + LAST_EXPR_VAL)
+        }
+    }
+
+    ir_raw("}")
+    ir_raw("")
+}
+
+fn ast_compile(source: string) -> string {
+    TOKENS = tokenize(source)
+    POS = 0
+    IR = ""
+    STR_DECLS = ""
+    STR_N = 0
+    STRUCT_NAMES = []
+    STRUCT_FIELD_STARTS = []
+    STRUCT_FIELD_COUNTS = []
+    SFIELD_NAMES = []
+    SFIELD_TYPES = []
+    ENUM_NAMES = []
+    ENUM_VARIANT_STARTS = []
+    ENUM_VARIANT_COUNTS = []
+    EVAR_NAMES = []
+    EVAR_FIELD_STARTS = []
+    EVAR_FIELD_COUNTS = []
+    EFIELD_NAMES = []
+    EFIELD_TYPES = []
+    GLOBAL_NAMES = []
+    GLOBAL_TYPES = []
+
+    // Pass 1: scan for type declarations, enum decls, fn sigs, globals
+    skip_nl()
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok: Tok = peek()
+        if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("type") {
+                parse_type_decl_top()
+            } else if check("enum") {
+                parse_enum_decl_top()
+            } else if check("fn") {
+                scan_fn_sig()
+            } else if check("mut") || check("let") {
+                parse_global_decl()
+            } else {
+                skip_to_newline()
+            }
+        } else if tok.text == "type" {
+            parse_type_decl_top()
+        } else if tok.text == "fn" {
+            scan_fn_sig()
+        } else if tok.text == "enum" {
+            parse_enum_decl_top()
+        } else if tok.text == "mut" || tok.text == "let" {
+            parse_global_decl()
+        } else if tok.text == "impl" {
+            advance()
+            while !check("{") && POS < TOKENS.length { advance() }
+            skip_block()
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+
+    // Pass 2: reset and parse into AST
+    POS = 0
+
+    // IR header
+    ir_raw("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128\"")
+    ir_raw("")
+    ir_raw("%ForgeString = type { ptr, i64 }")
+    // Emit struct type declarations
+    mut sti = 0
+    while sti < STRUCT_NAMES.length {
+        let sname = STRUCT_NAMES[sti]
+        let nf = struct_field_count(sti)
+        mut fields_ir = ""
+        mut fi = 0
+        while fi < nf {
+            if fi > 0 { fields_ir = fields_ir + ", " }
+            fields_ir = fields_ir + struct_field_type(sti, fi)
+            fi = fi + 1
+        }
+        ir_raw("%" + sname + " = type { " + fields_ir + " }")
+        sti = sti + 1
+    }
+    // Emit enum type declarations
+    mut ei = 0
+    while ei < ENUM_NAMES.length {
+        let ename = ENUM_NAMES[ei]
+        ir_raw("%" + ename + " = type " + enum_llvm_type_str(ei))
+        ei = ei + 1
+    }
+    // Emit global variable declarations
+    mut gi = 0
+    while gi < GLOBAL_NAMES.length {
+        let gname = GLOBAL_NAMES[gi]
+        let gty = GLOBAL_TYPES[gi]
+        mut emit_ty = gty
+        if is_list_type(gty) {
+            emit_ty = "{ ptr, i64 }"
+        }
+        ir_raw("@" + gname + " = global " + emit_ty + " zeroinitializer")
+        push_var(gname, "@" + gname, gty)
+        gi = gi + 1
+    }
+    ir_raw("")
+    ir_raw("declare %ForgeString @forge_string_new(ptr, i64)")
+    ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_string_length(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_int_to_string(i64)")
+    ir_raw("declare void @forge_print_string(%ForgeString)")
+    ir_raw("declare void @forge_println_string(%ForgeString)")
+    ir_raw("declare void @forge_eprintln_string(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_string_char_at(%ForgeString, i64)")
+    ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
+    ir_raw("declare i64 @forge_string_index_of(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_string_compare(%ForgeString, %ForgeString)")
+    ir_raw("declare i8 @forge_string_eq(%ForgeString, %ForgeString)")
+    ir_raw("declare ptr @forge_alloc(i64)")
+    ir_raw("declare i32 @puts(ptr)")
+    ir_raw("declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)")
+    ir_raw("declare void @forge_mini_set_args(i32, ptr)")
+    ir_raw("declare i64 @forge_mini_argc()")
+    ir_raw("declare %ForgeString @forge_mini_argv(i64)")
+    ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
+    ir_raw("declare void @forge_exit(i64)")
+    ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
+    ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
+    ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
+    ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
+    ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
+    ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
+    ir_raw("")
+
+    // Parse all functions into AST
+    let fns: List<FnDecl> = ast_parse_program()
+
+    // Generate IR for each function
+    mut fi = 0
+    while fi < fns.length {
+        let f: FnDecl = fns[fi]
+        gen_fn_decl(f)
+        fi = fi + 1
+    }
+
+    let final_ir = STR_DECLS + "\n" + IR
+    final_ir
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPILE (old direct-emit path) + MAIN
 // ═══════════════════════════════════════════════════════════════════
 
 fn compile(source: string) -> string {
@@ -3697,8 +4360,19 @@ fn main() {
         process.exit(1)
     }
 
-    eprintln("  lex + parse + codegen: " + input)
-    compile(source)
+    // Check for --ast flag
+    mut use_ast = false
+    if command == "ast-build" {
+        use_ast = true
+    }
+
+    if use_ast {
+        eprintln("  [AST] lex + parse + codegen: " + input)
+        ast_compile(source)
+    } else {
+        eprintln("  lex + parse + codegen: " + input)
+        compile(source)
+    }
     eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " chars")
 
     // Write combined IR: string constants + header + functions
