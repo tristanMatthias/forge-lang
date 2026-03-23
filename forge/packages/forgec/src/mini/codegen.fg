@@ -287,6 +287,107 @@ fn gen_expr(e: Expr) -> string {
             LAST_IS_LIST = 0
             return cur
         }
+        .Closure -> {
+            // Emit closure as anonymous function, return ptr to it
+            let params_str = e.str_val
+            CLOSURE_COUNT = CLOSURE_COUNT + 1
+            let fn_name = "__closure_" + string(CLOSURE_COUNT)
+
+            // Parse params from "x:int,y:int" format
+            mut param_ir = ""
+            mut param_names: List<string> = []
+            mut param_types: List<string> = []
+            if params_str.length > 0 {
+                mut pi = 0
+                mut pstart = 0
+                while pi <= params_str.length {
+                    mut is_sep = false
+                    if pi == params_str.length { is_sep = true }
+                    if pi < params_str.length {
+                        if params_str.substring(pi, pi + 1) == "," { is_sep = true }
+                    }
+                    if is_sep {
+                        let param = params_str.substring(pstart, pi)
+                        let colon = param.index_of(":")
+                        if colon >= 0 {
+                            let pn = param.substring(0, colon)
+                            let pt_name = param.substring(colon + 1, param.length)
+                            let pt = type_to_llvm(pt_name)
+                            param_names = param_names.push(pn)
+                            param_types = param_types.push(pt)
+                            if param_ir.length > 0 { param_ir = param_ir + ", " }
+                            param_ir = param_ir + pt + " %" + pn + ".arg"
+                        }
+                        pstart = pi + 1
+                    }
+                    pi = pi + 1
+                }
+            }
+
+            // Save current IR state
+            let saved_ir: List<string> = IR
+            let saved_reg = REG_N
+            let saved_lbl = LBL_N
+            let saved_ret = CUR_RET_TY
+
+            // Emit closure function body
+            IR = []
+            REG_N = 0
+            LBL_N = 0
+            // Infer return type from body (default i64)
+            CUR_RET_TY = "i64"
+
+            ir_raw("define i64 @" + fn_name + "(" + param_ir + ") {")
+            ir_raw("entry:")
+
+            // Create param allocas
+            mut ci = 0
+            while ci < param_names.length {
+                let alloca = new_reg()
+                ir_line(alloca + " = alloca " + param_types[ci])
+                ir_line("store " + param_types[ci] + " %" + param_names[ci] + ".arg, ptr " + alloca)
+                push_var(param_names[ci], alloca, param_types[ci])
+                ci = ci + 1
+            }
+
+            // Compile body expression
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            let body_val = gen_expr_child(e, 0)
+            ir_line("ret i64 " + body_val)
+            ir_raw("}")
+            ir_raw("")
+
+            // Capture closure IR and restore state
+            let closure_ir: List<string> = IR
+            IR = saved_ir
+            REG_N = saved_reg
+            LBL_N = saved_lbl
+            CUR_RET_TY = saved_ret
+
+            // Store closure function in CLOSURE_IR (emitted between functions)
+            mut ni = 0
+            while ni < closure_ir.length {
+                CLOSURE_IR = CLOSURE_IR.push(closure_ir[ni])
+                ni = ni + 1
+            }
+
+            // Pop closure params from var table
+            ci = 0
+            while ci < param_names.length {
+                // Simple: just leave them (they'll be shadowed by later scopes)
+                ci = ci + 1
+            }
+
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_IS_PTR = 1
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            return "@" + fn_name
+        }
         _ -> {
             return "0"
         }
@@ -668,7 +769,47 @@ fn gen_call(e: Expr) -> string {
             return r
         }
     }
-    // Regular function call
+    // Check if callee is a variable (function pointer / indirect call)
+    let var_idx = find_var(name)
+    if var_idx >= 0 {
+        let vty = VAR_TYPES[var_idx]
+        if vty == "ptr" {
+            // Indirect call through function pointer
+            let fn_ptr = new_reg()
+            ir_line(fn_ptr + " = load ptr, ptr " + VAR_REGS[var_idx])
+            mut arg_str = ""
+            mut arg_types = ""
+            mut i = 0
+            while i < e.children.length {
+                if i > 0 {
+                    arg_str = arg_str + ", "
+                    arg_types = arg_types + ", "
+                }
+                LAST_IS_STR = 0
+                LAST_IS_LIST = 0
+                LAST_STRUCT_TYPE = ""
+                LAST_ENUM_TYPE = ""
+                let a = gen_expr_child(e, i)
+                mut aty = "i64"
+                if LAST_IS_STR == 1 { aty = "%ForgeString" }
+                if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
+                if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
+                if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
+                arg_str = arg_str + aty + " " + a
+                arg_types = arg_types + aty
+                i = i + 1
+            }
+            let r = new_reg()
+            ir_line(r + " = call i64 " + fn_ptr + "(" + arg_str + ")")
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            return r
+        }
+    }
+
+    // Regular function call (direct)
     let call_ret = find_fn_ret(name)
     mut arg_str = ""
     mut i = 0
@@ -676,14 +817,20 @@ fn gen_call(e: Expr) -> string {
         if i > 0 { arg_str = arg_str + ", " }
         LAST_IS_STR = 0
         LAST_IS_LIST = 0
+        LAST_IS_PTR = 0
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
         let a = gen_expr_child(e, i)
         mut aty = "i64"
         if LAST_IS_STR == 1 { aty = "%ForgeString" }
+        if LAST_IS_PTR == 1 { aty = "ptr" }
         if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
         if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
         if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
+        // Function reference: @name is a ptr
+        if a.length > 1 {
+            if a.substring(0, 1) == "@" { aty = "ptr" }
+        }
         arg_str = arg_str + aty + " " + a
         i = i + 1
     }
@@ -743,6 +890,7 @@ fn gen_stmt(s: Stmt) -> bool {
         .Let -> {
             LAST_IS_STR = 0
             LAST_IS_LIST = 0
+            LAST_IS_PTR = 0
             LAST_STRUCT_TYPE = ""
             LAST_ENUM_TYPE = ""
             let val = gen_expr_from(s, 0)
@@ -754,6 +902,7 @@ fn gen_stmt(s: Stmt) -> bool {
             mut list_elem = LAST_LIST_ELEM_TYPE
             mut stype = ""
             if LAST_IS_STR == 1 { ty = "%ForgeString" }
+            if LAST_IS_PTR == 1 { ty = "ptr" }
             if LAST_IS_LIST == 1 {
                 ty = "{ ptr, i64 }"
                 is_list = true
@@ -1213,6 +1362,13 @@ fn gen_fn_decl(f: FnDecl) {
 
     ir_raw("}")
     ir_raw("")
+    // Emit any closure functions generated during this function
+    mut ci = 0
+    while ci < CLOSURE_IR.length {
+        IR = IR.push(CLOSURE_IR[ci])
+        ci = ci + 1
+    }
+    CLOSURE_IR = []
 }
 
 // Known type names (pre-scanned for forward references)
@@ -1274,6 +1430,8 @@ fn compile(source: string) -> string {
     IR = []
     STR_DECLS = []
     STR_N = 0
+    CLOSURE_COUNT = 0
+    CLOSURE_IR = []
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
     STRUCT_FIELD_COUNTS = []

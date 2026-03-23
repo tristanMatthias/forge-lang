@@ -45,6 +45,7 @@ enum ExprKind {
     StructLit   // data: str_val (type name), fields via side table
     EnumLit     // data: str_val (Type.Variant), children: args
     Null        // no data
+    Closure     // data: str_val ("param:type,...->ret"), children: body expr
 }
 
 type Expr = {
@@ -177,6 +178,12 @@ fn expr_struct(type_name: string, args: List<Expr>) -> Expr {
 
 fn expr_enum(name: string, args: List<Expr>) -> Expr {
     Expr { kind: ExprKind.EnumLit, int_val: 0, str_val: name, children: args }
+}
+
+fn expr_closure(params_ret: string, body: Expr) -> Expr {
+    mut ch: List<Expr> = []
+    ch = ch.push(body)
+    Expr { kind: ExprKind.Closure, int_val: 0, str_val: params_ret, children: ch }
 }
 
 // ─── Statement constructors ───────────────────────────────────────

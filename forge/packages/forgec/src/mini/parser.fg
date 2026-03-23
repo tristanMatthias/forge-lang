@@ -127,6 +127,42 @@ fn ast_parse_postfix() -> Expr {
     node
 }
 
+// Parse closure: (x: int, y: int) -> expr
+fn ast_parse_closure() -> Expr {
+    expect("(")
+    skip_nl()
+    mut params = ""
+    while !check(")") {
+        let pname = advance().text
+        mut ptype = "int"
+        if check(":") {
+            advance()
+            skip_nl()
+            ptype = advance().text
+            if check("<") {
+                advance()
+                mut d = 1
+                while d > 0 && POS < TOKENS.length {
+                    if check("<") { d = d + 1 }
+                    if check(">") { d = d - 1 }
+                    advance()
+                }
+            }
+        }
+        if params.length > 0 { params = params + "," }
+        params = params + pname + ":" + ptype
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect(")")
+    skip_nl()
+    expect("->")
+    skip_nl()
+    let body = ast_parse_expr()
+    expr_closure(params, body)
+}
+
 fn ast_parse_primary() -> Expr {
     skip_nl()
     let tok: Tok = peek()
@@ -155,8 +191,56 @@ fn ast_parse_primary() -> Expr {
         return expr_null()
     }
 
-    // Parenthesized expression
+    // Parenthesized expression or closure: (x: int) -> expr
     if tok.text == "(" {
+        // Lookahead: check if this is a closure by saving position
+        let saved_pos = POS
+        advance()
+        skip_nl()
+        // Closure detection: () -> or (ident: type...) -> or (ident) ->
+        mut is_closure = false
+        if check(")") {
+            advance()
+            skip_nl()
+            if check("->") { is_closure = true }
+        } else {
+            // Try to skip param-like tokens: ident [: type] [, ident [: type]]*
+            mut looks_like_params = true
+            while looks_like_params && !check(")") && not_at_end() {
+                if peek().kind != 1 {
+                    looks_like_params = false
+                } else {
+                    advance()
+                    if check(":") {
+                        advance()
+                        skip_nl()
+                        advance() // type name
+                        if check("<") {
+                            advance()
+                            mut d = 1
+                            while d > 0 && POS < TOKENS.length {
+                                if check("<") { d = d + 1 }
+                                if check(">") { d = d - 1 }
+                                advance()
+                            }
+                        }
+                    }
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+            }
+            if looks_like_params && check(")") {
+                advance()
+                skip_nl()
+                if check("->") { is_closure = true }
+            }
+        }
+        POS = saved_pos
+        if is_closure {
+            return ast_parse_closure()
+        }
+        // Regular parenthesized expression
         advance()
         skip_nl()
         let inner = ast_parse_expr()
@@ -447,6 +531,21 @@ fn ast_parse_fn_decl() -> FnDecl {
         expect(":")
         skip_nl()
         mut pty_name = advance().text
+        // fn(int) -> int type — skip the whole thing, store as "fn"
+        if pty_name == "fn" && check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance() // return type
+            }
+        }
         // Capture generic params like <T> — encode as "List<int>"
         if check("<") {
             advance()
