@@ -1138,6 +1138,15 @@ fn find_fn_ret(name: string) -> string {
     FIND_FN_RET_RESULT
 }
 
+fn find_fn_index(name: string) -> int {
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
 
 fn skip_block() {
     // Skip a { ... } block including nested blocks
@@ -1900,6 +1909,26 @@ fn ast_parse_primary() -> Expr {
         return expr_null()
     }
 
+    // Bare .Variant shorthand: .Error, .Some(x), etc.
+    if tok.text == "." && tok.kind == 5 {
+        advance()
+        let vname = advance().text
+        mut args: List<Expr> = []
+        if check("(") {
+            advance()
+            skip_nl()
+            while not_at_paren() {
+                args = args.push(ast_parse_expr())
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+        }
+        // Store as ".<variant>" — codegen infers enum type from context
+        return expr_enum("." + vname, args)
+    }
+
     // Parenthesized expression or closure: (x: int) -> expr
     if tok.text == "(" {
         // Lookahead: check if this is a closure by saving position
@@ -2376,10 +2405,49 @@ fn ast_parse_program() -> List<FnDecl> {
             skip_nl()
             while not_at_brace() { advance() }
             if check("}") { advance() }
-        } else if tok.text == "impl" || tok.text == "trait" {
+        } else if tok.text == "trait" {
+            // Skip trait blocks
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
+        } else if tok.text == "impl" {
+            // Parse impl block: impl TypeName { fn method(self) { ... } }
+            advance()
+            skip_nl()
+            let impl_type = advance().text
+            // Skip "for TypeName" if present
+            skip_nl()
+            if check("for") {
+                advance()
+                skip_nl()
+                advance()  // skip target type
+            }
+            skip_nl()
+            expect("{")
+            skip_nl()
+            while not_at_brace() {
+                skip_nl()
+                if check("fn") {
+                    mut f = ast_parse_fn_decl()
+                    // Mangle name: TypeName_method
+                    f.name = impl_type + "_" + f.name
+                    // Inject self param with impl type
+                    mut new_params: List<Param> = []
+                    new_params = new_params.push(Param { name: "self", type_name: impl_type })
+                    mut pi = 0
+                    while pi < f.params.length {
+                        let p: Param = f.params[pi]
+                        new_params = new_params.push(p)
+                        pi = pi + 1
+                    }
+                    f.params = new_params
+                    fns = fns.push(f)
+                } else {
+                    advance()
+                }
+                skip_nl()
+            }
+            expect("}")
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
         } else if tok.text == "use" || tok.text == "mod" {
@@ -2433,6 +2501,85 @@ fn gen_expr(e: Expr) -> string {
             return gen_ident(e.str_val)
         }
         .Binary -> {
+            // Handle null comparison: expr == null / expr != null
+            if (e.str_val == "==" || e.str_val == "!=") && e.children.length == 2 {
+                let rhs_node: Expr = e.children[1]
+                if rhs_node.kind is .Null {
+                    let lhs = gen_expr_child(e, 0)
+                    // For struct/enum types, always non-null (no nullable wrapping yet)
+                    // For string types, null = zero-length or null ptr
+                    if LAST_IS_STR == 1 {
+                        let sptr = new_reg()
+                        ir_line(sptr + " = extractvalue %ForgeString " + lhs + ", 0")
+                        let cmp = new_reg()
+                        mut null_pred = "eq"
+                        if e.str_val == "!=" { null_pred = "ne" }
+                        ir_line(cmp + " = icmp " + null_pred + " ptr " + sptr + ", null")
+                        let r = new_reg()
+                        ir_line(r + " = zext i1 " + cmp + " to i64")
+                        LAST_IS_STR = 0
+                        return r
+                    }
+                    // For ptr types, compare to null
+                    if LAST_IS_PTR == 1 {
+                        let cmp = new_reg()
+                        let r = new_reg()
+                        if e.str_val == "==" {
+                            ir_line(cmp + " = icmp eq ptr " + lhs + ", null")
+                        } else {
+                            ir_line(cmp + " = icmp ne ptr " + lhs + ", null")
+                        }
+                        ir_line(r + " = zext i1 " + cmp + " to i64")
+                        LAST_IS_STR = 0
+                        LAST_IS_PTR = 0
+                        LAST_STRUCT_TYPE = ""
+                        LAST_ENUM_TYPE = ""
+                        return r
+                    }
+                    // For struct types, == null is always false, != null always true
+                    if LAST_STRUCT_TYPE.length > 0 || LAST_ENUM_TYPE.length > 0 {
+                        LAST_IS_STR = 0
+                        LAST_STRUCT_TYPE = ""
+                        LAST_ENUM_TYPE = ""
+                        if e.str_val == "==" { return "0" }
+                        return "1"
+                    }
+                    // Default: i64 comparison with 0
+                    mut null_pred = "eq"
+                    if e.str_val == "!=" { null_pred = "ne" }
+                    let r = new_reg()
+                    ir_line(r + " = icmp " + null_pred + " i64 " + lhs + ", 0")
+                    let r2 = new_reg()
+                    ir_line(r2 + " = zext i1 " + r + " to i64")
+                    return r2
+                }
+            }
+            // Handle .Variant comparison: expr == .Error
+            if (e.str_val == "==" || e.str_val == "!=") && e.children.length == 2 {
+                let rhs_check: Expr = e.children[1]
+                if rhs_check.kind is .EnumLit {
+                    if rhs_check.str_val.length > 0 && rhs_check.str_val.substring(0, 1) == "." {
+                        // Bare .Variant — infer enum type from LHS
+                        let lhs = gen_expr_child(e, 0)
+                        let enum_name = LAST_ENUM_TYPE
+                        let ei = find_enum(enum_name)
+                        let vname = rhs_check.str_val.substring(1, rhs_check.str_val.length)
+                        let vidx = enum_variant_index(ei, vname)
+                        let tag = new_reg()
+                        ir_line(tag + " = extractvalue %" + enum_name + " " + lhs + ", 0")
+                        let cmp = new_reg()
+                        mut cmp_pred = "eq"
+                        if e.str_val == "!=" { cmp_pred = "ne" }
+                        ir_line(cmp + " = icmp " + cmp_pred + " i8 " + tag + ", " + string(vidx))
+                        let r = new_reg()
+                        ir_line(r + " = zext i1 " + cmp + " to i64")
+                        LAST_IS_STR = 0
+                        LAST_ENUM_TYPE = ""
+                        LAST_STRUCT_TYPE = ""
+                        return r
+                    }
+                }
+            }
             // Handle 'is' pattern: expr is .Variant
             if e.str_val == "is" {
                 let lhs = gen_expr_child(e, 0)
@@ -2980,6 +3127,68 @@ fn gen_call(e: Expr) -> string {
         }
     }
 
+    // Method resolution: p.method(args) → StructName_method(p, args)
+    if e.children.length >= 1 {
+        let first: Expr = e.children[0]
+        if is_ident_expr(first) {
+            let var_idx = find_var(first.str_val)
+            if var_idx >= 0 {
+                let var_stype = VAR_STRUCT_TYPE[var_idx]
+                if var_stype.length > 0 {
+                    // Try StructName_method
+                    let method_name = var_stype + "_" + name
+                    let method_ret = find_fn_ret(method_name)
+                    if method_ret != "i64" || find_fn_index(method_name) >= 0 {
+                        // Found a method — call it with object as first arg
+                        let call_ret = method_ret
+                        mut arg_str = ""
+                        mut mi = 0
+                        while mi < e.children.length {
+                            if mi > 0 { arg_str = arg_str + ", " }
+                            LAST_IS_STR = 0
+                            LAST_IS_LIST = 0
+                            LAST_IS_PTR = 0
+                            LAST_IS_FLOAT = 0
+                            LAST_STRUCT_TYPE = ""
+                            LAST_ENUM_TYPE = ""
+                            let a = gen_expr_child(e, mi)
+                            mut aty = "i64"
+                            if LAST_IS_STR == 1 { aty = "%ForgeString" }
+                            if LAST_IS_PTR == 1 { aty = "ptr" }
+                            if LAST_IS_FLOAT == 1 { aty = "double" }
+                            if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
+                            if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
+                            if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
+                            if a.length > 1 {
+                                if a.substring(0, 1) == "@" { aty = "ptr" }
+                            }
+                            arg_str = arg_str + aty + " " + a
+                            mi = mi + 1
+                        }
+                        if call_ret == "void" {
+                            ir_line("call void @" + method_name + "(" + arg_str + ")")
+                            LAST_IS_STR = 0
+                            LAST_IS_LIST = 0
+                            LAST_IS_PTR = 0
+                            LAST_STRUCT_TYPE = ""
+                            LAST_ENUM_TYPE = ""
+                            return "0"
+                        }
+                        let r = new_reg()
+                        ir_line(r + " = call " + call_ret + " @" + method_name + "(" + arg_str + ")")
+                        LAST_IS_STR = 0
+                        LAST_IS_LIST = 0
+                        LAST_IS_PTR = 0
+                        LAST_STRUCT_TYPE = ""
+                        LAST_ENUM_TYPE = ""
+                        set_type_from_llvm(call_ret)
+                        return r
+                    }
+                }
+            }
+        }
+    }
+
     // Hardcoded namespace methods: fs.read, fs.write, process.run, process.args, process.exit
     if e.children.length >= 1 {
         let first: Expr = e.children[0]
@@ -3121,7 +3330,31 @@ fn gen_call(e: Expr) -> string {
             LAST_IS_STR = 0
             return r
         }
+        if LAST_IS_FLOAT == 1 {
+            let r = new_reg()
+            ir_line(r + " = fptosi double " + arg + " to i64")
+            LAST_IS_FLOAT = 0
+            return r
+        }
         return arg
+    }
+    // Built-in: float(x)
+    if name == "float" && e.children.length == 1 {
+        let arg = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            // Parse string to float — use strtod via runtime
+            let r = new_reg()
+            ir_line(r + " = call double @forge_string_to_float(%ForgeString " + arg + ")")
+            LAST_IS_STR = 0
+            LAST_IS_FLOAT = 1
+            return r
+        }
+        if LAST_IS_FLOAT == 1 { return arg }
+        // int to float
+        let r = new_reg()
+        ir_line(r + " = sitofp i64 " + arg + " to double")
+        LAST_IS_FLOAT = 1
+        return r
     }
     // Built-in: println/eprintln
     if name == "println" || name == "eprintln" {
@@ -3359,11 +3592,13 @@ fn gen_member(obj: string, field: string) -> string {
             return r
         }
     }
-    // List methods
+    // List methods (also handles ForgeString-typed lists)
     if LAST_IS_LIST == 1 {
         if field == "length" {
             let r = new_reg()
-            ir_line(r + " = extractvalue { ptr, i64 } " + obj + ", 1")
+            // Use correct struct type for extractvalue
+            mut list_ty = "{ ptr, i64 }"
+            ir_line(r + " = extractvalue " + list_ty + " " + obj + ", 1")
             LAST_IS_LIST = 0
             LAST_IS_STR = 0
             return r
@@ -3527,12 +3762,28 @@ fn codegen_while(s: Stmt) -> int {
 fn codegen_for(s: Stmt) -> int {
     let var_name = s.str_val
     LAST_IS_LIST = 0
+    LAST_IS_STR = 0
     let iterable = gen_expr_from(s, 0)
-    let elem_ty = LAST_LIST_ELEM_TYPE
+    let iter_is_str = LAST_IS_STR
+    let iter_is_list = LAST_IS_LIST
+
+    // Get length and set up element access
+    mut elem_ty = LAST_LIST_ELEM_TYPE
     let len_r = new_reg()
-    ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
     let data_r = new_reg()
-    ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+
+    if iter_is_str == 1 {
+        // String iteration: use forge_string_length + forge_string_char_at
+        ir_line(len_r + " = call i64 @forge_string_length(%ForgeString " + iterable + ")")
+        ir_line(data_r + " = alloca %ForgeString")  // placeholder
+        ir_line("store %ForgeString " + iterable + ", ptr " + data_r)
+        elem_ty = "%ForgeString"  // each element is a single-char string
+    } else {
+        // List iteration: extractvalue
+        ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
+        ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+    }
+
     let idx_alloca = new_reg()
     ir_line(idx_alloca + " = alloca i64")
     ir_line("store i64 0, ptr " + idx_alloca)
@@ -3552,11 +3803,21 @@ fn codegen_for(s: Stmt) -> int {
     ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
     ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
     ir_raw(body_l + ":")
-    let ep = new_reg()
-    ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
-    let ev = new_reg()
-    ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
-    ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    if iter_is_str == 1 {
+        // String iteration: char_at(str, idx)
+        let str_val = new_reg()
+        ir_line(str_val + " = load %ForgeString, ptr " + data_r)
+        let ev = new_reg()
+        ir_line(ev + " = call %ForgeString @forge_string_char_at(%ForgeString " + str_val + ", i64 " + idx_val + ")")
+        ir_line("store %ForgeString " + ev + ", ptr " + elem_alloca)
+    } else {
+        // List iteration: GEP + load
+        let ep = new_reg()
+        ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
+        let ev = new_reg()
+        ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
+        ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    }
     let body_ended = gen_stmts(s.body)
     let next_idx = new_reg()
     ir_line(next_idx + " = add i64 " + idx_val + ", 1")
@@ -3946,6 +4207,15 @@ fn gen_fn_decl(f: FnDecl) {
             ir_line("ret i32 0")
         } else if ret_ty == "void" {
             ir_line("ret void")
+        } else if ret_ty == "double" {
+            // Float return — convert if needed
+            if LAST_IS_FLOAT == 1 {
+                ir_line("ret double " + LAST_EXPR_VAL)
+            } else {
+                let conv = new_reg()
+                ir_line(conv + " = sitofp i64 " + LAST_EXPR_VAL + " to double")
+                ir_line("ret double " + conv)
+            }
         } else {
             ir_line("ret " + ret_ty + " " + LAST_EXPR_VAL)
         }
@@ -4085,10 +4355,59 @@ fn compile(source: string) -> string {
             parse_enum_decl_top()
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
-        } else if tok.text == "impl" || tok.text == "trait" {
+        } else if tok.text == "trait" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
+        } else if tok.text == "impl" {
+            // Scan impl methods for fn signatures
+            advance()
+            skip_nl()
+            let impl_name = advance().text
+            skip_nl()
+            if check("for") { advance(); skip_nl(); advance() }
+            skip_nl()
+            while !check("{") && POS < TOKENS.length { advance() }
+            advance() // consume {
+            skip_nl()
+            while not_at_brace() {
+                skip_nl()
+                if check("fn") {
+                    // scan_fn_sig but with mangled name
+                    advance() // fn
+                    let method_name = advance().text
+                    let mangled = impl_name + "_" + method_name
+                    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+                    mut ret_ty = "void"
+                    if check("->") {
+                        advance()
+                        skip_nl()
+                        let rt = advance().text
+                        if rt == "int" { ret_ty = "i64" }
+                        if rt == "bool" { ret_ty = "i64" }
+                        if rt == "string" { ret_ty = "%ForgeString" }
+                        if find_struct(rt) >= 0 { ret_ty = "%" + rt }
+                        if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+                        if rt == "List" { ret_ty = "{ ptr, i64 }" }
+                        if rt == "ptr" { ret_ty = "ptr" }
+                        if check("<") {
+                            while !check(">") && POS < TOKENS.length { advance() }
+                            if check(">") { advance() }
+                        }
+                        if check("?") { advance() }
+                    }
+                    while !check("{") && POS < TOKENS.length { advance() }
+                    skip_block()
+                    FN_NAMES = FN_NAMES.push(mangled)
+                    FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+                } else {
+                    advance()
+                }
+                skip_nl()
+            }
+            if check("}") { advance() }
         } else {
             advance()
         }
@@ -4165,6 +4484,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare i64 @forge_string_to_int(%ForgeString)")
+    ir_raw("declare double @forge_string_to_float(%ForgeString)")
     ir_raw("declare ptr @forge_map_new()")
     ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
     ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
@@ -4230,6 +4550,80 @@ fn compile(source: string) -> string {
     }
 
     "done"
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BRIDGE — connects target feature methods to mini/'s global engine
+//
+// Target features call: p.advance(), tc.check_block(), cg.emit_expr()
+// Method resolution maps: p.advance() → Parser_advance(p)
+// These bridge functions delegate to mini/'s global functions.
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Parser methods ─────────────────────────────
+
+fn Parser_check(p: Parser, text: string) -> bool {
+    check(text)
+}
+
+fn Parser_advance(p: Parser) -> Tok {
+    advance()
+}
+
+fn Parser_peek(p: Parser) -> Tok {
+    peek()
+}
+
+fn Parser_expect(p: Parser, text: string) {
+    expect(text)
+}
+
+fn Parser_expect_ident(p: Parser) -> string {
+    advance().text
+}
+
+fn Parser_skip_newlines(p: Parser) {
+    skip_nl()
+}
+
+fn Parser_is_at_end(p: Parser) -> bool {
+    POS >= TOKENS.length
+}
+
+fn Parser_parse_block(p: Parser) -> List<Stmt> {
+    ast_parse_block()
+}
+
+fn Parser_parse_expr(p: Parser) -> Expr {
+    ast_parse_expr()
+}
+
+// ─── TypeChecker methods ────────────────────────
+
+fn TypeChecker_check_block(tc: TypeChecker, block: List<Stmt>) -> string {
+    "void"
+}
+
+fn TypeChecker_infer_expr(tc: TypeChecker, expr: Expr) -> string {
+    "int"
+}
+
+fn TypeChecker_resolve_type_expr(tc: TypeChecker, name: string) -> string {
+    type_to_llvm(name)
+}
+
+// ─── Codegen methods ────────────────────────────
+
+fn Codegen_emit_expr(cg: Codegen, expr: Expr) -> string {
+    gen_expr(expr)
+}
+
+fn Codegen_emit_block(cg: Codegen, stmts: List<Stmt>) {
+    gen_block(stmts)
+}
+
+fn Codegen_define_var(cg: Codegen, name: string, alloca: string, ty: string) {
+    push_var(name, alloca, ty)
 }
 
 // Mini Forge Compiler — self-hosted (multi-file)
