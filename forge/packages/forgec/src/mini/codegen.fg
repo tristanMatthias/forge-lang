@@ -1488,7 +1488,7 @@ fn codegen_match(s: Stmt) -> int {
                 if LAST_IS_STR == 1 { mst = "%ForgeString" }
                 if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
                 if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
-                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if LAST_EXPR_VAL == "zeroinitializer" && match_store_ty != "i64" { ir_line("store " + match_store_ty + " zeroinitializer, ptr " + match_result) } else { ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result) }
                 if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
@@ -1520,7 +1520,7 @@ fn codegen_match(s: Stmt) -> int {
                 if LAST_IS_STR == 1 { mst = "%ForgeString" }
                 if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
                 if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
-                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if LAST_EXPR_VAL == "zeroinitializer" && match_store_ty != "i64" { ir_line("store " + match_store_ty + " zeroinitializer, ptr " + match_result) } else { ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result) }
                 if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
@@ -1595,7 +1595,7 @@ fn codegen_match(s: Stmt) -> int {
                 if LAST_IS_STR == 1 { mst = "%ForgeString" }
                 if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
                 if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
-                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if LAST_EXPR_VAL == "zeroinitializer" && match_store_ty != "i64" { ir_line("store " + match_store_ty + " zeroinitializer, ptr " + match_result) } else { ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result) }
                 if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
