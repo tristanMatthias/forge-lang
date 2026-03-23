@@ -1681,6 +1681,41 @@ ForgeString forge_mini_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new(result, rlen);
 }
 
+// Run command with list of ForgeString args (not JSON)
+typedef struct { void* ptr; int64_t len; } ForgeList;
+ForgeString forge_mini_run_list(ForgeString cmd, ForgeList args) {
+    char cmd_buf[8192];
+    int off = snprintf(cmd_buf, sizeof(cmd_buf), "%.*s", (int)cmd.len, cmd.ptr);
+    ForgeString* items = (ForgeString*)args.ptr;
+    for (int64_t i = 0; i < args.len; i++) {
+        // Shell-escape: wrap in single quotes
+        off += snprintf(cmd_buf + off, sizeof(cmd_buf) - off, " '%.*s'",
+            (int)items[i].len, items[i].ptr);
+    }
+    cmd_buf[off] = '\0';
+    // Redirect stderr to stdout so we capture both
+    strncat(cmd_buf, " 2>&1", sizeof(cmd_buf) - strlen(cmd_buf) - 1);
+    FILE* fp = popen(cmd_buf, "r");
+    if (!fp) {
+        char err[] = "{\"stdout\":\"\",\"stderr\":\"popen failed\",\"code\":1}";
+        return forge_string_new(err, strlen(err));
+    }
+    char out[65536] = {0};
+    int total = 0;
+    while (total < (int)sizeof(out) - 1) {
+        int n = fread(out + total, 1, sizeof(out) - 1 - total, fp);
+        if (n <= 0) break;
+        total += n;
+    }
+    int code = pclose(fp);
+    int exit_code = WEXITSTATUS(code);
+    char result[131072];
+    int rlen = snprintf(result, sizeof(result),
+        "{\"stdout\":\"%.*s\",\"stderr\":\"\",\"code\":%d}",
+        total, out, exit_code);
+    return forge_string_new(result, rlen);
+}
+
 // Write a large ForgeString to file — workaround for potential ABI issues
 void forge_mini_write_file(ForgeString path, ForgeString content) {
     char cpath[4096];

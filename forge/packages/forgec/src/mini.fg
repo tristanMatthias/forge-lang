@@ -3758,7 +3758,7 @@ fn gen_call(e: Expr) -> string {
                     let cmd = gen_expr_child(e, 1)
                     let args = gen_expr_child(e, 2)
                     let r = new_reg()
-                    ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", { ptr, i64 } " + args + ")")
+                    ir_line(r + " = call %ForgeString @forge_mini_run_list(%ForgeString " + cmd + ", { ptr, i64 } " + args + ")")
                     LAST_IS_STR = 1
                     LAST_IS_LIST = 0
                     LAST_STRUCT_TYPE = ""
@@ -4563,6 +4563,7 @@ fn ast_compile(source: string) -> string {
     ir_raw("declare i64 @forge_mini_argc()")
     ir_raw("declare %ForgeString @forge_mini_argv(i64)")
     ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
+    ir_raw("declare %ForgeString @forge_mini_run_list(%ForgeString, { ptr, i64 })")
     ir_raw("declare void @forge_exit(i64)")
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
@@ -4718,6 +4719,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_mini_argc()")
     ir_raw("declare %ForgeString @forge_mini_argv(i64)")
     ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
+    ir_raw("declare %ForgeString @forge_mini_run_list(%ForgeString, { ptr, i64 })")
     ir_raw("declare void @forge_exit(i64)")
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
