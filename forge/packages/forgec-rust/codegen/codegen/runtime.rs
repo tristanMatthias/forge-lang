@@ -18,12 +18,14 @@ impl<'ctx> Codegen<'ctx> {
                 continue;
             }
 
+            let list_type = self.context.struct_type(&[ptr_type.into(), i64_type.into()], false);
             let param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = decl.params.iter().map(|p| match p {
                 RuntimeType::I64 => i64_type.into(),
                 RuntimeType::F64 => f64_type.into(),
                 RuntimeType::I8 => i8_type.into(),
                 RuntimeType::Ptr => ptr_type.into(),
                 RuntimeType::ForgeString => string_type.into(),
+                RuntimeType::ForgeList => list_type.into(),
             }).collect();
 
             // Handle snprintf specially (variadic)

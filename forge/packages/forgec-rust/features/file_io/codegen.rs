@@ -24,4 +24,19 @@ impl<'ctx> Codegen<'ctx> {
         let path_val = self.compile_expr(&args[0].value)?;
         self.call_runtime("forge_file_exists", &[path_val.into()], "file_exists")
     }
+
+    /// Compile forge_join_lines(lines) — joins list of strings with newlines
+    pub(crate) fn compile_join_lines(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+        if args.len() != 1 { return None; }
+        let lines_val = self.compile_expr(&args[0].value)?;
+        self.call_runtime("forge_join_lines", &[lines_val.into()], "joined")
+    }
+
+    /// Compile forge_write_lines(path, lines) — writes list of strings to file
+    pub(crate) fn compile_write_lines(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+        if args.len() != 2 { return None; }
+        let path_val = self.compile_expr(&args[0].value)?;
+        let lines_val = self.compile_expr(&args[1].value)?;
+        self.call_runtime("forge_write_lines", &[path_val.into(), lines_val.into()], "write_lines")
+    }
 }

@@ -253,6 +253,8 @@ impl<'ctx> Codegen<'ctx> {
                         "read_file" => self.compile_read_file(args),
                         "write_file" => self.compile_write_file(args),
                         "file_exists" => self.compile_file_exists(args),
+                        "forge_join_lines" => self.compile_join_lines(args),
+                        "forge_write_lines" => self.compile_write_lines(args),
                         _ => None,
                     },
                     "stderr" => match name.as_str() {

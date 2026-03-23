@@ -39,8 +39,12 @@ All paths are interpreted relative to the current working directory unless they 
 crate::builtin_fn! { name: "read_file", feature: "file_io", params: [String], ret: String, variadic: false }
 crate::builtin_fn! { name: "write_file", feature: "file_io", params: [String, String], ret: Bool, variadic: false }
 crate::builtin_fn! { name: "file_exists", feature: "file_io", params: [String], ret: Bool, variadic: false }
+crate::builtin_fn! { name: "forge_join_lines", feature: "file_io", params: [Unknown], ret: String, variadic: false }
+crate::builtin_fn! { name: "forge_write_lines", feature: "file_io", params: [String, Unknown], ret: Void, variadic: false }
 
 // Runtime function declarations
 crate::runtime_fn! { name: "forge_read_file", feature: "file_io", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_write_file", feature: "file_io", params: [ForgeString, ForgeString], ret: I8 }
 crate::runtime_fn! { name: "forge_file_exists", feature: "file_io", params: [ForgeString], ret: I8 }
+crate::runtime_fn! { name: "forge_write_lines", feature: "file_io", params: [ForgeString, ForgeList], ret: Void }
+crate::runtime_fn! { name: "forge_join_lines", feature: "file_io", params: [ForgeList], ret: ForgeString }

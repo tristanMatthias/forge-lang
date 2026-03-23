@@ -283,26 +283,13 @@ fn is_quote(c: string) -> bool {
 // ─── Codegen helpers (defined early for forward reference) ────────
 
 fn ir_block_terminated() -> int {
-    // Check if the last emitted IR instruction is a terminator (ret/br/unreachable)
-    // Scan backwards in IR for last non-empty line
-    let len = IR.length
-    if len < 5 { return 0 }
-    // Find last newline
-    mut i = len - 2
-    while i > 0 {
-        if IR.byte_at(i) == 10 {
-            // Found newline — check the line after it
-            let line = IR.substring(i + 1, len)
-            // Check for common terminators
-            if line.contains("ret ") { return 1 }
-            if line.contains("ret void") { return 1 }
-            if line.contains("unreachable") { return 1 }
-            if line.contains("br label") { return 1 }
-            if line.contains("br i1") { return 1 }
-            return 0
-        }
-        i = i - 1
-    }
+    if IR.length == 0 { return 0 }
+    let last = IR[IR.length - 1]
+    if last.contains("ret ") { return 1 }
+    if last.contains("ret void") { return 1 }
+    if last.contains("unreachable") { return 1 }
+    if last.contains("br label") { return 1 }
+    if last.contains("br i1") { return 1 }
     0
 }
 
@@ -515,11 +502,11 @@ fn tokenize(source: string) -> List<Tok> {
 
 mut TOKENS: List<Tok> = []
 mut POS: int = 0
-mut IR: string = ""
+mut IR: List<string> = []
 mut REG_N: int = 0
 mut LBL_N: int = 0
 mut STR_N: int = 0
-mut STR_DECLS: string = ""
+mut STR_DECLS: List<string> = []
 
 // Variable tracking — flat lists
 mut VAR_NAMES: List<string> = []
@@ -942,11 +929,11 @@ fn skip_nl() {
 }
 
 fn ir_line(s: string) {
-    IR = IR + "  " + s + "\n"
+    IR = IR.push("  " + s)
 }
 
 fn ir_raw(s: string) {
-    IR = IR + s + "\n"
+    IR = IR.push(s)
 }
 
 fn new_reg() -> string {
@@ -966,7 +953,7 @@ fn new_str_const(text: string) -> string {
     // Collect string constants in STR_DECLS (emitted at top of IR)
     // Size = escaped byte count + 1 (for NUL). Each \XX escape = 1 byte, regular char = 1 byte.
     let byte_len = count_ir_bytes(escaped)
-    STR_DECLS = STR_DECLS + name + " = private unnamed_addr constant [" + string(byte_len + 1) + " x i8] c\"" + escaped + "\\00\"\n"
+    STR_DECLS = STR_DECLS.push(name + " = private unnamed_addr constant [" + string(byte_len + 1) + " x i8] c\"" + escaped + "\\00\"")
     name
 }
 
@@ -4442,8 +4429,8 @@ fn is_known_type(name: string) -> bool {
 fn ast_compile(source: string) -> string {
     TOKENS = tokenize(source)
     POS = 0
-    IR = ""
-    STR_DECLS = ""
+    IR = []
+    STR_DECLS = []
     STR_N = 0
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
@@ -4572,6 +4559,8 @@ fn ast_compile(source: string) -> string {
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
+    ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
+    ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
     ir_raw("")
 
     // Parse all functions into AST
@@ -4585,8 +4574,7 @@ fn ast_compile(source: string) -> string {
         fi = fi + 1
     }
 
-    let final_ir = STR_DECLS + "\n" + IR
-    final_ir
+    "done"
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4596,8 +4584,8 @@ fn ast_compile(source: string) -> string {
 fn compile(source: string) -> string {
     TOKENS = tokenize(source)
     POS = 0
-    IR = ""
-    STR_DECLS = ""
+    IR = []
+    STR_DECLS = []
     STR_N = 0
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
@@ -4728,6 +4716,8 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
+    ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
+    ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
     ir_raw("")
 
     // Parse top-level
@@ -4776,8 +4766,7 @@ fn compile(source: string) -> string {
     // Build final IR: header + string constants + functions
     // The header is already at the top of IR. Insert STR_DECLS after header, before functions.
     // Since we can't easily split, just prepend STR_DECLS to the function definitions.
-    let final_ir = STR_DECLS + "\n" + IR
-    final_ir
+    "done"
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4815,14 +4804,25 @@ fn main() {
         eprintln("  lex + parse + codegen: " + input)
         compile(source)
     }
-    eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " chars")
+    eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " lines")
 
-    // Write combined IR: string constants + header + functions
+    // Write IR to file: IR (header+functions) then STR_DECLS (string constants)
     let ir_path = "/tmp/mini_output.ll"
-    let full_ir = IR + "\n" + STR_DECLS
+    mut all_lines: List<string> = []
+    mut ii = 0
+    while ii < IR.length {
+        all_lines = all_lines.push(IR[ii])
+        ii = ii + 1
+    }
+    all_lines = all_lines.push("")
+    mut si = 0
+    while si < STR_DECLS.length {
+        all_lines = all_lines.push(STR_DECLS[si])
+        si = si + 1
+    }
+    let full_ir = forge_join_lines(all_lines)
     fs.write(ir_path, full_ir)
-    let written = fs.read(ir_path)
-    eprintln("  wrote " + string(written.length) + " chars to " + ir_path)
+    eprintln("  wrote " + string(full_ir.length) + " chars to " + ir_path)
 
     // Compile
     mut output = "a.out"

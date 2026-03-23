@@ -918,6 +918,7 @@ pub enum RuntimeType {
     I8,
     Ptr,
     ForgeString,
+    ForgeList,
 }
 
 /// Return type descriptor for runtime functions

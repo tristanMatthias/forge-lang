@@ -1716,6 +1716,45 @@ ForgeString forge_mini_run_list(ForgeString cmd, ForgeList args) {
     return forge_string_new(result, rlen);
 }
 
+// Join a list of ForgeStrings with newline separator
+ForgeString forge_join_lines(ForgeList lines) {
+    ForgeString* items = (ForgeString*)lines.ptr;
+    // Calculate total length
+    int64_t total = 0;
+    for (int64_t i = 0; i < lines.len; i++) {
+        total += items[i].len + 1; // +1 for newline
+    }
+    char* buf = (char*)forge_alloc(total + 1);
+    int64_t off = 0;
+    for (int64_t i = 0; i < lines.len; i++) {
+        if (items[i].len > 0) {
+            memcpy(buf + off, items[i].ptr, items[i].len);
+            off += items[i].len;
+        }
+        buf[off++] = '\n';
+    }
+    buf[off] = '\0';
+    return forge_string_new(buf, off);
+}
+
+// Write a list of ForgeStrings to file, one per line
+void forge_write_lines(ForgeString path, ForgeList lines) {
+    char cpath[4096];
+    if (path.len >= sizeof(cpath)) return;
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+    FILE* f = fopen(cpath, "wb");
+    if (!f) return;
+    ForgeString* items = (ForgeString*)lines.ptr;
+    for (int64_t i = 0; i < lines.len; i++) {
+        if (items[i].len > 0) {
+            fwrite(items[i].ptr, 1, items[i].len, f);
+        }
+        fputc('\n', f);
+    }
+    fclose(f);
+}
+
 // Write a large ForgeString to file — workaround for potential ABI issues
 void forge_mini_write_file(ForgeString path, ForgeString content) {
     char cpath[4096];
