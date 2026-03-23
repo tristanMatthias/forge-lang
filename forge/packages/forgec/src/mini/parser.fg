@@ -751,10 +751,49 @@ fn ast_parse_program() -> List<FnDecl> {
             skip_nl()
             while not_at_brace() { advance() }
             if check("}") { advance() }
-        } else if tok.text == "impl" || tok.text == "trait" {
+        } else if tok.text == "trait" {
+            // Skip trait blocks
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
+        } else if tok.text == "impl" {
+            // Parse impl block: impl TypeName { fn method(self) { ... } }
+            advance()
+            skip_nl()
+            let impl_type = advance().text
+            // Skip "for TypeName" if present
+            skip_nl()
+            if check("for") {
+                advance()
+                skip_nl()
+                advance()  // skip target type
+            }
+            skip_nl()
+            expect("{")
+            skip_nl()
+            while not_at_brace() {
+                skip_nl()
+                if check("fn") {
+                    mut f = ast_parse_fn_decl()
+                    // Mangle name: TypeName_method
+                    f.name = impl_type + "_" + f.name
+                    // Inject self param with impl type
+                    mut new_params: List<Param> = []
+                    new_params = new_params.push(Param { name: "self", type_name: impl_type })
+                    mut pi = 0
+                    while pi < f.params.length {
+                        let p: Param = f.params[pi]
+                        new_params = new_params.push(p)
+                        pi = pi + 1
+                    }
+                    f.params = new_params
+                    fns = fns.push(f)
+                } else {
+                    advance()
+                }
+                skip_nl()
+            }
+            expect("}")
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
         } else if tok.text == "use" || tok.text == "mod" {

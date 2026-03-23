@@ -867,7 +867,31 @@ fn gen_call(e: Expr) -> string {
             LAST_IS_STR = 0
             return r
         }
+        if LAST_IS_FLOAT == 1 {
+            let r = new_reg()
+            ir_line(r + " = fptosi double " + arg + " to i64")
+            LAST_IS_FLOAT = 0
+            return r
+        }
         return arg
+    }
+    // Built-in: float(x)
+    if name == "float" && e.children.length == 1 {
+        let arg = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            // Parse string to float — use strtod via runtime
+            let r = new_reg()
+            ir_line(r + " = call double @forge_string_to_float(%ForgeString " + arg + ")")
+            LAST_IS_STR = 0
+            LAST_IS_FLOAT = 1
+            return r
+        }
+        if LAST_IS_FLOAT == 1 { return arg }
+        // int to float
+        let r = new_reg()
+        ir_line(r + " = sitofp i64 " + arg + " to double")
+        LAST_IS_FLOAT = 1
+        return r
     }
     // Built-in: println/eprintln
     if name == "println" || name == "eprintln" {
@@ -1105,11 +1129,13 @@ fn gen_member(obj: string, field: string) -> string {
             return r
         }
     }
-    // List methods
+    // List methods (also handles ForgeString-typed lists)
     if LAST_IS_LIST == 1 {
         if field == "length" {
             let r = new_reg()
-            ir_line(r + " = extractvalue { ptr, i64 } " + obj + ", 1")
+            // Use correct struct type for extractvalue
+            mut list_ty = "{ ptr, i64 }"
+            ir_line(r + " = extractvalue " + list_ty + " " + obj + ", 1")
             LAST_IS_LIST = 0
             LAST_IS_STR = 0
             return r
@@ -1273,12 +1299,28 @@ fn codegen_while(s: Stmt) -> int {
 fn codegen_for(s: Stmt) -> int {
     let var_name = s.str_val
     LAST_IS_LIST = 0
+    LAST_IS_STR = 0
     let iterable = gen_expr_from(s, 0)
-    let elem_ty = LAST_LIST_ELEM_TYPE
+    let iter_is_str = LAST_IS_STR
+    let iter_is_list = LAST_IS_LIST
+
+    // Get length and set up element access
+    mut elem_ty = LAST_LIST_ELEM_TYPE
     let len_r = new_reg()
-    ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
     let data_r = new_reg()
-    ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+
+    if iter_is_str == 1 {
+        // String iteration: use forge_string_length + forge_string_char_at
+        ir_line(len_r + " = call i64 @forge_string_length(%ForgeString " + iterable + ")")
+        ir_line(data_r + " = alloca %ForgeString")  // placeholder
+        ir_line("store %ForgeString " + iterable + ", ptr " + data_r)
+        elem_ty = "%ForgeString"  // each element is a single-char string
+    } else {
+        // List iteration: extractvalue
+        ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
+        ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+    }
+
     let idx_alloca = new_reg()
     ir_line(idx_alloca + " = alloca i64")
     ir_line("store i64 0, ptr " + idx_alloca)
@@ -1298,11 +1340,21 @@ fn codegen_for(s: Stmt) -> int {
     ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
     ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
     ir_raw(body_l + ":")
-    let ep = new_reg()
-    ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
-    let ev = new_reg()
-    ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
-    ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    if iter_is_str == 1 {
+        // String iteration: char_at(str, idx)
+        let str_val = new_reg()
+        ir_line(str_val + " = load %ForgeString, ptr " + data_r)
+        let ev = new_reg()
+        ir_line(ev + " = call %ForgeString @forge_string_char_at(%ForgeString " + str_val + ", i64 " + idx_val + ")")
+        ir_line("store %ForgeString " + ev + ", ptr " + elem_alloca)
+    } else {
+        // List iteration: GEP + load
+        let ep = new_reg()
+        ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
+        let ev = new_reg()
+        ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
+        ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    }
     let body_ended = gen_stmts(s.body)
     let next_idx = new_reg()
     ir_line(next_idx + " = add i64 " + idx_val + ", 1")
@@ -1840,10 +1892,59 @@ fn compile(source: string) -> string {
             parse_enum_decl_top()
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
-        } else if tok.text == "impl" || tok.text == "trait" {
+        } else if tok.text == "trait" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
+        } else if tok.text == "impl" {
+            // Scan impl methods for fn signatures
+            advance()
+            skip_nl()
+            let impl_name = advance().text
+            skip_nl()
+            if check("for") { advance(); skip_nl(); advance() }
+            skip_nl()
+            while !check("{") && POS < TOKENS.length { advance() }
+            advance() // consume {
+            skip_nl()
+            while not_at_brace() {
+                skip_nl()
+                if check("fn") {
+                    // scan_fn_sig but with mangled name
+                    advance() // fn
+                    let method_name = advance().text
+                    let mangled = impl_name + "_" + method_name
+                    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+                    mut ret_ty = "void"
+                    if check("->") {
+                        advance()
+                        skip_nl()
+                        let rt = advance().text
+                        if rt == "int" { ret_ty = "i64" }
+                        if rt == "bool" { ret_ty = "i64" }
+                        if rt == "string" { ret_ty = "%ForgeString" }
+                        if find_struct(rt) >= 0 { ret_ty = "%" + rt }
+                        if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+                        if rt == "List" { ret_ty = "{ ptr, i64 }" }
+                        if rt == "ptr" { ret_ty = "ptr" }
+                        if check("<") {
+                            while !check(">") && POS < TOKENS.length { advance() }
+                            if check(">") { advance() }
+                        }
+                        if check("?") { advance() }
+                    }
+                    while !check("{") && POS < TOKENS.length { advance() }
+                    skip_block()
+                    FN_NAMES = FN_NAMES.push(mangled)
+                    FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+                } else {
+                    advance()
+                }
+                skip_nl()
+            }
+            if check("}") { advance() }
         } else {
             advance()
         }
@@ -1920,6 +2021,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare i64 @forge_string_to_int(%ForgeString)")
+    ir_raw("declare double @forge_string_to_float(%ForgeString)")
     ir_raw("declare ptr @forge_map_new()")
     ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
     ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
