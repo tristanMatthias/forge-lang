@@ -646,6 +646,15 @@ fn find_fn_ret(name: string) -> string {
     FIND_FN_RET_RESULT
 }
 
+fn find_fn_index(name: string) -> int {
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
 
 fn skip_block() {
     // Skip a { ... } block including nested blocks

@@ -20,6 +20,8 @@ cd "$(dirname "$0")"
   echo ""
   cat mini/codegen.fg
   echo ""
+  cat mini/bridge.fg
+  echo ""
   # main.fg without mod declarations
   grep -v "^mod " mini/main.fg
 } > mini.fg
