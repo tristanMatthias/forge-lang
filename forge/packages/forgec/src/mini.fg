@@ -276,9 +276,6 @@ fn lex_is_alnum(ch: string) -> bool {
     lex_is_digit(ch)
 }
 
-fn is_quote(c: string) -> bool {
-    c == "\""
-}
 
 // ─── Codegen helpers (defined early for forward reference) ────────
 
@@ -318,18 +315,6 @@ fn set_field_type(fty: string) {
             }
         }
     }
-}
-
-fn is_ann_list(ann: string) -> bool {
-    ann == "List"
-}
-
-fn read_last_is_str() -> int {
-    LAST_IS_STR
-}
-
-fn read_last_is_list() -> int {
-    LAST_IS_LIST
 }
 
 fn byte_at_pos(pos: int) -> int {
@@ -564,7 +549,6 @@ mut LOOP_END: List<string> = []
 // Current function return type
 mut CUR_RET_TY: string = "i64"
 mut LAST_EXPR_VAL: string = "0"
-mut LAST_IDENT_NAME: string = ""
 mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
 // ─── Struct helpers ───────────────────────────────
 
@@ -665,18 +649,6 @@ fn is_list_type(ty: string) -> bool {
     true
 }
 
-fn clear_last_ident() {
-    LAST_IDENT_NAME = ""
-}
-
-fn check_list_annotation(ann: string, generic: string) {
-    if ann == "List" {
-        LAST_IS_LIST = 1
-        if generic != "" {
-            LAST_LIST_ELEM_TYPE = type_to_llvm(generic)
-        }
-    }
-}
 
 fn set_type_from_llvm(ty: string) {
     // Given an LLVM return type, set LAST_IS_STR/LAST_IS_LIST/LAST_STRUCT_TYPE/LAST_ENUM_TYPE
@@ -2527,7 +2499,6 @@ fn gen_stmt(s: Stmt) -> bool {
             } else {
                 push_var(name, alloca, ty)
             }
-            clear_last_ident()
             return false
         }
         .Return -> {
