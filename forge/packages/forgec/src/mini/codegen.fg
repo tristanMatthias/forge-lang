@@ -711,8 +711,14 @@ fn gen_call(e: Expr) -> string {
     // Built-in: string(x)
     if name == "string" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
-        // If already a string, pass through
         if LAST_IS_STR == 1 { return arg }
+        if LAST_IS_FLOAT == 1 {
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_float_to_string(double " + arg + ")")
+            LAST_IS_STR = 1
+            LAST_IS_FLOAT = 0
+            return r
+        }
         let r = new_reg()
         ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
         LAST_IS_STR = 1
@@ -1701,6 +1707,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_length(%ForgeString)")
     ir_raw("declare %ForgeString @forge_int_to_string(i64)")
+    ir_raw("declare %ForgeString @forge_float_to_string(double)")
     ir_raw("declare void @forge_print_string(%ForgeString)")
     ir_raw("declare void @forge_println_string(%ForgeString)")
     ir_raw("declare void @forge_eprintln_string(%ForgeString)")

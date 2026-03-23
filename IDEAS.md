@@ -13,6 +13,8 @@ Based on the ideas that:
 4. Escape hatches built in to everything when you don't want magic
 5. DX/Ergonomics is a feature, not an afterthought (errors, docs, tooling, etc) and optmized for LLMs
 
+- Layers of abstracted intent: Notebook like document that starts with goals and ends in code (tree like structure)
+
 # TODO
 - Move "provider" naming to "package"
 - Move channel to core, not as a std
