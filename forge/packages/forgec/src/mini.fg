@@ -2669,15 +2669,36 @@ fn gen_stmt(s: Stmt) -> bool {
         }
         .Assign -> {
             let target: Expr = s.exprs[0]
-            let val = gen_expr_from(s, 1)
-            // Simple variable assignment
             match target.kind {
                 .Ident -> {
+                    let val = gen_expr_from(s, 1)
                     let var_idx = find_var(target.str_val)
                     if var_idx >= 0 {
                         let store_ty = VAR_TYPES[var_idx]
                         let load_ty = get_load_type(store_ty)
                         ir_line("store " + load_ty + " " + val + ", ptr " + VAR_REGS[var_idx])
+                    }
+                }
+                .Member -> {
+                    // obj.field = value → load struct, insertvalue, store back
+                    let obj_expr: Expr = target.children[0]
+                    let field = target.str_val
+                    if is_ident_expr(obj_expr) {
+                        let var_idx = find_var(obj_expr.str_val)
+                        if var_idx >= 0 {
+                            let sty_name = VAR_STRUCT_TYPE[var_idx]
+                            let si = find_struct(sty_name)
+                            if si >= 0 {
+                                let fi = struct_field_index(si, field)
+                                let fty = struct_field_type(si, fi)
+                                let val = gen_expr_from(s, 1)
+                                let cur = new_reg()
+                                ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
+                                let updated = new_reg()
+                                ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + val + ", " + string(fi))
+                                ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
+                            }
+                        }
                     }
                 }
                 _ -> {}
