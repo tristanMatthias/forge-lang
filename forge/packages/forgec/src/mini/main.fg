@@ -1,12 +1,9 @@
-// Mini Forge Compiler — self-hosted (multi-file version)
-// Entry point with module declarations
-
+// Mini Forge Compiler — self-hosted (multi-file)
 mod types
 mod lexer
 mod state
 mod parser
 mod codegen
-
 // ═══════════════════════════════════════════════════════════════════
 // MODULE RESOLUTION
 // ═══════════════════════════════════════════════════════════════════
@@ -25,14 +22,9 @@ fn path_dir(path: string) -> string {
     path.substring(0, last_slash)
 }
 
-// Read a source file and resolve mod declarations.
-fn resolve_modules(path: string) -> List<string> {
-    let source = fs.read(path)
-    mut sources: List<string> = []
-    if source.length == 0 { return sources }
-    sources = sources.push(source)
-    let dir = path_dir(path)
-
+// Collect module file paths from "mod " declarations in source text
+fn collect_mod_paths(dir: string, source: string) -> List<string> {
+    mut paths: List<string> = []
     mut i = 0
     while i < source.length {
         mut at_line_start = false
@@ -43,29 +35,44 @@ fn resolve_modules(path: string) -> List<string> {
         if at_line_start && i + 4 < source.length {
             if source.substring(i, i + 4) == "mod " {
                 mut j = i + 4
-                while j < source.length && source.byte_at(j) != 10 && source.byte_at(j) != 32 {
+                while j < source.length && source.byte_at(j) != 10 && source.byte_at(j) != 32 && source.byte_at(j) != 13 {
                     j = j + 1
                 }
                 let mod_name = source.substring(i + 4, j)
+                // Try mod_name.fg then mod_name/mod.fg
                 mut mod_path = dir + "/" + mod_name + ".fg"
-                mut mod_src = fs.read(mod_path)
-                if mod_src.length == 0 {
+                let test = fs.read(mod_path)
+                if test.length == 0 {
                     mod_path = dir + "/" + mod_name + "/mod.fg"
-                    mod_src = fs.read(mod_path)
                 }
-                if mod_src.length > 0 {
-                    let sub: List<string> = resolve_modules(mod_path)
-                    mut si = 0
-                    while si < sub.length {
-                        sources = sources.push(sub[si])
-                        si = si + 1
-                    }
-                }
+                paths = paths.push(mod_path)
             }
         }
         i = i + 1
     }
-    sources
+    paths
+}
+
+// Read source file + all mod dependencies, return concatenated source
+fn resolve_modules(path: string) -> string {
+    let source = fs.read(path)
+    if source.length == 0 { return "" }
+    let dir = path_dir(path)
+    let mod_paths: List<string> = collect_mod_paths(dir, source)
+
+    // Collect all sources into a list, then join once
+    mut all: List<string> = []
+    all = all.push(source)
+    mut i = 0
+    while i < mod_paths.length {
+        let mp = mod_paths[i]
+        let mod_source = resolve_modules(mp)
+        if mod_source.length > 0 {
+            all = all.push(mod_source)
+        }
+        i = i + 1
+    }
+    forge_join_lines(all)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -83,20 +90,18 @@ fn main() {
 
     let command = args[1]
     let input = args[2]
-    let sources: List<string> = resolve_modules(input)
+    let source = resolve_modules(input)
 
-    if sources.length == 0 {
+    if source.length == 0 {
         eprintln("error: could not read " + input)
         process.exit(1)
     }
-
-    let source = forge_join_lines(sources)
 
     eprintln("  lex + parse + codegen: " + input)
     compile(source)
     eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " lines")
 
-    // Write IR to file
+    // Write IR to file: IR (header+functions) then STR_DECLS (string constants)
     let ir_path = "/tmp/mini_output.ll"
     mut all_lines: List<string> = []
     mut ii = 0
@@ -122,6 +127,7 @@ fn main() {
     if !llc_result.contains("\"code\":0") {
         eprintln("error: llc failed")
         eprintln(llc_result)
+        // Write IR for debugging
         eprintln("IR written to " + ir_path)
         process.exit(1)
     }
