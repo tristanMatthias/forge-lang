@@ -3759,6 +3759,12 @@ fn codegen_return(s: Stmt) -> int {
         let val = gen_expr_from(s, 0)
         ir_line("ret " + CUR_RET_TY + " " + val)
     }
+    // Clear type state after return (prevents stale types leaking to merge blocks)
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_IS_PTR = 0
     1
 }
 
@@ -3776,43 +3782,27 @@ fn codegen_if(s: Stmt) -> int {
     let else_l = new_label("else")
     let merge_l = new_label("merge")
 
-    // Alloca for if-result (accessible from any block, avoids SSA issues)
-    let if_result = new_reg()
-    ir_line(if_result + " = alloca [16 x i8]")
-
     ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
 
     // Then branch
     ir_raw(then_l + ":")
     let then_ended = gen_stmts(s.body)
-    let then_is_str = LAST_IS_STR
-    if then_ended == 0 {
-        // Store then result — only when type is known (str/struct/enum)
-        if LAST_EXPR_VAL.length > 1 && LAST_EXPR_VAL.substring(0, 1) == "%" && (LAST_IS_STR == 1 || LAST_STRUCT_TYPE.length > 0 || LAST_ENUM_TYPE.length > 0) {
-            mut st = "i64"
-            if LAST_IS_STR == 1 { st = "%ForgeString" }
-            if LAST_IS_LIST == 1 { st = "{ ptr, i64 }" }
-            if LAST_STRUCT_TYPE != "" { st = "%" + LAST_STRUCT_TYPE }
-            if LAST_ENUM_TYPE != "" { st = "%" + LAST_ENUM_TYPE }
-            ir_line("store " + st + " " + LAST_EXPR_VAL + ", ptr " + if_result)
-        }
-        ir_line("br label %" + merge_l)
+    if then_ended == 1 {
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        LAST_IS_STR = 0
     }
+    if then_ended == 0 { ir_line("br label %" + merge_l) }
 
     // Else branch
     ir_raw(else_l + ":")
     let else_ended = gen_stmts(s.else_body)
-    if else_ended == 0 {
-        if s.else_body.length > 0 && LAST_EXPR_VAL.length > 1 && LAST_EXPR_VAL.substring(0, 1) == "%" && (LAST_IS_STR == 1 || LAST_STRUCT_TYPE.length > 0 || LAST_ENUM_TYPE.length > 0) {
-            mut st = "i64"
-            if LAST_IS_STR == 1 { st = "%ForgeString" }
-            if LAST_IS_LIST == 1 { st = "{ ptr, i64 }" }
-            if LAST_STRUCT_TYPE != "" { st = "%" + LAST_STRUCT_TYPE }
-            if LAST_ENUM_TYPE != "" { st = "%" + LAST_ENUM_TYPE }
-            ir_line("store " + st + " " + LAST_EXPR_VAL + ", ptr " + if_result)
-        }
-        ir_line("br label %" + merge_l)
+    if else_ended == 1 {
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        LAST_IS_STR = 0
     }
+    if else_ended == 0 { ir_line("br label %" + merge_l) }
 
     // Merge
     ir_raw(merge_l + ":")
@@ -3820,20 +3810,7 @@ fn codegen_if(s: Stmt) -> int {
         ir_line("unreachable")
         return 1
     }
-
-    // Load result from alloca (only for if-expressions)
     IF_IS_EXPR = 0
-    if s.else_body.length > 0 && then_ended == 0 {
-        // Use the type of whatever was stored (fall back to CUR_RET_TY for struct returns)
-        mut load_ty = "i64"
-        if then_is_str == 1 || LAST_IS_STR == 1 { load_ty = "%ForgeString" }
-        if LAST_STRUCT_TYPE != "" { load_ty = "%" + LAST_STRUCT_TYPE }
-        if LAST_ENUM_TYPE != "" { load_ty = "%" + LAST_ENUM_TYPE }
-        let ifr = new_reg()
-        ir_line(ifr + " = load " + load_ty + ", ptr " + if_result)
-        LAST_EXPR_VAL = ifr
-        set_type_from_llvm(load_ty)
-    }
     0
 }
 
