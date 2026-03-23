@@ -255,6 +255,26 @@ fn ast_parse_primary() -> Expr {
         return expr_null()
     }
 
+    // Bare .Variant shorthand: .Error, .Some(x), etc.
+    if tok.text == "." && tok.kind == 5 {
+        advance()
+        let vname = advance().text
+        mut args: List<Expr> = []
+        if check("(") {
+            advance()
+            skip_nl()
+            while not_at_paren() {
+                args = args.push(ast_parse_expr())
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+        }
+        // Store as ".<variant>" — codegen infers enum type from context
+        return expr_enum("." + vname, args)
+    }
+
     // Parenthesized expression or closure: (x: int) -> expr
     if tok.text == "(" {
         // Lookahead: check if this is a closure by saving position
