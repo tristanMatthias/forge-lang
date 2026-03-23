@@ -163,6 +163,60 @@ fn ast_parse_closure() -> Expr {
     expr_closure(params, body)
 }
 
+// Expand template string "hello ${name}!" → "hello " + string(name) + "!"
+fn expand_template(s: string) -> Expr {
+    mut parts: List<Expr> = []
+    mut i = 0
+    mut seg_start = 0
+    while i < s.length {
+        if i + 1 < s.length && s.substring(i, i + 2) == "${" {
+            // Emit literal segment before ${
+            if i > seg_start {
+                parts = parts.push(expr_str(s.substring(seg_start, i)))
+            }
+            // Find matching }
+            mut j = i + 2
+            mut depth = 1
+            while j < s.length && depth > 0 {
+                if s.substring(j, j + 1) == "{" { depth = depth + 1 }
+                if s.substring(j, j + 1) == "}" { depth = depth - 1 }
+                if depth > 0 { j = j + 1 }
+            }
+            let expr_text = s.substring(i + 2, j)
+            // Parse the expression: tokenize and parse
+            let saved_tokens: List<Tok> = TOKENS
+            let saved_pos = POS
+            TOKENS = tokenize(expr_text)
+            POS = 0
+            let inner = ast_parse_expr()
+            TOKENS = saved_tokens
+            POS = saved_pos
+            // Wrap in string() — codegen handles string-passthrough
+            mut call_args: List<Expr> = []
+            call_args = call_args.push(inner)
+            parts = parts.push(expr_call("string", call_args))
+            i = j + 1
+            seg_start = i
+        } else {
+            i = i + 1
+        }
+    }
+    // Trailing literal
+    if seg_start < s.length {
+        parts = parts.push(expr_str(s.substring(seg_start, s.length)))
+    }
+    // Build concatenation chain
+    if parts.length == 0 { return expr_str("") }
+    mut result: Expr = parts[0]
+    mut pi = 1
+    while pi < parts.length {
+        let p: Expr = parts[pi]
+        result = expr_binary("+", result, p)
+        pi = pi + 1
+    }
+    result
+}
+
 fn ast_parse_primary() -> Expr {
     skip_nl()
     let tok: Tok = peek()
@@ -173,10 +227,15 @@ fn ast_parse_primary() -> Expr {
         return expr_int(int(tok.text))
     }
 
-    // String literal
+    // String literal (with template expansion for ${...})
     if tok.kind == 3 {
         advance()
-        return expr_str(tok.text)
+        let s = tok.text
+        // Check for template: contains ${
+        if s.index_of("${") >= 0 {
+            return expand_template(s)
+        }
+        return expr_str(s)
     }
 
     // Bool literal

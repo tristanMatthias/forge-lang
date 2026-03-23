@@ -685,6 +685,8 @@ fn gen_call(e: Expr) -> string {
     // Built-in: string(x)
     if name == "string" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
+        // If already a string, pass through
+        if LAST_IS_STR == 1 { return arg }
         let r = new_reg()
         ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
         LAST_IS_STR = 1
