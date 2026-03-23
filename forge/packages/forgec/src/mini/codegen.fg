@@ -819,6 +819,18 @@ fn gen_call(e: Expr) -> string {
     }
 
     // Built-in: map_new() → ptr
+    // Match/if expression — compile the pending statement inline
+    if name == "__match_expr" && HAS_PENDING_MATCH {
+        HAS_PENDING_MATCH = false
+        codegen_match(PENDING_MATCH_STMT)
+        return LAST_EXPR_VAL
+    }
+    if name == "__if_expr" && HAS_PENDING_MATCH {
+        HAS_PENDING_MATCH = false
+        codegen_if(PENDING_MATCH_STMT)
+        return LAST_EXPR_VAL
+    }
+
     if name == "map_new" && e.children.length == 0 {
         let r = new_reg()
         ir_line(r + " = call ptr @forge_map_new()")
