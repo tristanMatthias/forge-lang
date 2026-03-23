@@ -2946,10 +2946,12 @@ fn ast_parse_stmt() -> Stmt {
             advance()
             skip_nl()
             type_ann = peek().text
-            // Skip full type annotation
+            // Skip full type annotation, capture generic
             advance()
             if check("<") {
                 advance()
+                let gen = peek().text
+                type_ann = type_ann + "<" + gen + ">"
                 mut td = 1
                 while td > 0 && POS < TOKENS.length {
                     if check("<") { td = td + 1 }
@@ -3758,6 +3760,9 @@ fn gen_call(e: Expr) -> string {
                     let r = new_reg()
                     ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", { ptr, i64 } " + args + ")")
                     LAST_IS_STR = 1
+                    LAST_IS_LIST = 0
+                    LAST_STRUCT_TYPE = ""
+                    LAST_ENUM_TYPE = ""
                     return r
                 }
             }
@@ -3804,6 +3809,18 @@ fn gen_call(e: Expr) -> string {
             if LAST_STRUCT_TYPE != "" { ety = "%" + LAST_STRUCT_TYPE }
             if LAST_ENUM_TYPE != "" { ety = "%" + LAST_ENUM_TYPE }
             return gen_list_push(obj, elem, ety, saved_elem)
+        }
+    }
+    // String.byte_at(idx)
+    if name == "byte_at" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 {
+            let idx = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i64 @forge_string_byte_at(%ForgeString " + obj + ", i64 " + idx + ")")
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            return r
         }
     }
     // String.contains(s)
@@ -3937,18 +3954,28 @@ fn gen_stmt(s: Stmt) -> bool {
                 stype = LAST_STRUCT_TYPE
             }
             if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
-            // Prefer annotation
-            if s.str2 == "string" { ty = "%ForgeString" }
-            if s.str2 == "int" || s.str2 == "bool" { ty = "i64" }
-            if s.str2 == "List" {
+            // Prefer annotation — parse "List<string>" format
+            mut ann_base = s.str2
+            mut ann_generic = ""
+            let ann_lt = s.str2.index_of("<")
+            if ann_lt >= 0 {
+                ann_base = s.str2.substring(0, ann_lt)
+                ann_generic = s.str2.substring(ann_lt + 1, s.str2.length - 1)
+            }
+            if ann_base == "string" { ty = "%ForgeString" }
+            if ann_base == "int" || ann_base == "bool" { ty = "i64" }
+            if ann_base == "List" {
                 ty = "{ ptr, i64 }"
                 is_list = true
+                if ann_generic != "" {
+                    list_elem = type_to_llvm(ann_generic)
+                }
             }
-            if find_struct(s.str2) >= 0 {
-                ty = "%" + s.str2
-                stype = s.str2
+            if find_struct(ann_base) >= 0 {
+                ty = "%" + ann_base
+                stype = ann_base
             }
-            if find_enum(s.str2) >= 0 { ty = "%" + s.str2 }
+            if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
             ir_line(alloca + " = alloca " + ty)
             ir_line("store " + ty + " " + val + ", ptr " + alloca)
             if is_list {
