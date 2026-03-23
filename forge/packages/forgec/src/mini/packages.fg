@@ -3,13 +3,17 @@
 // ═══════════════════════════════════════════════════════════════════
 
 // Loaded package info
-mut PKG_EXTERN_FNS: List<string> = []     // "name:ret:param1,param2"
+mut PKG_EXTERN_FNS: List<string> = []     // "name:ret:param1,param2" (Forge types)
 mut PKG_LINK_LIBS: List<string> = []      // library .a paths
 mut PKG_LINK_FLAGS: List<string> = []     // extra linker flags
+mut EXTERN_FN_NAMES: List<string> = []    // names of extern functions
+mut EXTERN_FN_PARAMS: List<string> = []   // original Forge param types CSV
 
 fn reset_packages() {
     PKG_EXTERN_FNS = []
     PKG_LINK_LIBS = []
+    EXTERN_FN_NAMES = []
+    EXTERN_FN_PARAMS = []
     PKG_LINK_FLAGS = []
 }
 
@@ -211,7 +215,7 @@ fn emit_package_externs() {
         // Convert types
         mut ret_ty = type_to_llvm(ret_str)
 
-        // Build param list
+        // Build param list — string → ptr for extern FFI
         mut param_ir = ""
         if params_str.length > 0 {
             mut pi = 0
@@ -224,7 +228,9 @@ fn emit_package_externs() {
                 }
                 if is_sep {
                     let ptype = params_str.substring(pstart, pi)
-                    let llvm_ty = type_to_llvm(ptype)
+                    // Extern FFI: string params → ptr (C string)
+                    mut llvm_ty = type_to_llvm(ptype)
+                    if ptype == "string" { llvm_ty = "ptr" }
                     if param_ir.length > 0 { param_ir = param_ir + ", " }
                     param_ir = param_ir + llvm_ty
                     pstart = pi + 1
@@ -232,12 +238,18 @@ fn emit_package_externs() {
                 pi = pi + 1
             }
         }
+        // Extern FFI: string return → ptr
+        if ret_str == "string" { ret_ty = "ptr" }
 
         if ret_ty == "void" {
             ir_raw("declare void @" + fn_name + "(" + param_ir + ")")
         } else {
             ir_raw("declare " + ret_ty + " @" + fn_name + "(" + param_ir + ")")
         }
+
+        // Register extern fn for FFI coercion at call sites
+        EXTERN_FN_NAMES = EXTERN_FN_NAMES.push(fn_name)
+        EXTERN_FN_PARAMS = EXTERN_FN_PARAMS.push(params_str)
 
         // Also register in FN_NAMES so gen_call knows the return type
         FN_NAMES = FN_NAMES.push(fn_name)
@@ -247,6 +259,26 @@ fn emit_package_externs() {
 
         i = i + 1
     }
+}
+
+// Check if a function is an extern (from a package)
+fn is_extern_fn(name: string) -> bool {
+    mut i = 0
+    while i < EXTERN_FN_NAMES.length {
+        if EXTERN_FN_NAMES[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+// Get the original Forge param types for an extern fn (CSV)
+fn get_extern_params(name: string) -> string {
+    mut i = 0
+    while i < EXTERN_FN_NAMES.length {
+        if EXTERN_FN_NAMES[i] == name { return EXTERN_FN_PARAMS[i] }
+        i = i + 1
+    }
+    ""
 }
 
 // Get link flags for the cc command

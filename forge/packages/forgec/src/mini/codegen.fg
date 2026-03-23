@@ -894,7 +894,15 @@ fn gen_call(e: Expr) -> string {
         if a.length > 1 {
             if a.substring(0, 1) == "@" { aty = "ptr" }
         }
-        arg_str = arg_str + aty + " " + a
+        // Extern FFI: coerce ForgeString → ptr for string params
+        mut final_a = a
+        if is_extern_fn(name) && aty == "%ForgeString" {
+            let coerced = new_reg()
+            ir_line(coerced + " = extractvalue %ForgeString " + a + ", 0")
+            final_a = coerced
+            aty = "ptr"
+        }
+        arg_str = arg_str + aty + " " + final_a
         i = i + 1
     }
     if call_ret == "void" {
