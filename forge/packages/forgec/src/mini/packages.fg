@@ -8,10 +8,17 @@ mut PKG_LINK_LIBS: List<string> = []      // library .a paths
 mut PKG_LINK_FLAGS: List<string> = []     // extra linker flags
 mut EXTERN_FN_NAMES: List<string> = []    // names of extern functions
 mut EXTERN_FN_PARAMS: List<string> = []   // original Forge param types CSV
+mut PKG_EXPORT_FNS: List<FnDecl> = []    // parsed export wrapper FnDecls
+mut PKG_EXPORT_NS: List<string> = []     // namespace for each export fn
 
 fn reset_packages() {
     PKG_EXTERN_FNS = []
     PKG_LINK_LIBS = []
+    PKG_EXPORT_FNS = []
+    PKG_EXPORT_NS = []
+    NS_NAMES = []
+    NS_FN_NAMES = []
+    NS_MANGLED = []
     EXTERN_FN_NAMES = []
     EXTERN_FN_PARAMS = []
     PKG_LINK_FLAGS = []
@@ -76,69 +83,78 @@ fn parse_package_toml(content: string) -> string {
 
 // Parse extern fn declarations from package.fg
 // Format: extern fn name(param: type, ...) -> ret_type
-fn parse_package_fg(content: string) {
-    let toks: List<Tok> = tokenize(content)
-    mut ti = 0
-    while ti < toks.length {
-        let t: Tok = toks[ti]
-        if t.text == "extern" && ti + 1 < toks.length {
-            let t2: Tok = toks[ti + 1]
-            if t2.text == "fn" && ti + 2 < toks.length {
-                let t3: Tok = toks[ti + 2]
-                let fn_name = t3.text
-                // Skip to params
-                mut pi = ti + 3
-                // Find opening paren
-                while pi < toks.length {
-                    let pt: Tok = toks[pi]
-                    if pt.text == "(" { break }
-                    pi = pi + 1
-                }
-                pi = pi + 1  // skip (
+// Parse package.fg: extract extern fn declarations AND compile export fn wrappers
+fn parse_package_fg_full(content: string, namespace: string) {
+    // Save parser state
+    let saved_tokens: List<Tok> = TOKENS
+    let saved_pos = POS
+
+    TOKENS = tokenize(content)
+    POS = 0
+    skip_nl()
+
+    while POS < TOKENS.length && peek().kind != 0 {
+        let tok: Tok = peek()
+
+        if tok.text == "extern" {
+            advance()
+            skip_nl()
+            if check("fn") {
+                advance()
+                let fn_name = advance().text
                 // Parse params
+                expect("(")
                 mut params = ""
-                while pi < toks.length {
-                    let pt: Tok = toks[pi]
-                    if pt.text == ")" { break }
-                    if pt.text == ":" {
-                        pi = pi + 1
-                        // Skip newlines
-                        while pi < toks.length {
-                            let pn: Tok = toks[pi]
-                            if pn.kind != 4 { break }
-                            pi = pi + 1
-                        }
-                        let ty: Tok = toks[pi]
+                while !check(")") && POS < TOKENS.length {
+                    if check(":") {
+                        advance()
+                        skip_nl()
+                        let ty = advance().text
                         if params.length > 0 { params = params + "," }
-                        params = params + ty.text
+                        params = params + ty
+                    } else {
+                        advance()
                     }
-                    pi = pi + 1
                 }
-                pi = pi + 1  // skip )
-                // Check for return type
+                if check(")") { advance() }
+                // Parse return type
                 mut ret = "void"
-                while pi < toks.length {
-                    let pt: Tok = toks[pi]
-                    if pt.kind == 4 { break }  // newline = end of declaration
-                    if pt.text == "->" {
-                        pi = pi + 1
-                        // Skip newlines
-                        while pi < toks.length {
-                            let pn: Tok = toks[pi]
-                            if pn.kind != 4 { break }
-                            pi = pi + 1
-                        }
-                        let rt: Tok = toks[pi]
-                        ret = rt.text
-                    }
-                    pi = pi + 1
+                skip_nl()
+                if check("->") {
+                    advance()
+                    skip_nl()
+                    ret = advance().text
                 }
-                // Store: "name:ret:param1,param2"
                 PKG_EXTERN_FNS = PKG_EXTERN_FNS.push(fn_name + ":" + ret + ":" + params)
             }
+        } else if tok.text == "export" {
+            advance()
+            skip_nl()
+            if check("fn") {
+                // Parse export fn as full FnDecl using the AST parser
+                let f = ast_parse_fn_decl()
+                PKG_EXPORT_FNS = PKG_EXPORT_FNS.push(f)
+                PKG_EXPORT_NS = PKG_EXPORT_NS.push(namespace)
+                // Register in namespace tables
+                let mangled = namespace + "_" + f.name
+                NS_NAMES = NS_NAMES.push(namespace)
+                NS_FN_NAMES = NS_FN_NAMES.push(f.name)
+                NS_MANGLED = NS_MANGLED.push(mangled)
+            } else {
+                // Skip other exports (types, etc)
+                skip_to_newline()
+            }
+        } else if tok.text == "//" {
+            skip_to_newline()
+        } else {
+            advance()
         }
-        ti = ti + 1
+        skip_nl()
     }
+
+    // Restore parser state
+    TOKENS = saved_tokens
+    POS = saved_pos
 }
 
 // Load a package: read package.toml + package.fg, register externs
@@ -183,9 +199,9 @@ fn load_package(pkg_ref: string) {
         fi = fi + 1
     }
 
-    // Parse package.fg for extern fns
+    // Parse package.fg for extern fns + export wrapper fns
     if pkg_fg.length > 0 {
-        parse_package_fg(pkg_fg)
+        parse_package_fg_full(pkg_fg, name)
     }
 }
 

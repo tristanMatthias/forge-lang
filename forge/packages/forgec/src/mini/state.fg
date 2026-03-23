@@ -72,6 +72,32 @@ mut CLOSURE_COUNT: int = 0
 mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted after current fn
 mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
 mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
+
+// ─── Namespace tracking (package exports) ────────
+mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
+mut NS_FN_NAMES: List<string> = []   // ["build_trunc", "context_create", ...]
+mut NS_MANGLED: List<string> = []    // ["llvm_build_trunc", "llvm_context_create", ...]
+
+fn find_ns_fn(ns: string, method: string) -> string {
+    mut i = 0
+    while i < NS_NAMES.length {
+        if NS_NAMES[i] == ns && NS_FN_NAMES[i] == method {
+            return NS_MANGLED[i]
+        }
+        i = i + 1
+    }
+    ""
+}
+
+fn is_namespace(name: string) -> bool {
+    mut i = 0
+    while i < NS_NAMES.length {
+        if NS_NAMES[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
 // ─── Struct helpers ───────────────────────────────
 
 fn find_struct(name: string) -> int {

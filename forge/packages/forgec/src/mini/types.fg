@@ -8,8 +8,8 @@
 // - Type tracking via globals (LAST_IS_STR, LAST_STRUCT_TYPE, etc.)
 // - String constants collected in STR_DECLS, appended after functions
 
-use @std.process
-use @std.fs
+// @std.process handled by built-in dispatch
+// @std.fs handled by built-in dispatch
 
 // ═══════════════════════════════════════════════════════════════════
 // SIMPLE LEXER — token kind as int, text as string
