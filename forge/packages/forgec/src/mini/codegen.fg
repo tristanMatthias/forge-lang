@@ -1175,8 +1175,10 @@ fn codegen_assign(s: Stmt) -> int {
 
 fn codegen_match(s: Stmt) -> int {
     LAST_ENUM_TYPE = ""
+    LAST_IS_STR = 0
     let scrutinee = gen_expr_from(s, 0)
     let scrut_enum = LAST_ENUM_TYPE
+    let scrut_is_str = LAST_IS_STR
     let ei = find_enum(scrut_enum)
     let merge_l = new_label("match_end")
     let match_result = new_reg()
@@ -1197,6 +1199,33 @@ fn codegen_match(s: Stmt) -> int {
                 }
                 ir_line("br label %" + merge_l)
             }
+        } else if ei < 0 {
+            // Value match (string/int pattern)
+            let arm_l = new_label("match_arm")
+            let next_l = new_label("match_next")
+            let cmp = new_reg()
+            if scrut_is_str == 1 {
+                // String comparison
+                let pat_str = new_str_const(vname)
+                let pat_val = new_reg()
+                ir_line(pat_val + " = call %ForgeString @forge_string_new(ptr " + pat_str + ", i64 " + string(vname.length) + ")")
+                let eq = new_reg()
+                ir_line(eq + " = call i8 @forge_string_eq(%ForgeString " + scrutinee + ", %ForgeString " + pat_val + ")")
+                ir_line(cmp + " = trunc i8 " + eq + " to i1")
+            } else {
+                // Int comparison
+                ir_line(cmp + " = icmp eq i64 " + scrutinee + ", " + vname)
+            }
+            ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
+            ir_raw(arm_l + ":")
+            let ended = gen_stmts(arm.body)
+            if ended == 0 {
+                if CUR_RET_TY != "void" {
+                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                }
+                ir_line("br label %" + merge_l)
+            }
+            ir_raw(next_l + ":")
         } else if ei >= 0 {
             let vidx = enum_variant_index(ei, vname)
             let arm_l = new_label("match_arm")

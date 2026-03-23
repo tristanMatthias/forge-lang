@@ -556,9 +556,25 @@ fn parse_match_handler() -> Stmt {
                 body = body.push(ast_parse_stmt())
                 arms = arms.push(stmt_match_arm(vname, bindings, body))
             }
+        } else if peek().kind == 3 || peek().kind == 2 {
+            // String or int literal pattern: "foo" -> expr
+            let pattern_val = advance().text
+            if check(",") { advance() }
+            skip_nl()
+            expect("->")
+            skip_nl()
+            if check("{") {
+                let body: List<Stmt> = ast_parse_block()
+                arms = arms.push(stmt_match_arm(pattern_val, "", body))
+            } else {
+                mut body: List<Stmt> = []
+                body = body.push(ast_parse_stmt())
+                arms = arms.push(stmt_match_arm(pattern_val, "", body))
+            }
         } else {
             advance()
         }
+        if check(",") { advance() }
         skip_nl()
     }
     expect("}")
