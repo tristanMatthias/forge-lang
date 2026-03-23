@@ -1765,6 +1765,9 @@ fn ast_parse_postfix() -> Expr {
             skip_nl()
             expect("]")
             node = expr_index(node, idx)
+        } else if check("!") {
+            // Unwrap operator: expr! → pass through (no null check yet)
+            advance()
         } else {
             break
         }
