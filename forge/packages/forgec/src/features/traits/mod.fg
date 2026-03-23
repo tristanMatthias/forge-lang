@@ -95,11 +95,10 @@ fn parse_trait_method(p: Parser) -> TraitMethod? {
         if param_name == null { break }
 
         let is_self = param_name! == "self"
-        mut type_ann: TypeExpr? = null
-        if p.check(.Colon) {
+        let type_ann = if p.check(.Colon) {
             p.advance()
-            type_ann = p.parse_type_expr()
-        }
+            p.parse_type_expr()
+        } else { null }
 
         params = params.push(TraitMethodParam { name: param_name!, type_ann, is_self })
 
@@ -108,11 +107,10 @@ fn parse_trait_method(p: Parser) -> TraitMethod? {
     if p.expect(.RParen) == null { return null }
 
     // Optional return type: -> Type
-    mut return_type: TypeExpr? = null
-    if p.check(.Arrow) {
+    let return_type = if p.check(.Arrow) {
         p.advance()
-        return_type = p.parse_type_expr()
-    }
+        p.parse_type_expr()
+    } else { null }
 
     TraitMethod { name: name!, params, return_type, span: start }
 }

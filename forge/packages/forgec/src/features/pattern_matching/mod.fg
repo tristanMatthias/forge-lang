@@ -10,25 +10,11 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_STR, CG_LAST_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, codegen_new, cg_get_enum_ty_for, cg_enum_max_fields, cg_enum_variant_field_types, cg_enum_field_slot_offset, resolve_type_to_llvm}
-use lexer.{lexer_new}
-use parser.{parser_new}
-use parser.expressions.{match_enum_tag, ENUM_VARIANT_NAMES, ENUM_VARIANT_TAGS}
-use @std.llvm
+use codegen.Codegen
 
 // ─── Side Table ─────────────────────────────────
 
 mut MATCH_EXPRS: Map<string, MatchData> = {}
-
-// Arm body source text stored in flat CSV for reliable cross-function access
-// Format: "match_id:arm_idx=body_src\n" entries
-export mut MATCH_ARM_BODY_CSV: string = ""
-export mut MATCH_ARM_COUNT_CSV: string = ""  // "match_id:count\n"
-export mut MATCH_NEXT_ID: int = 0
-// Flat lists for arm metadata
-export mut MATCH_ARM_MATCH_ID: List<int> = []
-mut MATCH_NODE_IDS: List<int> = []
-mut MATCH_IDS: List<int> = []
 
 // ─── Data Types ─────────────────────────────────
 
@@ -65,10 +51,6 @@ fn get_match_data(id: int) -> MatchData? {
 fn make_match_expr(subject: Expr, arms: List<MatchArm>, span: Span) -> Expr {
     let id = next_node_id()
     MATCH_EXPRS["${id}"] = MatchData { subject, arms, span }
-    // Store node_id → match_id mapping
-    MATCH_NODE_IDS = MATCH_NODE_IDS.push(id)
-    MATCH_IDS = MATCH_IDS.push(MATCH_NEXT_ID)
-    MATCH_NEXT_ID = MATCH_NEXT_ID + 1
     feature_expr("pattern_matching", "match_expr", id, span)
 }
 
@@ -88,7 +70,6 @@ fn parse_match(p: Parser) -> Expr? {
     p.skip_newlines()
 
     mut arms: List<MatchArm> = []
-    let current_match_id = MATCH_NEXT_ID
 
     while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
@@ -127,10 +108,7 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     p.skip_newlines()
 
     // Body: block or expression
-    // Capture source text for arm body (for re-parsing during codegen —
-    // List<MatchArm> corrupts the Expr body field)
-    let body_start_pos = p.pos
-    let body_start_span = p.current_span()
+    // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
     mut body: Expr? = null
     if p.check(.LBrace) {
         let block = p.parse_block()
@@ -140,59 +118,6 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     }
 
     if body == null { return null }
-
-    // Store arm body source text for reliable codegen re-parsing
-    // (both List<MatchArm> and Map<string, Expr> corrupt complex Expr values)
-    // Reconstruct source text from tokens in the body range
-    // Reconstruct body source from tokens
-    mut body_text = ""
-    mut ti = body_start_pos
-    while ti < body_end_pos {
-        if ti < p.tokens.length {
-            let tok = p.tokens[ti]
-            if body_text != "" { body_text = body_text + " " }
-            body_text = body_text + tok.text
-        }
-        ti = ti + 1
-    }
-    // Parse arm count from CSV
-    mut arm_idx_for_store = 0
-    let count_needle = "${MATCH_NEXT_ID}:"
-    let cni = MATCH_ARM_COUNT_CSV.index_of(count_needle)
-    if cni >= 0 {
-        // Extract count after the needle
-        mut ci = cni + count_needle.length
-        mut count_str = ""
-        while ci < MATCH_ARM_COUNT_CSV.length && MATCH_ARM_COUNT_CSV[ci] != "\n" {
-            count_str = count_str + MATCH_ARM_COUNT_CSV[ci]
-            ci = ci + 1
-        }
-        if count_str != "" {
-            // Simple int parse
-            mut cv = 0
-            mut cj = 0
-            while cj < count_str.length {
-                let d = count_str[cj]
-                if d == "0" { cv = cv * 10 }
-                else if d == "1" { cv = cv * 10 + 1 }
-                else if d == "2" { cv = cv * 10 + 2 }
-                else if d == "3" { cv = cv * 10 + 3 }
-                else if d == "4" { cv = cv * 10 + 4 }
-                else if d == "5" { cv = cv * 10 + 5 }
-                else if d == "6" { cv = cv * 10 + 6 }
-                else if d == "7" { cv = cv * 10 + 7 }
-                else if d == "8" { cv = cv * 10 + 8 }
-                else if d == "9" { cv = cv * 10 + 9 }
-                cj = cj + 1
-            }
-            arm_idx_for_store = cv
-        }
-    }
-    // Store body text in CSV: "match_id:arm_idx=body_text\n"
-    MATCH_ARM_BODY_CSV = MATCH_ARM_BODY_CSV + "${MATCH_NEXT_ID}:${arm_idx_for_store}=${body_text}\n"
-    // Update count
-    // Remove old entry and add new
-    MATCH_ARM_COUNT_CSV = MATCH_ARM_COUNT_CSV + "${MATCH_NEXT_ID}:${arm_idx_for_store + 1}\n"
 
     MatchArm { pattern: pattern!, guard, body: body!, span: start }
 }
@@ -223,85 +148,90 @@ fn parse_pattern(p: Parser) -> Pattern? {
 fn parse_simple_pattern(p: Parser) -> Pattern? {
     let tok = p.peek()
 
-    // Wildcard: _
-    if tok.kind is .Underscore {
-        let span = p.advance().span
-        return Pattern.Wildcard(span)
-    }
+    match tok.kind {
+        // Wildcard: _
+        .Underscore -> {
+            let span = p.advance().span
+            Pattern.Wildcard(span)
+        }
 
-    // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
-    if tok.kind is .Dot {
-        let start = p.advance().span
-        let name = p.expect_ident()
-        if name == null { return null }
+        // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
+        .Dot -> {
+            let start = p.advance().span
+            let name = p.expect_ident()
+            if name == null { return null }
 
-        // Optional sub-patterns: .Variant(p1, p2)
-        if p.check(.LParen) {
-            p.advance()
-            mut fields: List<Pattern> = []
+            // Optional sub-patterns: .Variant(p1, p2)
+            if p.check(.LParen) {
+                p.advance()
+                mut fields: List<Pattern> = []
+                while !p.check(.RParen) && !p.is_at_end() {
+                    p.skip_newlines()
+                    let sub = parse_pattern(p)
+                    if sub != null {
+                        fields = fields.push(sub!)
+                    }
+                    p.skip_newlines()
+                    if p.check(.Comma) { p.advance() }
+                }
+                p.expect(.RParen)
+                Pattern.EnumVariant(name!, fields, start)
+            } else {
+                // Simple variant: .Variant (no fields)
+                Pattern.EnumVariant(name!, [], start)
+            }
+        }
+
+        // Literal patterns: int, float, string, bool, null
+        .IntLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.IntLit(value, span))
+        }
+        .FloatLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.FloatLit(value, span))
+        }
+        .StringLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.StringLit(value, span))
+        }
+        .BoolLiteral(value) -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.BoolLit(value, span))
+        }
+        .NullLiteral -> {
+            let span = p.advance().span
+            Pattern.Literal(Expr.NullLit(span))
+        }
+
+        // Identifier binding or tuple pattern
+        .Ident(name) -> {
+            let span = p.advance().span
+            Pattern.Ident(name, span)
+        }
+
+        // Tuple pattern: (p1, p2, ...)
+        .LParen -> {
+            let start = p.advance().span
+            mut elements: List<Pattern> = []
             while !p.check(.RParen) && !p.is_at_end() {
                 p.skip_newlines()
                 let sub = parse_pattern(p)
                 if sub != null {
-                    fields = fields.push(sub!)
+                    elements = elements.push(sub!)
                 }
                 p.skip_newlines()
                 if p.check(.Comma) { p.advance() }
             }
             p.expect(.RParen)
-            return Pattern.EnumVariant(name!, fields, start)
-        } else {
-            return Pattern.EnumVariant(name!, [], start)
+            Pattern.Tuple(elements, start)
+        }
+
+        _ -> {
+            p.error("expected pattern")
+            null
         }
     }
-
-    // Literal patterns: int, float, string, bool, null
-    if tok.kind is .IntLiteral {
-        let span = p.advance().span
-        return Pattern.Literal(Expr.IntLit(0, span))
-    }
-    if tok.kind is .FloatLiteral {
-        let span = p.advance().span
-        return Pattern.Literal(Expr.FloatLit(0.0, span))
-    }
-    if tok.kind is .StringLiteral {
-        let span = p.advance().span
-        return Pattern.Literal(Expr.StringLit("", span))
-    }
-    if tok.kind is .BoolLiteral {
-        let span = p.advance().span
-        return Pattern.Literal(Expr.BoolLit(false, span))
-    }
-    if tok.kind is .NullLiteral {
-        let span = p.advance().span
-        return Pattern.Literal(Expr.NullLit(span))
-    }
-
-    // Identifier binding
-    if tok.kind is .Ident {
-        let span = p.advance().span
-        return Pattern.Ident(tok.text, span)
-    }
-
-    // Tuple pattern: (p1, p2, ...)
-    if tok.kind is .LParen {
-        let start = p.advance().span
-        mut elements: List<Pattern> = []
-        while !p.check(.RParen) && !p.is_at_end() {
-            p.skip_newlines()
-            let sub = parse_pattern(p)
-            if sub != null {
-                elements = elements.push(sub!)
-            }
-            p.skip_newlines()
-            if p.check(.Comma) { p.advance() }
-        }
-        p.expect(.RParen)
-        return Pattern.Tuple(elements, start)
-    }
-
-    p.error("expected pattern")
-    null
 }
 
 // ─── Check ──────────────────────────────────────
@@ -357,230 +287,18 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     if d == null { return llvm.const_int(CG_I64, 0, 0) }
     let data = d!
 
-    // Look up match_id from node_id
-    mut match_id = -1
-    mut mi = 0
-    while mi < MATCH_NODE_IDS.length {
-        if MATCH_NODE_IDS[mi] == node.node_id {
-            match_id = MATCH_IDS[mi]
-            break
-        }
-        mi = mi + 1
-    }
-
-    // Emit subject value
+    // Emit subject
     let subject_val = cg.emit_expr(data.subject)
-    let subject_is_str = CG_LAST_IS_STR == 1
-    let subject_enum_type = CG_LAST_ENUM_TYPE
 
-    let current_fn = cg.current_fn
-    if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
+    // For now, compile as if-else chain
+    // TODO: proper tag-based dispatch for enum patterns, phi merging
 
-    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "match_end")
-
-    // Collect arm results for phi node: (value, block) pairs
-    // Bootstrap workaround: use parallel lists instead of List<{ptr, ptr}>
-    mut arm_vals: List<ptr> = []
-    mut arm_bbs: List<ptr> = []
-    mut result_ty: ptr = CG_I64  // LLVM type for the result
-
-    mut arm_idx = 0
-    let num_arms = data.arms.length
-
-    while arm_idx < num_arms {
-        let arm = data.arms[arm_idx]
-        let is_last = arm_idx == num_arms - 1
-
-        let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "arm")
-        mut next_bb = arm_bb
-        if !is_last {
-            next_bb = llvm.append_basic_block(CG_CTX, current_fn, "arm_next")
-        }
-
-        // Check pattern
-        let matched = emit_pattern_check(arm.pattern, subject_val, subject_enum_type)
-
-        if is_last {
-            // Last arm: unconditional branch (catch-all)
-            llvm.build_br(CG_B, arm_bb)
-        } else if matched != null {
-            llvm.build_cond_br(CG_B, matched, arm_bb, next_bb)
-        } else {
-            // Wildcard/ident — always matches
-            llvm.build_br(CG_B, arm_bb)
-        }
-
-        // Emit arm body by re-parsing source text (List<MatchArm> corrupts Expr fields)
-        llvm.position_at_end(CG_B, arm_bb)
-        // Bind pattern variables (e.g., .Variant(x, y) binds x, y)
-        bind_pattern_runtime(cg, arm.pattern, subject_val, subject_enum_type)
-        // Emit arm body — try original path first (works for int/string literals)
-        // then fall back to CSV re-parse for complex bodies
-        mut arm_val = cg.emit_expr(arm.body)
-        // Check if the arm body produced a valid value
-        // For bool literals, emit_expr might return i8 which needs zext
-        let val_ty = llvm.type_of(arm_val)
-        if val_ty == CG_I8 && result_ty == CG_I64 {
-            arm_val = llvm.build_zext(CG_B, arm_val, CG_I64, "bool_ext")
-        }
-        let arm_is_str = CG_LAST_IS_STR == 1
-
-        // Set result type from first arm
-        if arm_idx == 0 {
-            if arm_is_str { result_ty = CG_STR }
-        }
-
-        // (bool zext handled above)
-
-        let arm_end = llvm.get_insert_block(CG_B)
-        if !llvm.block_has_terminator(CG_B) {
-            arm_vals = arm_vals.push(arm_val)
-            arm_bbs = arm_bbs.push(arm_end)
-            llvm.build_br(CG_B, merge_bb)
-        }
-
-        if !is_last {
-            llvm.position_at_end(CG_B, next_bb)
-        }
-        arm_idx = arm_idx + 1
-    }
-
-    // Position at merge block
-    llvm.position_at_end(CG_B, merge_bb)
-
-    // Build phi node
-    if arm_vals.length > 0 {
-        let phi = llvm.build_phi(CG_B, result_ty, "match_result")
-        mut pi = 0
-        while pi < arm_vals.length {
-            llvm.add_incoming(phi, arm_vals[pi], arm_bbs[pi])
-            pi = pi + 1
-        }
-        CG_LAST_IS_STR = if result_ty == CG_STR { 1 } else { 0 }
-        return phi
+    // Simple fallback: evaluate first arm's body
+    if data.arms.length > 0 {
+        return cg.emit_expr(data.arms[0].body)
     }
 
     llvm.const_int(CG_I64, 0, 0)
-}
-
-// Check if a pattern matches the subject value.
-// Returns an i1 condition, or null for always-match (wildcard/ident).
-fn emit_pattern_check(pat: Pattern, subject_val: ptr, enum_type: string) -> ptr {
-    match pat {
-        .Wildcard(span) -> { return null }
-        .Ident(name, span) -> { return null }
-        .EnumVariant(variant, fields, span) -> {
-            // Extract tag from subject (field 0 of the enum struct)
-            let tag = llvm.build_extract_value(CG_B, subject_val, 0, "ptag")
-            // Look up expected tag index
-            mut expected_tag = -1
-            if enum_type != "" {
-                let full_name = enum_type + "." + variant
-                expected_tag = match_enum_tag(full_name)
-                if expected_tag < 0 {
-                    expected_tag = match_enum_tag(variant)
-                }
-            } else {
-                expected_tag = match_enum_tag(variant)
-            }
-            if expected_tag < 0 { return null }
-            let expected = llvm.const_int(CG_I8, expected_tag, 0)
-            return llvm.build_icmp(CG_B, 32, tag, expected, "tag_eq")
-        }
-        .Literal(expr) -> {
-            // Compare subject to literal value
-            mut cg = codegen_new()
-            let lit_val = cg.emit_expr(expr)
-            return llvm.build_icmp(CG_B, 32, subject_val, lit_val, "lit_eq")
-        }
-        .Or(alternatives, span) -> {
-            // Or patterns: treat as always-match for now
-            // (recursive emit_pattern_check on List<Pattern> elements causes
-            // type mismatch in bootstrap — Pattern loaded as i64 from list)
-            return null
-        }
-        .Tuple(elements, span) -> { return null }
-    }
-    null
-}
-
-// Bind pattern variables in the current scope.
-// For .Ident(name), bind the subject value directly.
-// For .EnumVariant(variant, [field_patterns]), extract fields and bind.
-fn bind_pattern_runtime(cg: Codegen, pat: Pattern, subject_val: ptr, enum_type: string) {
-    match pat {
-        .Ident(name, span) -> {
-            // Bind subject value to name
-            // Use alloca+store directly instead of define_var
-            // (bootstrap miscompiles define_var call with match-extracted name)
-            let alloca = llvm.build_alloca(CG_B, CG_I64, name)
-            llvm.build_store(CG_B, subject_val, alloca)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-        }
-        .EnumVariant(variant, fields, span) -> {
-            // Extract variant fields and bind to sub-pattern names
-            if fields.length == 0 { return }
-            let field_types = cg_enum_variant_field_types(enum_type, variant)
-            if field_types == "" { return }
-
-            mut fi = 0
-            while fi < fields.length {
-                let field_pat = fields[fi]
-                // Get slot offset for this field
-                let slot_offset = cg_enum_field_slot_offset(field_types, fi)
-                let slot_idx = 1 + slot_offset  // +1 for tag
-
-                match field_pat {
-                    .Ident(fname, fspan) -> {
-                        // Extract the field value from the enum struct
-                        let field_val = llvm.build_extract_value(CG_B, subject_val, slot_idx, fname)
-                        // Determine type from field_types CSV
-                        let ft_char = get_field_type_char(field_types, fi)
-                        if ft_char == "s" {
-                            let str_ptr = llvm.build_extract_value(CG_B, subject_val, slot_idx, "sp")
-                            let str_len = llvm.build_extract_value(CG_B, subject_val, slot_idx + 1, "sl")
-                            let undef = llvm.get_undef(CG_STR)
-                            let s1 = llvm.build_insert_value(CG_B, undef, str_ptr, 0, "si1")
-                            let s2 = llvm.build_insert_value(CG_B, s1, str_len, 1, "si2")
-                            // Direct alloca+store (avoid define_var with match-extracted name)
-                            let alloca = llvm.build_alloca(CG_B, CG_STR, fname)
-                            llvm.build_store(CG_B, s2, alloca)
-                            CG_VAR_NAMES = CG_VAR_NAMES.push(fname)
-                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(fname)
-                        } else {
-                            let alloca = llvm.build_alloca(CG_B, CG_I64, fname)
-                            llvm.build_store(CG_B, field_val, alloca)
-                            CG_VAR_NAMES = CG_VAR_NAMES.push(fname)
-                            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                        }
-                    }
-                    .Wildcard(ws) -> {} // skip
-                    _ -> {} // other patterns not yet supported for binding
-                }
-                fi = fi + 1
-            }
-        }
-        _ -> {} // wildcard, literal, tuple, or — no bindings needed
-    }
-}
-
-// Helper: get the type character at index fi from a field_types string like "i,s,i"
-fn get_field_type_char(field_types: string, fi: int) -> string {
-    mut idx = 0
-    mut comma_count = 0
-    while idx < field_types.length {
-        if comma_count == fi {
-            return field_types[idx]
-        }
-        if field_types[idx] == "," {
-            comma_count = comma_count + 1
-        }
-        idx = idx + 1
-    }
-    "i"  // default to int
 }
 
 // ─── Pattern Span Access ────────────────────────
@@ -588,12 +306,12 @@ fn get_field_type_char(field_types: string, fi: int) -> string {
 impl Pattern {
     fn span(self) -> Span {
         match self {
-            .Wildcard(span) -> { return span }
-            .Ident(_, span) -> { return span }
-            .Literal(expr) -> { return expr.span() }
-            .EnumVariant(_, _, span) -> { return span }
-            .Tuple(_, span) -> { return span }
-            .Or(_, span) -> { return span }
+            .Wildcard(span) -> span
+            .Ident(_, span) -> span
+            .Literal(expr) -> expr.span()
+            .EnumVariant(_, _, span) -> span
+            .Tuple(_, span) -> span
+            .Or(_, span) -> span
         }
     }
 }

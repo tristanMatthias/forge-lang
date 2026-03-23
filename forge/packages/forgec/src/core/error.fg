@@ -2,7 +2,7 @@
 // All compiler errors go through this system. No raw eprintln!
 // This is the self-hosted equivalent of CompileError + render().
 
-// NOTE: Span type is expected from core/token.fg (concatenated during bootstrap)
+use core.token.Span
 
 // ─── Severity ──────────────────────────────────
 
@@ -19,74 +19,37 @@ export type Diagnostic = {
     message: string,
     severity: Severity,
     span: Span,
-    help: string,
-    note: string,
+    help: string?,
+    note: string?,
 }
 
 // ─── Diagnostic Collection ─────────────────────
-// Bootstrap workaround: the self-hosted compiler can't handle
-// .push() on global/parameter lists or extractvalue on list struct
-// fields. Use a flat array with manual count tracking.
-
-export mut DIAG_COUNT: int = 0
-export mut DIAG_HAS_ERRORS: bool = false
-// Individual diagnostic fields stored as parallel arrays
-// (avoids needing List<Diagnostic> which requires .push)
-export mut DIAG_CODES: List<string> = []
-export mut DIAG_MSGS: List<string> = []
-export mut DIAG_SEVS: List<int> = []  // 0=Error, 1=Warning, 2=Info
-export mut DIAG_LINES: List<int> = []
-export mut DIAG_COLS: List<int> = []
-export mut DIAG_HELPS: List<string> = []
-export mut DIAG_NOTES: List<string> = []
 
 export type DiagnosticBag = {
-    mut placeholder: int,
+    mut diagnostics: List<Diagnostic>,
+    mut has_errors: bool,
 }
 
 export fn new_diagnostic_bag() -> DiagnosticBag {
-    DIAG_COUNT = 0
-    DIAG_HAS_ERRORS = false
-    DIAG_CODES = []
-    DIAG_MSGS = []
-    DIAG_SEVS = []
-    DIAG_LINES = []
-    DIAG_COLS = []
-    DIAG_HELPS = []
-    DIAG_NOTES = []
-    DiagnosticBag { placeholder: 0 }
-}
-
-export fn bag_add_raw(code: string, message: string, sev_int: int, line: int, col: int, help: string, note: string) {
-    DIAG_CODES = DIAG_CODES + [code]
-    DIAG_MSGS = DIAG_MSGS + [message]
-    DIAG_SEVS = DIAG_SEVS + [sev_int]
-    DIAG_LINES = DIAG_LINES + [line]
-    DIAG_COLS = DIAG_COLS + [col]
-    DIAG_HELPS = DIAG_HELPS + [help]
-    DIAG_NOTES = DIAG_NOTES + [note]
-    DIAG_COUNT = DIAG_COUNT + 1
-    if sev_int == 0 {
-        DIAG_HAS_ERRORS = true
+    DiagnosticBag {
+        diagnostics: [],
+        has_errors: false,
     }
 }
 
 export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
-    let sev = d.severity
-    mut sev_int = 2
-    if sev == .Error { sev_int = 0 }
-    if sev == .Warning { sev_int = 1 }
-    bag_add_raw(d.code, d.message, sev_int, d.span.line, d.span.col, d.help, d.note)
+    bag.diagnostics.push(d)
+    if d.severity == .Error {
+        bag.has_errors = true
+    }
 }
 
 export fn bag_error_count(bag: DiagnosticBag) -> int {
     mut count = 0
-    mut i = 0
-    while i < DIAG_COUNT {
-        if DIAG_SEVS[i] == 0 {
+    for d in bag.diagnostics {
+        if d.severity == .Error {
             count = count + 1
         }
-        i = i + 1
     }
     count
 }
@@ -99,8 +62,8 @@ export fn error(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Error,
         span,
-        help: "",
-        note: "",
+        help: null,
+        note: null,
     }
 }
 
@@ -111,7 +74,7 @@ export fn error_with_help(code: string, message: string, span: Span, help: strin
         severity: Severity.Error,
         span,
         help,
-        note: "",
+        note: null,
     }
 }
 
@@ -121,8 +84,8 @@ export fn warning(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Warning,
         span,
-        help: "",
-        note: "",
+        help: null,
+        note: null,
     }
 }
 
@@ -132,8 +95,8 @@ export fn info(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Info,
         span,
-        help: "",
-        note: "",
+        help: null,
+        note: null,
     }
 }
 
@@ -154,68 +117,45 @@ export let E_ICE = "F9999"
 
 // ─── Rendering ─────────────────────────────────
 
-export fn severity_label(sev_int: int) -> string {
-    if sev_int == 0 { return "error" }
-    if sev_int == 1 { return "warning" }
-    return "info"
-}
-
-// NOTE: render_diagnostic takes a Diagnostic but the struct may be large.
-// For bootstrap compatibility, we extract fields and call render_fields.
-
-export fn render_fields(code: string, message: string, sev_int: int, line: int, col: int, help: string, note: string, filename: string) -> string {
-    let sev = severity_label(sev_int)
-    mut msg = sev + "[" + code + "]: " + message
-    msg = msg + "\n  --> " + filename + ":" + string(line) + ":" + string(col)
-    if help != "" {
-        msg = msg + "\n  help: " + help
+export fn severity_to_string(s: Severity) -> string {
+    match s {
+        .Error -> "error"
+        .Warning -> "warning"
+        .Info -> "info"
     }
-    if note != "" {
-        msg = msg + "\n  note: " + note
-    }
-    msg
 }
 
 export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> string {
-    mut sev_int = 2
-    if d.severity is .Error { sev_int = 0 }
-    if d.severity is .Warning { sev_int = 1 }
-    render_fields(d.code, d.message, sev_int, d.span.line, d.span.col, d.help, d.note, filename)
-}
+    // Build the primary message line: severity[code]: message
+    let sev = severity_to_string(d.severity)
+    mut msg = "${sev}[${d.code}]: ${d.message}"
 
-export fn render_at(idx: int, filename: string) -> string {
-    let sev = severity_label(DIAG_SEVS[idx])
-    let code = DIAG_CODES[idx]
-    let message = DIAG_MSGS[idx]
-    mut msg = sev + "[" + code + "]: " + message
+    // Location line
+    msg = "${msg}\n  --> ${filename}:${d.span.line}:${d.span.col}"
 
-    let line = DIAG_LINES[idx]
-    let col = DIAG_COLS[idx]
-    msg = msg + "\n  --> " + filename + ":" + line + ":" + col
-
-    let help = DIAG_HELPS[idx]
-    if help != "" {
-        msg = msg + "\n  help: " + help
+    // Help text if present
+    if d.help != null {
+        msg = "${msg}\n  help: ${d.help!}"
     }
 
-    let note = DIAG_NOTES[idx]
-    if note != "" {
-        msg = msg + "\n  note: " + note
+    // Note if present
+    if d.note != null {
+        msg = "${msg}\n  note: ${d.note!}"
     }
+
+    // TODO: implement rich source context rendering with line excerpts,
+    // underline carets, and multi-line span highlighting.
 
     msg
 }
 
 export fn render_all(bag: DiagnosticBag, source: string, filename: string) -> string {
     mut output = ""
-    mut i = 0
-    while i < DIAG_COUNT {
+    for d in bag.diagnostics {
         if output != "" {
-            output = output + "\n\n"
+            output = "${output}\n\n"
         }
-        let rendered = render_at(i, filename)
-        output = output + rendered
-        i = i + 1
+        output = "${output}${render_diagnostic(d, source, filename)}"
     }
     output
 }

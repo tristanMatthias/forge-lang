@@ -9,7 +9,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, cg_reset_last_val, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
 use parser.expressions.LAST_IDENT_NAME
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
@@ -45,13 +45,12 @@ export fn parse_for(p: Parser) -> Statement? {
         p.skip_newlines()
 
         // Get list value: use CG_LAST_VAL if available (avoids Ident boxing corruption)
-        mut list_val: ptr = null
-        if CG_HAS_LAST_VAL == 1 {
+        let list_val = if CG_HAS_LAST_VAL == 1 {
             CG_HAS_LAST_VAL = 0
-            list_val = CG_LAST_VAL
+            CG_LAST_VAL
         } else {
             mut cg = codegen_new()
-            list_val = cg.emit_expr(iterable!)
+            cg.emit_expr(iterable!)
         }
 
         // --- Emit: mut __for_i = 0 ---
@@ -74,8 +73,7 @@ export fn parse_for(p: Parser) -> Statement? {
 
         // --- Determine element type before setting up blocks ---
         let list_name = LAST_IDENT_NAME
-        mut elem_ty = CG_I64
-        if is_list_var(list_name) { elem_ty = list_elem_llvm_type(list_name) }
+        let elem_ty = if is_list_var(list_name) { list_elem_llvm_type(list_name) } else { CG_I64 }
         let elem_is_str = is_str_list_var(list_name)
 
         // --- Set up loop blocks ---
@@ -144,9 +142,7 @@ export fn parse_for(p: Parser) -> Statement? {
         WHILE_COND_BB = outer_cond
         WHILE_END_BB = outer_end
 
-        // Continue after loop — reset CG_HAS_LAST_VAL since loop body values
-        // don't dominate for.end (stale values would cause verification errors)
-        cg_reset_last_val()
+        // Continue after loop
         llvm.position_at_end(CG_B, end_bb)
     } else {
         // Not in codegen — just parse and discard

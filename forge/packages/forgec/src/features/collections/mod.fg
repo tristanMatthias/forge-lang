@@ -59,32 +59,34 @@ fn make_map_lit(entries: List<MapEntry>, span: Span) -> Expr {
 // ─── Check ──────────────────────────────────────
 
 fn check_collection(tc: TypeChecker, node: NodeRef) -> Type {
-    if node.kind_name == "list_lit" {
-        let d = get_list_lit(node.node_id)
-        if d == null { return Type.Unknown }
-        let data = d!
-        mut elem_type = Type.Unknown
-        for elem in data.elements {
-            let t = tc.infer_expr(elem)
-            if elem_type is .Unknown { elem_type = t }
+    match node.kind_name {
+        "list_lit" -> {
+            let d = get_list_lit(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            mut elem_type = Type.Unknown
+            for elem in data.elements {
+                let t = tc.infer_expr(elem)
+                if elem_type is .Unknown { elem_type = t }
+            }
+            Type.ListType(elem_type)
         }
-        return Type.ListType(elem_type)
-    }
-    if node.kind_name == "map_lit" {
-        let d = get_map_lit(node.node_id)
-        if d == null { return Type.Unknown }
-        let data = d!
-        mut key_type = Type.Unknown
-        mut val_type = Type.Unknown
-        for entry in data.entries {
-            let kt = tc.infer_expr(entry.key)
-            let vt = tc.infer_expr(entry.value)
-            if key_type is .Unknown { key_type = kt }
-            if val_type is .Unknown { val_type = vt }
+        "map_lit" -> {
+            let d = get_map_lit(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            mut key_type = Type.Unknown
+            mut val_type = Type.Unknown
+            for entry in data.entries {
+                let kt = tc.infer_expr(entry.key)
+                let vt = tc.infer_expr(entry.value)
+                if key_type is .Unknown { key_type = kt }
+                if val_type is .Unknown { val_type = vt }
+            }
+            Type.MapType(key_type, val_type)
         }
-        return Type.MapType(key_type, val_type)
+        _ -> Type.Unknown
     }
-    return Type.Unknown
 }
 
 fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {

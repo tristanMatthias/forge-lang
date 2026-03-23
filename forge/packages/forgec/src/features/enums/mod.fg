@@ -131,11 +131,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    // Register at least 1 slot for unit-only enums so they're recognized
-    // by cg_enum_max_fields (callers check > 0 to detect enum types)
-    mut reg_slots = max_slots
-    if reg_slots == 0 { reg_slots = 1 }
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${reg_slots},"
+    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
     // Enum declarations register tags + max field count.
     PARSE_END_POS = p.pos
     let id = next_node_id()
@@ -166,8 +162,7 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
             if p.check(.Colon) {
                 p.advance()
                 let type_ann = p.parse_type_expr()
-                mut ann = TypeExpr.Named("unknown", start)
-                if type_ann != null { ann = type_ann! }
+                let ann = if type_ann != null { type_ann! } else { TypeExpr.Named("unknown", start) }
                 fields = fields.push(EnumVariantField {
                     name: field_name_or_type!, type_ann: ann,
                 })

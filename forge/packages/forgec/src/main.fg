@@ -13,7 +13,7 @@ mod features
 
 use features
 
-use core.error.{render_at, render_all, render_diagnostic, bag_add_raw, DIAG_COUNT, DIAG_CODES, DIAG_MSGS, DIAG_SEVS, DIAG_LINES, DIAG_COLS, DIAG_HELPS, DIAG_NOTES}
+use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
@@ -286,26 +286,14 @@ fn build_compile_separate(files: List<string>, output: string) {
     mut file_idx = 0
     for filepath in files {
         CURRENT_FILE_INDEX = file_idx
-        eprintln("  scan: " + filepath + " (" + string(fs.read(filepath).length) + " chars)")
         let source = fs.read(filepath)
-        eprintln("    lexing...")
         mut lex = lexer_new(source)
         let tokens = lex.tokenize()
-        eprintln("    lexed " + string(tokens.length) + " tokens, parsing...")
         mut p = parser_new_with_source(tokens, source)
         let program = p.parse_program()
-        eprintln("    parsed")
         file_idx = file_idx + 1
     }
-    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
-    // Debug: print file index for each function
-    mut di = 0
-    while di < FN_NAMES.length {
-        if di < FN_FILE_INDEX.length {
-            eprintln("  fn " + FN_NAMES[di] + " file=" + string(FN_FILE_INDEX[di]))
-        }
-        di = di + 1
-    }
+    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " functions")
 
     // Phase 2: Compile each file to .o
     mut obj_files: List<string> = []
@@ -314,14 +302,6 @@ fn build_compile_separate(files: List<string>, output: string) {
         let source = fs.read(filepath)
         let obj_path = "/tmp/forgec_obj_" + string(file_idx) + ".o"
 
-        eprintln("  compile: " + filepath + " (file_idx=" + string(file_idx) + ", " + string(source.length) + " chars)")
-        // Skip large files that cause stack overflow during recursive parsing
-        // (expression parser recurses deeply per expression — stack limit hit at ~30K chars)
-        if source.length > 30000 {
-            eprintln("  SKIP: file too large (" + string(source.length) + " chars) — would overflow stack")
-            file_idx = file_idx + 1
-            continue
-        }
         codegen_init(filepath)
         create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
         EMIT_FILE_IDX = file_idx
@@ -329,10 +309,8 @@ fn build_compile_separate(files: List<string>, output: string) {
         emit_all_fn_bodies(cg)
 
         if !codegen_emit_object(obj_path) {
-            eprintln("  SKIP: failed to emit " + obj_path)
-            codegen_cleanup()
-            file_idx = file_idx + 1
-            continue
+            eprintln("error: failed to emit " + obj_path)
+            process.exit(1)
         }
         codegen_cleanup()
         obj_files = obj_files.push(obj_path)
@@ -370,9 +348,7 @@ fn main() {
     let input = args[2]
 
     // Resolve all module file paths
-    eprintln("resolving: " + input)
     let files = resolve_module_paths(input)
-    eprintln("found " + string(files.length) + " files")
 
     if command == "check" {
         // For check: concatenate and check as one unit

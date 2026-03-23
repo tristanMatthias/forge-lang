@@ -8,7 +8,6 @@ use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use @std.llvm
-use @std.process
 
 // ─── LLVM state (globals) ──────────────────────
 
@@ -134,44 +133,31 @@ export fn store_toplevel_source(src: string) {
 // Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
 // which covers int (wastes 8 bytes), string, and list values.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
-    // Use CSV-based type detection
-    // Detect list/string globals by searching for "name:1:" (ann_is_list=1) in CSV
-    // Avoid nested ifs (bootstrap has bugs with mut vars in nested if scopes)
-    let type_csv = VAR_GLOBAL_TYPE_CSV
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Search for "name:1:" (list annotation) or "name:0:4" (StringLit value)
-        // Check type from CSV: "name:typetext:kind\n"
-        // typetext is "List", "string", "Map", "int", "bool", etc.
-        let list_needle = name + ":List:"
-        let str_needle = name + ":string:"
-        let map_needle = name + ":Map:"
-        let list_idx = type_csv.index_of(list_needle)
-        let str_idx = type_csv.index_of(str_needle)
-        let map_idx = type_csv.index_of(map_needle)
-        // Also check for ":0:4" (StringLit kind_id) for untyped string literals
-        let slit_needle = name + "::4"
-        let slit_idx = type_csv.index_of(slit_needle)
-        // Detect list/string/map by checking CSV needle positions.
-        // Bootstrap workaround: `if idx >= 0 { gty = X }` doesn't work
-        // reliably for mut variables. Use a function call instead.
-        // Use the function return value DIRECTLY to select the type.
-        // Bootstrap bug: `if bool_var { mut_var = X }` doesn't set mut_var.
-        // Workaround: use a function that returns the LLVM type directly.
-        mut gty = select_global_type(type_csv, list_needle, str_needle, map_needle, slit_needle)
-        let is_str = gty == CG_STR
-
+        // Check bitmask: bit i set = string/list type
+        mut bit = 1
+        mut shift = 0
+        while shift < i {
+            bit = bit * 2
+            shift = shift + 1
+        }
+        let is_str = (str_mask / bit) % 2 == 1
+        mut gty = if is_str { CG_STR } else { CG_I64 }
         let gv = llvm.add_global(CG_MOD, gty, name)
-        llvm.set_initializer(gv, llvm.const_null(gty))
-        llvm.set_linkage(gv, 3)
+        let zero = if is_str { llvm.const_null(gty) } else { llvm.const_int(CG_I64, 0, 0) }
+        llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        // Bootstrap workaround: `if is_str { ... }` doesn't work because
-        // the bootstrap's compiled `if bool { mut_assign }` is broken.
-        // Use a helper function with early return instead.
-        register_global_type(name, gty)
-        register_global_map(name, gty)
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        if is_str {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+        }
         i = i + 1
     }
 }
@@ -210,18 +196,20 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         else if type_name == "map" { gty = CG_PTR }
 
         let gv = llvm.add_global(CG_MOD, gty, name)
-        llvm.set_initializer(gv, llvm.const_null(gty))
-        llvm.set_linkage(gv, 3)  // LinkOnceODR: merge duplicates
+        let zero = if type_name == "string" || is_list {
+            llvm.const_null(gty)
+        } else if type_name == "map" {
+            llvm.const_null(CG_PTR)
+        } else {
+            llvm.const_int(CG_I64, 0, 0)
+        }
+        llvm.set_initializer(gv, zero)
 
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        mut sf = 0
-        if type_name == "string" || is_list { sf = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(sf)
-        mut mf = 0
-        if type_name == "map" { mf = 1 }
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(mf)
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if type_name == "string" || is_list { 1 } else { 0 })
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if type_name == "map" { 1 } else { 0 })
         if type_name == "string" || is_list {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
@@ -245,53 +233,6 @@ export fn create_llvm_globals_from(csv: string, count: int) {
 }
 
 // Check if a name is in a comma-separated string (e.g., ",NAMES,IDS,")
-// Check if csv contains any of the 4 needles (returns true if ANY found)
-// Returns CG_STR if any needle is found in csv, else CG_I64
-// Register a global variable's type info (avoiding if-on-bool which is broken in bootstrap)
-fn register_global_type(name: string, gty: ptr) {
-    if gty != CG_STR {
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(0)
-        return
-    }
-    // Is a string/list type
-    CG_VAR_IS_STR = CG_VAR_IS_STR.push(1)
-    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-    CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
-}
-
-// Bootstrap workaround: register map globals via early-return function
-// (same pattern as register_global_type — avoids `if bool { mut_assign }` bug)
-fn register_global_map(name: string, gty: ptr) {
-    if gty != CG_PTR {
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        return
-    }
-    CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(1)
-    CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
-}
-
-fn select_global_type(csv: string, n1: string, n2: string, n3: string, n4: string) -> ptr {
-    if csv.index_of(n1) >= 0 { return CG_STR }
-    if csv.index_of(n2) >= 0 { return CG_STR }
-    if csv.index_of(n3) >= 0 { return CG_PTR }  // Map uses ptr, not ForgeString
-    if csv.index_of(n4) >= 0 { return CG_STR }
-    return CG_I64
-}
-
-fn csv_has_any(csv: string, n1: string, n2: string, n3: string, n4: string) -> bool {
-    let i1 = csv.index_of(n1)
-    if i1 >= 0 {
-        eprintln("    [csv_has_any] FOUND n1='" + n1 + "' → returning true")
-        return true
-    }
-    if csv.index_of(n2) >= 0 { return true }
-    if csv.index_of(n3) >= 0 { return true }
-    if csv.index_of(n4) >= 0 { return true }
-    return false
-}
-
 fn csv_contains(csv: string, name: string) -> bool {
     let needle = ",${name},"
     let nl = needle.length
@@ -624,7 +565,6 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
     // Check if starts with "List" — list is {ptr, i64}
-    if type_name == "List" { return CG_LIST }
     if type_name.length > 4 {
         if type_name[0] == "L" {
             if type_name[1] == "i" {
@@ -684,35 +624,6 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
     return -1
 }
 
-// Get the type name of a struct field at a given index
-export fn struct_field_type_name(struct_name: string, fidx: int) -> string {
-    mut si = 0
-    while si < CG_STRUCT_NAMES.length {
-        if CG_STRUCT_NAMES[si] == struct_name {
-            let type_names = CG_STRUCT_FIELD_TYPE_NAMES[si]
-            if type_names == "" { return "" }
-            mut idx = 0
-            mut current = ""
-            mut ti = 0
-            while ti < type_names.length {
-                let ch = type_names[ti]
-                if ch == "," {
-                    if idx == fidx { return current }
-                    idx = idx + 1
-                    current = ""
-                } else {
-                    current = current + ch
-                }
-                ti = ti + 1
-            }
-            if idx == fidx { return current }
-            return ""
-        }
-        si = si + 1
-    }
-    return ""
-}
-
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
     mut vi = CG_STRUCT_VAR_NAMES.length - 1
@@ -755,9 +666,6 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
-    // Enum type cache must be cleared (old types from previous context are dangling)
-    CG_ENUM_TYPE_CACHE_NAMES = []
-    CG_ENUM_TYPE_CACHE_PTRS = []
     CG_ACTIVE = true
 }
 
@@ -766,23 +674,13 @@ export fn codegen_write_ir(path: string) {
 }
 
 export fn codegen_emit_object(path: string) -> bool {
-    // Write IR then use llc for object emission (our LLVM C API wrapper
-    // produces incorrect code for structs with enum fields in some cases)
-    let ir_path = path + ".ll"
-    codegen_write_ir(ir_path)
-    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", ["-O0", "-filetype=obj", ir_path, "-o", path])
-    llc_result.contains("\"code\":0")
+    let result = llvm.emit_object_file(CG_MOD, path)
+    result == 0
 }
 
 export fn codegen_cleanup() {
     CG_ACTIVE = false
     cg_cleanup()
-}
-
-// Bootstrap workaround: direct assignment to CG_HAS_LAST_VAL inside
-// conditionals doesn't work. Use this function instead.
-export fn cg_reset_last_val() {
-    CG_HAS_LAST_VAL = 0
 }
 
 fn cg_init_ctx(name: string) {
@@ -876,31 +774,17 @@ impl Codegen {
     }
 
     fn emit_statement(self, stmt: Statement) {
-        // Use match — the bootstrap's pattern matching extracts fields correctly
-        // The Expr data appears as all-zeros, but that's because the Statement
-        // was constructed with Statement.Expr(Expr.IntLit(0,span)) as a PLACEHOLDER
-        // during the inline-emit-during-parse path. The actual code was already
-        // emitted inline; this match just needs to handle Feature (side-table) stmts.
         match stmt {
             .Expr(expr) -> {
                 let val = self.emit_expr(expr)
                 CG_LAST_VAL = val
                 CG_HAS_LAST_VAL = 1
             }
-            .Assign(target, value, span) -> {
-                self.emit_assign(target, value)
-            }
-            .Return(value, span) -> {
-                self.emit_return(value)
-            }
-            .Feature(fe) -> {
-                self.dispatch_stmt(fe)
-            }
+            .Assign(target, value, span) -> { self.emit_assign(target, value) }
+            .Return(value, span) -> { self.emit_return(value) }
+            .Feature(fe) -> { self.dispatch_stmt(fe) }
         }
     }
-
-    // emit_statement_value removed — match destructuring for Statement
-    // doesn't work reliably in the bootstrap-compiled binary
 
     fn emit_return(self, value: Expr) {
         match value {
@@ -938,9 +822,7 @@ impl Codegen {
 
     fn emit_expr(self, expr: Expr) -> ptr {
         match expr {
-            .IntLit(value, span) -> {
-                return llvm.const_int(CG_I64, value, 0)
-            }
+            .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
@@ -962,7 +844,6 @@ impl Codegen {
                 return self.dispatch_expr(fe)
             }
         }
-        // Unmatched expr variant — return 0
         llvm.const_int(CG_I64, 0, 0)
     }
 
@@ -1098,9 +979,7 @@ impl Codegen {
                 // Check nullable first (takes precedence)
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    // Bootstrap workaround: if-as-expression returns corrupt ptr
-                    mut inner_ty = CG_I64
-                    if inner_name == "string" { inner_ty = CG_STR }
+                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
@@ -1120,12 +999,6 @@ impl Codegen {
                     let ety = cg_get_enum_ty_for(vet)
                     if ety != null { load_ty = ety }
                     CG_LAST_ENUM_TYPE = vet
-                }
-                // Check map type
-                CG_LAST_IS_MAP = 0
-                if self.is_map_var(name) {
-                    load_ty = CG_PTR
-                    CG_LAST_IS_MAP = 1
                 }
                 // Check struct type
                 CG_LAST_STRUCT_TYPE = ""
@@ -1154,9 +1027,7 @@ impl Codegen {
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    // Bootstrap workaround: if-as-expression returns corrupt ptr
-                    mut inner_ty = CG_I64
-                    if inner_name == "string" { inner_ty = CG_STR }
+                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
@@ -1175,12 +1046,6 @@ impl Codegen {
                     if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
                     CG_LAST_ENUM_TYPE = g_vet
                 }
-                // Check map type
-                CG_LAST_IS_MAP = 0
-                if self.is_map_var(name) {
-                    load_ty = CG_PTR
-                    CG_LAST_IS_MAP = 1
-                }
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
                     mut sti = CG_STRUCT_NAMES.length - 1
@@ -1193,7 +1058,6 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                let is_str_load = load_ty == CG_STR
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -1444,22 +1308,19 @@ impl Codegen {
 
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
-        mut si = 0
-        while si < block.statements.length {
-            if llvm.block_has_terminator(CG_B) { break }
-            let stmt = block.statements[si]
-            // Debug: check statement variant tag
+        for stmt in block.statements {
             match stmt {
-                .Expr(e) -> { eprintln("        [block] stmt[" + string(si) + "] = Expr") }
-                .Assign(t, v, s) -> { eprintln("        [block] stmt[" + string(si) + "] = Assign") }
-                .Return(v, s) -> { eprintln("        [block] stmt[" + string(si) + "] = Return") }
-                .Feature(fe) -> { eprintln("        [block] stmt[" + string(si) + "] = Feature:" + fe.data.feature) }
+                .Expr(expr) -> {
+                    last = self.emit_expr(expr)
+                }
+                .Assign(t, v, s) -> {}
+                .Return(v, s) -> {
+                    self.emit_return(v)
+                }
+                .Feature(fe) -> {
+                    self.dispatch_stmt(fe)
+                }
             }
-            self.emit_statement(stmt)
-            if CG_HAS_LAST_VAL > 0 {
-                last = CG_LAST_VAL
-            }
-            si = si + 1
         }
         last
     }
@@ -1487,27 +1348,21 @@ impl Codegen {
         }
         // For struct types, use the registered struct LLVM type
         if CG_LAST_STRUCT_TYPE != "" {
+            // Search from END to find the most recent entry (with LLVM type)
             mut si = CG_STRUCT_NAMES.length - 1
-            mut found_struct = false
             while si >= 0 {
                 if CG_STRUCT_NAMES[si] == CG_LAST_STRUCT_TYPE {
                     let found_ty = CG_STRUCT_TYPES[si]
                     if found_ty != null {
                         alloca_ty = found_ty
-                        found_struct = true
                     }
                     break
                 }
                 si = si - 1
             }
-            if !found_struct {
-                eprintln("        [define_var] WARN: struct type '" + CG_LAST_STRUCT_TYPE + "' not found in " + string(CG_STRUCT_NAMES.length) + " entries")
-            }
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
-        if value != null {
-            llvm.build_store(CG_B, value, alloca)
-        }
+        llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
@@ -1532,36 +1387,10 @@ impl Codegen {
     fn emit_member_access(self, obj: Expr, field: string) -> ptr {
         // Handle obj.field: extract the variable name from obj, look up struct type, extract field
         mut var_name = ""
-        mut nested_struct_type = ""
-        mut nested_val: ptr = null
         match obj {
             .Ident(name, span) -> { var_name = name }
-            .MemberAccess(inner_obj, inner_field, span) -> {
-                // Nested: inner_obj.inner_field.field — recursively emit inner
-                nested_val = self.emit_member_access(inner_obj, inner_field)
-                nested_struct_type = CG_LAST_STRUCT_TYPE
-            }
             _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
-
-        // Handle nested member access: obj.inner.field
-        if nested_val != null && nested_struct_type != "" {
-            let fidx = struct_field_index(nested_struct_type, field)
-            if fidx >= 0 {
-                let fv = llvm.build_extract_value(CG_B, nested_val, fidx, field)
-                // Check if this field is itself a struct
-                let field_type_name = struct_field_type_name(nested_struct_type, fidx)
-                CG_LAST_STRUCT_TYPE = field_type_name
-                CG_LAST_IS_STR = 0
-                if is_struct_field_str(nested_struct_type, fidx) {
-                    CG_LAST_IS_STR = 1
-                    CG_LAST_STRUCT_TYPE = ""
-                }
-                return fv
-            }
-            return llvm.const_int(CG_I64, 0, 0)
-        }
-
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
         // Special case: .length property
@@ -1614,19 +1443,6 @@ impl Codegen {
                 break
             }
             si = si + 1
-        }
-        // Track type of the extracted field for nested access / var binding
-        let ftn = struct_field_type_name(struct_type_name, fidx)
-        CG_LAST_STRUCT_TYPE = ""
-        CG_LAST_ENUM_TYPE = ""
-        if CG_LAST_IS_STR != 1 && ftn != "" && ftn != "int" && ftn != "float" && ftn != "bool" && ftn != "ptr" && ftn != "string" {
-            // Check if it's an enum or struct
-            let emf = cg_enum_max_fields(ftn)
-            if emf > 0 {
-                CG_LAST_ENUM_TYPE = ftn
-            } else {
-                CG_LAST_STRUCT_TYPE = ftn
-            }
         }
         field_val
     }

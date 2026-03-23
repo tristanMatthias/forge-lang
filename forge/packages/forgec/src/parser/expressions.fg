@@ -23,14 +23,12 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, cg_reset_last_val, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
 // Suppress cross-newline dot chaining inside match arm bodies
 mut IN_MATCH_ARM: bool = false
-// Track call nesting depth — only emit calls inline at depth 0 (top-level statement)
-export mut CALL_DEPTH: int = 0
 
 // ─── Precedence Levels ─────────────────────────
 // All binary levels use parse_binary_level(prec) which:
@@ -129,36 +127,12 @@ impl Parser {
             self.advance()
             self.skip_newlines()
 
-            // Dot-variant comparison fast-path: x == .Variant or x != .Variant
-            // The LHS is an enum value (struct with tag at index 0); extract tag and compare as i64
-            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && self.check(TokenKind.Dot) {
-                self.advance() // consume .
-                let dv_name = self.expect_ident()
-                let dv_tag = match_enum_tag(dv_name)
-                mut cg = codegen_new()
-                mut lhs = result_llvm
-                    if !result_is_llvm { lhs = cg.emit_expr(result) }
-                // Extract tag byte (i8 at struct index 0), zext to i64
-                let etag = llvm.build_extract_value(CG_B, lhs, 0, "dv_tag")
-                let etag_ext = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "dv_tagext")
-                let dv_const = llvm.const_int(CG_I64, dv_tag, 0)
-                let dv_pred = if op_key == "Eq" { 32 } else { 33 }
-                let dv_cmp = llvm.build_icmp(CG_B, dv_pred, etag_ext, dv_const, "dv_cmp")
-                let dv_ext = llvm.build_zext(CG_B, dv_cmp, llvm.int64_type(CG_CTX), "dv_ext")
-                result_is_llvm = true
-                result_llvm = dv_ext
-                result_is_str = false
-                result = Expr.IntLit(0, self.current_span())
-                continue
-            }
-
             // Null comparison fast-path: x == null or x != null
             let rhs_key = self.kind_to_key(self.peek().kind)
             if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
                 self.advance() // consume 'null'
                 mut cg = codegen_new()
-                mut lhs = result_llvm
-                    if !result_is_llvm { lhs = cg.emit_expr(result) }
+                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                 let tag = llvm.build_extract_value(CG_B, lhs, 0, "null_tag")
                 let zero_tag = llvm.const_int(CG_I8, 0, 0)
                 let pred = if op_key == "Eq" { 32 } else { 33 }
@@ -174,8 +148,7 @@ impl Parser {
             // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
             if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
                 mut cg = codegen_new()
-                mut lhs = result_llvm
-                    if !result_is_llvm { lhs = cg.emit_expr(result) }
+                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                 // Truncate LHS to i1
                 let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sc_lhs")
                 let current_bb = llvm.get_insert_block(CG_B)
@@ -202,8 +175,11 @@ impl Parser {
                 llvm.position_at_end(CG_B, merge_bb)
                 // For &&: from lhs_bb → 0, from rhs_bb → rhs result
                 // For ||: from lhs_bb → 1, from rhs_bb → rhs result
-                mut short_val = llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
-                if op_key != "And" { short_val = llvm.const_int(llvm.int1_type(CG_CTX), 1, 0) }
+                let short_val = if op_key == "And" {
+                    llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
+                } else {
+                    llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
+                }
                 let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sc_phi")
                 llvm.add_incoming(phi, short_val, current_bb)
                 llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
@@ -223,8 +199,11 @@ impl Parser {
             if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Get LHS: either from tracked LLVM value or emit AST
-                mut lhs = result_llvm
-                if !result_is_llvm { lhs = cg.emit_expr(result) }
+                let lhs = if result_is_llvm {
+                    result_llvm
+                } else {
+                    cg.emit_expr(result)
+                }
                 let rhs = cg.emit_expr(right!)
                 // Re-check rhs_is_str after emit (string() sets it during emit)
                 if CG_LAST_IS_STR == 1 { rhs_is_str = true }
@@ -292,9 +271,8 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__bt" + string(BINOP_COUNTER)
-            mut tmp_ty = Type.Int
-            if result_is_str { tmp_ty = Type.String }
+            let tmp = "__bt${BINOP_COUNTER}"
+            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
             // Track for implicit function returns
@@ -360,21 +338,8 @@ impl Parser {
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
                 result_is_llvm = false
-                // At the top level (CALL_DEPTH == 0), emit the call inline
-                // so CG_LAST_VAL captures the return value for implicit returns.
-                // Inside nested calls (CALL_DEPTH > 0), don't emit — the outer
-                // call's codegen will handle it.
-                if CG_ACTIVE && CALL_DEPTH == 0 {
-                    mut cg = codegen_new()
-                    let call_val = cg.emit_expr(result)
-                    CG_LAST_VAL = call_val
-                    CG_HAS_LAST_VAL = 1
-                    result_is_llvm = true
-                    result_llvm = call_val
-                    result_is_str = CG_LAST_IS_STR == 1
-                } else {
-                    CG_HAS_LAST_VAL = 0
-                }
+                // Clear HAS_LAST_VAL — args consumed by call, not by var binding
+                CG_HAS_LAST_VAL = 0
                 // Don't clear CG_LAST_ENUM_TYPE here — the emit_call will clear it
                 continue
             }
@@ -398,9 +363,7 @@ impl Parser {
                 // In codegen mode: handle known properties and methods inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    // Bootstrap workaround: if-as-expression returns corrupt ptr
-                    mut obj_val = result_llvm
-                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
+                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
 
                     // Check if this is an enum constructor BEFORE method call
                     let enum_type_name = LAST_IDENT_NAME  // save before arg parsing overwrites
@@ -426,19 +389,12 @@ impl Parser {
                                 let aexpr = self.parse_expr()
                                 if aexpr != null {
                                     mut aval = cg2.emit_expr(aexpr!)
-                                    // Box enum/struct args as pointers (like Rust's Box<T>)
+                                    // Box enum args as pointers (like Rust's Box<T>)
                                     if CG_LAST_ENUM_TYPE != "" {
                                         let ebox2 = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "ebox")
                                         llvm.build_store(CG_B, aval, ebox2)
                                         aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "eptr")
                                         CG_LAST_ENUM_TYPE = ""
-                                    }
-                                    // Also box struct args (FeatureStmt, FeatureExpr, etc.)
-                                    if CG_LAST_STRUCT_TYPE != "" {
-                                        let sbox = llvm.build_alloca(CG_B, resolve_type_to_llvm(CG_LAST_STRUCT_TYPE), "sbox")
-                                        llvm.build_store(CG_B, aval, sbox)
-                                        aval = llvm.build_ptr_to_int(CG_B, sbox, CG_I64, "sptr")
-                                        CG_LAST_STRUCT_TYPE = ""
                                     }
                                     // Store field via memory (handles any type including strings)
                                     let slot_off = cg_enum_field_slot_offset(vft, ai)
@@ -470,22 +426,9 @@ impl Parser {
                             CG_LAST_VAL = eval
                             CG_HAS_LAST_VAL = 1
                         } else {
-                            // Unit variant: wrap in enum struct type if available
-                            let uety = cg_get_enum_ty_for(enum_type_name)
-                            if uety != null {
-                                let tag_i8 = llvm.const_int(CG_I8, maybe_enum_tag, 0)
-                                mut uev = llvm.get_undef(uety)
-                                uev = llvm.build_insert_value(CG_B, uev, tag_i8, 0, "utag")
-                                uev = llvm.build_insert_value(CG_B, uev, llvm.const_int(CG_I64, 0, 0), 1, "uslot")
-                                result_is_llvm = true
-                                result_llvm = uev
-                                CG_LAST_ENUM_TYPE = enum_type_name
-                            } else {
-                                // No enum type available — use plain i64 tag
-                                result_is_llvm = true
-                                result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
-                                // Do NOT set CG_LAST_ENUM_TYPE (is pattern would crash)
-                            }
+                            // Unit variant: just the tag
+                            result_is_llvm = true
+                            result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
                         }
                         result_is_str = false
                         result = Expr.IntLit(maybe_enum_tag, span)
@@ -577,20 +520,9 @@ impl Parser {
                             CG_LAST_VAL = eval
                             CG_HAS_LAST_VAL = 1
                         } else {
-                            // Unit-only enum: wrap in enum struct type if available
-                            let uety2 = cg_get_enum_ty_for(enum_cname)
-                            if uety2 != null {
-                                let tag_i8b = llvm.const_int(CG_I8, enum_tag, 0)
-                                mut uev2 = llvm.get_undef(uety2)
-                                uev2 = llvm.build_insert_value(CG_B, uev2, tag_i8b, 0, "utag2")
-                                uev2 = llvm.build_insert_value(CG_B, uev2, llvm.const_int(CG_I64, 0, 0), 1, "uslot2")
-                                result_is_llvm = true
-                                result_llvm = uev2
-                                CG_LAST_ENUM_TYPE = enum_cname
-                            } else {
-                                result_is_llvm = true
-                                result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
-                            }
+                            // Unit-only enum: plain i64 tag
+                            result_is_llvm = true
+                            result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
                         }
                         result_is_str = false
                         result = Expr.IntLit(enum_tag, span)
@@ -622,7 +554,7 @@ impl Parser {
                                 fpos = fpos + 1
                             }
                             if fcur == field { found = true }
-                            if found && obj_val != null {
+                            if found {
                                 let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
                                 result_is_llvm = true
                                 result_llvm = field_val
@@ -630,27 +562,8 @@ impl Parser {
                                 let struct_type_name = CG_STRUCT_VAR_TYPES[svi]
                                 result_is_str = is_struct_field_str(struct_type_name, fidx)
                                 result_is_map = false
-                                // Check if the extracted field is itself a struct or enum
-                                let ftype = struct_field_type_name(struct_type_name, fidx)
+                                // Clear struct type — we extracted a single field, not a struct
                                 CG_LAST_STRUCT_TYPE = ""
-                                CG_LAST_ENUM_TYPE = ""
-                                mut ftype_is_complex = ftype != "" && ftype != "int" && ftype != "string" && ftype != "float" && ftype != "bool" && ftype != "ptr"
-                                if ftype_is_complex {
-                                    // Check if it's an enum
-                                    let ftype_emf = cg_enum_max_fields(ftype)
-                                    if ftype_emf > 0 {
-                                        CG_LAST_ENUM_TYPE = ftype
-                                        ftype_is_complex = false // don't register as struct
-                                    }
-                                }
-                                if ftype_is_complex {
-                                    CG_LAST_STRUCT_TYPE = ftype
-                                    // Note: nested struct field access (a.b.c) is handled
-                                    // by emit_member_access in the codegen path.
-                                    // The inline emit stores the value directly.
-                                } else {
-                                    CG_LAST_STRUCT_TYPE = ""
-                                }
                                 result = Expr.IntLit(0, span)
                                 break
                             }
@@ -688,8 +601,7 @@ impl Parser {
                 // In codegen mode: emit indexing inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    mut obj_val = result_llvm
-                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
+                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                     let idx_val = cg.emit_expr(index!)
 
                     // Check if this is a list variable (needs GEP, not char_at)
@@ -725,8 +637,7 @@ impl Parser {
                     } else {
                         // List/array indexing: GEP + load from data pointer
                         // Use correct element type (int=8B, string=16B, struct=varies)
-                        mut elem_ty = CG_I64
-                        if is_list { elem_ty = list_elem_llvm_type(index_obj_name) }
+                        let elem_ty = if is_list { list_elem_llvm_type(index_obj_name) } else { CG_I64 }
                         let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "list_data")
                         let indices = llvm.value_array_new(1)
                         llvm.value_array_set(indices, 0, idx_val)
@@ -756,8 +667,7 @@ impl Parser {
                 self.advance()
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    mut nullable_val = result_llvm
-                    if !result_is_llvm { nullable_val = cg.emit_expr(result) }
+                    let nullable_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                     let var_is_nullable = is_nullable_var(LAST_IDENT_NAME)
                     if var_is_nullable || CG_LAST_IS_NULLABLE == 1 {
                         let inner_val = llvm.build_extract_value(CG_B, nullable_val, 1, "unwrap")
@@ -810,13 +720,12 @@ impl Parser {
 
                     if CG_ACTIVE {
                         mut cg = codegen_new()
-                        mut obj_val = result_llvm
-                    if !result_is_llvm { obj_val = cg.emit_expr(result) }
+                        let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
                         let tag = match_enum_tag(variant_name)
                         let tag_val = llvm.const_int(CG_I64, tag, 0)
                         // For named enum types, extract tag byte first
                         mut cmp_lhs = obj_val
-                        if CG_LAST_ENUM_TYPE != "" && obj_val != null {
+                        if CG_LAST_ENUM_TYPE != "" {
                             let etag = llvm.build_extract_value(CG_B, obj_val, 0, "is_tag")
                             cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "is_tagext")
                         }
@@ -844,9 +753,8 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__pt" + string(BINOP_COUNTER)
-            mut tmp_ty = Type.Int
-            if result_is_str { tmp_ty = Type.String }
+            let tmp = "__pt${BINOP_COUNTER}"
+            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
             // If result is an enum, register in enum var tracking
             if CG_LAST_ENUM_TYPE != "" {
@@ -868,8 +776,6 @@ impl Parser {
                 if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
             }
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
-            CG_LAST_VAL = result_llvm
-            CG_HAS_LAST_VAL = 1
             return Expr.Ident(tmp, self.current_span())
         }
         // Don't clear CG_LAST_IS_STR — it was already set correctly by
@@ -883,7 +789,6 @@ impl Parser {
 
     fn parse_call_args(self) -> List<Expr> {
         mut args: List<Expr> = []
-        CALL_DEPTH = CALL_DEPTH + 1
 
         while !self.check(TokenKind.RParen) && !self.is_at_end() {
             self.skip_newlines()
@@ -897,7 +802,6 @@ impl Parser {
             }
         }
 
-        CALL_DEPTH = CALL_DEPTH - 1
         args
     }
 
@@ -1156,51 +1060,38 @@ impl Parser {
                     if field_count > 0 { parsed_fields = parsed_fields + "," }
                     parsed_fields = parsed_fields + fname
                     self.advance() // consume field name
-                    // Reset type flags before emitting field value
-                    CG_LAST_ENUM_TYPE = ""
-                    CG_LAST_IS_STR = 0
-                    CG_LAST_IS_LIST = 0
-                    CG_LAST_STRUCT_TYPE = ""
-                    mut cg = codegen_new()
-                    CG_HAS_LAST_VAL = 0
                     if self.check(TokenKind.Colon) {
                         self.advance() // consume :
+                        // Reset type flags before emitting field value
+                        CG_LAST_ENUM_TYPE = ""
+                        CG_LAST_IS_STR = 0
+                        CG_LAST_IS_LIST = 0
+                        CG_LAST_STRUCT_TYPE = ""
+                        mut cg = codegen_new()
                         let expr_val = self.parse_expr()
-                        // Use CG_LAST_VAL if set (list literals, struct literals, calls
-                        // emit inline and set CG_LAST_VAL — re-emitting via emit_expr
-                        // can produce a corrupt value in the bootstrap compiler)
-                        mut val: ptr = null
-                        if CG_HAS_LAST_VAL == 1 {
-                            val = CG_LAST_VAL
-                            CG_HAS_LAST_VAL = 0
+                        let val = cg.emit_expr(expr_val!)
+                        llvm.value_array_set(vals, field_count, val)
+                        // Track field type
+                        if field_count > 0 { parsed_field_types = parsed_field_types + "," }
+                        if CG_LAST_ENUM_TYPE != "" {
+                            parsed_field_types = parsed_field_types + "e"
+                            field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
+                        } else if CG_LAST_STRUCT_TYPE != "" {
+                            // Struct-typed field: use the struct type name
+                            parsed_field_types = parsed_field_types + "t"
+                            field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
+                        } else if CG_LAST_IS_STR == 1 {
+                            parsed_field_types = parsed_field_types + "s"
+                            field_enum_names = field_enum_names.push("")
+                        } else if CG_LAST_IS_LIST == 1 {
+                            parsed_field_types = parsed_field_types + "l"
+                            field_enum_names = field_enum_names.push("")
                         } else {
-                            val = cg.emit_expr(expr_val!)
+                            parsed_field_types = parsed_field_types + "i"
+                            field_enum_names = field_enum_names.push("")
                         }
-                        llvm.value_array_set(vals, field_count, val)
-                    } else {
-                        // Shorthand: { field } means { field: field }
-                        let val = cg.emit_ident(fname)
-                        llvm.value_array_set(vals, field_count, val)
+                        field_count = field_count + 1
                     }
-                    // Track field type
-                    if field_count > 0 { parsed_field_types = parsed_field_types + "," }
-                    if CG_LAST_ENUM_TYPE != "" {
-                        parsed_field_types = parsed_field_types + "e"
-                        field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
-                    } else if CG_LAST_STRUCT_TYPE != "" {
-                        parsed_field_types = parsed_field_types + "t"
-                        field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
-                    } else if CG_LAST_IS_STR == 1 {
-                        parsed_field_types = parsed_field_types + "s"
-                        field_enum_names = field_enum_names.push("")
-                    } else if CG_LAST_IS_LIST == 1 {
-                        parsed_field_types = parsed_field_types + "l"
-                        field_enum_names = field_enum_names.push("")
-                    } else {
-                        parsed_field_types = parsed_field_types + "i"
-                        field_enum_names = field_enum_names.push("")
-                    }
-                    field_count = field_count + 1
                 } else {
                     break
                 }
@@ -1281,39 +1172,10 @@ impl Parser {
             llvm.type_array_free(ft)
             mut struct_val = llvm.get_undef(struct_ty)
             mut fi = 0
-            mut ft_pos = 0
             while fi < field_count {
-                mut v = llvm.value_array_get(vals, fi)
-                // Check if this field is an enum type — if so, wrap the i64 tag
-                // in the proper enum struct type ({i8, i64, ...})
-                mut ft_char = "i"
-                if ft_pos < parsed_field_types.length {
-                    ft_char = parsed_field_types[ft_pos]
-                }
-                if ft_char == "e" {
-                    if fi < field_enum_names.length {
-                        let ename = field_enum_names[fi]
-                        if ename != "" {
-                            let ety = cg_get_enum_ty_for(ename)
-                            if ety != null {
-                                // Check if v is already the enum type (loaded from enum-typed alloca)
-                                let vty = llvm.type_of(v)
-                                if vty != ety {
-                                    // Wrap: create {i8 tag, i64 0} from the i64 value
-                                    let tag_i8 = llvm.build_trunc(CG_B, v, CG_I8, "etag")
-                                    mut ev = llvm.get_undef(ety)
-                                    ev = llvm.build_insert_value(CG_B, ev, tag_i8, 0, "et")
-                                    ev = llvm.build_insert_value(CG_B, ev, llvm.const_int(CG_I64, 0, 0), 1, "ep")
-                                    v = ev
-                                }
-                                // else: v is already %Big type, use directly
-                            }
-                        }
-                    }
-                }
+                let v = llvm.value_array_get(vals, fi)
                 struct_val = llvm.build_insert_value(CG_B, struct_val, v, fi, "sf")
                 fi = fi + 1
-                ft_pos = ft_pos + 2  // skip comma in parsed_field_types
             }
             llvm.value_array_free(vals)
 
@@ -1407,8 +1269,7 @@ impl Parser {
             let count_val = llvm.const_int(CG_I64, count, 0)
 
             // Determine element type and size
-            mut elem_ty = CG_I64
-            if first_elem_is_str == 1 { elem_ty = CG_STR }
+            let elem_ty = if first_elem_is_str == 1 { CG_STR } else { CG_I64 }
             let elem_size_val = llvm.const_int(CG_I64, if first_elem_is_str == 1 { 16 } else { 8 }, 0)
 
             // Allocate buffer: forge_alloc(count * elem_size)
@@ -1535,10 +1396,6 @@ impl Parser {
             }
 
             llvm.position_at_end(CG_B, merge_bb)
-            // Reset CG_HAS_LAST_VAL — values from then/else blocks don't
-            // dominate the merge block, so using them for implicit return would
-            // cause LLVM verification errors
-            cg_reset_last_val()
             return Expr.IntLit(0, start)
         }
 
@@ -1846,8 +1703,7 @@ impl Parser {
 
             // Build phi node so match can be used as an expression
             if arm_vals.length > 0 {
-                mut phi_ty = CG_I64
-                if match_arms_are_str { phi_ty = CG_STR }
+                let phi_ty = if match_arms_are_str { CG_STR } else { CG_I64 }
                 let phi = llvm.build_phi(CG_B, phi_ty, "match.val")
                 mut phi_i = 0
                 while phi_i < arm_vals.length {
@@ -1954,7 +1810,7 @@ impl Parser {
             }
         }
 
-        if method == "indexOf" || method == "index_of" {
+        if method == "indexOf" {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let sub_val = cg.emit_expr(args[0])
@@ -1967,18 +1823,13 @@ impl Parser {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 // Use CG_LAST_VAL if available (struct literals set this)
-                // Bootstrap workaround: if-as-expression returns corrupt ptr
-                mut item_val: ptr = null
-                if CG_HAS_LAST_VAL == 1 {
+                let item_val = if CG_HAS_LAST_VAL == 1 {
                     CG_HAS_LAST_VAL = 0
-                    item_val = CG_LAST_VAL
+                    CG_LAST_VAL
                 } else {
-                    item_val = cg.emit_expr(args[0])
+                    cg.emit_expr(args[0])
                 }
                 let elem_ty = list_elem_llvm_type(obj_var_name)
-                // Clear struct type — push result is {ptr, i64} list, not the element struct
-                CG_LAST_STRUCT_TYPE = ""
-                CG_LAST_ENUM_TYPE = ""
                 return emit_list_push_typed(obj_val, item_val, elem_ty)
             }
         }
@@ -2218,8 +2069,7 @@ fn tpl_load_var(name: string) -> ptr {
     while vi >= 0 {
         if CG_VAR_NAMES[vi] == name {
             TPL_VAR_IS_STR = is_str
-            mut load_ty = CG_I64
-            if is_str == 1 { load_ty = CG_STR }
+            let load_ty = if is_str == 1 { CG_STR } else { CG_I64 }
             return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
         }
         vi = vi - 1
@@ -2573,7 +2423,7 @@ fn csv_var_enum_type(name: string) -> string {
 }
 
 // Look up enum variant tag by name. Returns -1 if not found.
-export fn match_enum_tag(variant_name: string) -> int {
+fn match_enum_tag(variant_name: string) -> int {
     mut vi = ENUM_VARIANT_NAMES.length - 1
     while vi >= 0 {
         if ENUM_VARIANT_NAMES[vi] == variant_name {

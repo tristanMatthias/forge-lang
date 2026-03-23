@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, cg_reset_last_val, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, codegen_new}
 use @std.llvm
 
 // Global to propagate parser position back after free-function parse calls
@@ -70,10 +70,7 @@ export fn parse_while(p: Parser) -> Statement? {
         WHILE_COND_BB = outer_cond
         WHILE_END_BB = outer_end
 
-        // Continue after loop — reset CG_HAS_LAST_VAL since loop body values
-        // don't dominate while.end (stale values would cause verification errors)
-        // Use function call (bootstrap workaround: direct mut assignment in if blocks fails)
-        cg_reset_last_val()
+        // Continue after loop
         llvm.position_at_end(CG_B, end_bb)
     } else {
         // Not in codegen — just parse and discard

@@ -10,12 +10,12 @@
 // ─── AST Data Trait ────────────────────────────────────────────────
 // Every feature's AST node implements this trait.
 // Core dispatch uses feature_id() to look up handlers in the registry.
-// NOTE: trait impl disabled for bootstrap — NodeRef has too many fields
-// for ARM64 register-passing when used as `self` parameter. Use the
-// standalone helper functions (node_ref_kind, etc.) instead.
 
-// trait AstData removed for bootstrap (causes codegen crash)
-// Original: trait AstData { fn kind, fn feature_id, fn span }
+export trait AstData {
+    fn kind(self) -> string
+    fn feature_id(self) -> string
+    fn span(self) -> Span
+}
 
 
 // ─── Node Reference (bridge for trait-object downcast) ─────────────
@@ -29,9 +29,11 @@ export type NodeRef = {
     node_span: Span,
 }
 
-// NOTE: NodeRef has 9 flattened fields (int + 2 strings + Span).
-// Standalone accessor functions would exceed ARM64's 8-register limit.
-// Access NodeRef fields directly at call sites instead.
+impl AstData for NodeRef {
+    fn kind(self) -> string { self.kind_name }
+    fn feature_id(self) -> string { self.feature }
+    fn span(self) -> Span { self.node_span }
+}
 
 
 // ─── Feature Wrappers ─────────────────────────────────────────────
@@ -130,18 +132,14 @@ export fn next_node_id() -> int {
 // ─── Convenience Constructors ─────────────────────────────────────
 // Shorthand for creating Feature-wrapped statements and expressions.
 
-export fn make_node_ref(feature: string, kind_name: string, node_id: int, span: Span) -> NodeRef {
-    NodeRef { node_id: node_id, feature: feature, kind_name: kind_name, node_span: span }
-}
-
 export fn feature_stmt(feature: string, kind_name: string, node_id: int, span: Span) -> Statement {
-    let nr = make_node_ref(feature, kind_name, node_id, span)
-    let fs = FeatureStmt { data: nr }
-    Statement.Feature(fs)
+    Statement.Feature(FeatureStmt {
+        data: NodeRef { node_id, feature, kind_name, node_span: span },
+    })
 }
 
 export fn feature_expr(feature: string, kind_name: string, node_id: int, span: Span) -> Expr {
-    let nr = make_node_ref(feature, kind_name, node_id, span)
-    let fe = FeatureExpr { data: nr }
-    Expr.Feature(fe)
+    Expr.Feature(FeatureExpr {
+        data: NodeRef { node_id, feature, kind_name, node_span: span },
+    })
 }

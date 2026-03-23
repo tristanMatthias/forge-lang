@@ -65,7 +65,7 @@ export fn dispatch_emit_stmt(cg: Codegen, node: NodeRef) {
     else if fid == "while_loops" { emit_while(cg, node) }
     else if fid == "for_loops" { emit_for(cg, node) }
     else {
-        eprintln("[dispatch_emit_stmt] unknown feature: " + fid)
+        eprintln("[dispatch_emit_stmt] unknown feature: ${fid}")
     }
 }
 
@@ -80,7 +80,7 @@ export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     else if fid == "null_safety" { return emit_null_safety(cg, node) }
     else if fid == "structs" { return emit_struct_lit(cg, node) }
     else {
-        eprintln("[dispatch_emit_expr] unknown feature: " + fid)
+        eprintln("[dispatch_emit_expr] unknown feature: ${fid}")
     }
     null
 }
