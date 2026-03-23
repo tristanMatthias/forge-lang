@@ -341,182 +341,194 @@ fn ast_parse_block() -> List<Stmt> {
     stmts
 }
 
+// ─── Statement parse handlers (registered in registry) ───────────
+
+fn parse_let_handler() -> Stmt {
+    let tok: Tok = peek()
+    let is_mut = tok.text == "mut"
+    advance()
+    let name = advance().text
+    mut type_ann = ""
+    if check(":") {
+        advance()
+        skip_nl()
+        type_ann = peek().text
+        advance()
+        if type_ann == "fn" && check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance()
+            }
+        }
+        if check("<") {
+            advance()
+            let gen = peek().text
+            type_ann = type_ann + "<" + gen + ">"
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+    }
+    expect("=")
+    skip_nl()
+    let value = ast_parse_expr()
+    stmt_let(name, type_ann, value, is_mut)
+}
+
+fn parse_return_handler() -> Stmt {
+    advance()
+    skip_nl()
+    if check("}") || check_kind(4) || !not_at_end() {
+        return stmt_return(expr_null())
+    }
+    let value = ast_parse_expr()
+    stmt_return(value)
+}
+
+fn parse_if_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let cond = ast_parse_expr()
+    skip_nl()
+    let then_body: List<Stmt> = ast_parse_block()
+    skip_nl()
+    mut else_stmts: List<Stmt> = []
+    if check("else") {
+        advance()
+        skip_nl()
+        if check("if") {
+            else_stmts = else_stmts.push(ast_parse_stmt())
+        } else {
+            else_stmts = ast_parse_block()
+        }
+    }
+    stmt_if(cond, then_body, else_stmts)
+}
+
+fn parse_while_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let cond = ast_parse_expr()
+    skip_nl()
+    let body: List<Stmt> = ast_parse_block()
+    stmt_while(cond, body)
+}
+
+fn parse_for_handler() -> Stmt {
+    advance()
+    let var_name = advance().text
+    expect("in")
+    skip_nl()
+    let iterable = ast_parse_expr()
+    skip_nl()
+    let body: List<Stmt> = ast_parse_block()
+    stmt_for(var_name, iterable, body)
+}
+
+fn parse_break_handler() -> Stmt {
+    advance()
+    stmt_break()
+}
+
+fn parse_continue_handler() -> Stmt {
+    advance()
+    stmt_continue()
+}
+
+fn parse_match_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let scrutinee = ast_parse_expr()
+    skip_nl()
+    expect("{")
+    skip_nl()
+    mut arms: List<Stmt> = []
+    while not_at_brace() {
+        skip_nl()
+        if check("_") {
+            advance()
+            expect("->")
+            skip_nl()
+            if check("{") {
+                let body: List<Stmt> = ast_parse_block()
+                arms = arms.push(stmt_match_arm("_", "", body))
+            } else {
+                mut body: List<Stmt> = []
+                body = body.push(ast_parse_stmt())
+                arms = arms.push(stmt_match_arm("_", "", body))
+            }
+        } else if check(".") {
+            advance()
+            let vname = advance().text
+            mut bindings = ""
+            if check("(") {
+                advance()
+                skip_nl()
+                while !check(")") {
+                    if bindings.length > 0 { bindings = bindings + "," }
+                    bindings = bindings + advance().text
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+                expect(")")
+            }
+            expect("->")
+            skip_nl()
+            if check("{") {
+                let body: List<Stmt> = ast_parse_block()
+                arms = arms.push(stmt_match_arm(vname, bindings, body))
+            } else {
+                mut body: List<Stmt> = []
+                body = body.push(ast_parse_stmt())
+                arms = arms.push(stmt_match_arm(vname, bindings, body))
+            }
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+    expect("}")
+    stmt_match(scrutinee, arms)
+}
+
+// Register all built-in parse handlers
+fn register_parse_handlers() {
+    register_parse("let", parse_let_handler)
+    register_parse("mut", parse_let_handler)
+    register_parse("return", parse_return_handler)
+    register_parse("if", parse_if_handler)
+    register_parse("while", parse_while_handler)
+    register_parse("for", parse_for_handler)
+    register_parse("break", parse_break_handler)
+    register_parse("continue", parse_continue_handler)
+    register_parse("match", parse_match_handler)
+}
+
+// ─── Main statement parser (registry-driven) ─────────────────────
+
 fn ast_parse_stmt() -> Stmt {
     skip_nl()
     let tok: Tok = peek()
 
-    // let / mut
-    if tok.text == "let" || tok.text == "mut" {
-        let is_mut = tok.text == "mut"
-        advance()
-        let name = advance().text
-        mut type_ann = ""
-        if check(":") {
-            advance()
-            skip_nl()
-            type_ann = peek().text
-            // Skip full type annotation, capture generic
-            advance()
-            // fn(int) -> int type annotation
-            if type_ann == "fn" && check("(") {
-                advance()
-                mut fd = 1
-                while fd > 0 && POS < TOKENS.length {
-                    if check("(") { fd = fd + 1 }
-                    if check(")") { fd = fd - 1 }
-                    advance()
-                }
-                if check("->") {
-                    advance()
-                    skip_nl()
-                    advance()
-                }
-            }
-            if check("<") {
-                advance()
-                let gen = peek().text
-                type_ann = type_ann + "<" + gen + ">"
-                mut td = 1
-                while td > 0 && POS < TOKENS.length {
-                    if check("<") { td = td + 1 }
-                    if check(">") { td = td - 1 }
-                    advance()
-                }
-            }
-            if check("?") { advance() }
-        }
-        expect("=")
-        skip_nl()
-        let value = ast_parse_expr()
-        return stmt_let(name, type_ann, value, is_mut)
+    // Check registry for handler
+    if tok.kind == 1 && has_parse_handler(tok.text) {
+        return call_parse_handler(tok.text)
     }
 
-    // return
-    if tok.text == "return" {
-        advance()
-        skip_nl()
-        if check("}") || check_kind(4) || !not_at_end() {
-            return stmt_return(expr_null())
-        }
-        let value = ast_parse_expr()
-        return stmt_return(value)
-    }
-
-    // if
-    if tok.text == "if" {
-        advance()
-        skip_nl()
-        let cond = ast_parse_expr()
-        skip_nl()
-        let then_body: List<Stmt> = ast_parse_block()
-        skip_nl()
-        mut else_stmts: List<Stmt> = []
-        if check("else") {
-            advance()
-            skip_nl()
-            if check("if") {
-                // else if → wrap in list
-                else_stmts = else_stmts.push(ast_parse_stmt())
-            } else {
-                else_stmts = ast_parse_block()
-            }
-        }
-        return stmt_if(cond, then_body, else_stmts)
-    }
-
-    // while
-    if tok.text == "while" {
-        advance()
-        skip_nl()
-        let cond = ast_parse_expr()
-        skip_nl()
-        let body: List<Stmt> = ast_parse_block()
-        return stmt_while(cond, body)
-    }
-
-    // for
-    if tok.text == "for" {
-        advance()
-        let var_name = advance().text
-        expect("in")
-        skip_nl()
-        let iterable = ast_parse_expr()
-        skip_nl()
-        let body: List<Stmt> = ast_parse_block()
-        return stmt_for(var_name, iterable, body)
-    }
-
-    // break / continue
-    if tok.text == "break" {
-        advance()
-        return stmt_break()
-    }
-    if tok.text == "continue" {
-        advance()
-        return stmt_continue()
-    }
-
-    // match
-    if tok.text == "match" {
-        advance()
-        skip_nl()
-        let scrutinee = ast_parse_expr()
-        skip_nl()
-        expect("{")
-        skip_nl()
-        mut arms: List<Stmt> = []
-        while not_at_brace() {
-            skip_nl()
-            if check("_") {
-                // Wildcard arm
-                advance()
-                expect("->")
-                skip_nl()
-                if check("{") {
-                    let body: List<Stmt> = ast_parse_block()
-                    arms = arms.push(stmt_match_arm("_", "", body))
-                } else {
-                    mut body: List<Stmt> = []
-                    body = body.push(ast_parse_stmt())
-                    arms = arms.push(stmt_match_arm("_", "", body))
-                }
-            } else if check(".") {
-                // .Variant pattern
-                advance()
-                let vname = advance().text
-                mut bindings = ""
-                if check("(") {
-                    advance()
-                    skip_nl()
-                    while !check(")") {
-                        if bindings.length > 0 { bindings = bindings + "," }
-                        bindings = bindings + advance().text
-                        skip_nl()
-                        if check(",") { advance() }
-                        skip_nl()
-                    }
-                    expect(")")
-                }
-                expect("->")
-                skip_nl()
-                if check("{") {
-                    let body: List<Stmt> = ast_parse_block()
-                    arms = arms.push(stmt_match_arm(vname, bindings, body))
-                } else {
-                    mut body: List<Stmt> = []
-                    body = body.push(ast_parse_stmt())
-                    arms = arms.push(stmt_match_arm(vname, bindings, body))
-                }
-            } else {
-                advance()
-            }
-            skip_nl()
-        }
-        expect("}")
-        return stmt_match(scrutinee, arms)
-    }
-
-    // Expression statement (or assignment)
+    // Fallback: expression statement or assignment
     let expr = ast_parse_expr()
     skip_nl()
     if check("=") {
@@ -527,11 +539,6 @@ fn ast_parse_stmt() -> Stmt {
     }
     stmt_expr(expr)
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// AST PARSE — top-level: fn decls, program
-// ═══════════════════════════════════════════════════════════════════
-
 fn ast_parse_fn_decl() -> FnDecl {
     expect("fn")
     let name = advance().text

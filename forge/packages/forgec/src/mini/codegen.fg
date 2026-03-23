@@ -1503,6 +1503,9 @@ fn compile(source: string) -> string {
     STR_N = 0
     CLOSURE_COUNT = 0
     CLOSURE_IR = []
+    // Initialize registry and register handlers
+    init_registry()
+    register_parse_handlers()
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
     STRUCT_FIELD_COUNTS = []
