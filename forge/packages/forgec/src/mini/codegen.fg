@@ -942,349 +942,369 @@ fn gen_member(obj: string, field: string) -> string {
     obj
 }
 
-fn gen_stmt(s: Stmt) -> bool {
-    match s.kind {
-        .Let -> {
-            LAST_IS_STR = 0
-            LAST_IS_LIST = 0
-            LAST_IS_PTR = 0
-            LAST_STRUCT_TYPE = ""
-            LAST_ENUM_TYPE = ""
-            let val = gen_expr_from(s, 0)
-            let alloca = new_reg()
-            let name = s.str_val
-            // Determine type from annotation or inference
-            mut ty = "i64"
-            mut is_list = false
-            mut list_elem = LAST_LIST_ELEM_TYPE
-            mut stype = ""
-            if LAST_IS_STR == 1 { ty = "%ForgeString" }
-            if LAST_IS_PTR == 1 { ty = "ptr" }
-            if LAST_IS_LIST == 1 {
-                ty = "{ ptr, i64 }"
-                is_list = true
+// ─── Codegen handlers (registered in registry) ──────────────────
+
+fn codegen_let(s: Stmt) -> int {
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_IS_PTR = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    let val = gen_expr_from(s, 0)
+    let alloca = new_reg()
+    let name = s.str_val
+    mut ty = "i64"
+    mut is_list = false
+    mut list_elem = LAST_LIST_ELEM_TYPE
+    mut stype = ""
+    if LAST_IS_STR == 1 { ty = "%ForgeString" }
+    if LAST_IS_PTR == 1 { ty = "ptr" }
+    if LAST_IS_LIST == 1 {
+        ty = "{ ptr, i64 }"
+        is_list = true
+    }
+    if LAST_STRUCT_TYPE != "" {
+        ty = "%" + LAST_STRUCT_TYPE
+        stype = LAST_STRUCT_TYPE
+    }
+    if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
+    mut ann_base = s.str2
+    mut ann_generic = ""
+    let ann_lt = s.str2.index_of("<")
+    if ann_lt >= 0 {
+        ann_base = s.str2.substring(0, ann_lt)
+        ann_generic = s.str2.substring(ann_lt + 1, s.str2.length - 1)
+    }
+    if ann_base == "string" { ty = "%ForgeString" }
+    if ann_base == "int" || ann_base == "bool" { ty = "i64" }
+    if ann_base == "List" {
+        ty = "{ ptr, i64 }"
+        is_list = true
+        if ann_generic != "" {
+            list_elem = type_to_llvm(ann_generic)
+        }
+    }
+    if ann_base == "Map" { ty = "ptr" }
+    if ann_base == "fn" { ty = "ptr" }
+    if find_struct(ann_base) >= 0 {
+        ty = "%" + ann_base
+        stype = ann_base
+    }
+    if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
+    mut final_val = val
+    if ann_base == "Map" {
+        final_val = new_reg()
+        ir_line(final_val + " = call ptr @forge_map_new()")
+    }
+    if ann_base == "fn" && ty == "ptr" && LAST_IS_PTR == 0 {
+        let conv = new_reg()
+        ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
+        final_val = conv
+    }
+    ir_line(alloca + " = alloca " + ty)
+    ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
+    if is_list {
+        push_var_list(name, alloca, "list_" + list_elem, list_elem)
+    } else if stype != "" {
+        push_var_with_struct(name, alloca, ty, stype)
+    } else {
+        push_var(name, alloca, ty)
+    }
+    0
+}
+
+fn codegen_return(s: Stmt) -> int {
+    if CUR_RET_TY == "void" {
+        ir_line("ret void")
+    } else {
+        let val = gen_expr_from(s, 0)
+        ir_line("ret " + CUR_RET_TY + " " + val)
+    }
+    1
+}
+
+fn codegen_expr_stmt(s: Stmt) -> int {
+    let val = gen_expr_from(s, 0)
+    LAST_EXPR_VAL = val
+    0
+}
+
+fn codegen_if(s: Stmt) -> int {
+    let cond = gen_expr_from(s, 0)
+    let cond_i1 = new_reg()
+    ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+    let then_l = new_label("then")
+    let else_l = new_label("else")
+    let merge_l = new_label("merge")
+    ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
+    ir_raw(then_l + ":")
+    let then_ended = gen_stmts(s.body)
+    if then_ended == 0 { ir_line("br label %" + merge_l) }
+    ir_raw(else_l + ":")
+    let else_ended = gen_stmts(s.else_body)
+    if else_ended == 0 { ir_line("br label %" + merge_l) }
+    ir_raw(merge_l + ":")
+    if then_ended == 1 && else_ended == 1 {
+        ir_line("unreachable")
+        return 1
+    }
+    0
+}
+
+fn codegen_while(s: Stmt) -> int {
+    let cond_l = new_label("while_cond")
+    let body_l = new_label("while_body")
+    let end_l = new_label("while_end")
+    LOOP_COND = LOOP_COND.push(cond_l)
+    LOOP_END = LOOP_END.push(end_l)
+    ir_line("br label %" + cond_l)
+    ir_raw(cond_l + ":")
+    let cond = gen_expr_from(s, 0)
+    let cond_i1 = new_reg()
+    ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+    ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
+    ir_raw(body_l + ":")
+    let body_ended = gen_stmts(s.body)
+    if body_ended == 0 { ir_line("br label %" + cond_l) }
+    mut new_cond: List<string> = []
+    mut new_end: List<string> = []
+    mut li = 0
+    while li < LOOP_COND.length - 1 {
+        new_cond = new_cond.push(LOOP_COND[li])
+        new_end = new_end.push(LOOP_END[li])
+        li = li + 1
+    }
+    LOOP_COND = new_cond
+    LOOP_END = new_end
+    ir_raw(end_l + ":")
+    0
+}
+
+fn codegen_for(s: Stmt) -> int {
+    let var_name = s.str_val
+    LAST_IS_LIST = 0
+    let iterable = gen_expr_from(s, 0)
+    let elem_ty = LAST_LIST_ELEM_TYPE
+    let len_r = new_reg()
+    ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
+    let data_r = new_reg()
+    ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+    let idx_alloca = new_reg()
+    ir_line(idx_alloca + " = alloca i64")
+    ir_line("store i64 0, ptr " + idx_alloca)
+    let elem_alloca = new_reg()
+    ir_line(elem_alloca + " = alloca " + elem_ty)
+    push_var(var_name, elem_alloca, elem_ty)
+    let cond_l = new_label("for_cond")
+    let body_l = new_label("for_body")
+    let end_l = new_label("for_end")
+    LOOP_COND = LOOP_COND.push(cond_l)
+    LOOP_END = LOOP_END.push(end_l)
+    ir_line("br label %" + cond_l)
+    ir_raw(cond_l + ":")
+    let idx_val = new_reg()
+    ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+    let cmp = new_reg()
+    ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
+    ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
+    ir_raw(body_l + ":")
+    let ep = new_reg()
+    ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
+    let ev = new_reg()
+    ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
+    ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    let body_ended = gen_stmts(s.body)
+    let next_idx = new_reg()
+    ir_line(next_idx + " = add i64 " + idx_val + ", 1")
+    ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
+    if body_ended == 0 { ir_line("br label %" + cond_l) }
+    mut new_cond: List<string> = []
+    mut new_end: List<string> = []
+    mut li = 0
+    while li < LOOP_COND.length - 1 {
+        new_cond = new_cond.push(LOOP_COND[li])
+        new_end = new_end.push(LOOP_END[li])
+        li = li + 1
+    }
+    LOOP_COND = new_cond
+    LOOP_END = new_end
+    ir_raw(end_l + ":")
+    0
+}
+
+fn codegen_break(s: Stmt) -> int {
+    if LOOP_END.length > 0 {
+        ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
+    }
+    1
+}
+
+fn codegen_continue(s: Stmt) -> int {
+    if LOOP_COND.length > 0 {
+        ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
+    }
+    1
+}
+
+fn codegen_assign(s: Stmt) -> int {
+    let target: Expr = s.exprs[0]
+    match target.kind {
+        .Ident -> {
+            let val = gen_expr_from(s, 1)
+            let var_idx = find_var(target.str_val)
+            if var_idx >= 0 {
+                let store_ty = VAR_TYPES[var_idx]
+                let load_ty = get_load_type(store_ty)
+                ir_line("store " + load_ty + " " + val + ", ptr " + VAR_REGS[var_idx])
             }
-            if LAST_STRUCT_TYPE != "" {
-                ty = "%" + LAST_STRUCT_TYPE
-                stype = LAST_STRUCT_TYPE
-            }
-            if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
-            // Prefer annotation — parse "List<string>" format
-            mut ann_base = s.str2
-            mut ann_generic = ""
-            let ann_lt = s.str2.index_of("<")
-            if ann_lt >= 0 {
-                ann_base = s.str2.substring(0, ann_lt)
-                ann_generic = s.str2.substring(ann_lt + 1, s.str2.length - 1)
-            }
-            if ann_base == "string" { ty = "%ForgeString" }
-            if ann_base == "int" || ann_base == "bool" { ty = "i64" }
-            if ann_base == "List" {
-                ty = "{ ptr, i64 }"
-                is_list = true
-                if ann_generic != "" {
-                    list_elem = type_to_llvm(ann_generic)
+        }
+        .Member -> {
+            let obj_expr: Expr = target.children[0]
+            let field = target.str_val
+            if is_ident_expr(obj_expr) {
+                let var_idx = find_var(obj_expr.str_val)
+                if var_idx >= 0 {
+                    let sty_name = VAR_STRUCT_TYPE[var_idx]
+                    let si = find_struct(sty_name)
+                    if si >= 0 {
+                        let fi = struct_field_index(si, field)
+                        let fty = struct_field_type(si, fi)
+                        let val = gen_expr_from(s, 1)
+                        let cur = new_reg()
+                        ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
+                        let updated = new_reg()
+                        ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + val + ", " + string(fi))
+                        ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
+                    }
                 }
             }
-            if ann_base == "Map" { ty = "ptr" }
-            if ann_base == "fn" { ty = "ptr" }
-            if find_struct(ann_base) >= 0 {
-                ty = "%" + ann_base
-                stype = ann_base
-            }
-            if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
-            // For Map types, initialize with forge_map_new()
-            mut final_val = val
-            if ann_base == "Map" {
-                final_val = new_reg()
-                ir_line(final_val + " = call ptr @forge_map_new()")
-            }
-            // For fn types, convert i64 to ptr if needed
-            if ann_base == "fn" && ty == "ptr" && LAST_IS_PTR == 0 {
-                let conv = new_reg()
-                ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
-                final_val = conv
-            }
-            ir_line(alloca + " = alloca " + ty)
-            ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
-            if is_list {
-                push_var_list(name, alloca, "list_" + list_elem, list_elem)
-            } else if stype != "" {
-                push_var_with_struct(name, alloca, ty, stype)
-            } else {
-                push_var(name, alloca, ty)
-            }
-            return false
         }
-        .Return -> {
-            if CUR_RET_TY == "void" {
-                ir_line("ret void")
-            } else {
-                let val = gen_expr_from(s, 0)
-                ir_line("ret " + CUR_RET_TY + " " + val)
+        _ -> {}
+    }
+    0
+}
+
+fn codegen_match(s: Stmt) -> int {
+    LAST_ENUM_TYPE = ""
+    let scrutinee = gen_expr_from(s, 0)
+    let scrut_enum = LAST_ENUM_TYPE
+    let ei = find_enum(scrut_enum)
+    let merge_l = new_label("match_end")
+    let match_result = new_reg()
+    ir_line(match_result + " = alloca " + CUR_RET_TY)
+    let tag_r = new_reg()
+    if ei >= 0 {
+        ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
+    }
+    mut ai = 0
+    while ai < s.body.length {
+        let arm: Stmt = s.body[ai]
+        let vname = arm.str_val
+        if vname == "_" {
+            let ended = gen_stmts(arm.body)
+            if ended == 0 {
+                if CUR_RET_TY != "void" {
+                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                }
+                ir_line("br label %" + merge_l)
             }
-            return true
-        }
-        .ExprStmt -> {
-            let val = gen_expr_from(s, 0)
-            LAST_EXPR_VAL = val
-            return false
-        }
-        .If -> {
-            let cond = gen_expr_from(s, 0)
-            let cond_i1 = new_reg()
-            ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
-            let then_l = new_label("then")
-            let else_l = new_label("else")
-            let merge_l = new_label("merge")
-            ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
-            // Then
-            ir_raw(then_l + ":")
-            let then_ended = gen_stmts(s.body)
-            if then_ended == 0 { ir_line("br label %" + merge_l) }
-            // Else
-            ir_raw(else_l + ":")
-            let else_ended = gen_stmts(s.else_body)
-            if else_ended == 0 { ir_line("br label %" + merge_l) }
-            // Merge
-            ir_raw(merge_l + ":")
-            if then_ended == 1 && else_ended == 1 {
-                ir_line("unreachable")
-                return true
-            }
-            return false
-        }
-        .While -> {
-            let cond_l = new_label("while_cond")
-            let body_l = new_label("while_body")
-            let end_l = new_label("while_end")
-            LOOP_COND = LOOP_COND.push(cond_l)
-            LOOP_END = LOOP_END.push(end_l)
-            ir_line("br label %" + cond_l)
-            ir_raw(cond_l + ":")
-            let cond = gen_expr_from(s, 0)
-            let cond_i1 = new_reg()
-            ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
-            ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
-            ir_raw(body_l + ":")
-            let body_ended = gen_stmts(s.body)
-            if body_ended == 0 { ir_line("br label %" + cond_l) }
-            // Pop loop labels
-            mut new_cond: List<string> = []
-            mut new_end: List<string> = []
-            mut li = 0
-            while li < LOOP_COND.length - 1 {
-                new_cond = new_cond.push(LOOP_COND[li])
-                new_end = new_end.push(LOOP_END[li])
-                li = li + 1
-            }
-            LOOP_COND = new_cond
-            LOOP_END = new_end
-            ir_raw(end_l + ":")
-            return false
-        }
-        .For -> {
-            // for var_name in iterable { body }
-            let var_name = s.str_val
-            LAST_IS_LIST = 0
-            let iterable = gen_expr_from(s, 0)
-            let elem_ty = LAST_LIST_ELEM_TYPE
-            // Get length
-            let len_r = new_reg()
-            ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
-            let data_r = new_reg()
-            ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
-            // Index variable
-            let idx_alloca = new_reg()
-            ir_line(idx_alloca + " = alloca i64")
-            ir_line("store i64 0, ptr " + idx_alloca)
-            // Loop element variable
-            let elem_alloca = new_reg()
-            ir_line(elem_alloca + " = alloca " + elem_ty)
-            push_var(var_name, elem_alloca, elem_ty)
-            let cond_l = new_label("for_cond")
-            let body_l = new_label("for_body")
-            let end_l = new_label("for_end")
-            LOOP_COND = LOOP_COND.push(cond_l)
-            LOOP_END = LOOP_END.push(end_l)
-            ir_line("br label %" + cond_l)
-            ir_raw(cond_l + ":")
-            let idx_val = new_reg()
-            ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+        } else if ei >= 0 {
+            let vidx = enum_variant_index(ei, vname)
+            let arm_l = new_label("match_arm")
+            let next_l = new_label("match_next")
             let cmp = new_reg()
-            ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
-            ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
-            ir_raw(body_l + ":")
-            // Load element
-            let ep = new_reg()
-            ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
-            let ev = new_reg()
-            ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
-            ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
-            let body_ended = gen_stmts(s.body)
-            // Increment index
-            let next_idx = new_reg()
-            ir_line(next_idx + " = add i64 " + idx_val + ", 1")
-            ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
-            if body_ended == 0 { ir_line("br label %" + cond_l) }
-            // Pop loop labels
-            mut new_cond: List<string> = []
-            mut new_end: List<string> = []
-            mut li = 0
-            while li < LOOP_COND.length - 1 {
-                new_cond = new_cond.push(LOOP_COND[li])
-                new_end = new_end.push(LOOP_END[li])
-                li = li + 1
-            }
-            LOOP_COND = new_cond
-            LOOP_END = new_end
-            ir_raw(end_l + ":")
-            return false
-        }
-        .Break -> {
-            if LOOP_END.length > 0 {
-                ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
-            }
-            return true
-        }
-        .Continue -> {
-            if LOOP_COND.length > 0 {
-                ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
-            }
-            return true
-        }
-        .Assign -> {
-            let target: Expr = s.exprs[0]
-            match target.kind {
-                .Ident -> {
-                    let val = gen_expr_from(s, 1)
-                    let var_idx = find_var(target.str_val)
-                    if var_idx >= 0 {
-                        let store_ty = VAR_TYPES[var_idx]
-                        let load_ty = get_load_type(store_ty)
-                        ir_line("store " + load_ty + " " + val + ", ptr " + VAR_REGS[var_idx])
+            ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
+            ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
+            ir_raw(arm_l + ":")
+            if arm.str2.length > 0 {
+                mut bi = 0
+                mut bstart = 0
+                mut bpos = 0
+                while bpos <= arm.str2.length {
+                    mut is_comma = false
+                    if bpos < arm.str2.length {
+                        if arm.str2.substring(bpos, bpos + 1) == "," {
+                            is_comma = true
+                        }
                     }
+                    if is_comma || bpos == arm.str2.length {
+                        let bname = arm.str2.substring(bstart, bpos)
+                        let bval = new_reg()
+                        let slot = bi + 1
+                        ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
+                        let balloca = new_reg()
+                        ir_line(balloca + " = alloca i64")
+                        ir_line("store i64 " + bval + ", ptr " + balloca)
+                        push_var(bname, balloca, "i64")
+                        bi = bi + 1
+                        bstart = bpos + 1
+                    }
+                    bpos = bpos + 1
                 }
-                .Member -> {
-                    // obj.field = value → load struct, insertvalue, store back
-                    let obj_expr: Expr = target.children[0]
-                    let field = target.str_val
-                    if is_ident_expr(obj_expr) {
-                        let var_idx = find_var(obj_expr.str_val)
-                        if var_idx >= 0 {
-                            let sty_name = VAR_STRUCT_TYPE[var_idx]
-                            let si = find_struct(sty_name)
-                            if si >= 0 {
-                                let fi = struct_field_index(si, field)
-                                let fty = struct_field_type(si, fi)
-                                let val = gen_expr_from(s, 1)
-                                let cur = new_reg()
-                                ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
-                                let updated = new_reg()
-                                ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + val + ", " + string(fi))
-                                ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
-                            }
-                        }
-                    }
+            }
+            let ended = gen_stmts(arm.body)
+            if ended == 0 {
+                if CUR_RET_TY != "void" {
+                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
                 }
-                _ -> {}
+                ir_line("br label %" + merge_l)
             }
-            return false
+            ir_raw(next_l + ":")
         }
-        .Match -> {
-            // Compile match as if-chain over enum tag
-            LAST_ENUM_TYPE = ""
-            let scrutinee = gen_expr_from(s, 0)
-            let scrut_enum = LAST_ENUM_TYPE
-            let ei = find_enum(scrut_enum)
-            let merge_l = new_label("match_end")
-            // Match result alloca (for implicit return / expression result)
-            let match_result = new_reg()
-            ir_line(match_result + " = alloca " + CUR_RET_TY)
-            // Extract tag
-            let tag_r = new_reg()
-            if ei >= 0 {
-                ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
-            }
-            // Process arms
-            mut ai = 0
-            while ai < s.body.length {
-                let arm: Stmt = s.body[ai]
-                let vname = arm.str_val
-                if vname == "_" {
-                    // Wildcard arm
-                    let ended = gen_stmts(arm.body)
-                    if ended == 0 {
-                        if CUR_RET_TY != "void" {
-                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                        }
-                        ir_line("br label %" + merge_l)
-                    }
-                } else if ei >= 0 {
-                    // .Variant arm
-                    let vidx = enum_variant_index(ei, vname)
-                    let arm_l = new_label("match_arm")
-                    let next_l = new_label("match_next")
-                    let cmp = new_reg()
-                    ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
-                    ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
-                    ir_raw(arm_l + ":")
-                    // Bind variant fields
-                    if arm.str2.length > 0 {
-                        mut bi = 0
-                        mut bstart = 0
-                        mut bpos = 0
-                        while bpos <= arm.str2.length {
-                            mut is_comma = false
-                            if bpos < arm.str2.length {
-                                if arm.str2.substring(bpos, bpos + 1) == "," {
-                                    is_comma = true
-                                }
-                            }
-                            if is_comma || bpos == arm.str2.length {
-                                let bname = arm.str2.substring(bstart, bpos)
-                                let bval = new_reg()
-                                let slot = bi + 1
-                                ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
-                                let balloca = new_reg()
-                                ir_line(balloca + " = alloca i64")
-                                ir_line("store i64 " + bval + ", ptr " + balloca)
-                                push_var(bname, balloca, "i64")
-                                bi = bi + 1
-                                bstart = bpos + 1
-                            }
-                            bpos = bpos + 1
-                        }
-                    }
-                    let ended = gen_stmts(arm.body)
-                    if ended == 0 {
-                        if CUR_RET_TY != "void" {
-                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                        }
-                        ir_line("br label %" + merge_l)
-                    }
-                    ir_raw(next_l + ":")
-                }
-                ai = ai + 1
-            }
-            // Default fallthrough
-            ir_line("br label %" + merge_l)
-            ir_raw(merge_l + ":")
-            // Load match result
-            if CUR_RET_TY != "void" {
-                let mr = new_reg()
-                ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
-                LAST_EXPR_VAL = mr
-            }
-            return false
-        }
-        _ -> {
-            return false
-        }
+        ai = ai + 1
+    }
+    ir_line("br label %" + merge_l)
+    ir_raw(merge_l + ":")
+    if CUR_RET_TY != "void" {
+        let mr = new_reg()
+        ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
+        LAST_EXPR_VAL = mr
+    }
+    0
+}
+
+// Register all codegen handlers
+fn register_codegen_handlers() {
+    register_codegen("Let", codegen_let)
+    register_codegen("Return", codegen_return)
+    register_codegen("ExprStmt", codegen_expr_stmt)
+    register_codegen("If", codegen_if)
+    register_codegen("While", codegen_while)
+    register_codegen("For", codegen_for)
+    register_codegen("Break", codegen_break)
+    register_codegen("Continue", codegen_continue)
+    register_codegen("Assign", codegen_assign)
+    register_codegen("Match", codegen_match)
+}
+
+// ─── Main statement codegen (registry-driven) ────────────────────
+
+fn stmt_kind_name(s: Stmt) -> string {
+    match s.kind {
+        .Let -> { return "Let" }
+        .Return -> { return "Return" }
+        .ExprStmt -> { return "ExprStmt" }
+        .If -> { return "If" }
+        .While -> { return "While" }
+        .For -> { return "For" }
+        .Break -> { return "Break" }
+        .Continue -> { return "Continue" }
+        .Assign -> { return "Assign" }
+        .Match -> { return "Match" }
+        _ -> { return "" }
+    }
+    ""
+}
+
+fn gen_stmt(s: Stmt) -> bool {
+    let kind = stmt_kind_name(s)
+    if kind.length > 0 && has_codegen_handler(kind) {
+        let result = call_codegen_handler(kind, s)
+        if result == 1 { return true }
+        return false
     }
     false
 }
-
 fn gen_stmts(stmts: List<Stmt>) -> int {
     gen_block(stmts)
 }
@@ -1506,6 +1526,7 @@ fn compile(source: string) -> string {
     // Initialize registry and register handlers
     init_registry()
     register_parse_handlers()
+    register_codegen_handlers()
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
     STRUCT_FIELD_COUNTS = []

@@ -2,10 +2,6 @@
 // FEATURE REGISTRY — map-based dispatch for parse + codegen
 // ═══════════════════════════════════════════════════════════════════
 
-// Parse handler: called when a keyword token is seen at statement position
-// Takes no args (reads from global TOKENS/POS), returns Stmt
-// Registered by keyword: "let" → parse_let, "if" → parse_if, etc.
-
 mut PARSE_HANDLERS: Map<string, fn> = {}
 mut CODEGEN_HANDLERS: Map<string, fn> = {}
 
@@ -13,6 +9,8 @@ fn init_registry() {
     PARSE_HANDLERS = map_new()
     CODEGEN_HANDLERS = map_new()
 }
+
+// ─── Parse registry ──────────────────────────────────────────────
 
 fn register_parse(keyword: string, handler: fn() -> Stmt) {
     PARSE_HANDLERS.set(keyword, handler)
@@ -26,4 +24,21 @@ fn call_parse_handler(keyword: string) -> Stmt {
     let raw = PARSE_HANDLERS.get(keyword)
     let handler: fn() -> Stmt = raw
     handler()
+}
+
+// ─── Codegen registry ────────────────────────────────────────────
+// Codegen handlers take a Stmt, return int (1 = terminated, 0 = not)
+
+fn register_codegen(kind_name: string, handler: fn(Stmt) -> int) {
+    CODEGEN_HANDLERS.set(kind_name, handler)
+}
+
+fn has_codegen_handler(kind_name: string) -> bool {
+    CODEGEN_HANDLERS.has(kind_name)
+}
+
+fn call_codegen_handler(kind_name: string, s: Stmt) -> int {
+    let raw = CODEGEN_HANDLERS.get(kind_name)
+    let handler: fn(Stmt) -> int = raw
+    handler(s)
 }
