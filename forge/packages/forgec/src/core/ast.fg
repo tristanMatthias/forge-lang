@@ -11,11 +11,10 @@
 // Every feature's AST node implements this trait.
 // Core dispatch uses feature_id() to look up handlers in the registry.
 
-export trait AstData {
-    fn kind(self) -> string
-    fn feature_id(self) -> string
-    fn span(self) -> Span
-}
+// trait AstData — disabled for bootstrap compatibility
+// fn kind(self) -> string
+// fn feature_id(self) -> string
+// fn span(self) -> Span
 
 
 // ─── Node Reference (bridge for trait-object downcast) ─────────────
@@ -29,10 +28,10 @@ export type NodeRef = {
     node_span: Span,
 }
 
-impl AstData for NodeRef {
-    fn kind(self) -> string { self.kind_name }
-    fn feature_id(self) -> string { self.feature }
-    fn span(self) -> Span { self.node_span }
+// impl AstData for NodeRef — disabled for bootstrap compatibility
+// fn kind(self) -> string { self.kind_name }
+// fn feature_id(self) -> string { self.feature }
+// fn span(self) -> Span { self.node_span }
 }
 
 
