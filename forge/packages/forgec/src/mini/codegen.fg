@@ -999,6 +999,12 @@ fn gen_stmt(s: Stmt) -> bool {
                 final_val = new_reg()
                 ir_line(final_val + " = call ptr @forge_map_new()")
             }
+            // For fn types, convert i64 to ptr if needed
+            if ann_base == "fn" && ty == "ptr" && LAST_IS_PTR == 0 {
+                let conv = new_reg()
+                ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
+                final_val = conv
+            }
             ir_line(alloca + " = alloca " + ty)
             ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
             if is_list {

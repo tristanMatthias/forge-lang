@@ -357,6 +357,21 @@ fn ast_parse_stmt() -> Stmt {
             type_ann = peek().text
             // Skip full type annotation, capture generic
             advance()
+            // fn(int) -> int type annotation
+            if type_ann == "fn" && check("(") {
+                advance()
+                mut fd = 1
+                while fd > 0 && POS < TOKENS.length {
+                    if check("(") { fd = fd + 1 }
+                    if check(")") { fd = fd - 1 }
+                    advance()
+                }
+                if check("->") {
+                    advance()
+                    skip_nl()
+                    advance()
+                }
+            }
             if check("<") {
                 advance()
                 let gen = peek().text
