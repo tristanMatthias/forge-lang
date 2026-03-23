@@ -118,7 +118,7 @@ fn gen_expr(e: Expr) -> string {
                 }
             }
             // Handle 'is' pattern: expr is .Variant
-            if e.str_val == "is" {
+            if e.str_val == "is" || e.str_val == "is_not" {
                 let lhs = gen_expr_child(e, 0)
                 let enum_name = LAST_ENUM_TYPE
                 let ei = find_enum(enum_name)
@@ -129,7 +129,9 @@ fn gen_expr(e: Expr) -> string {
                 let tag = new_reg()
                 ir_line(tag + " = extractvalue %" + enum_name + " " + lhs + ", 0")
                 let cmp = new_reg()
-                ir_line(cmp + " = icmp eq i8 " + tag + ", " + string(vidx))
+                mut is_pred = "eq"
+                if e.str_val == "is_not" { is_pred = "ne" }
+                ir_line(cmp + " = icmp " + is_pred + " i8 " + tag + ", " + string(vidx))
                 let r = new_reg()
                 ir_line(r + " = zext i1 " + cmp + " to i64")
                 LAST_IS_STR = 0

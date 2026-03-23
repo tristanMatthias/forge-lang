@@ -34,10 +34,20 @@ fn ast_parse_compare() -> Expr {
     if check("is") {
         advance()
         skip_nl()
+        // Handle "is not .Variant"
+        mut negated = false
+        if check("not") {
+            advance()
+            skip_nl()
+            negated = true
+        }
         // Expect .Variant
         expect(".")
         let vname = advance().text
-        // Encode as binary "is" with right side as str ident
+        if negated {
+            // is not .Variant → !(is .Variant) → encode as "is_not"
+            return expr_binary("is_not", left, expr_str(vname))
+        }
         return expr_binary("is", left, expr_str(vname))
     }
     while check("==") || check("!=") || check("<") || check(">") || check("<=") || check(">=") {
