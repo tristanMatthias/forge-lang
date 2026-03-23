@@ -254,7 +254,8 @@ fn enum_max_slots(enum_idx: int) -> int {
 
 fn enum_llvm_type_str(enum_idx: int) -> string {
     let ms = enum_max_slots(enum_idx)
-    // { i8, i64, i64, ... } — tag + payload slots
+    // { i8, i64, i64, ... } — tag + i64 payload slots
+    // ForgeString fields use 2 slots (ptr as i64, len as i64)
     mut ty = "{ i8"
     mut i = 0
     while i < ms {
