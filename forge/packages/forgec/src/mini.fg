@@ -76,7 +76,7 @@ type Stmt = {
     exprs: List<Expr>,    // condition, value, target, etc.
     body: List<Stmt>,
     else_body: List<Stmt>,
-    mutflag: bool,
+    writable: bool,
 }
 
 type Param = {
@@ -188,67 +188,67 @@ fn expr_closure(params_ret: string, body: Expr) -> Expr {
 
 // ─── Statement constructors ───────────────────────────────────────
 
-fn stmt_let(name: string, type_ann: string, value: Expr, mutflag: bool) -> Stmt {
+fn stmt_let(name: string, type_ann: string, value: Expr, writable: bool) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], mutflag: mutflag }
+    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], writable: writable }
 }
 
 fn stmt_assign(target: Expr, value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(target)
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_return(value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_expr(e: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(e)
-    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_if(cond: Expr, then_body: List<Stmt>, else_body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, mutflag: false }
+    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, writable: false }
 }
 
 fn stmt_while(cond: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], writable: false }
 }
 
 fn stmt_for(var_name: string, iterable: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(iterable)
-    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], writable: false }
 }
 
 fn stmt_break() -> Stmt {
-    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], writable: false }
 }
 
 fn stmt_continue() -> Stmt {
-    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], writable: false }
 }
 
 // Match arm: str_val = variant name (or "_"), str2 = binding names CSV, body = arm statements
 fn stmt_match_arm(variant: string, bindings: string, body: List<Stmt>) -> Stmt {
-    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], writable: false }
 }
 
 // Match: exprs[0] = scrutinee, body = list of arm stmts
 fn stmt_match(scrutinee: Expr, arms: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(scrutinee)
-    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], writable: false }
 }
 
 mut LEX_SRC: string = ""
@@ -560,6 +560,7 @@ mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
 mut CLOSURE_COUNT: int = 0
 mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted after current fn
 mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
+mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
 // ─── Struct helpers ───────────────────────────────
 
 fn find_struct(name: string) -> int {
@@ -619,6 +620,7 @@ fn detect_var_type(vty: string) {
     LAST_IS_STR = 0
     LAST_IS_LIST = 0
     LAST_IS_PTR = 0
+    LAST_IS_FLOAT = 0
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     if vty == "%ForgeString" {
@@ -627,6 +629,10 @@ fn detect_var_type(vty: string) {
     }
     if vty == "ptr" {
         LAST_IS_PTR = 1
+        return
+    }
+    if vty == "double" {
+        LAST_IS_FLOAT = 1
         return
     }
     if is_list_type(vty) {
@@ -743,7 +749,8 @@ fn enum_max_slots(enum_idx: int) -> int {
 
 fn enum_llvm_type_str(enum_idx: int) -> string {
     let ms = enum_max_slots(enum_idx)
-    // { i8, i64, i64, ... } — tag + payload slots
+    // { i8, i64, i64, ... } — tag + i64 payload slots
+    // ForgeString fields use 2 slots (ptr as i64, len as i64)
     mut ty = "{ i8"
     mut i = 0
     while i < ms {
@@ -829,6 +836,30 @@ fn parse_type_decl_top() {
     let name = advance().text
     expect("=")
     skip_nl()
+    // Type alias to fn type: type Handler = fn(X) -> Y
+    if check("fn") {
+        advance()
+        if check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance()
+                if check("?") { advance() }
+            }
+        }
+        // Register as empty struct (ptr at runtime)
+        STRUCT_NAMES = STRUCT_NAMES.push(name)
+        STRUCT_FIELD_STARTS = STRUCT_FIELD_STARTS.push(SFIELD_NAMES.length)
+        STRUCT_FIELD_COUNTS = STRUCT_FIELD_COUNTS.push(0)
+        return
+    }
     expect("{")
     skip_nl()
     let start_idx = SFIELD_NAMES.length
@@ -1391,6 +1422,61 @@ fn ast_parse_closure() -> Expr {
     expr_closure(params, body)
 }
 
+// Expand template string "hello ${name}!" → "hello " + string(name) + "!"
+fn expand_template(s: string) -> Expr {
+    mut parts: List<Expr> = []
+    mut i = 0
+    mut seg_start = 0
+    while i < s.length {
+        let dollar_brace = "$" + "{"
+        if i + 1 < s.length && s.substring(i, i + 2) == dollar_brace {
+            // Emit literal segment before ${
+            if i > seg_start {
+                parts = parts.push(expr_str(s.substring(seg_start, i)))
+            }
+            // Find matching }
+            mut j = i + 2
+            mut depth = 1
+            while j < s.length && depth > 0 {
+                if s.substring(j, j + 1) == "{" { depth = depth + 1 }
+                if s.substring(j, j + 1) == "}" { depth = depth - 1 }
+                if depth > 0 { j = j + 1 }
+            }
+            let expr_text = s.substring(i + 2, j)
+            // Parse the expression: tokenize and parse
+            let saved_tokens: List<Tok> = TOKENS
+            let saved_pos = POS
+            TOKENS = tokenize(expr_text)
+            POS = 0
+            let inner = ast_parse_expr()
+            TOKENS = saved_tokens
+            POS = saved_pos
+            // Wrap in string() — codegen handles string-passthrough
+            mut call_args: List<Expr> = []
+            call_args = call_args.push(inner)
+            parts = parts.push(expr_call("string", call_args))
+            i = j + 1
+            seg_start = i
+        } else {
+            i = i + 1
+        }
+    }
+    // Trailing literal
+    if seg_start < s.length {
+        parts = parts.push(expr_str(s.substring(seg_start, s.length)))
+    }
+    // Build concatenation chain
+    if parts.length == 0 { return expr_str("") }
+    mut result: Expr = parts[0]
+    mut pi = 1
+    while pi < parts.length {
+        let p: Expr = parts[pi]
+        result = expr_binary("+", result, p)
+        pi = pi + 1
+    }
+    result
+}
+
 fn ast_parse_primary() -> Expr {
     skip_nl()
     let tok: Tok = peek()
@@ -1401,10 +1487,16 @@ fn ast_parse_primary() -> Expr {
         return expr_int(int(tok.text))
     }
 
-    // String literal
+    // String literal (with template expansion for ${...})
     if tok.kind == 3 {
         advance()
-        return expr_str(tok.text)
+        let s = tok.text
+        // Check for template: contains ${
+        let db = "$" + "{"
+        if s.index_of(db) >= 0 {
+            return expand_template(s)
+        }
+        return expr_str(s)
     }
 
     // Bool literal
@@ -1573,7 +1665,7 @@ fn ast_parse_block() -> List<Stmt> {
 
 fn parse_let_handler() -> Stmt {
     let tok: Tok = peek()
-    let mutflag = tok.text == "mut"
+    let writable = tok.text == "mut"
     advance()
     let name = advance().text
     mut type_ann = ""
@@ -1612,7 +1704,7 @@ fn parse_let_handler() -> Stmt {
     expect("=")
     skip_nl()
     let value = ast_parse_expr()
-    stmt_let(name, type_ann, value, mutflag)
+    stmt_let(name, type_ann, value, writable)
 }
 
 fn parse_return_handler() -> Stmt {
@@ -1778,6 +1870,12 @@ fn ast_parse_fn_decl() -> FnDecl {
     while !check(")") {
         if check("mut") { advance() }
         let pname = advance().text
+        if !check(":") {
+            // self param or untyped param — skip
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+        } else {
         expect(":")
         skip_nl()
         mut pty_name = advance().text
@@ -1813,6 +1911,7 @@ fn ast_parse_fn_decl() -> FnDecl {
         skip_nl()
         if check(",") { advance() }
         skip_nl()
+        } // end else (typed param)
     }
     expect(")")
     skip_nl()
@@ -2065,12 +2164,38 @@ fn gen_expr(e: Expr) -> string {
             if fc > 0 {
                 let fs = EVAR_FIELD_STARTS[gvi]
                 mut fi = 0
+                mut slot = 1
                 while fi < fc && fi < e.children.length {
                     let fval = gen_expr_child(e, fi)
-                    let slot = fi + 1
-                    let nr = new_reg()
-                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
-                    cur = nr
+                    let fty = EFIELD_TYPES[fs + fi]
+                    if fty == "double" {
+                        // Bitcast double to i64 for storage
+                        let bc = new_reg()
+                        ir_line(bc + " = bitcast double " + fval + " to i64")
+                        let nr = new_reg()
+                        ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + bc + ", " + string(slot))
+                        cur = nr
+                        slot = slot + 1
+                    } else if fty == "%ForgeString" {
+                        // Split ForgeString {ptr, i64} into 2 i64 slots
+                        let p = new_reg()
+                        ir_line(p + " = extractvalue %ForgeString " + fval + ", 0")
+                        let pi = new_reg()
+                        ir_line(pi + " = ptrtoint ptr " + p + " to i64")
+                        let nr1 = new_reg()
+                        ir_line(nr1 + " = insertvalue " + ety + " " + cur + ", i64 " + pi + ", " + string(slot))
+                        let l = new_reg()
+                        ir_line(l + " = extractvalue %ForgeString " + fval + ", 1")
+                        let nr2 = new_reg()
+                        ir_line(nr2 + " = insertvalue " + ety + " " + nr1 + ", i64 " + l + ", " + string(slot + 1))
+                        cur = nr2
+                        slot = slot + 2
+                    } else {
+                        let nr = new_reg()
+                        ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
+                        cur = nr
+                        slot = slot + 1
+                    }
                     fi = fi + 1
                 }
             }
@@ -2576,6 +2701,14 @@ fn gen_call(e: Expr) -> string {
     // Built-in: string(x)
     if name == "string" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
+        if LAST_IS_STR == 1 { return arg }
+        if LAST_IS_FLOAT == 1 {
+            let r = new_reg()
+            ir_line(r + " = call %ForgeString @forge_float_to_string(double " + arg + ")")
+            LAST_IS_STR = 1
+            LAST_IS_FLOAT = 0
+            return r
+        }
         let r = new_reg()
         ir_line(r + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
         LAST_IS_STR = 1
@@ -2785,7 +2918,15 @@ fn gen_call(e: Expr) -> string {
         if a.length > 1 {
             if a.substring(0, 1) == "@" { aty = "ptr" }
         }
-        arg_str = arg_str + aty + " " + a
+        // Extern FFI: coerce ForgeString → ptr for string params
+        mut final_a = a
+        if is_extern_fn(name) && aty == "%ForgeString" {
+            let coerced = new_reg()
+            ir_line(coerced + " = extractvalue %ForgeString " + a + ", 0")
+            final_a = coerced
+            aty = "ptr"
+        }
+        arg_str = arg_str + aty + " " + final_a
         i = i + 1
     }
     if call_ret == "void" {
@@ -3115,6 +3256,7 @@ fn codegen_match(s: Stmt) -> int {
             ir_raw(arm_l + ":")
             if arm.str2.length > 0 {
                 mut bi = 0
+                mut bind_slot = 1
                 mut bstart = 0
                 mut bpos = 0
                 while bpos <= arm.str2.length {
@@ -3126,13 +3268,39 @@ fn codegen_match(s: Stmt) -> int {
                     }
                     if is_comma || bpos == arm.str2.length {
                         let bname = arm.str2.substring(bstart, bpos)
-                        let bval = new_reg()
-                        let slot = bi + 1
-                        ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
-                        let balloca = new_reg()
-                        ir_line(balloca + " = alloca i64")
-                        ir_line("store i64 " + bval + ", ptr " + balloca)
-                        push_var(bname, balloca, "i64")
+                        // Look up actual field type
+                        let gvi_arm = ENUM_VARIANT_STARTS[ei] + vidx
+                        let fs_arm = EVAR_FIELD_STARTS[gvi_arm]
+                        mut bind_ty = "i64"
+                        if bi < EVAR_FIELD_COUNTS[gvi_arm] {
+                            bind_ty = EFIELD_TYPES[fs_arm + bi]
+                        }
+                        if bind_ty == "%ForgeString" {
+                            // Reconstruct ForgeString from 2 i64 slots
+                            let p_i64 = new_reg()
+                            ir_line(p_i64 + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
+                            let l_i64 = new_reg()
+                            ir_line(l_i64 + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot + 1))
+                            let p_ptr = new_reg()
+                            ir_line(p_ptr + " = inttoptr i64 " + p_i64 + " to ptr")
+                            let s1 = new_reg()
+                            ir_line(s1 + " = insertvalue %ForgeString undef, ptr " + p_ptr + ", 0")
+                            let s2 = new_reg()
+                            ir_line(s2 + " = insertvalue %ForgeString " + s1 + ", i64 " + l_i64 + ", 1")
+                            let balloca = new_reg()
+                            ir_line(balloca + " = alloca %ForgeString")
+                            ir_line("store %ForgeString " + s2 + ", ptr " + balloca)
+                            push_var(bname, balloca, "%ForgeString")
+                            bind_slot = bind_slot + 2
+                        } else {
+                            let bval = new_reg()
+                            ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
+                            let balloca = new_reg()
+                            ir_line(balloca + " = alloca i64")
+                            ir_line("store i64 " + bval + ", ptr " + balloca)
+                            push_var(bname, balloca, "i64")
+                            bind_slot = bind_slot + 1
+                        }
                         bi = bi + 1
                         bstart = bpos + 1
                     }
@@ -3441,8 +3609,10 @@ fn compile(source: string) -> string {
     GLOBAL_TYPES = []
     KNOWN_TYPE_NAMES = []
 
-    // Pass 0: pre-scan type/enum names
+    // Pass 0: pre-scan type/enum names + load packages
     scan_type_names()
+    reset_packages()
+    load_packages(source)
 
     // Pass 1: scan for type declarations, enum decls, fn sigs, globals
     skip_nl()
@@ -3527,6 +3697,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_length(%ForgeString)")
     ir_raw("declare %ForgeString @forge_int_to_string(i64)")
+    ir_raw("declare %ForgeString @forge_float_to_string(double)")
     ir_raw("declare void @forge_print_string(%ForgeString)")
     ir_raw("declare void @forge_println_string(%ForgeString)")
     ir_raw("declare void @forge_eprintln_string(%ForgeString)")
@@ -3558,6 +3729,9 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
     ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
+    ir_raw("")
+    // Emit package extern function declarations
+    emit_package_externs()
     ir_raw("")
 
     // Parse all functions into AST
@@ -3704,7 +3878,15 @@ fn main() {
     }
 
     let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", "/tmp/mini_runtime.o"])
-    let link_result = process.run("cc", ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"])
+    // Build link command with package libraries
+    mut link_args: List<string> = ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"]
+    let pkg_args: List<string> = get_link_args()
+    mut pi = 0
+    while pi < pkg_args.length {
+        link_args = link_args.push(pkg_args[pi])
+        pi = pi + 1
+    }
+    let link_result = process.run("cc", link_args)
     if !link_result.contains("\"code\":0") {
         eprintln("error: linker failed")
         eprintln(link_result)

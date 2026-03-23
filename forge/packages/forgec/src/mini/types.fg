@@ -76,7 +76,7 @@ type Stmt = {
     exprs: List<Expr>,    // condition, value, target, etc.
     body: List<Stmt>,
     else_body: List<Stmt>,
-    mutflag: bool,
+    writable: bool,
 }
 
 type Param = {
@@ -188,65 +188,65 @@ fn expr_closure(params_ret: string, body: Expr) -> Expr {
 
 // ─── Statement constructors ───────────────────────────────────────
 
-fn stmt_let(name: string, type_ann: string, value: Expr, mutflag: bool) -> Stmt {
+fn stmt_let(name: string, type_ann: string, value: Expr, writable: bool) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], mutflag: mutflag }
+    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], writable: writable }
 }
 
 fn stmt_assign(target: Expr, value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(target)
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_return(value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_expr(e: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(e)
-    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], writable: false }
 }
 
 fn stmt_if(cond: Expr, then_body: List<Stmt>, else_body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, mutflag: false }
+    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, writable: false }
 }
 
 fn stmt_while(cond: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], writable: false }
 }
 
 fn stmt_for(var_name: string, iterable: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(iterable)
-    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], writable: false }
 }
 
 fn stmt_break() -> Stmt {
-    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], writable: false }
 }
 
 fn stmt_continue() -> Stmt {
-    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], writable: false }
 }
 
 // Match arm: str_val = variant name (or "_"), str2 = binding names CSV, body = arm statements
 fn stmt_match_arm(variant: string, bindings: string, body: List<Stmt>) -> Stmt {
-    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], writable: false }
 }
 
 // Match: exprs[0] = scrutinee, body = list of arm stmts
 fn stmt_match(scrutinee: Expr, arms: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(scrutinee)
-    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], mutflag: false }
+    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], writable: false }
 }

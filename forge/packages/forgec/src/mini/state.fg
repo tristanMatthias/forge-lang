@@ -347,6 +347,30 @@ fn parse_type_decl_top() {
     let name = advance().text
     expect("=")
     skip_nl()
+    // Type alias to fn type: type Handler = fn(X) -> Y
+    if check("fn") {
+        advance()
+        if check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance()
+                if check("?") { advance() }
+            }
+        }
+        // Register as empty struct (ptr at runtime)
+        STRUCT_NAMES = STRUCT_NAMES.push(name)
+        STRUCT_FIELD_STARTS = STRUCT_FIELD_STARTS.push(SFIELD_NAMES.length)
+        STRUCT_FIELD_COUNTS = STRUCT_FIELD_COUNTS.push(0)
+        return
+    }
     expect("{")
     skip_nl()
     let start_idx = SFIELD_NAMES.length

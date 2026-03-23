@@ -169,7 +169,8 @@ fn expand_template(s: string) -> Expr {
     mut i = 0
     mut seg_start = 0
     while i < s.length {
-        if i + 1 < s.length && s.substring(i, i + 2) == "${" {
+        let dollar_brace = "$" + "{"
+        if i + 1 < s.length && s.substring(i, i + 2) == dollar_brace {
             // Emit literal segment before ${
             if i > seg_start {
                 parts = parts.push(expr_str(s.substring(seg_start, i)))
@@ -232,7 +233,8 @@ fn ast_parse_primary() -> Expr {
         advance()
         let s = tok.text
         // Check for template: contains ${
-        if s.index_of("${") >= 0 {
+        let db = "$" + "{"
+        if s.index_of(db) >= 0 {
             return expand_template(s)
         }
         return expr_str(s)
@@ -404,7 +406,7 @@ fn ast_parse_block() -> List<Stmt> {
 
 fn parse_let_handler() -> Stmt {
     let tok: Tok = peek()
-    let mutflag = tok.text == "mut"
+    let writable = tok.text == "mut"
     advance()
     let name = advance().text
     mut type_ann = ""
@@ -443,7 +445,7 @@ fn parse_let_handler() -> Stmt {
     expect("=")
     skip_nl()
     let value = ast_parse_expr()
-    stmt_let(name, type_ann, value, mutflag)
+    stmt_let(name, type_ann, value, writable)
 }
 
 fn parse_return_handler() -> Stmt {
@@ -609,6 +611,12 @@ fn ast_parse_fn_decl() -> FnDecl {
     while !check(")") {
         if check("mut") { advance() }
         let pname = advance().text
+        if !check(":") {
+            // self param or untyped param — skip
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+        } else {
         expect(":")
         skip_nl()
         mut pty_name = advance().text
@@ -644,6 +652,7 @@ fn ast_parse_fn_decl() -> FnDecl {
         skip_nl()
         if check(",") { advance() }
         skip_nl()
+        } // end else (typed param)
     }
     expect(")")
     skip_nl()
