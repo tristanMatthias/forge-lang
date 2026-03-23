@@ -2488,61 +2488,63 @@ fn gen_expr(e: Expr) -> string {
             return cur
         }
         .EnumLit -> {
-            // str_val = "EnumName.VariantName"
+            // Memory-based enum construction (handles all payload types)
             let dot_idx = e.str_val.index_of(".")
             let ename = e.str_val.substring(0, dot_idx)
             let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
             let ei = find_enum(ename)
             let vidx = enum_variant_index(ei, vname)
             let ety = "%" + ename
-            let tag_r = new_reg()
-            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
+
+            // Alloca + zero-init the enum
+            let enum_alloca = new_reg()
+            ir_line(enum_alloca + " = alloca " + ety)
+            ir_line("store " + ety + " zeroinitializer, ptr " + enum_alloca)
+
+            // Store tag at field 0
+            let tag_ptr = new_reg()
+            ir_line(tag_ptr + " = getelementptr inbounds " + ety + ", ptr " + enum_alloca + ", i32 0, i32 0")
+            ir_line("store i8 " + string(vidx) + ", ptr " + tag_ptr)
+
+            // Store payload fields via GEP to field 1 + bitcast
             let gvi = ENUM_VARIANT_STARTS[ei] + vidx
             let fc = EVAR_FIELD_COUNTS[gvi]
-            mut cur = tag_r
-            if fc > 0 {
+            if fc > 0 && e.children.length > 0 {
+                // GEP to payload start (field 1 of enum struct)
+                let payload_ptr = new_reg()
+                ir_line(payload_ptr + " = getelementptr inbounds " + ety + ", ptr " + enum_alloca + ", i32 0, i32 1")
+
+                // Build variant struct type for bitcast
                 let fs = EVAR_FIELD_STARTS[gvi]
+                mut variant_fields = ""
+                mut vfi = 0
+                while vfi < fc {
+                    if vfi > 0 { variant_fields = variant_fields + ", " }
+                    variant_fields = variant_fields + EFIELD_TYPES[fs + vfi]
+                    vfi = vfi + 1
+                }
+                let variant_ty = "{ " + variant_fields + " }"
+
+                // Compile and store each field
                 mut fi = 0
-                mut slot = 1
                 while fi < fc && fi < e.children.length {
                     let fval = gen_expr_child(e, fi)
                     let fty = EFIELD_TYPES[fs + fi]
-                    if fty == "double" {
-                        // Bitcast double to i64 for storage
-                        let bc = new_reg()
-                        ir_line(bc + " = bitcast double " + fval + " to i64")
-                        let nr = new_reg()
-                        ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + bc + ", " + string(slot))
-                        cur = nr
-                        slot = slot + 1
-                    } else if fty == "%ForgeString" {
-                        // Split ForgeString {ptr, i64} into 2 i64 slots
-                        let p = new_reg()
-                        ir_line(p + " = extractvalue %ForgeString " + fval + ", 0")
-                        let pi = new_reg()
-                        ir_line(pi + " = ptrtoint ptr " + p + " to i64")
-                        let nr1 = new_reg()
-                        ir_line(nr1 + " = insertvalue " + ety + " " + cur + ", i64 " + pi + ", " + string(slot))
-                        let l = new_reg()
-                        ir_line(l + " = extractvalue %ForgeString " + fval + ", 1")
-                        let nr2 = new_reg()
-                        ir_line(nr2 + " = insertvalue " + ety + " " + nr1 + ", i64 " + l + ", " + string(slot + 1))
-                        cur = nr2
-                        slot = slot + 2
-                    } else {
-                        let nr = new_reg()
-                        ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
-                        cur = nr
-                        slot = slot + 1
-                    }
+                    let fptr = new_reg()
+                    ir_line(fptr + " = getelementptr inbounds " + variant_ty + ", ptr " + payload_ptr + ", i32 0, i32 " + string(fi))
+                    ir_line("store " + fty + " " + fval + ", ptr " + fptr)
                     fi = fi + 1
                 }
             }
+
+            // Load and return the enum value
+            let result = new_reg()
+            ir_line(result + " = load " + ety + ", ptr " + enum_alloca)
             LAST_ENUM_TYPE = ename
             LAST_STRUCT_TYPE = ""
             LAST_IS_STR = 0
             LAST_IS_LIST = 0
-            return cur
+            return result
         }
         .ListLit -> {
             let count = e.children.length
@@ -2580,67 +2582,6 @@ fn gen_expr(e: Expr) -> string {
             LAST_IS_STR = 0
             LAST_LIST_ELEM_TYPE = elem_type
             return ls2
-        }
-        .StructLit -> {
-            // str_val = "TypeName|field1,field2,..."
-            let encoded = e.str_val
-            let pipe_idx = encoded.index_of("|")
-            let type_name = encoded.substring(0, pipe_idx)
-            let field_csv = encoded.substring(pipe_idx + 1, encoded.length)
-            let si = find_struct(type_name)
-            if si < 0 { return "0" }
-            let sty = struct_llvm_type(type_name)
-            mut cur = "undef"
-            mut fi = 0
-            while fi < e.children.length {
-                let fval = gen_expr_child(e, fi)
-                let fname = csv_field(field_csv, fi)
-                let fidx = struct_field_index(si, fname)
-                if fidx >= 0 {
-                    let fty = struct_field_type(si, fidx)
-                    let nr = new_reg()
-                    ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + fval + ", " + string(fidx))
-                    cur = nr
-                }
-                fi = fi + 1
-            }
-            LAST_STRUCT_TYPE = type_name
-            LAST_IS_STR = 0
-            LAST_IS_LIST = 0
-            LAST_ENUM_TYPE = ""
-            return cur
-        }
-        .EnumLit -> {
-            // str_val = "EnumName.VariantName"
-            let dot_idx = e.str_val.index_of(".")
-            let enum_name = e.str_val.substring(0, dot_idx)
-            let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
-            let ei = find_enum(enum_name)
-            if ei < 0 { return "0" }
-            let ety = "%" + enum_name
-            let vidx = enum_variant_index(ei, vname)
-            let tag_r = new_reg()
-            ir_line(tag_r + " = insertvalue " + ety + " undef, i8 " + string(vidx) + ", 0")
-            let gvi = ENUM_VARIANT_STARTS[ei] + vidx
-            let fc = EVAR_FIELD_COUNTS[gvi]
-            mut cur = tag_r
-            if fc > 0 {
-                let fs = EVAR_FIELD_STARTS[gvi]
-                mut fi = 0
-                while fi < fc && fi < e.children.length {
-                    let fval = gen_expr_child(e, fi)
-                    let slot = fi + 1
-                    let nr = new_reg()
-                    ir_line(nr + " = insertvalue " + ety + " " + cur + ", i64 " + fval + ", " + string(slot))
-                    cur = nr
-                    fi = fi + 1
-                }
-            }
-            LAST_ENUM_TYPE = enum_name
-            LAST_STRUCT_TYPE = ""
-            LAST_IS_STR = 0
-            LAST_IS_LIST = 0
-            return cur
         }
         .Closure -> {
             // Emit closure as anonymous function, return ptr to it
