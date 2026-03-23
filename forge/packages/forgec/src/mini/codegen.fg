@@ -1550,8 +1550,10 @@ fn compile(source: string) -> string {
     GLOBAL_TYPES = []
     KNOWN_TYPE_NAMES = []
 
-    // Pass 0: pre-scan type/enum names
+    // Pass 0: pre-scan type/enum names + load packages
     scan_type_names()
+    reset_packages()
+    load_packages(source)
 
     // Pass 1: scan for type declarations, enum decls, fn sigs, globals
     skip_nl()
@@ -1667,6 +1669,9 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
     ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
+    ir_raw("")
+    // Emit package extern function declarations
+    emit_package_externs()
     ir_raw("")
 
     // Parse all functions into AST

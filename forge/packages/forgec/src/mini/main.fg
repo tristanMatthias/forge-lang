@@ -3,6 +3,7 @@ mod types
 mod lexer
 mod state
 mod registry
+mod packages
 mod parser
 mod codegen
 // ═══════════════════════════════════════════════════════════════════
@@ -134,7 +135,15 @@ fn main() {
     }
 
     let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", "/tmp/mini_runtime.o"])
-    let link_result = process.run("cc", ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"])
+    // Build link command with package libraries
+    mut link_args: List<string> = ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"]
+    let pkg_args: List<string> = get_link_args()
+    mut pi = 0
+    while pi < pkg_args.length {
+        link_args = link_args.push(pkg_args[pi])
+        pi = pi + 1
+    }
+    let link_result = process.run("cc", link_args)
     if !link_result.contains("\"code\":0") {
         eprintln("error: linker failed")
         eprintln(link_result)
