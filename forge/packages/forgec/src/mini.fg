@@ -1,3 +1,6 @@
+use @std.process
+use @std.fs
+
 // ─── Mini Forge Compiler ──────────────────────────────────────────
 // Self-contained single-file compiler. Emits LLVM IR as text.
 // Lex → Parse → Emit IR → llc → cc
@@ -1458,13 +1461,15 @@ fn parse_package_fg_full(content: string, namespace: string) {
             if check("fn") {
                 // Parse export fn as full FnDecl using the AST parser
                 let f = ast_parse_fn_decl()
-                PKG_EXPORT_FNS = PKG_EXPORT_FNS.push(f)
-                PKG_EXPORT_NS = PKG_EXPORT_NS.push(namespace)
-                // Register in namespace tables
                 let mangled = namespace + "_" + f.name
-                NS_NAMES = NS_NAMES.push(namespace)
-                NS_FN_NAMES = NS_FN_NAMES.push(f.name)
-                NS_MANGLED = NS_MANGLED.push(mangled)
+                // Skip duplicates
+                if find_ns_fn(namespace, f.name).length == 0 {
+                    PKG_EXPORT_FNS = PKG_EXPORT_FNS.push(f)
+                    PKG_EXPORT_NS = PKG_EXPORT_NS.push(namespace)
+                    NS_NAMES = NS_NAMES.push(namespace)
+                    NS_FN_NAMES = NS_FN_NAMES.push(f.name)
+                    NS_MANGLED = NS_MANGLED.push(mangled)
+                }
             } else {
                 // Skip other exports (types, etc)
                 skip_to_newline()
@@ -3308,6 +3313,8 @@ fn gen_call(e: Expr) -> string {
         if a.length > 1 {
             if a.substring(0, 1) == "@" { aty = "ptr" }
         }
+        // Type tracking for float
+        if LAST_IS_FLOAT == 1 { aty = "double" }
         // Extern FFI: coerce ForgeString → ptr for string params
         mut final_a = a
         if is_extern_fn(name) && aty == "%ForgeString" {

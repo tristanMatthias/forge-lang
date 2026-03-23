@@ -133,13 +133,15 @@ fn parse_package_fg_full(content: string, namespace: string) {
             if check("fn") {
                 // Parse export fn as full FnDecl using the AST parser
                 let f = ast_parse_fn_decl()
-                PKG_EXPORT_FNS = PKG_EXPORT_FNS.push(f)
-                PKG_EXPORT_NS = PKG_EXPORT_NS.push(namespace)
-                // Register in namespace tables
                 let mangled = namespace + "_" + f.name
-                NS_NAMES = NS_NAMES.push(namespace)
-                NS_FN_NAMES = NS_FN_NAMES.push(f.name)
-                NS_MANGLED = NS_MANGLED.push(mangled)
+                // Skip duplicates
+                if find_ns_fn(namespace, f.name).length == 0 {
+                    PKG_EXPORT_FNS = PKG_EXPORT_FNS.push(f)
+                    PKG_EXPORT_NS = PKG_EXPORT_NS.push(namespace)
+                    NS_NAMES = NS_NAMES.push(namespace)
+                    NS_FN_NAMES = NS_FN_NAMES.push(f.name)
+                    NS_MANGLED = NS_MANGLED.push(mangled)
+                }
             } else {
                 // Skip other exports (types, etc)
                 skip_to_newline()

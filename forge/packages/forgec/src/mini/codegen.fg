@@ -921,6 +921,8 @@ fn gen_call(e: Expr) -> string {
         if a.length > 1 {
             if a.substring(0, 1) == "@" { aty = "ptr" }
         }
+        // Type tracking for float
+        if LAST_IS_FLOAT == 1 { aty = "double" }
         // Extern FFI: coerce ForgeString → ptr for string params
         mut final_a = a
         if is_extern_fn(name) && aty == "%ForgeString" {

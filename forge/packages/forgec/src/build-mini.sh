@@ -2,6 +2,10 @@
 # Regenerate mini.fg from split files
 cd "$(dirname "$0")"
 {
+  # Bootstrap needs these package imports for process.args/fs.read
+  echo "use @std.process"
+  echo "use @std.fs"
+  echo ""
   cat mini/types.fg
   echo ""
   cat mini/lexer.fg
