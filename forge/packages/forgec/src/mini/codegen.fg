@@ -38,6 +38,46 @@ fn gen_expr(e: Expr) -> string {
             return gen_ident(e.str_val)
         }
         .Binary -> {
+            // Handle null comparison: expr == null / expr != null
+            if (e.str_val == "==" || e.str_val == "!=") && e.children.length == 2 {
+                let rhs_node: Expr = e.children[1]
+                if rhs_node.kind is .Null {
+                    let lhs = gen_expr_child(e, 0)
+                    // For struct/enum types, always non-null (no nullable wrapping yet)
+                    // For ptr types, compare to null
+                    if LAST_IS_PTR == 1 {
+                        let cmp = new_reg()
+                        let r = new_reg()
+                        if e.str_val == "==" {
+                            ir_line(cmp + " = icmp eq ptr " + lhs + ", null")
+                        } else {
+                            ir_line(cmp + " = icmp ne ptr " + lhs + ", null")
+                        }
+                        ir_line(r + " = zext i1 " + cmp + " to i64")
+                        LAST_IS_STR = 0
+                        LAST_IS_PTR = 0
+                        LAST_STRUCT_TYPE = ""
+                        LAST_ENUM_TYPE = ""
+                        return r
+                    }
+                    // For struct types, == null is always false, != null always true
+                    if LAST_STRUCT_TYPE.length > 0 || LAST_ENUM_TYPE.length > 0 {
+                        LAST_IS_STR = 0
+                        LAST_STRUCT_TYPE = ""
+                        LAST_ENUM_TYPE = ""
+                        if e.str_val == "==" { return "0" }
+                        return "1"
+                    }
+                    // Default: i64 comparison with 0
+                    mut null_pred = "eq"
+                    if e.str_val == "!=" { null_pred = "ne" }
+                    let r = new_reg()
+                    ir_line(r + " = icmp " + null_pred + " i64 " + lhs + ", 0")
+                    let r2 = new_reg()
+                    ir_line(r2 + " = zext i1 " + r + " to i64")
+                    return r2
+                }
+            }
             // Handle 'is' pattern: expr is .Variant
             if e.str_val == "is" {
                 let lhs = gen_expr_child(e, 0)
