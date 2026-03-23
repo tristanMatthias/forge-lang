@@ -3126,6 +3126,61 @@ fn compile(source: string) -> string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// MODULE RESOLUTION
+// ═══════════════════════════════════════════════════════════════════
+
+// Extract directory from a file path: "/foo/bar/baz.fg" → "/foo/bar"
+fn path_dir(path: string) -> string {
+    mut last_slash = -1
+    mut i = 0
+    while i < path.length {
+        if path.substring(i, i + 1) == "/" {
+            last_slash = i
+        }
+        i = i + 1
+    }
+    if last_slash < 0 { return "." }
+    path.substring(0, last_slash)
+}
+
+// Read a source file and resolve mod declarations recursively.
+// Returns concatenated source of all modules.
+fn resolve_modules(path: string) -> string {
+    let source = fs.read(path)
+    if source.length == 0 { return source }
+    let dir = path_dir(path)
+
+    // Tokenize to find mod declarations
+    let toks: List<Tok> = tokenize(source)
+    mut merged = source
+    mut ti = 0
+    while ti < toks.length {
+        let t: Tok = toks[ti]
+        if t.kind == 1 && t.text == "mod" {
+            // Next token is the module name
+            if ti + 1 < toks.length {
+                let mod_tok: Tok = toks[ti + 1]
+                let mod_name = mod_tok.text
+                // Try mod_name.fg first, then mod_name/mod.fg
+                mut mod_path = dir + "/" + mod_name + ".fg"
+                mut mod_src = fs.read(mod_path)
+                if mod_src.length == 0 {
+                    mod_path = dir + "/" + mod_name + "/mod.fg"
+                    mod_src = fs.read(mod_path)
+                }
+                if mod_src.length > 0 {
+                    // Recursively resolve sub-modules
+                    let resolved = resolve_modules(mod_path)
+                    merged = merged + "\n" + resolved
+                }
+            }
+        }
+        ti = ti + 1
+    }
+    merged
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3133,14 +3188,14 @@ fn main() {
     let args: List<string> = process.args()
 
     if args.length < 3 {
-        eprintln("mini-forge v0.1 - minimal self-hosted compiler")
+        eprintln("mini-forge v0.2 - self-hosted compiler")
         eprintln("Usage: mini build <file.fg> [output]")
         process.exit(1)
     }
 
     let command = args[1]
     let input = args[2]
-    let source = fs.read(input)
+    let source = resolve_modules(input)
 
     if source.length == 0 {
         eprintln("error: could not read " + input)
