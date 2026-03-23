@@ -345,7 +345,7 @@ fn ast_parse_block() -> List<Stmt> {
 
 fn parse_let_handler() -> Stmt {
     let tok: Tok = peek()
-    let is_mut = tok.text == "mut"
+    let mutflag = tok.text == "mut"
     advance()
     let name = advance().text
     mut type_ann = ""
@@ -354,7 +354,7 @@ fn parse_let_handler() -> Stmt {
         skip_nl()
         type_ann = peek().text
         advance()
-        if type_ann == "fn" && check("(") {
+        if type_ann.length == 2 && type_ann.substring(0, 1) == "f" && check("(") {
             advance()
             mut fd = 1
             while fd > 0 && POS < TOKENS.length {
@@ -384,7 +384,7 @@ fn parse_let_handler() -> Stmt {
     expect("=")
     skip_nl()
     let value = ast_parse_expr()
-    stmt_let(name, type_ann, value, is_mut)
+    stmt_let(name, type_ann, value, mutflag)
 }
 
 fn parse_return_handler() -> Stmt {
@@ -554,7 +554,7 @@ fn ast_parse_fn_decl() -> FnDecl {
         skip_nl()
         mut pty_name = advance().text
         // fn(int) -> int type — skip the whole thing, store as "fn"
-        if pty_name == "fn" && check("(") {
+        if pty_name.length == 2 && pty_name.substring(0, 1) == "f" && check("(") {
             advance()
             mut fd = 1
             while fd > 0 && POS < TOKENS.length {

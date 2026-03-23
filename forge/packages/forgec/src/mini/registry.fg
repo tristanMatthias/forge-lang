@@ -2,8 +2,8 @@
 // FEATURE REGISTRY — map-based dispatch for parse + codegen
 // ═══════════════════════════════════════════════════════════════════
 
-mut PARSE_HANDLERS: Map<string, fn> = {}
-mut CODEGEN_HANDLERS: Map<string, fn> = {}
+mut PARSE_HANDLERS: Map<string, int> = {}
+mut CODEGEN_HANDLERS: Map<string, int> = {}
 
 fn init_registry() {
     PARSE_HANDLERS = map_new()
@@ -12,7 +12,7 @@ fn init_registry() {
 
 // ─── Parse registry ──────────────────────────────────────────────
 
-fn register_parse(keyword: string, handler: fn() -> Stmt) {
+fn register_parse(keyword: string, handler: int) {
     PARSE_HANDLERS.set(keyword, handler)
 }
 
@@ -27,9 +27,8 @@ fn call_parse_handler(keyword: string) -> Stmt {
 }
 
 // ─── Codegen registry ────────────────────────────────────────────
-// Codegen handlers take a Stmt, return int (1 = terminated, 0 = not)
 
-fn register_codegen(kind_name: string, handler: fn(Stmt) -> int) {
+fn register_codegen(kind_name: string, handler: int) {
     CODEGEN_HANDLERS.set(kind_name, handler)
 }
 

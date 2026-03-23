@@ -45,6 +45,7 @@ enum ExprKind {
     StructLit   // data: str_val (type name), fields via side table
     EnumLit     // data: str_val (Type.Variant), children: args
     Null        // no data
+    Closure     // data: str_val ("param:type,...->ret"), children: body expr
 }
 
 type Expr = {
@@ -75,7 +76,7 @@ type Stmt = {
     exprs: List<Expr>,    // condition, value, target, etc.
     body: List<Stmt>,
     else_body: List<Stmt>,
-    is_mut: bool,
+    mutflag: bool,
 }
 
 type Param = {
@@ -179,69 +180,75 @@ fn expr_enum(name: string, args: List<Expr>) -> Expr {
     Expr { kind: ExprKind.EnumLit, int_val: 0, str_val: name, children: args }
 }
 
+fn expr_closure(params_ret: string, body: Expr) -> Expr {
+    mut ch: List<Expr> = []
+    ch = ch.push(body)
+    Expr { kind: ExprKind.Closure, int_val: 0, str_val: params_ret, children: ch }
+}
+
 // ─── Statement constructors ───────────────────────────────────────
 
-fn stmt_let(name: string, type_ann: string, value: Expr, mutable: bool) -> Stmt {
+fn stmt_let(name: string, type_ann: string, value: Expr, mutflag: bool) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], is_mut: mutable }
+    Stmt { kind: StmtKind.Let, str_val: name, str2: type_ann, exprs: exprs, body: [], else_body: [], mutflag: mutflag }
 }
 
 fn stmt_assign(target: Expr, value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(target)
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.Assign, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
 }
 
 fn stmt_return(value: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(value)
-    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.Return, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
 }
 
 fn stmt_expr(e: Expr) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(e)
-    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: "", str2: "", exprs: exprs, body: [], else_body: [], mutflag: false }
 }
 
 fn stmt_if(cond: Expr, then_body: List<Stmt>, else_body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, is_mut: false }
+    Stmt { kind: StmtKind.If, str_val: "", str2: "", exprs: exprs, body: then_body, else_body: else_body, mutflag: false }
 }
 
 fn stmt_while(cond: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(cond)
-    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.While, str_val: "", str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
 }
 
 fn stmt_for(var_name: string, iterable: Expr, body: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(iterable)
-    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.For, str_val: var_name, str2: "", exprs: exprs, body: body, else_body: [], mutflag: false }
 }
 
 fn stmt_break() -> Stmt {
-    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.Break, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
 }
 
 fn stmt_continue() -> Stmt {
-    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.Continue, str_val: "", str2: "", exprs: [], body: [], else_body: [], mutflag: false }
 }
 
 // Match arm: str_val = variant name (or "_"), str2 = binding names CSV, body = arm statements
 fn stmt_match_arm(variant: string, bindings: string, body: List<Stmt>) -> Stmt {
-    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.ExprStmt, str_val: variant, str2: bindings, exprs: [], body: body, else_body: [], mutflag: false }
 }
 
 // Match: exprs[0] = scrutinee, body = list of arm stmts
 fn stmt_match(scrutinee: Expr, arms: List<Stmt>) -> Stmt {
     mut exprs: List<Expr> = []
     exprs = exprs.push(scrutinee)
-    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], is_mut: false }
+    Stmt { kind: StmtKind.Match, str_val: "", str2: "", exprs: exprs, body: arms, else_body: [], mutflag: false }
 }
 
 mut LEX_SRC: string = ""
@@ -550,6 +557,9 @@ mut LOOP_END: List<string> = []
 mut CUR_RET_TY: string = "i64"
 mut LAST_EXPR_VAL: string = "0"
 mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
+mut CLOSURE_COUNT: int = 0
+mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted after current fn
+mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
 // ─── Struct helpers ───────────────────────────────
 
 fn find_struct(name: string) -> int {
@@ -608,10 +618,15 @@ fn get_load_type(vty: string) -> string {
 fn detect_var_type(vty: string) {
     LAST_IS_STR = 0
     LAST_IS_LIST = 0
+    LAST_IS_PTR = 0
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     if vty == "%ForgeString" {
         LAST_IS_STR = 1
+        return
+    }
+    if vty == "ptr" {
+        LAST_IS_PTR = 1
         return
     }
     if is_list_type(vty) {
@@ -745,6 +760,8 @@ fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "string" { return "%ForgeString" }
     if ty_name == "float" { return "double" }
     if ty_name == "List" { return "{ ptr, i64 }" }
+    if ty_name == "fn" { return "ptr" }
+    if ty_name == "Map" { return "ptr" }
     // Check if it's a known struct
     let si = find_struct(ty_name)
     if si >= 0 { return "%" + ty_name }
@@ -1164,6 +1181,51 @@ fn skip_to_newline() {
     while !check("\n") && POS < TOKENS.length { advance() }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// FEATURE REGISTRY — map-based dispatch for parse + codegen
+// ═══════════════════════════════════════════════════════════════════
+
+mut PARSE_HANDLERS: Map<string, int> = {}
+mut CODEGEN_HANDLERS: Map<string, int> = {}
+
+fn init_registry() {
+    PARSE_HANDLERS = map_new()
+    CODEGEN_HANDLERS = map_new()
+}
+
+// ─── Parse registry ──────────────────────────────────────────────
+
+fn register_parse(keyword: string, handler: int) {
+    PARSE_HANDLERS.set(keyword, handler)
+}
+
+fn has_parse_handler(keyword: string) -> bool {
+    PARSE_HANDLERS.has(keyword)
+}
+
+fn call_parse_handler(keyword: string) -> Stmt {
+    let raw = PARSE_HANDLERS.get(keyword)
+    let handler: fn() -> Stmt = raw
+    handler()
+}
+
+// ─── Codegen registry ────────────────────────────────────────────
+
+fn register_codegen(kind_name: string, handler: int) {
+    CODEGEN_HANDLERS.set(kind_name, handler)
+}
+
+fn has_codegen_handler(kind_name: string) -> bool {
+    CODEGEN_HANDLERS.has(kind_name)
+}
+
+fn call_codegen_handler(kind_name: string, s: Stmt) -> int {
+    let raw = CODEGEN_HANDLERS.get(kind_name)
+    let handler: fn(Stmt) -> int = raw
+    handler(s)
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // AST PARSER — builds Expr/Stmt trees (no IR emission)
 // ═══════════════════════════════════════════════════════════════════
@@ -1293,6 +1355,42 @@ fn ast_parse_postfix() -> Expr {
     node
 }
 
+// Parse closure: (x: int, y: int) -> expr
+fn ast_parse_closure() -> Expr {
+    expect("(")
+    skip_nl()
+    mut params = ""
+    while !check(")") {
+        let pname = advance().text
+        mut ptype = "int"
+        if check(":") {
+            advance()
+            skip_nl()
+            ptype = advance().text
+            if check("<") {
+                advance()
+                mut d = 1
+                while d > 0 && POS < TOKENS.length {
+                    if check("<") { d = d + 1 }
+                    if check(">") { d = d - 1 }
+                    advance()
+                }
+            }
+        }
+        if params.length > 0 { params = params + "," }
+        params = params + pname + ":" + ptype
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect(")")
+    skip_nl()
+    expect("->")
+    skip_nl()
+    let body = ast_parse_expr()
+    expr_closure(params, body)
+}
+
 fn ast_parse_primary() -> Expr {
     skip_nl()
     let tok: Tok = peek()
@@ -1321,8 +1419,56 @@ fn ast_parse_primary() -> Expr {
         return expr_null()
     }
 
-    // Parenthesized expression
+    // Parenthesized expression or closure: (x: int) -> expr
     if tok.text == "(" {
+        // Lookahead: check if this is a closure by saving position
+        let saved_pos = POS
+        advance()
+        skip_nl()
+        // Closure detection: () -> or (ident: type...) -> or (ident) ->
+        mut is_closure = false
+        if check(")") {
+            advance()
+            skip_nl()
+            if check("->") { is_closure = true }
+        } else {
+            // Try to skip param-like tokens: ident [: type] [, ident [: type]]*
+            mut looks_like_params = true
+            while looks_like_params && !check(")") && not_at_end() {
+                if peek().kind != 1 {
+                    looks_like_params = false
+                } else {
+                    advance()
+                    if check(":") {
+                        advance()
+                        skip_nl()
+                        advance() // type name
+                        if check("<") {
+                            advance()
+                            mut d = 1
+                            while d > 0 && POS < TOKENS.length {
+                                if check("<") { d = d + 1 }
+                                if check(">") { d = d - 1 }
+                                advance()
+                            }
+                        }
+                    }
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+            }
+            if looks_like_params && check(")") {
+                advance()
+                skip_nl()
+                if check("->") { is_closure = true }
+            }
+        }
+        POS = saved_pos
+        if is_closure {
+            return ast_parse_closure()
+        }
+        // Regular parenthesized expression
         advance()
         skip_nl()
         let inner = ast_parse_expr()
@@ -1423,167 +1569,194 @@ fn ast_parse_block() -> List<Stmt> {
     stmts
 }
 
+// ─── Statement parse handlers (registered in registry) ───────────
+
+fn parse_let_handler() -> Stmt {
+    let tok: Tok = peek()
+    let mutflag = tok.text == "mut"
+    advance()
+    let name = advance().text
+    mut type_ann = ""
+    if check(":") {
+        advance()
+        skip_nl()
+        type_ann = peek().text
+        advance()
+        if type_ann.length == 2 && type_ann.substring(0, 1) == "f" && check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance()
+            }
+        }
+        if check("<") {
+            advance()
+            let gen = peek().text
+            type_ann = type_ann + "<" + gen + ">"
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+    }
+    expect("=")
+    skip_nl()
+    let value = ast_parse_expr()
+    stmt_let(name, type_ann, value, mutflag)
+}
+
+fn parse_return_handler() -> Stmt {
+    advance()
+    skip_nl()
+    if check("}") || check_kind(4) || !not_at_end() {
+        return stmt_return(expr_null())
+    }
+    let value = ast_parse_expr()
+    stmt_return(value)
+}
+
+fn parse_if_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let cond = ast_parse_expr()
+    skip_nl()
+    let then_body: List<Stmt> = ast_parse_block()
+    skip_nl()
+    mut else_stmts: List<Stmt> = []
+    if check("else") {
+        advance()
+        skip_nl()
+        if check("if") {
+            else_stmts = else_stmts.push(ast_parse_stmt())
+        } else {
+            else_stmts = ast_parse_block()
+        }
+    }
+    stmt_if(cond, then_body, else_stmts)
+}
+
+fn parse_while_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let cond = ast_parse_expr()
+    skip_nl()
+    let body: List<Stmt> = ast_parse_block()
+    stmt_while(cond, body)
+}
+
+fn parse_for_handler() -> Stmt {
+    advance()
+    let var_name = advance().text
+    expect("in")
+    skip_nl()
+    let iterable = ast_parse_expr()
+    skip_nl()
+    let body: List<Stmt> = ast_parse_block()
+    stmt_for(var_name, iterable, body)
+}
+
+fn parse_break_handler() -> Stmt {
+    advance()
+    stmt_break()
+}
+
+fn parse_continue_handler() -> Stmt {
+    advance()
+    stmt_continue()
+}
+
+fn parse_match_handler() -> Stmt {
+    advance()
+    skip_nl()
+    let scrutinee = ast_parse_expr()
+    skip_nl()
+    expect("{")
+    skip_nl()
+    mut arms: List<Stmt> = []
+    while not_at_brace() {
+        skip_nl()
+        if check("_") {
+            advance()
+            expect("->")
+            skip_nl()
+            if check("{") {
+                let body: List<Stmt> = ast_parse_block()
+                arms = arms.push(stmt_match_arm("_", "", body))
+            } else {
+                mut body: List<Stmt> = []
+                body = body.push(ast_parse_stmt())
+                arms = arms.push(stmt_match_arm("_", "", body))
+            }
+        } else if check(".") {
+            advance()
+            let vname = advance().text
+            mut bindings = ""
+            if check("(") {
+                advance()
+                skip_nl()
+                while !check(")") {
+                    if bindings.length > 0 { bindings = bindings + "," }
+                    bindings = bindings + advance().text
+                    skip_nl()
+                    if check(",") { advance() }
+                    skip_nl()
+                }
+                expect(")")
+            }
+            expect("->")
+            skip_nl()
+            if check("{") {
+                let body: List<Stmt> = ast_parse_block()
+                arms = arms.push(stmt_match_arm(vname, bindings, body))
+            } else {
+                mut body: List<Stmt> = []
+                body = body.push(ast_parse_stmt())
+                arms = arms.push(stmt_match_arm(vname, bindings, body))
+            }
+        } else {
+            advance()
+        }
+        skip_nl()
+    }
+    expect("}")
+    stmt_match(scrutinee, arms)
+}
+
+// Register all built-in parse handlers
+fn register_parse_handlers() {
+    register_parse("let", parse_let_handler)
+    register_parse("mut", parse_let_handler)
+    register_parse("return", parse_return_handler)
+    register_parse("if", parse_if_handler)
+    register_parse("while", parse_while_handler)
+    register_parse("for", parse_for_handler)
+    register_parse("break", parse_break_handler)
+    register_parse("continue", parse_continue_handler)
+    register_parse("match", parse_match_handler)
+}
+
+// ─── Main statement parser (registry-driven) ─────────────────────
+
 fn ast_parse_stmt() -> Stmt {
     skip_nl()
     let tok: Tok = peek()
 
-    // let / mut
-    if tok.text == "let" || tok.text == "mut" {
-        let is_mut = tok.text == "mut"
-        advance()
-        let name = advance().text
-        mut type_ann = ""
-        if check(":") {
-            advance()
-            skip_nl()
-            type_ann = peek().text
-            // Skip full type annotation, capture generic
-            advance()
-            if check("<") {
-                advance()
-                let gen = peek().text
-                type_ann = type_ann + "<" + gen + ">"
-                mut td = 1
-                while td > 0 && POS < TOKENS.length {
-                    if check("<") { td = td + 1 }
-                    if check(">") { td = td - 1 }
-                    advance()
-                }
-            }
-            if check("?") { advance() }
-        }
-        expect("=")
-        skip_nl()
-        let value = ast_parse_expr()
-        return stmt_let(name, type_ann, value, is_mut)
+    // Check registry for handler
+    if tok.kind == 1 && has_parse_handler(tok.text) {
+        return call_parse_handler(tok.text)
     }
 
-    // return
-    if tok.text == "return" {
-        advance()
-        skip_nl()
-        if check("}") || check_kind(4) || !not_at_end() {
-            return stmt_return(expr_null())
-        }
-        let value = ast_parse_expr()
-        return stmt_return(value)
-    }
-
-    // if
-    if tok.text == "if" {
-        advance()
-        skip_nl()
-        let cond = ast_parse_expr()
-        skip_nl()
-        let then_body: List<Stmt> = ast_parse_block()
-        skip_nl()
-        mut else_stmts: List<Stmt> = []
-        if check("else") {
-            advance()
-            skip_nl()
-            if check("if") {
-                // else if → wrap in list
-                else_stmts = else_stmts.push(ast_parse_stmt())
-            } else {
-                else_stmts = ast_parse_block()
-            }
-        }
-        return stmt_if(cond, then_body, else_stmts)
-    }
-
-    // while
-    if tok.text == "while" {
-        advance()
-        skip_nl()
-        let cond = ast_parse_expr()
-        skip_nl()
-        let body: List<Stmt> = ast_parse_block()
-        return stmt_while(cond, body)
-    }
-
-    // for
-    if tok.text == "for" {
-        advance()
-        let var_name = advance().text
-        expect("in")
-        skip_nl()
-        let iterable = ast_parse_expr()
-        skip_nl()
-        let body: List<Stmt> = ast_parse_block()
-        return stmt_for(var_name, iterable, body)
-    }
-
-    // break / continue
-    if tok.text == "break" {
-        advance()
-        return stmt_break()
-    }
-    if tok.text == "continue" {
-        advance()
-        return stmt_continue()
-    }
-
-    // match
-    if tok.text == "match" {
-        advance()
-        skip_nl()
-        let scrutinee = ast_parse_expr()
-        skip_nl()
-        expect("{")
-        skip_nl()
-        mut arms: List<Stmt> = []
-        while not_at_brace() {
-            skip_nl()
-            if check("_") {
-                // Wildcard arm
-                advance()
-                expect("->")
-                skip_nl()
-                if check("{") {
-                    let body: List<Stmt> = ast_parse_block()
-                    arms = arms.push(stmt_match_arm("_", "", body))
-                } else {
-                    mut body: List<Stmt> = []
-                    body = body.push(ast_parse_stmt())
-                    arms = arms.push(stmt_match_arm("_", "", body))
-                }
-            } else if check(".") {
-                // .Variant pattern
-                advance()
-                let vname = advance().text
-                mut bindings = ""
-                if check("(") {
-                    advance()
-                    skip_nl()
-                    while !check(")") {
-                        if bindings.length > 0 { bindings = bindings + "," }
-                        bindings = bindings + advance().text
-                        skip_nl()
-                        if check(",") { advance() }
-                        skip_nl()
-                    }
-                    expect(")")
-                }
-                expect("->")
-                skip_nl()
-                if check("{") {
-                    let body: List<Stmt> = ast_parse_block()
-                    arms = arms.push(stmt_match_arm(vname, bindings, body))
-                } else {
-                    mut body: List<Stmt> = []
-                    body = body.push(ast_parse_stmt())
-                    arms = arms.push(stmt_match_arm(vname, bindings, body))
-                }
-            } else {
-                advance()
-            }
-            skip_nl()
-        }
-        expect("}")
-        return stmt_match(scrutinee, arms)
-    }
-
-    // Expression statement (or assignment)
+    // Fallback: expression statement or assignment
     let expr = ast_parse_expr()
     skip_nl()
     if check("=") {
@@ -1594,11 +1767,6 @@ fn ast_parse_stmt() -> Stmt {
     }
     stmt_expr(expr)
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// AST PARSE — top-level: fn decls, program
-// ═══════════════════════════════════════════════════════════════════
-
 fn ast_parse_fn_decl() -> FnDecl {
     expect("fn")
     let name = advance().text
@@ -1613,6 +1781,21 @@ fn ast_parse_fn_decl() -> FnDecl {
         expect(":")
         skip_nl()
         mut pty_name = advance().text
+        // fn(int) -> int type — skip the whole thing, store as "fn"
+        if pty_name.length == 2 && pty_name.substring(0, 1) == "f" && check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance() // return type
+            }
+        }
         // Capture generic params like <T> — encode as "List<int>"
         if check("<") {
             advance()
@@ -1702,6 +1885,7 @@ fn ast_parse_program() -> List<FnDecl> {
     }
     fns
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 // AST CODEGEN — walks Expr/Stmt trees and emits IR text
@@ -1992,6 +2176,107 @@ fn gen_expr(e: Expr) -> string {
             LAST_IS_LIST = 0
             return cur
         }
+        .Closure -> {
+            // Emit closure as anonymous function, return ptr to it
+            let params_str = e.str_val
+            CLOSURE_COUNT = CLOSURE_COUNT + 1
+            let fn_name = "__closure_" + string(CLOSURE_COUNT)
+
+            // Parse params from "x:int,y:int" format
+            mut param_ir = ""
+            mut param_names: List<string> = []
+            mut param_types: List<string> = []
+            if params_str.length > 0 {
+                mut pi = 0
+                mut pstart = 0
+                while pi <= params_str.length {
+                    mut is_sep = false
+                    if pi == params_str.length { is_sep = true }
+                    if pi < params_str.length {
+                        if params_str.substring(pi, pi + 1) == "," { is_sep = true }
+                    }
+                    if is_sep {
+                        let param = params_str.substring(pstart, pi)
+                        let colon = param.index_of(":")
+                        if colon >= 0 {
+                            let pn = param.substring(0, colon)
+                            let pt_name = param.substring(colon + 1, param.length)
+                            let pt = type_to_llvm(pt_name)
+                            param_names = param_names.push(pn)
+                            param_types = param_types.push(pt)
+                            if param_ir.length > 0 { param_ir = param_ir + ", " }
+                            param_ir = param_ir + pt + " %" + pn + ".arg"
+                        }
+                        pstart = pi + 1
+                    }
+                    pi = pi + 1
+                }
+            }
+
+            // Save current IR state
+            let saved_ir: List<string> = IR
+            let saved_reg = REG_N
+            let saved_lbl = LBL_N
+            let saved_ret = CUR_RET_TY
+
+            // Emit closure function body
+            IR = []
+            REG_N = 0
+            LBL_N = 0
+            // Infer return type from body (default i64)
+            CUR_RET_TY = "i64"
+
+            ir_raw("define i64 @" + fn_name + "(" + param_ir + ") {")
+            ir_raw("entry:")
+
+            // Create param allocas
+            mut ci = 0
+            while ci < param_names.length {
+                let alloca = new_reg()
+                ir_line(alloca + " = alloca " + param_types[ci])
+                ir_line("store " + param_types[ci] + " %" + param_names[ci] + ".arg, ptr " + alloca)
+                push_var(param_names[ci], alloca, param_types[ci])
+                ci = ci + 1
+            }
+
+            // Compile body expression
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            let body_val = gen_expr_child(e, 0)
+            ir_line("ret i64 " + body_val)
+            ir_raw("}")
+            ir_raw("")
+
+            // Capture closure IR and restore state
+            let closure_ir: List<string> = IR
+            IR = saved_ir
+            REG_N = saved_reg
+            LBL_N = saved_lbl
+            CUR_RET_TY = saved_ret
+
+            // Store closure function in CLOSURE_IR (emitted between functions)
+            mut ni = 0
+            while ni < closure_ir.length {
+                CLOSURE_IR = CLOSURE_IR.push(closure_ir[ni])
+                ni = ni + 1
+            }
+
+            // Pop closure params from var table
+            ci = 0
+            while ci < param_names.length {
+                // Simple: just leave them (they'll be shadowed by later scopes)
+                ci = ci + 1
+            }
+
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_IS_PTR = 1
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            return "@" + fn_name
+        }
         _ -> {
             return "0"
         }
@@ -2260,6 +2545,14 @@ fn gen_call(e: Expr) -> string {
         }
     }
 
+    // Built-in: map_new() → ptr
+    if name == "map_new" && e.children.length == 0 {
+        let r = new_reg()
+        ir_line(r + " = call ptr @forge_map_new()")
+        LAST_IS_PTR = 1
+        LAST_IS_STR = 0
+        return r
+    }
     // Built-in: forge_join_lines(list) → string
     if name == "forge_join_lines" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
@@ -2310,6 +2603,55 @@ fn gen_call(e: Expr) -> string {
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
         return "0"
+    }
+    // Map methods: set, get, has
+    if name == "set" && e.children.length == 3 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            LAST_IS_PTR = 0
+            let key = gen_expr_child(e, 1)
+            LAST_IS_PTR = 0
+            let val = gen_expr_child(e, 2)
+            // Convert val to i64 if it's a ptr (fn pointer or closure)
+            mut val_i64 = val
+            mut is_ptr_val = false
+            if LAST_IS_PTR == 1 { is_ptr_val = true }
+            if val.length > 1 {
+                if val.substring(0, 1) == "@" { is_ptr_val = true }
+            }
+            if is_ptr_val {
+                val_i64 = new_reg()
+                ir_line(val_i64 + " = ptrtoint ptr " + val + " to i64")
+            }
+            ir_line("call void @forge_map_set(ptr " + obj + ", %ForgeString " + key + ", i64 " + val_i64 + ")")
+            LAST_IS_PTR = 1
+            LAST_IS_STR = 0
+            return obj
+        }
+    }
+    if name == "get" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            let key = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i64 @forge_map_get(ptr " + obj + ", %ForgeString " + key + ")")
+            LAST_IS_PTR = 0
+            LAST_IS_STR = 0
+            return r
+        }
+    }
+    if name == "has" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            let key = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i8 @forge_map_has(ptr " + obj + ", %ForgeString " + key + ")")
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i8 " + r + " to i64")
+            LAST_IS_PTR = 0
+            LAST_IS_STR = 0
+            return r2
+        }
     }
     // Method calls: children[0] is the object
     // List.push(elem) — obj.push(val) where obj is list
@@ -2373,7 +2715,53 @@ fn gen_call(e: Expr) -> string {
             return r
         }
     }
-    // Regular function call
+    // Check if callee is a variable (function pointer / indirect call)
+    let var_idx = find_var(name)
+    if var_idx >= 0 {
+        let vty = VAR_TYPES[var_idx]
+        if vty == "ptr" {
+            // Indirect call through function pointer
+            let fn_ptr = new_reg()
+            ir_line(fn_ptr + " = load ptr, ptr " + VAR_REGS[var_idx])
+            mut arg_str = ""
+            mut arg_types = ""
+            mut i = 0
+            while i < e.children.length {
+                if i > 0 {
+                    arg_str = arg_str + ", "
+                    arg_types = arg_types + ", "
+                }
+                LAST_IS_STR = 0
+                LAST_IS_LIST = 0
+                LAST_STRUCT_TYPE = ""
+                LAST_ENUM_TYPE = ""
+                let a = gen_expr_child(e, i)
+                mut aty = "i64"
+                if LAST_IS_STR == 1 { aty = "%ForgeString" }
+                if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
+                if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
+                if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
+                arg_str = arg_str + aty + " " + a
+                arg_types = arg_types + aty
+                i = i + 1
+            }
+            // Use current fn return type for indirect call if non-primitive
+            mut indirect_ret = "i64"
+            if CUR_RET_TY != "i64" && CUR_RET_TY != "void" && CUR_RET_TY != "i32" {
+                indirect_ret = CUR_RET_TY
+            }
+            let r = new_reg()
+            ir_line(r + " = call " + indirect_ret + " " + fn_ptr + "(" + arg_str + ")")
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
+            set_type_from_llvm(indirect_ret)
+            return r
+        }
+    }
+
+    // Regular function call (direct)
     let call_ret = find_fn_ret(name)
     mut arg_str = ""
     mut i = 0
@@ -2381,14 +2769,20 @@ fn gen_call(e: Expr) -> string {
         if i > 0 { arg_str = arg_str + ", " }
         LAST_IS_STR = 0
         LAST_IS_LIST = 0
+        LAST_IS_PTR = 0
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
         let a = gen_expr_child(e, i)
         mut aty = "i64"
         if LAST_IS_STR == 1 { aty = "%ForgeString" }
+        if LAST_IS_PTR == 1 { aty = "ptr" }
         if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
         if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
         if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
+        // Function reference: @name is a ptr
+        if a.length > 1 {
+            if a.substring(0, 1) == "@" { aty = "ptr" }
+        }
         arg_str = arg_str + aty + " " + a
         i = i + 1
     }
@@ -2443,333 +2837,369 @@ fn gen_member(obj: string, field: string) -> string {
     obj
 }
 
-fn gen_stmt(s: Stmt) -> bool {
-    match s.kind {
-        .Let -> {
-            LAST_IS_STR = 0
-            LAST_IS_LIST = 0
-            LAST_STRUCT_TYPE = ""
-            LAST_ENUM_TYPE = ""
-            let val = gen_expr_from(s, 0)
-            let alloca = new_reg()
-            let name = s.str_val
-            // Determine type from annotation or inference
-            mut ty = "i64"
-            mut is_list = false
-            mut list_elem = LAST_LIST_ELEM_TYPE
-            mut stype = ""
-            if LAST_IS_STR == 1 { ty = "%ForgeString" }
-            if LAST_IS_LIST == 1 {
-                ty = "{ ptr, i64 }"
-                is_list = true
+// ─── Codegen handlers (registered in registry) ──────────────────
+
+fn codegen_let(s: Stmt) -> int {
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_IS_PTR = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    let val = gen_expr_from(s, 0)
+    let alloca = new_reg()
+    let name = s.str_val
+    mut ty = "i64"
+    mut is_list = false
+    mut list_elem = LAST_LIST_ELEM_TYPE
+    mut stype = ""
+    if LAST_IS_STR == 1 { ty = "%ForgeString" }
+    if LAST_IS_PTR == 1 { ty = "ptr" }
+    if LAST_IS_LIST == 1 {
+        ty = "{ ptr, i64 }"
+        is_list = true
+    }
+    if LAST_STRUCT_TYPE != "" {
+        ty = "%" + LAST_STRUCT_TYPE
+        stype = LAST_STRUCT_TYPE
+    }
+    if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
+    mut ann_base = s.str2
+    mut ann_generic = ""
+    let ann_lt = s.str2.index_of("<")
+    if ann_lt >= 0 {
+        ann_base = s.str2.substring(0, ann_lt)
+        ann_generic = s.str2.substring(ann_lt + 1, s.str2.length - 1)
+    }
+    if ann_base == "string" { ty = "%ForgeString" }
+    if ann_base == "int" || ann_base == "bool" { ty = "i64" }
+    if ann_base == "List" {
+        ty = "{ ptr, i64 }"
+        is_list = true
+        if ann_generic != "" {
+            list_elem = type_to_llvm(ann_generic)
+        }
+    }
+    if ann_base == "Map" { ty = "ptr" }
+    if ann_base == "fn" { ty = "ptr" }
+    if find_struct(ann_base) >= 0 {
+        ty = "%" + ann_base
+        stype = ann_base
+    }
+    if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
+    mut final_val = val
+    if ann_base == "Map" {
+        final_val = new_reg()
+        ir_line(final_val + " = call ptr @forge_map_new()")
+    }
+    if ann_base == "fn" && ty == "ptr" && LAST_IS_PTR == 0 {
+        let conv = new_reg()
+        ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
+        final_val = conv
+    }
+    ir_line(alloca + " = alloca " + ty)
+    ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
+    if is_list {
+        push_var_list(name, alloca, "list_" + list_elem, list_elem)
+    } else if stype != "" {
+        push_var_with_struct(name, alloca, ty, stype)
+    } else {
+        push_var(name, alloca, ty)
+    }
+    0
+}
+
+fn codegen_return(s: Stmt) -> int {
+    if CUR_RET_TY == "void" {
+        ir_line("ret void")
+    } else {
+        let val = gen_expr_from(s, 0)
+        ir_line("ret " + CUR_RET_TY + " " + val)
+    }
+    1
+}
+
+fn codegen_expr_stmt(s: Stmt) -> int {
+    let val = gen_expr_from(s, 0)
+    LAST_EXPR_VAL = val
+    0
+}
+
+fn codegen_if(s: Stmt) -> int {
+    let cond = gen_expr_from(s, 0)
+    let cond_i1 = new_reg()
+    ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+    let then_l = new_label("then")
+    let else_l = new_label("else")
+    let merge_l = new_label("merge")
+    ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
+    ir_raw(then_l + ":")
+    let then_ended = gen_stmts(s.body)
+    if then_ended == 0 { ir_line("br label %" + merge_l) }
+    ir_raw(else_l + ":")
+    let else_ended = gen_stmts(s.else_body)
+    if else_ended == 0 { ir_line("br label %" + merge_l) }
+    ir_raw(merge_l + ":")
+    if then_ended == 1 && else_ended == 1 {
+        ir_line("unreachable")
+        return 1
+    }
+    0
+}
+
+fn codegen_while(s: Stmt) -> int {
+    let cond_l = new_label("while_cond")
+    let body_l = new_label("while_body")
+    let end_l = new_label("while_end")
+    LOOP_COND = LOOP_COND.push(cond_l)
+    LOOP_END = LOOP_END.push(end_l)
+    ir_line("br label %" + cond_l)
+    ir_raw(cond_l + ":")
+    let cond = gen_expr_from(s, 0)
+    let cond_i1 = new_reg()
+    ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
+    ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
+    ir_raw(body_l + ":")
+    let body_ended = gen_stmts(s.body)
+    if body_ended == 0 { ir_line("br label %" + cond_l) }
+    mut new_cond: List<string> = []
+    mut new_end: List<string> = []
+    mut li = 0
+    while li < LOOP_COND.length - 1 {
+        new_cond = new_cond.push(LOOP_COND[li])
+        new_end = new_end.push(LOOP_END[li])
+        li = li + 1
+    }
+    LOOP_COND = new_cond
+    LOOP_END = new_end
+    ir_raw(end_l + ":")
+    0
+}
+
+fn codegen_for(s: Stmt) -> int {
+    let var_name = s.str_val
+    LAST_IS_LIST = 0
+    let iterable = gen_expr_from(s, 0)
+    let elem_ty = LAST_LIST_ELEM_TYPE
+    let len_r = new_reg()
+    ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
+    let data_r = new_reg()
+    ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
+    let idx_alloca = new_reg()
+    ir_line(idx_alloca + " = alloca i64")
+    ir_line("store i64 0, ptr " + idx_alloca)
+    let elem_alloca = new_reg()
+    ir_line(elem_alloca + " = alloca " + elem_ty)
+    push_var(var_name, elem_alloca, elem_ty)
+    let cond_l = new_label("for_cond")
+    let body_l = new_label("for_body")
+    let end_l = new_label("for_end")
+    LOOP_COND = LOOP_COND.push(cond_l)
+    LOOP_END = LOOP_END.push(end_l)
+    ir_line("br label %" + cond_l)
+    ir_raw(cond_l + ":")
+    let idx_val = new_reg()
+    ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+    let cmp = new_reg()
+    ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
+    ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
+    ir_raw(body_l + ":")
+    let ep = new_reg()
+    ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
+    let ev = new_reg()
+    ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
+    ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
+    let body_ended = gen_stmts(s.body)
+    let next_idx = new_reg()
+    ir_line(next_idx + " = add i64 " + idx_val + ", 1")
+    ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
+    if body_ended == 0 { ir_line("br label %" + cond_l) }
+    mut new_cond: List<string> = []
+    mut new_end: List<string> = []
+    mut li = 0
+    while li < LOOP_COND.length - 1 {
+        new_cond = new_cond.push(LOOP_COND[li])
+        new_end = new_end.push(LOOP_END[li])
+        li = li + 1
+    }
+    LOOP_COND = new_cond
+    LOOP_END = new_end
+    ir_raw(end_l + ":")
+    0
+}
+
+fn codegen_break(s: Stmt) -> int {
+    if LOOP_END.length > 0 {
+        ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
+    }
+    1
+}
+
+fn codegen_continue(s: Stmt) -> int {
+    if LOOP_COND.length > 0 {
+        ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
+    }
+    1
+}
+
+fn codegen_assign(s: Stmt) -> int {
+    let target: Expr = s.exprs[0]
+    match target.kind {
+        .Ident -> {
+            let val = gen_expr_from(s, 1)
+            let var_idx = find_var(target.str_val)
+            if var_idx >= 0 {
+                let store_ty = VAR_TYPES[var_idx]
+                let load_ty = get_load_type(store_ty)
+                ir_line("store " + load_ty + " " + val + ", ptr " + VAR_REGS[var_idx])
             }
-            if LAST_STRUCT_TYPE != "" {
-                ty = "%" + LAST_STRUCT_TYPE
-                stype = LAST_STRUCT_TYPE
-            }
-            if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
-            // Prefer annotation — parse "List<string>" format
-            mut ann_base = s.str2
-            mut ann_generic = ""
-            let ann_lt = s.str2.index_of("<")
-            if ann_lt >= 0 {
-                ann_base = s.str2.substring(0, ann_lt)
-                ann_generic = s.str2.substring(ann_lt + 1, s.str2.length - 1)
-            }
-            if ann_base == "string" { ty = "%ForgeString" }
-            if ann_base == "int" || ann_base == "bool" { ty = "i64" }
-            if ann_base == "List" {
-                ty = "{ ptr, i64 }"
-                is_list = true
-                if ann_generic != "" {
-                    list_elem = type_to_llvm(ann_generic)
+        }
+        .Member -> {
+            let obj_expr: Expr = target.children[0]
+            let field = target.str_val
+            if is_ident_expr(obj_expr) {
+                let var_idx = find_var(obj_expr.str_val)
+                if var_idx >= 0 {
+                    let sty_name = VAR_STRUCT_TYPE[var_idx]
+                    let si = find_struct(sty_name)
+                    if si >= 0 {
+                        let fi = struct_field_index(si, field)
+                        let fty = struct_field_type(si, fi)
+                        let val = gen_expr_from(s, 1)
+                        let cur = new_reg()
+                        ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
+                        let updated = new_reg()
+                        ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + val + ", " + string(fi))
+                        ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
+                    }
                 }
             }
-            if find_struct(ann_base) >= 0 {
-                ty = "%" + ann_base
-                stype = ann_base
-            }
-            if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
-            ir_line(alloca + " = alloca " + ty)
-            ir_line("store " + ty + " " + val + ", ptr " + alloca)
-            if is_list {
-                push_var_list(name, alloca, "list_" + list_elem, list_elem)
-            } else if stype != "" {
-                push_var_with_struct(name, alloca, ty, stype)
-            } else {
-                push_var(name, alloca, ty)
-            }
-            return false
         }
-        .Return -> {
-            if CUR_RET_TY == "void" {
-                ir_line("ret void")
-            } else {
-                let val = gen_expr_from(s, 0)
-                ir_line("ret " + CUR_RET_TY + " " + val)
+        _ -> {}
+    }
+    0
+}
+
+fn codegen_match(s: Stmt) -> int {
+    LAST_ENUM_TYPE = ""
+    let scrutinee = gen_expr_from(s, 0)
+    let scrut_enum = LAST_ENUM_TYPE
+    let ei = find_enum(scrut_enum)
+    let merge_l = new_label("match_end")
+    let match_result = new_reg()
+    ir_line(match_result + " = alloca " + CUR_RET_TY)
+    let tag_r = new_reg()
+    if ei >= 0 {
+        ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
+    }
+    mut ai = 0
+    while ai < s.body.length {
+        let arm: Stmt = s.body[ai]
+        let vname = arm.str_val
+        if vname == "_" {
+            let ended = gen_stmts(arm.body)
+            if ended == 0 {
+                if CUR_RET_TY != "void" {
+                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                }
+                ir_line("br label %" + merge_l)
             }
-            return true
-        }
-        .ExprStmt -> {
-            let val = gen_expr_from(s, 0)
-            LAST_EXPR_VAL = val
-            return false
-        }
-        .If -> {
-            let cond = gen_expr_from(s, 0)
-            let cond_i1 = new_reg()
-            ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
-            let then_l = new_label("then")
-            let else_l = new_label("else")
-            let merge_l = new_label("merge")
-            ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
-            // Then
-            ir_raw(then_l + ":")
-            let then_ended = gen_stmts(s.body)
-            if then_ended == 0 { ir_line("br label %" + merge_l) }
-            // Else
-            ir_raw(else_l + ":")
-            let else_ended = gen_stmts(s.else_body)
-            if else_ended == 0 { ir_line("br label %" + merge_l) }
-            // Merge
-            ir_raw(merge_l + ":")
-            if then_ended == 1 && else_ended == 1 {
-                ir_line("unreachable")
-                return true
-            }
-            return false
-        }
-        .While -> {
-            let cond_l = new_label("while_cond")
-            let body_l = new_label("while_body")
-            let end_l = new_label("while_end")
-            LOOP_COND = LOOP_COND.push(cond_l)
-            LOOP_END = LOOP_END.push(end_l)
-            ir_line("br label %" + cond_l)
-            ir_raw(cond_l + ":")
-            let cond = gen_expr_from(s, 0)
-            let cond_i1 = new_reg()
-            ir_line(cond_i1 + " = trunc i64 " + cond + " to i1")
-            ir_line("br i1 " + cond_i1 + ", label %" + body_l + ", label %" + end_l)
-            ir_raw(body_l + ":")
-            let body_ended = gen_stmts(s.body)
-            if body_ended == 0 { ir_line("br label %" + cond_l) }
-            // Pop loop labels
-            mut new_cond: List<string> = []
-            mut new_end: List<string> = []
-            mut li = 0
-            while li < LOOP_COND.length - 1 {
-                new_cond = new_cond.push(LOOP_COND[li])
-                new_end = new_end.push(LOOP_END[li])
-                li = li + 1
-            }
-            LOOP_COND = new_cond
-            LOOP_END = new_end
-            ir_raw(end_l + ":")
-            return false
-        }
-        .For -> {
-            // for var_name in iterable { body }
-            let var_name = s.str_val
-            LAST_IS_LIST = 0
-            let iterable = gen_expr_from(s, 0)
-            let elem_ty = LAST_LIST_ELEM_TYPE
-            // Get length
-            let len_r = new_reg()
-            ir_line(len_r + " = extractvalue { ptr, i64 } " + iterable + ", 1")
-            let data_r = new_reg()
-            ir_line(data_r + " = extractvalue { ptr, i64 } " + iterable + ", 0")
-            // Index variable
-            let idx_alloca = new_reg()
-            ir_line(idx_alloca + " = alloca i64")
-            ir_line("store i64 0, ptr " + idx_alloca)
-            // Loop element variable
-            let elem_alloca = new_reg()
-            ir_line(elem_alloca + " = alloca " + elem_ty)
-            push_var(var_name, elem_alloca, elem_ty)
-            let cond_l = new_label("for_cond")
-            let body_l = new_label("for_body")
-            let end_l = new_label("for_end")
-            LOOP_COND = LOOP_COND.push(cond_l)
-            LOOP_END = LOOP_END.push(end_l)
-            ir_line("br label %" + cond_l)
-            ir_raw(cond_l + ":")
-            let idx_val = new_reg()
-            ir_line(idx_val + " = load i64, ptr " + idx_alloca)
+        } else if ei >= 0 {
+            let vidx = enum_variant_index(ei, vname)
+            let arm_l = new_label("match_arm")
+            let next_l = new_label("match_next")
             let cmp = new_reg()
-            ir_line(cmp + " = icmp slt i64 " + idx_val + ", " + len_r)
-            ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
-            ir_raw(body_l + ":")
-            // Load element
-            let ep = new_reg()
-            ir_line(ep + " = getelementptr " + elem_ty + ", ptr " + data_r + ", i64 " + idx_val)
-            let ev = new_reg()
-            ir_line(ev + " = load " + elem_ty + ", ptr " + ep)
-            ir_line("store " + elem_ty + " " + ev + ", ptr " + elem_alloca)
-            let body_ended = gen_stmts(s.body)
-            // Increment index
-            let next_idx = new_reg()
-            ir_line(next_idx + " = add i64 " + idx_val + ", 1")
-            ir_line("store i64 " + next_idx + ", ptr " + idx_alloca)
-            if body_ended == 0 { ir_line("br label %" + cond_l) }
-            // Pop loop labels
-            mut new_cond: List<string> = []
-            mut new_end: List<string> = []
-            mut li = 0
-            while li < LOOP_COND.length - 1 {
-                new_cond = new_cond.push(LOOP_COND[li])
-                new_end = new_end.push(LOOP_END[li])
-                li = li + 1
-            }
-            LOOP_COND = new_cond
-            LOOP_END = new_end
-            ir_raw(end_l + ":")
-            return false
-        }
-        .Break -> {
-            if LOOP_END.length > 0 {
-                ir_line("br label %" + LOOP_END[LOOP_END.length - 1])
-            }
-            return true
-        }
-        .Continue -> {
-            if LOOP_COND.length > 0 {
-                ir_line("br label %" + LOOP_COND[LOOP_COND.length - 1])
-            }
-            return true
-        }
-        .Assign -> {
-            let target: Expr = s.exprs[0]
-            match target.kind {
-                .Ident -> {
-                    let val = gen_expr_from(s, 1)
-                    let var_idx = find_var(target.str_val)
-                    if var_idx >= 0 {
-                        let store_ty = VAR_TYPES[var_idx]
-                        let load_ty = get_load_type(store_ty)
-                        ir_line("store " + load_ty + " " + val + ", ptr " + VAR_REGS[var_idx])
+            ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
+            ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
+            ir_raw(arm_l + ":")
+            if arm.str2.length > 0 {
+                mut bi = 0
+                mut bstart = 0
+                mut bpos = 0
+                while bpos <= arm.str2.length {
+                    mut is_comma = false
+                    if bpos < arm.str2.length {
+                        if arm.str2.substring(bpos, bpos + 1) == "," {
+                            is_comma = true
+                        }
                     }
+                    if is_comma || bpos == arm.str2.length {
+                        let bname = arm.str2.substring(bstart, bpos)
+                        let bval = new_reg()
+                        let slot = bi + 1
+                        ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
+                        let balloca = new_reg()
+                        ir_line(balloca + " = alloca i64")
+                        ir_line("store i64 " + bval + ", ptr " + balloca)
+                        push_var(bname, balloca, "i64")
+                        bi = bi + 1
+                        bstart = bpos + 1
+                    }
+                    bpos = bpos + 1
                 }
-                .Member -> {
-                    // obj.field = value → load struct, insertvalue, store back
-                    let obj_expr: Expr = target.children[0]
-                    let field = target.str_val
-                    if is_ident_expr(obj_expr) {
-                        let var_idx = find_var(obj_expr.str_val)
-                        if var_idx >= 0 {
-                            let sty_name = VAR_STRUCT_TYPE[var_idx]
-                            let si = find_struct(sty_name)
-                            if si >= 0 {
-                                let fi = struct_field_index(si, field)
-                                let fty = struct_field_type(si, fi)
-                                let val = gen_expr_from(s, 1)
-                                let cur = new_reg()
-                                ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
-                                let updated = new_reg()
-                                ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + val + ", " + string(fi))
-                                ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
-                            }
-                        }
-                    }
+            }
+            let ended = gen_stmts(arm.body)
+            if ended == 0 {
+                if CUR_RET_TY != "void" {
+                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
                 }
-                _ -> {}
+                ir_line("br label %" + merge_l)
             }
-            return false
+            ir_raw(next_l + ":")
         }
-        .Match -> {
-            // Compile match as if-chain over enum tag
-            LAST_ENUM_TYPE = ""
-            let scrutinee = gen_expr_from(s, 0)
-            let scrut_enum = LAST_ENUM_TYPE
-            let ei = find_enum(scrut_enum)
-            let merge_l = new_label("match_end")
-            // Match result alloca (for implicit return / expression result)
-            let match_result = new_reg()
-            ir_line(match_result + " = alloca " + CUR_RET_TY)
-            // Extract tag
-            let tag_r = new_reg()
-            if ei >= 0 {
-                ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
-            }
-            // Process arms
-            mut ai = 0
-            while ai < s.body.length {
-                let arm: Stmt = s.body[ai]
-                let vname = arm.str_val
-                if vname == "_" {
-                    // Wildcard arm
-                    let ended = gen_stmts(arm.body)
-                    if ended == 0 {
-                        if CUR_RET_TY != "void" {
-                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                        }
-                        ir_line("br label %" + merge_l)
-                    }
-                } else if ei >= 0 {
-                    // .Variant arm
-                    let vidx = enum_variant_index(ei, vname)
-                    let arm_l = new_label("match_arm")
-                    let next_l = new_label("match_next")
-                    let cmp = new_reg()
-                    ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
-                    ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
-                    ir_raw(arm_l + ":")
-                    // Bind variant fields
-                    if arm.str2.length > 0 {
-                        mut bi = 0
-                        mut bstart = 0
-                        mut bpos = 0
-                        while bpos <= arm.str2.length {
-                            mut is_comma = false
-                            if bpos < arm.str2.length {
-                                if arm.str2.substring(bpos, bpos + 1) == "," {
-                                    is_comma = true
-                                }
-                            }
-                            if is_comma || bpos == arm.str2.length {
-                                let bname = arm.str2.substring(bstart, bpos)
-                                let bval = new_reg()
-                                let slot = bi + 1
-                                ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(slot))
-                                let balloca = new_reg()
-                                ir_line(balloca + " = alloca i64")
-                                ir_line("store i64 " + bval + ", ptr " + balloca)
-                                push_var(bname, balloca, "i64")
-                                bi = bi + 1
-                                bstart = bpos + 1
-                            }
-                            bpos = bpos + 1
-                        }
-                    }
-                    let ended = gen_stmts(arm.body)
-                    if ended == 0 {
-                        if CUR_RET_TY != "void" {
-                            ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                        }
-                        ir_line("br label %" + merge_l)
-                    }
-                    ir_raw(next_l + ":")
-                }
-                ai = ai + 1
-            }
-            // Default fallthrough
-            ir_line("br label %" + merge_l)
-            ir_raw(merge_l + ":")
-            // Load match result
-            if CUR_RET_TY != "void" {
-                let mr = new_reg()
-                ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
-                LAST_EXPR_VAL = mr
-            }
-            return false
-        }
-        _ -> {
-            return false
-        }
+        ai = ai + 1
+    }
+    ir_line("br label %" + merge_l)
+    ir_raw(merge_l + ":")
+    if CUR_RET_TY != "void" {
+        let mr = new_reg()
+        ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
+        LAST_EXPR_VAL = mr
+    }
+    0
+}
+
+// Register all codegen handlers
+fn register_codegen_handlers() {
+    register_codegen("Let", codegen_let)
+    register_codegen("Return", codegen_return)
+    register_codegen("ExprStmt", codegen_expr_stmt)
+    register_codegen("If", codegen_if)
+    register_codegen("While", codegen_while)
+    register_codegen("For", codegen_for)
+    register_codegen("Break", codegen_break)
+    register_codegen("Continue", codegen_continue)
+    register_codegen("Assign", codegen_assign)
+    register_codegen("Match", codegen_match)
+}
+
+// ─── Main statement codegen (registry-driven) ────────────────────
+
+fn stmt_kind_name(s: Stmt) -> string {
+    match s.kind {
+        .Let -> { return "Let" }
+        .Return -> { return "Return" }
+        .ExprStmt -> { return "ExprStmt" }
+        .If -> { return "If" }
+        .While -> { return "While" }
+        .For -> { return "For" }
+        .Break -> { return "Break" }
+        .Continue -> { return "Continue" }
+        .Assign -> { return "Assign" }
+        .Match -> { return "Match" }
+        _ -> { return "" }
+    }
+    ""
+}
+
+fn gen_stmt(s: Stmt) -> bool {
+    let kind = stmt_kind_name(s)
+    if kind.length > 0 && has_codegen_handler(kind) {
+        let result = call_codegen_handler(kind, s)
+        if result == 1 { return true }
+        return false
     }
     false
 }
-
 fn gen_stmts(stmts: List<Stmt>) -> int {
     gen_block(stmts)
 }
@@ -2918,6 +3348,13 @@ fn gen_fn_decl(f: FnDecl) {
 
     ir_raw("}")
     ir_raw("")
+    // Emit any closure functions generated during this function
+    mut ci = 0
+    while ci < CLOSURE_IR.length {
+        IR = IR.push(CLOSURE_IR[ci])
+        ci = ci + 1
+    }
+    CLOSURE_IR = []
 }
 
 // Known type names (pre-scanned for forward references)
@@ -2979,6 +3416,12 @@ fn compile(source: string) -> string {
     IR = []
     STR_DECLS = []
     STR_N = 0
+    CLOSURE_COUNT = 0
+    CLOSURE_IR = []
+    // Initialize registry and register handlers
+    init_registry()
+    register_parse_handlers()
+    register_codegen_handlers()
     STRUCT_NAMES = []
     STRUCT_FIELD_STARTS = []
     STRUCT_FIELD_COUNTS = []
@@ -3104,6 +3547,10 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare i64 @forge_string_to_int(%ForgeString)")
+    ir_raw("declare ptr @forge_map_new()")
+    ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
+    ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
+    ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
@@ -3125,6 +3572,7 @@ fn compile(source: string) -> string {
     "done"
 }
 
+// Mini Forge Compiler — self-hosted (multi-file)
 // ═══════════════════════════════════════════════════════════════════
 // MODULE RESOLUTION
 // ═══════════════════════════════════════════════════════════════════
