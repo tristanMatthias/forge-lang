@@ -1,0 +1,235 @@
+mut LEX_SRC: string = ""
+mut LEX_POS: int = 0
+mut LEX_LINE: int = 1
+
+fn lex_peek() -> string {
+    if LEX_POS >= LEX_SRC.length { return "" }
+    lex_char_at(LEX_POS)
+}
+
+fn lex_advance() -> string {
+    if LEX_POS >= LEX_SRC.length { return "" }
+    let ch = lex_char_at(LEX_POS)
+    LEX_POS = LEX_POS + 1
+    ch
+}
+
+fn lex_is_alpha(ch: string) -> bool {
+    if ch == "_" { return true }
+    if ch >= "a" && ch <= "z" { return true }
+    if ch >= "A" && ch <= "Z" { return true }
+    false
+}
+
+fn lex_is_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "9"
+}
+
+fn lex_is_alnum(ch: string) -> bool {
+    if lex_is_alpha(ch) { return true }
+    lex_is_digit(ch)
+}
+
+
+// ─── Codegen helpers (defined early for forward reference) ────────
+
+fn ir_block_terminated() -> int {
+    if IR.length == 0 { return 0 }
+    let last = IR[IR.length - 1]
+    if last.contains("ret ") { return 1 }
+    if last.contains("ret void") { return 1 }
+    if last.contains("unreachable") { return 1 }
+    if last.contains("br label") { return 1 }
+    if last.contains("br i1") { return 1 }
+    0
+}
+
+fn set_field_type(fty: string) {
+    LAST_IS_STR = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    LAST_IS_LIST = 0
+    if fty == "%ForgeString" {
+        LAST_IS_STR = 1
+    }
+    if fty == "{ ptr, i64 }" {
+        LAST_IS_LIST = 1
+    }
+    if is_list_type(fty) {
+        LAST_IS_LIST = 1
+        LAST_LIST_ELEM_TYPE = fty.substring(5, fty.length)
+    }
+    // Check for struct field type
+    if fty.length > 1 {
+        if fty.substring(0, 1) == "%" {
+            if fty != "%ForgeString" {
+                let tname = fty.substring(1, fty.length)
+                LAST_STRUCT_TYPE = tname
+                LAST_ENUM_TYPE = tname
+            }
+        }
+    }
+}
+
+fn byte_at_pos(pos: int) -> int {
+    // Get raw byte value at position (avoids string comparison issues)
+    // 34 = double quote, 10 = newline
+    LEX_SRC.byte_at(pos)
+}
+
+fn is_slash(c: string) -> bool {
+    c.substring(0, 1) == "/"
+}
+
+fn not_at_end() -> bool {
+    POS < TOKENS.length
+}
+
+fn not_at_brace() -> bool {
+    if POS >= TOKENS.length { return false }
+    let t: Tok = TOKENS[POS]
+    if t.kind == 3 { return true }
+    if t.text == "}" { return false }
+    true
+}
+
+fn not_at_paren() -> bool {
+    if POS >= TOKENS.length { return false }
+    let t: Tok = TOKENS[POS]
+    // Don't match string literals as closing paren
+    if t.kind == 3 { return true }
+    if t.text == ")" { return false }
+    true
+}
+
+fn lex_char_at(pos: int) -> string {
+    LEX_SRC.substring(pos, pos + 1)
+}
+
+fn lex_skip_whitespace() {
+    while LEX_POS < LEX_SRC.length {
+        let c = lex_peek()
+        if c == " " {
+            lex_advance()
+        } else if c == "\t" {
+            lex_advance()
+        } else if c == "\r" {
+            lex_advance()
+        } else if is_slash(c) {
+            if LEX_POS + 1 < LEX_SRC.length {
+                if is_slash(lex_char_at(LEX_POS + 1)) {
+                    while LEX_POS < LEX_SRC.length {
+                        if lex_peek() == "\n" { return }
+                        lex_advance()
+                    }
+                } else {
+                    return
+                }
+            } else {
+                return
+            }
+        } else {
+            return
+        }
+    }
+}
+
+fn lex_read_string() -> string {
+    lex_advance() // consume opening "
+    mut result = ""
+    while LEX_POS < LEX_SRC.length && byte_at_pos(LEX_POS) != 34 {
+        let ch = lex_advance()
+        if ch == "\\" && LEX_POS < LEX_SRC.length {
+            let esc = lex_advance()
+            if esc == "n" {
+                result = result + "\n"
+            } else if esc == "t" {
+                result = result + "\t"
+            } else if esc == "\\" {
+                result = result + "\\"
+            } else if esc == "\"" {
+                result = result + "\""
+            } else {
+                result = result + "\\" + esc
+            }
+        } else {
+            result = result + ch
+        }
+    }
+    if LEX_POS < LEX_SRC.length { lex_advance() } // consume closing "
+    result
+}
+
+fn lex_next() -> Tok {
+    lex_skip_whitespace()
+    if LEX_POS >= LEX_SRC.length {
+        return Tok { kind: 0, text: "", line: LEX_LINE }
+    }
+
+    let ch = lex_peek()
+    let line = LEX_LINE
+    let ch_byte = byte_at_pos(LEX_POS)
+
+    // Newline (byte 10)
+    if ch_byte == 10 {
+        lex_advance()
+        return Tok { kind: 4, text: "\n", line: line }
+    }
+    if ch_byte == 34 {
+        let s = lex_read_string()
+        return Tok { kind: 3, text: s, line: line }
+    }
+
+    // Number
+    if lex_is_digit(ch) {
+        mut num = ""
+        while LEX_POS < LEX_SRC.length && lex_is_digit(lex_peek()) {
+            num = num + lex_advance()
+        }
+        return Tok { kind: 2, text: num, line: line }
+    }
+
+    // Identifier / keyword
+    if lex_is_alpha(ch) {
+        mut word = ""
+        while LEX_POS < LEX_SRC.length {
+            let wch = lex_char_at(LEX_POS)
+            if !lex_is_alnum(wch) { break }
+            word = word + wch
+            LEX_POS = LEX_POS + 1
+        }
+        // Check for bool literals
+        if word == "true" || word == "false" {
+            return Tok { kind: 6, text: word, line: line }
+        }
+        return Tok { kind: 1, text: word, line: line }
+    }
+
+    // Two-character operators
+    if LEX_POS + 1 < LEX_SRC.length {
+        let ch2 = lex_char_at(LEX_POS + 1)
+        mut two = ch + ch2
+        if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "->" {
+            lex_advance()
+            lex_advance()
+            return Tok { kind: 5, text: two, line: line }
+        }
+    }
+
+    // Single-character symbols
+    lex_advance()
+    Tok { kind: 5, text: ch, line: line }
+}
+
+fn tokenize(source: string) -> List<Tok> {
+    LEX_SRC = source
+    LEX_POS = 0
+    LEX_LINE = 1
+    mut tokens: List<Tok> = []
+    while true {
+        let tok: Tok = lex_next()
+        tokens = tokens.push(tok)
+        if tok.kind == 0 { break }
+    }
+    tokens
+}

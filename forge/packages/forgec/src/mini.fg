@@ -3143,24 +3143,33 @@ fn path_dir(path: string) -> string {
     path.substring(0, last_slash)
 }
 
-// Read a source file and resolve mod declarations recursively.
-// Returns concatenated source of all modules.
-fn resolve_modules(path: string) -> string {
+// Read a source file and resolve mod declarations.
+// Scans for "mod <name>" lines and reads the referenced files.
+// Returns list of all sources (main file + modules).
+fn resolve_modules(path: string) -> List<string> {
     let source = fs.read(path)
-    if source.length == 0 { return source }
+    mut sources: List<string> = []
+    if source.length == 0 { return sources }
+    sources = sources.push(source)
     let dir = path_dir(path)
 
-    // Tokenize to find mod declarations
-    let toks: List<Tok> = tokenize(source)
-    mut merged = source
-    mut ti = 0
-    while ti < toks.length {
-        let t: Tok = toks[ti]
-        if t.kind == 1 && t.text == "mod" {
-            // Next token is the module name
-            if ti + 1 < toks.length {
-                let mod_tok: Tok = toks[ti + 1]
-                let mod_name = mod_tok.text
+    // Scan raw text for "mod " at line start
+    mut i = 0
+    while i < source.length {
+        // Check for "mod " at position i (must be at line start or after newline)
+        mut at_line_start = false
+        if i == 0 { at_line_start = true }
+        if i > 0 {
+            if source.byte_at(i - 1) == 10 { at_line_start = true }
+        }
+        if at_line_start && i + 4 < source.length {
+            if source.substring(i, i + 4) == "mod " {
+                // Extract module name (until newline or space)
+                mut j = i + 4
+                while j < source.length && source.byte_at(j) != 10 && source.byte_at(j) != 32 {
+                    j = j + 1
+                }
+                let mod_name = source.substring(i + 4, j)
                 // Try mod_name.fg first, then mod_name/mod.fg
                 mut mod_path = dir + "/" + mod_name + ".fg"
                 mut mod_src = fs.read(mod_path)
@@ -3170,14 +3179,18 @@ fn resolve_modules(path: string) -> string {
                 }
                 if mod_src.length > 0 {
                     // Recursively resolve sub-modules
-                    let resolved = resolve_modules(mod_path)
-                    merged = merged + "\n" + resolved
+                    let sub: List<string> = resolve_modules(mod_path)
+                    mut si = 0
+                    while si < sub.length {
+                        sources = sources.push(sub[si])
+                        si = si + 1
+                    }
                 }
             }
         }
-        ti = ti + 1
+        i = i + 1
     }
-    merged
+    sources
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3195,12 +3208,15 @@ fn main() {
 
     let command = args[1]
     let input = args[2]
-    let source = resolve_modules(input)
+    let sources: List<string> = resolve_modules(input)
 
-    if source.length == 0 {
+    if sources.length == 0 {
         eprintln("error: could not read " + input)
         process.exit(1)
     }
+
+    // Join all module sources
+    let source = forge_join_lines(sources)
 
     eprintln("  lex + parse + codegen: " + input)
     compile(source)
