@@ -656,6 +656,14 @@ fn gen_call(e: Expr) -> string {
         }
     }
 
+    // Built-in: map_new() → ptr
+    if name == "map_new" && e.children.length == 0 {
+        let r = new_reg()
+        ir_line(r + " = call ptr @forge_map_new()")
+        LAST_IS_PTR = 1
+        LAST_IS_STR = 0
+        return r
+    }
     // Built-in: forge_join_lines(list) → string
     if name == "forge_join_lines" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
@@ -706,6 +714,55 @@ fn gen_call(e: Expr) -> string {
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
         return "0"
+    }
+    // Map methods: set, get, has
+    if name == "set" && e.children.length == 3 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            LAST_IS_PTR = 0
+            let key = gen_expr_child(e, 1)
+            LAST_IS_PTR = 0
+            let val = gen_expr_child(e, 2)
+            // Convert val to i64 if it's a ptr (fn pointer or closure)
+            mut val_i64 = val
+            mut is_ptr_val = false
+            if LAST_IS_PTR == 1 { is_ptr_val = true }
+            if val.length > 1 {
+                if val.substring(0, 1) == "@" { is_ptr_val = true }
+            }
+            if is_ptr_val {
+                val_i64 = new_reg()
+                ir_line(val_i64 + " = ptrtoint ptr " + val + " to i64")
+            }
+            ir_line("call void @forge_map_set(ptr " + obj + ", %ForgeString " + key + ", i64 " + val_i64 + ")")
+            LAST_IS_PTR = 1
+            LAST_IS_STR = 0
+            return obj
+        }
+    }
+    if name == "get" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            let key = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i64 @forge_map_get(ptr " + obj + ", %ForgeString " + key + ")")
+            LAST_IS_PTR = 0
+            LAST_IS_STR = 0
+            return r
+        }
+    }
+    if name == "has" && e.children.length == 2 {
+        let obj = gen_expr_child(e, 0)
+        if LAST_IS_PTR == 1 {
+            let key = gen_expr_child(e, 1)
+            let r = new_reg()
+            ir_line(r + " = call i8 @forge_map_has(ptr " + obj + ", %ForgeString " + key + ")")
+            let r2 = new_reg()
+            ir_line(r2 + " = zext i8 " + r + " to i64")
+            LAST_IS_PTR = 0
+            LAST_IS_STR = 0
+            return r2
+        }
     }
     // Method calls: children[0] is the object
     // List.push(elem) — obj.push(val) where obj is list
@@ -929,13 +986,21 @@ fn gen_stmt(s: Stmt) -> bool {
                     list_elem = type_to_llvm(ann_generic)
                 }
             }
+            if ann_base == "Map" { ty = "ptr" }
+            if ann_base == "fn" { ty = "ptr" }
             if find_struct(ann_base) >= 0 {
                 ty = "%" + ann_base
                 stype = ann_base
             }
             if find_enum(ann_base) >= 0 { ty = "%" + ann_base }
+            // For Map types, initialize with forge_map_new()
+            mut final_val = val
+            if ann_base == "Map" {
+                final_val = new_reg()
+                ir_line(final_val + " = call ptr @forge_map_new()")
+            }
             ir_line(alloca + " = alloca " + ty)
-            ir_line("store " + ty + " " + val + ", ptr " + alloca)
+            ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
             if is_list {
                 push_var_list(name, alloca, "list_" + list_elem, list_elem)
             } else if stype != "" {
@@ -1557,6 +1622,10 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
     ir_raw("declare i64 @forge_string_to_int(%ForgeString)")
+    ir_raw("declare ptr @forge_map_new()")
+    ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
+    ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
+    ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
