@@ -361,13 +361,18 @@ fn not_at_end() -> bool {
 
 fn not_at_brace() -> bool {
     if POS >= TOKENS.length { return false }
-    if TOKENS[POS].text == "}" { return false }
+    let t: Tok = TOKENS[POS]
+    if t.kind == 3 { return true }
+    if t.text == "}" { return false }
     true
 }
 
 fn not_at_paren() -> bool {
     if POS >= TOKENS.length { return false }
-    if TOKENS[POS].text == ")" { return false }
+    let t: Tok = TOKENS[POS]
+    // Don't match string literals as closing paren
+    if t.kind == 3 { return true }
+    if t.text == ")" { return false }
     true
 }
 
@@ -703,14 +708,28 @@ fn check_list_annotation(ann: string, generic: string) {
 }
 
 fn set_type_from_llvm(ty: string) {
-    // Given an LLVM return type like "%Tok", set LAST_STRUCT_TYPE/LAST_ENUM_TYPE
+    // Given an LLVM return type, set LAST_IS_STR/LAST_IS_LIST/LAST_STRUCT_TYPE/LAST_ENUM_TYPE
+    if ty == "%ForgeString" {
+        LAST_IS_STR = 1
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
+    if ty == "{ ptr, i64 }" {
+        LAST_IS_LIST = 1
+        LAST_IS_STR = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
     if ty.length > 1 {
         if ty.substring(0, 1) == "%" {
-            if ty != "%ForgeString" {
-                let tname = ty.substring(1, ty.length)
-                LAST_STRUCT_TYPE = tname
-                LAST_ENUM_TYPE = tname
-            }
+            let tname = ty.substring(1, ty.length)
+            LAST_STRUCT_TYPE = tname
+            LAST_ENUM_TYPE = tname
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
         }
     }
 }
@@ -2686,6 +2705,16 @@ fn ast_parse_and() -> Expr {
 
 fn ast_parse_compare() -> Expr {
     mut left = ast_parse_arith()
+    // Handle 'is' pattern: expr is .Variant
+    if check("is") {
+        advance()
+        skip_nl()
+        // Expect .Variant
+        expect(".")
+        let vname = advance().text
+        // Encode as binary "is" with right side as str ident
+        return expr_binary("is", left, expr_str(vname))
+    }
     while check("==") || check("!=") || check("<") || check(">") || check("<=") || check(">=") {
         let op = advance().text
         skip_nl()
@@ -3221,6 +3250,27 @@ fn gen_expr(e: Expr) -> string {
             return gen_ident(e.str_val)
         }
         .Binary -> {
+            // Handle 'is' pattern: expr is .Variant
+            if e.str_val == "is" {
+                let lhs = gen_expr_child(e, 0)
+                let enum_name = LAST_ENUM_TYPE
+                let ei = find_enum(enum_name)
+                // rhs is expr_str(variant_name)
+                let rhs_expr: Expr = e.children[1]
+                let vname = rhs_expr.str_val
+                let vidx = enum_variant_index(ei, vname)
+                let tag = new_reg()
+                ir_line(tag + " = extractvalue %" + enum_name + " " + lhs + ", 0")
+                let cmp = new_reg()
+                ir_line(cmp + " = icmp eq i8 " + tag + ", " + string(vidx))
+                let r = new_reg()
+                ir_line(r + " = zext i1 " + cmp + " to i64")
+                LAST_IS_STR = 0
+                LAST_IS_LIST = 0
+                LAST_STRUCT_TYPE = ""
+                LAST_ENUM_TYPE = ""
+                return r
+            }
             let lhs = gen_expr_child(e, 0)
             let lhs_str = LAST_IS_STR
             let rhs = gen_expr_child(e, 1)
@@ -3478,15 +3528,15 @@ fn csv_field(csv: string, idx: int) -> string {
 }
 
 fn gen_ident(name: string) -> string {
-    // Built-in namespace handling
-    if name == "process" || name == "fs" {
-        return "@" + name
-    }
-    // Variable lookup
+    // Variable lookup (check first — local vars shadow namespaces)
     let idx = find_var(name)
     if idx >= 0 {
         let vty = VAR_TYPES[idx]
         return load_var_by_type(name, idx, vty)
+    }
+    // Built-in namespace handling (only if no local var found)
+    if name == "process" || name == "fs" {
+        return "@" + name
     }
     // Function reference
     "@" + name
@@ -3615,8 +3665,105 @@ fn gen_list_push(list_val: string, elem: string, elem_ty: string, saved_elem: st
     ls2
 }
 
+fn is_ident_expr(e: Expr) -> bool {
+    // Check if expr is an Ident by matching its kind
+    match e.kind {
+        .Ident -> { return true }
+        _ -> { return false }
+    }
+    false
+}
+
 fn gen_call(e: Expr) -> string {
     let name = e.str_val
+
+    // Namespace method calls: fs.read, fs.write, process.run, process.args, process.exit
+    if e.children.length >= 1 {
+        let first: Expr = e.children[0]
+        if is_ident_expr(first) {
+            if first.str_val == "fs" {
+                if name == "read" {
+                    let path = gen_expr_child(e, 1)
+                    let r = new_reg()
+                    ir_line(r + " = call %ForgeString @forge_read_file(%ForgeString " + path + ")")
+                    LAST_IS_STR = 1
+                    return r
+                }
+                if name == "write" {
+                    let path = gen_expr_child(e, 1)
+                    let content = gen_expr_child(e, 2)
+                    ir_line("call void @forge_mini_write_file(%ForgeString " + path + ", %ForgeString " + content + ")")
+                    LAST_IS_STR = 0
+                    return "0"
+                }
+            }
+            if first.str_val == "process" {
+                if name == "args" {
+                    // Return list of strings
+                    let argc = new_reg()
+                    ir_line(argc + " = call i64 @forge_mini_argc()")
+                    // Build list by iterating
+                    let alloca = new_reg()
+                    ir_line(alloca + " = alloca { ptr, i64 }")
+                    // Start with empty list
+                    let esize = new_reg()
+                    ir_line(esize + " = ptrtoint ptr getelementptr (%ForgeString, ptr null, i32 1) to i64")
+                    let total = new_reg()
+                    ir_line(total + " = mul i64 " + esize + ", " + argc)
+                    let data = new_reg()
+                    ir_line(data + " = call ptr @forge_alloc(i64 " + total + ")")
+                    // Fill
+                    let idx = new_reg()
+                    ir_line(idx + " = alloca i64")
+                    ir_line("store i64 0, ptr " + idx)
+                    let cond_l = new_label("args_cond")
+                    let body_l = new_label("args_body")
+                    let end_l = new_label("args_end")
+                    ir_line("br label %" + cond_l)
+                    ir_raw(cond_l + ":")
+                    let iv = new_reg()
+                    ir_line(iv + " = load i64, ptr " + idx)
+                    let cmp = new_reg()
+                    ir_line(cmp + " = icmp slt i64 " + iv + ", " + argc)
+                    ir_line("br i1 " + cmp + ", label %" + body_l + ", label %" + end_l)
+                    ir_raw(body_l + ":")
+                    let arg = new_reg()
+                    ir_line(arg + " = call %ForgeString @forge_mini_argv(i64 " + iv + ")")
+                    let ep = new_reg()
+                    ir_line(ep + " = getelementptr %ForgeString, ptr " + data + ", i64 " + iv)
+                    ir_line("store %ForgeString " + arg + ", ptr " + ep)
+                    let next = new_reg()
+                    ir_line(next + " = add i64 " + iv + ", 1")
+                    ir_line("store i64 " + next + ", ptr " + idx)
+                    ir_line("br label %" + cond_l)
+                    ir_raw(end_l + ":")
+                    let ls1 = new_reg()
+                    ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
+                    let ls2 = new_reg()
+                    ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + argc + ", 1")
+                    LAST_IS_LIST = 1
+                    LAST_IS_STR = 0
+                    LAST_LIST_ELEM_TYPE = "%ForgeString"
+                    return ls2
+                }
+                if name == "exit" {
+                    let code = gen_expr_child(e, 1)
+                    ir_line("call void @forge_exit(i64 " + code + ")")
+                    LAST_IS_STR = 0
+                    return "0"
+                }
+                if name == "run" {
+                    let cmd = gen_expr_child(e, 1)
+                    let args = gen_expr_child(e, 2)
+                    let r = new_reg()
+                    ir_line(r + " = call %ForgeString @forge_mini_run(%ForgeString " + cmd + ", { ptr, i64 } " + args + ")")
+                    LAST_IS_STR = 1
+                    return r
+                }
+            }
+        }
+    }
+
     // Built-in: string(x)
     if name == "string" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
@@ -3703,6 +3850,8 @@ fn gen_call(e: Expr) -> string {
         if i > 0 { arg_str = arg_str + ", " }
         LAST_IS_STR = 0
         LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
         let a = gen_expr_child(e, i)
         mut aty = "i64"
         if LAST_IS_STR == 1 { aty = "%ForgeString" }
@@ -3813,8 +3962,12 @@ fn gen_stmt(s: Stmt) -> bool {
             return false
         }
         .Return -> {
-            let val = gen_expr_from(s, 0)
-            ir_line("ret " + CUR_RET_TY + " " + val)
+            if CUR_RET_TY == "void" {
+                ir_line("ret void")
+            } else {
+                let val = gen_expr_from(s, 0)
+                ir_line("ret " + CUR_RET_TY + " " + val)
+            }
             return true
         }
         .ExprStmt -> {
