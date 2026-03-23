@@ -1183,88 +1183,47 @@ fn skip_to_newline() {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// FEATURE REGISTRY — array-based dispatch (bootstrap-compatible)
+// FEATURE REGISTRY — Map + fn pointer dispatch
 // ═══════════════════════════════════════════════════════════════════
 
-// Use parallel arrays instead of maps for bootstrap compatibility
-mut PARSE_KEYS: List<string> = []
-mut PARSE_VALS: List<string> = []
-mut CODEGEN_KEYS: List<string> = []
-mut CODEGEN_VALS: List<string> = []
+mut PARSE_HANDLERS: Map<string, int> = {}
+mut CODEGEN_HANDLERS: Map<string, int> = {}
 
 fn init_registry() {
-    PARSE_KEYS = []
-    PARSE_VALS = []
-    CODEGEN_KEYS = []
-    CODEGEN_VALS = []
+    PARSE_HANDLERS = map_new()
+    CODEGEN_HANDLERS = map_new()
 }
 
-fn register_parse(keyword: string, fn_name: string) {
-    PARSE_KEYS = PARSE_KEYS.push(keyword)
-    PARSE_VALS = PARSE_VALS.push(fn_name)
+// ─── Parse registry ──────────────────────────────────────────────
+
+fn register_parse(keyword: string, handler: fn() -> Stmt) {
+    PARSE_HANDLERS.set(keyword, handler)
 }
 
 fn has_parse_handler(keyword: string) -> bool {
-    mut i = 0
-    while i < PARSE_KEYS.length {
-        if PARSE_KEYS[i] == keyword { return true }
-        i = i + 1
-    }
-    false
+    PARSE_HANDLERS.has(keyword)
 }
 
 fn call_parse_handler(keyword: string) -> Stmt {
-    mut i = 0
-    while i < PARSE_KEYS.length {
-        if PARSE_KEYS[i] == keyword {
-            let fn_name = PARSE_VALS[i]
-            if fn_name == "let" { return parse_let_handler() }
-            if fn_name == "return" { return parse_return_handler() }
-            if fn_name == "if" { return parse_if_handler() }
-            if fn_name == "while" { return parse_while_handler() }
-            if fn_name == "for" { return parse_for_handler() }
-            if fn_name == "break" { return parse_break_handler() }
-            if fn_name == "continue" { return parse_continue_handler() }
-            if fn_name == "match" { return parse_match_handler() }
-        }
-        i = i + 1
-    }
-    stmt_expr(expr_null())
+    let raw = PARSE_HANDLERS.get(keyword)
+    let handler: fn() -> Stmt = raw
+    handler()
 }
 
-fn register_codegen(kind_name: string, fn_name: string) {
-    CODEGEN_KEYS = CODEGEN_KEYS.push(kind_name)
-    CODEGEN_VALS = CODEGEN_VALS.push(fn_name)
+// ─── Codegen registry ────────────────────────────────────────────
+
+fn register_codegen(kind_name: string, handler: fn(Stmt) -> int) {
+    CODEGEN_HANDLERS.set(kind_name, handler)
 }
 
 fn has_codegen_handler(kind_name: string) -> bool {
-    mut i = 0
-    while i < CODEGEN_KEYS.length {
-        if CODEGEN_KEYS[i] == kind_name { return true }
-        i = i + 1
-    }
-    false
+    CODEGEN_HANDLERS.has(kind_name)
 }
 
 fn call_codegen_handler(kind_name: string, s: Stmt) -> int {
-    mut i = 0
-    while i < CODEGEN_KEYS.length {
-        if CODEGEN_KEYS[i] == kind_name {
-            let fn_name = CODEGEN_VALS[i]
-            if fn_name == "let" { return codegen_let(s) }
-            if fn_name == "return" { return codegen_return(s) }
-            if fn_name == "expr" { return codegen_expr_stmt(s) }
-            if fn_name == "if" { return codegen_if(s) }
-            if fn_name == "while" { return codegen_while(s) }
-            if fn_name == "for" { return codegen_for(s) }
-            if fn_name == "break" { return codegen_break(s) }
-            if fn_name == "continue" { return codegen_continue(s) }
-            if fn_name == "assign" { return codegen_assign(s) }
-            if fn_name == "match" { return codegen_match(s) }
-        }
-        i = i + 1
-    }
-    0
+    let raw = CODEGEN_HANDLERS.get(kind_name)
+    let handler: fn(Stmt) -> int = raw
+    handler(s)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1775,15 +1734,15 @@ fn parse_match_handler() -> Stmt {
 
 // Register all built-in parse handlers
 fn register_parse_handlers() {
-    register_parse("let", "let")
-    register_parse("mut", "let")
-    register_parse("return", "return")
-    register_parse("if", "if")
-    register_parse("while", "while")
-    register_parse("for", "for")
-    register_parse("break", "break")
-    register_parse("continue", "continue")
-    register_parse("match", "match")
+    register_parse("let", parse_let_handler)
+    register_parse("mut", parse_let_handler)
+    register_parse("return", parse_return_handler)
+    register_parse("if", parse_if_handler)
+    register_parse("while", parse_while_handler)
+    register_parse("for", parse_for_handler)
+    register_parse("break", parse_break_handler)
+    register_parse("continue", parse_continue_handler)
+    register_parse("match", parse_match_handler)
 }
 
 // ─── Main statement parser (registry-driven) ─────────────────────
@@ -3203,16 +3162,16 @@ fn codegen_match(s: Stmt) -> int {
 
 // Register all codegen handlers
 fn register_codegen_handlers() {
-    register_codegen("Let", "let")
-    register_codegen("Return", "return")
-    register_codegen("ExprStmt", "expr")
-    register_codegen("If", "if")
-    register_codegen("While", "while")
-    register_codegen("For", "for")
-    register_codegen("Break", "break")
-    register_codegen("Continue", "continue")
-    register_codegen("Assign", "assign")
-    register_codegen("Match", "match")
+    register_codegen("Let", codegen_let)
+    register_codegen("Return", codegen_return)
+    register_codegen("ExprStmt", codegen_expr_stmt)
+    register_codegen("If", codegen_if)
+    register_codegen("While", codegen_while)
+    register_codegen("For", codegen_for)
+    register_codegen("Break", codegen_break)
+    register_codegen("Continue", codegen_continue)
+    register_codegen("Assign", codegen_assign)
+    register_codegen("Match", codegen_match)
 }
 
 // ─── Main statement codegen (registry-driven) ────────────────────

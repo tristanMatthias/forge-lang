@@ -506,15 +506,15 @@ fn parse_match_handler() -> Stmt {
 
 // Register all built-in parse handlers
 fn register_parse_handlers() {
-    register_parse("let", "let")
-    register_parse("mut", "let")
-    register_parse("return", "return")
-    register_parse("if", "if")
-    register_parse("while", "while")
-    register_parse("for", "for")
-    register_parse("break", "break")
-    register_parse("continue", "continue")
-    register_parse("match", "match")
+    register_parse("let", parse_let_handler)
+    register_parse("mut", parse_let_handler)
+    register_parse("return", parse_return_handler)
+    register_parse("if", parse_if_handler)
+    register_parse("while", parse_while_handler)
+    register_parse("for", parse_for_handler)
+    register_parse("break", parse_break_handler)
+    register_parse("continue", parse_continue_handler)
+    register_parse("match", parse_match_handler)
 }
 
 // ─── Main statement parser (registry-driven) ─────────────────────

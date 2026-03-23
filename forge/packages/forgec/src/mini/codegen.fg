@@ -1271,16 +1271,16 @@ fn codegen_match(s: Stmt) -> int {
 
 // Register all codegen handlers
 fn register_codegen_handlers() {
-    register_codegen("Let", "let")
-    register_codegen("Return", "return")
-    register_codegen("ExprStmt", "expr")
-    register_codegen("If", "if")
-    register_codegen("While", "while")
-    register_codegen("For", "for")
-    register_codegen("Break", "break")
-    register_codegen("Continue", "continue")
-    register_codegen("Assign", "assign")
-    register_codegen("Match", "match")
+    register_codegen("Let", codegen_let)
+    register_codegen("Return", codegen_return)
+    register_codegen("ExprStmt", codegen_expr_stmt)
+    register_codegen("If", codegen_if)
+    register_codegen("While", codegen_while)
+    register_codegen("For", codegen_for)
+    register_codegen("Break", codegen_break)
+    register_codegen("Continue", codegen_continue)
+    register_codegen("Assign", codegen_assign)
+    register_codegen("Match", codegen_match)
 }
 
 // ─── Main statement codegen (registry-driven) ────────────────────
