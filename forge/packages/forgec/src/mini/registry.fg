@@ -1,43 +1,83 @@
 // ═══════════════════════════════════════════════════════════════════
-// FEATURE REGISTRY — Map + fn pointer dispatch
+// FEATURE REGISTRY — string-based dispatch (bootstrap + self-hosted)
 // ═══════════════════════════════════════════════════════════════════
 
-mut PARSE_HANDLERS: Map<string, int> = {}
-mut CODEGEN_HANDLERS: Map<string, int> = {}
+mut PARSE_KEYS: List<string> = []
+mut PARSE_VALS: List<string> = []
+mut CODEGEN_KEYS: List<string> = []
+mut CODEGEN_VALS: List<string> = []
 
 fn init_registry() {
-    PARSE_HANDLERS = map_new()
-    CODEGEN_HANDLERS = map_new()
+    PARSE_KEYS = []
+    PARSE_VALS = []
+    CODEGEN_KEYS = []
+    CODEGEN_VALS = []
 }
 
-// ─── Parse registry ──────────────────────────────────────────────
-
-fn register_parse(keyword: string, handler: fn() -> Stmt) {
-    PARSE_HANDLERS.set(keyword, handler)
+fn register_parse(keyword: string, handler_name: string) {
+    PARSE_KEYS = PARSE_KEYS.push(keyword)
+    PARSE_VALS = PARSE_VALS.push(handler_name)
 }
 
 fn has_parse_handler(keyword: string) -> bool {
-    PARSE_HANDLERS.has(keyword)
+    mut i = 0
+    while i < PARSE_KEYS.length {
+        if PARSE_KEYS[i] == keyword { return true }
+        i = i + 1
+    }
+    false
 }
 
 fn call_parse_handler(keyword: string) -> Stmt {
-    let raw = PARSE_HANDLERS.get(keyword)
-    let handler: fn() -> Stmt = raw
-    handler()
+    mut i = 0
+    while i < PARSE_KEYS.length {
+        if PARSE_KEYS[i] == keyword {
+            let n = PARSE_VALS[i]
+            if n == "let" { return parse_let_handler() }
+            if n == "return" { return parse_return_handler() }
+            if n == "if" { return parse_if_handler() }
+            if n == "while" { return parse_while_handler() }
+            if n == "for" { return parse_for_handler() }
+            if n == "break" { return parse_break_handler() }
+            if n == "continue" { return parse_continue_handler() }
+            if n == "match" { return parse_match_handler() }
+        }
+        i = i + 1
+    }
+    stmt_expr(expr_null())
 }
 
-// ─── Codegen registry ────────────────────────────────────────────
-
-fn register_codegen(kind_name: string, handler: fn(Stmt) -> int) {
-    CODEGEN_HANDLERS.set(kind_name, handler)
+fn register_codegen(kind_name: string, handler_name: string) {
+    CODEGEN_KEYS = CODEGEN_KEYS.push(kind_name)
+    CODEGEN_VALS = CODEGEN_VALS.push(handler_name)
 }
 
 fn has_codegen_handler(kind_name: string) -> bool {
-    CODEGEN_HANDLERS.has(kind_name)
+    mut i = 0
+    while i < CODEGEN_KEYS.length {
+        if CODEGEN_KEYS[i] == kind_name { return true }
+        i = i + 1
+    }
+    false
 }
 
 fn call_codegen_handler(kind_name: string, s: Stmt) -> int {
-    let raw = CODEGEN_HANDLERS.get(kind_name)
-    let handler: fn(Stmt) -> int = raw
-    handler(s)
+    mut i = 0
+    while i < CODEGEN_KEYS.length {
+        if CODEGEN_KEYS[i] == kind_name {
+            let n = CODEGEN_VALS[i]
+            if n == "let" { return codegen_let(s) }
+            if n == "return" { return codegen_return(s) }
+            if n == "expr" { return codegen_expr_stmt(s) }
+            if n == "if" { return codegen_if(s) }
+            if n == "while" { return codegen_while(s) }
+            if n == "for" { return codegen_for(s) }
+            if n == "break" { return codegen_break(s) }
+            if n == "continue" { return codegen_continue(s) }
+            if n == "assign" { return codegen_assign(s) }
+            if n == "match" { return codegen_match(s) }
+        }
+        i = i + 1
+    }
+    0
 }

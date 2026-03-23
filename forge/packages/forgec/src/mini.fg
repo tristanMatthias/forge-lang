@@ -1214,47 +1214,386 @@ fn skip_to_newline() {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// FEATURE REGISTRY — Map + fn pointer dispatch
+// FEATURE REGISTRY — string-based dispatch (bootstrap + self-hosted)
 // ═══════════════════════════════════════════════════════════════════
 
-mut PARSE_HANDLERS: Map<string, int> = {}
-mut CODEGEN_HANDLERS: Map<string, int> = {}
+mut PARSE_KEYS: List<string> = []
+mut PARSE_VALS: List<string> = []
+mut CODEGEN_KEYS: List<string> = []
+mut CODEGEN_VALS: List<string> = []
 
 fn init_registry() {
-    PARSE_HANDLERS = map_new()
-    CODEGEN_HANDLERS = map_new()
+    PARSE_KEYS = []
+    PARSE_VALS = []
+    CODEGEN_KEYS = []
+    CODEGEN_VALS = []
 }
 
-// ─── Parse registry ──────────────────────────────────────────────
-
-fn register_parse(keyword: string, handler: fn() -> Stmt) {
-    PARSE_HANDLERS.set(keyword, handler)
+fn register_parse(keyword: string, handler_name: string) {
+    PARSE_KEYS = PARSE_KEYS.push(keyword)
+    PARSE_VALS = PARSE_VALS.push(handler_name)
 }
 
 fn has_parse_handler(keyword: string) -> bool {
-    PARSE_HANDLERS.has(keyword)
+    mut i = 0
+    while i < PARSE_KEYS.length {
+        if PARSE_KEYS[i] == keyword { return true }
+        i = i + 1
+    }
+    false
 }
 
 fn call_parse_handler(keyword: string) -> Stmt {
-    let raw = PARSE_HANDLERS.get(keyword)
-    let handler: fn() -> Stmt = raw
-    handler()
+    mut i = 0
+    while i < PARSE_KEYS.length {
+        if PARSE_KEYS[i] == keyword {
+            let n = PARSE_VALS[i]
+            if n == "let" { return parse_let_handler() }
+            if n == "return" { return parse_return_handler() }
+            if n == "if" { return parse_if_handler() }
+            if n == "while" { return parse_while_handler() }
+            if n == "for" { return parse_for_handler() }
+            if n == "break" { return parse_break_handler() }
+            if n == "continue" { return parse_continue_handler() }
+            if n == "match" { return parse_match_handler() }
+        }
+        i = i + 1
+    }
+    stmt_expr(expr_null())
 }
 
-// ─── Codegen registry ────────────────────────────────────────────
-
-fn register_codegen(kind_name: string, handler: fn(Stmt) -> int) {
-    CODEGEN_HANDLERS.set(kind_name, handler)
+fn register_codegen(kind_name: string, handler_name: string) {
+    CODEGEN_KEYS = CODEGEN_KEYS.push(kind_name)
+    CODEGEN_VALS = CODEGEN_VALS.push(handler_name)
 }
 
 fn has_codegen_handler(kind_name: string) -> bool {
-    CODEGEN_HANDLERS.has(kind_name)
+    mut i = 0
+    while i < CODEGEN_KEYS.length {
+        if CODEGEN_KEYS[i] == kind_name { return true }
+        i = i + 1
+    }
+    false
 }
 
 fn call_codegen_handler(kind_name: string, s: Stmt) -> int {
-    let raw = CODEGEN_HANDLERS.get(kind_name)
-    let handler: fn(Stmt) -> int = raw
-    handler(s)
+    mut i = 0
+    while i < CODEGEN_KEYS.length {
+        if CODEGEN_KEYS[i] == kind_name {
+            let n = CODEGEN_VALS[i]
+            if n == "let" { return codegen_let(s) }
+            if n == "return" { return codegen_return(s) }
+            if n == "expr" { return codegen_expr_stmt(s) }
+            if n == "if" { return codegen_if(s) }
+            if n == "while" { return codegen_while(s) }
+            if n == "for" { return codegen_for(s) }
+            if n == "break" { return codegen_break(s) }
+            if n == "continue" { return codegen_continue(s) }
+            if n == "assign" { return codegen_assign(s) }
+            if n == "match" { return codegen_match(s) }
+        }
+        i = i + 1
+    }
+    0
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PACKAGE SYSTEM — use @namespace.name → extern fns + link flags
+// ═══════════════════════════════════════════════════════════════════
+
+// Loaded package info
+mut PKG_EXTERN_FNS: List<string> = []     // "name:ret:param1,param2" (Forge types)
+mut PKG_LINK_LIBS: List<string> = []      // library .a paths
+mut PKG_LINK_FLAGS: List<string> = []     // extra linker flags
+mut EXTERN_FN_NAMES: List<string> = []    // names of extern functions
+mut EXTERN_FN_PARAMS: List<string> = []   // original Forge param types CSV
+
+fn reset_packages() {
+    PKG_EXTERN_FNS = []
+    PKG_LINK_LIBS = []
+    EXTERN_FN_NAMES = []
+    EXTERN_FN_PARAMS = []
+    PKG_LINK_FLAGS = []
+}
+
+// Find packages/ directory (relative to cwd)
+fn find_packages_dir() -> string {
+    let test1 = fs.read("packages/std-llvm/package.toml")
+    if test1.length > 0 { return "packages" }
+    let test2 = fs.read("../packages/std-llvm/package.toml")
+    if test2.length > 0 { return "../packages" }
+    ""
+}
+
+// Scan source for use @namespace.name declarations
+fn scan_package_uses(source: string) -> List<string> {
+    mut uses: List<string> = []
+    mut i = 0
+    while i < source.length {
+        // Look for "use @" at line start
+        mut at_line_start = false
+        if i == 0 { at_line_start = true }
+        if i > 0 {
+            if source.byte_at(i - 1) == 10 { at_line_start = true }
+        }
+        if at_line_start && i + 5 < source.length {
+            if source.substring(i, i + 5) == "use @" {
+                // Extract "namespace.name"
+                mut j = i + 5
+                while j < source.length && source.byte_at(j) != 10 && source.byte_at(j) != 32 {
+                    j = j + 1
+                }
+                let pkg_ref = source.substring(i + 5, j)
+                uses = uses.push(pkg_ref)
+            }
+        }
+        i = i + 1
+    }
+    uses
+}
+
+// Parse a package.toml to extract library name and link flags
+fn parse_package_toml(content: string) -> string {
+    // Extract library = "name"
+    mut lib_name = ""
+    mut i = 0
+    while i < content.length {
+        if i + 10 < content.length {
+            if content.substring(i, i + 10) == "library = " {
+                // Find the quoted string
+                mut j = i + 11  // skip past opening quote
+                while j < content.length && content.byte_at(j) != 34 {
+                    j = j + 1
+                }
+                lib_name = content.substring(i + 11, j)
+            }
+        }
+        i = i + 1
+    }
+    lib_name
+}
+
+// Parse extern fn declarations from package.fg
+// Format: extern fn name(param: type, ...) -> ret_type
+fn parse_package_fg(content: string) {
+    let toks: List<Tok> = tokenize(content)
+    mut ti = 0
+    while ti < toks.length {
+        let t: Tok = toks[ti]
+        if t.text == "extern" && ti + 1 < toks.length {
+            let t2: Tok = toks[ti + 1]
+            if t2.text == "fn" && ti + 2 < toks.length {
+                let t3: Tok = toks[ti + 2]
+                let fn_name = t3.text
+                // Skip to params
+                mut pi = ti + 3
+                // Find opening paren
+                while pi < toks.length {
+                    let pt: Tok = toks[pi]
+                    if pt.text == "(" { break }
+                    pi = pi + 1
+                }
+                pi = pi + 1  // skip (
+                // Parse params
+                mut params = ""
+                while pi < toks.length {
+                    let pt: Tok = toks[pi]
+                    if pt.text == ")" { break }
+                    if pt.text == ":" {
+                        pi = pi + 1
+                        // Skip newlines
+                        while pi < toks.length {
+                            let pn: Tok = toks[pi]
+                            if pn.kind != 4 { break }
+                            pi = pi + 1
+                        }
+                        let ty: Tok = toks[pi]
+                        if params.length > 0 { params = params + "," }
+                        params = params + ty.text
+                    }
+                    pi = pi + 1
+                }
+                pi = pi + 1  // skip )
+                // Check for return type
+                mut ret = "void"
+                while pi < toks.length {
+                    let pt: Tok = toks[pi]
+                    if pt.kind == 4 { break }  // newline = end of declaration
+                    if pt.text == "->" {
+                        pi = pi + 1
+                        // Skip newlines
+                        while pi < toks.length {
+                            let pn: Tok = toks[pi]
+                            if pn.kind != 4 { break }
+                            pi = pi + 1
+                        }
+                        let rt: Tok = toks[pi]
+                        ret = rt.text
+                    }
+                    pi = pi + 1
+                }
+                // Store: "name:ret:param1,param2"
+                PKG_EXTERN_FNS = PKG_EXTERN_FNS.push(fn_name + ":" + ret + ":" + params)
+            }
+        }
+        ti = ti + 1
+    }
+}
+
+// Load a package: read package.toml + package.fg, register externs
+fn load_package(pkg_ref: string) {
+    // pkg_ref = "std.llvm" → packages/std-llvm/
+    let dot_idx = pkg_ref.index_of(".")
+    if dot_idx < 0 { return }
+    let namespace = pkg_ref.substring(0, dot_idx)
+    let name = pkg_ref.substring(dot_idx + 1, pkg_ref.length)
+    let pkg_dir_name = namespace + "-" + name
+
+    let packages_dir = find_packages_dir()
+    if packages_dir.length == 0 { return }
+
+    let pkg_dir = packages_dir + "/" + pkg_dir_name
+    let toml = fs.read(pkg_dir + "/package.toml")
+    let pkg_fg = fs.read(pkg_dir + "/src/package.fg")
+
+    if toml.length == 0 { return }
+
+    // Parse toml for library name
+    let lib_name = parse_package_toml(toml)
+    if lib_name.length > 0 {
+        // Look for .a in target/release/
+        let lib_path = pkg_dir + "/target/release/lib" + lib_name + ".a"
+        PKG_LINK_LIBS = PKG_LINK_LIBS.push(lib_path)
+    }
+
+    // Parse link_flags from toml (simple: scan for -L and -l lines)
+    mut fi = 0
+    while fi < toml.length {
+        if fi + 2 < toml.length {
+            if toml.substring(fi, fi + 2) == "\"-" {
+                mut fj = fi + 1
+                while fj < toml.length && toml.byte_at(fj) != 34 {
+                    fj = fj + 1
+                }
+                let flag = toml.substring(fi + 1, fj)
+                PKG_LINK_FLAGS = PKG_LINK_FLAGS.push(flag)
+            }
+        }
+        fi = fi + 1
+    }
+
+    // Parse package.fg for extern fns
+    if pkg_fg.length > 0 {
+        parse_package_fg(pkg_fg)
+    }
+}
+
+// Load all packages referenced in source
+fn load_packages(source: string) {
+    let uses: List<string> = scan_package_uses(source)
+    mut i = 0
+    while i < uses.length {
+        load_package(uses[i])
+        i = i + 1
+    }
+}
+
+// Emit IR declarations for all loaded extern fns
+fn emit_package_externs() {
+    mut i = 0
+    while i < PKG_EXTERN_FNS.length {
+        let entry = PKG_EXTERN_FNS[i]
+        // Parse "name:ret:param1,param2"
+        let colon1 = entry.index_of(":")
+        let fn_name = entry.substring(0, colon1)
+        let rest = entry.substring(colon1 + 1, entry.length)
+        let colon2 = rest.index_of(":")
+        let ret_str = rest.substring(0, colon2)
+        let params_str = rest.substring(colon2 + 1, rest.length)
+
+        // Convert types
+        mut ret_ty = type_to_llvm(ret_str)
+
+        // Build param list — string → ptr for extern FFI
+        mut param_ir = ""
+        if params_str.length > 0 {
+            mut pi = 0
+            mut pstart = 0
+            while pi <= params_str.length {
+                mut is_sep = false
+                if pi == params_str.length { is_sep = true }
+                if pi < params_str.length {
+                    if params_str.substring(pi, pi + 1) == "," { is_sep = true }
+                }
+                if is_sep {
+                    let ptype = params_str.substring(pstart, pi)
+                    // Extern FFI: string params → ptr (C string)
+                    mut llvm_ty = type_to_llvm(ptype)
+                    if ptype == "string" { llvm_ty = "ptr" }
+                    if param_ir.length > 0 { param_ir = param_ir + ", " }
+                    param_ir = param_ir + llvm_ty
+                    pstart = pi + 1
+                }
+                pi = pi + 1
+            }
+        }
+        // Extern FFI: string return → ptr
+        if ret_str == "string" { ret_ty = "ptr" }
+
+        if ret_ty == "void" {
+            ir_raw("declare void @" + fn_name + "(" + param_ir + ")")
+        } else {
+            ir_raw("declare " + ret_ty + " @" + fn_name + "(" + param_ir + ")")
+        }
+
+        // Register extern fn for FFI coercion at call sites
+        EXTERN_FN_NAMES = EXTERN_FN_NAMES.push(fn_name)
+        EXTERN_FN_PARAMS = EXTERN_FN_PARAMS.push(params_str)
+
+        // Also register in FN_NAMES so gen_call knows the return type
+        FN_NAMES = FN_NAMES.push(fn_name)
+        FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+        FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+        FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+
+        i = i + 1
+    }
+}
+
+// Check if a function is an extern (from a package)
+fn is_extern_fn(name: string) -> bool {
+    mut i = 0
+    while i < EXTERN_FN_NAMES.length {
+        if EXTERN_FN_NAMES[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+// Get the original Forge param types for an extern fn (CSV)
+fn get_extern_params(name: string) -> string {
+    mut i = 0
+    while i < EXTERN_FN_NAMES.length {
+        if EXTERN_FN_NAMES[i] == name { return EXTERN_FN_PARAMS[i] }
+        i = i + 1
+    }
+    ""
+}
+
+// Get link flags for the cc command
+fn get_link_args() -> List<string> {
+    mut args: List<string> = []
+    mut i = 0
+    while i < PKG_LINK_LIBS.length {
+        args = args.push(PKG_LINK_LIBS[i])
+        i = i + 1
+    }
+    i = 0
+    while i < PKG_LINK_FLAGS.length {
+        args = args.push(PKG_LINK_FLAGS[i])
+        i = i + 1
+    }
+    args
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1826,15 +2165,15 @@ fn parse_match_handler() -> Stmt {
 
 // Register all built-in parse handlers
 fn register_parse_handlers() {
-    register_parse("let", parse_let_handler)
-    register_parse("mut", parse_let_handler)
-    register_parse("return", parse_return_handler)
-    register_parse("if", parse_if_handler)
-    register_parse("while", parse_while_handler)
-    register_parse("for", parse_for_handler)
-    register_parse("break", parse_break_handler)
-    register_parse("continue", parse_continue_handler)
-    register_parse("match", parse_match_handler)
+    register_parse("let", "let")
+    register_parse("mut", "let")
+    register_parse("return", "return")
+    register_parse("if", "if")
+    register_parse("while", "while")
+    register_parse("for", "for")
+    register_parse("break", "break")
+    register_parse("continue", "continue")
+    register_parse("match", "match")
 }
 
 // ─── Main statement parser (registry-driven) ─────────────────────
@@ -1971,7 +2310,7 @@ fn ast_parse_program() -> List<FnDecl> {
             skip_nl()
             while not_at_brace() { advance() }
             if check("}") { advance() }
-        } else if tok.text == "impl" {
+        } else if tok.text == "impl" || tok.text == "trait" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()
@@ -3330,16 +3669,16 @@ fn codegen_match(s: Stmt) -> int {
 
 // Register all codegen handlers
 fn register_codegen_handlers() {
-    register_codegen("Let", codegen_let)
-    register_codegen("Return", codegen_return)
-    register_codegen("ExprStmt", codegen_expr_stmt)
-    register_codegen("If", codegen_if)
-    register_codegen("While", codegen_while)
-    register_codegen("For", codegen_for)
-    register_codegen("Break", codegen_break)
-    register_codegen("Continue", codegen_continue)
-    register_codegen("Assign", codegen_assign)
-    register_codegen("Match", codegen_match)
+    register_codegen("Let", "let")
+    register_codegen("Return", "return")
+    register_codegen("ExprStmt", "expr")
+    register_codegen("If", "if")
+    register_codegen("While", "while")
+    register_codegen("For", "for")
+    register_codegen("Break", "break")
+    register_codegen("Continue", "continue")
+    register_codegen("Assign", "assign")
+    register_codegen("Match", "match")
 }
 
 // ─── Main statement codegen (registry-driven) ────────────────────
@@ -3621,7 +3960,17 @@ fn compile(source: string) -> string {
         if tok.text == "export" {
             advance()
             skip_nl()
-            if check("type") {
+            if !check("type") && !check("enum") && !check("fn") && !check("mut") && !check("let") {
+                // Unknown export — skip (covers trait, impl, etc.)
+                advance()
+                // If there's a block, skip it
+                while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+                if check("{") { skip_block() }
+            } else if false {
+                advance()
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else if check("type") {
                 parse_type_decl_top()
             } else if check("enum") {
                 parse_enum_decl_top()
@@ -3640,7 +3989,7 @@ fn compile(source: string) -> string {
             parse_enum_decl_top()
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
-        } else if tok.text == "impl" {
+        } else if tok.text == "impl" || tok.text == "trait" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()

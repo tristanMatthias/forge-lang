@@ -1340,16 +1340,16 @@ fn codegen_match(s: Stmt) -> int {
 
 // Register all codegen handlers
 fn register_codegen_handlers() {
-    register_codegen("Let", codegen_let)
-    register_codegen("Return", codegen_return)
-    register_codegen("ExprStmt", codegen_expr_stmt)
-    register_codegen("If", codegen_if)
-    register_codegen("While", codegen_while)
-    register_codegen("For", codegen_for)
-    register_codegen("Break", codegen_break)
-    register_codegen("Continue", codegen_continue)
-    register_codegen("Assign", codegen_assign)
-    register_codegen("Match", codegen_match)
+    register_codegen("Let", "let")
+    register_codegen("Return", "return")
+    register_codegen("ExprStmt", "expr")
+    register_codegen("If", "if")
+    register_codegen("While", "while")
+    register_codegen("For", "for")
+    register_codegen("Break", "break")
+    register_codegen("Continue", "continue")
+    register_codegen("Assign", "assign")
+    register_codegen("Match", "match")
 }
 
 // ─── Main statement codegen (registry-driven) ────────────────────
@@ -1631,7 +1631,17 @@ fn compile(source: string) -> string {
         if tok.text == "export" {
             advance()
             skip_nl()
-            if check("type") {
+            if !check("type") && !check("enum") && !check("fn") && !check("mut") && !check("let") {
+                // Unknown export — skip (covers trait, impl, etc.)
+                advance()
+                // If there's a block, skip it
+                while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+                if check("{") { skip_block() }
+            } else if false {
+                advance()
+                while !check("{") && POS < TOKENS.length { advance() }
+                skip_block()
+            } else if check("type") {
                 parse_type_decl_top()
             } else if check("enum") {
                 parse_enum_decl_top()
@@ -1650,7 +1660,7 @@ fn compile(source: string) -> string {
             parse_enum_decl_top()
         } else if tok.text == "mut" || tok.text == "let" {
             parse_global_decl()
-        } else if tok.text == "impl" {
+        } else if tok.text == "impl" || tok.text == "trait" {
             advance()
             while !check("{") && POS < TOKENS.length { advance() }
             skip_block()

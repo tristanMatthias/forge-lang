@@ -10,6 +10,8 @@ cd "$(dirname "$0")"
   echo ""
   cat mini/registry.fg
   echo ""
+  cat mini/packages.fg
+  echo ""
   cat mini/parser.fg
   echo ""
   cat mini/codegen.fg
