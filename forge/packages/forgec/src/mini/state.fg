@@ -73,6 +73,7 @@ mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted afte
 mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
 mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
 mut PENDING_MATCH_STMTS: List<Stmt> = []
+mut IF_IS_EXPR: int = 0
 
 // ─── Namespace tracking (package exports) ────────
 mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]

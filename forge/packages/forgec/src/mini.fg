@@ -565,6 +565,7 @@ mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted afte
 mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
 mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
 mut PENDING_MATCH_STMTS: List<Stmt> = []
+mut IF_IS_EXPR: int = 0
 
 // ─── Namespace tracking (package exports) ────────
 mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
@@ -3334,6 +3335,7 @@ fn gen_call(e: Expr) -> string {
             pmi = pmi + 1
         }
         PENDING_MATCH_STMTS = new_pending
+        IF_IS_EXPR = 1
         codegen_if(m)
         return LAST_EXPR_VAL
     }
@@ -3773,17 +3775,61 @@ fn codegen_if(s: Stmt) -> int {
     let then_l = new_label("then")
     let else_l = new_label("else")
     let merge_l = new_label("merge")
+
+    // Alloca for if-result (accessible from any block, avoids SSA issues)
+    let if_result = new_reg()
+    ir_line(if_result + " = alloca [16 x i8]")
+
     ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
+
+    // Then branch
     ir_raw(then_l + ":")
     let then_ended = gen_stmts(s.body)
-    if then_ended == 0 { ir_line("br label %" + merge_l) }
+    let then_is_str = LAST_IS_STR
+    if then_ended == 0 {
+        // Store then result into alloca
+        if LAST_EXPR_VAL != "0" || LAST_IS_STR == 0 {
+            mut st = "i64"
+            if LAST_IS_STR == 1 { st = "%ForgeString" }
+            if LAST_IS_LIST == 1 { st = "{ ptr, i64 }" }
+            if LAST_IS_LIST == 1 { st = "{ ptr, i64 }" }
+            if LAST_STRUCT_TYPE != "" { st = "%" + LAST_STRUCT_TYPE }
+            if LAST_ENUM_TYPE != "" { st = "%" + LAST_ENUM_TYPE }
+            ir_line("store " + st + " " + LAST_EXPR_VAL + ", ptr " + if_result)
+        }
+        ir_line("br label %" + merge_l)
+    }
+
+    // Else branch
     ir_raw(else_l + ":")
     let else_ended = gen_stmts(s.else_body)
-    if else_ended == 0 { ir_line("br label %" + merge_l) }
+    if else_ended == 0 {
+        if s.else_body.length > 0 && LAST_EXPR_VAL != "0" {
+            mut st = "i64"
+            if LAST_IS_STR == 1 { st = "%ForgeString" }
+            if LAST_STRUCT_TYPE != "" { st = "%" + LAST_STRUCT_TYPE }
+            if LAST_IS_LIST == 1 { st = "{ ptr, i64 }" }
+            if LAST_ENUM_TYPE != "" { st = "%" + LAST_ENUM_TYPE }
+            ir_line("store " + st + " " + LAST_EXPR_VAL + ", ptr " + if_result)
+        }
+        ir_line("br label %" + merge_l)
+    }
+
+    // Merge
     ir_raw(merge_l + ":")
     if then_ended == 1 && else_ended == 1 {
         ir_line("unreachable")
         return 1
+    }
+
+    // Load result from alloca (if both branches ran)
+    if s.else_body.length > 0 && then_ended == 0 {
+        mut load_ty = "i64"
+        if then_is_str == 1 || LAST_IS_STR == 1 { load_ty = "%ForgeString" }
+        let ifr = new_reg()
+        ir_line(ifr + " = load " + load_ty + ", ptr " + if_result)
+        LAST_EXPR_VAL = ifr
+        if load_ty == "%ForgeString" { LAST_IS_STR = 1 }
     }
     0
 }
