@@ -268,8 +268,7 @@ fn ast_parse_primary() -> Expr {
     // Match as expression: let x = match y { ... }
     if tok.text == "match" {
         let m = parse_match_handler()
-        PENDING_MATCH_STMT = m
-        HAS_PENDING_MATCH = true
+        PENDING_MATCH_STMTS = PENDING_MATCH_STMTS.push(m)
         mut empty: List<Expr> = []
         return expr_call("__match_expr", empty)
     }
@@ -277,8 +276,7 @@ fn ast_parse_primary() -> Expr {
     // If as expression
     if tok.text == "if" {
         let m = parse_if_handler()
-        PENDING_MATCH_STMT = m
-        HAS_PENDING_MATCH = true
+        PENDING_MATCH_STMTS = PENDING_MATCH_STMTS.push(m)
         mut empty: List<Expr> = []
         return expr_call("__if_expr", empty)
     }

@@ -819,15 +819,32 @@ fn gen_call(e: Expr) -> string {
     }
 
     // Built-in: map_new() → ptr
-    // Match/if expression — compile the pending statement inline
-    if name == "__match_expr" && HAS_PENDING_MATCH {
-        HAS_PENDING_MATCH = false
-        codegen_match(PENDING_MATCH_STMT)
+    // Match/if expression — pop from pending list and compile inline
+    if name == "__match_expr" && PENDING_MATCH_STMTS.length > 0 {
+        let m: Stmt = PENDING_MATCH_STMTS[0]
+        // Pop first element
+        mut new_pending: List<Stmt> = []
+        mut pmi = 1
+        while pmi < PENDING_MATCH_STMTS.length {
+            let ps: Stmt = PENDING_MATCH_STMTS[pmi]
+            new_pending = new_pending.push(ps)
+            pmi = pmi + 1
+        }
+        PENDING_MATCH_STMTS = new_pending
+        codegen_match(m)
         return LAST_EXPR_VAL
     }
-    if name == "__if_expr" && HAS_PENDING_MATCH {
-        HAS_PENDING_MATCH = false
-        codegen_if(PENDING_MATCH_STMT)
+    if name == "__if_expr" && PENDING_MATCH_STMTS.length > 0 {
+        let m: Stmt = PENDING_MATCH_STMTS[0]
+        mut new_pending: List<Stmt> = []
+        mut pmi = 1
+        while pmi < PENDING_MATCH_STMTS.length {
+            let ps: Stmt = PENDING_MATCH_STMTS[pmi]
+            new_pending = new_pending.push(ps)
+            pmi = pmi + 1
+        }
+        PENDING_MATCH_STMTS = new_pending
+        codegen_if(m)
         return LAST_EXPR_VAL
     }
 
@@ -1448,8 +1465,10 @@ fn codegen_match(s: Stmt) -> int {
     let scrut_is_str = LAST_IS_STR
     let ei = find_enum(scrut_enum)
     let merge_l = new_label("match_end")
+    mut match_store_ty = "i64"  // updated by first arm store
+    // Match result alloca — uses ptr for type-agnostic storage
     let match_result = new_reg()
-    ir_line(match_result + " = alloca " + CUR_RET_TY)
+    ir_line(match_result + " = alloca [16 x i8]")
     let tag_r = new_reg()
     if ei >= 0 {
         ir_line(tag_r + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 0")
@@ -1459,11 +1478,18 @@ fn codegen_match(s: Stmt) -> int {
         let arm: Stmt = s.body[ai]
         let vname = arm.str_val
         if vname == "_" {
+            LAST_IS_STR = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
             let ended = gen_stmts(arm.body)
             if ended == 0 {
-                if CUR_RET_TY != "void" {
-                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                }
+                // Store result via ptr cast
+                mut mst = "i64"
+                if LAST_IS_STR == 1 { mst = "%ForgeString" }
+                if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
+                if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
+                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
         } else if ei < 0 {
@@ -1485,11 +1511,17 @@ fn codegen_match(s: Stmt) -> int {
             }
             ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
             ir_raw(arm_l + ":")
+            LAST_IS_STR = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
             let ended = gen_stmts(arm.body)
             if ended == 0 {
-                if CUR_RET_TY != "void" {
-                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                }
+                mut mst = "i64"
+                if LAST_IS_STR == 1 { mst = "%ForgeString" }
+                if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
+                if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
+                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
             ir_raw(next_l + ":")
@@ -1540,12 +1572,12 @@ fn codegen_match(s: Stmt) -> int {
                             push_var(bname, balloca, "%ForgeString")
                             bind_slot = bind_slot + 2
                         } else {
-                            let bval = new_reg()
-                            ir_line(bval + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
-                            let balloca = new_reg()
-                            ir_line(balloca + " = alloca i64")
-                            ir_line("store i64 " + bval + ", ptr " + balloca)
-                            push_var(bname, balloca, "i64")
+                            let bval2 = new_reg()
+                            ir_line(bval2 + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
+                            let balloca2 = new_reg()
+                            ir_line(balloca2 + " = alloca i64")
+                            ir_line("store i64 " + bval2 + ", ptr " + balloca2)
+                            push_var(bname, balloca2, "i64")
                             bind_slot = bind_slot + 1
                         }
                         bi = bi + 1
@@ -1554,11 +1586,17 @@ fn codegen_match(s: Stmt) -> int {
                     bpos = bpos + 1
                 }
             }
+            LAST_IS_STR = 0
+            LAST_STRUCT_TYPE = ""
+            LAST_ENUM_TYPE = ""
             let ended = gen_stmts(arm.body)
             if ended == 0 {
-                if CUR_RET_TY != "void" {
-                    ir_line("store " + CUR_RET_TY + " " + LAST_EXPR_VAL + ", ptr " + match_result)
-                }
+                mut mst = "i64"
+                if LAST_IS_STR == 1 { mst = "%ForgeString" }
+                if LAST_STRUCT_TYPE != "" { mst = "%" + LAST_STRUCT_TYPE }
+                if LAST_ENUM_TYPE != "" { mst = "%" + LAST_ENUM_TYPE }
+                ir_line("store " + mst + " " + LAST_EXPR_VAL + ", ptr " + match_result)
+                if match_store_ty == "i64" { match_store_ty = mst }
                 ir_line("br label %" + merge_l)
             }
             ir_raw(next_l + ":")
@@ -1567,11 +1605,12 @@ fn codegen_match(s: Stmt) -> int {
     }
     ir_line("br label %" + merge_l)
     ir_raw(merge_l + ":")
-    if CUR_RET_TY != "void" {
-        let mr = new_reg()
-        ir_line(mr + " = load " + CUR_RET_TY + ", ptr " + match_result)
-        LAST_EXPR_VAL = mr
-    }
+    // Load match result
+    let mr = new_reg()
+    ir_line(mr + " = load " + match_store_ty + ", ptr " + match_result)
+    LAST_EXPR_VAL = mr
+    if match_store_ty == "%ForgeString" { LAST_IS_STR = 1 }
+    set_type_from_llvm(match_store_ty)
     0
 }
 
@@ -1844,6 +1883,7 @@ fn compile(source: string) -> string {
     STR_N = 0
     CLOSURE_COUNT = 0
     CLOSURE_IR = []
+    PENDING_MATCH_STMTS = []
     // Initialize registry and register handlers
     init_registry()
     register_parse_handlers()
