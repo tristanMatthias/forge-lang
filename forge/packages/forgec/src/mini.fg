@@ -3781,7 +3781,6 @@ fn codegen_if(s: Stmt) -> int {
     let then_l = new_label("then")
     let else_l = new_label("else")
     let merge_l = new_label("merge")
-
     ir_line("br i1 " + cond_i1 + ", label %" + then_l + ", label %" + else_l)
 
     // Then branch
@@ -4252,6 +4251,8 @@ fn gen_fn_decl(f: FnDecl) {
     } else {
         ir_raw("define " + ret_ty + " @" + name + "(" + param_str + ") {")
         ir_raw("entry:")
+    }
+    if ret_ty != "void" && ret_ty != "i32" {
     }
 
     // Reset registers, type tracking, and scope (keep globals)
