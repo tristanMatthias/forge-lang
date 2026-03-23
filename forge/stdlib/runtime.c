@@ -1716,6 +1716,15 @@ ForgeString forge_mini_run_list(ForgeString cmd, ForgeList args) {
     return forge_string_new(result, rlen);
 }
 
+// Convert ForgeString to int64
+int64_t forge_string_to_int(ForgeString s) {
+    char buf[64];
+    int64_t len = s.len < 63 ? s.len : 63;
+    memcpy(buf, s.ptr, len);
+    buf[len] = '\0';
+    return strtoll(buf, NULL, 10);
+}
+
 // Join a list of ForgeStrings with newline separator
 ForgeString forge_join_lines(ForgeList lines) {
     ForgeString* items = (ForgeString*)lines.ptr;

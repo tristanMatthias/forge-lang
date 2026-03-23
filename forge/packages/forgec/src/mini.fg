@@ -2317,7 +2317,12 @@ fn gen_call(e: Expr) -> string {
     // Built-in: int(x)
     if name == "int" && e.children.length == 1 {
         let arg = gen_expr_child(e, 0)
-        // If arg is string, could parse — for now just pass through
+        if LAST_IS_STR == 1 {
+            let r = new_reg()
+            ir_line(r + " = call i64 @forge_string_to_int(%ForgeString " + arg + ")")
+            LAST_IS_STR = 0
+            return r
+        }
         return arg
     }
     // Built-in: println/eprintln
@@ -3106,6 +3111,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_byte_at(%ForgeString, i64)")
+    ir_raw("declare i64 @forge_string_to_int(%ForgeString)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
