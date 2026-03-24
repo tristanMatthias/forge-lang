@@ -328,12 +328,13 @@ export fn declare_all_fns() {
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {
-    // Note: LLVM globals are created in main.fg before emit_program is called
-
-    // Materialize struct types: create LLVM types for structs registered during initial parse
-    // Simple approach: for each registered struct, create all-i64 fields
-    // (mixed types will be corrected when struct literals are created)
+    eprintln("EAF:enter")
+    // Re-init LLVM types (globals get zeroed somewhere between init and here)
+    CG_I64 = llvm.int64_type(CG_CTX)
+    CG_I32 = llvm.int32_type(CG_CTX)
+    CG_I8 = llvm.int8_type(CG_CTX)
     let struct_count = CG_STRUCT_NAMES.length
+    eprintln("EAF:structs=" + string(struct_count))
     mut si = 0
     while si < struct_count {
         // Always create LLVM type (null check on List<ptr> unreliable)
@@ -406,16 +407,21 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         si = si + 1
     }
 
+    eprintln("EAF:fns=" + string(FN_NAMES.length))
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
         let name = FN_NAMES[i]
+        eprintln("EAF:fn[" + string(i) + "]=" + name)
         let body_src = FN_BODY_SOURCES[i]
         let is_main = name == "main"
+        eprintln("EAF:pc_check")
         let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+        eprintln("EAF:pc=" + string(pc))
 
         // Declare the LLVM function with correct param types
         let param_arr = llvm.type_array_new(pc)
+        eprintln("EAF:param_arr")
         mut pi = 0
         while pi < pc {
             // Look up param type — use struct LLVM type if registered
@@ -429,7 +435,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             pi = pi + 1
         }
         // Determine return type
-        mut ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        if CG_I32 == null { eprintln("EAF:CG_I32 is null HERE") }
+        if CG_I64 == null { eprintln("EAF:CG_I64 is null HERE") }
+        mut ret_ty = CG_I64
+        if is_main { ret_ty = CG_I32 }
         mut fn_is_nullable = false
         mut fn_nullable_inner = CG_I64
         if !is_main && i < FN_RETURN_TYPES.length {
@@ -452,9 +461,14 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 ret_ty = make_nullable_type(ret_ty)
             }
         }
+        if ret_ty == null { eprintln("EAF:ret_ty is NULL!") }
+        if param_arr == null { eprintln("EAF:param_arr is NULL!") }
+        eprintln("EAF:calling function_type pc=" + string(pc))
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+        eprintln("EAF:fn_type_done")
         llvm.type_array_free(param_arr)
         let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        eprintln("EAF:declared " + name)
         // Store in global for function calls (Map<string, ptr>)
         DECLARED_FNS[name] = fn_val
 

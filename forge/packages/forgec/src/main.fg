@@ -86,7 +86,9 @@ fn build_compile(source: string, filename: string, output: string) {
     eprintln("BC:globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     eprintln("BC:new")
+    eprintln("BC:i32=" + string(CG_I32))
     mut cg = codegen_new()
+    eprintln("BC:i32_2=" + string(CG_I32))
     eprintln("BC:emit")
     cg.emit_program(program)
 

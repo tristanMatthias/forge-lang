@@ -51,6 +51,7 @@ std/mobile
 - components/subcomponents
   - @syntax should be removed and just part of component creation
 - What could be done with control flow graphs? Vizualize? Deployment analytics? 
+- Remove "self" in components
 ### New compiler (forgec)
 - new_thing/thing_new is an antipattern, we need a better init/constructor story
 
