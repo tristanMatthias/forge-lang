@@ -1548,7 +1548,14 @@ impl Parser {
                 else_block = self.parse_block()
             }
         }
-        store_if_expr(condition!, then_block, has_else, else_block, start)
+        // Store if-data in globals, return IntLit marker
+        CURRENT_IF_COND = condition!
+        CURRENT_IF_THEN = then_block
+        CURRENT_IF_HAS_ELSE = has_else
+        CURRENT_IF_ELSE = else_block
+        PENDING_IF = true
+        // Return IntLit(-1) as marker — emit_expr checks PENDING_IF
+        Expr.IntLit(-1, start)
     }
 
     // ─── Match Expression ──────────────────────

@@ -859,6 +859,35 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
+    fn emit_if_from_globals(self) -> ptr {
+        let cv = self.emit_expr(CURRENT_IF_COND)
+        let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
+        let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+        let tb = llvm.append_basic_block(CG_CTX, fn_val, "th")
+        let eb = llvm.append_basic_block(CG_CTX, fn_val, "el")
+        let mb = llvm.append_basic_block(CG_CTX, fn_val, "mg")
+        llvm.build_cond_br(CG_B, ci, tb, eb)
+        llvm.position_at_end(CG_B, tb)
+        let tv = self.emit_block(CURRENT_IF_THEN)
+        let te = llvm.get_insert_block(CG_B)
+        let tt = llvm.block_has_terminator(CG_B)
+        if !tt { llvm.build_br(CG_B, mb) }
+        llvm.position_at_end(CG_B, eb)
+        mut ev = llvm.const_int(CG_I64, 0, 0)
+        if CURRENT_IF_HAS_ELSE { ev = self.emit_block(CURRENT_IF_ELSE) }
+        let ee = llvm.get_insert_block(CG_B)
+        let et = llvm.block_has_terminator(CG_B)
+        if !et { llvm.build_br(CG_B, mb) }
+        llvm.position_at_end(CG_B, mb)
+        if CURRENT_IF_HAS_ELSE && !tt && !et {
+            let phi = llvm.build_phi(CG_B, CG_I64, "iv")
+            llvm.add_incoming(phi, tv, te)
+            llvm.add_incoming(phi, ev, ee)
+            return phi
+        }
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
     fn emit_assign(self, target: Expr, value: Expr) {
         // target should be an Ident — look up its alloca in CG_VAR_NAMES/CG_VAR_PTRS
         match target {
@@ -1327,7 +1356,14 @@ impl Codegen {
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
             match stmt {
-                .Expr(expr) -> { last = self.emit_expr(expr) }
+                .Expr(expr) -> {
+                    if PENDING_IF {
+                        PENDING_IF = false
+                        last = self.emit_if_from_globals()
+                    } else {
+                        last = self.emit_expr(expr)
+                    }
+                }
                 .Assign(t, v, s) -> { self.emit_assign(t, v) }
                 .Return(v, s) -> { self.emit_return(v) }
                 .Let(name, val, s) -> {

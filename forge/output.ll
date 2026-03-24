@@ -35,32 +35,36 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
+define i64 @fib(i64 %0) {
+entry:
+  %n = alloca i64, align 8
+  store i64 %0, ptr %n, align 4
+  %n1 = load i64, ptr %n, align 4
+  %le = icmp sle i64 %n1, 1
+  br i1 %le, label %th, label %el
+
+th:                                               ; preds = %entry
+  %n2 = load i64, ptr %n, align 4
+  ret i64 %n2
+
+el:                                               ; preds = %entry
+  br label %mg
+
+mg:                                               ; preds = %el
+  %n3 = load i64, ptr %n, align 4
+  %sub = sub i64 %n3, 1
+  %call = call i64 @fib(i64 %sub)
+  %n4 = load i64, ptr %n, align 4
+  %sub5 = sub i64 %n4, 2
+  %call6 = call i64 @fib(i64 %sub5)
+  %add = add i64 %call, %call6
+  ret i64 %add
+}
+
 define i32 @main() {
 entry:
-  %s = alloca i64, align 8
-  store i64 0, ptr %s, align 4
-  %i = alloca i64, align 8
-  store i64 1, ptr %i, align 4
-  br label %wc
-
-wc:                                               ; preds = %wb, %entry
-  %i1 = load i64, ptr %i, align 4
-  %le = icmp sle i64 %i1, 5
-  br i1 %le, label %wb, label %we
-
-wb:                                               ; preds = %wc
-  %s2 = load i64, ptr %s, align 4
-  %i3 = load i64, ptr %i, align 4
-  %add = add i64 %s2, %i3
-  store i64 %add, ptr %s, align 4
-  %i4 = load i64, ptr %i, align 4
-  %add5 = add i64 %i4, 1
-  store i64 %add5, ptr %i, align 4
-  br label %wc
-
-we:                                               ; preds = %wc
-  %s6 = load i64, ptr %s, align 4
-  %i2s = call %ForgeString @forge_int_to_string(i64 %s6)
+  %call = call i64 @fib(i64 10)
+  %i2s = call %ForgeString @forge_int_to_string(i64 %call)
   call void @forge_println_string(%ForgeString %i2s)
   ret i32 0
 }

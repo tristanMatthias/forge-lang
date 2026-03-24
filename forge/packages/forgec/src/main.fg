@@ -325,14 +325,12 @@ fn build_compile_separate(files: List<string>, output: string) {
     codegen_write_ir("output.ll")
     eprintln("  emit done")
 
+    // Use external llc for object emission (in-process LLVM emitter crashes)
+    let ir_path = "/tmp/forgec_out.ll"
     let obj_path = output + ".o"
-    if !codegen_emit_object(obj_path) {
-        eprintln("error: failed to emit object file")
-        codegen_write_ir("output.ll")
-        codegen_cleanup()
-        process.exit(1)
-    }
+    codegen_write_ir(ir_path)
     codegen_cleanup()
+    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", [ir_path, "-filetype=obj", "-o", obj_path])
     mut obj_files: List<string> = [obj_path]
 
     // Phase 3: Compile runtime
