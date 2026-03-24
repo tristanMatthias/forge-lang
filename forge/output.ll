@@ -37,16 +37,30 @@ declare void @forge_map_set(ptr, %ForgeString, i64)
 
 define i32 @main() {
 entry:
+  %s = alloca i64, align 8
+  store i64 0, ptr %s, align 4
+  %i = alloca i64, align 8
+  store i64 1, ptr %i, align 4
   br label %wc
 
 wc:                                               ; preds = %wb, %entry
-  br i1 true, label %wb, label %we
+  %i1 = load i64, ptr %i, align 4
+  %le = icmp sle i64 %i1, 5
+  br i1 %le, label %wb, label %we
 
 wb:                                               ; preds = %wc
+  %s2 = load i64, ptr %s, align 4
+  %i3 = load i64, ptr %i, align 4
+  %add = add i64 %s2, %i3
+  store i64 %add, ptr %s, align 4
+  %i4 = load i64, ptr %i, align 4
+  %add5 = add i64 %i4, 1
+  store i64 %add5, ptr %i, align 4
   br label %wc
 
 we:                                               ; preds = %wc
-  %i2s = call %ForgeString @forge_int_to_string(i64 0)
+  %s6 = load i64, ptr %s, align 4
+  %i2s = call %ForgeString @forge_int_to_string(i64 %s6)
   call void @forge_println_string(%ForgeString %i2s)
   ret i32 0
 }

@@ -110,6 +110,7 @@ export enum Statement {
     Expr(expr: Expr)
     Assign(target: Expr, value: Expr, span: Span)
     Return(value: Expr, span: Span)
+    Let(name: string, value: Expr, span: Span)
     While(condition: Expr, body: Block, span: Span)
     For(var_name: string, iterable: Expr, body: Block, span: Span)
     Break(span: Span)

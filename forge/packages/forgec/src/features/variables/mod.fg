@@ -108,6 +108,12 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
     }
 
+    // When CG_ACTIVE is off, return AST node for emit_block to handle
+    if !CG_ACTIVE {
+        PARSE_END_POS = p.pos
+        return Statement.Let(var_name, value!, start)
+    }
+
     // Emit inline during re-parse+codegen (Map storage corrupts complex data)
     if CG_ACTIVE {
         // Check if parse_list_literal or postfix set a pre-computed LLVM value

@@ -1330,6 +1330,12 @@ impl Codegen {
                 .Expr(expr) -> { last = self.emit_expr(expr) }
                 .Assign(t, v, s) -> { self.emit_assign(t, v) }
                 .Return(v, s) -> { self.emit_return(v) }
+                .Let(name, val, s) -> {
+                    let ev = self.emit_expr(val)
+                    // Detect type from flags set by emit_expr
+                    let ty = if CG_LAST_IS_STR == 1 { Type.String } else { Type.Int }
+                    self.define_var(name, ty, ev)
+                }
                 .While(cond, body, s) -> {
                     let wfn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
