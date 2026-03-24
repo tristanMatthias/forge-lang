@@ -2095,6 +2095,38 @@ fn codegen_match(s: Stmt) -> int {
                             ir_line("store %ForgeString " + s2 + ", ptr " + balloca)
                             push_var(bname, balloca, "%ForgeString")
                             bind_slot = bind_slot + 2
+                        } else if bind_ty == "{ ptr, i64 }" || is_list_type(bind_ty) {
+                            // List type: 2 slots (ptr + length)
+                            let lp = new_reg()
+                            ir_line(lp + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
+                            let ll = new_reg()
+                            ir_line(ll + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot + 1))
+                            let lp2 = new_reg()
+                            ir_line(lp2 + " = inttoptr i64 " + lp + " to ptr")
+                            let ls1 = new_reg()
+                            ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + lp2 + ", 0")
+                            let ls2 = new_reg()
+                            ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + ll + ", 1")
+                            let balloca3 = new_reg()
+                            ir_line(balloca3 + " = alloca { ptr, i64 }")
+                            ir_line("store { ptr, i64 } " + ls2 + ", ptr " + balloca3)
+                            if is_list_type(bind_ty) {
+                                let ety = bind_ty.substring(5, bind_ty.length)
+                                push_var_list(bname, balloca3, bind_ty, ety)
+                            } else {
+                                push_var_list(bname, balloca3, "list_i64", "i64")
+                            }
+                            bind_slot = bind_slot + 2
+                        } else if bind_ty.length > 1 && bind_ty.substring(0, 1) == "%" && bind_ty != "%ForgeString" {
+                            // Struct/enum type: use GEP to load from enum payload memory
+                            // For now, treat as 1 slot (ptr-sized) — the actual data is elsewhere
+                            let bval2 = new_reg()
+                            ir_line(bval2 + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
+                            let balloca2 = new_reg()
+                            ir_line(balloca2 + " = alloca i64")
+                            ir_line("store i64 " + bval2 + ", ptr " + balloca2)
+                            push_var(bname, balloca2, "i64")
+                            bind_slot = bind_slot + 1
                         } else {
                             let bval2 = new_reg()
                             ir_line(bval2 + " = extractvalue %" + scrut_enum + " " + scrutinee + ", " + string(bind_slot))
