@@ -5,6 +5,41 @@
 #include <unistd.h>
 #include <signal.h>
 #include <execinfo.h>
+#include <setjmp.h>
+
+// ---- Try/catch for LLVM crashes ----
+static sigjmp_buf forge_try_jmp;
+static volatile int forge_try_active = 0;
+
+static void forge_try_handler(int signum) {
+    if (forge_try_active) {
+        forge_try_active = 0;
+        siglongjmp(forge_try_jmp, 1);
+    }
+}
+
+// Returns 1 if the function crashed, 0 if OK
+int64_t forge_try_call(void (*fn)(void)) {
+    forge_try_active = 1;
+    struct sigaction sa, old_segv, old_bus;
+    sa.sa_handler = forge_try_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGBUS, &sa, &old_bus);
+
+    int crashed = 0;
+    if (sigsetjmp(forge_try_jmp, 1) != 0) {
+        crashed = 1;
+    } else {
+        fn();
+    }
+
+    forge_try_active = 0;
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGBUS, &old_bus, NULL);
+    return crashed;
+}
 
 // ---- Signal handlers ----
 

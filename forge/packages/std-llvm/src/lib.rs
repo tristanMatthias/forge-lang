@@ -18,6 +18,11 @@ extern "C" {
     // Context
     fn LLVMContextCreate() -> LLVMPtr;
     fn LLVMContextDispose(ctx: LLVMPtr);
+    fn LLVMGetGlobalContext() -> LLVMPtr;
+
+    // Type inspection
+    fn LLVMTypeOf(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetTypeKind(ty: LLVMPtr) -> c_uint;
 
     // Module
     fn LLVMModuleCreateWithNameInContext(name: *const c_char, ctx: LLVMPtr) -> LLVMPtr;
@@ -519,7 +524,17 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
         eprintln!("WARNING: build_extract_value called with null aggregate");
         return std::ptr::null_mut();
     }
-    unsafe { LLVMBuildExtractValue(builder, agg, index as c_uint, safe_name(name)) }
+    // Safety: verify the value is an aggregate type (struct/array)
+    unsafe {
+        let ty = LLVMTypeOf(agg);
+        let kind = LLVMGetTypeKind(ty);
+        // 11 = struct, 12 = array. Other kinds crash ExtractValue.
+        if kind != 11 && kind != 12 {
+            eprintln!("WARNING: extract_value on non-aggregate (kind={})", kind);
+            return std::ptr::null_mut();
+        }
+        LLVMBuildExtractValue(builder, agg, index as c_uint, safe_name(name))
+    }
 }
 
 // ── Arithmetic (division, remainder, float ops) ──
