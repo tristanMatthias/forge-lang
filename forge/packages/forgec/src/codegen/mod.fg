@@ -1566,6 +1566,7 @@ impl Codegen {
                         PENDING_IF = false
                         last = self.emit_if_from_globals()
                     } else if PENDING_MATCH {
+                        eprintln("MATCH EMIT!")
                         PENDING_MATCH = false
                         last = self.emit_match_from_globals()
                     } else {

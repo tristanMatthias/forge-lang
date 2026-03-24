@@ -1570,6 +1570,7 @@ impl Parser {
     // Supports: integer patterns, string patterns, .Variant patterns, _ wildcard.
 
     fn parse_match_expr(self) -> Expr? {
+        eprintln("MATCH: active=" + if CG_ACTIVE { "YES" } else { "NO" })
         let start = self.advance().span // consume 'match'
         self.skip_newlines()
 
@@ -1584,6 +1585,7 @@ impl Parser {
         if self.expect(TokenKind.LBrace) == null { return null }
 
         if CG_ACTIVE {
+            eprintln("MATCH: taking CG_ACTIVE path")
             // Emit scrutinee value once
             mut cg = codegen_new()
             let subj_val = cg.emit_expr(scrutinee!)
@@ -1868,11 +1870,13 @@ impl Parser {
             return Expr.IntLit(0, start)
         }
 
-        // Non-codegen: desugar match to nested if-else via PENDING_IF
+        // Non-codegen: parse match arms with PENDING_MATCH
+        // Note: { was already consumed by expect(LBrace) above
         self.skip_newlines()
-        if !self.check(TokenKind.LBrace) { return null }
-        self.advance() // consume {
-        self.skip_newlines()
+
+        // Determine scrutinee's enum type from variable name
+        let enum_type = cg_var_enum_type(scrutinee_var)
+        eprintln("MATCH: v0=" + ENUM_VARIANT_NAMES[0] + " v1=" + ENUM_VARIANT_NAMES[1] + " v2=" + ENUM_VARIANT_NAMES[2] + " v3=" + ENUM_VARIANT_NAMES[3])
 
         // Collect arms: (pattern_tag: int, body: Block)
         mut arm_tags: List<int> = []
@@ -1886,7 +1890,11 @@ impl Parser {
             if self.check(TokenKind.Dot) {
                 self.advance()
                 let vname = self.expect_ident()
-                pat_tag = match_enum_tag(vname)
+                // Try qualified name first (Color.Green), then bare (Green)
+                let qname = enum_type + "." + vname
+                pat_tag = match_enum_tag(qname)
+                eprintln("MATCH ARM: qname=[" + qname + "] tag=" + string(pat_tag) + " vname=[" + vname + "]")
+                if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                 if self.check(TokenKind.LParen) {
                     self.advance()
                     while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
@@ -1939,6 +1947,7 @@ impl Parser {
         MATCH_DEFAULT = default_body
         MATCH_HAS_DEFAULT = has_default
         PENDING_MATCH = true
+        eprintln("MATCH: SET PENDING, bodies=" + string(arm_bodies.length) + " tags=" + MATCH_ARM_TAGS)
         Expr.IntLit(-1, start)
     }
 
@@ -2233,7 +2242,7 @@ impl Parser {
 
 use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
-use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT}
+use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT, cg_var_enum_type}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)
