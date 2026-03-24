@@ -1,99 +1,54 @@
 // ─── While Loops Feature ───────────────────────
-// while condition { body }
-// Emits LLVM IR inline during parsing (bootstrap workaround).
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
+use core.registry.{reg_parser, reg_check_stmt, reg_emit_stmt}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, codegen_new}
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, codegen_new}
 use @std.llvm
 
-// Global to propagate parser position back after free-function parse calls
-// (bootstrap workaround: Parser is pass-by-value, pos changes lost)
-// Shared by ALL feature parse functions
 export mut PARSE_END_POS: int = -1
-
-// Current while loop's blocks (for break/continue)
 export mut WHILE_COND_BB: ptr = null
 export mut WHILE_END_BB: ptr = null
 
 export fn parse_while(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'while'
+    let start = p.advance().span
     p.skip_newlines()
-
-    // If codegen is active, set up while loop blocks BEFORE parsing body
-    if CG_ACTIVE {
-        let current_bb = llvm.get_insert_block(CG_B)
-        let current_fn = llvm.get_basic_block_parent(current_bb)
-
-        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "wc")
-        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "wb")
-        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "we")
-
-        // Save outer loop blocks and set current loop blocks
-        let outer_cond = WHILE_COND_BB
-        let outer_end = WHILE_END_BB
-        WHILE_COND_BB = cond_bb
-        WHILE_END_BB = end_bb
-
-        // Jump to condition check
-        llvm.build_br(CG_B, cond_bb)
-
-        // Position in cond_bb BEFORE parsing condition
-        // (inline binary emit goes into cond_bb so it's re-evaluated each iteration)
-        llvm.position_at_end(CG_B, cond_bb)
-
-        // Parse condition (inline emit fires in cond_bb)
-        let condition = p.parse_expr()
-        if condition == null { return null }
-
-        p.skip_newlines()
-
-        // The condition's final value (may be in a temp var from inline binary)
-        mut cg = codegen_new()
-        let cond_val = cg.emit_expr(condition!)
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "wcc")
-        llvm.build_cond_br(CG_B, cond_i1, body_bb, end_bb)
-
-        // Position in body block, then parse+emit body
-        llvm.position_at_end(CG_B, body_bb)
-        let body = p.parse_block()
-        // Emit AST statements (assignments, returns) that weren't emitted inline
-        cg.emit_block(body)
-        // Only loop back if the body didn't already terminate (e.g., break/return)
-        if !llvm.block_has_terminator(CG_B) {
-            llvm.build_br(CG_B, cond_bb)
-        }
-
-        // Restore outer loop blocks
-        WHILE_COND_BB = outer_cond
-        WHILE_END_BB = outer_end
-
-        // Continue after loop
-        llvm.position_at_end(CG_B, end_bb)
-    } else {
-        // Not in codegen — just parse and discard
-        let condition = p.parse_expr()
-        p.skip_newlines()
-        let body = p.parse_block()
-    }
-
+    let condition = p.parse_expr()
+    if condition == null { return null }
+    p.skip_newlines()
+    let body = p.parse_block()
     PARSE_END_POS = p.pos
-    let id = next_node_id()
-    feature_stmt("while_loops", "while", id, start)
+    Statement.While(condition!, body, start)
 }
 
-fn check_while(tc: TypeChecker, node: NodeRef) {
-    // TODO: type check condition and body
+// Emit while loop from AST (called by emit_block)
+export fn emit_while_ast(cg: Codegen, condition: Expr, body: Block) {
+    let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let wc = llvm.append_basic_block(CG_CTX, fn_val, "wc")
+    let wb = llvm.append_basic_block(CG_CTX, fn_val, "wb")
+    let we = llvm.append_basic_block(CG_CTX, fn_val, "we")
+    let oc = WHILE_COND_BB
+    let oe = WHILE_END_BB
+    WHILE_COND_BB = wc
+    WHILE_END_BB = we
+    llvm.build_br(CG_B, wc)
+    llvm.position_at_end(CG_B, wc)
+    let cv = cg.emit_expr(condition)
+    let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "wt")
+    llvm.build_cond_br(CG_B, ci, wb, we)
+    llvm.position_at_end(CG_B, wb)
+    cg.emit_block(body)
+    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, wc) }
+    WHILE_COND_BB = oc
+    WHILE_END_BB = oe
+    llvm.position_at_end(CG_B, we)
 }
 
-fn emit_while(cg: Codegen, node: NodeRef) {
-    // No-op: while loops are emitted inline during parsing
-    return
-}
+fn check_while(tc: TypeChecker, node: NodeRef) {}
+fn emit_while(cg: Codegen, node: NodeRef) {}
 
 reg_parser("while", parse_while)
 reg_check_stmt("while_loops", check_while)

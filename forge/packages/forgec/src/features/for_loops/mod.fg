@@ -1,194 +1,83 @@
 // ─── For Loops Feature ─────────────────────────
-// for item in iterable { body }
-// Desugars to a while loop with index counter.
-// Emits LLVM IR inline during parsing (bootstrap workaround).
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, feature_stmt, next_node_id}
 use core.types.Type
-use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
+use core.registry.{reg_parser, reg_check_stmt, reg_emit_stmt}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, resolve_type_to_llvm}
-use parser.expressions.LAST_IDENT_NAME
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 export fn parse_for(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'for'
+    let start = p.advance().span
     p.skip_newlines()
-
     let var_name = p.expect_ident()
-    if var_name == "" {
-        p.error("expected variable name after 'for'")
-        return null
-    }
-
-    if p.expect(.In) == null {
-        p.error("expected 'in' after for variable")
-        return null
-    }
-
+    if var_name == "" { return null }
+    if p.expect(.In) == null { return null }
     p.skip_newlines()
-
-    // If codegen is active, desugar to a while loop inline:
-    //   mut __for_i = 0
-    //   while __for_i < list.length {
-    //       let item = list[__for_i]
-    //       body
-    //       __for_i = __for_i + 1
-    //   }
-    if CG_ACTIVE {
-        // Parse the iterable expression (inline emit fires)
-        let iterable = p.parse_expr()
-        if iterable == null { return null }
-        p.skip_newlines()
-
-        // Get list value: prefer CG_LAST_VAL (set by inline emit during parse_expr)
-        let list_val = if CG_HAS_LAST_VAL == 1 {
-            CG_HAS_LAST_VAL = 0
-            CG_LAST_VAL
-        } else {
-            mut cg = codegen_new()
-            cg.emit_expr(iterable!)
-        }
-
-        // --- Emit: mut __for_i = 0 ---
-        let idx_name = "__fi"
-        let zero = llvm.const_int(CG_I64, 0, 0)
-        let idx_alloca = llvm.build_alloca(CG_B, CG_I64, idx_name)
-        llvm.build_store(CG_B, zero, idx_alloca)
-        CG_VAR_NAMES = CG_VAR_NAMES.push(idx_name)
-        CG_VAR_PTRS = CG_VAR_PTRS.push(idx_alloca)
-
-        // --- Get list length ---
-        let len_args = llvm.value_array_new(1)
-        llvm.value_array_set(len_args, 0, list_val)
-        let len_pt = llvm.type_array_new(1)
-        llvm.type_array_set(len_pt, 0, CG_STR)
-        let len_ft = llvm.function_type(CG_I64, len_pt, 1, 0)
-        llvm.type_array_free(len_pt)
-        let length_val = llvm.build_call(CG_B, len_ft, CG_RT_SLEN, len_args, 1, "ll")
-        llvm.value_array_free(len_args)
-
-        // --- Determine element type ---
-        // Check by variable name first, then by CG_LAST_IS_LIST for struct field lists
-        let list_name = LAST_IDENT_NAME
-        mut elem_ty = CG_I64
-        mut elem_is_str = false
-        if is_list_var(list_name) {
-            elem_ty = list_elem_llvm_type(list_name)
-            elem_is_str = is_str_list_var(list_name)
-        } else if CG_LAST_IS_LIST == 1 {
-            // Struct field list — check element type from CSV by field name
-            let ft = list_elem_type(var_name)
-            if ft == "" {
-                // Try the iterable expression's field name
-                let iname = if iterable != null {
-                    match iterable! {
-                        .Ident(n, s) -> n
-                        _ -> ""
-                    }
-                } else { "" }
-                let ft2 = list_elem_type(iname)
-                if ft2 != "" { elem_ty = resolve_type_to_llvm(ft2) }
-            } else {
-                elem_ty = resolve_type_to_llvm(ft)
-            }
-        }
-
-        // --- Set up loop blocks ---
-        let current_bb = llvm.get_insert_block(CG_B)
-        let current_fn = llvm.get_basic_block_parent(current_bb)
-
-        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "fc")
-        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "fb")
-        let incr_bb = llvm.append_basic_block(CG_CTX, current_fn, "fx")
-        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "fe")
-
-        // Save outer loop blocks and set current loop blocks (for break/continue)
-        // continue -> incr_bb (increment then re-check condition)
-        // break -> end_bb
-        let outer_cond = WHILE_COND_BB
-        let outer_end = WHILE_END_BB
-        WHILE_COND_BB = incr_bb
-        WHILE_END_BB = end_bb
-
-        // Jump to condition
-        llvm.build_br(CG_B, cond_bb)
-
-        // --- Condition: __for_i < length ---
-        llvm.position_at_end(CG_B, cond_bb)
-        let idx_val = llvm.build_load(CG_B, CG_I64, idx_alloca, "fi")
-        let cond_val = llvm.build_icmp(CG_B, 40, idx_val, length_val, "fc")
-        llvm.build_cond_br(CG_B, cond_val, body_bb, end_bb)
-
-        // --- Body ---
-        llvm.position_at_end(CG_B, body_bb)
-
-        let body_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "fib")
-        let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "dat")
-        let gep_idx = llvm.value_array_new(1)
-        llvm.value_array_set(gep_idx, 0, body_idx)
-        let elem_ptr = llvm.build_gep2(CG_B, CG_I64, data_ptr, gep_idx, 1, "elp")
-        llvm.value_array_free(gep_idx)
-        let elem_val = llvm.build_load(CG_B, CG_I64, elem_ptr, "elv")
-        let item_alloca = llvm.build_alloca(CG_B, CG_I64, "itv")
-        llvm.build_store(CG_B, elem_val, item_alloca)
-        CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
-        CG_VAR_PTRS = CG_VAR_PTRS.push(item_alloca)
-        // Track string loop variable so emit_ident loads with CG_STR type
-        if elem_is_str {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(var_name)
-        }
-
-        // Parse body block (inline emit fires into body_bb)
-        let body = p.parse_block()
-        // Emit AST statements (assignments, returns) that weren't emitted inline
-        mut cg = codegen_new()
-        cg.emit_block(body)
-
-        // Fall through to increment block (only if body didn't terminate via break/return)
-        if !llvm.block_has_terminator(CG_B) {
-            llvm.build_br(CG_B, incr_bb)
-        }
-
-        // --- Increment block: __for_i = __for_i + 1, then back to cond ---
-        llvm.position_at_end(CG_B, incr_bb)
-        let cur_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "fic")
-        let one = llvm.const_int(CG_I64, 1, 0)
-        let next_idx = llvm.build_add(CG_B, cur_idx, one, "fin")
-        llvm.build_store(CG_B, next_idx, idx_alloca)
-        llvm.build_br(CG_B, cond_bb)
-
-        // Restore outer loop blocks
-        WHILE_COND_BB = outer_cond
-        WHILE_END_BB = outer_end
-
-        // Continue after loop
-        llvm.position_at_end(CG_B, end_bb)
-    } else {
-        // Not in codegen — just parse and discard
-        let iterable = p.parse_expr()
-        p.skip_newlines()
-        let body = p.parse_block()
-    }
-
+    let iterable = p.parse_expr()
+    if iterable == null { return null }
+    p.skip_newlines()
+    let body = p.parse_block()
     PARSE_END_POS = p.pos
-    let id = next_node_id()
-    feature_stmt("for_loops", "for", id, start)
+    Statement.For(var_name, iterable!, body, start)
 }
 
-fn check_for(tc: TypeChecker, node: NodeRef) {
-    // TODO: type check iterable and body
+export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Block) {
+    let lv = cg.emit_expr(iterable)
+    let ia = llvm.build_alloca(CG_B, CG_I64, "fi")
+    llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), ia)
+    let la = llvm.value_array_new(1)
+    llvm.value_array_set(la, 0, lv)
+    let lt = llvm.type_array_new(1)
+    llvm.type_array_set(lt, 0, CG_STR)
+    let lf = llvm.function_type(CG_I64, lt, 1, 0)
+    llvm.type_array_free(lt)
+    let ln = llvm.build_call(CG_B, lf, CG_RT_SLEN, la, 1, "ln")
+    llvm.value_array_free(la)
+    let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let fc = llvm.append_basic_block(CG_CTX, fn_val, "fc")
+    let fb = llvm.append_basic_block(CG_CTX, fn_val, "fb")
+    let fx = llvm.append_basic_block(CG_CTX, fn_val, "fx")
+    let fe = llvm.append_basic_block(CG_CTX, fn_val, "fe")
+    let oc = WHILE_COND_BB
+    let oe = WHILE_END_BB
+    WHILE_COND_BB = fx
+    WHILE_END_BB = fe
+    llvm.build_br(CG_B, fc)
+    llvm.position_at_end(CG_B, fc)
+    let ci = llvm.build_load(CG_B, CG_I64, ia, "ci")
+    let cc = llvm.build_icmp(CG_B, 40, ci, ln, "cc")
+    llvm.build_cond_br(CG_B, cc, fb, fe)
+    llvm.position_at_end(CG_B, fb)
+    let bi = llvm.build_load(CG_B, CG_I64, ia, "bi")
+    let dp = llvm.build_extract_value(CG_B, lv, 0, "dp")
+    let gi = llvm.value_array_new(1)
+    llvm.value_array_set(gi, 0, bi)
+    let ep = llvm.build_gep2(CG_B, CG_I64, dp, gi, 1, "ep")
+    llvm.value_array_free(gi)
+    let ev = llvm.build_load(CG_B, CG_I64, ep, "ev")
+    let va = llvm.build_alloca(CG_B, CG_I64, "iv")
+    llvm.build_store(CG_B, ev, va)
+    CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
+    CG_VAR_PTRS = CG_VAR_PTRS.push(va)
+    cg.emit_block(body)
+    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, fx) }
+    llvm.position_at_end(CG_B, fx)
+    let ic = llvm.build_load(CG_B, CG_I64, ia, "ic")
+    let ni = llvm.build_add(CG_B, ic, llvm.const_int(CG_I64, 1, 0), "ni")
+    llvm.build_store(CG_B, ni, ia)
+    llvm.build_br(CG_B, fc)
+    WHILE_COND_BB = oc
+    WHILE_END_BB = oe
+    llvm.position_at_end(CG_B, fe)
 }
 
-fn emit_for(cg: Codegen, node: NodeRef) {
-    // No-op: for loops are emitted inline during parsing
-    return
-}
+fn check_for(tc: TypeChecker, node: NodeRef) {}
+fn emit_for(cg: Codegen, node: NodeRef) {}
 
-// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
 reg_parser("for", parse_for)
 reg_check_stmt("for_loops", check_for)
 reg_emit_stmt("for_loops", emit_for)
