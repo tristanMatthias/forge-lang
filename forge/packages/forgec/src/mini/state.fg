@@ -184,6 +184,21 @@ fn struct_llvm_type(name: string) -> string {
 }
 
 fn load_var_by_type(name: string, idx: int, vty: string) -> string {
+    // Self ptr: load ptr from alloca, then load struct from ptr (double indirection)
+    if vty == "ptr" && VAR_STRUCT_TYPE[idx].length > 0 {
+        let sty = VAR_STRUCT_TYPE[idx]
+        let p = new_reg()
+        ir_line(p + " = load ptr, ptr " + VAR_REGS[idx])
+        let r = new_reg()
+        ir_line(r + " = load %" + sty + ", ptr " + p)
+        reg_set_type(r, "%" + sty)
+        LAST_STRUCT_TYPE = sty
+        LAST_ENUM_TYPE = sty
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_IS_PTR = 0
+        return r
+    }
     detect_var_type(vty)
     let load_ty = get_load_type(vty)
     let r = new_reg()

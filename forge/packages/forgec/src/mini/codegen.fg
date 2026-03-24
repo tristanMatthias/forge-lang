@@ -928,12 +928,19 @@ fn gen_call(e: Expr) -> string {
                     let method_name = var_stype + "_" + name
                     let method_ret = find_fn_ret(method_name)
                     if method_ret != "i64" || find_fn_index(method_name) >= 0 {
-                        // Found a method — call it with object as first arg
+                        // Found a method — call it with self ptr
                         let call_ret = method_ret
-                        mut arg_str = ""
-                        mut mi = 0
+                        // If var is self (ptr type), load the ptr; otherwise pass alloca
+                        mut self_arg = VAR_REGS[var_idx]
+                        if VAR_TYPES[var_idx] == "ptr" {
+                            let sp = new_reg()
+                            ir_line(sp + " = load ptr, ptr " + VAR_REGS[var_idx])
+                            self_arg = sp
+                        }
+                        mut arg_str = "ptr " + self_arg
+                        mut mi = 1
                         while mi < e.children.length {
-                            if mi > 0 { arg_str = arg_str + ", " }
+                            arg_str = arg_str + ", "
                             LAST_IS_STR = 0
                             LAST_IS_LIST = 0
                             LAST_IS_PTR = 0
@@ -1939,11 +1946,17 @@ fn codegen_assign(s: Stmt) -> int {
                             if fty == "i64" && val_rt != "i64" { final_val = "0" }
                         }
                         if fty == "ptr" && final_val == "0" { final_val = "null" }
+                        // For self (ptr type), load ptr first then load/store struct through it
+                        mut assign_ptr = VAR_REGS[var_idx]
+                        if VAR_TYPES[var_idx] == "ptr" {
+                            assign_ptr = new_reg()
+                            ir_line(assign_ptr + " = load ptr, ptr " + VAR_REGS[var_idx])
+                        }
                         let cur = new_reg()
-                        ir_line(cur + " = load %" + sty_name + ", ptr " + VAR_REGS[var_idx])
+                        ir_line(cur + " = load %" + sty_name + ", ptr " + assign_ptr)
                         let updated = new_reg()
                         ir_line(updated + " = insertvalue %" + sty_name + " " + cur + ", " + fty + " " + final_val + ", " + string(fi))
-                        ir_line("store %" + sty_name + " " + updated + ", ptr " + VAR_REGS[var_idx])
+                        ir_line("store %" + sty_name + " " + updated + ", ptr " + assign_ptr)
                     }
                 }
             }
@@ -2213,6 +2226,7 @@ fn gen_fn_decl(f: FnDecl) {
     // Resolve param types to LLVM
     mut param_types: List<string> = []
     mut param_generics: List<string> = []
+    mut self_struct_type = ""  // original struct type name for self param
     mut i = 0
     while i < f.params.length {
         let p: Param = f.params[i]
@@ -2224,7 +2238,12 @@ fn gen_fn_decl(f: FnDecl) {
             base_type = p.type_name.substring(0, lt_idx)
             generic = p.type_name.substring(lt_idx + 1, p.type_name.length - 1)
         }
-        let pty = type_to_llvm(base_type)
+        mut pty = type_to_llvm(base_type)
+        // Self parameter: pass as ptr for mutability
+        if p.name == "self" && pty.length > 1 && pty.substring(0, 1) == "%" {
+            self_struct_type = pty.substring(1, pty.length)
+            pty = "ptr"
+        }
         param_types = param_types.push(pty)
         param_generics = param_generics.push(generic)
         i = i + 1
@@ -2316,7 +2335,10 @@ fn gen_fn_decl(f: FnDecl) {
         let pgen = param_generics[i]
         ir_line(alloca + " = alloca " + pty)
         ir_line("store " + pty + " %" + p.name + ".arg, ptr " + alloca)
-        if pty == "{ ptr, i64 }" && pgen != "" {
+        if p.name == "self" && pty == "ptr" && self_struct_type.length > 0 {
+            // Self ptr: store alloca with struct type info for field access
+            push_var_with_struct(p.name, alloca, "ptr", self_struct_type)
+        } else if pty == "{ ptr, i64 }" && pgen != "" {
             let elem_ty = type_to_llvm(pgen)
             push_var_list(p.name, alloca, "list_" + elem_ty, elem_ty)
         } else if pty.length > 1 && pty.substring(0, 1) == "%" {
