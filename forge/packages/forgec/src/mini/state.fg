@@ -392,8 +392,8 @@ fn max_enum_slots_global() -> int {
 }
 
 fn enum_llvm_type_str(enum_idx: int) -> string {
-    // Use global max to ensure all enums can hold any other enum's payload
-    mut ms = max_enum_slots_global()
+    // Use global max + 1 extra slot (for nested enum's tag byte + padding)
+    mut ms = max_enum_slots_global() + 5
     mut ty = "{ i8"
     mut i = 0
     while i < ms {

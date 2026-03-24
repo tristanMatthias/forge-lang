@@ -826,8 +826,9 @@ impl Codegen {
     // ─── Expressions ───────────────────────────
 
     fn emit_expr(self, expr: Expr) -> ptr {
+        eprintln("EE:enter")
         match expr {
-            .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
+            .IntLit(value, span) -> { eprintln("EE:int"); return llvm.const_int(CG_I64, value, 0) }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
@@ -841,7 +842,7 @@ impl Codegen {
             .Ident(name, span) -> { return self.emit_ident(name) }
             .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
             .Unary(op, operand, span) -> { return self.emit_expr(operand) }
-            .Call(callee, args, span) -> { return self.emit_call(callee, args) }
+            .Call(callee, args, span) -> { eprintln("EE:call"); return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Block(block) -> { return self.emit_block(block) }
