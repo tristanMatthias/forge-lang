@@ -434,7 +434,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if pt_idx < FN_ALL_PARAM_TYPES.length {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
-        let p_ty = if param_type_name == "string" { CG_STR } else { CG_I64 }
+        mut p_ty = if param_type_name == "string" { CG_STR } else { CG_I64 }
+        if is_struct_param {
+            let resolved = resolve_type_to_llvm(param_type_name)
+            if resolved != null { p_ty = resolved }
+        }
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
