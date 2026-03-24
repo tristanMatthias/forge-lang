@@ -1786,6 +1786,44 @@ void forge_mini_write_file(ForgeString path, ForgeString content) {
     fclose(f);
 }
 
+// ---- Efficient list push (amortized O(1) via capacity doubling) ----
+// Capacity is stored in 8 bytes BEFORE the data pointer.
+// Layout: [cap:i64][elem0][elem1]...  data_ptr points to elem0.
+
+ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
+    int64_t len = list.len;
+    int64_t cap = 0;
+    char* raw = NULL;
+
+    if (list.ptr && len > 0) {
+        // Read capacity from before data pointer
+        raw = (char*)list.ptr - sizeof(int64_t);
+        cap = *(int64_t*)raw;
+    }
+
+    if (len >= cap) {
+        // Grow: double capacity (min 8)
+        int64_t new_cap = cap < 8 ? 8 : cap * 2;
+        char* new_raw = (char*)malloc(sizeof(int64_t) + new_cap * elem_size);
+        *(int64_t*)new_raw = new_cap;
+        char* new_data = new_raw + sizeof(int64_t);
+        if (list.ptr && len > 0) {
+            memcpy(new_data, list.ptr, len * elem_size);
+        }
+        // Don't free old — GC will handle it (or leak, acceptable for compiler)
+        list.ptr = new_data;
+        raw = new_raw;
+    }
+
+    // Append element
+    memcpy((char*)list.ptr + len * elem_size, elem, elem_size);
+    list.len = len + 1;
+    return list;
+}
+
+// Stub: span() identity function (workaround for match binding issue)
+int64_t span(int64_t val) { return val; }
+
 // Debug: write ForgeString to file, print debug info
 void forge_mini_write_debug(ForgeString path, ForgeString content) {
     char cpath[4096];

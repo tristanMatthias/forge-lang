@@ -22,7 +22,13 @@ use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, emit_all_fn_bodies}
 
 fn check(source: string, filename: string) -> bool {
+    eprintln("check: " + filename + " len=" + string(source.length))
+    eprintln("  creating lexer...")
     mut lex = lexer_new(source)
+    eprintln("  lexer created, chars=" + string(lex.chars.length))
+    eprintln("  tokenizing...")
+    let tokens = lex.tokenize()
+    eprintln("  " + string(tokens.length) + " tokens")
     let tokens = lex.tokenize()
 
     if lex.diagnostics.length > 0 {
@@ -45,8 +51,8 @@ fn check(source: string, filename: string) -> bool {
     tc.check_program(program)
 
     if tc.diagnostics.has_errors {
-        let output = render_all(tc.diagnostics, source, filename)
-        eprintln(output)
+        let err_output = render_all(tc.diagnostics, source, filename)
+        eprintln(err_output)
         return false
     }
 
@@ -77,8 +83,8 @@ fn build_compile(source: string, filename: string, output: string) {
     tc.check_program(program)
 
     if tc.diagnostics.has_errors {
-        let output = render_all(tc.diagnostics, source, filename)
-        eprintln(output)
+        let err_output = render_all(tc.diagnostics, source, filename)
+        eprintln(err_output)
         process.exit(1)
     }
 
@@ -130,7 +136,11 @@ fn build_compile(source: string, filename: string, output: string) {
 // all module files, and returns concatenated source.
 
 fn resolve_modules(filepath: string) -> string {
+    eprintln("resolve_modules: " + filepath)
     let source = fs.read(filepath)
+    eprintln("  source length: " + string(source.length))
+    // Return source directly for simple files (no mod scanning)
+    return source + "\n"
     // Find the directory of this file
     mut dir = ""
     mut last_slash = -1

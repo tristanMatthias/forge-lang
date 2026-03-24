@@ -46,9 +46,14 @@ fn ir_block_terminated() -> int {
 
 fn set_field_type(fty: string) {
     LAST_IS_STR = 0
+    LAST_IS_PTR = 0
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     LAST_IS_LIST = 0
+    if fty == "ptr" {
+        LAST_IS_PTR = 1
+        return
+    }
     if fty == "%ForgeString" {
         LAST_IS_STR = 1
     }

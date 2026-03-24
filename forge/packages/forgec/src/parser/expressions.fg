@@ -445,7 +445,7 @@ impl Parser {
                         result_llvm = method_result
                         // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
                         // For built-in string methods, most return strings except indexOf/length
-                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { method != "indexOf" && method != "length" && CG_LAST_STRUCT_TYPE == "" }
+                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { field != "indexOf" && field != "length" && CG_LAST_STRUCT_TYPE == "" }
                         result = Expr.IntLit(0, span)
                         continue
                     }

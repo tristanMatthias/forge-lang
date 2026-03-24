@@ -825,7 +825,8 @@ fn ast_parse_program() -> List<FnDecl> {
         } else if tok.text == "use" || tok.text == "mod" {
             skip_to_newline()
         } else {
-            advance()
+            // Unknown top-level statement (function calls, etc.) — skip to newline
+            skip_to_newline()
         }
         skip_nl()
     }

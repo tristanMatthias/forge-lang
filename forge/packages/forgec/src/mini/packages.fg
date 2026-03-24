@@ -219,12 +219,23 @@ fn load_packages(source: string) {
 
 // Emit IR declarations for all loaded extern fns
 fn emit_package_externs() {
+    mut emitted_names: List<string> = []
     mut i = 0
     while i < PKG_EXTERN_FNS.length {
         let entry = PKG_EXTERN_FNS[i]
         // Parse "name:ret:param1,param2"
         let colon1 = entry.index_of(":")
         let fn_name = entry.substring(0, colon1)
+        // Dedup: skip if already emitted
+        mut dup = false
+        mut di = 0
+        while di < emitted_names.length {
+            if emitted_names[di] == fn_name { dup = true }
+            di = di + 1
+        }
+        if dup { i = i + 1 }
+        if !dup {
+        emitted_names = emitted_names.push(fn_name)
         let rest = entry.substring(colon1 + 1, entry.length)
         let colon2 = rest.index_of(":")
         let ret_str = rest.substring(0, colon2)
@@ -276,6 +287,7 @@ fn emit_package_externs() {
         FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
 
         i = i + 1
+        }
     }
 }
 

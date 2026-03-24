@@ -11,6 +11,43 @@ mut LBL_N: int = 0
 mut STR_N: int = 0
 mut STR_DECLS: List<string> = []
 
+// Register type table — parallel arrays (reg name → LLVM type)
+mut REG_TY_NAMES: List<string> = []
+mut REG_TY_VALS: List<string> = []
+
+fn reg_set_type(reg: string, ty: string) {
+    REG_TY_NAMES = REG_TY_NAMES.push(reg)
+    REG_TY_VALS = REG_TY_VALS.push(ty)
+}
+
+fn reg_get_type(reg: string) -> string {
+    // Search backwards (latest definition wins)
+    mut i = REG_TY_NAMES.length - 1
+    while i >= 0 {
+        if REG_TY_NAMES[i] == reg { return REG_TY_VALS[i] }
+        i = i - 1
+    }
+    ""
+}
+
+// Get the best known type for any value (register, literal, or global)
+fn val_type(val: string) -> string {
+    if val == "0" { return "i64" }
+    if val == "zeroinitializer" { return "" }
+    if val == "null" { return "ptr" }
+    if val.length < 2 { return "i64" }
+    if val.substring(0, 1) == "@" { return "ptr" }
+    let rt = reg_get_type(val)
+    if rt.length > 0 { return rt }
+    if LAST_IS_STR == 1 { return "%ForgeString" }
+    if LAST_IS_PTR == 1 { return "ptr" }
+    if LAST_IS_LIST == 1 { return "{ ptr, i64 }" }
+    if LAST_IS_FLOAT == 1 { return "double" }
+    if LAST_STRUCT_TYPE.length > 0 { return "%" + LAST_STRUCT_TYPE }
+    if LAST_ENUM_TYPE.length > 0 { return "%" + LAST_ENUM_TYPE }
+    "i64"
+}
+
 // Variable tracking — flat lists
 mut VAR_NAMES: List<string> = []
 mut VAR_REGS: List<string> = []
@@ -74,6 +111,10 @@ mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.
 mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
 mut PENDING_MATCH_STMTS: List<Stmt> = []
 mut IF_IS_EXPR: int = 0
+mut CUR_RETVAL: string = ""
+mut IF_DEPTH: int = 0
+mut IN_FN_BODY: int = 0
+mut IN_MATCH_ARM: int = 0
 
 // ─── Namespace tracking (package exports) ────────
 mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
@@ -147,6 +188,7 @@ fn load_var_by_type(name: string, idx: int, vty: string) -> string {
     let load_ty = get_load_type(vty)
     let r = new_reg()
     ir_line(r + " = load " + load_ty + ", ptr " + VAR_REGS[idx])
+    reg_set_type(r, load_ty)
     r
 }
 
@@ -226,6 +268,14 @@ fn set_type_from_llvm(ty: string) {
         LAST_ENUM_TYPE = ""
         return
     }
+    if ty == "ptr" {
+        LAST_IS_PTR = 1
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
     if ty.length > 1 {
         if ty.substring(0, 1) == "%" {
             let tname = ty.substring(1, ty.length)
@@ -258,6 +308,41 @@ fn enum_variant_index(enum_idx: int, variant_name: string) -> int {
 }
 
 // Compute max payload size across all variants (in i64 slots)
+mut SLOT_COUNT_DEPTH: int = 0
+
+fn type_slot_count(fty: string) -> int {
+    if fty == "%ForgeString" { return 2 }
+    if fty == "{ ptr, i64 }" { return 2 }
+    if is_list_type(fty) { return 2 }
+    if fty == "double" { return 1 }
+    if fty == "ptr" { return 1 }
+    if fty == "i64" { return 1 }
+    // Prevent infinite recursion
+    if SLOT_COUNT_DEPTH > 3 { return 1 }
+    SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH + 1
+    mut result = 1
+    if fty.length > 1 && fty.substring(0, 1) == "%" {
+        let tname = fty.substring(1, fty.length)
+        let si = find_struct(tname)
+        if si >= 0 {
+            let nf = struct_field_count(si)
+            mut total = 0
+            mut k = 0
+            while k < nf {
+                let sf = struct_field_type(si, k)
+                total = total + type_slot_count(sf)
+                k = k + 1
+            }
+            result = total
+        } else {
+            let ei = find_enum(tname)
+            if ei >= 0 { result = enum_max_slots(ei) + 1 }
+        }
+    }
+    SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH - 1
+    result
+}
+
 fn enum_max_slots(enum_idx: int) -> int {
     let start = ENUM_VARIANT_STARTS[enum_idx]
     let count = ENUM_VARIANT_COUNTS[enum_idx]
@@ -265,18 +350,12 @@ fn enum_max_slots(enum_idx: int) -> int {
     mut i = 0
     while i < count {
         let fc = EVAR_FIELD_COUNTS[start + i]
-        // Each field takes 1 slot (i64-sized)
-        // Strings take 2 slots ({ptr, i64})
         let fs = EVAR_FIELD_STARTS[start + i]
         mut slots = 0
         mut j = 0
         while j < fc {
             let fty = EFIELD_TYPES[fs + j]
-            if fty == "%ForgeString" {
-                slots = slots + 2
-            } else {
-                slots = slots + 1
-            }
+            slots = slots + type_slot_count(fty)
             j = j + 1
         }
         if slots > max_slots { max_slots = slots }
@@ -322,6 +401,12 @@ fn type_to_llvm(ty_name: string) -> string {
 fn parse_enum_decl_top() {
     expect("enum")
     let name = advance().text
+    // Skip if already registered (multi-module dedup)
+    if find_enum(name) >= 0 {
+        while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+        if check("{") { skip_block() }
+        return
+    }
     expect("{")
     skip_nl()
     let vstart = EVAR_NAMES.length
@@ -375,6 +460,17 @@ fn parse_type_decl_top() {
     let name = advance().text
     expect("=")
     skip_nl()
+    // Skip if already registered (multi-module dedup)
+    if find_struct(name) >= 0 {
+        // Already parsed — skip the body
+        if check("fn") {
+            skip_to_newline()
+        } else {
+            while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+            if check("{") { skip_block() }
+        }
+        return
+    }
     // Type alias to fn type: type Handler = fn(X) -> Y
     if check("fn") {
         advance()
@@ -422,11 +518,17 @@ fn parse_type_decl_top() {
                 advance()
             }
         }
-        if check("?") { advance() }
+        mut is_nullable = false
+        if check("?") { advance(); is_nullable = true }
         mut ftype = type_to_llvm(ftype_name)
         // For List<T> fields, store as "list_ELEMTYPE" for element tracking
         if ftype_name == "List" && ftype_generic != "" {
             ftype = "list_" + type_to_llvm(ftype_generic)
+        }
+        // Nullable struct/enum fields → ptr (avoids infinite-size types)
+        // But NOT for ForgeString — nullable strings stay as %ForgeString (zeroinitializer = null)
+        if is_nullable && ftype.length > 1 && ftype != "%ForgeString" {
+            if ftype.substring(0, 1) == "%" { ftype = "ptr" }
         }
         SFIELD_NAMES = SFIELD_NAMES.push(fname)
         SFIELD_TYPES = SFIELD_TYPES.push(ftype)
@@ -482,7 +584,65 @@ fn skip_nl() {
 }
 
 fn ir_line(s: string) {
-    IR = IR.push("  " + s)
+    // Fix ptr 0 → ptr null globally
+    mut fixed = s
+    if s.contains("ptr 0,") { fixed = s.substring(0, s.index_of("ptr 0,")) + "ptr null," + s.substring(s.index_of("ptr 0,") + 6, s.length) }
+    if fixed.length > 6 && fixed.substring(fixed.length - 5, fixed.length) == "ptr 0" { fixed = fixed.substring(0, fixed.length - 1) + "null" }
+    IR = IR.push("  " + fixed)
+    // Auto-track register types from emitted IR
+    if s.length > 6 && s.substring(0, 2) == "%r" {
+        let eq_pos = s.index_of(" = ")
+        if eq_pos > 0 {
+            let reg = s.substring(0, eq_pos)
+            let rest = s.substring(eq_pos + 3, s.length)
+            if rest.length > 5 {
+                // "load %Type, ptr ..."
+                if rest.substring(0, 5) == "load " {
+                    let comma = rest.index_of(",")
+                    if comma > 5 {
+                        reg_set_type(reg, rest.substring(5, comma))
+                    }
+                }
+                // "call %Type @..."
+                if rest.substring(0, 5) == "call " {
+                    let at_pos = rest.index_of(" @")
+                    if at_pos > 5 {
+                        reg_set_type(reg, rest.substring(5, at_pos))
+                    }
+                }
+                // "insertvalue %Type ..."
+                if rest.length > 12 && rest.substring(0, 12) == "insertvalue " {
+                    let after = rest.substring(12, rest.length)
+                    let sp = after.index_of(" ")
+                    if sp > 0 {
+                        reg_set_type(reg, after.substring(0, sp))
+                    }
+                }
+                // "extractvalue %Type %rN, <idx>"
+                if rest.length > 13 && rest.substring(0, 13) == "extractvalue " {
+                    let ev_rest = rest.substring(13, rest.length)
+                    if ev_rest.length > 1 && ev_rest.substring(0, 1) == "%" {
+                        let ev_sp = ev_rest.index_of(" ")
+                        if ev_sp > 0 {
+                            let ev_ty = ev_rest.substring(0, ev_sp)
+                            // Find field index (last number after ", ")
+                            let ev_comma = rest.index_of(", ")
+                            if ev_comma > 0 {
+                                let ev_idx_str = rest.substring(ev_comma + 2, rest.length)
+                                let ev_idx = int(ev_idx_str)
+                                // Look up struct field type
+                                let si = find_struct(ev_ty.substring(1, ev_ty.length))
+                                if si >= 0 {
+                                    let ft = struct_field_type(si, ev_idx)
+                                    reg_set_type(reg, ft)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn ir_raw(s: string) {
@@ -684,8 +844,11 @@ fn scan_fn_sig() {
         if rt == "int" { ret_ty = "i64" }
         if rt == "bool" { ret_ty = "i64" }
         if rt == "string" { ret_ty = "%ForgeString" }
+        if rt == "ptr" { ret_ty = "ptr" }
         if find_struct(rt) >= 0 { ret_ty = "%" + rt }
         if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+        // Fallback: check known type names from pass 0
+        if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
         if rt == "List" { ret_ty = "{ ptr, i64 }" }
         // Skip generic params
         if check("<") {
