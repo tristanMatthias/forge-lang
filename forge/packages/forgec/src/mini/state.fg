@@ -394,6 +394,17 @@ fn enum_llvm_type_str(enum_idx: int) -> string {
     ty
 }
 
+// Convert stored field type to LLVM load type
+fn type_to_llvm_field(fty: string) -> string {
+    if fty == "%ForgeString" { return "%ForgeString" }
+    if fty == "{ ptr, i64 }" { return "{ ptr, i64 }" }
+    if is_list_type(fty) { return "{ ptr, i64 }" }
+    if fty == "double" { return "double" }
+    if fty == "ptr" { return "ptr" }
+    if fty.length > 1 && fty.substring(0, 1) == "%" { return fty }
+    "i64"
+}
+
 fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "int" { return "i64" }
     if ty_name == "bool" { return "i64" }
