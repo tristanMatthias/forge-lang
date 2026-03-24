@@ -1,9 +1,7 @@
-; ModuleID = '/tmp/test_hello.fg'
-source_filename = "/tmp/test_hello.fg"
+; ModuleID = '/tmp/test8.fg'
+source_filename = "/tmp/test8.fg"
 
 %ForgeString = type { ptr, i64 }
-
-@str = private unnamed_addr constant [6 x i8] c"hello\00", align 1
 
 declare void @forge_println_string(%ForgeString)
 
@@ -39,7 +37,7 @@ declare void @forge_map_set(ptr, %ForgeString, i64)
 
 define i32 @main() {
 entry:
-  %str = call %ForgeString @forge_string_new(ptr @str, i64 5)
-  call void @forge_println_string(%ForgeString %str)
+  %i2s = call %ForgeString @forge_int_to_string(i64 99)
+  call void @forge_println_string(%ForgeString %i2s)
   ret i32 0
 }

@@ -661,7 +661,8 @@ export fn codegen_init(name: string) {
     CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
     CG_NULLABLE_STR_TY = null
-    // Skip: DECLARED_FNS = {} — the {} map literal breaks the mini parser
+    let dfns = map_new()
+    DECLARED_FNS = dfns
     cg_init_ctx(name)
     cg_init_int_types()
     cg_init_other_types()
@@ -1341,6 +1342,7 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
+        eprintln("DV:" + name)
         // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
