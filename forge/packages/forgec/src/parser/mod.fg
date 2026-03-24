@@ -85,8 +85,11 @@ impl Parser {
     }
 
     fn peek(self) -> Token {
+        eprintln("        peek: pos=" + string(self.pos) + " len=" + string(self.tokens.length))
         if self.pos < self.tokens.length {
-            self.tokens[self.pos]
+            let tok = self.tokens[self.pos]
+            eprintln("        peek: got token")
+            return tok
         } else {
             Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
         }
@@ -151,9 +154,12 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
+        eprintln("      skip_newlines: entering check loop")
         while self.check(TokenKind.Newline) {
+            eprintln("      skip_newlines: advancing")
             self.advance()
         }
+        eprintln("      skip_newlines: done")
     }
 
     // Skip tokens until matching closing brace (handles nesting).
@@ -207,7 +213,9 @@ impl Parser {
     // ─── Program Parsing ───────────────────────
 
     fn parse_program(self) -> Program {
+        eprintln("    parse_program: entered")
         mut statements: List<Statement> = []
+        eprintln("    parse_program: skip_newlines")
         self.skip_newlines()
 
         while !self.is_at_end() {
