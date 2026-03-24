@@ -1609,8 +1609,8 @@ fn codegen_return(s: Stmt) -> int {
             let conv = new_reg()
             ir_line(conv + " = inttoptr i64 " + val + " to ptr")
             ir_line("ret ptr " + conv)
-        } else if (vt == "ptr" || vt == "i64") && CUR_RET_TY.length > 1 && CUR_RET_TY.substring(0, 1) == "%" {
-            // Type mismatch — load from CUR_RETVAL
+        } else if (vt == "ptr" || vt == "i64" || vt == "") && CUR_RET_TY.length > 1 && CUR_RET_TY.substring(0, 1) == "%" {
+            // Type mismatch or null return — use zeroinitializer for null, CUR_RETVAL for type mismatch
             if CUR_RETVAL.length > 0 {
                 let rv = new_reg()
                 ir_line(rv + " = load " + CUR_RET_TY + ", ptr " + CUR_RETVAL)
