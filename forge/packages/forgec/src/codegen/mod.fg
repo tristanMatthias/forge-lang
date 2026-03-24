@@ -661,29 +661,13 @@ export fn codegen_init(name: string) {
     CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
     CG_NULLABLE_STR_TY = null
-    DECLARED_FNS = {}
-    // Inline LLVM init (sub-function calls weren't compiled by mini)
-    CG_CTX = llvm.context_create()
-    CG_MOD = llvm.module_create(name, CG_CTX)
-    CG_B = llvm.create_builder(CG_CTX)
-    CG_I64 = llvm.int64_type(CG_CTX)
-    CG_I32 = llvm.int32_type(CG_CTX)
-    CG_I8 = llvm.int8_type(CG_CTX)
-    CG_VOID = llvm.void_type(CG_CTX)
-    CG_PTR = llvm.pointer_type(CG_CTX)
-    CG_F64 = llvm.double_type(CG_CTX)
-    // String type
-    CG_STR = llvm.struct_create_named(CG_CTX, "ForgeString")
-    let sf = llvm.type_array_new(2)
-    llvm.type_array_set(sf, 0, CG_PTR)
-    llvm.type_array_set(sf, 1, CG_I64)
-    llvm.struct_set_body(CG_STR, sf, 2, 0)
-    llvm.type_array_free(sf)
-    // List type
-    CG_LIST = llvm.struct_type(CG_CTX, llvm.type_array_new(2), 2, 0)
-    // Runtime (skip for now — not needed for simple programs)
+    // Skip: DECLARED_FNS = {} — the {} map literal breaks the mini parser
+    cg_init_ctx(name)
+    cg_init_int_types()
+    cg_init_other_types()
+    cg_init_str()
+    cg_init_runtime()
     CG_ACTIVE = true
-    eprintln("CI:done i32=" + string(CG_I32))
 }
 
 export fn codegen_write_ir(path: string) {
@@ -714,8 +698,6 @@ fn cg_init_int_types() {
     CG_I64 = llvm.int64_type(CG_CTX)
     CG_I32 = llvm.int32_type(CG_CTX)
     CG_I8 = llvm.int8_type(CG_CTX)
-    // Store sentinel to test if globals survive
-    CG_I32 = 12345
 }
 
 fn cg_init_other_types() {
