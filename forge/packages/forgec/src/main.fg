@@ -77,23 +77,17 @@ fn build_compile(source: string, filename: string, output: string) {
     }
 
     mut p = parser_new_with_source(tokens, source)
-    let program = p.parse_program()
+    eprintln("BC:parsing")
+    p.parse_program()
+    eprintln("BC:parsed")
 
-    if p.diagnostics.length > 0 {
-        for d in p.diagnostics {
-            eprintln(render_diagnostic(d, source, filename))
-        }
-        process.exit(1)
-    }
-
-    // Skip type checker for now (crashes on enum payload extraction)
-    // mut tc = type_checker_new()
-    // tc.check_program(program)
-
+    eprintln("BC:init")
     codegen_init(filename)
-    // Create LLVM globals for top-level variables
+    eprintln("BC:globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    eprintln("BC:new")
     mut cg = codegen_new()
+    eprintln("BC:emit")
     cg.emit_program(program)
 
     // Write IR for debugging
@@ -359,9 +353,8 @@ fn main() {
     let command = args[1]
     let input = args[2]
 
-    // Resolve all module file paths
-    let files = resolve_module_paths(input)
-
+    eprintln("M:argc=" + string(args.length))
+    eprintln("M:cmd=[" + command + "]")
     if command == "check" {
         // For check: concatenate and check as one unit
         let source = resolve_modules(input)
@@ -371,14 +364,8 @@ fn main() {
         println("OK")
     } else if command == "build" {
         let output = if args.length > 3 { args[3] } else { "a.out" }
-        if files.length > 1 {
-            // Multi-file: separate compilation
-            build_compile_separate(files, output)
-        } else {
-            // Single file: original path (faster)
-            let source = resolve_modules(input)
-            build_compile(source, input, output)
-        }
+        let source = resolve_modules(input)
+        build_compile(source, input, output)
     } else {
         eprintln("unknown command")
         process.exit(1)
