@@ -1925,38 +1925,20 @@ impl Parser {
         }
         if self.check(TokenKind.RBrace) { self.advance() }
 
-        // Build nested if-else chain using PENDING_IF:
-        // if scrutinee == tag0 { body0 } else if scrutinee == tag1 { body1 } else { default }
-        // Work backwards: last arm's else = default, then wrap each arm
-        mut else_block = default_body
-        mut ai = arm_bodies.length - 1
-        while ai >= 0 {
-            let tag_val = arm_tags[ai]
-            let cond = Expr.Binary(scrutinee!, BinOp.Eq, Expr.IntLit(tag_val, start), start)
-            let then_block = arm_bodies[ai]
-            // This arm becomes: if (scrutinee == tag) { body } else { prev_else }
-            // Store in globals for PENDING_IF
-            CURRENT_IF_COND = cond
-            CURRENT_IF_THEN = then_block
-            CURRENT_IF_HAS_ELSE = true
-            CURRENT_IF_ELSE = else_block
-            // For the outermost arm, set PENDING_IF
-            if ai == 0 {
-                PENDING_IF = true
-                return Expr.IntLit(-1, start)
-            }
-            // For inner arms, wrap the if-else as the new else_block
-            let if_stmts: List<Statement> = [Statement.Expr(Expr.IntLit(-1, start))]
-            else_block = Block { statements: if_stmts, span: start }
-            ai = ai - 1
+        // Store match data in PENDING_MATCH globals
+        MATCH_SCRUTINEE = scrutinee!
+        mut tag_csv = ""
+        mut ti = 0
+        while ti < arm_tags.length {
+            if ti > 0 { tag_csv = tag_csv + "," }
+            tag_csv = tag_csv + string(arm_tags[ti])
+            ti = ti + 1
         }
-
-        // Fallback: just the default
-        CURRENT_IF_COND = Expr.IntLit(1, start)
-        CURRENT_IF_THEN = default_body
-        CURRENT_IF_HAS_ELSE = false
-        CURRENT_IF_ELSE = Block { statements: [], span: start }
-        PENDING_IF = true
+        MATCH_ARM_TAGS = tag_csv
+        MATCH_ARM_BODIES = arm_bodies
+        MATCH_DEFAULT = default_body
+        MATCH_HAS_DEFAULT = has_default
+        PENDING_MATCH = true
         Expr.IntLit(-1, start)
     }
 
@@ -2251,6 +2233,7 @@ impl Parser {
 
 use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
+use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)
