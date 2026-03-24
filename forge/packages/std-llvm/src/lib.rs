@@ -6,6 +6,13 @@ use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
 // Opaque pointer type used for all LLVM refs
 type LLVMPtr = *mut c_void;
 
+// All LLVM instruction names go through this: use empty string to avoid
+// crashes from non-null-terminated ForgeString ptrs passed via extern FFI
+const EMPTY_NAME: &[u8] = b"\0";
+fn safe_name(_name: *const c_char) -> *const c_char {
+    EMPTY_NAME.as_ptr() as *const c_char
+}
+
 // LLVM C API bindings (from llvm-c/Core.h, llvm-c/Analysis.h, llvm-c/TargetMachine.h)
 extern "C" {
     // Context
@@ -294,7 +301,7 @@ pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMAppendBasicBlockInContext(ctx, f, name) }
+    unsafe { LLVMAppendBasicBlockInContext(ctx, f, safe_name(name)) }
 }
 
 #[no_mangle]
@@ -326,17 +333,17 @@ pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAdd(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildAdd(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSub(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildSub(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildMul(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildMul(builder, lhs, rhs, safe_name(name)) }
 }
 
 // ── Constants ──
@@ -364,7 +371,7 @@ pub extern "C" fn forge_llvm_verify_module(m: LLVMPtr) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAlloca(builder, ty, name) }
+    unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) }
 }
 
 #[no_mangle]
@@ -375,7 +382,7 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildLoad2(builder, ty, ptr, name) }
+    unsafe { LLVMBuildLoad2(builder, ty, ptr, safe_name(name)) }
 }
 
 // ── Control flow ──
@@ -392,14 +399,14 @@ pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildICmp(builder, pred, lhs, rhs, name) }
+    unsafe { LLVMBuildICmp(builder, pred, lhs, rhs, safe_name(name)) }
 }
 
 // ── Function calls ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, name) }
+    unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name)) }
 }
 
 #[no_mangle]
@@ -427,14 +434,14 @@ pub extern "C" fn forge_llvm_value_array_free(arr: *mut LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_global_string_ptr(builder: LLVMPtr, s: *const c_char, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildGlobalStringPtr(builder, s, name) }
+    unsafe { LLVMBuildGlobalStringPtr(builder, s, safe_name(name)) }
 }
 
 // ── PHI nodes ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildPhi(builder, ty, name) }
+    unsafe { LLVMBuildPhi(builder, ty, safe_name(name)) }
 }
 
 #[no_mangle]
@@ -482,12 +489,12 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, name) }
+    unsafe { LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, name) }
+    unsafe { LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, safe_name(name)) }
 }
 
 #[no_mangle]
@@ -502,7 +509,7 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
             eprintln!("WARNING: insertvalue index {} >= struct field count {} for {}", index, n, name_s);
             return agg;
         }
-        LLVMBuildInsertValue(builder, agg, element, index as c_uint, name)
+        LLVMBuildInsertValue(builder, agg, element, index as c_uint, safe_name(name))
     }
 }
 
@@ -512,138 +519,138 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
         eprintln!("WARNING: build_extract_value called with null aggregate");
         return std::ptr::null_mut();
     }
-    unsafe { LLVMBuildExtractValue(builder, agg, index as c_uint, name) }
+    unsafe { LLVMBuildExtractValue(builder, agg, index as c_uint, safe_name(name)) }
 }
 
 // ── Arithmetic (division, remainder, float ops) ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSDiv(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildSDiv(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_srem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSRem(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildSRem(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fadd(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFAdd(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildFAdd(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fsub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFSub(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildFSub(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fmul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFMul(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildFMul(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFDiv(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildFDiv(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_frem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFRem(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildFRem(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fneg(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFNeg(builder, val, name) }
+    unsafe { LLVMBuildFNeg(builder, val, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fcmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFCmp(builder, pred, lhs, rhs, name) }
+    unsafe { LLVMBuildFCmp(builder, pred, lhs, rhs, safe_name(name)) }
 }
 
 // ── Integer Conversions ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildZExt(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildZExt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSExt(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildSExt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildTrunc(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildTrunc(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_si_to_fp(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSIToFP(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildSIToFP(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_fp_to_si(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildFPToSI(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildFPToSI(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_bitcast(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildBitCast(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildBitCast(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ptrtoint(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_inttoptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, name) }
+    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
 }
 
 // ── Bitwise Operations ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAnd(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildAnd(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildOr(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildOr(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildXor(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildXor(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_shl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildShl(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildShl(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ashr(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAShr(builder, lhs, rhs, name) }
+    unsafe { LLVMBuildAShr(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_not(builder: LLVMPtr, val: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildNot(builder, val, name) }
+    unsafe { LLVMBuildNot(builder, val, safe_name(name)) }
 }
 
 // ── Control Flow (switch, unreachable) ──
