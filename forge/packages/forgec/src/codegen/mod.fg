@@ -7,6 +7,7 @@ use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, Feat
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
+use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -1323,21 +1324,18 @@ impl Codegen {
 
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
-        for stmt in block.statements {
+        let _stmts = block.statements
+        for stmt in _stmts {
+            if llvm.block_has_terminator(CG_B) { break }
             match stmt {
-                .Expr(expr) -> {
-                    // debug removed
-                    last = self.emit_expr(expr)
-                }
-                .Assign(t, v, s) -> {
-                    self.emit_assign(t, v)
-                }
-                .Return(v, s) -> {
-                    self.emit_return(v)
-                }
-                .Feature(fe) -> {
-                    self.dispatch_stmt(fe)
-                }
+                .Expr(expr) -> { last = self.emit_expr(expr) }
+                .Assign(t, v, s) -> { self.emit_assign(t, v) }
+                .Return(v, s) -> { self.emit_return(v) }
+                .While(cond, body, s) -> { last = emit_while_inline(self, cond, body) }
+                .For(vn, iter, body, s) -> { last = emit_for_inline(self, vn, iter, body) }
+                .Break(s) -> { if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) } }
+                .Continue(s) -> { if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) } }
+                .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
         }
         last
@@ -1466,4 +1464,78 @@ impl Codegen {
         }
         field_val
     }
+}
+
+fn emit_while_inline(cg: Codegen, condition: Expr, body: Block) -> ptr {
+    let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let wc = llvm.append_basic_block(CG_CTX, fn_val, "wc")
+    let wb = llvm.append_basic_block(CG_CTX, fn_val, "wb")
+    let we = llvm.append_basic_block(CG_CTX, fn_val, "we")
+    let oc = WHILE_COND_BB
+    let oe = WHILE_END_BB
+    WHILE_COND_BB = wc
+    WHILE_END_BB = we
+    llvm.build_br(CG_B, wc)
+    llvm.position_at_end(CG_B, wc)
+    let cv = cg.emit_expr(condition)
+    let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "wt")
+    llvm.build_cond_br(CG_B, ci, wb, we)
+    llvm.position_at_end(CG_B, wb)
+    cg.emit_block(body)
+    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, wc) }
+    WHILE_COND_BB = oc
+    WHILE_END_BB = oe
+    llvm.position_at_end(CG_B, we)
+    llvm.const_int(CG_I64, 0, 0)
+}
+
+fn emit_for_inline(cg: Codegen, var_name: string, iterable: Expr, body: Block) -> ptr {
+    let lv = cg.emit_expr(iterable)
+    let ia = llvm.build_alloca(CG_B, CG_I64, "fi")
+    llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), ia)
+    let la = llvm.value_array_new(1)
+    llvm.value_array_set(la, 0, lv)
+    let lt = llvm.type_array_new(1)
+    llvm.type_array_set(lt, 0, CG_STR)
+    let lf = llvm.function_type(CG_I64, lt, 1, 0)
+    llvm.type_array_free(lt)
+    let ln = llvm.build_call(CG_B, lf, CG_RT_SLEN, la, 1, "ln")
+    llvm.value_array_free(la)
+    let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let fc = llvm.append_basic_block(CG_CTX, fn_val, "fc")
+    let fb = llvm.append_basic_block(CG_CTX, fn_val, "fb")
+    let fx = llvm.append_basic_block(CG_CTX, fn_val, "fx")
+    let fe = llvm.append_basic_block(CG_CTX, fn_val, "fe")
+    let oc = WHILE_COND_BB
+    let oe = WHILE_END_BB
+    WHILE_COND_BB = fx
+    WHILE_END_BB = fe
+    llvm.build_br(CG_B, fc)
+    llvm.position_at_end(CG_B, fc)
+    let ci = llvm.build_load(CG_B, CG_I64, ia, "ci")
+    let cc = llvm.build_icmp(CG_B, 40, ci, ln, "cc")
+    llvm.build_cond_br(CG_B, cc, fb, fe)
+    llvm.position_at_end(CG_B, fb)
+    let bi = llvm.build_load(CG_B, CG_I64, ia, "bi")
+    let dp = llvm.build_extract_value(CG_B, lv, 0, "dp")
+    let gi = llvm.value_array_new(1)
+    llvm.value_array_set(gi, 0, bi)
+    let ep = llvm.build_gep2(CG_B, CG_I64, dp, gi, 1, "ep")
+    llvm.value_array_free(gi)
+    let ev = llvm.build_load(CG_B, CG_I64, ep, "ev")
+    let va = llvm.build_alloca(CG_B, CG_I64, "iv")
+    llvm.build_store(CG_B, ev, va)
+    CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
+    CG_VAR_PTRS = CG_VAR_PTRS.push(va)
+    cg.emit_block(body)
+    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, fx) }
+    llvm.position_at_end(CG_B, fx)
+    let ic = llvm.build_load(CG_B, CG_I64, ia, "ic")
+    let ni = llvm.build_add(CG_B, ic, llvm.const_int(CG_I64, 1, 0), "ni")
+    llvm.build_store(CG_B, ni, ia)
+    llvm.build_br(CG_B, fc)
+    WHILE_COND_BB = oc
+    WHILE_END_BB = oe
+    llvm.position_at_end(CG_B, fe)
+    llvm.const_int(CG_I64, 0, 0)
 }
