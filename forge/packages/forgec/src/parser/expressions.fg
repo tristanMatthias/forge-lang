@@ -2352,7 +2352,7 @@ fn tpl_concat(a: ptr, b: ptr) -> ptr {
 // Template text is the raw content (without outer quotes), e.g. "hello ${name}".
 // Splits on ${ and } to find literal and variable segments.
 // Only handles simple variable references like ${name} (single identifiers).
-fn emit_template_expr(text: string) -> ptr {
+export fn emit_template_expr(text: string) -> ptr {
     mut result: ptr = null
     mut has_result = false
     mut pos = 0

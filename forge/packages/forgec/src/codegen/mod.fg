@@ -7,6 +7,7 @@ use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, Feat
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
+use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
