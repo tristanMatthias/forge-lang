@@ -272,7 +272,7 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__bt${BINOP_COUNTER}"
+            let tmp = "_b${BINOP_COUNTER}"
             let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
             CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
@@ -759,7 +759,7 @@ impl Parser {
         if result_is_llvm {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__pt${BINOP_COUNTER}"
+            let tmp = "_p${BINOP_COUNTER}"
             let tmp_ty = if result_is_str { Type.String } else { Type.Int }
             cg.define_var(tmp, tmp_ty, result_llvm)
             // If result is an enum, register in enum var tracking
@@ -845,7 +845,7 @@ impl Parser {
                 // Parse raw template text and emit LLVM IR for string interpolation
                 let result = emit_template_expr(tok.text)
                 BINOP_COUNTER = BINOP_COUNTER + 1
-                let tmp = "__tpl${BINOP_COUNTER}"
+                let tmp = "_t${BINOP_COUNTER}"
                 mut cg = codegen_new()
                 cg.define_var(tmp, Type.String, result)
                 CG_LAST_IS_STR = 1
@@ -1003,7 +1003,7 @@ impl Parser {
                     self.advance() // consume }
                     let map_ptr = call_rt_0(CG_RT_MAP_NEW, CG_PTR, "mn")
                     BINOP_COUNTER = BINOP_COUNTER + 1
-                    let tmp = "__map${BINOP_COUNTER}"
+                    let tmp = "_m${BINOP_COUNTER}"
                     mut cg = codegen_new()
                     cg.define_var(tmp, Type.Int, map_ptr)
                     CG_LAST_IS_STR = 0
@@ -1180,7 +1180,7 @@ impl Parser {
             llvm.type_array_free(ft)
             // Use alloca + GEP stores (avoids named vs anonymous struct type mismatch in insertvalue)
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__struct${BINOP_COUNTER}"
+            let tmp = "_s${BINOP_COUNTER}"
             let alloca = llvm.build_alloca(CG_B, struct_ty, tmp)
             // Zero-init the struct
             llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
@@ -1308,7 +1308,7 @@ impl Parser {
             // (StringLit triggers Type.String in parse_var_binding)
             // This is a hack but avoids the CG_LAST_IS_STR timing issue
             BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "__list${BINOP_COUNTER}"
+            let tmp = "_l${BINOP_COUNTER}"
             mut cg = codegen_new()
             cg.define_var(tmp, Type.String, s2)
             CG_LAST_IS_STR = 1

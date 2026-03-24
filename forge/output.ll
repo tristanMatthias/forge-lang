@@ -3,6 +3,10 @@ source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
 
+@str = private unnamed_addr constant [4 x i8] c"red\00", align 1
+@str.1 = private unnamed_addr constant [6 x i8] c"green\00", align 1
+@str.2 = private unnamed_addr constant [5 x i8] c"blue\00", align 1
+
 declare void @forge_println_string(%ForgeString)
 
 declare %ForgeString @forge_int_to_string(i64)
@@ -35,69 +39,48 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
-define i64 @count(%ForgeString %0) {
+define %ForgeString @name(i64 %0) {
 entry:
-  %items = alloca %ForgeString, align 8
-  store %ForgeString %0, ptr %items, align 8
-  %n = alloca i64, align 8
-  store i64 0, ptr %n, align 4
-  %items1 = load %ForgeString, ptr %items, align 8
-  %__for_i = alloca i64, align 8
-  store i64 0, ptr %__for_i, align 4
-  %list_len = call i64 @forge_string_length(%ForgeString %items1)
-  br label %for.cond
+  %c = alloca i64, align 8
+  store i64 %0, ptr %c, align 4
+  %c1 = load i64, ptr %c, align 4
+  %mc = icmp eq i64 %c1, 0
+  br i1 %mc, label %ma, label %mn
 
-for.cond:                                         ; preds = %for.incr, %entry
-  %for_i = load i64, ptr %__for_i, align 4
-  %forcond = icmp slt i64 %for_i, %list_len
-  br i1 %forcond, label %for.body, label %for.end
+me:                                               ; preds = %mn7, %ma6, %ma2, %ma
+  %mv = phi %ForgeString [ %str, %ma ], [ %str5, %ma2 ], [ %str9, %ma6 ], [ zeroinitializer, %mn7 ]
+  ret %ForgeString %mv
 
-for.body:                                         ; preds = %for.cond
-  %fib = load i64, ptr %__for_i, align 4
-  %dat = extractvalue %ForgeString %items1, 0
-  %elp = getelementptr i64, ptr %dat, i64 %fib
-  %elv = load i64, ptr %elp, align 4
-  %itv = alloca i64, align 8
-  store i64 %elv, ptr %itv, align 4
-  %n2 = load i64, ptr %n, align 4
-  %add = add i64 %n2, 1
-  %__bt1 = alloca i64, align 8
-  store i64 %add, ptr %__bt1, align 4
-  %__bt13 = load i64, ptr %__bt1, align 4
-  store i64 %__bt13, ptr %n, align 4
-  %__bt14 = load i64, ptr %__bt1, align 4
-  store i64 %__bt14, ptr %n, align 4
-  br label %for.incr
+ma:                                               ; preds = %entry
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 3)
+  br label %me
 
-for.incr:                                         ; preds = %for.body
-  %for_i_cur = load i64, ptr %__for_i, align 4
-  %for_i_next = add i64 %for_i_cur, 1
-  store i64 %for_i_next, ptr %__for_i, align 4
-  br label %for.cond
+mn:                                               ; preds = %entry
+  %mc4 = icmp eq i64 %c1, 1
+  br i1 %mc4, label %ma2, label %mn3
 
-for.end:                                          ; preds = %for.cond
-  %n5 = load i64, ptr %n, align 4
-  ret i64 %add
+ma2:                                              ; preds = %mn
+  %str5 = call %ForgeString @forge_string_new(ptr @str.1, i64 5)
+  br label %me
+
+mn3:                                              ; preds = %mn
+  %mc8 = icmp eq i64 %c1, 2
+  br i1 %mc8, label %ma6, label %mn7
+
+ma6:                                              ; preds = %mn3
+  %str9 = call %ForgeString @forge_string_new(ptr @str.2, i64 4)
+  br label %me
+
+mn7:                                              ; preds = %mn3
+  br label %me
 }
 
 define i32 @main() {
 entry:
-  %list_data = call ptr @forge_alloc(i64 24)
-  %ep = getelementptr i64, ptr %list_data, i64 0
-  store i64 10, ptr %ep, align 4
-  %ep1 = getelementptr i64, ptr %list_data, i64 1
-  store i64 20, ptr %ep1, align 4
-  %ep2 = getelementptr i64, ptr %list_data, i64 2
-  store i64 30, ptr %ep2, align 4
-  %ls1 = insertvalue %ForgeString undef, ptr %list_data, 0
-  %ls2 = insertvalue %ForgeString %ls1, i64 3, 1
-  %__list2 = alloca %ForgeString, align 8
-  store %ForgeString %ls2, ptr %__list2, align 8
-  %nums = alloca %ForgeString, align 8
-  store %ForgeString %ls2, ptr %nums, align 8
-  %nums3 = load %ForgeString, ptr %nums, align 8
-  %call = call i64 @count(%ForgeString %nums3)
-  %i2s = call %ForgeString @forge_int_to_string(i64 %call)
-  call void @forge_println_string(%ForgeString %i2s)
+  %_p1 = alloca i64, align 8
+  store i64 1, ptr %_p1, align 4
+  %_p11 = load i64, ptr %_p1, align 4
+  %call = call %ForgeString @name(i64 %_p11)
+  call void @forge_println_string(%ForgeString %call)
   ret i32 0
 }
