@@ -110,6 +110,7 @@ impl Parser {
 
     // Generic binary operator loop for any precedence level.
     fn parse_binary_level(self, level: int) -> Expr? {
+        eprintln("BL:" + string(level))
         let left = self.parse_next_level(level)
         if left == null { return null }
 
@@ -290,6 +291,7 @@ impl Parser {
 
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
+        eprintln("UE")
         if self.check(TokenKind.Not) {
             let start = self.advance().span
             let operand = self.parse_unary_expr() // right-associative
@@ -319,6 +321,7 @@ impl Parser {
 
     // Level 13: Postfix () . [] ? !
     fn parse_postfix_expr(self) -> Expr? {
+        eprintln("PE")
         let expr = self.parse_primary_expr()
         if expr == null { return null }
 
@@ -808,11 +811,14 @@ impl Parser {
     // ─── Primary Expressions ───────────────────
 
     fn parse_primary_expr(self) -> Expr? {
+        eprintln("PR")
         let tok = self.peek()
+        eprintln("PR:tok")
 
         // Bootstrap workaround: check data-carrying variants via kind_id
+        eprintln("PR:kid=" + string(tok.kind_id))
         if tok.kind_id == 2 {
-            // IntLiteral — parse value from text
+            // IntLiteral
             let span = self.advance().span
             return Expr.IntLit(parse_int(tok.text), span)
         }

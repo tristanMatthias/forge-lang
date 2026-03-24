@@ -332,8 +332,8 @@ fn type_slot_count(fty: string) -> int {
     if fty == "double" { return 1 }
     if fty == "ptr" { return 1 }
     if fty == "i64" { return 1 }
-    // Prevent infinite recursion
-    if SLOT_COUNT_DEPTH > 3 { return 1 }
+    // Prevent recursive explosion — nested types use ptr-sized (1 slot)
+    if SLOT_COUNT_DEPTH > 0 { return 1 }
     SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH + 1
     mut result = 1
     if fty.length > 1 && fty.substring(0, 1) == "%" {

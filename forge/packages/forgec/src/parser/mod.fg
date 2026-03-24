@@ -220,6 +220,7 @@ impl Parser {
 
         while !self.is_at_end() {
             let before = self.pos
+            eprintln("PP:" + string(before))
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
@@ -251,8 +252,7 @@ impl Parser {
             CG_IS_MAP_INDEX = 0
         }
 
-        // Hardcoded feature dispatch (bootstrap can't store fn ptrs in Maps)
-        // All feature parse fns receive Parser by value — PARSE_END_POS syncs pos back.
+        eprintln("    parse_statement: pos=" + string(self.pos))
         match tok.kind {
             .Let -> {
                 let r = parse_let(self)
@@ -351,6 +351,7 @@ impl Parser {
                 Statement.Expr(Expr.IntLit(0, tok.span))
             }
             _ -> {
+                eprintln("    parse_statement: default case, parsing expr")
                 let result = self.parse_expr_or_assign()
                 // Track last expression value for implicit function returns
                 if CG_ACTIVE && result != null {

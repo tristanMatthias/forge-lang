@@ -1674,7 +1674,11 @@ fn codegen_if(s: Stmt) -> int {
             if_val = CUR_RETVAL
         } else {
             if_val = new_reg()
-            ir_line(if_val + " = alloca [16 x i8]")
+            if CUR_RET_TY.length > 0 && CUR_RET_TY != "void" && CUR_RET_TY != "i32" {
+                ir_line(if_val + " = alloca " + CUR_RET_TY)
+            } else {
+                ir_line(if_val + " = alloca [16 x i8]")
+            }
         }
     }
 
@@ -1979,7 +1983,11 @@ fn codegen_match(s: Stmt) -> int {
     if match_result.length == 0 {
         // Fallback: create inline alloca (only for void functions)
         match_result = new_reg()
-        ir_line(match_result + " = alloca [16 x i8]")
+        if CUR_RET_TY.length > 0 && CUR_RET_TY != "void" && CUR_RET_TY != "i32" {
+            ir_line(match_result + " = alloca " + CUR_RET_TY)
+        } else {
+            ir_line(match_result + " = alloca [16 x i8]")
+        }
     }
     let tag_r = new_reg()
     if ei >= 0 {
@@ -2323,7 +2331,8 @@ fn gen_fn_decl(f: FnDecl) {
     CUR_RETVAL = ""
     if ret_ty != "void" && ret_ty != "i32" {
         CUR_RETVAL = new_reg()
-        ir_line(CUR_RETVAL + " = alloca [16 x i8]")
+        // Alloca sized for the return type (use ret_ty directly, not fixed 16 bytes)
+        ir_line(CUR_RETVAL + " = alloca " + ret_ty)
     }
 
     // Create param allocas

@@ -137,7 +137,7 @@ fn main() {
 
     let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", "/tmp/mini_runtime.o"])
     // Build link command with package libraries
-    mut link_args: List<string> = ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm"]
+    mut link_args: List<string> = ["-o", output, "/tmp/mini_output.o", "/tmp/mini_runtime.o", "-lm", "-Wl,-stack_size,0x800000"]
     let pkg_args: List<string> = get_link_args()
     mut pi = 0
     while pi < pkg_args.length {
