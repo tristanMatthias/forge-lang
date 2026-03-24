@@ -559,12 +559,17 @@ impl Parser {
                                 let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
                                 result_is_llvm = true
                                 result_llvm = field_val
-                                // Check if this field is a string type
+                                // Check if this field is a string or list type ({ptr, i64})
                                 let struct_type_name = CG_STRUCT_VAR_TYPES[svi]
-                                result_is_str = is_struct_field_str(struct_type_name, fidx)
+                                let field_type_name = get_struct_field_type(struct_type_name, fidx)
+                                result_is_str = field_type_name == "string" || field_type_name == "List"
                                 result_is_map = false
-                                // Clear struct type — we extracted a single field, not a struct
-                                CG_LAST_STRUCT_TYPE = ""
+                                // If field is a struct/enum type, track it
+                                if field_type_name != "string" && field_type_name != "int" && field_type_name != "float" && field_type_name != "bool" && field_type_name != "ptr" && field_type_name != "List" {
+                                    CG_LAST_STRUCT_TYPE = field_type_name
+                                } else {
+                                    CG_LAST_STRUCT_TYPE = ""
+                                }
                                 result = Expr.IntLit(0, span)
                                 break
                             }
@@ -1794,7 +1799,7 @@ impl Parser {
 
 // ─── Struct Field Helpers ────────────────────────
 
-use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
+use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
 use features.functions.{FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS}
 use features.if_else.{store_if_expr}
 
@@ -1807,6 +1812,34 @@ fn var_struct_type_for_expr(expr: Expr) -> string {
 
 // Track the most recently parsed identifier name (for struct type lookup)
 export mut LAST_IDENT_NAME: string = ""
+
+fn get_struct_field_type(struct_name: string, field_idx: int) -> string {
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_NAMES[si] == struct_name {
+            if si >= CG_STRUCT_FIELD_TYPE_NAMES.length { return "" }
+            let ftn = CG_STRUCT_FIELD_TYPE_NAMES[si]
+            mut idx = 0
+            mut current = ""
+            mut fi = 0
+            while fi < ftn.length {
+                let ch = ftn[fi]
+                if ch == "," {
+                    if idx == field_idx { return current }
+                    idx = idx + 1
+                    current = ""
+                } else {
+                    current = current + ch
+                }
+                fi = fi + 1
+            }
+            if idx == field_idx { return current }
+            return ""
+        }
+        si = si + 1
+    }
+    ""
+}
 
 fn is_struct_field_str(struct_name: string, field_idx: int) -> bool {
     mut si = 0

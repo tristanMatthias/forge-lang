@@ -317,6 +317,7 @@ fn build_compile_separate(files: List<string>, output: string) {
         if bsrc.length > 0 {
             eprintln("    [" + string(fi) + "] " + FN_NAMES[fi])
             emit_fn_body_from_source(cg, fi, param_offset)
+            eprintln("      ok")
         }
         param_offset = param_offset + pc
         fi = fi + 1
