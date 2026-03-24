@@ -54,7 +54,7 @@ export fn parse_for(p: Parser) -> Statement? {
         }
 
         // --- Emit: mut __for_i = 0 ---
-        let idx_name = "__for_i"
+        let idx_name = "__fi"
         let zero = llvm.const_int(CG_I64, 0, 0)
         let idx_alloca = llvm.build_alloca(CG_B, CG_I64, idx_name)
         llvm.build_store(CG_B, zero, idx_alloca)
@@ -68,7 +68,7 @@ export fn parse_for(p: Parser) -> Statement? {
         llvm.type_array_set(len_pt, 0, CG_STR)
         let len_ft = llvm.function_type(CG_I64, len_pt, 1, 0)
         llvm.type_array_free(len_pt)
-        let length_val = llvm.build_call(CG_B, len_ft, CG_RT_SLEN, len_args, 1, "list_len")
+        let length_val = llvm.build_call(CG_B, len_ft, CG_RT_SLEN, len_args, 1, "ll")
         llvm.value_array_free(len_args)
 
         // --- Determine element type before setting up blocks ---
@@ -80,10 +80,10 @@ export fn parse_for(p: Parser) -> Statement? {
         let current_bb = llvm.get_insert_block(CG_B)
         let current_fn = llvm.get_basic_block_parent(current_bb)
 
-        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.cond")
-        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.body")
-        let incr_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.incr")
-        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "for.end")
+        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "fc")
+        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "fb")
+        let incr_bb = llvm.append_basic_block(CG_CTX, current_fn, "fx")
+        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "fe")
 
         // Save outer loop blocks and set current loop blocks (for break/continue)
         // continue -> incr_bb (increment then re-check condition)
@@ -98,8 +98,8 @@ export fn parse_for(p: Parser) -> Statement? {
 
         // --- Condition: __for_i < length ---
         llvm.position_at_end(CG_B, cond_bb)
-        let idx_val = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i")
-        let cond_val = llvm.build_icmp(CG_B, 40, idx_val, length_val, "forcond")
+        let idx_val = llvm.build_load(CG_B, CG_I64, idx_alloca, "fi")
+        let cond_val = llvm.build_icmp(CG_B, 40, idx_val, length_val, "fc")
         llvm.build_cond_br(CG_B, cond_val, body_bb, end_bb)
 
         // --- Body ---
@@ -134,9 +134,9 @@ export fn parse_for(p: Parser) -> Statement? {
 
         // --- Increment block: __for_i = __for_i + 1, then back to cond ---
         llvm.position_at_end(CG_B, incr_bb)
-        let cur_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i_cur")
+        let cur_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "fic")
         let one = llvm.const_int(CG_I64, 1, 0)
-        let next_idx = llvm.build_add(CG_B, cur_idx, one, "for_i_next")
+        let next_idx = llvm.build_add(CG_B, cur_idx, one, "fin")
         llvm.build_store(CG_B, next_idx, idx_alloca)
         llvm.build_br(CG_B, cond_bb)
 

@@ -19,8 +19,8 @@ export type Diagnostic = {
     message: string,
     severity: Severity,
     span: Span,
-    help: string?,
-    note: string?,
+    help: string,
+    note: string,
 }
 
 // ─── Diagnostic Collection ─────────────────────
@@ -45,9 +45,10 @@ export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
 }
 
 export fn bag_error_count(bag: DiagnosticBag) -> int {
+    let diags = bag.diagnostics
     mut count = 0
-    for d in bag.diagnostics {
-        if d.severity == .Error {
+    for d in diags {
+        if d.severity is .Error {
             count = count + 1
         }
     }
@@ -62,8 +63,8 @@ export fn error(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Error,
         span,
-        help: null,
-        note: null,
+        help: "",
+        note: "",
     }
 }
 
@@ -84,8 +85,8 @@ export fn warning(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Warning,
         span,
-        help: null,
-        note: null,
+        help: "",
+        note: "",
     }
 }
 
@@ -95,8 +96,8 @@ export fn info(code: string, message: string, span: Span) -> Diagnostic {
         message,
         severity: Severity.Info,
         span,
-        help: null,
-        note: null,
+        help: "",
+        note: "",
     }
 }
 
@@ -151,7 +152,8 @@ export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> 
 
 export fn render_all(bag: DiagnosticBag, source: string, filename: string) -> string {
     mut output = ""
-    for d in bag.diagnostics {
+    let diags = bag.diagnostics
+    for d in diags {
         if output != "" {
             output = "${output}\n\n"
         }

@@ -82,14 +82,14 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     // Emit condition
     let cond_val = cg.emit_expr(data.condition)
     // Truncate to i1 (comparison results are i64 after zext)
-    let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
+    let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
 
     let current_bb = llvm.get_insert_block(CG_B)
     let current_fn = llvm.get_basic_block_parent(current_bb)
 
-    let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
-    let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
-    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
+    let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "th")
+    let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "el")
+    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ic")
 
     llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
 
@@ -133,13 +133,13 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
         // In a nullable function, both branches are now wrapped as {i8, T}
         if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
             let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
-            let phi = llvm.build_phi(CG_B, nullable_ty, "ifval")
+            let phi = llvm.build_phi(CG_B, nullable_ty, "iv")
             llvm.add_incoming(phi, then_val, then_end_bb)
             llvm.add_incoming(phi, else_val, else_end_bb)
             CG_LAST_IS_NULLABLE = 1
             return phi
         }
-        let phi = llvm.build_phi(CG_B, CG_I64, "ifval")
+        let phi = llvm.build_phi(CG_B, CG_I64, "iv")
         llvm.add_incoming(phi, then_val, then_end_bb)
         llvm.add_incoming(phi, else_val, else_end_bb)
         return phi

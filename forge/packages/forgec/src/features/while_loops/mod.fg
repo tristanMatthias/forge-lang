@@ -29,9 +29,9 @@ export fn parse_while(p: Parser) -> Statement? {
         let current_bb = llvm.get_insert_block(CG_B)
         let current_fn = llvm.get_basic_block_parent(current_bb)
 
-        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.cond")
-        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.body")
-        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "while.end")
+        let cond_bb = llvm.append_basic_block(CG_CTX, current_fn, "wc")
+        let body_bb = llvm.append_basic_block(CG_CTX, current_fn, "wb")
+        let end_bb = llvm.append_basic_block(CG_CTX, current_fn, "we")
 
         // Save outer loop blocks and set current loop blocks
         let outer_cond = WHILE_COND_BB
@@ -55,7 +55,7 @@ export fn parse_while(p: Parser) -> Statement? {
         // The condition's final value (may be in a temp var from inline binary)
         mut cg = codegen_new()
         let cond_val = cg.emit_expr(condition!)
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "whilecond")
+        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "wcc")
         llvm.build_cond_br(CG_B, cond_i1, body_bb, end_bb)
 
         // Position in body block, then parse+emit body
