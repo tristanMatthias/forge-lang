@@ -322,8 +322,8 @@ fn build_compile_separate(files: List<string>, output: string) {
         param_offset = param_offset + pc
         fi = fi + 1
     }
-    eprintln("  emit done")
     codegen_write_ir("output.ll")
+    eprintln("  emit done")
 
     let obj_path = output + ".o"
     if !codegen_emit_object(obj_path) {
