@@ -1098,6 +1098,24 @@ impl Codegen {
                     vi = vi - 1
                 }
             }
+            .Index(obj, idx, s) -> {
+                // Map index assignment: map[key] = value
+                let map_val = self.emit_expr(obj)
+                let key_val = self.emit_expr(idx)
+                let rhs_val = self.emit_expr(value)
+                let sa = llvm.value_array_new(3)
+                llvm.value_array_set(sa, 0, map_val)
+                llvm.value_array_set(sa, 1, key_val)
+                llvm.value_array_set(sa, 2, rhs_val)
+                let st = llvm.type_array_new(3)
+                llvm.type_array_set(st, 0, CG_PTR)
+                llvm.type_array_set(st, 1, CG_STR)
+                llvm.type_array_set(st, 2, CG_I64)
+                let sf = llvm.function_type(CG_VOID, st, 3, 0)
+                llvm.type_array_free(st)
+                llvm.build_call(CG_B, sf, CG_RT_MAP_SET, sa, 3, "")
+                llvm.value_array_free(sa)
+            }
             _ -> {}
         }
     }
