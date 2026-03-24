@@ -315,8 +315,9 @@ fn build_compile_separate(files: List<string>, output: string) {
         let pc = if fi < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fi] } else { 0 }
         let bsrc = FN_BODY_SOURCES[fi]
         if bsrc.length > 0 {
+            eprintln("    [" + string(fi) + "] " + FN_NAMES[fi])
             emit_fn_body_from_source(cg, fi, param_offset)
-            eprintln("    [" + string(fi) + "] ok")
+            eprintln("      ok")
         }
         param_offset = param_offset + pc
         fi = fi + 1
