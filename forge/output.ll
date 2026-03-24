@@ -3,7 +3,8 @@ source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
 
-@str = private unnamed_addr constant [5 x i8] c"blue\00", align 1
+@str = private unnamed_addr constant [4 x i8] c"yes\00", align 1
+@str.1 = private unnamed_addr constant [5 x i8] c"done\00", align 1
 
 declare void @forge_println_string(%ForgeString)
 
@@ -37,17 +38,20 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
-define %ForgeString @name(i64 %0) {
-entry:
-  %c = alloca i64, align 8
-  store i64 %0, ptr %c, align 4
-  %str = call %ForgeString @forge_string_new(ptr @str, i64 4)
-  ret %ForgeString %str
-}
-
 define i32 @main() {
 entry:
-  %call = call %ForgeString @name(i64 1)
-  call void @forge_println_string(%ForgeString %call)
+  br i1 true, label %th, label %el
+
+th:                                               ; preds = %entry
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 3)
+  call void @forge_println_string(%ForgeString %str)
+  br label %mg
+
+el:                                               ; preds = %entry
+  br label %mg
+
+mg:                                               ; preds = %el, %th
+  %str1 = call %ForgeString @forge_string_new(ptr @str.1, i64 4)
+  call void @forge_println_string(%ForgeString %str1)
   ret i32 0
 }
