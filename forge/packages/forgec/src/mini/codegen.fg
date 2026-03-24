@@ -356,10 +356,14 @@ fn gen_expr(e: Expr) -> string {
             let dot_idx = e.str_val.index_of(".")
             mut ename = e.str_val.substring(0, dot_idx)
             if ename.length == 0 && CUR_RET_TY.length > 1 && CUR_RET_TY.substring(0, 1) == "%" {
-                ename = CUR_RET_TY.substring(1, CUR_RET_TY.length)
+                let candidate = CUR_RET_TY.substring(1, CUR_RET_TY.length)
+                // Only use CUR_RET_TY if it's an enum (not a struct)
+                if find_enum(candidate) >= 0 { ename = candidate }
             }
             let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
             let ei = find_enum(ename)
+            // If enum not found, return 0 (unresolved shorthand)
+            if ei < 0 { return "0" }
             let vidx = enum_variant_index(ei, vname)
             let ety = "%" + ename
 

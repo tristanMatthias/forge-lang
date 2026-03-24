@@ -3,6 +3,8 @@ source_filename = "/tmp/test_hello.fg"
 
 %ForgeString = type { ptr, i64 }
 
+@str = private unnamed_addr constant [6 x i8] c"hello\00", align 1
+
 declare void @forge_println_string(%ForgeString)
 
 declare %ForgeString @forge_int_to_string(i64)
@@ -37,5 +39,7 @@ declare void @forge_map_set(ptr, %ForgeString, i64)
 
 define i32 @main() {
 entry:
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 5)
+  call void @forge_println_string(%ForgeString %str)
   ret i32 0
 }
