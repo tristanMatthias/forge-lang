@@ -75,7 +75,7 @@ export fn error_with_help(code: string, message: string, span: Span, help: strin
         severity: Severity.Error,
         span,
         help,
-        note: null,
+        note: "",
     }
 }
 
@@ -135,13 +135,13 @@ export fn render_diagnostic(d: Diagnostic, source: string, filename: string) -> 
     msg = "${msg}\n  --> ${filename}:${d.span.line}:${d.span.col}"
 
     // Help text if present
-    if d.help != null {
-        msg = "${msg}\n  help: ${d.help!}"
+    if d.help != "" {
+        msg = "${msg}\n  help: ${d.help}"
     }
 
     // Note if present
-    if d.note != null {
-        msg = "${msg}\n  note: ${d.note!}"
+    if d.note != "" {
+        msg = "${msg}\n  note: ${d.note}"
     }
 
     // TODO: implement rich source context rendering with line excerpts,
