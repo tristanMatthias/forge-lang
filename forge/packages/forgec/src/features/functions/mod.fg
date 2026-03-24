@@ -354,7 +354,8 @@ export fn declare_all_fns() {
         CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
         si = si + 1
     }
-    // Declare all function signatures
+    // Declare all function signatures — use i64 for all params/returns
+    // (bootstrap: resolve_type_to_llvm may return null for complex types)
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
@@ -367,7 +368,9 @@ export fn declare_all_fns() {
             let pt_idx = param_offset + pi
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
-                param_ty = resolve_type_to_llvm(FN_ALL_PARAM_TYPES[pt_idx])
+                let tname = FN_ALL_PARAM_TYPES[pt_idx]
+                let resolved = resolve_type_to_llvm(tname)
+                if resolved != null { param_ty = resolved }
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -377,7 +380,10 @@ export fn declare_all_fns() {
         if !is_main && i < FN_RETURN_TYPES.length {
             let rtn = FN_RETURN_TYPES[i]
             if rtn == "string" { ret_ty = CG_STR }
-            else if rtn != "" { ret_ty = resolve_type_to_llvm(rtn) }
+            else if rtn != "" {
+                let resolved = resolve_type_to_llvm(rtn)
+                if resolved != null { ret_ty = resolved }
+            }
         }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
@@ -395,9 +401,14 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let is_main = name == "main"
     let pc = if idx < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[idx] } else { 0 }
 
-    if !DECLARED_FNS.has(name) { return }
-    let fn_val = DECLARED_FNS[name]
+    // Use LLVM lookup (avoids map ptr-as-i64 corruption)
+    let fn_val = llvm.get_named_function(CG_MOD, name)
+    if fn_val == null { return }
     cg.current_fn = fn_val
+    // Re-init types (may get zeroed between functions)
+    CG_I64 = llvm.int64_type(CG_CTX)
+    CG_I32 = llvm.int32_type(CG_CTX)
+    CG_I8 = llvm.int8_type(CG_CTX)
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
     llvm.position_at_end(CG_B, entry)
@@ -424,9 +435,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
         let p_ty = if param_type_name == "string" { CG_STR } else { CG_I64 }
-        let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
-        let alloca_ty = if is_struct_param { resolve_type_to_llvm(param_type_name) } else { p_ty }
-        let alloca = llvm.build_alloca(CG_B, alloca_ty, pname)
+        let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(if param_type_name == "string" { 1 } else { 0 })
