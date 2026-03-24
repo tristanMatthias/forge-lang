@@ -1868,69 +1868,56 @@ impl Parser {
             return Expr.IntLit(0, start)
         }
 
-        // Non-codegen: parse match arms and encode as Call
-        // match scrutinee { .Pat1 -> body1, .Pat2 -> body2, _ -> default }
-        // → Call("__match_pat1,pat2,...", [scrutinee, body1, body2, ...])
+        // Non-codegen: desugar match to nested if-else via PENDING_IF
         self.skip_newlines()
         if !self.check(TokenKind.LBrace) { return null }
         self.advance() // consume {
         self.skip_newlines()
 
-        mut patterns = ""  // comma-separated pattern names
-        mut args: List<Expr> = [scrutinee!]  // first arg is scrutinee
-        mut arm_count = 0
+        // Collect arms: (pattern_tag: int, body: Block)
+        mut arm_tags: List<int> = []
+        mut arm_bodies: List<Block> = []
+        mut has_default = false
+        mut default_body = Block { statements: [], span: start }
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
-            // Parse pattern: .VariantName or _ or literal
-            mut pat_name = "_"
+            mut pat_tag = -1
             if self.check(TokenKind.Dot) {
                 self.advance()
-                pat_name = self.expect_ident()
-                // Skip binding args: .Variant(x, y)
+                let vname = self.expect_ident()
+                pat_tag = match_enum_tag(vname)
                 if self.check(TokenKind.LParen) {
                     self.advance()
-                    while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                        self.advance()
-                    }
+                    while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
                     if self.check(TokenKind.RParen) { self.advance() }
                 }
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
-                pat_name = "_"
+                pat_tag = -1
+                has_default = true
             } else {
-                // Literal pattern or ident
-                let ptok = self.peek()
-                if ptok.kind_id == 2 {
-                    pat_name = ptok.text
-                    self.advance()
-                } else if ptok.kind_id == 4 {
-                    pat_name = ptok.text
-                    self.advance()
-                } else if ptok.kind_id == 1 {
-                    pat_name = ptok.text
-                    self.advance()
-                }
-                else { self.advance() }
+                self.advance()
             }
 
-            // Expect ->
             self.skip_newlines()
             if self.check(TokenKind.Arrow) { self.advance() }
             self.skip_newlines()
 
-            // Parse arm body (expression or block)
-            let arm_body = if self.check(TokenKind.LBrace) {
-                Expr.Block(self.parse_block())
+            let body = if self.check(TokenKind.LBrace) {
+                self.parse_block()
             } else {
                 let e = self.parse_expr()
-                if e != null { e! } else { Expr.IntLit(0, start) }
+                let body_stmts: List<Statement> = if e != null { [Statement.Expr(e!)] } else { [] }
+                Block { statements: body_stmts, span: start }
             }
 
-            if arm_count > 0 { patterns = patterns + "," }
-            patterns = patterns + pat_name
-            args = args.push(arm_body)
-            arm_count = arm_count + 1
+            if pat_tag == -1 && has_default {
+                default_body = body
+            } else {
+                arm_tags = arm_tags.push(pat_tag)
+                arm_bodies = arm_bodies.push(body)
+            }
 
             self.skip_newlines()
             if self.check(TokenKind.Comma) { self.advance() }
@@ -1938,7 +1925,39 @@ impl Parser {
         }
         if self.check(TokenKind.RBrace) { self.advance() }
 
-        Expr.Call(Expr.Ident("__m_" + patterns, start), args, start)
+        // Build nested if-else chain using PENDING_IF:
+        // if scrutinee == tag0 { body0 } else if scrutinee == tag1 { body1 } else { default }
+        // Work backwards: last arm's else = default, then wrap each arm
+        mut else_block = default_body
+        mut ai = arm_bodies.length - 1
+        while ai >= 0 {
+            let tag_val = arm_tags[ai]
+            let cond = Expr.Binary(scrutinee!, BinOp.Eq, Expr.IntLit(tag_val, start), start)
+            let then_block = arm_bodies[ai]
+            // This arm becomes: if (scrutinee == tag) { body } else { prev_else }
+            // Store in globals for PENDING_IF
+            CURRENT_IF_COND = cond
+            CURRENT_IF_THEN = then_block
+            CURRENT_IF_HAS_ELSE = true
+            CURRENT_IF_ELSE = else_block
+            // For the outermost arm, set PENDING_IF
+            if ai == 0 {
+                PENDING_IF = true
+                return Expr.IntLit(-1, start)
+            }
+            // For inner arms, wrap the if-else as the new else_block
+            let if_stmts: List<Statement> = [Statement.Expr(Expr.IntLit(-1, start))]
+            else_block = Block { statements: if_stmts, span: start }
+            ai = ai - 1
+        }
+
+        // Fallback: just the default
+        CURRENT_IF_COND = Expr.IntLit(1, start)
+        CURRENT_IF_THEN = default_body
+        CURRENT_IF_HAS_ELSE = false
+        CURRENT_IF_ELSE = Block { statements: [], span: start }
+        PENDING_IF = true
+        Expr.IntLit(-1, start)
     }
 
     // ─── Span Helper ───────────────────────────
