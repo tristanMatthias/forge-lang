@@ -762,12 +762,16 @@ impl Parser {
 
             // Struct literal: Ident { field: value, ... }
             if self.check(TokenKind.LBrace) && self.is_struct_literal() {
-                self.parse_struct_literal()
-                // Struct literal already stored in __struct temp var
-                // Don't track as LLVM value (would try to re-store in i64 alloca)
-                result_is_llvm = false
-                result_is_str = false
-                result = Expr.IntLit(0, self.current_span())
+                let slit = self.parse_struct_literal()
+                if !CG_ACTIVE {
+                    // Pure AST: return the Call-encoded struct literal
+                    if slit != null { result = slit! }
+                } else {
+                    // CG_ACTIVE: struct built inline, use placeholder
+                    result_is_llvm = false
+                    result_is_str = false
+                    result = Expr.IntLit(0, self.current_span())
+                }
                 continue
             }
 
@@ -1288,7 +1292,9 @@ impl Parser {
             return Expr.Ident(tmp, start)
         }
 
-        // Non-codegen fallback: parse and discard
+        // Non-codegen: encode as Call("__s_TypeName", [field1, field2, ...])
+        let struct_name = LAST_IDENT_NAME
+        mut field_values: List<Expr> = []
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
             let field_tok = self.peek()
@@ -1296,23 +1302,24 @@ impl Parser {
                 self.advance()
                 if self.check(TokenKind.Colon) {
                     self.advance()
-                    let _value = self.parse_expr()
+                    let fval = self.parse_expr()
+                    if fval != null {
+                        field_values = field_values.push(fval!)
+                    }
+                } else {
+                    // Shorthand: { name } means { name: name }
+                    field_values = field_values.push(Expr.Ident(field_tok.text, field_tok.span))
                 }
-            } else if field_tok.kind_id == 4 {
-                self.advance()
-                if self.expect(TokenKind.Colon) == null { return null }
-                let _value = self.parse_expr()
             } else {
                 break
             }
-
             self.skip_newlines()
             if self.check(TokenKind.Comma) { self.advance() }
+            self.skip_newlines()
         }
-
         self.expect(TokenKind.RBrace)
-        // Return a placeholder block for now
-        Expr.Block(Block { statements: [], span: start })
+        // Return Call-encoded struct lit
+        Expr.Call(Expr.Ident("__s_" + struct_name, start), field_values, start)
     }
 
     // ─── List Literal ──────────────────────────

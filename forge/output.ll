@@ -2,6 +2,7 @@
 source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
+%Point = type { i64, i64 }
 
 declare void @forge_println_string(%ForgeString)
 
@@ -35,36 +36,20 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
-define i64 @fib(i64 %0) {
-entry:
-  %n = alloca i64, align 8
-  store i64 %0, ptr %n, align 4
-  %n1 = load i64, ptr %n, align 4
-  %le = icmp sle i64 %n1, 1
-  br i1 %le, label %th, label %el
-
-th:                                               ; preds = %entry
-  %n2 = load i64, ptr %n, align 4
-  ret i64 %n2
-
-el:                                               ; preds = %entry
-  br label %mg
-
-mg:                                               ; preds = %el
-  %n3 = load i64, ptr %n, align 4
-  %sub = sub i64 %n3, 1
-  %call = call i64 @fib(i64 %sub)
-  %n4 = load i64, ptr %n, align 4
-  %sub5 = sub i64 %n4, 2
-  %call6 = call i64 @fib(i64 %sub5)
-  %add = add i64 %call, %call6
-  ret i64 %add
-}
-
 define i32 @main() {
 entry:
-  %call = call i64 @fib(i64 10)
-  %i2s = call %ForgeString @forge_int_to_string(i64 %call)
+  %sl = alloca %Point, align 8
+  store %Point zeroinitializer, ptr %sl, align 4
+  %sf = getelementptr inbounds %Point, ptr %sl, i32 0, i32 0
+  store i64 42, ptr %sf, align 4
+  %sf1 = getelementptr inbounds %Point, ptr %sl, i32 0, i32 1
+  store i64 10, ptr %sf1, align 4
+  %sv = load %Point, ptr %sl, align 4
+  %p = alloca %Point, align 8
+  store %Point %sv, ptr %p, align 4
+  %p2 = load %Point, ptr %p, align 4
+  %x = extractvalue %Point %p2, 0
+  %i2s = call %ForgeString @forge_int_to_string(i64 %x)
   call void @forge_println_string(%ForgeString %i2s)
   ret i32 0
 }
