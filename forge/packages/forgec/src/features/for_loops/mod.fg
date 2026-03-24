@@ -44,14 +44,14 @@ export fn parse_for(p: Parser) -> Statement? {
         if iterable == null { return null }
         p.skip_newlines()
 
-        // Get list value: use CG_LAST_VAL if available (avoids Ident boxing corruption)
-        let list_val = if CG_HAS_LAST_VAL == 1 {
-            CG_HAS_LAST_VAL = 0
-            CG_LAST_VAL
-        } else {
-            mut cg = codegen_new()
-            cg.emit_expr(iterable!)
-        }
+        // Always emit iterable via emit_expr (loads from temp with correct type)
+        CG_HAS_LAST_VAL = 0
+        mut cg = codegen_new()
+        let list_val = cg.emit_expr(iterable!)
+
+        // Store list in a local alloca so it can be re-loaded in loop body
+        let list_alloca = llvm.build_alloca(CG_B, CG_STR, "__for_list")
+        llvm.build_store(CG_B, list_val, list_alloca)
 
         // --- Emit: mut __for_i = 0 ---
         let idx_name = "__for_i"
@@ -61,7 +61,7 @@ export fn parse_for(p: Parser) -> Statement? {
         CG_VAR_NAMES = CG_VAR_NAMES.push(idx_name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(idx_alloca)
 
-        // --- Get list length via forge_string_length (same {ptr, i64} layout) ---
+        // --- Get list length ---
         let len_args = llvm.value_array_new(1)
         llvm.value_array_set(len_args, 0, list_val)
         let len_pt = llvm.type_array_new(1)
@@ -105,9 +105,10 @@ export fn parse_for(p: Parser) -> Statement? {
         // --- Body ---
         llvm.position_at_end(CG_B, body_bb)
 
-        // let item = list[__for_i] — use correct element type
+        // let item = list[__for_i] — re-load list from alloca (SSA value from entry block not usable here)
         let body_idx = llvm.build_load(CG_B, CG_I64, idx_alloca, "for_i_body")
-        let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "list_data")
+        let body_list = llvm.build_load(CG_B, CG_STR, list_alloca, "for_list")
+        let data_ptr = llvm.build_extract_value(CG_B, body_list, 0, "list_data")
         let indices = llvm.value_array_new(1)
         llvm.value_array_set(indices, 0, body_idx)
         let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "elem_ptr")

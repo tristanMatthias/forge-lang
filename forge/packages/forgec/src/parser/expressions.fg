@@ -1178,20 +1178,20 @@ impl Parser {
                 struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
             }
             llvm.type_array_free(ft)
-            mut struct_val = llvm.get_undef(struct_ty)
-            mut fi = 0
-            while fi < field_count {
-                let v = llvm.value_array_get(vals, fi)
-                struct_val = llvm.build_insert_value(CG_B, struct_val, v, fi, "sf")
-                fi = fi + 1
-            }
-            llvm.value_array_free(vals)
-
-            // Store in temp with struct alloca
+            // Use alloca + GEP stores (avoids named vs anonymous struct type mismatch in insertvalue)
             BINOP_COUNTER = BINOP_COUNTER + 1
             let tmp = "__struct${BINOP_COUNTER}"
             let alloca = llvm.build_alloca(CG_B, struct_ty, tmp)
-            llvm.build_store(CG_B, struct_val, alloca)
+            // Zero-init the struct
+            llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
+            mut fi = 0
+            while fi < field_count {
+                let v = llvm.value_array_get(vals, fi)
+                let field_ptr = llvm.build_struct_gep2(CG_B, struct_ty, alloca, fi, "sf_ptr")
+                llvm.build_store(CG_B, v, field_ptr)
+                fi = fi + 1
+            }
+            llvm.value_array_free(vals)
             CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
             CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
 
