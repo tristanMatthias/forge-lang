@@ -9,7 +9,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, resolve_type_to_llvm}
 use parser.expressions.LAST_IDENT_NAME
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
@@ -71,10 +71,31 @@ export fn parse_for(p: Parser) -> Statement? {
         let length_val = llvm.build_call(CG_B, len_ft, CG_RT_SLEN, len_args, 1, "ll")
         llvm.value_array_free(len_args)
 
-        // --- Determine element type before setting up blocks ---
+        // --- Determine element type ---
+        // Check by variable name first, then by CG_LAST_IS_LIST for struct field lists
         let list_name = LAST_IDENT_NAME
-        let elem_ty = if is_list_var(list_name) { list_elem_llvm_type(list_name) } else { CG_I64 }
-        let elem_is_str = is_str_list_var(list_name)
+        mut elem_ty = CG_I64
+        mut elem_is_str = false
+        if is_list_var(list_name) {
+            elem_ty = list_elem_llvm_type(list_name)
+            elem_is_str = is_str_list_var(list_name)
+        } else if CG_LAST_IS_LIST == 1 {
+            // Struct field list — check element type from CSV by field name
+            let ft = list_elem_type(var_name)
+            if ft == "" {
+                // Try the iterable expression's field name
+                let iname = if iterable != null {
+                    match iterable! {
+                        .Ident(n, s) -> n
+                        _ -> ""
+                    }
+                } else { "" }
+                let ft2 = list_elem_type(iname)
+                if ft2 != "" { elem_ty = resolve_type_to_llvm(ft2) }
+            } else {
+                elem_ty = resolve_type_to_llvm(ft)
+            }
+        }
 
         // --- Set up loop blocks ---
         let current_bb = llvm.get_insert_block(CG_B)

@@ -90,16 +90,23 @@ fn parse_type_decl(p: Parser) -> Statement? {
             let fname = p.expect_ident()
             p.expect(TokenKind.Colon)
             // Parse type — might be generic like List<Token>
-            let ftype_name = p.expect_ident()
-            // Skip generic args
+            mut ftype_name = p.expect_ident()
+            // Capture generic arg for List<T> → store as "List:T"
             if p.check(TokenKind.Lt) {
                 p.advance()
+                let gen_arg = p.expect_ident()
+                // Store as "List:Diagnostic" so element type is recoverable
+                if ftype_name == "List" || ftype_name == "Map" {
+                    ftype_name = ftype_name + ":" + gen_arg
+                }
+                // Skip remaining generic args
                 mut depth = 1
                 while depth > 0 && !p.is_at_end() {
                     if p.check(TokenKind.Lt) { depth = depth + 1 }
                     if p.check(TokenKind.Gt) { depth = depth - 1 }
-                    p.advance()
+                    if depth > 0 { p.advance() }
                 }
+                if p.check(TokenKind.Gt) { p.advance() }
             }
             // Check for nullable ?
             if p.check(TokenKind.Question) { p.advance() }

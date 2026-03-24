@@ -568,8 +568,22 @@ impl Parser {
                                 result_is_llvm = true
                                 result_llvm = field_val
                                 let field_type_name = get_struct_field_type(struct_type_for_field, fidx)
-                                result_is_str = field_type_name == "string" || field_type_name == "List"
-                                if field_type_name != "string" && field_type_name != "int" && field_type_name != "float" && field_type_name != "bool" && field_type_name != "ptr" && field_type_name != "List" {
+                                let is_list_field = field_type_name.length >= 4 && field_type_name[0] == "L"
+                                result_is_str = field_type_name == "string" || is_list_field
+                                // Track list element type for for-in loops
+                                if is_list_field {
+                                    // "List:Diagnostic" → register element type
+                                    let colon_pos = field_type_name.index_of(":")
+                                    if colon_pos > 0 {
+                                        let elem_type = field_type_name.substring(colon_pos + 1, field_type_name.length)
+                                        // Use field name as the list var name
+                                        CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + field + ","
+                                        CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + "," + field + ":" + elem_type + ","
+                                        // Also track temp name that will be created by postfix exit
+                                        CG_LAST_IS_LIST = 1
+                                    }
+                                }
+                                if field_type_name != "string" && field_type_name != "int" && field_type_name != "float" && field_type_name != "bool" && field_type_name != "ptr" && !is_list_field {
                                     CG_LAST_STRUCT_TYPE = field_type_name
                                 } else {
                                     CG_LAST_STRUCT_TYPE = ""
