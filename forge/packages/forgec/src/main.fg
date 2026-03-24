@@ -29,7 +29,14 @@ fn check(source: string, filename: string) -> bool {
     eprintln("  tokenizing...")
     let tokens = lex.tokenize()
     eprintln("  " + string(tokens.length) + " tokens")
-    let tokens = lex.tokenize()
+
+    eprintln("  parsing...")
+    mut p = parser_new_with_source(tokens, source)
+    eprintln("  parser created, parsing program...")
+    let program = p.parse_program()
+    eprintln("  parsed!")
+    eprintln("OK")
+    return true
 
     if lex.diagnostics.length > 0 {
         for d in lex.diagnostics {
