@@ -485,6 +485,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_IS_MAP_INDEX = 0
     CG_LAST_STRUCT_TYPE = ""
     CG_LAST_IS_NULLABLE = 0
+    PENDING_IF = false
+    PENDING_MATCH = false
 
     // Pure AST parse then emit
     if body_src != "" {

@@ -4,7 +4,10 @@ source_filename = "forgec_output"
 %ForgeString = type { ptr, i64 }
 %Color = type { i8, i64 }
 
-@str = private unnamed_addr constant [5 x i8] c"blue\00", align 1
+@str = private unnamed_addr constant [4 x i8] c"red\00", align 1
+@str.1 = private unnamed_addr constant [6 x i8] c"green\00", align 1
+@str.2 = private unnamed_addr constant [5 x i8] c"blue\00", align 1
+@str.3 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 
 declare void @forge_println_string(%ForgeString)
 
@@ -43,29 +46,37 @@ entry:
   %c = alloca i64, align 8
   store i64 %0, ptr %c, align 4
   %c1 = load %Color, ptr %c, align 4
-  %mc = icmp eq %Color %c1, i64 0
+  %tg = extractvalue %Color %c1, 0
+  %te = zext i8 %tg to i64
+  %mc = icmp eq i64 %te, 0
   br i1 %mc, label %ma, label %mn
 
-me:                                               ; preds = %ma5, %mn3, %ma2, %ma
-  %mv = phi i64 [ 0, %ma ], [ 0, %ma2 ], [ %str, %ma5 ]
-  ret i64 %mv
+me:                                               ; preds = %mn7, %ma6, %ma2, %ma
+  %mv = phi %ForgeString [ %str, %ma ], [ %str5, %ma2 ], [ %str9, %ma6 ], [ %str10, %mn7 ]
+  ret %ForgeString %mv
 
 ma:                                               ; preds = %entry
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 3)
   br label %me
 
 mn:                                               ; preds = %entry
-  %mc4 = icmp eq %Color %c1, i64 -1
+  %mc4 = icmp eq i64 %te, 1
   br i1 %mc4, label %ma2, label %mn3
 
 ma2:                                              ; preds = %mn
+  %str5 = call %ForgeString @forge_string_new(ptr @str.1, i64 5)
   br label %me
 
 mn3:                                              ; preds = %mn
-  %mc6 = icmp eq %Color %c1, i64 -1
-  br i1 %mc6, label %ma5, label %me
+  %mc8 = icmp eq i64 %te, 2
+  br i1 %mc8, label %ma6, label %mn7
 
-ma5:                                              ; preds = %mn3
-  %str = call %ForgeString @forge_string_new(ptr @str, i64 4)
+ma6:                                              ; preds = %mn3
+  %str9 = call %ForgeString @forge_string_new(ptr @str.2, i64 4)
+  br label %me
+
+mn7:                                              ; preds = %mn3
+  %str10 = call %ForgeString @forge_string_new(ptr @str.3, i64 0)
   br label %me
 }
 

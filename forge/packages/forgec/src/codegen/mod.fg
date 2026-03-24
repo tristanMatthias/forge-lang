@@ -970,7 +970,13 @@ impl Codegen {
     }
 
     fn emit_match_from_globals(self) -> ptr {
-        let subj = self.emit_expr(MATCH_SCRUTINEE)
+        let subj_raw = self.emit_expr(MATCH_SCRUTINEE)
+        // For enum scrutinees, extract the tag byte
+        mut subj = subj_raw
+        if CG_LAST_ENUM_TYPE != "" {
+            let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+            subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
+        }
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
         // Parse tag CSV
@@ -995,11 +1001,7 @@ impl Codegen {
         mut ai = 0
         while ai < tags.length {
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
-            let next_bb = if ai < tags.length - 1 {
-                llvm.append_basic_block(CG_CTX, fn_val, "mn")
-            } else if MATCH_HAS_DEFAULT {
-                llvm.append_basic_block(CG_CTX, fn_val, "md")
-            } else { merge_bb }
+            let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
             let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
             let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
             llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
@@ -1012,17 +1014,24 @@ impl Codegen {
             llvm.position_at_end(CG_B, next_bb)
             ai = ai + 1
         }
-        // Default arm
+        // Default/fallthrough arm
         if MATCH_HAS_DEFAULT {
             let dv = self.emit_block(MATCH_DEFAULT)
             let de = llvm.get_insert_block(CG_B)
             if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
             phi_vals = phi_vals.push(dv)
             phi_bbs = phi_bbs.push(de)
+        } else {
+            // No default — add empty fallthrough for PHI completeness
+            let def_val = if CG_LAST_IS_STR == 1 { self.emit_string("") } else { llvm.const_int(CG_I64, 0, 0) }
+            phi_vals = phi_vals.push(def_val)
+            phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
+            llvm.build_br(CG_B, merge_bb)
         }
         llvm.position_at_end(CG_B, merge_bb)
         if phi_vals.length > 0 {
-            let phi = llvm.build_phi(CG_B, CG_I64, "mv")
+            let phi_ty = if CG_LAST_IS_STR == 1 { CG_STR } else { CG_I64 }
+            let phi = llvm.build_phi(CG_B, phi_ty, "mv")
             mut pi = 0
             while pi < phi_vals.length {
                 llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
@@ -1566,7 +1575,6 @@ impl Codegen {
                         PENDING_IF = false
                         last = self.emit_if_from_globals()
                     } else if PENDING_MATCH {
-                        eprintln("MATCH EMIT!")
                         PENDING_MATCH = false
                         last = self.emit_match_from_globals()
                     } else {

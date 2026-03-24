@@ -1570,7 +1570,6 @@ impl Parser {
     // Supports: integer patterns, string patterns, .Variant patterns, _ wildcard.
 
     fn parse_match_expr(self) -> Expr? {
-        eprintln("MATCH: active=" + if CG_ACTIVE { "YES" } else { "NO" })
         let start = self.advance().span // consume 'match'
         self.skip_newlines()
 
@@ -1585,7 +1584,6 @@ impl Parser {
         if self.expect(TokenKind.LBrace) == null { return null }
 
         if CG_ACTIVE {
-            eprintln("MATCH: taking CG_ACTIVE path")
             // Emit scrutinee value once
             mut cg = codegen_new()
             let subj_val = cg.emit_expr(scrutinee!)
@@ -1876,7 +1874,6 @@ impl Parser {
 
         // Determine scrutinee's enum type from variable name
         let enum_type = cg_var_enum_type(scrutinee_var)
-        eprintln("MATCH: v0=" + ENUM_VARIANT_NAMES[0] + " v1=" + ENUM_VARIANT_NAMES[1] + " v2=" + ENUM_VARIANT_NAMES[2] + " v3=" + ENUM_VARIANT_NAMES[3])
 
         // Collect arms: (pattern_tag: int, body: Block)
         mut arm_tags: List<int> = []
@@ -1893,7 +1890,6 @@ impl Parser {
                 // Try qualified name first (Color.Green), then bare (Green)
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
-                eprintln("MATCH ARM: qname=[" + qname + "] tag=" + string(pat_tag) + " vname=[" + vname + "]")
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                 if self.check(TokenKind.LParen) {
                     self.advance()
@@ -1912,6 +1908,8 @@ impl Parser {
             if self.check(TokenKind.Arrow) { self.advance() }
             self.skip_newlines()
 
+            let prev_match = IN_MATCH_ARM
+            IN_MATCH_ARM = true
             let body = if self.check(TokenKind.LBrace) {
                 self.parse_block()
             } else {
@@ -1919,6 +1917,7 @@ impl Parser {
                 let body_stmts: List<Statement> = if e != null { [Statement.Expr(e!)] } else { [] }
                 Block { statements: body_stmts, span: start }
             }
+            IN_MATCH_ARM = prev_match
 
             if pat_tag == -1 && has_default {
                 default_body = body
@@ -1947,7 +1946,6 @@ impl Parser {
         MATCH_DEFAULT = default_body
         MATCH_HAS_DEFAULT = has_default
         PENDING_MATCH = true
-        eprintln("MATCH: SET PENDING, bodies=" + string(arm_bodies.length) + " tags=" + MATCH_ARM_TAGS)
         Expr.IntLit(-1, start)
     }
 
