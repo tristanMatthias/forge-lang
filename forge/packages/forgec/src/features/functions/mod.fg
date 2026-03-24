@@ -483,7 +483,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_LAST_STRUCT_TYPE = ""
     CG_LAST_IS_NULLABLE = 0
 
-    // Parse (pure AST, no inline codegen) then emit
+    // Pure AST parse then emit
     if body_src != "" {
         CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)

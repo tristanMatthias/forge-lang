@@ -2,7 +2,8 @@
 source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
-%Point = type { i64, i64 }
+
+@str = private unnamed_addr constant [5 x i8] c"blue\00", align 1
 
 declare void @forge_println_string(%ForgeString)
 
@@ -36,20 +37,17 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
+define %ForgeString @name(i64 %0) {
+entry:
+  %c = alloca i64, align 8
+  store i64 %0, ptr %c, align 4
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 4)
+  ret %ForgeString %str
+}
+
 define i32 @main() {
 entry:
-  %sl = alloca %Point, align 8
-  store %Point zeroinitializer, ptr %sl, align 4
-  %sf = getelementptr inbounds %Point, ptr %sl, i32 0, i32 0
-  store i64 42, ptr %sf, align 4
-  %sf1 = getelementptr inbounds %Point, ptr %sl, i32 0, i32 1
-  store i64 10, ptr %sf1, align 4
-  %sv = load %Point, ptr %sl, align 4
-  %p = alloca %Point, align 8
-  store %Point %sv, ptr %p, align 4
-  %p2 = load %Point, ptr %p, align 4
-  %x = extractvalue %Point %p2, 0
-  %i2s = call %ForgeString @forge_int_to_string(i64 %x)
-  call void @forge_println_string(%ForgeString %i2s)
+  %call = call %ForgeString @name(i64 1)
+  call void @forge_println_string(%ForgeString %call)
   ret i32 0
 }

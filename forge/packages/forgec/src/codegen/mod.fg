@@ -888,6 +888,79 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
+    fn emit_match_call(self, patterns: string, args: List<Expr>) -> ptr {
+        if args.length < 2 { return llvm.const_int(CG_I64, 0, 0) }
+        // args[0] = scrutinee, args[1..] = arm bodies
+        let subj = self.emit_expr(args[0])
+        let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+        let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
+
+        // Parse patterns CSV and create arm blocks
+        mut arm_idx = 0
+        mut pat_pos = 0
+        mut phi_vals: List<ptr> = []
+        mut phi_bbs: List<ptr> = []
+
+        while arm_idx < args.length - 1 {
+            // Extract next pattern name
+            mut pat = ""
+            while pat_pos < patterns.length {
+                let ch = patterns[pat_pos]
+                pat_pos = pat_pos + 1
+                if ch == "," { break }
+                pat = pat + ch
+            }
+
+            let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
+            let next_bb = if arm_idx < args.length - 2 {
+                llvm.append_basic_block(CG_CTX, fn_val, "mn")
+            } else { merge_bb }
+
+            if pat == "_" {
+                // Wildcard — unconditional branch
+                llvm.build_br(CG_B, arm_bb)
+            } else {
+                // Enum variant — compare tag to variant index
+                let tag_val = llvm.const_int(CG_I64, match_enum_tag(pat), 0)
+                // For struct-typed enums, extract tag first
+                mut cmp_lhs = subj
+                if CG_LAST_ENUM_TYPE != "" {
+                    let etag = llvm.build_extract_value(CG_B, subj, 0, "tg")
+                    cmp_lhs = llvm.build_zext(CG_B, etag, CG_I64, "te")
+                }
+                let cmp = llvm.build_icmp(CG_B, 32, cmp_lhs, tag_val, "mc")
+                llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+            }
+
+            llvm.position_at_end(CG_B, arm_bb)
+            let arm_val = self.emit_expr(args[arm_idx + 1])
+            let arm_end = llvm.get_insert_block(CG_B)
+            if !llvm.block_has_terminator(CG_B) {
+                llvm.build_br(CG_B, merge_bb)
+            }
+            phi_vals = phi_vals.push(arm_val)
+            phi_bbs = phi_bbs.push(arm_end)
+
+            if pat != "_" && arm_idx < args.length - 2 {
+                llvm.position_at_end(CG_B, next_bb)
+            }
+            arm_idx = arm_idx + 1
+        }
+
+        llvm.position_at_end(CG_B, merge_bb)
+        // Build PHI if multiple arms
+        if phi_vals.length > 0 {
+            let phi = llvm.build_phi(CG_B, CG_I64, "mv")
+            mut pi = 0
+            while pi < phi_vals.length {
+                llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
+                pi = pi + 1
+            }
+            return phi
+        }
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
     fn emit_struct_lit(self, struct_name: string, field_values: List<Expr>) -> ptr {
         // Find struct LLVM type
         mut struct_ty: ptr = null
@@ -1204,6 +1277,13 @@ impl Codegen {
                                 }
                             }
                         }
+                    }
+                }
+                // Match expression: __m_pat1,pat2,...(scrutinee, body1, body2, ...)
+                if name.length > 4 {
+                    if name[0] == "_" && name[1] == "_" && name[2] == "m" && name[3] == "_" {
+                        let patterns = name.substring(4, name.length)
+                        return self.emit_match_call(patterns, args)
                     }
                 }
                 // Cast functions: string(x), int(x), float(x), bool(x)
@@ -1575,6 +1655,13 @@ impl Codegen {
             _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Enum constructor: Color.Green → tag value
+        let tag = match_enum_tag(var_name + "." + field)
+        if tag >= 0 {
+            CG_LAST_ENUM_TYPE = var_name
+            return llvm.const_int(CG_I64, tag, 0)
+        }
 
         // Special case: .length property
         if field == "length" {

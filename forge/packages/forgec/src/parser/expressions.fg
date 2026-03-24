@@ -1868,11 +1868,77 @@ impl Parser {
             return Expr.IntLit(0, start)
         }
 
-        // Not in codegen — just parse and discard
-        // Bootstrap workaround: avoid function calls as last expression in if-blocks
-        // (causes domination errors). Use skip_to_matching_brace which is simpler.
-        self.skip_to_matching_brace()
-        Expr.IntLit(0, start)
+        // Non-codegen: parse match arms and encode as Call
+        // match scrutinee { .Pat1 -> body1, .Pat2 -> body2, _ -> default }
+        // → Call("__match_pat1,pat2,...", [scrutinee, body1, body2, ...])
+        self.skip_newlines()
+        if !self.check(TokenKind.LBrace) { return null }
+        self.advance() // consume {
+        self.skip_newlines()
+
+        mut patterns = ""  // comma-separated pattern names
+        mut args: List<Expr> = [scrutinee!]  // first arg is scrutinee
+        mut arm_count = 0
+
+        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+            self.skip_newlines()
+            // Parse pattern: .VariantName or _ or literal
+            mut pat_name = "_"
+            if self.check(TokenKind.Dot) {
+                self.advance()
+                pat_name = self.expect_ident()
+                // Skip binding args: .Variant(x, y)
+                if self.check(TokenKind.LParen) {
+                    self.advance()
+                    while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                        self.advance()
+                    }
+                    if self.check(TokenKind.RParen) { self.advance() }
+                }
+            } else if self.check(TokenKind.Underscore) {
+                self.advance()
+                pat_name = "_"
+            } else {
+                // Literal pattern or ident
+                let ptok = self.peek()
+                if ptok.kind_id == 2 {
+                    pat_name = ptok.text
+                    self.advance()
+                } else if ptok.kind_id == 4 {
+                    pat_name = ptok.text
+                    self.advance()
+                } else if ptok.kind_id == 1 {
+                    pat_name = ptok.text
+                    self.advance()
+                }
+                else { self.advance() }
+            }
+
+            // Expect ->
+            self.skip_newlines()
+            if self.check(TokenKind.Arrow) { self.advance() }
+            self.skip_newlines()
+
+            // Parse arm body (expression or block)
+            let arm_body = if self.check(TokenKind.LBrace) {
+                Expr.Block(self.parse_block())
+            } else {
+                let e = self.parse_expr()
+                if e != null { e! } else { Expr.IntLit(0, start) }
+            }
+
+            if arm_count > 0 { patterns = patterns + "," }
+            patterns = patterns + pat_name
+            args = args.push(arm_body)
+            arm_count = arm_count + 1
+
+            self.skip_newlines()
+            if self.check(TokenKind.Comma) { self.advance() }
+            self.skip_newlines()
+        }
+        if self.check(TokenKind.RBrace) { self.advance() }
+
+        Expr.Call(Expr.Ident("__m_" + patterns, start), args, start)
     }
 
     // ─── Span Helper ───────────────────────────
