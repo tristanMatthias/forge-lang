@@ -2,12 +2,8 @@
 source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
-%Color = type { i8, i64 }
 
-@str = private unnamed_addr constant [4 x i8] c"red\00", align 1
-@str.1 = private unnamed_addr constant [6 x i8] c"green\00", align 1
-@str.2 = private unnamed_addr constant [5 x i8] c"blue\00", align 1
-@str.3 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@str = private unnamed_addr constant [5 x i8] c"x = \00", align 1
 
 declare void @forge_println_string(%ForgeString)
 
@@ -41,48 +37,14 @@ declare i64 @forge_map_get(ptr, %ForgeString)
 
 declare void @forge_map_set(ptr, %ForgeString, i64)
 
-define %ForgeString @name(i64 %0) {
-entry:
-  %c = alloca i64, align 8
-  store i64 %0, ptr %c, align 4
-  %c1 = load %Color, ptr %c, align 4
-  %tg = extractvalue %Color %c1, 0
-  %te = zext i8 %tg to i64
-  %mc = icmp eq i64 %te, 0
-  br i1 %mc, label %ma, label %mn
-
-me:                                               ; preds = %mn7, %ma6, %ma2, %ma
-  %mv = phi %ForgeString [ %str, %ma ], [ %str5, %ma2 ], [ %str9, %ma6 ], [ %str10, %mn7 ]
-  ret %ForgeString %mv
-
-ma:                                               ; preds = %entry
-  %str = call %ForgeString @forge_string_new(ptr @str, i64 3)
-  br label %me
-
-mn:                                               ; preds = %entry
-  %mc4 = icmp eq i64 %te, 1
-  br i1 %mc4, label %ma2, label %mn3
-
-ma2:                                              ; preds = %mn
-  %str5 = call %ForgeString @forge_string_new(ptr @str.1, i64 5)
-  br label %me
-
-mn3:                                              ; preds = %mn
-  %mc8 = icmp eq i64 %te, 2
-  br i1 %mc8, label %ma6, label %mn7
-
-ma6:                                              ; preds = %mn3
-  %str9 = call %ForgeString @forge_string_new(ptr @str.2, i64 4)
-  br label %me
-
-mn7:                                              ; preds = %mn3
-  %str10 = call %ForgeString @forge_string_new(ptr @str.3, i64 0)
-  br label %me
-}
-
 define i32 @main() {
 entry:
-  %call = call %ForgeString @name(i64 1)
-  call void @forge_println_string(%ForgeString %call)
+  %x = alloca %ForgeString, align 8
+  store i64 42, ptr %x, align 4
+  %str = call %ForgeString @forge_string_new(ptr @str, i64 4)
+  %x1 = load %ForgeString, ptr %x, align 8
+  %i2s = call %ForgeString @forge_int_to_string(%ForgeString %x1)
+  %cc = call %ForgeString @forge_string_concat(%ForgeString %str, %ForgeString %i2s)
+  call void @forge_println_string(%ForgeString %cc)
   ret i32 0
 }

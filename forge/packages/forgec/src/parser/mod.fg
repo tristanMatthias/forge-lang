@@ -4,6 +4,7 @@
 // uses precedence climbing defined in expressions.fg.
 
 mod expressions
+mod templates
 
 use core.token.{Token, TokenKind, Span, TemplatePart}
 use core.ast.{

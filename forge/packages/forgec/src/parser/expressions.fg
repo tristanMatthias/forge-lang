@@ -918,7 +918,7 @@ impl Parser {
                 return Expr.Ident(tmp, span)
             }
             CG_LAST_IS_STR = 1
-            return Expr.StringLit(tok.text, span)
+            return decompose_template(tok.text, span)
         }
         if tok.kind_id == 1 {
             // Identifier
@@ -2241,6 +2241,7 @@ impl Parser {
 use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
 use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
 use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT, cg_var_enum_type}
+use parser.templates.{decompose_template}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
     let args = llvm.value_array_new(0)
