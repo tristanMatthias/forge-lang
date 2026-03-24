@@ -301,10 +301,16 @@ export fn declare_all_functions(cg: Codegen) {
 
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
-    // Re-init LLVM types
+    // Re-init LLVM types (globals may get zeroed)
     CG_I64 = llvm.int64_type(CG_CTX)
     CG_I32 = llvm.int32_type(CG_CTX)
     CG_I8 = llvm.int8_type(CG_CTX)
+    // Re-init list type {ptr, i64}
+    let lf = llvm.type_array_new(2)
+    llvm.type_array_set(lf, 0, llvm.pointer_type(CG_CTX))
+    llvm.type_array_set(lf, 1, CG_I64)
+    CG_LIST = llvm.struct_type(CG_CTX, lf, 2, 0)
+    llvm.type_array_free(lf)
     // Create struct LLVM types
     let struct_count = CG_STRUCT_NAMES.length
     mut si = 0
@@ -434,10 +440,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if pt_idx < FN_ALL_PARAM_TYPES.length {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
+        let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
         mut p_ty = if param_type_name == "string" { CG_STR } else { CG_I64 }
         if is_struct_param {
             let resolved = resolve_type_to_llvm(param_type_name)
-            if resolved != null { p_ty = resolved }
+            if resolved != null && resolved != CG_I64 { p_ty = resolved }
         }
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)

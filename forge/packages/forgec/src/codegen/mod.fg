@@ -555,7 +555,7 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
     // Check if starts with "List" — list is {ptr, i64}
-    if type_name.length > 4 {
+    if type_name.length >= 4 {
         if type_name[0] == "L" {
             if type_name[1] == "i" {
                 if type_name[2] == "s" {
