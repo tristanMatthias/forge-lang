@@ -332,7 +332,7 @@ fn type_slot_count(fty: string) -> int {
     if fty == "double" { return 1 }
     if fty == "ptr" { return 1 }
     if fty == "i64" { return 1 }
-    // Prevent recursive explosion — allow 1 level of nesting for field types
+    // For struct/enum types: compute size but cap struct recursion
     if SLOT_COUNT_DEPTH > 1 { return 1 }
     SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH + 1
     mut result = 1
@@ -380,10 +380,20 @@ fn enum_max_slots(enum_idx: int) -> int {
     max_slots
 }
 
+fn max_enum_slots_global() -> int {
+    mut max_s = 0
+    mut i = 0
+    while i < ENUM_NAMES.length {
+        let s = enum_max_slots(i)
+        if s > max_s { max_s = s }
+        i = i + 1
+    }
+    max_s
+}
+
 fn enum_llvm_type_str(enum_idx: int) -> string {
-    let ms = enum_max_slots(enum_idx)
-    // { i8, i64, i64, ... } — tag + i64 payload slots
-    // ForgeString fields use 2 slots (ptr as i64, len as i64)
+    // Use global max to ensure all enums can hold any other enum's payload
+    mut ms = max_enum_slots_global()
     mut ty = "{ i8"
     mut i = 0
     while i < ms {

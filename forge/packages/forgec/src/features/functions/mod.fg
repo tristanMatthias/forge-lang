@@ -571,9 +571,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         if body_src != "" {
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
+            eprintln("EAF:body_tokens=" + string(body_tokens.length))
             mut body_parser = parser_new(body_tokens)
-            let _body = body_parser.parse_block()
-            // No cg.emit_block — all code emitted inline during parsing
+            let body = body_parser.parse_block()
+            eprintln("EAF:body_stmts=" + string(body.statements.length))
+            cg.emit_block(body)
         }
 
         // Add implicit return only if the block doesn't already terminate

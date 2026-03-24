@@ -1312,10 +1312,13 @@ impl Codegen {
     }
 
     fn emit_block(self, block: Block) -> ptr {
+        eprintln("EB:stmts=" + string(block.statements.length))
         mut last = llvm.const_int(CG_I64, 0, 0)
         for stmt in block.statements {
+            eprintln("EB:stmt")
             match stmt {
                 .Expr(expr) -> {
+                    eprintln("EB:expr")
                     last = self.emit_expr(expr)
                 }
                 .Assign(t, v, s) -> {}
