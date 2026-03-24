@@ -380,28 +380,12 @@ fn enum_max_slots(enum_idx: int) -> int {
     max_slots
 }
 
-fn max_enum_slots_global() -> int {
-    mut max_s = 0
-    mut i = 0
-    while i < ENUM_NAMES.length {
-        let s = enum_max_slots(i)
-        if s > max_s { max_s = s }
-        i = i + 1
-    }
-    max_s
-}
-
 fn enum_llvm_type_str(enum_idx: int) -> string {
-    // Use global max + 1 extra slot (for nested enum's tag byte + padding)
-    mut ms = max_enum_slots_global() + 5
-    mut ty = "{ i8"
-    mut i = 0
-    while i < ms {
-        ty = ty + ", i64"
-        i = i + 1
-    }
-    ty = ty + " }"
-    ty
+    // Heap-allocated payload: { i8 tag, ptr payload }
+    // Construction: alloc variant struct → store fields → store ptr in enum
+    // Extraction: load ptr → GEP → load field
+    "{ i8, ptr }"
+}
 }
 
 // Convert stored field type to LLVM load type
