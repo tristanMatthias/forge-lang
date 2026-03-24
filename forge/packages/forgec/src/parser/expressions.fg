@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, make_nullable_type, wrap_nullable, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -110,7 +110,6 @@ impl Parser {
 
     // Generic binary operator loop for any precedence level.
     fn parse_binary_level(self, level: int) -> Expr? {
-        eprintln("BL:" + string(level))
         let left = self.parse_next_level(level)
         if left == null { return null }
 
@@ -142,6 +141,7 @@ impl Parser {
                 result_is_llvm = true
                 result_llvm = ext
                 result_is_str = false
+                CG_LAST_IS_NULLABLE = 0  // result is a boolean i64, not nullable
                 result = Expr.IntLit(0, self.current_span())
                 continue
             }
@@ -291,7 +291,6 @@ impl Parser {
 
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
-        eprintln("UE")
         if self.check(TokenKind.Not) {
             let start = self.advance().span
             let operand = self.parse_unary_expr() // right-associative
@@ -321,7 +320,6 @@ impl Parser {
 
     // Level 13: Postfix () . [] ? !
     fn parse_postfix_expr(self) -> Expr? {
-        eprintln("PE")
         let expr = self.parse_primary_expr()
         if expr == null { return null }
 
@@ -448,7 +446,7 @@ impl Parser {
                         result_llvm = method_result
                         // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
                         // For built-in string methods, most return strings except indexOf/length
-                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { field != "indexOf" && field != "length" && CG_LAST_STRUCT_TYPE == "" }
+                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { field != "index_of" && field != "length" && CG_LAST_STRUCT_TYPE == "" }
                         result = Expr.IntLit(0, span)
                         continue
                     }
@@ -811,12 +809,9 @@ impl Parser {
     // ─── Primary Expressions ───────────────────
 
     fn parse_primary_expr(self) -> Expr? {
-        eprintln("PR")
         let tok = self.peek()
-        eprintln("PR:tok")
 
         // Bootstrap workaround: check data-carrying variants via kind_id
-        eprintln("PR:kid=" + string(tok.kind_id))
         if tok.kind_id == 2 {
             // IntLiteral
             let span = self.advance().span
@@ -1033,9 +1028,11 @@ impl Parser {
         let after_brace = self.peek_at(offset)
 
         // { ident: ... } — struct literal (use kind_id for data variants)
+        // Note: { ident } alone (ident followed by }) is a block expression, not a struct literal.
+        // Only match when followed by : (named field) or , (multiple fields).
         if after_brace.kind_id == 1 {
             let after_ident = self.peek_at(offset + 1)
-            return after_ident.kind is .Colon || after_ident.kind is .Comma || after_ident.kind is .RBrace
+            return after_ident.kind is .Colon || after_ident.kind is .Comma
         }
         // { "string": ... } — map literal
         if after_brace.kind_id == 4 {
@@ -1349,20 +1346,21 @@ impl Parser {
     }
 
     // ─── If Expression ─────────────────────────
-    // Basic if/else parsing. Will be overridden by if_else feature.
+    // Parse if/else expression.
+    // When CG_ACTIVE: emits LLVM inline (control flow needs immediate basic blocks).
+    // When !CG_ACTIVE: stores in side table for later emission.
 
     fn parse_if_expr(self) -> Expr? {
         let start = self.advance().span // consume 'if'
         self.skip_newlines()
 
-        // Parse condition first
         let condition = self.parse_expr()
         if condition == null { return null }
 
         self.skip_newlines()
 
-        // If codegen is active, create LLVM blocks BEFORE parsing bodies
         if CG_ACTIVE {
+            // Inline emit: control flow needs immediate basic blocks
             mut cg = codegen_new()
             let cond_val = cg.emit_expr(condition!)
             let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
@@ -1370,54 +1368,106 @@ impl Parser {
             let current_bb = llvm.get_insert_block(CG_B)
             let current_fn = llvm.get_basic_block_parent(current_bb)
 
-            // Always create then + else + merge (else may be empty)
             let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
             let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
             let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
 
             llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
 
-            // Parse+emit then block
+            // Emit then block
             llvm.position_at_end(CG_B, then_bb)
-            let _then = self.parse_block()
-            // Only add br if block doesn't already terminate (e.g., with ret)
-            if !llvm.block_has_terminator(CG_B) {
+            let then_block = self.parse_block()
+            mut then_val = cg.emit_block(then_block)
+            mut then_is_nullable = CG_LAST_IS_NULLABLE == 1
+            // In nullable function context, wrap non-nullable then value before branching
+            if CG_FN_RETURNS_NULLABLE == 1 && !then_is_nullable {
+                then_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, then_val)
+                then_is_nullable = true
+            }
+            let then_end_bb = llvm.get_insert_block(CG_B)
+            let then_terminated = llvm.block_has_terminator(CG_B)
+            if !then_terminated {
                 llvm.build_br(CG_B, merge_bb)
             }
 
-            // Parse+emit else block (if present)
+            // Emit else block
             llvm.position_at_end(CG_B, else_bb)
+            mut has_else = false
+            mut else_val = llvm.const_int(CG_I64, 0, 0)
+            mut else_is_nullable = false
             self.skip_newlines()
             if self.check(TokenKind.Else) {
+                has_else = true
                 self.advance()
                 self.skip_newlines()
                 if self.check(TokenKind.If) {
-                    self.parse_if_expr()
+                    let nested = self.parse_if_expr()
+                    if nested != null {
+                        else_val = cg.emit_expr(nested!)
+                    }
                 } else {
-                    let _else = self.parse_block()
+                    let else_block = self.parse_block()
+                    else_val = cg.emit_block(else_block)
+                }
+                else_is_nullable = CG_LAST_IS_NULLABLE == 1
+                // In nullable function context, wrap non-nullable else value before branching
+                if CG_FN_RETURNS_NULLABLE == 1 && !else_is_nullable {
+                    else_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, else_val)
+                    else_is_nullable = true
                 }
             }
-            if !llvm.block_has_terminator(CG_B) {
+            let else_end_bb = llvm.get_insert_block(CG_B)
+            let else_terminated = llvm.block_has_terminator(CG_B)
+            if !else_terminated {
                 llvm.build_br(CG_B, merge_bb)
             }
 
             llvm.position_at_end(CG_B, merge_bb)
+
+            // PHI to merge values from both branches (if-as-expression)
+            if has_else && !then_terminated && !else_terminated {
+                // In nullable function, use {i8, T} type for PHI
+                if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
+                    let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
+                    let phi = llvm.build_phi(CG_B, nullable_ty, "ifval")
+                    llvm.add_incoming(phi, then_val, then_end_bb)
+                    llvm.add_incoming(phi, else_val, else_end_bb)
+                    CG_LAST_VAL = phi
+                    CG_HAS_LAST_VAL = 1
+                    CG_LAST_IS_NULLABLE = 1
+                } else {
+                    let phi = llvm.build_phi(CG_B, CG_I64, "ifval")
+                    llvm.add_incoming(phi, then_val, then_end_bb)
+                    llvm.add_incoming(phi, else_val, else_end_bb)
+                    CG_LAST_VAL = phi
+                    CG_HAS_LAST_VAL = 1
+                }
+            }
             return Expr.IntLit(0, start)
         }
 
-        // Not in codegen — just parse normally
+        // Non-codegen path: store in side table
         let then_block = self.parse_block()
         self.skip_newlines()
+        mut has_else = false
+        mut else_block = Block { statements: [], span: start }
         if self.check(TokenKind.Else) {
+            has_else = true
             self.advance()
             self.skip_newlines()
             if self.check(TokenKind.If) {
-                self.parse_if_expr()
+                let nested = self.parse_if_expr()
+                if nested != null {
+                    else_block = Block {
+                        statements: [Statement.Expr(nested!)],
+                        span: start,
+                    }
+                }
             } else {
-                self.parse_block()
+                else_block = self.parse_block()
             }
         }
-        Expr.IntLit(0, start)
+        store_if_expr(condition!, then_block, has_else, else_block, start)
     }
 
     // ─── Match Expression ──────────────────────
@@ -1746,6 +1796,7 @@ impl Parser {
 
 use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
 use features.functions.{FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS}
+use features.if_else.{store_if_expr}
 
 fn var_struct_type_for_expr(expr: Expr) -> string {
     // For now only handle Ident expressions
@@ -1755,7 +1806,7 @@ fn var_struct_type_for_expr(expr: Expr) -> string {
 }
 
 // Track the most recently parsed identifier name (for struct type lookup)
-mut LAST_IDENT_NAME: string = ""
+export mut LAST_IDENT_NAME: string = ""
 
 fn is_struct_field_str(struct_name: string, field_idx: int) -> bool {
     mut si = 0
@@ -1816,7 +1867,7 @@ impl Parser {
             }
         }
 
-        if method == "indexOf" {
+        if method == "index_of" {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 let sub_val = cg.emit_expr(args[0])

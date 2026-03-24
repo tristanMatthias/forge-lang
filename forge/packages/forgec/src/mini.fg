@@ -4473,7 +4473,11 @@ fn compile(source: string) -> string {
             skip_nl()
             let impl_name = advance().text
             skip_nl()
-            if check("for") { advance(); skip_nl(); advance() }
+            if check("for") {
+                advance()
+                skip_nl()
+                advance()
+            }
             skip_nl()
             while !check("{") && POS < TOKENS.length { advance() }
             advance() // consume {

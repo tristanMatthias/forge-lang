@@ -19,13 +19,13 @@ use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
 use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup}
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
-use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, emit_all_fn_bodies}
+use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source}
 
 fn check(source: string, filename: string) -> bool {
     eprintln("check: " + filename + " len=" + string(source.length))
     eprintln("  creating lexer...")
     mut lex = lexer_new(source)
-    eprintln("  lexer created, chars=" + string(lex.chars.length))
+    eprintln("  lexer created, len=" + string(source.length))
     eprintln("  tokenizing...")
     let tokens = lex.tokenize()
     eprintln("  " + string(tokens.length) + " tokens")
@@ -137,8 +137,6 @@ fn resolve_modules(filepath: string) -> string {
     eprintln("resolve_modules: " + filepath)
     let source = fs.read(filepath)
     eprintln("  source length: " + string(source.length))
-    // Return source directly for simple files (no mod scanning)
-    return source + "\n"
     // Find the directory of this file
     mut dir = ""
     mut last_slash = -1
@@ -290,7 +288,7 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 // ─── Per-File Compilation ──────────────────────
 
 fn build_compile_separate(files: List<string>, output: string) {
-    // Phase 1: Scan ALL files (collect metadata, no codegen)
+    // Phase 1: Scan ALL files (collect function signatures — no bodies)
     mut file_idx = 0
     for filepath in files {
         CURRENT_FILE_INDEX = file_idx
@@ -298,33 +296,28 @@ fn build_compile_separate(files: List<string>, output: string) {
         mut lex = lexer_new(source)
         let tokens = lex.tokenize()
         mut p = parser_new_with_source(tokens, source)
-        let program = p.parse_program()
+        p.parse_program()
         file_idx = file_idx + 1
     }
-    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " functions")
+    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
-    // Phase 2: Compile each file to .o
-    mut obj_files: List<string> = []
-    file_idx = 0
-    for filepath in files {
-        let source = fs.read(filepath)
-        let obj_path = "/tmp/forgec_obj_" + string(file_idx) + ".o"
+    // Phase 2: Single LLVM module — declare + emit all functions
+    codegen_init("forgec_output")
+    create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    EMIT_FILE_IDX = -1
+    mut cg = codegen_new()
+    emit_all_fn_bodies(cg)
+    eprintln("  emit done")
 
-        codegen_init(filepath)
-        create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
-        EMIT_FILE_IDX = file_idx
-        mut cg = codegen_new()
-        emit_all_fn_bodies(cg)
-
-        if !codegen_emit_object(obj_path) {
-            eprintln("error: failed to emit " + obj_path)
-            process.exit(1)
-        }
+    let obj_path = output + ".o"
+    if !codegen_emit_object(obj_path) {
+        eprintln("error: failed to emit object file")
+        codegen_write_ir("output.ll")
         codegen_cleanup()
-        obj_files = obj_files.push(obj_path)
-        eprintln("  compiled: " + filepath + " -> " + obj_path)
-        file_idx = file_idx + 1
+        process.exit(1)
     }
+    codegen_cleanup()
+    mut obj_files: List<string> = [obj_path]
 
     // Phase 3: Compile runtime
     let runtime_obj = "/tmp/forgec_runtime.o"
@@ -366,8 +359,9 @@ fn main() {
         println("OK")
     } else if command == "build" {
         let output = if args.length > 3 { args[3] } else { "a.out" }
-        let source = resolve_modules(input)
-        build_compile(source, input, output)
+        let files = resolve_module_paths(input)
+        eprintln("M:files=" + string(files.length))
+        build_compile_separate(files, output)
     } else {
         eprintln("unknown command")
         process.exit(1)

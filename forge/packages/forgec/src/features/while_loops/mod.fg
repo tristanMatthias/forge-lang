@@ -61,6 +61,8 @@ export fn parse_while(p: Parser) -> Statement? {
         // Position in body block, then parse+emit body
         llvm.position_at_end(CG_B, body_bb)
         let body = p.parse_block()
+        // Emit AST statements (assignments, returns) that weren't emitted inline
+        cg.emit_block(body)
         // Only loop back if the body didn't already terminate (e.g., break/return)
         if !llvm.block_has_terminator(CG_B) {
             llvm.build_br(CG_B, cond_bb)

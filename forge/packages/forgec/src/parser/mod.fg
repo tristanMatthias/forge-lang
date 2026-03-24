@@ -15,6 +15,7 @@ use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, wrap_nullable, make_null_value}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
+use expressions.{LAST_IDENT_NAME}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
 export mut PARSED_PARAM_TYPES: List<string> = []
@@ -85,10 +86,8 @@ impl Parser {
     }
 
     fn peek(self) -> Token {
-        eprintln("        peek: pos=" + string(self.pos) + " len=" + string(self.tokens.length))
         if self.pos < self.tokens.length {
             let tok = self.tokens[self.pos]
-            eprintln("        peek: got token")
             return tok
         } else {
             Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
@@ -154,12 +153,9 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
-        eprintln("      skip_newlines: entering check loop")
         while self.check(TokenKind.Newline) {
-            eprintln("      skip_newlines: advancing")
             self.advance()
         }
-        eprintln("      skip_newlines: done")
     }
 
     // Skip tokens until matching closing brace (handles nesting).
@@ -213,14 +209,11 @@ impl Parser {
     // ─── Program Parsing ───────────────────────
 
     fn parse_program(self) -> Program {
-        eprintln("    parse_program: entered")
         mut statements: List<Statement> = []
-        eprintln("    parse_program: skip_newlines")
         self.skip_newlines()
 
         while !self.is_at_end() {
             let before = self.pos
-            eprintln("PP:" + string(before))
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
@@ -244,15 +237,11 @@ impl Parser {
 
         let tok = self.peek()
 
-        // Reset type flags at statement boundary to prevent cross-statement leakage
-        if CG_ACTIVE {
-            CG_LAST_IS_STR = 0
-            CG_LAST_IS_MAP = 0
-            CG_HAS_LAST_VAL = 0
-            CG_IS_MAP_INDEX = 0
-        }
+        // Reset type flags at statement boundary
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_IS_MAP_INDEX = 0
 
-        eprintln("    parse_statement: pos=" + string(self.pos))
         match tok.kind {
             .Let -> {
                 let r = parse_let(self)
@@ -351,15 +340,7 @@ impl Parser {
                 Statement.Expr(Expr.IntLit(0, tok.span))
             }
             _ -> {
-                eprintln("    parse_statement: default case, parsing expr")
-                let result = self.parse_expr_or_assign()
-                // Track last expression value for implicit function returns
-                if CG_ACTIVE && result != null {
-                    // The inline emit stored the value — set the flag so
-                    // emit_all_fn_bodies can build an implicit ret
-                    CG_HAS_LAST_VAL = 1
-                }
-                result
+                self.parse_expr_or_assign()
             }
         }
     }
@@ -374,67 +355,25 @@ impl Parser {
     fn parse_return(self) -> Statement? {
         let start = self.advance().span // consume 'return'
 
-        // Check if there's a value (not at end of statement)
+        // Bare return (no value)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
-            // Bare return — emit void/null return inline if codegen active
-            if CG_ACTIVE {
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    let nv = make_null_value(CG_FN_NULLABLE_INNER_TY)
-                    llvm.build_ret(CG_B, nv)
-                } else {
-                    llvm.build_ret_void(CG_B)
-                }
-            }
-            return Statement.Expr(Expr.IntLit(0, start))
+            return Statement.Return(Expr.NullLit(start), start)
         }
 
-        // Check for 'return null' — handle before parse_expr to avoid type mismatch
+        // return null
         let pk = self.peek()
         let pk_key = self.kind_to_key(pk.kind)
         if pk_key == "NullLiteral" {
             self.advance() // consume 'null'
-            if CG_ACTIVE {
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    let nv = make_null_value(CG_FN_NULLABLE_INNER_TY)
-                    llvm.build_ret(CG_B, nv)
-                } else {
-                    llvm.build_ret_void(CG_B)
-                }
-            }
-            return Statement.Expr(Expr.IntLit(0, start))
+            return Statement.Return(Expr.NullLit(start), start)
         }
 
         let value = self.parse_expr()
         if value == null {
-            if CG_ACTIVE {
-                llvm.build_ret_void(CG_B)
-            }
-            return Statement.Expr(Expr.IntLit(0, start))
+            return Statement.Return(Expr.NullLit(start), start)
         }
 
-        // Emit return inline during codegen
-        if CG_ACTIVE {
-            // Use CG_LAST_VAL if set (struct literal or function call result)
-            if CG_HAS_LAST_VAL == 1 {
-                CG_HAS_LAST_VAL = 0
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    let wr = wrap_nullable(CG_FN_NULLABLE_INNER_TY, CG_LAST_VAL)
-                    llvm.build_ret(CG_B, wr)
-                } else {
-                    llvm.build_ret(CG_B, CG_LAST_VAL)
-                }
-            } else {
-                mut cg = codegen_new()
-                let ret_val = cg.emit_expr(value!)
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    let wr = wrap_nullable(CG_FN_NULLABLE_INNER_TY, ret_val)
-                    llvm.build_ret(CG_B, wr)
-                } else {
-                    llvm.build_ret(CG_B, ret_val)
-                }
-            }
-        }
-        Statement.Expr(Expr.IntLit(0, start))
+        Statement.Return(value!, start)
     }
 
     fn parse_expr_or_assign(self) -> Statement? {
@@ -443,24 +382,25 @@ impl Parser {
 
         // Check for assignment: expr = value
         if self.check(TokenKind.Eq) {
-            self.advance() // consume =
+            // Save target variable name before RHS parsing overwrites LAST_IDENT_NAME
+            let assign_target_name = LAST_IDENT_NAME
+            let eq_span = self.advance().span // consume =
             let value = self.parse_expr()
             if value == null {
                 self.error("expected expression after '='")
                 return null
             }
-            // Emit assignment inline during re-parse+codegen
+            // Emit store inline so subsequent statements see the updated value
             if CG_ACTIVE {
-                // Check for map[key] = value assignment
+                mut cg = codegen_new()
+                let rhs_val = cg.emit_expr(value!)
+                // Map index assignment: m["key"] = value → forge_map_set
                 if CG_IS_MAP_INDEX == 1 {
                     CG_IS_MAP_INDEX = 0
-                    mut cg = codegen_new()
-                    let val = cg.emit_expr(value!)
-                    // Call forge_map_set(map_ptr, key, value)
                     let set_args = llvm.value_array_new(3)
                     llvm.value_array_set(set_args, 0, CG_MAP_INDEX_OBJ)
                     llvm.value_array_set(set_args, 1, CG_MAP_INDEX_KEY)
-                    llvm.value_array_set(set_args, 2, val)
+                    llvm.value_array_set(set_args, 2, rhs_val)
                     let set_pt = llvm.type_array_new(3)
                     llvm.type_array_set(set_pt, 0, CG_PTR)
                     llvm.type_array_set(set_pt, 1, CG_STR)
@@ -469,29 +409,19 @@ impl Parser {
                     llvm.type_array_free(set_pt)
                     llvm.build_call(CG_B, set_ft, CG_RT_MAP_SET, set_args, 3, "")
                     llvm.value_array_free(set_args)
-                    return Statement.Expr(Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 }))
-                }
-
-                // Regular variable assignment: extract variable name from target (Ident)
-                match expr! {
-                    .Ident(name, span) -> {
-                        mut cg = codegen_new()
-                        let val = cg.emit_expr(value!)
-                        // Find variable alloca and store
-                        mut vi = CG_VAR_NAMES.length - 1
-                        while vi >= 0 {
-                            if CG_VAR_NAMES[vi] == name {
-                                llvm.build_store(CG_B, val, CG_VAR_PTRS[vi])
-                                break
-                            }
-                            vi = vi - 1
+                } else if assign_target_name != "" {
+                    // Regular variable assignment
+                    mut vi = CG_VAR_NAMES.length - 1
+                    while vi >= 0 {
+                        if CG_VAR_NAMES[vi] == assign_target_name {
+                            llvm.build_store(CG_B, rhs_val, CG_VAR_PTRS[vi])
+                            break
                         }
+                        vi = vi - 1
                     }
-                    _ -> {}
                 }
             }
-            // Return a no-op expression statement (assignment already emitted)
-            return Statement.Expr(Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 }))
+            return Statement.Assign(expr!, value!, eq_span)
         }
 
         // Check for channel send: expr <- value
@@ -502,17 +432,10 @@ impl Parser {
                 self.error("expected expression after '<-'")
                 return null
             }
-            // Channel send wraps as an expression statement
-            // TODO: create FeatureExpr for channel send
             return Statement.Expr(expr!)
         }
 
-        // Emit expression statement inline during codegen
-        if CG_ACTIVE {
-            mut cg = codegen_new()
-            cg.emit_expr(expr!)
-        }
-        Statement.Expr(Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 }))
+        Statement.Expr(expr!)
     }
 
     // ─── Block Parsing ─────────────────────────

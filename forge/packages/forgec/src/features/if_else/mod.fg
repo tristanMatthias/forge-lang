@@ -1,20 +1,14 @@
 // ─── If/Else Feature ──────────────────────────
 // Handles: if/else expressions.
-// Side table stores IfExprData keyed by node_id (as string).
-//
-// Note: if/else is an EXPRESSION in Forge, not a statement. It produces
-// a value. Currently, the if/else parsing is handled inline in the
-// expression parser (parser/expressions.fg) because it's a prefix
-// expression. This feature module declares the side table and data types
-// so that the expression parser can store data here, and registers the
-// feature for check/emit dispatch.
+// Side table stores IfExprData keyed by node_id.
+// Parse stores AST, emit reads from side table.
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_node_id}
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_PTR, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_PTR, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR, CG_LAST_IS_STR, CG_LAST_ENUM_TYPE, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_nullable_type, wrap_nullable, codegen_new}
 use @std.llvm
 
 // ─── Data Types ──────────────────────────────────
@@ -22,93 +16,42 @@ use @std.llvm
 type IfExprData = {
     condition: Expr,
     then_block: Block,
-    else_block: Block?,
+    has_else: bool,
+    else_block: Block,
     span: Span,
 }
 
-// ─── Current If Data ─────────────────────────────
-// Since we re-parse + codegen each function body in one pass,
-// the most recently parsed if-expression data is still live.
-// Use a global to pass data from parser → codegen.
-export mut PENDING_IF: bool = false
-export mut CURRENT_IF_COND: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut CURRENT_IF_THEN: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-export mut CURRENT_IF_HAS_ELSE: bool = false
-export mut CURRENT_IF_ELSE: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-
-// Emit if-expression inline during parse (because AST storage corrupts nested data)
-// Two entry points: with else and without (avoids nullable which is unreliable)
-export fn make_if_expr(condition: Expr, then_block: Block, else_block: Block?, span: Span) -> Expr {
-    // Delegate to the non-nullable version
-    // Bootstrap workaround: else_block nullability is unreliable
-    make_if_no_else(condition, then_block, span)
-}
-
-export fn make_if_with_else(condition: Expr, then_block: Block, else_block: Block, span: Span) -> Expr {
-    if CG_ACTIVE {
-        let cond_val = emit_if_cond(condition)
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
-        let current_bb = llvm.get_insert_block(CG_B)
-        let current_fn = llvm.get_basic_block_parent(current_bb)
-        let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
-        let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
-        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
-
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
-
-        llvm.position_at_end(CG_B, then_bb)
-        emit_if_block(then_block)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, else_bb)
-        emit_if_block(else_block)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, merge_bb)
-    }
-    Expr.IntLit(0, span)
-}
-
-export fn make_if_no_else(condition: Expr, then_block: Block, span: Span) -> Expr {
-    if CG_ACTIVE {
-        let cond_val = emit_if_cond(condition)
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
-        let current_bb = llvm.get_insert_block(CG_B)
-        let current_fn = llvm.get_basic_block_parent(current_bb)
-        let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
-        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
-
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
-
-        llvm.position_at_end(CG_B, then_bb)
-        emit_if_block(then_block)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, merge_bb)
-    }
-    Expr.IntLit(0, span)
-}
-
-// ─── Inline Emit Helpers ────────────────────────
-
-fn emit_if_cond(condition: Expr) -> ptr {
-    mut cg = codegen_new()
-    cg.emit_expr(condition)
-}
-
-fn emit_if_block(block: Block) -> ptr {
-    mut cg = codegen_new()
-    cg.emit_block(block)
-}
-
 // ─── Side Table ─────────────────────────────────
-// Stub: inline-emit-during-parse means no AST data is stored
+
 mut IF_EXPR_DATA: Map<string, IfExprData> = {}
 
 fn get_if_expr(node_id: int) -> IfExprData? {
     let key = "${node_id}"
     if IF_EXPR_DATA.has(key) { IF_EXPR_DATA[key] } else { null }
 }
+
+// ─── Store ──────────────────────────────────────
+// Called by parser to store if-expression data
+
+export fn store_if_expr(condition: Expr, then_block: Block, has_else: bool, else_block: Block, span: Span) -> Expr {
+    let id = next_node_id()
+    let key = "${id}"
+    IF_EXPR_DATA[key] = IfExprData {
+        condition,
+        then_block,
+        has_else,
+        else_block,
+        span,
+    }
+    feature_expr("if_else", "if_expr", id, span)
+}
+
+// Legacy exports (for old inline-emit code that may still reference these)
+export mut PENDING_IF: bool = false
+export mut CURRENT_IF_COND: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
+export mut CURRENT_IF_THEN: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
+export mut CURRENT_IF_HAS_ELSE: bool = false
+export mut CURRENT_IF_ELSE: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
 
 // ─── Check ──────────────────────────────────────
 
@@ -118,13 +61,11 @@ fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {
     let data = d!
 
     let cond_type = tc.infer_expr(data.condition)
-    // TODO: verify cond_type is bool
 
     let then_type = tc.check_block(data.then_block)
 
-    if data.else_block != null {
-        let else_type = tc.check_block(data.else_block!)
-        // TODO: unify then_type and else_type
+    if data.has_else {
+        let else_type = tc.check_block(data.else_block)
         then_type
     } else {
         Type.Void
@@ -134,49 +75,80 @@ fn check_if_expr(tc: TypeChecker, node: NodeRef) -> Type {
 // ─── Emit ───────────────────────────────────────
 
 fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
-    eprintln("[emit_if] called! node_id=${node.node_id}")
-    // Use globals set by make_if_expr (data from most recent parse)
-    let cond_val = cg.emit_expr(CURRENT_IF_COND)
-    eprintln("[emit_if] cond emitted")
+    let d = get_if_expr(node.node_id)
+    if d == null { return llvm.const_int(CG_I64, 0, 0) }
+    let data = d!
 
-    // Truncate to i1 (condition might be i1 from icmp, or i8, or i64)
+    // Emit condition
+    let cond_val = cg.emit_expr(data.condition)
+    // Truncate to i1 (comparison results are i64 after zext)
     let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifcond")
 
-    let current_fn = cg.current_fn
-    if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
+    let current_bb = llvm.get_insert_block(CG_B)
+    let current_fn = llvm.get_basic_block_parent(current_bb)
 
-    let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "then")
-    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ifcont")
+    let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "then")
+    let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "else")
+    let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ifcont")
 
-    if CURRENT_IF_HAS_ELSE {
-        let else_bb = llvm.append_basic_block(CG_CTX, current_fn!, "else")
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
+    llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
 
-        llvm.position_at_end(CG_B, then_bb)
-        cg.emit_block(CURRENT_IF_THEN)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, else_bb)
-        cg.emit_block(CURRENT_IF_ELSE)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, merge_bb)
-        llvm.const_int(CG_I64, 0, 0)
-    } else {
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
-
-        llvm.position_at_end(CG_B, then_bb)
-        cg.emit_block(CURRENT_IF_THEN)
-        llvm.build_br(CG_B, merge_bb)
-
-        llvm.position_at_end(CG_B, merge_bb)
-        llvm.const_int(CG_I64, 0, 0)
+    // Emit then block
+    llvm.position_at_end(CG_B, then_bb)
+    mut then_val = cg.emit_block(data.then_block)
+    mut then_is_nullable = CG_LAST_IS_NULLABLE == 1
+    // In nullable function context, wrap non-nullable then value before branching
+    if CG_FN_RETURNS_NULLABLE == 1 && !then_is_nullable {
+        then_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, then_val)
+        then_is_nullable = true
     }
+    let then_end_bb = llvm.get_insert_block(CG_B)
+    let then_terminated = llvm.block_has_terminator(CG_B)
+    if !then_terminated {
+        llvm.build_br(CG_B, merge_bb)
+    }
+
+    // Emit else block
+    llvm.position_at_end(CG_B, else_bb)
+    mut else_val = llvm.const_int(CG_I64, 0, 0)
+    if data.has_else {
+        else_val = cg.emit_block(data.else_block)
+    }
+    mut else_is_nullable = CG_LAST_IS_NULLABLE == 1
+    // In nullable function context, wrap non-nullable else value before branching
+    if data.has_else && CG_FN_RETURNS_NULLABLE == 1 && !else_is_nullable {
+        else_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, else_val)
+        else_is_nullable = true
+    }
+    let else_end_bb = llvm.get_insert_block(CG_B)
+    let else_terminated = llvm.block_has_terminator(CG_B)
+    if !else_terminated {
+        llvm.build_br(CG_B, merge_bb)
+    }
+
+    llvm.position_at_end(CG_B, merge_bb)
+
+    // If both branches produced values (if-as-expression), use PHI
+    if data.has_else && !then_terminated && !else_terminated {
+        // In a nullable function, both branches are now wrapped as {i8, T}
+        if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
+            let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
+            let phi = llvm.build_phi(CG_B, nullable_ty, "ifval")
+            llvm.add_incoming(phi, then_val, then_end_bb)
+            llvm.add_incoming(phi, else_val, else_end_bb)
+            CG_LAST_IS_NULLABLE = 1
+            return phi
+        }
+        let phi = llvm.build_phi(CG_B, CG_I64, "ifval")
+        llvm.add_incoming(phi, then_val, then_end_bb)
+        llvm.add_incoming(phi, else_val, else_end_bb)
+        return phi
+    }
+
+    llvm.const_int(CG_I64, 0, 0)
 }
 
 // ─── Registration ────────────────────────────────
 
-// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
-// Old: register_feature(FeatureRegistration { id: "if_else", ... })
 reg_check_expr("if_else", check_if_expr)
 reg_emit_expr("if_else", emit_if_expr)

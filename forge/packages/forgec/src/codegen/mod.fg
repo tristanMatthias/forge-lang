@@ -327,29 +327,19 @@ export mut CG_ENUM_VARIANT_FIELDS_CSV: string = ""
 
 export fn cg_enum_max_fields(name: string) -> int {
     let needle = "," + name + ":"
-    let nl = needle.length
-    let cl = CG_ENUM_TYPE_CSV.length
-    mut i = 0
-    while i + nl <= cl {
-        mut ok = true
-        mut j = 0
-        while j < nl {
-            if CG_ENUM_TYPE_CSV[i + j] != needle[j] { ok = false }
-            j = j + 1
-        }
-        if ok {
-            mut ns = ""
-            mut k = i + nl
-            while k < cl {
-                if CG_ENUM_TYPE_CSV[k] == "," { break }
-                ns = ns + CG_ENUM_TYPE_CSV[k]
-                k = k + 1
-            }
-            if ns.length > 0 { return int(ns) }
-            return 0
-        }
-        i = i + 1
+    let idx = CG_ENUM_TYPE_CSV.index_of(needle)
+    if idx < 0 { return 0 }
+    // Extract the number after the needle
+    let start = idx + needle.length
+    mut ns = ""
+    mut k = start
+    while k < CG_ENUM_TYPE_CSV.length {
+        let ch = CG_ENUM_TYPE_CSV[k]
+        if ch == "," { break }
+        ns = ns + ch
+        k = k + 1
     }
+    if ns.length > 0 { return int(ns) }
     0
 }
 
@@ -576,11 +566,18 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             }
         }
     }
-    // Check enum type
+    // Check enum type — zero-payload enums use i64 (just a tag), others use struct
     let emf = cg_enum_max_fields(type_name)
-    if emf > 0 {
-        let ety = cg_make_enum_type(type_name)
-        if ety != null { return ety }
+    // Check if this is a known enum (name appears in CG_ENUM_TYPE_CSV)
+    let enum_needle = "," + type_name + ":"
+    if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+        if emf > 0 {
+            let ety = cg_get_enum_ty_for(type_name)
+            if ety != null { return ety }
+        } else {
+            // Zero-payload enum: just a tag, represented as i64
+            return CG_I64
+        }
     }
     // Check struct type
     mut sti = CG_STRUCT_NAMES.length - 1
@@ -637,7 +634,6 @@ export fn var_struct_type(name: string) -> string {
 }
 
 export fn codegen_init(name: string) {
-    eprintln("CI:enter " + name)
     // Reset per-module LLVM state (preserves metadata from scan phase)
     CG_VAR_NAMES = []
     CG_VAR_PTRS = []
@@ -827,9 +823,8 @@ impl Codegen {
     // ─── Expressions ───────────────────────────
 
     fn emit_expr(self, expr: Expr) -> ptr {
-        eprintln("EE:enter")
         match expr {
-            .IntLit(value, span) -> { eprintln("EE:int"); return llvm.const_int(CG_I64, value, 0) }
+            .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
@@ -842,8 +837,18 @@ impl Codegen {
             }
             .Ident(name, span) -> { return self.emit_ident(name) }
             .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
-            .Unary(op, operand, span) -> { return self.emit_expr(operand) }
-            .Call(callee, args, span) -> { eprintln("EE:call"); return self.emit_call(callee, args) }
+            .Unary(op, operand, span) -> {
+                let val = self.emit_expr(operand)
+                match op {
+                    .Neg -> { return llvm.build_sub(CG_B, llvm.const_int(CG_I64, 0, 0), val, "neg") }
+                    .Not -> {
+                        let cmp = llvm.build_icmp(CG_B, 32, val, llvm.const_int(CG_I64, 0, 0), "not")
+                        return llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "notext")
+                    }
+                    .BitNot -> { return llvm.build_xor(CG_B, val, llvm.const_int(CG_I64, -1, 1), "bitnot") }
+                }
+            }
+            .Call(callee, args, span) -> { return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
             .Block(block) -> { return self.emit_block(block) }
@@ -1245,6 +1250,9 @@ impl Codegen {
         // Wrap return type for nullable
         if call_is_nullable {
             call_ret_ty = make_nullable_type(call_ret_ty)
+            CG_LAST_IS_NULLABLE = 1
+        } else {
+            CG_LAST_IS_NULLABLE = 0
         }
         let ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0)
         llvm.type_array_free(param_arr)
@@ -1314,16 +1322,16 @@ impl Codegen {
     }
 
     fn emit_block(self, block: Block) -> ptr {
-        eprintln("EB:stmts=" + string(block.statements.length))
         mut last = llvm.const_int(CG_I64, 0, 0)
         for stmt in block.statements {
-            eprintln("EB:stmt")
             match stmt {
                 .Expr(expr) -> {
-                    eprintln("EB:expr")
+                    // debug removed
                     last = self.emit_expr(expr)
                 }
-                .Assign(t, v, s) -> {}
+                .Assign(t, v, s) -> {
+                    self.emit_assign(t, v)
+                }
                 .Return(v, s) -> {
                     self.emit_return(v)
                 }
@@ -1342,7 +1350,6 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        eprintln("DV:" + name)
         // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
@@ -1372,6 +1379,8 @@ impl Codegen {
                 si = si - 1
             }
         }
+        if CG_B == 0 { eprintln("FATAL: CG_B is null in define_var!") }
+        if alloca_ty == 0 { eprintln("FATAL: alloca_ty is null for " + name) }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)

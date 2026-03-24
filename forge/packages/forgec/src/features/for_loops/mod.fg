@@ -124,6 +124,9 @@ export fn parse_for(p: Parser) -> Statement? {
 
         // Parse body block (inline emit fires into body_bb)
         let body = p.parse_block()
+        // Emit AST statements (assignments, returns) that weren't emitted inline
+        mut cg = codegen_new()
+        cg.emit_block(body)
 
         // Fall through to increment block (only if body didn't terminate via break/return)
         if !llvm.block_has_terminator(CG_B) {
