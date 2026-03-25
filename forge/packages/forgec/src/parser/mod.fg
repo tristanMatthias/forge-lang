@@ -279,6 +279,37 @@ impl Parser {
                 self.sync_pos()
                 return r
             }
+            .If -> {
+                if !CG_ACTIVE {
+                    // Parse if-statement as Statement.If (avoids PENDING_IF forward refs)
+                    let start = self.advance().span // consume 'if'
+                    self.skip_newlines()
+                    let cond = self.parse_expr()
+                    if cond == null { return null }
+                    self.skip_newlines()
+                    let then_block = self.parse_block()
+                    self.skip_newlines()
+                    mut has_else = 0
+                    mut else_block = Block { statements: [], span: start }
+                    if self.check(TokenKind.Else) {
+                        has_else = 1
+                        self.advance()
+                        self.skip_newlines()
+                        if self.check(TokenKind.If) {
+                            // else-if chain: parse recursively as statement
+                            let nested = self.parse_statement()
+                            if nested != null {
+                                else_block = Block { statements: [nested!], span: start }
+                            }
+                        } else {
+                            else_block = self.parse_block()
+                        }
+                    }
+                    return Statement.If(cond!, then_block, else_block, has_else, start)
+                }
+                // CG_ACTIVE: fall through to expression parser (inline emit)
+                return self.parse_expr_or_assign()
+            }
             .TypeKw -> {
                 let r = parse_type_decl(self)
                 self.sync_pos()
