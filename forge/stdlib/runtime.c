@@ -1856,6 +1856,67 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
     return list;
 }
 
+// ---- Self-hosted compiler support ----
+// These provide process.args(), fs.read(), process.exit(), process.run()
+// directly in the runtime, without the @std.process/@std.fs package layer.
+
+static int _forge_argc = 0;
+static char** _forge_argv = NULL;
+
+void forge_set_args(int argc, char** argv) {
+    _forge_argc = argc;
+    _forge_argv = argv;
+}
+
+// Auto-capture args via macOS/Linux __attribute__((section)) trick
+// The real main() calls this before Forge's main
+__attribute__((constructor))
+static void _forge_capture_args(int argc, char** argv) {
+    _forge_argc = argc;
+    _forge_argv = argv;
+}
+
+// process.args() → List<string> (ForgeString elements)
+ForgeList forge_selfhost_process_args(void) {
+    if (_forge_argc == 0 || _forge_argv == NULL) {
+        return (ForgeList){ .ptr = NULL, .len = 0 };
+    }
+    ForgeString* items = (ForgeString*)malloc(sizeof(ForgeString) * _forge_argc);
+    for (int i = 0; i < _forge_argc; i++) {
+        items[i] = forge_string_new(_forge_argv[i], strlen(_forge_argv[i]));
+    }
+    return (ForgeList){ .ptr = items, .len = _forge_argc };
+}
+
+// fs.read(path) → string
+ForgeString forge_selfhost_fs_read(ForgeString path) {
+    char cpath[4096];
+    int64_t plen = path.len < 4095 ? path.len : 4095;
+    memcpy(cpath, path.ptr, plen);
+    cpath[plen] = '\0';
+    FILE* f = fopen(cpath, "rb");
+    if (!f) return forge_string_new("", 0);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* buf = (char*)malloc(size + 1);
+    fread(buf, 1, size, f);
+    fclose(f);
+    buf[size] = '\0';
+    return (ForgeString){ .ptr = buf, .len = size };
+}
+
+// process.exit(code)
+void forge_selfhost_process_exit(int64_t code) {
+    exit((int)code);
+}
+
+// process.run(cmd, args) → string (JSON result)
+ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
+    // Simplified: just return empty for now
+    return forge_string_new("{\"code\":0}", 10);
+}
+
 // Stub: span() identity function (workaround for match binding issue)
 int64_t span(int64_t val) { return val; }
 

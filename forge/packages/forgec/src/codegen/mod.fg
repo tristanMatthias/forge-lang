@@ -770,6 +770,14 @@ fn cg_init_runtime() {
     CG_RT_MAP_HAS = llvm.add_function(CG_MOD, "forge_map_has", make_fn_type(CG_I8, [CG_PTR, CG_STR]))
     CG_RT_MAP_GET = llvm.add_function(CG_MOD, "forge_map_get", make_fn_type(CG_I64, [CG_PTR, CG_STR]))
     CG_RT_MAP_SET = llvm.add_function(CG_MOD, "forge_map_set", make_fn_type(CG_VOID, [CG_PTR, CG_STR, CG_I64]))
+    // Process/FS functions (self-hosted compiler support — selfhost_ prefix avoids package conflicts)
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "forge_set_args", make_fn_type(CG_VOID, [CG_I32, CG_PTR]))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_args", make_fn_type(CG_STR, []))
+    llvm.add_function(CG_MOD, "forge_selfhost_fs_read", make_fn_type(CG_STR, [CG_STR]))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_exit", make_fn_type(CG_VOID, [CG_I64]))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type(CG_STR, [CG_STR, CG_STR]))
+    llvm.add_function(CG_MOD, "forge_eprintln_string", make_fn_type(CG_VOID, [CG_STR]))
 }
 
 fn cg_cleanup() {
@@ -1581,6 +1589,12 @@ impl Codegen {
                     if fn_ref2 != null {
                         return self.emit_fn_call_direct(fn_ref2, prefixed, args)
                     }
+                    // Try forge_selfhost_ prefix: process.args → forge_selfhost_process_args
+                    let selfhost = "forge_selfhost_" + ns + "_" + f
+                    let fn_ref_sh = llvm.get_named_function(CG_MOD, selfhost)
+                    if fn_ref_sh != null {
+                        return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
+                    }
                     // Try method call: Type__method (impl methods)
                     let method_name = ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
@@ -1639,8 +1653,27 @@ impl Codegen {
             i = i + 1
         }
         // Look up return type from FN_RETURN_TYPES
+        cg_reinit_types()
         mut call_ret_ty = CG_I64
         mut call_is_nullable = false
+        // For extern runtime functions, use known return types
+        mut is_extern_str_return = false
+        if fn_name == "forge_selfhost_process_args" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_selfhost_fs_read" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_selfhost_process_run" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_string_concat" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_string_new" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_string_char_at" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_string_substring" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "forge_int_to_string" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
         mut fi = 0
         while fi < FN_NAMES.length {
             if FN_NAMES[fi] == fn_name {
@@ -1675,6 +1708,7 @@ impl Codegen {
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
+        if is_extern_str_return { CG_LAST_IS_STR = 1 }
         r
     }
 
