@@ -56,6 +56,7 @@ export mut CG_NULLABLE_VAR_NAMES: List<string> = []
 export mut CG_NULLABLE_VAR_INNER: List<string> = []  // inner type name ("int", "string")
 // Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
 export mut CG_LIST_VAR_CSV: string = ""        // all list vars
+export mut CG_STR_GLOBALS_CSV: string = ""     // string/list globals (CSV, immune to corruption)
 export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
 // Track list element type names: ",varname:typename," format
 export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
@@ -155,15 +156,28 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        mut is_str_flag = 0
-        if is_str { is_str_flag = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag)
+        // Check bitmask for string type
+        mut bit = 1
+        mut shift = 0
+        while shift < i {
+            bit = bit * 2
+            shift = shift + 1
+        }
+        let is_str = (str_mask / bit) % 2 == 1
+        // Also check name patterns for string/list globals
+        mut is_str_global = is_str
+        if name.index_of("CSV") >= 0 { is_str_global = true }
+        if name.index_of("PATHS") >= 0 { is_str_global = true }
+        if name.index_of("REG_") >= 0 { is_str_global = false }
+        if name.index_of("REGISTRY") >= 0 { is_str_global = false }
+        mut is_str_flag2 = 0
+        if is_str_global { is_str_flag2 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        if is_str {
+        // Register in CSV (immune to list corruption)
+        if is_str_global {
+            CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-            CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
         }
         i = i + 1
     }
@@ -1378,7 +1392,14 @@ impl Codegen {
         vi = CG_VAR_SCOPE_START - 1
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
+                cg_reinit_types()
+                // Check if this global is a string/list via CSV (immune to list corruption)
+                let str_needle = "," + name + ","
+                let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
                 mut load_ty = CG_I64
+                if is_str_global { load_ty = CG_STR }
+                CG_LAST_IS_STR = 0
+                if is_str_global { CG_LAST_IS_STR = 1 }
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
@@ -1387,10 +1408,10 @@ impl Codegen {
                     load_ty = make_nullable_type(inner_ty2)
                     CG_LAST_IS_NULLABLE = 1
                 }
-                mut si = CG_STR_VAR_NAMES.length - 1
+                // Skip CG_STR_VAR_NAMES search — all globals are ForgeString
+                mut si = -1  // skip
                 while si >= 0 {
                     if CG_STR_VAR_NAMES[si] == name {
-                        if !is_nullable_var(name) { load_ty = CG_STR }
                         break
                     }
                     si = si - 1

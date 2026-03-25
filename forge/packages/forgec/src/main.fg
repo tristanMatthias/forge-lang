@@ -291,7 +291,6 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 // ─── Per-File Compilation ──────────────────────
 
 fn build_compile_separate(files: List<string>, output: string) {
-    eprintln("BCS: files=" + string(files.length))
     // Phase 1: Scan ALL files (collect function signatures — no bodies)
     mut file_idx = 0
     for filepath in files {
