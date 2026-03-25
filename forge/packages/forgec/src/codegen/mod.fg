@@ -1705,16 +1705,7 @@ impl Codegen {
                         bpos = bpos + 1
                     }
                     if bcur != "" { all_bindings = all_bindings.push(bcur) }
-                    // Pre-create allocas in ENTRY block (ensures dominance across all blocks)
-                    let cur_bb = llvm.get_insert_block(CG_B)
-                    let entry_bb = llvm.get_entry_basic_block(mfn)
-                    // Position at entry block to create allocas there
-                    let first_instr = llvm.get_first_instruction(entry_bb)
-                    if first_instr != null {
-                        llvm.position_before(CG_B, first_instr)
-                    } else {
-                        llvm.position_at_end(CG_B, entry_bb)
-                    }
+                    // Pre-create allocas before match branches (current block)
                     mut pre_bi = 0
                     while pre_bi < all_bindings.length {
                         let pre_csv = all_bindings[pre_bi]
@@ -1743,8 +1734,6 @@ impl Codegen {
                         }
                         pre_bi = pre_bi + 1
                     }
-                    // Restore builder to current position
-                    llvm.position_at_end(CG_B, cur_bb)
                     // Emit each arm as if-else chain
                     mut ai = 0
                     while ai < tags.length {
@@ -1956,9 +1945,21 @@ impl Codegen {
                 si = si - 1
             }
         }
-        if CG_B == 0 { eprintln("FATAL: CG_B is null in define_var!") }
-        if alloca_ty == 0 { eprintln("FATAL: alloca_ty is null for " + name) }
+        if CG_B == 0 { return }
+        if alloca_ty == 0 { return }
+        // Create alloca in ENTRY block (ensures dominance across all basic blocks)
+        let cur_bb = llvm.get_insert_block(CG_B)
+        let fn_val = llvm.get_basic_block_parent(cur_bb)
+        let entry_bb = llvm.get_entry_basic_block(fn_val)
+        let first_instr = llvm.get_first_instruction(entry_bb)
+        if first_instr != null {
+            llvm.position_before(CG_B, first_instr)
+        } else {
+            llvm.position_at_end(CG_B, entry_bb)
+        }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
+        // Restore builder position and store value
+        llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         mut is_str_flag3 = 0
