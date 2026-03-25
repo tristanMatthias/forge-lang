@@ -1664,7 +1664,7 @@ impl Codegen {
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }
                     llvm.position_at_end(CG_B, mb)
                 }
-                .Match(scrutinee, arm_tags_csv, arm_bodies, default_body, has_default, s) -> {
+                .Match(scrutinee, arm_tags_csv, arm_bindings_csv, arm_bodies, default_body, has_default, s) -> {
                     cg_reinit_types()
                     let subj_raw = self.emit_expr(scrutinee)
                     // Try extracting tag from enum struct
@@ -1690,6 +1690,61 @@ impl Codegen {
                         tpos = tpos + 1
                     }
                     if tcur != "" { tags = tags.push(int(tcur)) }
+                    // Parse arm bindings (semicolon-separated groups, comma-separated names)
+                    mut all_bindings: List<string> = []
+                    mut bpos = 0
+                    mut bcur = ""
+                    while bpos < arm_bindings_csv.length {
+                        let bch = arm_bindings_csv[bpos]
+                        if bch == ";" {
+                            all_bindings = all_bindings.push(bcur)
+                            bcur = ""
+                        } else {
+                            bcur = bcur + bch
+                        }
+                        bpos = bpos + 1
+                    }
+                    if bcur != "" { all_bindings = all_bindings.push(bcur) }
+                    // Pre-create allocas in ENTRY block (ensures dominance across all blocks)
+                    let cur_bb = llvm.get_insert_block(CG_B)
+                    let entry_bb = llvm.get_entry_basic_block(mfn)
+                    // Position at entry block to create allocas there
+                    let first_instr = llvm.get_first_instruction(entry_bb)
+                    if first_instr != null {
+                        llvm.position_before(CG_B, first_instr)
+                    } else {
+                        llvm.position_at_end(CG_B, entry_bb)
+                    }
+                    mut pre_bi = 0
+                    while pre_bi < all_bindings.length {
+                        let pre_csv = all_bindings[pre_bi]
+                        mut pre_pi = 0
+                        mut pre_name = ""
+                        while pre_pi < pre_csv.length {
+                            let pc = pre_csv[pre_pi]
+                            if pc == "," {
+                                if pre_name != "_" && pre_name != "" {
+                                    cg_reinit_types()
+                                    let pre_alloca = llvm.build_alloca(CG_B, CG_I64, "mb")
+                                    CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
+                                    CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
+                                }
+                                pre_name = ""
+                            } else {
+                                pre_name = pre_name + pc
+                            }
+                            pre_pi = pre_pi + 1
+                        }
+                        if pre_name != "_" && pre_name != "" {
+                            cg_reinit_types()
+                            let pre_alloca = llvm.build_alloca(CG_B, CG_I64, "mb")
+                            CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
+                            CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
+                        }
+                        pre_bi = pre_bi + 1
+                    }
+                    // Restore builder to current position
+                    llvm.position_at_end(CG_B, cur_bb)
                     // Emit each arm as if-else chain
                     mut ai = 0
                     while ai < tags.length {
@@ -1700,10 +1755,63 @@ impl Codegen {
                         let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
                         llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
                         llvm.position_at_end(CG_B, arm_bb)
+                        // Save var scope for binding cleanup
+                        let saved_var_len = CG_VAR_NAMES.length
+                        // Store extracted values into pre-created binding allocas
+                        if ai < all_bindings.length {
+                            let bind_csv = all_bindings[ai]
+                            mut slot = 1  // payload starts at index 1 (after tag)
+                            mut bpi = 0
+                            mut bpname = ""
+                            while bpi < bind_csv.length {
+                                let bc = bind_csv[bpi]
+                                if bc == "," {
+                                    if bpname != "_" && bpname != "" {
+                                        cg_reinit_types()
+                                        let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
+                                        if ev != null {
+                                            // Find the pre-created alloca for this binding name
+                                            mut vi = CG_VAR_NAMES.length - 1
+                                            while vi >= 0 {
+                                                if CG_VAR_NAMES[vi] == bpname {
+                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
+                                                    break
+                                                }
+                                                vi = vi - 1
+                                            }
+                                        }
+                                    }
+                                    slot = slot + 1
+                                    bpname = ""
+                                } else {
+                                    bpname = bpname + bc
+                                }
+                                bpi = bpi + 1
+                            }
+                            // Last binding
+                            if bpname != "_" && bpname != "" {
+                                cg_reinit_types()
+                                let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
+                                if ev != null {
+                                    mut vi = CG_VAR_NAMES.length - 1
+                                    while vi >= 0 {
+                                        if CG_VAR_NAMES[vi] == bpname {
+                                            llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
+                                            break
+                                        }
+                                        vi = vi - 1
+                                    }
+                                }
+                            }
+                        }
                         if ai < arm_bodies.length {
                             self.emit_block(arm_bodies[ai])
                         }
                         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+                        // Restore var scope (remove bindings from this arm)
+                        // Truncate CG_VAR_NAMES/CG_VAR_PTRS back to saved length
+                        // (bootstrap: can't truncate lists, but pushing same names in next arm is fine
+                        //  because emit_ident searches from end — new arm's bindings shadow old ones)
                         llvm.position_at_end(CG_B, next_bb)
                         ai = ai + 1
                     }

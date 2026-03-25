@@ -325,21 +325,37 @@ impl Parser {
                     let enum_type = cg_var_enum_type(scrutinee_var)
                     mut arm_tags: List<int> = []
                     mut arm_bodies: List<Block> = []
+                    mut arm_bindings_list: List<string> = []
                     mut has_default = 0
                     mut default_body = Block { statements: [], span: start }
 
                     while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                         self.skip_newlines()
                         mut pat_tag = -1
+                        mut arm_bind_csv = ""
                         if self.check(TokenKind.Dot) {
                             self.advance()
                             let vname = self.expect_ident()
                             let qname = enum_type + "." + vname
                             pat_tag = match_enum_tag(qname)
                             if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
+                            // Capture binding names
                             if self.check(TokenKind.LParen) {
                                 self.advance()
-                                while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
+                                mut bind_idx = 0
+                                while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                                    let bname = self.expect_ident()
+                                    if bname != "" && bname != "_" {
+                                        if bind_idx > 0 { arm_bind_csv = arm_bind_csv + "," }
+                                        arm_bind_csv = arm_bind_csv + bname
+                                    } else {
+                                        if bind_idx > 0 { arm_bind_csv = arm_bind_csv + "," }
+                                        arm_bind_csv = arm_bind_csv + "_"
+                                    }
+                                    bind_idx = bind_idx + 1
+                                    if self.check(TokenKind.Comma) { self.advance() }
+                                    self.skip_newlines()
+                                }
                                 if self.check(TokenKind.RParen) { self.advance() }
                             }
                         } else if self.check(TokenKind.Underscore) {
@@ -371,6 +387,7 @@ impl Parser {
                         } else {
                             arm_tags = arm_tags.push(pat_tag)
                             arm_bodies = arm_bodies.push(body)
+                            arm_bindings_list = arm_bindings_list.push(arm_bind_csv)
                         }
                         self.skip_newlines()
                         if self.check(TokenKind.Comma) { self.advance() }
@@ -387,7 +404,16 @@ impl Parser {
                         ti = ti + 1
                     }
 
-                    return Statement.Match(scrutinee!, tag_csv, arm_bodies, default_body, has_default, start)
+                    // Build bindings CSV (semicolons between arms)
+                    mut bindings_csv = ""
+                    mut bi = 0
+                    while bi < arm_bindings_list.length {
+                        if bi > 0 { bindings_csv = bindings_csv + ";" }
+                        bindings_csv = bindings_csv + arm_bindings_list[bi]
+                        bi = bi + 1
+                    }
+
+                    return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
                 }
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()
