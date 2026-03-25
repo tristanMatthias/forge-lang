@@ -1705,7 +1705,13 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    let method_name = ns + "__" + f
+                    // Resolve "self" to actual struct type for correct mangling
+                    mut method_ns = ns
+                    if ns == "self" {
+                        let vst = var_struct_type("self")
+                        if vst != "" { method_ns = vst }
+                    }
+                    let method_name = method_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
                         // Prepend self (the object) as first arg

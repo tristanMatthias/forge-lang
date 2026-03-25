@@ -279,6 +279,7 @@ fn scan_one_file(filepath: string, idx: int) {
     let source = fs.read(filepath)
     mut lex = lexer_new(source)
     let tokens = lex.tokenize()
+    eprintln("  " + string(tokens.length) + " tokens from " + filepath)
     mut p = parser_new_with_source(tokens, source)
     p.parse_program()
 }
