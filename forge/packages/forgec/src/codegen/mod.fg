@@ -889,6 +889,9 @@ impl Codegen {
             .Call(callee, args, span) -> { return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> {
+                // Reset stale list flags before checking
+                CG_LAST_LIST_ELEM_TYPE = ""
+                CG_LAST_IS_LIST = 0
                 // Check if object is a known list variable BEFORE emitting (flags get corrupted)
                 mut obj_var_name = ""
                 match obj {
