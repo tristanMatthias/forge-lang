@@ -392,7 +392,30 @@ pub extern "C" fn forge_llvm_dispose_builder(builder: LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMBuildRet(builder, value) }
+    unsafe {
+        if value.is_null() {
+            return LLVMBuildRetVoid(builder);
+        }
+        // Check if value type matches the function's return type
+        let bb = LLVMGetInsertBlock(builder);
+        if !bb.is_null() {
+            let func = LLVMGetBasicBlockParent(bb);
+            if !func.is_null() {
+                let fn_ty = LLVMGlobalGetValueType(func);
+                let ret_ty = LLVMGetReturnType(fn_ty);
+                let val_ty = LLVMTypeOf(value);
+                if ret_ty != val_ty {
+                    let ret_kind = LLVMGetTypeKind(ret_ty);
+                    if ret_kind == 0 { // Void
+                        return LLVMBuildRetVoid(builder);
+                    }
+                    // Type mismatch — return undef of correct type
+                    return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
+                }
+            }
+        }
+        LLVMBuildRet(builder, value)
+    }
 }
 
 #[no_mangle]
@@ -523,8 +546,13 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
     unsafe {
         let lhs_ty = LLVMTypeOf(lhs);
         let rhs_ty = LLVMTypeOf(rhs);
+        let lhs_kind = LLVMGetTypeKind(lhs_ty);
+        // icmp only works on integer (8) and pointer (12) types
+        if lhs_kind != 8 && lhs_kind != 12 {
+            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
+            return LLVMConstInt(i1, 0, 0);
+        }
         if lhs_ty != rhs_ty {
-            // Operand type mismatch (corrupted type pointer) — return i1 false
             let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
             return LLVMConstInt(i1, 0, 0);
         }
@@ -659,10 +687,16 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
     let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() {
-        eprintln!("WARNING: build_gep2 with null ptr or type");
         return std::ptr::null_mut();
     }
-    unsafe { LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, safe_name(name)) }
+    unsafe {
+        // GEP requires a pointer base — if we got a non-pointer, return null
+        let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
+        if ptr_kind != 12 { // 12 = PointerTypeKind
+            return std::ptr::null_mut();
+        }
+        LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, safe_name(name))
+    }
 }
 
 #[no_mangle]
