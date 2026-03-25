@@ -154,13 +154,17 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
             shift = shift + 1
         }
         let is_str = (str_mask / bit) % 2 == 1
-        mut gty = if is_str { CG_STR } else { CG_I64 }
+        mut gty = CG_I64
+        if is_str { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = if is_str { llvm.const_null(gty) } else { llvm.const_int(CG_I64, 0, 0) }
+        mut zero = llvm.const_int(CG_I64, 0, 0)
+        if is_str { zero = llvm.const_null(gty) }
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
+        mut is_str_flag = 0
+        if is_str { is_str_flag = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
@@ -206,20 +210,23 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         else if type_name == "map" { gty = CG_PTR }
 
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = if type_name == "string" || is_list {
-            llvm.const_null(gty)
+        mut zero = llvm.const_int(CG_I64, 0, 0)
+        if type_name == "string" || is_list {
+            zero = llvm.const_null(gty)
         } else if type_name == "map" {
-            llvm.const_null(CG_PTR)
-        } else {
-            llvm.const_int(CG_I64, 0, 0)
+            zero = llvm.const_null(CG_PTR)
         }
         llvm.set_initializer(gv, zero)
 
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if type_name == "string" || is_list { 1 } else { 0 })
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if type_name == "map" { 1 } else { 0 })
+        mut is_str_flag2 = 0
+        if type_name == "string" || is_list { is_str_flag2 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
+        mut is_map_flag = 0
+        if type_name == "map" { is_map_flag = 1 }
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag)
         if type_name == "string" || is_list {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
@@ -365,7 +372,8 @@ export fn cg_get_enum_ty_for(name: string) -> ptr {
     }
     // Create: {i8, i64 x max_fields}
     let mf = cg_enum_max_fields(name)
-    let fc = if mf > 0 { mf + 1 } else { 2 }  // minimum {i8, i64}
+    mut fc = 2  // minimum {i8, i64}
+    if mf > 0 { fc = mf + 1 }
     let fields = llvm.type_array_new(fc)
     llvm.type_array_set(fields, 0, CG_I8)
     mut fi = 1
@@ -935,9 +943,10 @@ impl Codegen {
             }
 
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
-            let next_bb = if arm_idx < args.length - 2 {
-                llvm.append_basic_block(CG_CTX, fn_val, "mn")
-            } else { merge_bb }
+            mut next_bb = merge_bb
+            if arm_idx < args.length - 2 {
+                next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
+            }
 
             if pat == "_" {
                 // Wildcard — unconditional branch
@@ -1040,14 +1049,16 @@ impl Codegen {
             phi_bbs = phi_bbs.push(de)
         } else {
             // No default — add empty fallthrough for PHI completeness
-            let def_val = if CG_LAST_IS_STR == 1 { self.emit_string("") } else { llvm.const_int(CG_I64, 0, 0) }
+            mut def_val = llvm.const_int(CG_I64, 0, 0)
+            if CG_LAST_IS_STR == 1 { def_val = self.emit_string("") }
             phi_vals = phi_vals.push(def_val)
             phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
             llvm.build_br(CG_B, merge_bb)
         }
         llvm.position_at_end(CG_B, merge_bb)
         if phi_vals.length > 0 {
-            let phi_ty = if CG_LAST_IS_STR == 1 { CG_STR } else { CG_I64 }
+            mut phi_ty = CG_I64
+            if CG_LAST_IS_STR == 1 { phi_ty = CG_STR }
             let phi = llvm.build_phi(CG_B, phi_ty, "mv")
             mut pi = 0
             while pi < phi_vals.length {
@@ -1242,7 +1253,8 @@ impl Codegen {
                 // Check nullable first (takes precedence)
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
+                    mut inner_ty = CG_I64
+                    if inner_name == "string" { inner_ty = CG_STR }
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
@@ -1291,8 +1303,9 @@ impl Codegen {
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
-                    let inner_ty = if inner_name == "string" { CG_STR } else { CG_I64 }
-                    load_ty = make_nullable_type(inner_ty)
+                    mut inner_ty2 = CG_I64
+                    if inner_name == "string" { inner_ty2 = CG_STR }
+                    load_ty = make_nullable_type(inner_ty2)
                     CG_LAST_IS_NULLABLE = 1
                 }
                 mut si = CG_STR_VAR_NAMES.length - 1
@@ -1614,7 +1627,8 @@ impl Codegen {
                 .Return(v, s) -> { self.emit_return(v) }
                 .Let(name, val, s) -> {
                     let ev = self.emit_expr(val)
-                    let ty = if CG_LAST_IS_STR == 1 { Type.String } else { Type.Int }
+                    mut ty = Type.Int
+                    if CG_LAST_IS_STR == 1 { ty = Type.String }
                     self.define_var(name, ty, ev)
                     // If value was a struct, register as struct variable
                     if CG_LAST_STRUCT_TYPE != "" {
@@ -1756,11 +1770,13 @@ impl Codegen {
         // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
-        mut alloca_ty = if is_str { CG_STR } else { CG_I64 }
+        mut alloca_ty = CG_I64
+        if is_str { alloca_ty = CG_STR }
         // For nullable types, use the {i8, T} struct type
         if CG_LAST_IS_NULLABLE == 1 {
-            let inner_ty = if is_str { CG_STR } else { CG_I64 }
-            alloca_ty = make_nullable_type(inner_ty)
+            mut inner_ty3 = CG_I64
+            if is_str { inner_ty3 = CG_STR }
+            alloca_ty = make_nullable_type(inner_ty3)
         }
         // For enum tagged union types — per-enum sizing
         if CG_LAST_ENUM_TYPE != "" {
@@ -1787,8 +1803,12 @@ impl Codegen {
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if is_str { 1 } else { 0 })
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(if is_map { 1 } else { 0 })
+        mut is_str_flag3 = 0
+        if is_str { is_str_flag3 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag3)
+        mut is_map_flag2 = 0
+        if is_map { is_map_flag2 = 1 }
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag2)
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
