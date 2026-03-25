@@ -14,9 +14,9 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, wrap_nullable, make_null_value}
+use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, wrap_nullable, make_null_value, cg_var_enum_type}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
-use expressions.{LAST_IDENT_NAME}
+use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
 export mut PARSED_PARAM_TYPES: List<string> = []
@@ -306,6 +306,88 @@ impl Parser {
                         }
                     }
                     return Statement.If(cond!, then_block, else_block, has_else, start)
+                }
+                // CG_ACTIVE: fall through to expression parser (inline emit)
+                return self.parse_expr_or_assign()
+            }
+            .Match -> {
+                if !CG_ACTIVE {
+                    // Parse match-statement as Statement.Match (avoids PENDING_MATCH forward refs)
+                    let start = self.advance().span // consume 'match'
+                    self.skip_newlines()
+                    let scrutinee = self.parse_expr()
+                    if scrutinee == null { return null }
+                    let scrutinee_var = LAST_IDENT_NAME
+                    self.skip_newlines()
+                    if self.expect(TokenKind.LBrace) == null { return null }
+                    self.skip_newlines()
+
+                    let enum_type = cg_var_enum_type(scrutinee_var)
+                    mut arm_tags: List<int> = []
+                    mut arm_bodies: List<Block> = []
+                    mut has_default = 0
+                    mut default_body = Block { statements: [], span: start }
+
+                    while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+                        self.skip_newlines()
+                        mut pat_tag = -1
+                        if self.check(TokenKind.Dot) {
+                            self.advance()
+                            let vname = self.expect_ident()
+                            let qname = enum_type + "." + vname
+                            pat_tag = match_enum_tag(qname)
+                            if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
+                            if self.check(TokenKind.LParen) {
+                                self.advance()
+                                while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
+                                if self.check(TokenKind.RParen) { self.advance() }
+                            }
+                        } else if self.check(TokenKind.Underscore) {
+                            self.advance()
+                            pat_tag = -1
+                            has_default = 1
+                        } else {
+                            self.advance()
+                        }
+                        self.skip_newlines()
+                        if self.check(TokenKind.Arrow) { self.advance() }
+                        self.skip_newlines()
+                        let prev_match = IN_MATCH_ARM
+                        IN_MATCH_ARM = true
+                        mut body = Block { statements: [], span: start }
+                        if self.check(TokenKind.LBrace) {
+                            body = self.parse_block()
+                        } else {
+                            let e = self.parse_expr()
+                            if e != null {
+                                mut body_stmts: List<Statement> = []
+                                body_stmts = body_stmts.push(Statement.Expr(e!))
+                                body = Block { statements: body_stmts, span: start }
+                            }
+                        }
+                        IN_MATCH_ARM = prev_match
+                        if pat_tag == -1 && has_default == 1 {
+                            default_body = body
+                        } else {
+                            arm_tags = arm_tags.push(pat_tag)
+                            arm_bodies = arm_bodies.push(body)
+                        }
+                        self.skip_newlines()
+                        if self.check(TokenKind.Comma) { self.advance() }
+                        self.skip_newlines()
+                    }
+                    if self.check(TokenKind.RBrace) { self.advance() }
+
+                    // Build tag CSV
+                    mut tag_csv = ""
+                    mut ti = 0
+                    while ti < arm_tags.length {
+                        if ti > 0 { tag_csv = tag_csv + "," }
+                        tag_csv = tag_csv + string(arm_tags[ti])
+                        ti = ti + 1
+                    }
+
+                    return Statement.Match(scrutinee!, tag_csv, arm_bodies, default_body, has_default, start)
                 }
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()

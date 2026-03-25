@@ -1664,6 +1664,56 @@ impl Codegen {
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }
                     llvm.position_at_end(CG_B, mb)
                 }
+                .Match(scrutinee, arm_tags_csv, arm_bodies, default_body, has_default, s) -> {
+                    cg_reinit_types()
+                    let subj_raw = self.emit_expr(scrutinee)
+                    // Try extracting tag from enum struct
+                    mut subj = subj_raw
+                    let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+                    if tag_byte != null {
+                        subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
+                    }
+                    let mfn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+                    let merge_bb = llvm.append_basic_block(CG_CTX, mfn, "me")
+                    // Parse tag CSV
+                    mut tags: List<int> = []
+                    mut tpos = 0
+                    mut tcur = ""
+                    while tpos < arm_tags_csv.length {
+                        let ch = arm_tags_csv[tpos]
+                        if ch == "," {
+                            tags = tags.push(int(tcur))
+                            tcur = ""
+                        } else {
+                            tcur = tcur + ch
+                        }
+                        tpos = tpos + 1
+                    }
+                    if tcur != "" { tags = tags.push(int(tcur)) }
+                    // Emit each arm as if-else chain
+                    mut ai = 0
+                    while ai < tags.length {
+                        cg_reinit_types()
+                        let arm_bb = llvm.append_basic_block(CG_CTX, mfn, "ma")
+                        let next_bb = llvm.append_basic_block(CG_CTX, mfn, "mn")
+                        let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
+                        let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+                        llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+                        llvm.position_at_end(CG_B, arm_bb)
+                        if ai < arm_bodies.length {
+                            self.emit_block(arm_bodies[ai])
+                        }
+                        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+                        llvm.position_at_end(CG_B, next_bb)
+                        ai = ai + 1
+                    }
+                    // Default arm
+                    if has_default == 1 {
+                        self.emit_block(default_body)
+                    }
+                    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+                    llvm.position_at_end(CG_B, merge_bb)
+                }
                 .While(cond, body, s) -> {
                     let wfn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
