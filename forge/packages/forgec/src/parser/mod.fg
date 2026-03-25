@@ -337,6 +337,8 @@ impl Parser {
                             self.advance()
                             let vname = self.expect_ident()
                             let qname = enum_type + "." + vname
+                            // Store variant qualified name for field type lookup
+                            arm_bind_csv = qname + ":"
                             pat_tag = match_enum_tag(qname)
                             if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                             // Capture binding names

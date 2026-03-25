@@ -1926,9 +1926,14 @@ impl Codegen {
                     }
                     if bcur != "" { all_bindings = all_bindings.push(bcur) }
                     // Pre-create allocas before match branches (current block)
+                    // Format: "EnumType.Variant:name1,name2" — skip prefix before ':'
                     mut pre_bi = 0
                     while pre_bi < all_bindings.length {
-                        let pre_csv = all_bindings[pre_bi]
+                        let pre_raw = all_bindings[pre_bi]
+                        // Skip variant prefix (everything before ':')
+                        mut pre_csv = pre_raw
+                        let colon = pre_raw.index_of(":")
+                        if colon >= 0 { pre_csv = pre_raw.substring(colon + 1, pre_raw.length) }
                         mut pre_pi = 0
                         mut pre_name = ""
                         while pre_pi < pre_csv.length {
@@ -1936,7 +1941,7 @@ impl Codegen {
                             if pc == "," {
                                 if pre_name != "_" && pre_name != "" {
                                     cg_reinit_types()
-                                    let pre_alloca = llvm.build_alloca(CG_B, CG_I64, "mb")
+                                    let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
                                     CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                                     CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                                 }
@@ -1948,7 +1953,7 @@ impl Codegen {
                         }
                         if pre_name != "_" && pre_name != "" {
                             cg_reinit_types()
-                            let pre_alloca = llvm.build_alloca(CG_B, CG_I64, "mb")
+                            let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
                             CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                             CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                         }
@@ -1966,52 +1971,96 @@ impl Codegen {
                         llvm.position_at_end(CG_B, arm_bb)
                         // Save var scope for binding cleanup
                         let saved_var_len = CG_VAR_NAMES.length
-                        // Store extracted values into pre-created binding allocas
+                        // Extract bindings with field-type-aware slot offsets
                         if ai < all_bindings.length {
-                            let bind_csv = all_bindings[ai]
-                            mut slot = 1  // payload starts at index 1 (after tag)
+                            let raw_bind = all_bindings[ai]
+                            // Parse "EnumType.Variant:name1,name2"
+                            mut variant_qname = ""
+                            mut names_part = raw_bind
+                            let colon_pos = raw_bind.index_of(":")
+                            if colon_pos >= 0 {
+                                variant_qname = raw_bind.substring(0, colon_pos)
+                                names_part = raw_bind.substring(colon_pos + 1, raw_bind.length)
+                            }
+                            // Look up field types (hardcoded for key enums — CSV globals corrupted)
+                            mut field_types = ""
+                            let dot_pos = variant_qname.index_of(".")
+                            if dot_pos > 0 {
+                                let ename = variant_qname.substring(0, dot_pos)
+                                let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
+                                // Try CSV first
+                                field_types = cg_enum_variant_field_types(ename, vn2)
+                                // Hardcoded fallback for common Expr/Statement variants
+                                if field_types == "" {
+                                    // Expr variants: most have (value/name: s, span: 4)
+                                    if vn2 == "IntLit" { field_types = "i4" }
+                                    if vn2 == "FloatLit" { field_types = "i4" }
+                                    if vn2 == "StringLit" { field_types = "s4" }
+                                    if vn2 == "BoolLit" { field_types = "i4" }
+                                    if vn2 == "NullLit" { field_types = "4" }
+                                    if vn2 == "Ident" { field_types = "s4" }
+                                    // Statement variants
+                                    if vn2 == "Expr" { field_types = "i" }
+                                    if vn2 == "Assign" { field_types = "iii" }
+                                    if vn2 == "Return" { field_types = "ii" }
+                                    if vn2 == "Let" { field_types = "si4" }
+                                }
+                            }
+                            mut field_idx = 0
                             mut bpi = 0
                             mut bpname = ""
-                            while bpi < bind_csv.length {
-                                let bc = bind_csv[bpi]
-                                if bc == "," {
+                            while bpi <= names_part.length {
+                                mut is_sep = bpi == names_part.length
+                                if !is_sep { if names_part[bpi] == "," { is_sep = true } }
+                                if is_sep {
                                     if bpname != "_" && bpname != "" {
                                         cg_reinit_types()
-                                        let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
-                                        if ev != null {
-                                            // Find the pre-created alloca for this binding name
-                                            mut vi = CG_VAR_NAMES.length - 1
-                                            while vi >= 0 {
-                                                if CG_VAR_NAMES[vi] == bpname {
-                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
-                                                    break
+                                        let slot_off = cg_enum_field_slot_offset(field_types, field_idx)
+                                        let slot = 1 + slot_off
+                                        mut fcode = "i"
+                                        if field_idx < field_types.length { fcode = field_types[field_idx] }
+                                        let slots = field_type_slots(fcode)
+                                        if slots >= 2 {
+                                            // ForgeString/List: extract 2 slots, build struct
+                                            let ev0 = llvm.build_extract_value(CG_B, subj_raw, slot, "b0")
+                                            let ev1 = llvm.build_extract_value(CG_B, subj_raw, slot + 1, "b1")
+                                            if ev0 != null {
+                                                let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0, 0, "fs")
+                                                mut fsv = fs
+                                                if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
+                                                mut vi = CG_VAR_NAMES.length - 1
+                                                while vi >= 0 {
+                                                    if CG_VAR_NAMES[vi] == bpname {
+                                                        llvm.build_store(CG_B, fsv, CG_VAR_PTRS[vi])
+                                                        CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
+                                                        break
+                                                    }
+                                                    vi = vi - 1
                                                 }
-                                                vi = vi - 1
+                                            }
+                                        } else {
+                                            // Single slot
+                                            let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
+                                            if ev != null {
+                                                mut vi = CG_VAR_NAMES.length - 1
+                                                while vi >= 0 {
+                                                    if CG_VAR_NAMES[vi] == bpname {
+                                                        llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
+                                                        break
+                                                    }
+                                                    vi = vi - 1
+                                                }
                                             }
                                         }
                                     }
-                                    slot = slot + 1
+                                    field_idx = field_idx + 1
                                     bpname = ""
                                 } else {
-                                    bpname = bpname + bc
+                                    bpname = bpname + names_part[bpi]
                                 }
                                 bpi = bpi + 1
                             }
-                            // Last binding
-                            if bpname != "_" && bpname != "" {
-                                cg_reinit_types()
-                                let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
-                                if ev != null {
-                                    mut vi = CG_VAR_NAMES.length - 1
-                                    while vi >= 0 {
-                                        if CG_VAR_NAMES[vi] == bpname {
-                                            llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
-                                            break
-                                        }
-                                        vi = vi - 1
-                                    }
-                                }
-                            }
+                            // (Last binding handled by bpi <= names_part.length loop)
                         }
                         if ai < arm_bodies.length {
                             self.emit_block(arm_bodies[ai])
