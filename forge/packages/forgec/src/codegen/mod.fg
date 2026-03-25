@@ -880,7 +880,75 @@ impl Codegen {
             }
             .Call(callee, args, span) -> { return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
-            .Index(obj, idx, span) -> { return llvm.const_int(CG_I64, 0, 0) }
+            .Index(obj, idx, span) -> {
+                // Check if object is a known list variable BEFORE emitting (flags get corrupted)
+                mut obj_var_name = ""
+                match obj {
+                    .Ident(n, s) -> { obj_var_name = n }
+                    _ -> {}
+                }
+                mut is_known_list = is_list_var(obj_var_name)
+                mut is_str_list = is_str_list_var(obj_var_name)
+                let obj_val = self.emit_expr(obj)
+                let obj_is_str = CG_LAST_IS_STR
+                let obj_is_list = CG_LAST_IS_LIST
+                let obj_is_map = CG_LAST_IS_MAP
+                let obj_list_elem = CG_LAST_LIST_ELEM_TYPE
+                let idx_val = self.emit_expr(idx)
+                cg_reinit_types()
+                if obj_is_map == 1 {
+                    // Map: forge_map_get(map_ptr, key) → i64
+                    let ga = llvm.value_array_new(2)
+                    llvm.value_array_set(ga, 0, obj_val)
+                    llvm.value_array_set(ga, 1, idx_val)
+                    let gt = llvm.type_array_new(2)
+                    llvm.type_array_set(gt, 0, CG_PTR)
+                    llvm.type_array_set(gt, 1, CG_STR)
+                    let gf = llvm.function_type(CG_I64, gt, 2, 0)
+                    llvm.type_array_free(gt)
+                    let result = llvm.build_call(CG_B, gf, CG_RT_MAP_GET, ga, 2, "mg")
+                    llvm.value_array_free(ga)
+                    CG_IS_MAP_INDEX = 1
+                    CG_MAP_INDEX_OBJ = obj_val
+                    CG_MAP_INDEX_KEY = idx_val
+                    return result
+                }
+                // String charAt only for known non-list string variables
+                // List GEP for everything else (safer default)
+                mut is_pure_str = obj_is_str == 1 && !is_known_list
+                // If we have member access (like block.statements), it's a list from struct
+                if obj_list_elem != "" { is_pure_str = false }
+                // If variable name is in CG_STR_VAR_NAMES but also a list, prefer list
+                if is_str_list { is_pure_str = false }
+                if is_pure_str {
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, obj_val)
+                    llvm.value_array_set(ca, 1, idx_val)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_I64)
+                    let cf = llvm.function_type(CG_STR, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let result = llvm.build_call(CG_B, cf, CG_RT_SCHARAT, ca, 2, "ch")
+                    llvm.value_array_free(ca)
+                    CG_LAST_IS_STR = 1
+                    return result
+                }
+                // List: extract data pointer, GEP to element, load
+                cg_reinit_types()
+                mut elem_ty = CG_I64
+                if is_str_list { elem_ty = CG_STR }
+                let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
+                if dp == null { return llvm.const_int(CG_I64, 0, 0) }
+                let gi = llvm.value_array_new(1)
+                llvm.value_array_set(gi, 0, idx_val)
+                let gp = llvm.build_gep2(CG_B, elem_ty, dp, gi, 1, "ep")
+                llvm.value_array_free(gi)
+                if gp == null { return llvm.const_int(CG_I64, 0, 0) }
+                let ev = llvm.build_load(CG_B, elem_ty, gp, "ev")
+                if elem_ty == CG_STR { CG_LAST_IS_STR = 1 }
+                return ev
+            }
             .Block(block) -> { return self.emit_block(block) }
             .Feature(fe) -> {
                 return self.dispatch_expr(fe)
@@ -1364,8 +1432,41 @@ impl Codegen {
             .Mul -> { return llvm.build_mul(CG_B, lhs, rhs, "mul") }
             .Div -> { return llvm.build_sdiv(CG_B, lhs, rhs, "div") }
             .Mod -> { return llvm.build_srem(CG_B, lhs, rhs, "mod") }
-            .Eq -> { return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq") }
-            .NotEq -> { return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne") }
+            .Eq -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    // String comparison: forge_string_compare(a, b) == 0
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp_result = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 32, cmp_result, llvm.const_int(CG_I64, 0, 0), "eq")
+                }
+                return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq")
+            }
+            .NotEq -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp_result = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 33, cmp_result, llvm.const_int(CG_I64, 0, 0), "ne")
+                }
+                return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne")
+            }
             .Lt -> { return llvm.build_icmp(CG_B, 40, lhs, rhs, "lt") }
             .LtEq -> { return llvm.build_icmp(CG_B, 41, lhs, rhs, "le") }
             .Gt -> { return llvm.build_icmp(CG_B, 38, lhs, rhs, "gt") }
