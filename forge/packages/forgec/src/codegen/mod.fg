@@ -1606,47 +1606,41 @@ impl Codegen {
         llvm.value_array_free(pa)
     }
 
-    fn emit_block(self, block: Block) -> ptr {
-        mut last = llvm.const_int(CG_I64, 0, 0)
-        let _stmts = block.statements
-        for stmt in _stmts {
-            if llvm.block_has_terminator(CG_B) { break }
-            match stmt {
-                .Expr(expr) -> {
-                    if PENDING_IF {
-                        PENDING_IF = false
-                        last = self.emit_if_from_globals()
-                    } else if PENDING_MATCH {
-                        PENDING_MATCH = false
-                        last = self.emit_match_from_globals()
-                    } else {
-                        last = self.emit_expr(expr)
-                    }
+    fn emit_statement(self, stmt: Statement) -> ptr {
+        match stmt {
+            .Expr(expr) -> {
+                if PENDING_IF {
+                    PENDING_IF = false
+                    return self.emit_if_from_globals()
+                } else if PENDING_MATCH {
+                    PENDING_MATCH = false
+                    return self.emit_match_from_globals()
+                } else {
+                    return self.emit_expr(expr)
                 }
-                .Assign(t, v, s) -> { self.emit_assign(t, v) }
-                .Return(v, s) -> { self.emit_return(v) }
-                .Let(name, val, s) -> {
-                    let ev = self.emit_expr(val)
-                    mut ty = Type.Int
-                    if CG_LAST_IS_STR == 1 { ty = Type.String }
-                    self.define_var(name, ty, ev)
-                    // If value was a struct, register as struct variable
-                    if CG_LAST_STRUCT_TYPE != "" {
-                        CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
-                        CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
-                        // Find field names
-                        mut fn_str = ""
-                        mut fsi = CG_STRUCT_FIELDS.length - 1
-                        while fsi >= 0 {
-                            if CG_STRUCT_NAMES[fsi] == CG_LAST_STRUCT_TYPE {
-                                fn_str = CG_STRUCT_FIELDS[fsi]
-                                break
-                            }
-                            fsi = fsi - 1
+            }
+            .Assign(t, v, s) -> { self.emit_assign(t, v) }
+            .Return(v, s) -> { self.emit_return(v) }
+            .Let(name, val, s) -> {
+                let ev = self.emit_expr(val)
+                mut ty = Type.Int
+                if CG_LAST_IS_STR == 1 { ty = Type.String }
+                self.define_var(name, ty, ev)
+                if CG_LAST_STRUCT_TYPE != "" {
+                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
+                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+                    mut fn_str = ""
+                    mut fsi = CG_STRUCT_FIELDS.length - 1
+                    while fsi >= 0 {
+                        if CG_STRUCT_NAMES[fsi] == CG_LAST_STRUCT_TYPE {
+                            fn_str = CG_STRUCT_FIELDS[fsi]
+                            break
                         }
-                        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(fn_str)
+                        fsi = fsi - 1
                     }
+                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(fn_str)
                 }
+            }
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
                     let cv = self.emit_expr(cond)
@@ -1903,6 +1897,15 @@ impl Codegen {
                 .Continue(s) -> {}
                 .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
+            llvm.const_int(CG_I64, 0, 0)
+        }
+
+    fn emit_block(self, block: Block) -> ptr {
+        mut last = llvm.const_int(CG_I64, 0, 0)
+        let _stmts = block.statements
+        for stmt in _stmts {
+            if llvm.block_has_terminator(CG_B) { break }
+            last = self.emit_statement(stmt)
         }
         last
     }
