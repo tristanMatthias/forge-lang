@@ -921,14 +921,11 @@ impl Codegen {
                     CG_MAP_INDEX_KEY = idx_val
                     return result
                 }
-                // String charAt only for known non-list string variables
-                // List GEP for everything else (safer default)
-                mut is_pure_str = obj_is_str == 1 && !is_known_list
-                // If we have member access (like block.statements), it's a list from struct
-                if obj_list_elem != "" { is_pure_str = false }
-                // If variable name is in CG_STR_VAR_NAMES but also a list, prefer list
-                if is_str_list { is_pure_str = false }
-                if is_pure_str {
+                // Default: use charAt for string indexing
+                // Use GEP only for explicitly known list variables
+                mut use_gep = is_known_list || is_str_list
+                if obj_list_elem != "" { use_gep = true }
+                if !use_gep {
                     let ca = llvm.value_array_new(2)
                     llvm.value_array_set(ca, 0, obj_val)
                     llvm.value_array_set(ca, 1, idx_val)
@@ -1322,6 +1319,7 @@ impl Codegen {
     fn emit_string(self, value: string) -> ptr {
         // Create string as a constant struct (position-independent, no builder call needed)
         // This prevents forward SSA references when strings are used in loop bodies
+        CG_LAST_IS_STR = 1
         llvm.const_string(CG_MOD, value, value.length)
     }
 
