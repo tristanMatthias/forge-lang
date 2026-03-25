@@ -395,9 +395,14 @@ export fn declare_all_fns() {
         mut ret_ty = CG_I64
         if is_main { ret_ty = CG_I32 }
         if !is_main && i < FN_RETURN_TYPES.length {
-            let rtn = FN_RETURN_TYPES[i]
+            mut rtn = FN_RETURN_TYPES[i]
+            // Strip nullable suffix for type resolution
+            if rtn.length > 1 { if rtn[rtn.length - 1] == "?" {
+                rtn = rtn.substring(0, rtn.length - 1)
+            } }
             if rtn == "string" { ret_ty = CG_STR }
             else if rtn != "" {
+                cg_reinit_types()
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
             }
@@ -509,20 +514,36 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
         CG_ACTIVE = true
+        cg_reinit_types()
         let last = cg.emit_block(body)
         CG_LAST_VAL = last
         CG_HAS_LAST_VAL = 1
     }
 
-    // Implicit return
+    // Implicit return — must match declared return type
     if !llvm.block_has_terminator(CG_B) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-        } else if CG_HAS_LAST_VAL == 1 {
-            CG_HAS_LAST_VAL = 0
-            llvm.build_ret(CG_B, CG_LAST_VAL)
         } else {
-            llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+            // Compute return type late (after body emit, before implicit ret)
+            cg_reinit_types()
+            mut ret_type_name = ""
+            if idx < FN_RETURN_TYPES.length { ret_type_name = FN_RETURN_TYPES[idx] }
+            if ret_type_name.length > 1 { if ret_type_name[ret_type_name.length - 1] == "?" {
+                ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
+            } }
+            cg_reinit_types()
+            let ret_ty = resolve_type_to_llvm(ret_type_name)
+            if ret_ty != null && ret_ty != CG_I64 {
+                // Struct/enum return: always use undef (body expressions may be mistyped)
+                llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
+                CG_HAS_LAST_VAL = 0
+            } else if CG_HAS_LAST_VAL == 1 {
+                CG_HAS_LAST_VAL = 0
+                llvm.build_ret(CG_B, CG_LAST_VAL)
+            } else {
+                llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+            }
         }
     }
 }

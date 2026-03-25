@@ -882,6 +882,7 @@ impl Codegen {
     }
 
     fn emit_if_from_globals(self) -> ptr {
+        cg_reinit_types()
         let cv = self.emit_expr(CURRENT_IF_COND)
         let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
@@ -1015,6 +1016,7 @@ impl Codegen {
         let _bodies = MATCH_ARM_BODIES
         mut ai = 0
         while ai < tags.length {
+            cg_reinit_types()
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
             let tag_val = llvm.const_int(CG_I64, tags[ai], 0)

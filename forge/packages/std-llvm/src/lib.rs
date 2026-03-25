@@ -46,6 +46,10 @@ extern "C" {
     fn LLVMVoidTypeInContext(ctx: LLVMPtr) -> LLVMPtr;
     fn LLVMPointerTypeInContext(ctx: LLVMPtr, address_space: c_uint) -> LLVMPtr;
     fn LLVMFunctionType(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_uint, is_vararg: c_int) -> LLVMPtr;
+    fn LLVMGetReturnType(fn_type: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetElementType(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMGlobalGetValueType(global: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetTypeContext(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
     fn LLVMStructCreateNamed(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetTypeByName2(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -331,7 +335,22 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMBuildRetVoid(builder) }
+    unsafe {
+        // Check if the current function returns void. If not, return undef of the return type.
+        let bb = LLVMGetInsertBlock(builder);
+        if !bb.is_null() {
+            let func = LLVMGetBasicBlockParent(bb);
+            if !func.is_null() {
+                let fn_ty = LLVMGlobalGetValueType(func);
+                let ret_ty = LLVMGetReturnType(fn_ty);
+                let ret_kind = LLVMGetTypeKind(ret_ty);
+                if ret_kind != 0 { // 0 = VoidTypeKind
+                    return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
+                }
+            }
+        }
+        LLVMBuildRetVoid(builder)
+    }
 }
 
 // ── Arithmetic ──
@@ -355,7 +374,19 @@ pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_int(ty: LLVMPtr, value: i64, sign_extend: c_int) -> LLVMPtr {
-    unsafe { LLVMConstInt(ty, value as c_ulonglong, sign_extend) }
+    unsafe {
+        if ty.is_null() {
+            return std::ptr::null_mut();
+        }
+        // Guard: if ty is not an integer type (corrupted global), get i64 from same context
+        let kind = LLVMGetTypeKind(ty);
+        if kind != 8 { // 8 = IntegerTypeKind
+            let ctx = LLVMGetTypeContext(ty);
+            let i64_ty = LLVMInt64TypeInContext(ctx);
+            return LLVMConstInt(i64_ty, value as c_ulonglong, sign_extend);
+        }
+        LLVMConstInt(ty, value as c_ulonglong, sign_extend)
+    }
 }
 
 // ── Verification ──
