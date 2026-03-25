@@ -422,7 +422,10 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                         let field_count = LLVMCountStructElementTypes(ret_ty);
                         if field_count == 2 {
                             let undef = LLVMGetUndef(ret_ty);
-                            let with_ptr = LLVMBuildInsertValue(builder, undef, value, 0, safe_name(std::ptr::null()));
+                            // Field 0 is ptr — convert i64 to ptr first
+                            let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
+                            let as_ptr = LLVMBuildIntToPtr(builder, value, ptr_ty, safe_name(std::ptr::null()));
+                            let with_ptr = LLVMBuildInsertValue(builder, undef, as_ptr, 0, safe_name(std::ptr::null()));
                             let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
                             let zero = LLVMConstInt(i64_ty, 0, 0);
                             let with_len = LLVMBuildInsertValue(builder, with_ptr, zero, 1, safe_name(std::ptr::null()));

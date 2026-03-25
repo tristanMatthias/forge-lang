@@ -1459,9 +1459,12 @@ impl Codegen {
         CG_LAST_IS_STR = 0
         match op {
             .Add -> {
-                if lhs_is_str == 1 || rhs_is_str == 1 {
+                // Only use string concat when BOTH sides are strings
+                // (prevents false concat from stale CG_LAST_IS_STR on struct int fields)
+                if lhs_is_str == 1 && rhs_is_str == 1 {
                     return self.emit_string_concat(lhs, lhs_is_str, rhs, rhs_is_str)
                 }
+                // Rust build_add auto-detects remaining cases (struct + any → concat)
                 return llvm.build_add(CG_B, lhs, rhs, "add")
             }
             .Sub -> { return llvm.build_sub(CG_B, lhs, rhs, "sub") }
@@ -2025,7 +2028,9 @@ impl Codegen {
                                             let ev0 = llvm.build_extract_value(CG_B, subj_raw, slot, "b0")
                                             let ev1 = llvm.build_extract_value(CG_B, subj_raw, slot + 1, "b1")
                                             if ev0 != null {
-                                                let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0, 0, "fs")
+                                                // Convert ev0 (i64) to ptr for ForgeString field 0
+                                                let ev0_ptr = llvm.build_inttoptr(CG_B, ev0, CG_PTR, "sp")
+                                                let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
                                                 mut vi = CG_VAR_NAMES.length - 1
