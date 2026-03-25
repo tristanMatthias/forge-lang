@@ -132,10 +132,12 @@ impl Parser {
             if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
                 self.advance() // consume 'null'
                 mut cg = codegen_new()
-                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                mut lhs = cg.emit_expr(result)
+                if result_is_llvm { lhs = result_llvm }
                 let tag = llvm.build_extract_value(CG_B, lhs, 0, "nt")
                 let zero_tag = llvm.const_int(CG_I8, 0, 0)
-                let pred = if op_key == "Eq" { 32 } else { 33 }
+                mut pred = 33
+                if op_key == "Eq" { pred = 32 }
                 let cmp = llvm.build_icmp(CG_B, pred, tag, zero_tag, "nc")
                 let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ne")
                 result_is_llvm = true
@@ -149,7 +151,8 @@ impl Parser {
             // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
             if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
                 mut cg = codegen_new()
-                let lhs = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                mut lhs = cg.emit_expr(result)
+                if result_is_llvm { lhs = result_llvm }
                 // Truncate LHS to i1
                 let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sl")
                 let current_bb = llvm.get_insert_block(CG_B)
@@ -176,11 +179,8 @@ impl Parser {
                 llvm.position_at_end(CG_B, merge_bb)
                 // For &&: from lhs_bb → 0, from rhs_bb → rhs result
                 // For ||: from lhs_bb → 1, from rhs_bb → rhs result
-                let short_val = if op_key == "And" {
-                    llvm.const_int(llvm.int1_type(CG_CTX), 0, 0)
-                } else {
-                    llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
-                }
+                mut short_val = llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
+                if op_key == "And" { short_val = llvm.const_int(llvm.int1_type(CG_CTX), 0, 0) }
                 let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sp")
                 llvm.add_incoming(phi, short_val, current_bb)
                 llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
@@ -200,11 +200,8 @@ impl Parser {
             if CG_ACTIVE {
                 mut cg = codegen_new()
                 // Get LHS: either from tracked LLVM value or emit AST
-                let lhs = if result_is_llvm {
-                    result_llvm
-                } else {
-                    cg.emit_expr(result)
-                }
+                mut lhs = cg.emit_expr(result)
+                if result_is_llvm { lhs = result_llvm }
                 let rhs = cg.emit_expr(right!)
                 // Re-check rhs_is_str after emit (string() sets it during emit)
                 if CG_LAST_IS_STR == 1 { rhs_is_str = true }
@@ -273,9 +270,12 @@ impl Parser {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
             let tmp = "_b${BINOP_COUNTER}"
-            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            mut tmp_ty = Type.Int
+            if result_is_str { tmp_ty = Type.String }
             cg.define_var(tmp, tmp_ty, result_llvm)
-            CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
+            mut cg_str_flag = 0
+            if result_is_str { cg_str_flag = 1 }
+            CG_LAST_IS_STR = cg_str_flag
             // Track for implicit function returns
             CG_LAST_VAL = result_llvm
             CG_HAS_LAST_VAL = 1
@@ -364,7 +364,8 @@ impl Parser {
                 // In codegen mode: handle known properties and methods inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    mut obj_val = cg.emit_expr(result)
+                    if result_is_llvm { obj_val = result_llvm }
 
                     // Check if this is an enum constructor BEFORE method call
                     let enum_type_name = LAST_IDENT_NAME  // save before arg parsing overwrites
@@ -446,7 +447,8 @@ impl Parser {
                         result_llvm = method_result
                         // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
                         // For built-in string methods, most return strings except indexOf/length
-                        result_is_str = if CG_LAST_IS_STR == 1 { true } else { field != "index_of" && field != "length" && CG_LAST_STRUCT_TYPE == "" }
+                        result_is_str = field != "index_of" && field != "length" && CG_LAST_STRUCT_TYPE == ""
+                        if CG_LAST_IS_STR == 1 { result_is_str = true }
                         result = Expr.IntLit(0, span)
                         continue
                     }
@@ -669,7 +671,8 @@ impl Parser {
                 // In codegen mode: emit indexing inline
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    mut obj_val = cg.emit_expr(result)
+                    if result_is_llvm { obj_val = result_llvm }
                     let idx_val = cg.emit_expr(index!)
 
                     // Check if this is a list variable (needs GEP, not char_at)
@@ -705,7 +708,8 @@ impl Parser {
                     } else {
                         // List/array indexing: GEP + load from data pointer
                         // Use correct element type (int=8B, string=16B, struct=varies)
-                        let elem_ty = if is_list { list_elem_llvm_type(index_obj_name) } else { CG_I64 }
+                        mut elem_ty = CG_I64
+                        if is_list { elem_ty = list_elem_llvm_type(index_obj_name) }
                         let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "ld")
                         let indices = llvm.value_array_new(1)
                         llvm.value_array_set(indices, 0, idx_val)
@@ -715,7 +719,8 @@ impl Parser {
                         result_is_llvm = true
                         result_llvm = elem_val
                         // Track type: string elements → str, struct elements → set struct type
-                        let elem_type_name = if is_list { list_elem_type(index_obj_name) } else { "" }
+                        mut elem_type_name = ""
+                        if is_list { elem_type_name = list_elem_type(index_obj_name) }
                         result_is_str = elem_type_name == "string"
                         if elem_type_name != "" && elem_type_name != "string" && elem_type_name != "int" {
                             CG_LAST_STRUCT_TYPE = elem_type_name
@@ -735,7 +740,8 @@ impl Parser {
                 self.advance()
                 if CG_ACTIVE {
                     mut cg = codegen_new()
-                    let nullable_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                    mut nullable_val = cg.emit_expr(result)
+                    if result_is_llvm { nullable_val = result_llvm }
                     let var_is_nullable = is_nullable_var(LAST_IDENT_NAME)
                     if var_is_nullable || CG_LAST_IS_NULLABLE == 1 {
                         let inner_val = llvm.build_extract_value(CG_B, nullable_val, 1, "uw")
@@ -792,7 +798,8 @@ impl Parser {
 
                     if CG_ACTIVE {
                         mut cg = codegen_new()
-                        let obj_val = if result_is_llvm { result_llvm } else { cg.emit_expr(result) }
+                        mut obj_val = cg.emit_expr(result)
+                        if result_is_llvm { obj_val = result_llvm }
                         let tag = match_enum_tag(variant_name)
                         let tag_val = llvm.const_int(CG_I64, tag, 0)
                         // For named enum types, extract tag byte first
@@ -801,7 +808,8 @@ impl Parser {
                             let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
                             cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
                         }
-                        let pred = if negated { 33 } else { 32 }
+                        mut pred = 32
+                        if negated { pred = 33 }
                         let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
                         let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
                         result_is_llvm = true
@@ -826,7 +834,8 @@ impl Parser {
             mut cg = codegen_new()
             BINOP_COUNTER = BINOP_COUNTER + 1
             let tmp = "_p${BINOP_COUNTER}"
-            let tmp_ty = if result_is_str { Type.String } else { Type.Int }
+            mut tmp_ty = Type.Int
+            if result_is_str { tmp_ty = Type.String }
             cg.define_var(tmp, tmp_ty, result_llvm)
             // If result is an enum, register in enum var tracking
             if CG_LAST_ENUM_TYPE != "" {
@@ -847,7 +856,9 @@ impl Parser {
                 }
                 if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
             }
-            CG_LAST_IS_STR = if result_is_str { 1 } else { 0 }
+            mut cg_str_flag2 = 0
+            if result_is_str { cg_str_flag2 = 1 }
+            CG_LAST_IS_STR = cg_str_flag2
             return Expr.Ident(tmp, self.current_span())
         }
         // Don't clear CG_LAST_IS_STR — it was already set correctly by
@@ -1144,11 +1155,12 @@ impl Parser {
                         mut cg = codegen_new()
                         let expr_val = self.parse_expr()
                         // Use CG_LAST_VAL if set (struct/list values), else re-emit
-                        let val = if CG_HAS_LAST_VAL == 1 {
+                        mut val: ptr = null
+                        if CG_HAS_LAST_VAL == 1 {
                             CG_HAS_LAST_VAL = 0
-                            CG_LAST_VAL
+                            val = CG_LAST_VAL
                         } else {
-                            cg.emit_expr(expr_val!)
+                            val = cg.emit_expr(expr_val!)
                         }
                         llvm.value_array_set(vals, field_count, val)
                         // Track field type
@@ -1360,8 +1372,11 @@ impl Parser {
             let count_val = llvm.const_int(CG_I64, count, 0)
 
             // Determine element type and size
-            let elem_ty = if first_elem_is_str == 1 { CG_STR } else { CG_I64 }
-            let elem_size_val = llvm.const_int(CG_I64, if first_elem_is_str == 1 { 16 } else { 8 }, 0)
+            mut elem_ty = CG_I64
+            if first_elem_is_str == 1 { elem_ty = CG_STR }
+            mut elem_size = 8
+            if first_elem_is_str == 1 { elem_size = 16 }
+            let elem_size_val = llvm.const_int(CG_I64, elem_size, 0)
 
             // Allocate buffer: forge_alloc(count * elem_size)
             let size = llvm.build_mul(CG_B, count_val, elem_size_val, "lz")
@@ -1854,7 +1869,8 @@ impl Parser {
 
             // Build phi node so match can be used as an expression
             if arm_vals.length > 0 {
-                let phi_ty = if match_arms_are_str { CG_STR } else { CG_I64 }
+                mut phi_ty = CG_I64
+                if match_arms_are_str { phi_ty = CG_STR }
                 let phi = llvm.build_phi(CG_B, phi_ty, "mv")
                 mut phi_i = 0
                 while phi_i < arm_vals.length {
@@ -1910,12 +1926,14 @@ impl Parser {
 
             let prev_match = IN_MATCH_ARM
             IN_MATCH_ARM = true
-            let body = if self.check(TokenKind.LBrace) {
-                self.parse_block()
+            mut body = Block { statements: [], span: start }
+            if self.check(TokenKind.LBrace) {
+                body = self.parse_block()
             } else {
                 let e = self.parse_expr()
-                let body_stmts: List<Statement> = if e != null { [Statement.Expr(e!)] } else { [] }
-                Block { statements: body_stmts, span: start }
+                mut body_stmts: List<Statement> = []
+                if e != null { body_stmts = [Statement.Expr(e!)] }
+                body = Block { statements: body_stmts, span: start }
             }
             IN_MATCH_ARM = prev_match
 
@@ -2077,11 +2095,12 @@ impl Parser {
             if args.length >= 1 {
                 mut cg = codegen_new()
                 // Use CG_LAST_VAL if available (struct literals set this)
-                let item_val = if CG_HAS_LAST_VAL == 1 {
+                mut item_val: ptr = null
+                if CG_HAS_LAST_VAL == 1 {
                     CG_HAS_LAST_VAL = 0
-                    CG_LAST_VAL
+                    item_val = CG_LAST_VAL
                 } else {
-                    cg.emit_expr(args[0])
+                    item_val = cg.emit_expr(args[0])
                 }
                 let elem_ty = list_elem_llvm_type(obj_var_name)
                 return emit_list_push_typed(obj_val, item_val, elem_ty)
@@ -2129,7 +2148,8 @@ impl Parser {
                     }
                     fi = fi + 1
                 }
-                let fn_pc = if fn_idx >= 0 && fn_idx < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fn_idx] } else { args.length + 1 }
+                mut fn_pc = args.length + 1
+                if fn_idx >= 0 && fn_idx < FN_PARAM_COUNTS.length { fn_pc = FN_PARAM_COUNTS[fn_idx] }
 
                 // Call TypeName__method(self, args...)
                 let total_args = args.length + 1
@@ -2325,7 +2345,8 @@ fn tpl_load_var(name: string) -> ptr {
     while vi >= 0 {
         if CG_VAR_NAMES[vi] == name {
             TPL_VAR_IS_STR = is_str
-            let load_ty = if is_str == 1 { CG_STR } else { CG_I64 }
+            mut load_ty = CG_I64
+            if is_str == 1 { load_ty = CG_STR }
             return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
         }
         vi = vi - 1
@@ -2476,7 +2497,8 @@ fn tpl_emit_interpolation(expr_src: string) -> ptr {
     mut cg = codegen_new()
     let val = cg.emit_expr(expr!)
     // Use emit_expr's flag if it set one, otherwise fall back to parse_expr's flag
-    let is_str = if CG_LAST_IS_STR == 1 { 1 } else { parse_is_str }
+    mut is_str = parse_is_str
+    if CG_LAST_IS_STR == 1 { is_str = 1 }
 
     let str_val = tpl_to_string(val, is_str)
     CG_LAST_IS_STR = 1

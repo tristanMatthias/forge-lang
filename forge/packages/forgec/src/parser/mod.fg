@@ -626,11 +626,10 @@ impl Parser {
         if self.expect(TokenKind.RParen) == null { return null }
 
         // -> ReturnType
-        let ret = if self.check(TokenKind.Arrow) {
+        mut ret: TypeExpr? = TypeExpr.Named("void", start)
+        if self.check(TokenKind.Arrow) {
             self.advance()
-            self.parse_type_expr()
-        } else {
-            TypeExpr.Named("void", start)
+            ret = self.parse_type_expr()
         }
 
         if ret == null { return null }
@@ -695,10 +694,11 @@ impl Parser {
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
-            let mutable = if self.check(TokenKind.Mut) {
+            mut mutable = false
+            if self.check(TokenKind.Mut) {
                 self.advance()
-                true
-            } else { false }
+                mutable = true
+            }
             let name = self.expect_ident()
             if name == null { return null }
             if self.expect(TokenKind.Colon) == null { return null }
@@ -739,37 +739,36 @@ impl Parser {
 
     fn parse_param(self) -> Param? {
         let start = self.current_span()
-        let mutable = if self.check(TokenKind.Mut) {
-                self.advance()
-                true
-            } else { false }
+        mut mutable = false
+        if self.check(TokenKind.Mut) {
+            self.advance()
+            mutable = true
+        }
         let name = self.expect_ident()
         if name == null { return null }
 
         // Optional type annotation: : Type
         // Capture the type name text before parsing (for struct type lookup)
         mut type_name_text = "int"  // default
-        let type_ann = if self.check(TokenKind.Colon) {
+        mut type_ann: TypeExpr? = null
+        if self.check(TokenKind.Colon) {
             self.advance()
             // Capture the next token's text as the type name
             let type_tok = self.peek()
             if type_tok.kind_id == 1 {
                 type_name_text = type_tok.text
             }
-            self.parse_type_expr()
-        } else {
-            null
+            type_ann = self.parse_type_expr()
         }
         // Store the type name for function param type tracking
         LAST_PARAM_TYPE_NAME = type_name_text
         PARSED_PARAM_TYPES = PARSED_PARAM_TYPES.push(type_name_text)
 
         // Optional default value: = expr
-        let default_value = if self.check(TokenKind.Eq) {
+        mut default_value: Expr? = null
+        if self.check(TokenKind.Eq) {
             self.advance()
-            self.parse_expr()
-        } else {
-            null
+            default_value = self.parse_expr()
         }
 
         Param { name: name!, type_ann, default_value, span: start, mutable }

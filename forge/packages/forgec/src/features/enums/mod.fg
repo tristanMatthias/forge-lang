@@ -162,7 +162,8 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
             if p.check(.Colon) {
                 p.advance()
                 let type_ann = p.parse_type_expr()
-                let ann = if type_ann != null { type_ann! } else { TypeExpr.Named("unknown", start) }
+                mut ann = TypeExpr.Named("unknown", start)
+                if type_ann != null { ann = type_ann! }
                 fields = fields.push(EnumVariantField {
                     name: field_name_or_type!, type_ann: ann,
                 })

@@ -55,7 +55,8 @@ export fn decompose_template(raw: string, span: Span) -> Expr {
             mut seg_pos = 0
             mut first_seg = true
             while seg_pos <= et.length {
-                let is_dot = if seg_pos < et.length { et[seg_pos] == "." } else { true }
+                mut is_dot = true
+                if seg_pos < et.length { is_dot = et[seg_pos] == "." }
                 if is_dot {
                     let seg = et.substring(seg_start, seg_pos)
                     if first_seg {

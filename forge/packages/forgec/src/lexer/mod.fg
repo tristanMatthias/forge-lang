@@ -531,7 +531,8 @@ impl Lexer {
 
         // Unterminated
         let span = self.make_span(start_pos, start_line, start_col)
-        let err_code = if close_ch == "\"" { E_UNTERMINATED_STRING } else { E_UNTERMINATED_TEMPLATE }
+        mut err_code = E_UNTERMINATED_TEMPLATE
+        if close_ch == "\"" { err_code = E_UNTERMINATED_STRING }
         self.add_error("F0002", "unterminated string literal", span)
         if text.length > 0 {
             parts = parts.push(TemplatePart.Literal(text))
