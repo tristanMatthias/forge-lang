@@ -832,7 +832,23 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
             eprintln!("WARNING: insertvalue index {} >= struct field count {} for {}", index, n, name_s);
             return agg;
         }
-        LLVMBuildInsertValue(builder, agg, element, index as c_uint, safe_name(name))
+        // Check type compatibility — if element is struct but field expects i64, extract field 1
+        let field_ty = LLVMStructGetTypeAtIndex(agg_ty, index as c_uint);
+        let elem_ty = LLVMTypeOf(element);
+        let field_kind = LLVMGetTypeKind(field_ty);
+        let elem_kind = LLVMGetTypeKind(elem_ty);
+        let mut real_element = element;
+        if field_kind != elem_kind {
+            if field_kind == 8 && elem_kind == 10 {
+                // Field expects integer but got struct — extract field 1 (i64 part)
+                real_element = LLVMBuildExtractValue(builder, element, 1, safe_name(std::ptr::null()));
+            } else if field_kind == 12 && elem_kind == 8 {
+                // Field expects ptr but got i64 — inttoptr
+                let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
+                real_element = LLVMBuildIntToPtr(builder, element, ptr_ty, safe_name(std::ptr::null()));
+            }
+        }
+        LLVMBuildInsertValue(builder, agg, real_element, index as c_uint, safe_name(name))
     }
 }
 

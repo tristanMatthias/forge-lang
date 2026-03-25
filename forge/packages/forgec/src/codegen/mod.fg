@@ -85,6 +85,7 @@ export mut CG_STRUCT_FIELD_TYPE_NAMES: List<string> = []  // comma-separated typ
 
 // Track which variables are struct-typed
 export mut CG_STRUCT_VAR_NAMES: List<string> = []   // variable names
+export mut CG_STRUCT_VAR_CSV: string = ""            // ",varname:TypeName," format (immune to corruption)
 export mut CG_STRUCT_VAR_TYPES: List<string> = []   // struct type names
 export mut CG_STRUCT_VAR_FIELDS: List<string> = []  // comma-separated field names
 // Also the last struct type name for propagation through var binding
@@ -651,6 +652,15 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
 
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
+    // Try CSV first (immune to list corruption)
+    let csv_needle = "," + name + ":"
+    let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
+    if csv_pos >= 0 {
+        let after = CG_STRUCT_VAR_CSV.substring(csv_pos + csv_needle.length, CG_STRUCT_VAR_CSV.length)
+        let comma = after.index_of(",")
+        if comma >= 0 { return after.substring(0, comma) }
+    }
+    // Fallback to list (may be corrupted)
     mut vi = CG_STRUCT_VAR_NAMES.length - 1
     while vi >= 0 {
         if CG_STRUCT_VAR_NAMES[vi] == name {
@@ -1222,6 +1232,48 @@ impl Codegen {
                         return
                     }
                     vi = vi - 1
+                }
+            }
+            .MemberAccess(obj, field, span) -> {
+                // Struct field assignment: self.pos = val
+                let val = self.emit_expr(value)
+                mut obj_name = ""
+                match obj {
+                    .Ident(n, _) -> { obj_name = n }
+                    _ -> {}
+                }
+                if obj_name != "" {
+                    // Look up struct type via CSV (immune to list corruption)
+                    mut struct_type_name = ""
+                    let csv_needle = "," + obj_name + ":"
+                    let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
+                    if csv_pos >= 0 {
+                        let after = CG_STRUCT_VAR_CSV.substring(csv_pos + csv_needle.length, CG_STRUCT_VAR_CSV.length)
+                        let comma = after.index_of(",")
+                        if comma >= 0 { struct_type_name = after.substring(0, comma) }
+                    }
+                    // Fallback to corrupted list
+                    if struct_type_name == "" { struct_type_name = var_struct_type(obj_name) }
+                    if struct_type_name != "" {
+                        let fidx = struct_field_index(struct_type_name, field)
+                        if fidx >= 0 {
+                            mut vi = CG_VAR_NAMES.length - 1
+                            while vi >= 0 {
+                                if CG_VAR_NAMES[vi] == obj_name {
+                                    cg_reinit_types()
+                                    let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
+                                    if struct_ty != null {
+                                        let fp = llvm.build_struct_gep2(CG_B, struct_ty, CG_VAR_PTRS[vi], fidx, "sf")
+                                        if fp != null {
+                                            llvm.build_store(CG_B, val, fp)
+                                        }
+                                    }
+                                    return
+                                }
+                                vi = vi - 1
+                            }
+                        }
+                    }
                 }
             }
             .Index(obj, idx, s) -> {
@@ -1884,6 +1936,7 @@ impl Codegen {
                 if CG_LAST_STRUCT_TYPE != "" {
                     CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
                     CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + CG_LAST_STRUCT_TYPE + ","
                     mut fn_str = ""
                     mut fsi = CG_STRUCT_FIELDS.length - 1
                     while fsi >= 0 {

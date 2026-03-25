@@ -497,6 +497,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             } else {
                 CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
                 CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
+                CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + pname + ":" + param_type_name + ","
                 mut field_info = ""
                 mut sri = CG_STRUCT_FIELDS.length - 1
                 while sri >= 0 {
