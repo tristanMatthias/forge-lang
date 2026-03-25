@@ -272,39 +272,32 @@ fn collect_module_paths(filepath: string) {
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
 }
 
-fn resolve_module_paths(filepath: string) -> List<string> {
-    MODULE_PATHS_CSV = ""
-    collect_module_paths(filepath)
-    eprintln("  CSV len=" + string(MODULE_PATHS_CSV.length))
-    // Parse CSV into list
-    mut paths: List<string> = []
+// ─── Per-File Compilation ──────────────────────
+
+fn scan_one_file(filepath: string, idx: int) {
+    CURRENT_FILE_INDEX = idx
+    let source = fs.read(filepath)
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
+    mut p = parser_new_with_source(tokens, source)
+    p.parse_program()
+}
+
+fn build_compile_separate(paths_csv: string, output: string) {
+    // Phase 1: Scan ALL files from newline-separated CSV
+    mut file_idx = 0
     mut start = 0
     mut i = 0
-    while i < MODULE_PATHS_CSV.length {
-        if MODULE_PATHS_CSV[i] == "\n" {
+    while i < paths_csv.length {
+        if paths_csv[i] == "\n" {
             if i > start {
-                paths = paths.push(MODULE_PATHS_CSV.substring(start, i))
+                let filepath = paths_csv.substring(start, i)
+                scan_one_file(filepath, file_idx)
+                file_idx = file_idx + 1
             }
             start = i + 1
         }
         i = i + 1
-    }
-    return paths
-}
-
-// ─── Per-File Compilation ──────────────────────
-
-fn build_compile_separate(files: List<string>, output: string) {
-    // Phase 1: Scan ALL files (collect function signatures — no bodies)
-    mut file_idx = 0
-    for filepath in files {
-        CURRENT_FILE_INDEX = file_idx
-        let source = fs.read(filepath)
-        mut lex = lexer_new(source)
-        let tokens = lex.tokenize()
-        mut p = parser_new_with_source(tokens, source)
-        p.parse_program()
-        file_idx = file_idx + 1
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
@@ -434,9 +427,10 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        let files = resolve_module_paths(input)
-        eprintln("M:files=" + string(files.length))
-        build_compile_separate(files, output)
+        MODULE_PATHS_CSV = ""
+        collect_module_paths(input)
+        eprintln("M:csv_len=" + string(MODULE_PATHS_CSV.length))
+        build_compile_separate(MODULE_PATHS_CSV, output)
     } else {
         eprintln("unknown command")
         process.exit(1)
