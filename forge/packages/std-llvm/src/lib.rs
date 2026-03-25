@@ -1072,6 +1072,11 @@ pub extern "C" fn forge_llvm_get_undef(ty: LLVMPtr) -> LLVMPtr {
 }
 
 #[no_mangle]
+pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMGlobalGetValueType(val) }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_const_real(ty: LLVMPtr, value: f64) -> LLVMPtr {
     unsafe { LLVMConstReal(ty, value) }
 }

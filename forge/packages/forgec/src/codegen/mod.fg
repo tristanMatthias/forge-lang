@@ -1633,10 +1633,25 @@ impl Codegen {
                     let method_name = ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // For method calls, prepend self (the object) as first arg
+                        // Prepend self (the object) as first arg
                         let obj_val = self.emit_ident(ns)
-                        // TODO: prepend obj_val to args
-                        return self.emit_fn_call_direct(fn_ref3, method_name, args)
+                        // Emit all args + obj_val as first param
+                        cg_reinit_types()
+                        let total_args = args.length + 1
+                        let arg_arr = llvm.value_array_new(total_args)
+                        llvm.value_array_set(arg_arr, 0, obj_val)
+                        mut argi = 0
+                        for arg in args {
+                            llvm.value_array_set(arg_arr, argi + 1, self.emit_expr(arg))
+                            argi = argi + 1
+                        }
+                        // Build function type with self as first param
+                        let param_arr = llvm.type_array_new(total_args)
+                        // Use the function's declared type
+                        let fn_ty = llvm.global_get_value_type(fn_ref3)
+                        let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
+                        llvm.value_array_free(arg_arr)
+                        return result
                     }
                 }
             }

@@ -594,6 +594,14 @@ export fn add_case(switch_val: ptr, on_val: ptr, dest: ptr) {
     forge_llvm_add_case(switch_val, on_val, dest)
 }
 
+// ── Type inspection (additional) ──
+
+extern fn forge_llvm_global_get_value_type(val: ptr) -> ptr
+
+export fn global_get_value_type(val: ptr) -> ptr {
+    forge_llvm_global_get_value_type(val)
+}
+
 // ── Constants and Globals ──
 
 /// Create a null constant of the given type.
