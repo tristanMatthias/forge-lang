@@ -290,6 +290,60 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 // ─── Per-File Compilation ──────────────────────
 
+fn build_compile_separate(files: List<string>, output: string) {
+    // Phase 1: Scan ALL files (collect function signatures — no bodies)
+    mut file_idx = 0
+    for filepath in files {
+        CURRENT_FILE_INDEX = file_idx
+        let source = fs.read(filepath)
+        mut lex = lexer_new(source)
+        let tokens = lex.tokenize()
+        mut p = parser_new_with_source(tokens, source)
+        p.parse_program()
+        file_idx = file_idx + 1
+    }
+    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
+
+    // Phase 2: Single LLVM module — declare all, then emit bodies
+    codegen_init("forgec_output")
+    create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    EMIT_FILE_IDX = -1
+    mut cg = codegen_new()
+    declare_all_fns()
+    eprintln("  declared " + string(FN_NAMES.length) + " fns")
+    // Emit each function body
+    mut param_offset = 0
+    mut fi = 0
+    while fi < FN_NAMES.length {
+        mut pc = 0
+        if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
+        let bsrc = FN_BODY_SOURCES[fi]
+        if bsrc.length > 0 {
+            emit_fn_body_from_source(cg, fi, param_offset)
+        }
+        param_offset = param_offset + pc
+        fi = fi + 1
+    }
+    codegen_write_ir("output.ll")
+    eprintln("  emit done")
+
+    // Use external llc for object emission
+    let ir_path = "/tmp/forgec_out.ll"
+    let obj_path = output + ".o"
+    codegen_write_ir(ir_path)
+    codegen_cleanup()
+    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", [ir_path, "-filetype=obj", "-o", obj_path])
+
+    // Compile runtime
+    let runtime_obj = "/tmp/forgec_runtime.o"
+    let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", runtime_obj])
+
+    // Link
+    let link_result = process.run("cc", ["-o", output, obj_path, runtime_obj, "-lm"])
+
+    println("compiled: " + output)
+}
+
 fn build_compile_single(input_file: string, output: string) {
     // Single-file build: read, scan, compile
     eprintln("BC: reading " + input_file)
@@ -376,7 +430,9 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        build_compile_single(input, output)
+        let files = resolve_module_paths(input)
+        eprintln("M:files=" + string(files.length))
+        build_compile_separate(files, output)
     } else {
         eprintln("unknown command")
         process.exit(1)

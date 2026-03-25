@@ -17,7 +17,8 @@ export type Lexer = {
 }
 
 export fn lexer_new(source: string) -> Lexer {
-    Lexer {
+    eprintln("  lexer_new src_len=" + string(source.length))
+    let result = Lexer {
         source,
         pos: 0,
         line: 1,
@@ -25,6 +26,8 @@ export fn lexer_new(source: string) -> Lexer {
         pos_offset: 0,
         diagnostics: [],
     }
+    eprintln("  lexer_new result.source? checking...")
+    return result
 }
 
 export fn lexer_with_offset(source: string, pos_offset: int, line: int, col: int) -> Lexer {

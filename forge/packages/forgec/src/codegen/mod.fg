@@ -2038,8 +2038,43 @@ impl Codegen {
                                                     vi = vi - 1
                                                 }
                                             }
+                                        } else if fcode == "p" {
+                                            // Boxed pointer: extract ptr, load full value
+                                            let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "bp")
+                                            if ev != null {
+                                                cg_reinit_types()
+                                                // Dereference: inttoptr → load %Expr
+                                                let ptr_val = llvm.build_inttoptr(CG_B, ev, CG_PTR, "dp")
+                                                let expr_ty = llvm.get_type_by_name(CG_CTX, "Expr")
+                                                mut deref_val = ev
+                                                if expr_ty != null && ptr_val != null {
+                                                    let loaded = llvm.build_load(CG_B, expr_ty, ptr_val, "de")
+                                                    if loaded != null { deref_val = loaded }
+                                                }
+                                                // Store the dereferenced full value
+                                                mut vi = CG_VAR_NAMES.length - 1
+                                                while vi >= 0 {
+                                                    if CG_VAR_NAMES[vi] == bpname {
+                                                        // For boxed Expr: alloca needs to be Expr-sized
+                                                        // But pre-alloca is CG_STR (16 bytes). Expr is larger.
+                                                        // Create a new alloca of the right type
+                                                        if expr_ty != null {
+                                                            let big_alloca = llvm.build_alloca(CG_B, expr_ty, "bx")
+                                                            llvm.build_store(CG_B, deref_val, big_alloca)
+                                                            // Shadow with Expr-sized alloca + register as enum var
+                                                            CG_VAR_NAMES = CG_VAR_NAMES.push(bpname)
+                                                            CG_VAR_PTRS = CG_VAR_PTRS.push(big_alloca)
+                                                            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + bpname + ":Expr,"
+                                                        } else {
+                                                            llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
+                                                        }
+                                                        break
+                                                    }
+                                                    vi = vi - 1
+                                                }
+                                            }
                                         } else {
-                                            // Single slot
+                                            // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
                                                 mut vi = CG_VAR_NAMES.length - 1
