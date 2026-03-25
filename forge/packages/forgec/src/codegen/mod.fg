@@ -1941,6 +1941,21 @@ impl Codegen {
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
                 let ev = self.emit_expr(val)
+                // Correct CG_LAST_IS_STR for known i64 extern functions
+                // (can't modify emit_fn_call_direct — breaks bootstrap)
+                match val {
+                    .Call(callee, _, _) -> {
+                        match callee {
+                            .Ident(cn, _) -> {
+                                if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
+                                if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
+                                if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
+                            }
+                            _ -> {}
+                        }
+                    }
+                    _ -> {}
+                }
                 let let_is_list = CG_LAST_IS_LIST
                 let let_is_str = CG_LAST_IS_STR
                 mut ty = Type.Int
