@@ -790,14 +790,20 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
         eprintln!("WARNING: build_extract_value called with null aggregate");
         return std::ptr::null_mut();
     }
-    // Safety: verify the value is an aggregate type (struct/array)
+    // Safety: verify the value is an aggregate type and index is in bounds
     unsafe {
         let ty = LLVMTypeOf(agg);
         let kind = LLVMGetTypeKind(ty);
         // 10 = struct, 11 = array. Other kinds crash ExtractValue.
         if kind != 10 && kind != 11 {
-            eprintln!("WARNING: extract_value on non-aggregate (kind={})", kind);
             return std::ptr::null_mut();
+        }
+        // Bounds check for struct types
+        if kind == 10 {
+            let count = LLVMCountStructElementTypes(ty);
+            if index as c_uint >= count {
+                return std::ptr::null_mut();
+            }
         }
         LLVMBuildExtractValue(builder, agg, index as c_uint, safe_name(name))
     }
