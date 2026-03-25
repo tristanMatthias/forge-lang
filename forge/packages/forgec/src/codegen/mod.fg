@@ -1560,7 +1560,38 @@ impl Codegen {
                     return call_result
                 }
             }
-            .MemberAccess(o, f, s) -> {}
+            .MemberAccess(o, f, s) -> {
+                // Namespace.method call: process.args(), fs.read(), llvm.build_add(), etc.
+                mut ns = ""
+                match o {
+                    .Ident(n, _) -> { ns = n }
+                    _ -> {}
+                }
+                if ns != "" {
+                    // Build function name: namespace_method or forge_namespace_method
+                    // Try: name as-is first (for llvm_* calls), then forge_ prefixed
+                    let direct_name = ns + "_" + f
+                    let fn_ref = llvm.get_named_function(CG_MOD, direct_name)
+                    if fn_ref != null {
+                        return self.emit_fn_call_direct(fn_ref, direct_name, args)
+                    }
+                    // Try forge_ prefix: process.args → forge_process_args
+                    let prefixed = "forge_" + ns + "_" + f
+                    let fn_ref2 = llvm.get_named_function(CG_MOD, prefixed)
+                    if fn_ref2 != null {
+                        return self.emit_fn_call_direct(fn_ref2, prefixed, args)
+                    }
+                    // Try method call: Type__method (impl methods)
+                    let method_name = ns + "__" + f
+                    let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
+                    if fn_ref3 != null {
+                        // For method calls, prepend self (the object) as first arg
+                        let obj_val = self.emit_ident(ns)
+                        // TODO: prepend obj_val to args
+                        return self.emit_fn_call_direct(fn_ref3, method_name, args)
+                    }
+                }
+            }
             .Feature(fe) -> {}
             .Binary(l, o, r, s) -> {}
             .Unary(o, e, s) -> {}
