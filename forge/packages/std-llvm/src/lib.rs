@@ -97,6 +97,7 @@ extern "C" {
     fn LLVMGetElementType(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMGlobalGetValueType(global: LLVMPtr) -> LLVMPtr;
     fn LLVMGetTypeContext(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetIntTypeWidth(ty: LLVMPtr) -> c_uint;
     fn LLVMGetGlobalParent(val: LLVMPtr) -> LLVMPtr;
     fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
     fn LLVMStructCreateNamed(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -571,7 +572,19 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
         // store requires a pointer destination
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { return std::ptr::null_mut(); }
-        LLVMBuildStore(builder, val, ptr)
+        // If storing i1 (boolean), zero-extend to i64 first
+        // (prevents garbage upper bits when loaded back as i64)
+        let val_ty = LLVMTypeOf(val);
+        let val_kind = LLVMGetTypeKind(val_ty);
+        let mut real_val = val;
+        if val_kind == 8 { // IntegerTypeKind
+            let bit_width = LLVMGetIntTypeWidth(val_ty);
+            if bit_width == 1 {
+                let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+                real_val = LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null()));
+            }
+        }
+        LLVMBuildStore(builder, real_val, ptr)
     }
 }
 

@@ -226,10 +226,23 @@ fn collect_module_paths(filepath: string) {
     if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
 
     // Find mod declarations — same logic as resolve_modules (which works)
+    eprintln("  scanning " + string(source.length) + " bytes for mod declarations")
     mut pos = 0
+    mut dbg_count = 0
     while pos < source.length {
         mut at_line_start = pos == 0
         if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
+        if pos == 85 {
+            let ch84 = source[84]
+            let is_nl = ch84 == "\n"
+            eprintln("  @85 is_nl=" + string(is_nl) + " als=" + string(at_line_start))
+        }
+        if at_line_start {
+            if dbg_count < 20 {
+                eprintln("  LINE@" + string(pos))
+            }
+            dbg_count = dbg_count + 1
+        }
         if at_line_start {
             if pos + 4 < source.length {
                 let c0 = source[pos]
