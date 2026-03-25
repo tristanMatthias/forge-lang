@@ -458,6 +458,41 @@ fn guard_int_binop(lhs: LLVMPtr, rhs: LLVMPtr) -> bool {
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if !guard_int_binop(lhs, rhs) {
+        // Auto-detect string concatenation: if either operand is a struct (ForgeString),
+        // call forge_string_concat. Convert i64 operands to string first.
+        unsafe {
+            let lhs_kind = LLVMGetTypeKind(LLVMTypeOf(lhs));
+            let rhs_kind = LLVMGetTypeKind(LLVMTypeOf(rhs));
+            if lhs_kind == 10 || rhs_kind == 10 {
+                let bb = LLVMGetInsertBlock(builder);
+                if !bb.is_null() {
+                    let func = LLVMGetBasicBlockParent(bb);
+                    if !func.is_null() {
+                        let module = LLVMGetGlobalParent(func);
+                        let concat_fn = LLVMGetNamedFunction(module, b"forge_string_concat\0".as_ptr() as *const c_char);
+                        let i2s_fn = LLVMGetNamedFunction(module, b"forge_int_to_string\0".as_ptr() as *const c_char);
+                        if !concat_fn.is_null() {
+                            // Convert non-struct operands to string via forge_int_to_string
+                            let mut real_lhs = lhs;
+                            let mut real_rhs = rhs;
+                            if lhs_kind != 10 && !i2s_fn.is_null() {
+                                let i2s_ty = LLVMGlobalGetValueType(i2s_fn);
+                                let mut i2s_args = [lhs];
+                                real_lhs = LLVMBuildCall2(builder, i2s_ty, i2s_fn, i2s_args.as_mut_ptr(), 1, safe_name(std::ptr::null()));
+                            }
+                            if rhs_kind != 10 && !i2s_fn.is_null() {
+                                let i2s_ty = LLVMGlobalGetValueType(i2s_fn);
+                                let mut i2s_args = [rhs];
+                                real_rhs = LLVMBuildCall2(builder, i2s_ty, i2s_fn, i2s_args.as_mut_ptr(), 1, safe_name(std::ptr::null()));
+                            }
+                            let fn_ty = LLVMGlobalGetValueType(concat_fn);
+                            let mut args = [real_lhs, real_rhs];
+                            return LLVMBuildCall2(builder, fn_ty, concat_fn, args.as_mut_ptr(), 2, safe_name(name));
+                        }
+                    }
+                }
+            }
+        }
         return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
     }
     unsafe { LLVMBuildAdd(builder, lhs, rhs, safe_name(name)) }
