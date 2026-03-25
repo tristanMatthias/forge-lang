@@ -1714,8 +1714,9 @@ impl Codegen {
                     let method_name = method_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self (the object) as first arg
-                        let obj_val = self.emit_ident(ns)
+                        // Prepend self (the object) — pass by pointer for mutability
+                        self.emit_ident(ns)
+                        let obj_val = CG_LAST_VAR_PTR
                         // Emit all args + obj_val as first param
                         cg_reinit_types()
                         let total_args = args.length + 1
@@ -2437,7 +2438,22 @@ impl Codegen {
         mut var_name = ""
         match obj {
             .Ident(name, span) -> { var_name = name }
-            _ -> { return llvm.const_int(CG_I64, 0, 0) }
+            _ -> {
+                // Chained access: evaluate obj, handle .length on result
+                let obj_val = self.emit_expr(obj)
+                if field == "length" {
+                    if CG_LAST_IS_STR == 1 {
+                        let ca = llvm.value_array_new(1)
+                        llvm.value_array_set(ca, 0, obj_val)
+                        let ft = make_fn_type(CG_I64, [CG_STR])
+                        let r = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+                        llvm.value_array_free(ca)
+                        CG_LAST_IS_STR = 0
+                        return r
+                    }
+                }
+                return obj_val
+            }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
