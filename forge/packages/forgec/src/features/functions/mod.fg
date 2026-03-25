@@ -49,7 +49,8 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     let params = p.parse_params()
 
     mut return_type_name = ""
-    let return_type = if p.check(TokenKind.Arrow) {
+    mut return_type: TypeExpr? = null
+    if p.check(TokenKind.Arrow) {
         p.advance()
         // Capture return type name
         let ret_tok = p.peek()
@@ -67,8 +68,8 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
                 _ -> {}
             }
         }
-        parsed_ret
-    } else { null }
+        return_type = parsed_ret
+    }
 
     // Capture body source by reconstructing from token positions
     // Use raw source between the { and } tokens (span-based extraction)
@@ -78,10 +79,12 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     IN_FUNCTION_BODY = 0
     // The } token was consumed by parse_block, so peek_at(-1) is the }
     // Use the source positions: from block_open to current position
-    let block_close_end = if p.pos > 0 { p.tokens[p.pos - 1].span.end } else { block_open_span.end }
-    let body_src = if p.source.length > 0 && block_close_end > block_open_span.start {
-        p.source.substring(block_open_span.start, block_close_end + 1)
-    } else { "" }
+    mut block_close_end = block_open_span.end
+    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
+    mut body_src = ""
+    if p.source.length > 0 && block_close_end > block_open_span.start {
+        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    }
 
     // Store for codegen — name, body, param count, names, types, return type
     store_fn_source(name, body_src)
@@ -206,7 +209,8 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
         llvm.type_array_set(param_arr, i, CG_I64)
         i = i + 1
     }
-    let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+    mut ret_ty = CG_I64
+    if is_main { ret_ty = CG_I32 }
     let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
     llvm.type_array_free(param_arr)
 
@@ -282,14 +286,16 @@ export fn declare_all_functions(cg: Codegen) {
     while i < FN_NAMES.length {
         let name = FN_NAMES[i]
         let is_main = name == "main"
-        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+        mut pc = 0
+        if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
         let param_arr = llvm.type_array_new(pc)
         mut pi = 0
         while pi < pc {
             llvm.type_array_set(param_arr, pi, CG_I64)
             pi = pi + 1
         }
-        let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+        mut ret_ty = CG_I64
+        if is_main { ret_ty = CG_I32 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
         let fn_val = llvm.add_function(CG_MOD, name, fn_type)
@@ -315,7 +321,8 @@ export fn declare_all_fns() {
             ci = ci + 1
         }
         if fields.length == 0 { fc = 0 }
-        let ftn = if si < CG_STRUCT_FIELD_TYPE_NAMES.length { CG_STRUCT_FIELD_TYPE_NAMES[si] } else { "" }
+        mut ftn = ""
+        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
         let fta = llvm.type_array_new(fc)
         // Save type values locally (list pushes corrupt globals)
         let saved_i64 = CG_I64
@@ -378,7 +385,8 @@ export fn declare_all_fns() {
         cg_reinit_types()
         let name = FN_NAMES[i]
         let is_main = name == "main"
-        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+        mut pc = 0
+        if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
         let param_arr = llvm.type_array_new(pc)
         mut pi = 0
         while pi < pc {
@@ -421,7 +429,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = FN_NAMES[idx]
     let body_src = FN_BODY_SOURCES[idx]
     let is_main = name == "main"
-    let pc = if idx < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[idx] } else { 0 }
+    mut pc = 0
+    if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
@@ -454,7 +463,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
         let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
-        mut p_ty = if param_type_name == "string" { CG_STR } else { CG_I64 }
+        mut p_ty = CG_I64
+        if param_type_name == "string" { p_ty = CG_STR }
         if is_struct_param {
             let resolved = resolve_type_to_llvm(param_type_name)
             if resolved != null && resolved != CG_I64 { p_ty = resolved }
@@ -462,7 +472,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(if param_type_name == "string" { 1 } else { 0 })
+        mut _vis = 0
+        if param_type_name == "string" { _vis = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
@@ -573,7 +585,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             }
             if fields.length == 0 { fc = 0 }
             // Create struct type with correct field types using field type names
-            let ftn = if si < CG_STRUCT_FIELD_TYPE_NAMES.length { CG_STRUCT_FIELD_TYPE_NAMES[si] } else { "" }
+            mut ftn = ""
+            if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
             let fta = llvm.type_array_new(fc)
             if ftn.length > 0 {
                 // Use field type names for proper type resolution
@@ -637,7 +650,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let name = FN_NAMES[i]
         let body_src = FN_BODY_SOURCES[i]
         let is_main = name == "main"
-        let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
+        mut pc = 0
+        if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
 
         // Declare the LLVM function with correct param types
         let param_arr = llvm.type_array_new(pc)
@@ -741,7 +755,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             let alloca = llvm.build_alloca(CG_B, p_ty, pname)
             llvm.build_store(CG_B, param_val, alloca)
             CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(if param_type_name == "string" { 1 } else { 0 })
+            mut _vis2 = 0
+            if param_type_name == "string" { _vis2 = 1 }
+            CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis2)
             CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
             CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
             if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
@@ -782,9 +798,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_LAST_IS_NULLABLE = 0
 
         // Set nullable return tracking for this function
-        CG_FN_RETURNS_NULLABLE = if fn_is_nullable { 1 } else { 0 }
+        CG_FN_RETURNS_NULLABLE = 0
+        if fn_is_nullable { CG_FN_RETURNS_NULLABLE = 1 }
         CG_FN_NULLABLE_INNER_TY = fn_nullable_inner
-        CG_FN_NULLABLE_RET_TY = if fn_is_nullable { ret_ty } else { null }
+        CG_FN_NULLABLE_RET_TY = null
+        if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
         // Re-lex and re-parse the body source text
         // CG_ACTIVE stays true for control flow (if/else, while, for) that emits inline.
@@ -863,7 +881,8 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
         }
         fi = fi + 1
     }
-    let pc = if fi < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fi] } else { 0 }
+    mut pc = 0
+    if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
     mut pi = 0
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
@@ -889,7 +908,8 @@ fn emit_fn_data(cg: Codegen, data: FnDeclData) {
         llvm.type_array_set(param_arr, i, CG_I64)
         i = i + 1
     }
-    let ret_ty = if is_main { CG_I32 } else { CG_I64 }
+    mut ret_ty = CG_I64
+    if is_main { ret_ty = CG_I32 }
     let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
     llvm.type_array_free(param_arr)
 

@@ -312,7 +312,8 @@ fn build_compile_separate(files: List<string>, output: string) {
     mut param_offset = 0
     mut fi = 0
     while fi < FN_NAMES.length {
-        let pc = if fi < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[fi] } else { 0 }
+        mut pc = 0
+        if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         let bsrc = FN_BODY_SOURCES[fi]
         if bsrc.length > 0 {
             eprintln("  >> " + string(fi))
@@ -372,7 +373,8 @@ fn main() {
         }
         println("OK")
     } else if command == "build" {
-        let output = if args.length > 3 { args[3] } else { "a.out" }
+        mut output = "a.out"
+        if args.length > 3 { output = args[3] }
         let files = resolve_module_paths(input)
         eprintln("M:files=" + string(files.length))
         build_compile_separate(files, output)

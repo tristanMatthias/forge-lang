@@ -129,10 +129,12 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     // Capture body source text (same as regular functions)
     let block_open_span = p.peek().span
     let body = p.parse_block()
-    let block_close_end = if p.pos > 0 { p.tokens[p.pos - 1].span.end } else { block_open_span.end }
-    let body_src = if p.source.length > 0 && block_close_end > block_open_span.start {
-        p.source.substring(block_open_span.start, block_close_end + 1)
-    } else { "" }
+    mut block_close_end = block_open_span.end
+    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
+    mut body_src = ""
+    if p.source.length > 0 && block_close_end > block_open_span.start {
+        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    }
 
     // Store function data for codegen (using the mangled name)
     // Filter out 'self' param: replace it with the type name as param type
@@ -183,10 +185,11 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
     let params = p.parse_params()
     if params == null { return null }
 
-    let return_type = if p.check(.Arrow) {
+    mut return_type: TypeExpr? = null
+    if p.check(.Arrow) {
         p.advance()
-        p.parse_type_expr()
-    } else { null }
+        return_type = p.parse_type_expr()
+    }
 
     let body = p.parse_block()
     if body == null {
