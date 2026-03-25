@@ -140,11 +140,16 @@ extern "C" {
     fn LLVMBuildFCmp(builder: LLVMPtr, op: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Constants
+    fn LLVMIsConstant(val: LLVMPtr) -> c_int;
     fn LLVMConstInt(ty: LLVMPtr, n: c_ulonglong, sign_extend: c_int) -> LLVMPtr;
     fn LLVMConstReal(ty: LLVMPtr, n: f64) -> LLVMPtr;
     fn LLVMConstNull(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMGetUndef(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMConstStructInContext(ctx: LLVMPtr, values: *mut LLVMPtr, count: c_uint, packed: c_int) -> LLVMPtr;
+    fn LLVMConstStringInContext(ctx: LLVMPtr, str: *const c_char, len: c_uint, dont_null_terminate: c_int) -> LLVMPtr;
+    fn LLVMConstBitCast(val: LLVMPtr, ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMArrayType(element_type: LLVMPtr, count: c_uint) -> LLVMPtr;
+    fn LLVMConstGEP2(ty: LLVMPtr, constant: LLVMPtr, indices: *mut LLVMPtr, count: c_uint) -> LLVMPtr;
 
     // Globals
     fn LLVMAddGlobal(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -599,6 +604,37 @@ pub extern "C" fn forge_llvm_value_array_free(arr: *mut LLVMPtr) {
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_global_string_ptr(builder: LLVMPtr, s: *const c_char, name: *const c_char) -> LLVMPtr {
     unsafe { LLVMBuildGlobalStringPtr(builder, s, safe_name(name)) }
+}
+
+/// Create a constant ForgeString {ptr, i64} value without using the builder.
+/// The string data becomes a global constant; the ForgeString is a constant struct.
+/// This is position-independent — safe to use anywhere in the function.
+#[no_mangle]
+pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, len: i64) -> LLVMPtr {
+    TYPE_CACHE.with(|c| {
+        let cache = c.borrow();
+        unsafe {
+            // Create the string data as a global constant
+            let str_const = LLVMConstStringInContext(cache.ctx, text, len as c_uint, 1);
+            let arr_ty = LLVMArrayType(cache.i8, len as c_uint);
+            let global = LLVMAddGlobal(module, arr_ty, safe_name(std::ptr::null()));
+            LLVMSetInitializer(global, str_const);
+            LLVMSetGlobalConstant(global, 1);
+            // Get a ptr to the first byte
+            let mut indices = [LLVMConstInt(cache.i64, 0, 0), LLVMConstInt(cache.i64, 0, 0)];
+            let str_ptr = LLVMConstGEP2(arr_ty, global, indices.as_mut_ptr(), 2);
+            // Build the ForgeString struct constant: {ptr, i64}
+            let len_val = LLVMConstInt(cache.i64, len as c_ulonglong, 0);
+            let mut fields = [str_ptr, len_val];
+            // Get ForgeString type from cache context
+            let str_ty = LLVMGetTypeByName2(cache.ctx, b"ForgeString\0".as_ptr() as *const c_char);
+            if str_ty.is_null() {
+                // Fallback: use anonymous struct
+                return LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0);
+            }
+            LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0)
+        }
+    })
 }
 
 // ── PHI nodes ──

@@ -1224,16 +1224,9 @@ impl Codegen {
     }
 
     fn emit_string(self, value: string) -> ptr {
-        let raw = llvm.build_global_string_ptr(CG_B, value, "str")
-        let len = llvm.const_int(CG_I64, value.length, 0)
-        // Call forge_string_new(ptr, len) → ForgeString
-        let ca = llvm.value_array_new(2)
-        llvm.value_array_set(ca, 0, raw)
-        llvm.value_array_set(ca, 1, len)
-        let ft = make_fn_type(CG_STR, [CG_PTR, CG_I64])
-        let result = llvm.build_call(CG_B, ft, CG_RT_SNEW, ca, 2, "str")
-        llvm.value_array_free(ca)
-        result
+        // Create string as a constant struct (position-independent, no builder call needed)
+        // This prevents forward SSA references when strings are used in loop bodies
+        llvm.const_string(CG_MOD, value, value.length)
     }
 
     fn emit_ident(self, name: string) -> ptr {

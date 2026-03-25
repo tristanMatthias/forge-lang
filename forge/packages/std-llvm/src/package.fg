@@ -129,6 +129,12 @@ extern fn forge_llvm_build_switch(builder: ptr, val: ptr, else_bb: ptr, num_case
 extern fn forge_llvm_add_case(switch_val: ptr, on_val: ptr, dest: ptr)
 
 // ── Constants and Globals ──
+extern fn forge_llvm_const_string(module: ptr, text: string, len: int) -> ptr
+
+export fn const_string(module: ptr, text: string, len: int) -> ptr {
+    forge_llvm_const_string(module, text, len)
+}
+
 extern fn forge_llvm_const_null(ty: ptr) -> ptr
 extern fn forge_llvm_get_undef(ty: ptr) -> ptr
 extern fn forge_llvm_const_real(ty: ptr, value: float) -> ptr
