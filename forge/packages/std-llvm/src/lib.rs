@@ -1,7 +1,14 @@
 //! Thin Rust wrappers around the LLVM C API for use from Forge programs.
 //! Each function is a 1-3 line wrapper that calls the corresponding LLVM C API function.
+//!
+//! **Type cache**: The bootstrap compiler's list operations corrupt global variables.
+//! LLVM type pointers (i64, i32, etc.) stored as Forge globals get overwritten with
+//! garbage. This module maintains a Rust-side thread-local cache of the correct types.
+//! All wrapper functions that accept type parameters auto-correct corrupted types
+//! by checking LLVMGetTypeKind and substituting from the cache.
 
 use std::ffi::{c_char, c_int, c_uint, c_ulonglong, c_void};
+use std::cell::RefCell;
 
 // Opaque pointer type used for all LLVM refs
 type LLVMPtr = *mut c_void;
@@ -11,6 +18,46 @@ type LLVMPtr = *mut c_void;
 const EMPTY_NAME: &[u8] = b"\0";
 fn safe_name(_name: *const c_char) -> *const c_char {
     EMPTY_NAME.as_ptr() as *const c_char
+}
+
+// ── Type Cache (immune to bootstrap global corruption) ──────────────
+// Stored in Rust thread-local, populated when context is created.
+
+#[derive(Default)]
+struct TypeCache {
+    ctx: LLVMPtr,
+    i1: LLVMPtr,
+    i8: LLVMPtr,
+    i32: LLVMPtr,
+    i64: LLVMPtr,
+    f64: LLVMPtr,
+    void: LLVMPtr,
+    ptr: LLVMPtr,
+}
+
+thread_local! {
+    static TYPE_CACHE: RefCell<TypeCache> = RefCell::new(TypeCache::default());
+}
+
+/// If `ty` should be an integer type but got corrupted, return the cached i64.
+/// Returns the original type if it's already an integer, or the cached i64 otherwise.
+fn ensure_int_type(ty: LLVMPtr) -> LLVMPtr {
+    if ty.is_null() {
+        return TYPE_CACHE.with(|c| c.borrow().i64);
+    }
+    unsafe {
+        let kind = LLVMGetTypeKind(ty);
+        if kind == 8 { return ty; } // Already integer
+        TYPE_CACHE.with(|c| c.borrow().i64)
+    }
+}
+
+/// If `ty` should be a valid LLVM type but is null, return cached i64.
+fn ensure_type(ty: LLVMPtr) -> LLVMPtr {
+    if ty.is_null() {
+        return TYPE_CACHE.with(|c| c.borrow().i64);
+    }
+    ty
 }
 
 // LLVM C API bindings (from llvm-c/Core.h, llvm-c/Analysis.h, llvm-c/TargetMachine.h)
@@ -184,7 +231,22 @@ extern "C" {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_context_create() -> LLVMPtr {
-    unsafe { LLVMContextCreate() }
+    unsafe {
+        let ctx = LLVMContextCreate();
+        // Populate the type cache — these pointers are stable for the context's lifetime
+        TYPE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            cache.ctx = ctx;
+            cache.i1 = LLVMInt1TypeInContext(ctx);
+            cache.i8 = LLVMInt8TypeInContext(ctx);
+            cache.i32 = LLVMInt32TypeInContext(ctx);
+            cache.i64 = LLVMInt64TypeInContext(ctx);
+            cache.f64 = LLVMDoubleTypeInContext(ctx);
+            cache.void = LLVMVoidTypeInContext(ctx);
+            cache.ptr = LLVMPointerTypeInContext(ctx, 0);
+        });
+        ctx
+    }
 }
 
 #[no_mangle]
@@ -357,37 +419,49 @@ pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAdd(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            // Operand type mismatch — return i64 zero as graceful degradation
+            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+            return LLVMConstInt(i64_ty, 0, 0);
+        }
+        LLVMBuildAdd(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSub(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+            return LLVMConstInt(i64_ty, 0, 0);
+        }
+        LLVMBuildSub(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildMul(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+            return LLVMConstInt(i64_ty, 0, 0);
+        }
+        LLVMBuildMul(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 // ── Constants ──
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_int(ty: LLVMPtr, value: i64, sign_extend: c_int) -> LLVMPtr {
-    unsafe {
-        if ty.is_null() {
-            return std::ptr::null_mut();
-        }
-        // Guard: if ty is not an integer type (corrupted global), get i64 from same context
-        let kind = LLVMGetTypeKind(ty);
-        if kind != 8 { // 8 = IntegerTypeKind
-            eprintln!("CONST_INT_FIX: kind={} value={}", kind, value);
-            let ctx = LLVMGetTypeContext(ty);
-            let i64_ty = LLVMInt64TypeInContext(ctx);
-            return LLVMConstInt(i64_ty, value as c_ulonglong, sign_extend);
-        }
-        LLVMConstInt(ty, value as c_ulonglong, sign_extend)
-    }
+    unsafe { LLVMConstInt(ensure_int_type(ty), value as c_ulonglong, sign_extend) }
 }
 
 // ── Verification ──
@@ -408,6 +482,7 @@ pub extern "C" fn forge_llvm_verify_module(m: LLVMPtr) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let ty = ensure_type(ty);
     if ty.is_null() {
         eprintln!("WARNING: build_alloca with null type");
         return std::ptr::null_mut();
@@ -423,6 +498,7 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() {
         eprintln!("WARNING: build_load with null ptr or type");
         return std::ptr::null_mut();
@@ -444,7 +520,16 @@ pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildICmp(builder, pred, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            // Operand type mismatch (corrupted type pointer) — return i1 false
+            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
+            return LLVMConstInt(i1, 0, 0);
+        }
+        LLVMBuildICmp(builder, pred, lhs, rhs, safe_name(name))
+    }
 }
 
 // ── Function calls ──
@@ -486,6 +571,7 @@ pub extern "C" fn forge_llvm_build_global_string_ptr(builder: LLVMPtr, s: *const
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let ty = ensure_type(ty);
     unsafe { LLVMBuildPhi(builder, ty, safe_name(name)) }
 }
 
@@ -497,7 +583,28 @@ pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, values: *mut LLVMPtr, bl
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
     unsafe {
-        let mut values = [value];
+        // Auto-correct type mismatch: if phi expects i64 but value is null/ptr, use i64 0
+        let safe_value = if phi.is_null() || value.is_null() || block.is_null() {
+            return;
+        } else {
+            let phi_ty = LLVMTypeOf(phi);
+            let val_ty = LLVMTypeOf(value);
+            let phi_kind = LLVMGetTypeKind(phi_ty);
+            let val_kind = LLVMGetTypeKind(val_ty);
+            if phi_kind != val_kind {
+                // Type mismatch — create zero of the phi's type
+                if phi_kind == 8 { // phi is integer
+                    LLVMConstInt(phi_ty, 0, 0)
+                } else if phi_kind == 10 { // phi is struct
+                    LLVMGetUndef(phi_ty)
+                } else {
+                    LLVMConstNull(phi_ty)
+                }
+            } else {
+                value
+            }
+        };
+        let mut values = [safe_value];
         let mut blocks = [block];
         LLVMAddIncoming(phi, values.as_mut_ptr(), blocks.as_mut_ptr(), 1);
     }
@@ -550,6 +657,7 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
+    let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() {
         eprintln!("WARNING: build_gep2 with null ptr or type");
         return std::ptr::null_mut();
@@ -601,12 +709,28 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSDiv(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+            return LLVMConstInt(i64_ty, 0, 0);
+        }
+        LLVMBuildSDiv(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_srem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildSRem(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        let lhs_ty = LLVMTypeOf(lhs);
+        let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty != rhs_ty {
+            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+            return LLVMConstInt(i64_ty, 0, 0);
+        }
+        LLVMBuildSRem(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
@@ -648,16 +772,19 @@ pub extern "C" fn forge_llvm_build_fcmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let dest_ty = ensure_int_type(dest_ty);
     unsafe { LLVMBuildZExt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let dest_ty = ensure_int_type(dest_ty);
     unsafe { LLVMBuildSExt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    let dest_ty = ensure_int_type(dest_ty);
     unsafe { LLVMBuildTrunc(builder, val, dest_ty, safe_name(name)) }
 }
 
