@@ -97,6 +97,7 @@ export mut CG_LAST_IS_STR: int = 0
 
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
 export mut CG_LAST_VAL: ptr = null
+export mut CG_LAST_VAR_PTR: ptr = null  // alloca pointer from most recent emit_ident
 export mut CG_HAS_LAST_VAL: int = 0
 export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
@@ -886,7 +887,10 @@ impl Codegen {
             .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
-            .BoolLit(value, span) -> { return llvm.const_int(CG_I8, if value { 1 } else { 0 }, 0) }
+            .BoolLit(value, span) -> {
+                // value is the runtime boolean (0 or 1) from match binding
+                return self.emit_ident("value")
+            }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
                     CG_LAST_IS_NULLABLE = 1
@@ -1221,11 +1225,19 @@ impl Codegen {
     }
 
     fn emit_assign(self, target: Expr, value: Expr) {
-        // target should be an Ident — look up its alloca in CG_VAR_NAMES/CG_VAR_PTRS
+        // target should be an Ident — use emit_ident to find alloca, then store
         match target {
             .Ident(name, span) -> {
+                // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
+                CG_LAST_VAR_PTR = null
+                self.emit_ident(name)
                 let val = self.emit_expr(value)
-                // Find the variable's alloca pointer (search reverse for most recent)
+                // Use CG_LAST_VAR_PTR from emit_ident (avoids corrupted list re-search)
+                if CG_LAST_VAR_PTR != null {
+                    llvm.build_store(CG_B, val, CG_LAST_VAR_PTR)
+                    return
+                }
+                // Fallback: search CG_VAR_NAMES
                 mut vi = CG_VAR_NAMES.length - 1
                 while vi >= 0 {
                     if CG_VAR_NAMES[vi] == name {
@@ -1451,6 +1463,7 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
+                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -1502,6 +1515,7 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
+                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -2017,6 +2031,7 @@ impl Codegen {
                     if bcur != "" { all_bindings = all_bindings.push(bcur) }
                     // Pre-create allocas before match branches (current block)
                     // Format: "EnumType.Variant:name1,name2" — skip prefix before ':'
+                    let pre_start_idx = CG_VAR_PTRS.length  // save index for direct access
                     mut pre_bi = 0
                     while pre_bi < all_bindings.length {
                         let pre_raw = all_bindings[pre_bi]
@@ -2090,13 +2105,14 @@ impl Codegen {
                                     if vn2 == "NullLit" { field_types = "4" }
                                     if vn2 == "Ident" { field_types = "s4" }
                                     // Statement variants
-                                    if vn2 == "Expr" { field_types = "i" }
-                                    if vn2 == "Assign" { field_types = "iii" }
-                                    if vn2 == "Return" { field_types = "ii" }
-                                    if vn2 == "Let" { field_types = "si4" }
+                                    if vn2 == "Expr" { field_types = "p" }
+                                    if vn2 == "Assign" { field_types = "pp4" }
+                                    if vn2 == "Return" { field_types = "p4" }
+                                    if vn2 == "Let" { field_types = "sp4" }
                                 }
                             }
                             mut field_idx = 0
+                            mut binding_ptr_idx = 0  // index into pre-created allocas
                             mut bpi = 0
                             mut bpname = ""
                             while bpi <= names_part.length {
@@ -2120,15 +2136,12 @@ impl Codegen {
                                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                                mut vi = CG_VAR_NAMES.length - 1
-                                                while vi >= 0 {
-                                                    if CG_VAR_NAMES[vi] == bpname {
-                                                        llvm.build_store(CG_B, fsv, CG_VAR_PTRS[vi])
-                                                        CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
-                                                        break
-                                                    }
-                                                    vi = vi - 1
+                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                if alloca_idx < CG_VAR_PTRS.length {
+                                                    llvm.build_store(CG_B, fsv, CG_VAR_PTRS[alloca_idx])
+                                                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
                                                 }
+                                                binding_ptr_idx = binding_ptr_idx + 1
                                             }
                                         } else if fcode == "p" {
                                             // Boxed pointer: extract ptr, load full value
@@ -2144,39 +2157,33 @@ impl Codegen {
                                                     if loaded != null { deref_val = loaded }
                                                 }
                                                 // Store the dereferenced full value
-                                                mut vi = CG_VAR_NAMES.length - 1
-                                                while vi >= 0 {
-                                                    if CG_VAR_NAMES[vi] == bpname {
-                                                        // For boxed Expr: alloca needs to be Expr-sized
-                                                        // But pre-alloca is CG_STR (16 bytes). Expr is larger.
-                                                        // Create a new alloca of the right type
-                                                        if expr_ty != null {
-                                                            let big_alloca = llvm.build_alloca(CG_B, expr_ty, "bx")
-                                                            llvm.build_store(CG_B, deref_val, big_alloca)
-                                                            // Shadow with Expr-sized alloca + register as enum var
-                                                            CG_VAR_NAMES = CG_VAR_NAMES.push(bpname)
-                                                            CG_VAR_PTRS = CG_VAR_PTRS.push(big_alloca)
-                                                            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + bpname + ":Expr,"
-                                                        } else {
-                                                            llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
-                                                        }
-                                                        break
+                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                if alloca_idx < CG_VAR_PTRS.length {
+                                                    // For boxed Expr: alloca needs to be Expr-sized
+                                                    // But pre-alloca is CG_STR (16 bytes). Expr is larger.
+                                                    // Create a new alloca of the right type
+                                                    if expr_ty != null {
+                                                        let big_alloca = llvm.build_alloca(CG_B, expr_ty, "bx")
+                                                        llvm.build_store(CG_B, deref_val, big_alloca)
+                                                        // Shadow with Expr-sized alloca + register as enum var
+                                                        CG_VAR_NAMES = CG_VAR_NAMES.push(bpname)
+                                                        CG_VAR_PTRS = CG_VAR_PTRS.push(big_alloca)
+                                                        CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + bpname + ":Expr,"
+                                                    } else {
+                                                        llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
                                                     }
-                                                    vi = vi - 1
                                                 }
+                                                binding_ptr_idx = binding_ptr_idx + 1
                                             }
                                         } else {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                mut vi = CG_VAR_NAMES.length - 1
-                                                while vi >= 0 {
-                                                    if CG_VAR_NAMES[vi] == bpname {
-                                                        llvm.build_store(CG_B, ev, CG_VAR_PTRS[vi])
-                                                        break
-                                                    }
-                                                    vi = vi - 1
+                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                if alloca_idx < CG_VAR_PTRS.length {
+                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
                                                 }
+                                                binding_ptr_idx = binding_ptr_idx + 1
                                             }
                                         }
                                     }
