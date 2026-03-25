@@ -97,6 +97,7 @@ extern "C" {
     fn LLVMGetElementType(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMGlobalGetValueType(global: LLVMPtr) -> LLVMPtr;
     fn LLVMGetTypeContext(ty: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetGlobalParent(val: LLVMPtr) -> LLVMPtr;
     fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
     fn LLVMStructCreateNamed(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetTypeByName2(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -560,6 +561,27 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
         let lhs_kind = LLVMGetTypeKind(lhs_ty);
         // icmp only works on integer (8) and pointer (12) types
         if lhs_kind != 8 && lhs_kind != 12 {
+            // For struct types (10), try string comparison via forge_string_compare
+            if lhs_kind == 10 {
+                // Look up forge_string_compare in the module
+                let bb = LLVMGetInsertBlock(builder);
+                if !bb.is_null() {
+                    let func = LLVMGetBasicBlockParent(bb);
+                    if !func.is_null() {
+                        let module = LLVMGetGlobalParent(func);
+                        let cmp_fn = LLVMGetNamedFunction(module, b"forge_string_compare\0".as_ptr() as *const c_char);
+                        if !cmp_fn.is_null() {
+                            // Call forge_string_compare(lhs, rhs) → i64, then icmp result with 0
+                            let fn_ty = LLVMGlobalGetValueType(cmp_fn);
+                            let mut args = [lhs, rhs];
+                            let cmp_result = LLVMBuildCall2(builder, fn_ty, cmp_fn, args.as_mut_ptr(), 2, safe_name(std::ptr::null()));
+                            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+                            let zero = LLVMConstInt(i64_ty, 0, 0);
+                            return LLVMBuildICmp(builder, pred, cmp_result, zero, safe_name(name));
+                        }
+                    }
+                }
+            }
             let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
             return LLVMConstInt(i1, 0, 0);
         }

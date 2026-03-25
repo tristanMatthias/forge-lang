@@ -945,11 +945,20 @@ impl Codegen {
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
                 mut elem_ty = CG_I64
+                // Use CG_STR for string list elements
                 if is_str_list { elem_ty = CG_STR }
+                // Also check CG_STR_VAR_NAMES (more reliable than CSV — handles process.args)
+                if obj_var_name != "" && obj_is_str == 1 { elem_ty = CG_STR }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
+                // Ensure index is integer (might be ForgeString if CG_LAST_IS_STR leaked)
+                // Try extractvalue — if idx is a struct, extract field 0 (i64 part)
+                // If it's already i64, extractvalue returns null (not aggregate) and we keep idx_val
+                mut safe_idx = idx_val
+                let maybe_int = llvm.build_extract_value(CG_B, idx_val, 0, "ix")
+                if maybe_int != null { safe_idx = maybe_int }
                 let gi = llvm.value_array_new(1)
-                llvm.value_array_set(gi, 0, idx_val)
+                llvm.value_array_set(gi, 0, safe_idx)
                 let gp = llvm.build_gep2(CG_B, elem_ty, dp, gi, 1, "ep")
                 llvm.value_array_free(gi)
                 if gp == null { return llvm.const_int(CG_I64, 0, 0) }
@@ -1774,6 +1783,13 @@ impl Codegen {
     }
 
     fn emit_statement(self, stmt: Statement) -> ptr {
+        // Reset type flags at statement boundary
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_LAST_IS_LIST = 0
+        CG_IS_MAP_INDEX = 0
+        CG_LAST_ENUM_TYPE = ""
+        CG_LAST_STRUCT_TYPE = ""
         match stmt {
             .Expr(expr) -> {
                 if PENDING_IF {
@@ -1791,9 +1807,14 @@ impl Codegen {
             .Let(name, val, s) -> {
                 let ev = self.emit_expr(val)
                 let let_is_list = CG_LAST_IS_LIST
+                let let_is_str = CG_LAST_IS_STR
                 mut ty = Type.Int
-                if CG_LAST_IS_STR == 1 { ty = Type.String }
+                if let_is_str == 1 { ty = Type.String }
                 self.define_var(name, ty, ev)
+                // Explicitly register string vars (CG_LAST_IS_STR may be corrupted by define_var pushes)
+                if let_is_str == 1 {
+                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+                }
                 // Register list variables for correct indexing
                 if let_is_list == 1 {
                     CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
