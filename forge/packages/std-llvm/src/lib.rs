@@ -412,10 +412,24 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                 let val_ty = LLVMTypeOf(value);
                 if ret_ty != val_ty {
                     let ret_kind = LLVMGetTypeKind(ret_ty);
+                    let val_kind = LLVMGetTypeKind(val_ty);
                     if ret_kind == 0 { // Void
                         return LLVMBuildRetVoid(builder);
                     }
-                    // Type mismatch — return undef of correct type
+                    // If return is ForgeString (2-field struct) but value is integer,
+                    // build ForgeString{val, 0} — common for list/string returns from i64 allocas
+                    if ret_kind == 10 && val_kind == 8 {
+                        let field_count = LLVMCountStructElementTypes(ret_ty);
+                        if field_count == 2 {
+                            let undef = LLVMGetUndef(ret_ty);
+                            let with_ptr = LLVMBuildInsertValue(builder, undef, value, 0, safe_name(std::ptr::null()));
+                            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+                            let zero = LLVMConstInt(i64_ty, 0, 0);
+                            let with_len = LLVMBuildInsertValue(builder, with_ptr, zero, 1, safe_name(std::ptr::null()));
+                            return LLVMBuildRet(builder, with_len);
+                        }
+                    }
+                    // Other mismatch — return undef of correct type
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }

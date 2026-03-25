@@ -203,7 +203,7 @@ fn resolve_modules(filepath: string) -> string {
     result = result + source + "\n"
     // Also track file paths for separate compilation
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
-    result
+    return result
 }
 
 // ─── Module Path Resolution ────────────────────
@@ -285,7 +285,7 @@ fn resolve_module_paths(filepath: string) -> List<string> {
         }
         i = i + 1
     }
-    paths
+    return paths
 }
 
 // ─── Per-File Compilation ──────────────────────
