@@ -1917,8 +1917,24 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new("{\"code\":0}", 10);
 }
 
-// Stub: span() identity function (workaround for match binding issue)
-int64_t span(int64_t val) { return val; }
+// Stub: forge_span() identity function (workaround for match binding issue)
+int64_t forge_span(int64_t val) { return val; }
+
+// List push for ForgeString elements: returns new list with item appended
+ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
+    int64_t old_count = list.len;
+    int64_t new_count = old_count + 1;
+    int64_t elem_size = sizeof(ForgeString);
+    ForgeString* new_data = (ForgeString*)forge_alloc(new_count * elem_size);
+    if (old_count > 0 && list.ptr) {
+        forge_memcpy(new_data, list.ptr, old_count * elem_size);
+    }
+    new_data[old_count] = item;
+    ForgeString result;
+    result.ptr = (char*)new_data;
+    result.len = new_count;
+    return result;
+}
 
 // Debug: write ForgeString to file, print debug info
 void forge_mini_write_debug(ForgeString path, ForgeString content) {

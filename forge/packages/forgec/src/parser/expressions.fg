@@ -643,6 +643,28 @@ impl Parser {
                     if svi >= 0 { continue }
                 }
 
+                // Desugar string method calls: obj.method(args) → forge_string_method(obj, args)
+                if !CG_ACTIVE {
+                    if self.check(TokenKind.LParen) {
+                        mut is_str_method = false
+                        if field == "substring" { is_str_method = true }
+                        if field == "index_of" { is_str_method = true }
+                        if field == "contains" { is_str_method = true }
+                        if is_str_method {
+                            self.advance()
+                            let ma = self.parse_call_args()
+                            self.expect(TokenKind.RParen)
+                            let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+                            mut aa: List<Expr> = [result]
+                            for a in ma { aa = aa.push(a) }
+                            result = Expr.Call(Expr.Ident("forge_string_" + field, span), aa, sp2)
+                            result_is_llvm = false
+                            result_is_str = field == "substring"
+                            continue
+                        }
+                    }
+                }
+
                 result = Expr.MemberAccess(result, field, span)
                 result_is_llvm = false
                 continue

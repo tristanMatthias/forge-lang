@@ -112,7 +112,7 @@ fn build_compile(source: string, filename: string, output: string) {
     let runtime_obj = "/tmp/forgec_runtime.o"
     let runtime_src = "stdlib/runtime.c"
     let rt_result = process.run("cc", ["-c", "-O0", runtime_src, "-o", runtime_obj])
-    if !rt_result.contains("\"code\":0") {
+    if !forge_string_contains(rt_result, "\"code\":0") {
         eprintln("error: failed to compile runtime (${runtime_src})")
         eprintln(rt_result)
         process.exit(1)
@@ -120,7 +120,7 @@ fn build_compile(source: string, filename: string, output: string) {
 
     // Link: cc -o output obj_path runtime_obj -lm
     let link_result = process.run("cc", ["-o", output, obj_path, runtime_obj, "-lm"])
-    if !link_result.contains("\"code\":0") {
+    if !forge_string_contains(link_result, "\"code\":0") {
         eprintln("error: linker failed")
         eprintln(link_result)
         process.exit(1)
@@ -137,17 +137,9 @@ fn resolve_modules(filepath: string) -> string {
     eprintln("resolve_modules: " + filepath)
     let source = fs.read(filepath)
     eprintln("  source length: " + string(source.length))
-    // Find the directory of this file
-    mut dir = ""
-    mut last_slash = -1
-    mut ci = 0
-    while ci < filepath.length {
-        if filepath[ci] == "/" { last_slash = ci }
-        ci = ci + 1
-    }
-    if last_slash >= 0 {
-        dir = filepath.substring(0, last_slash + 1)
-    }
+    // Find the directory of this file (no conditional assignment — avoids emit_assign bug)
+    let last_slash = forge_string_last_index_of(filepath, "/")
+    let dir = forge_string_substring(filepath, 0, last_slash + 1)
 
     // Collect all source: start with this file
     // Modules go BEFORE the file that imports them (forward declaration)
@@ -171,11 +163,10 @@ fn resolve_modules(filepath: string) -> string {
                         if c2 == "d" {
                             if c3 == " " {
                                 // Extract module name
-                                // Find end of mod name using indexOf
-                                let rest_str = source.substring(pos + 4, source.length)
-                                let nl_pos = rest_str.index_of("\n")
+                                let rest_str = forge_string_substring(source, pos + 4, source.length)
+                                let nl_pos = forge_string_index_of(rest_str, "\n")
                                 mut mod_name = rest_str
-                                if nl_pos >= 0 { mod_name = rest_str.substring(0, nl_pos) }
+                                if nl_pos >= 0 { mod_name = forge_string_substring(rest_str, 0, nl_pos) }
 
                                 // Try: dir/name/mod.fg then dir/name.fg
                                 let mod_path1 = dir + mod_name + "/mod.fg"
@@ -212,99 +203,151 @@ fn resolve_modules(filepath: string) -> string {
 // Use a CSV string for paths (avoid List<string> from recursive calls crashing bootstrap)
 mut MODULE_PATHS_CSV: string = ""
 
+// Helper: extract mod name from rest of line (avoids assignment-in-if bug)
+fn extract_until_newline(s: string) -> string {
+    let nl = forge_string_index_of(s, "\n")
+    if nl >= 0 {
+        return forge_string_substring(s, 0, nl)
+    }
+    return s
+}
+
 fn collect_module_paths(filepath: string) {
     eprintln("collect_module_paths: " + filepath)
-    let source = fs.read(filepath)
-    eprintln("  read " + string(source.length) + " bytes")
-    mut dir = ""
-    mut last_slash = -1
-    mut ci = 0
-    while ci < filepath.length {
-        if filepath[ci] == "/" { last_slash = ci }
-        ci = ci + 1
-    }
-    if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
-
-    // Find mod declarations using index_of("\nmod ") — avoids per-char assignment bug
-    mut search_from = 0
-    // Check if source starts with "mod " (no preceding newline needed)
-    if source.length >= 4 {
-        if source.substring(0, 4) == "mod " {
-            let rest = source.substring(4, source.length)
-            let nl = rest.index_of("\n")
-            mut mod_name = rest
-            if nl >= 0 { mod_name = rest.substring(0, nl) }
-            let p1 = dir + mod_name + "/mod.fg"
-            let p2 = dir + mod_name + ".fg"
-            let s1 = fs.read(p1)
-            if s1.length > 0 { collect_module_paths(p1) }
+    let raw_source = fs.read(filepath)
+    eprintln("  read " + string(raw_source.length) + " bytes")
+    let last_slash = forge_string_last_index_of(filepath, "/")
+    let dir = forge_string_substring(filepath, 0, last_slash + 1)
+    // Prepend \n so "mod " at line start also matches "\nmod "
+    let source = "\n" + raw_source
+    // Find first \nmod match
+    let p0 = forge_string_index_of(source, "\nmod ")
+    if p0 >= 0 {
+        let ns0 = p0 + 5
+        let r0 = forge_string_substring(source, ns0, source.length)
+        let mn0 = extract_until_newline(r0)
+        let pa0 = dir + mn0 + "/mod.fg"
+        let pb0 = dir + mn0 + ".fg"
+        let sa0 = fs.read(pa0)
+        if sa0.length > 0 { collect_module_paths(pa0) }
+        else {
+            let sb0 = fs.read(pb0)
+            if sb0.length > 0 { collect_module_paths(pb0) }
+        }
+        // Find second match
+        let rem1 = forge_string_substring(source, ns0, source.length)
+        let p1 = forge_string_index_of(rem1, "\nmod ")
+        if p1 >= 0 {
+            let ns1 = p1 + 5
+            let r1 = forge_string_substring(rem1, ns1, rem1.length)
+            let mn1 = extract_until_newline(r1)
+            let pa1 = dir + mn1 + "/mod.fg"
+            let pb1 = dir + mn1 + ".fg"
+            let sa1 = fs.read(pa1)
+            if sa1.length > 0 { collect_module_paths(pa1) }
             else {
-                let s2 = fs.read(p2)
-                if s2.length > 0 { collect_module_paths(p2) }
+                let sb1 = fs.read(pb1)
+                if sb1.length > 0 { collect_module_paths(pb1) }
+            }
+            // Find third match
+            let rem2 = forge_string_substring(rem1, ns1, rem1.length)
+            let p2 = forge_string_index_of(rem2, "\nmod ")
+            if p2 >= 0 {
+                let ns2 = p2 + 5
+                let r2 = forge_string_substring(rem2, ns2, rem2.length)
+                let mn2 = extract_until_newline(r2)
+                let pa2 = dir + mn2 + "/mod.fg"
+                let pb2 = dir + mn2 + ".fg"
+                let sa2 = fs.read(pa2)
+                if sa2.length > 0 { collect_module_paths(pa2) }
+                else {
+                    let sb2 = fs.read(pb2)
+                    if sb2.length > 0 { collect_module_paths(pb2) }
+                }
+                // Find fourth match
+                let rem3 = forge_string_substring(rem2, ns2, rem2.length)
+                let p3 = forge_string_index_of(rem3, "\nmod ")
+                if p3 >= 0 {
+                    let ns3 = p3 + 5
+                    let r3 = forge_string_substring(rem3, ns3, rem3.length)
+                    let mn3 = extract_until_newline(r3)
+                    let pa3 = dir + mn3 + "/mod.fg"
+                    let pb3 = dir + mn3 + ".fg"
+                    let sa3 = fs.read(pa3)
+                    if sa3.length > 0 { collect_module_paths(pa3) }
+                    else {
+                        let sb3 = fs.read(pb3)
+                        if sb3.length > 0 { collect_module_paths(pb3) }
+                    }
+                    // Find fifth match
+                    let rem4 = forge_string_substring(rem3, ns3, rem3.length)
+                    let p4 = forge_string_index_of(rem4, "\nmod ")
+                    if p4 >= 0 {
+                        let ns4 = p4 + 5
+                        let r4 = forge_string_substring(rem4, ns4, rem4.length)
+                        let mn4 = extract_until_newline(r4)
+                        let pa4 = dir + mn4 + "/mod.fg"
+                        let pb4 = dir + mn4 + ".fg"
+                        let sa4 = fs.read(pa4)
+                        if sa4.length > 0 { collect_module_paths(pa4) }
+                        else {
+                            let sb4 = fs.read(pb4)
+                            if sb4.length > 0 { collect_module_paths(pb4) }
+                        }
+                        // Find sixth match
+                        let rem5 = forge_string_substring(rem4, ns4, rem4.length)
+                        let p5 = forge_string_index_of(rem5, "\nmod ")
+                        if p5 >= 0 {
+                            let ns5 = p5 + 5
+                            let r5 = forge_string_substring(rem5, ns5, rem5.length)
+                            let mn5 = extract_until_newline(r5)
+                            let pa5 = dir + mn5 + "/mod.fg"
+                            let pb5 = dir + mn5 + ".fg"
+                            let sa5 = fs.read(pa5)
+                            if sa5.length > 0 { collect_module_paths(pa5) }
+                            else {
+                                let sb5 = fs.read(pb5)
+                                if sb5.length > 0 { collect_module_paths(pb5) }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-    // Search for "\nmod " throughout the source
-    mut found = source.index_of("\nmod ")
-    while found >= 0 {
-        let name_start = found + 5
-        let rest = source.substring(name_start, source.length)
-        let nl = rest.index_of("\n")
-        mut mod_name = rest
-        if nl >= 0 { mod_name = rest.substring(0, nl) }
-        let p1 = dir + mod_name + "/mod.fg"
-        let p2 = dir + mod_name + ".fg"
-        let s1 = fs.read(p1)
-        if s1.length > 0 { collect_module_paths(p1) }
-        else {
-            let s2 = fs.read(p2)
-            if s2.length > 0 { collect_module_paths(p2) }
-        }
-        // Continue searching after this match
-        if name_start < source.length {
-            let remaining = source.substring(name_start, source.length)
-            let next = remaining.index_of("\nmod ")
-            if next >= 0 { found = name_start + next }
-            else { found = -1 }
-        } else { found = -1 }
-    }
-    // This file comes after its modules
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
 }
 
-fn resolve_module_paths(filepath: string) -> List<string> {
+fn resolve_module_paths(filepath: string) -> string {
     MODULE_PATHS_CSV = ""
     collect_module_paths(filepath)
     eprintln("  CSV len=" + string(MODULE_PATHS_CSV.length))
-    // Parse CSV into list
-    mut paths: List<string> = []
-    mut start = 0
-    mut i = 0
-    while i < MODULE_PATHS_CSV.length {
-        if MODULE_PATHS_CSV[i] == "\n" {
-            if i > start {
-                paths = paths.push(MODULE_PATHS_CSV.substring(start, i))
-            }
-            start = i + 1
-        }
-        i = i + 1
-    }
-    return paths
+    return MODULE_PATHS_CSV
 }
 
 // ─── Per-File Compilation ──────────────────────
 
-fn build_compile_separate(files: List<string>, output: string) {
+fn build_compile_separate(paths_csv: string, output: string) {
     // Phase 1: Scan ALL files (collect function signatures — no bodies)
+    // Parse CSV: newline-separated file paths
     mut file_idx = 0
-    for filepath in files {
-        CURRENT_FILE_INDEX = file_idx
-        let source = fs.read(filepath)
-        mut lex = lexer_new(source)
-        let tokens = lex.tokenize()
-        mut p = parser_new_with_source(tokens, source)
-        p.parse_program()
-        file_idx = file_idx + 1
+    mut csv_start = 0
+    mut csv_i = 0
+    while csv_i < paths_csv.length {
+        if paths_csv[csv_i] == "\n" {
+            if csv_i > csv_start {
+                let filepath = forge_string_substring(paths_csv, csv_start, csv_i)
+                CURRENT_FILE_INDEX = file_idx
+                let source = fs.read(filepath)
+                mut lex = lexer_new(source)
+                let tokens = lex.tokenize()
+                mut p = parser_new_with_source(tokens, source)
+                p.parse_program()
+                file_idx = file_idx + 1
+            }
+            csv_start = csv_i + 1
+        }
+        csv_i = csv_i + 1
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
@@ -423,7 +466,9 @@ fn main() {
     let input = args[2]
 
     eprintln("M:argc=" + string(args.length))
-    eprintln("M:cmd=[" + command + "]")
+    eprintln("M:cmd_len=" + string(command.length))
+    eprintln("M:input_len=" + string(input.length))
+    eprintln("M:input=" + input)
     if command == "check" {
         // For check: concatenate and check as one unit
         let source = resolve_modules(input)
@@ -434,9 +479,9 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        let files = resolve_module_paths(input)
-        eprintln("M:files=" + string(files.length))
-        build_compile_separate(files, output)
+        let files_csv = resolve_module_paths(input)
+        eprintln("M:csv_len=" + string(files_csv.length))
+        build_compile_separate(files_csv, output)
     } else {
         eprintln("unknown command")
         process.exit(1)
