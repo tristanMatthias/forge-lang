@@ -34,7 +34,6 @@ extern "C" {
 
     // Size
     fn LLVMSizeOf(ty: LLVMPtr) -> LLVMPtr;
-    fn LLVMTypeOf(val: LLVMPtr) -> LLVMPtr;
     fn LLVMGetHostCPUName() -> *mut c_char;
     fn LLVMGetHostCPUFeatures() -> *mut c_char;
 
@@ -49,6 +48,7 @@ extern "C" {
     fn LLVMFunctionType(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_uint, is_vararg: c_int) -> LLVMPtr;
     fn LLVMStructTypeInContext(ctx: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int) -> LLVMPtr;
     fn LLVMStructCreateNamed(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetTypeByName2(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMStructSetBody(struct_type: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int);
     fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
@@ -376,6 +376,10 @@ pub extern "C" fn forge_llvm_verify_module(m: LLVMPtr) -> c_int {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if ty.is_null() {
+        eprintln!("WARNING: build_alloca with null type");
+        return std::ptr::null_mut();
+    }
     unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) }
 }
 
@@ -387,6 +391,10 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if ptr.is_null() || ty.is_null() {
+        eprintln!("WARNING: build_load with null ptr or type");
+        return std::ptr::null_mut();
+    }
     unsafe { LLVMBuildLoad2(builder, ty, ptr, safe_name(name)) }
 }
 
@@ -471,8 +479,24 @@ pub extern "C" fn forge_llvm_struct_type(ctx: LLVMPtr, element_types: *mut LLVMP
 }
 
 #[no_mangle]
+#[no_mangle]
+pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
+    unsafe { LLVMTypeOf(val) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_type_kind(ty: LLVMPtr) -> c_int {
+    unsafe { LLVMGetTypeKind(ty) as c_int }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_struct_create_named(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe { LLVMStructCreateNamed(ctx, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_type_by_name(ctx: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMGetTypeByName2(ctx, name) }
 }
 
 #[no_mangle]
@@ -494,6 +518,10 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
+    if ptr.is_null() || ty.is_null() {
+        eprintln!("WARNING: build_gep2 with null ptr or type");
+        return std::ptr::null_mut();
+    }
     unsafe { LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, safe_name(name)) }
 }
 
@@ -528,8 +556,8 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
     unsafe {
         let ty = LLVMTypeOf(agg);
         let kind = LLVMGetTypeKind(ty);
-        // 11 = struct, 12 = array. Other kinds crash ExtractValue.
-        if kind != 11 && kind != 12 {
+        // 10 = struct, 11 = array. Other kinds crash ExtractValue.
+        if kind != 10 && kind != 11 {
             eprintln!("WARNING: extract_value on non-aggregate (kind={})", kind);
             return std::ptr::null_mut();
         }
@@ -695,11 +723,6 @@ pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_size_of(ty: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMSizeOf(ty) }
-}
-
-#[no_mangle]
-pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMTypeOf(val) }
 }
 
 #[no_mangle]

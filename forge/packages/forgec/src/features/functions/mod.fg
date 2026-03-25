@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm}
+use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -301,16 +301,12 @@ export fn declare_all_functions(cg: Codegen) {
 
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
-    // Re-init LLVM types (globals may get zeroed)
-    CG_I64 = llvm.int64_type(CG_CTX)
-    CG_I32 = llvm.int32_type(CG_CTX)
-    CG_I8 = llvm.int8_type(CG_CTX)
-    // List uses same type as string: %ForgeString = {ptr, i64}
-    CG_LIST = CG_STR
+    cg_reinit_types()
     // Create struct LLVM types
     let struct_count = CG_STRUCT_NAMES.length
     mut si = 0
     while si < struct_count {
+        cg_reinit_types()
         let fields = CG_STRUCT_FIELDS[si]
         mut fc = 1
         mut ci = 0
@@ -321,6 +317,9 @@ export fn declare_all_fns() {
         if fields.length == 0 { fc = 0 }
         let ftn = if si < CG_STRUCT_FIELD_TYPE_NAMES.length { CG_STRUCT_FIELD_TYPE_NAMES[si] } else { "" }
         let fta = llvm.type_array_new(fc)
+        // Save type values locally (list pushes corrupt globals)
+        let saved_i64 = CG_I64
+        let saved_str = CG_STR
         if ftn.length > 0 {
             mut fi = 0
             mut ftn_pos = 0
@@ -328,7 +327,17 @@ export fn declare_all_fns() {
             while ftn_pos < ftn.length {
                 let ch = ftn[ftn_pos]
                 if ch == "," {
-                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+                    // Use saved values directly to avoid corruption from string operations
+                    mut fty = saved_i64
+                    if ftn_cur == "string" { fty = saved_str }
+                    else if ftn_cur == "int" { fty = saved_i64 }
+                    else if ftn_cur == "float" { fty = saved_i64 }
+                    else if ftn_cur == "bool" { fty = saved_i64 }
+                    else if ftn_cur == "ptr" { fty = saved_i64 }
+                    else if ftn_cur.length >= 4 {
+                        if ftn_cur[0] == "L" { fty = saved_str }
+                    }
+                    llvm.type_array_set(fta, fi, fty)
                     fi = fi + 1
                     ftn_cur = ""
                 } else {
@@ -337,12 +346,17 @@ export fn declare_all_fns() {
                 ftn_pos = ftn_pos + 1
             }
             if ftn_cur != "" {
-                llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+                mut fty = saved_i64
+                if ftn_cur == "string" { fty = saved_str }
+                else if ftn_cur.length >= 4 {
+                    if ftn_cur[0] == "L" { fty = saved_str }
+                }
+                llvm.type_array_set(fta, fi, fty)
             }
         } else {
             mut fi = 0
             while fi < fc {
-                llvm.type_array_set(fta, fi, CG_I64)
+                llvm.type_array_set(fta, fi, saved_i64)
                 fi = fi + 1
             }
         }
@@ -361,6 +375,7 @@ export fn declare_all_fns() {
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
+        cg_reinit_types()
         let name = FN_NAMES[i]
         let is_main = name == "main"
         let pc = if i < FN_PARAM_COUNTS.length { FN_PARAM_COUNTS[i] } else { 0 }
@@ -407,10 +422,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let fn_val = llvm.get_named_function(CG_MOD, name)
     if fn_val == null { return }
     cg.current_fn = fn_val
-    // Re-init types (may get zeroed between functions)
-    CG_I64 = llvm.int64_type(CG_CTX)
-    CG_I32 = llvm.int32_type(CG_CTX)
-    CG_I8 = llvm.int8_type(CG_CTX)
+    cg_reinit_types()
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
     llvm.position_at_end(CG_B, entry)
@@ -487,6 +499,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_LAST_IS_NULLABLE = 0
     PENDING_IF = false
     PENDING_MATCH = false
+    cg_reinit_types()
 
     // Pure AST parse then emit
     if body_src != "" {
@@ -597,7 +610,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         si = si + 1
     }
 
-    eprintln("  structs=" + string(struct_count) + " fns=" + string(FN_NAMES.length))
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {

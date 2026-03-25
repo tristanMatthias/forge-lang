@@ -7,6 +7,18 @@ extern fn forge_llvm_module_print(m: ptr) -> ptr
 extern fn forge_llvm_print_module_to_file(m: ptr, filename: string) -> int
 extern fn forge_llvm_dispose_message(msg: ptr)
 
+// ── Type inspection ──
+extern fn forge_llvm_type_of(val: ptr) -> ptr
+extern fn forge_llvm_get_type_kind(ty: ptr) -> int
+
+export fn type_of(val: ptr) -> ptr {
+    forge_llvm_type_of(val)
+}
+
+export fn get_type_kind(ty: ptr) -> int {
+    forge_llvm_get_type_kind(ty)
+}
+
 // ── Types ──
 extern fn forge_llvm_int1_type(ctx: ptr) -> ptr
 extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
@@ -394,6 +406,12 @@ extern fn forge_llvm_struct_set_body(struct_type: ptr, element_types: ptr, count
 
 export fn struct_create_named(ctx: ptr, name: string) -> ptr {
     forge_llvm_struct_create_named(ctx, name)
+}
+
+extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
+
+export fn get_type_by_name(ctx: ptr, name: string) -> ptr {
+    forge_llvm_get_type_by_name(ctx, name)
 }
 
 export fn struct_set_body(struct_type: ptr, element_types: ptr, count: int, packed: int) {

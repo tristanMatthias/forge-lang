@@ -98,6 +98,7 @@ export mut CG_HAS_LAST_VAL: int = 0
 export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
 export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
+export mut CG_LAST_LIST_ELEM_TYPE: string = ""  // element type name for last list expression (e.g., "Statement", "Token")
 export mut CG_LAST_IS_NULLABLE: int = 0  // set to 1 when last expr was nullable
 // Set when the last expression was a map index access (for map[key] = value)
 export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
@@ -706,6 +707,18 @@ fn cg_init_int_types() {
     CG_I8 = llvm.int8_type(CG_CTX)
 }
 
+// Re-init ALL type globals (list pushes corrupt globals in bootstrap compiler)
+export fn cg_reinit_types() {
+    CG_I64 = llvm.int64_type(CG_CTX)
+    CG_I32 = llvm.int32_type(CG_CTX)
+    CG_I8 = llvm.int8_type(CG_CTX)
+    CG_VOID = llvm.void_type(CG_CTX)
+    CG_PTR = llvm.pointer_type(CG_CTX)
+    CG_F64 = llvm.double_type(CG_CTX)
+    CG_STR = llvm.get_type_by_name(CG_CTX, "ForgeString")
+    CG_LIST = CG_STR
+}
+
 fn cg_init_other_types() {
     CG_VOID = llvm.void_type(CG_CTX)
     CG_PTR = llvm.pointer_type(CG_CTX)
@@ -974,8 +987,9 @@ impl Codegen {
         let subj_raw = self.emit_expr(MATCH_SCRUTINEE)
         // For enum scrutinees, extract the tag byte
         mut subj = subj_raw
-        if CG_LAST_ENUM_TYPE != "" {
-            let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+        // Try extract_value to get tag — returns null if not aggregate
+        let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+        if tag_byte != null {
             subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
         }
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
@@ -1248,6 +1262,7 @@ impl Codegen {
                 }
                 // Check enum type
                 CG_LAST_ENUM_TYPE = ""
+                cg_reinit_types()
                 let vet = cg_var_enum_type(name)
                 if vet != "" {
                     let ety = cg_get_enum_ty_for(vet)
@@ -1640,6 +1655,17 @@ impl Codegen {
                 }
                 .For(vn, iter, body, s) -> {
                     let fl = self.emit_expr(iter)
+                    // Determine element type for proper GEP/load sizing
+                    let for_elem_type = CG_LAST_LIST_ELEM_TYPE
+                    mut elem_llvm_ty = CG_I64
+                    if for_elem_type != "" {
+                        cg_reinit_types()
+                        let resolved = resolve_type_to_llvm(for_elem_type)
+                        if resolved != null { elem_llvm_ty = resolved }
+                    }
+                    if CG_LAST_LIST_ELEM_IS_STR == 1 {
+                        elem_llvm_ty = CG_STR
+                    }
                     let fa = llvm.build_alloca(CG_B, CG_I64, "fi")
                     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fa)
                     let fla = llvm.value_array_new(1)
@@ -1661,24 +1687,43 @@ impl Codegen {
                     let fx = llvm.build_icmp(CG_B, 40, fc, fln, "cc")
                     llvm.build_cond_br(CG_B, fx, f2, f4)
                     llvm.position_at_end(CG_B, f2)
-                    let fb = llvm.build_load(CG_B, CG_I64, fa, "bi")
                     let fd = llvm.build_extract_value(CG_B, fl, 0, "dp")
-                    let fg = llvm.value_array_new(1)
-                    llvm.value_array_set(fg, 0, fb)
-                    let fp = llvm.build_gep2(CG_B, CG_I64, fd, fg, 1, "ep")
-                    llvm.value_array_free(fg)
-                    let fe = llvm.build_load(CG_B, CG_I64, fp, "ev")
-                    let fv = llvm.build_alloca(CG_B, CG_I64, "iv")
-                    llvm.build_store(CG_B, fe, fv)
-                    CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
-                    CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
-                    self.emit_block(body)
-                    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, f3) }
-                    llvm.position_at_end(CG_B, f3)
-                    let fi = llvm.build_load(CG_B, CG_I64, fa, "ic")
-                    let fn2 = llvm.build_add(CG_B, fi, llvm.const_int(CG_I64, 1, 0), "ni")
-                    llvm.build_store(CG_B, fn2, fa)
-                    llvm.build_br(CG_B, f1)
+                    if fd == null {
+                        // List value was not a struct — can't iterate. Skip to end.
+                        // Create a dummy var for the loop body to reference
+                        let fv = llvm.build_alloca(CG_B, CG_I64, "iv")
+                        llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fv)
+                        CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
+                        CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
+                        llvm.build_br(CG_B, f4)
+                        llvm.position_at_end(CG_B, f3)
+                        llvm.build_br(CG_B, f1)
+                    } else {
+                        let fb = llvm.build_load(CG_B, CG_I64, fa, "bi")
+                        let fg = llvm.value_array_new(1)
+                        llvm.value_array_set(fg, 0, fb)
+                        let fp = llvm.build_gep2(CG_B, elem_llvm_ty, fd, fg, 1, "ep")
+                        llvm.value_array_free(fg)
+                        let fe = llvm.build_load(CG_B, elem_llvm_ty, fp, "ev")
+                        let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
+                        llvm.build_store(CG_B, fe, fv)
+                        CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
+                        CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
+                        // Register enum loop var for match
+                        if for_elem_type != "" {
+                            let enum_needle = "," + for_elem_type + ":"
+                            if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+                                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + vn + ":" + for_elem_type + ","
+                            }
+                        }
+                        self.emit_block(body)
+                        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, f3) }
+                        llvm.position_at_end(CG_B, f3)
+                        let fi = llvm.build_load(CG_B, CG_I64, fa, "ic")
+                        let fn2 = llvm.build_add(CG_B, fi, llvm.const_int(CG_I64, 1, 0), "ni")
+                        llvm.build_store(CG_B, fn2, fa)
+                        llvm.build_br(CG_B, f1)
+                    }
                     llvm.position_at_end(CG_B, f4)
                 }
                 .Break(s) -> {}
@@ -1789,10 +1834,12 @@ impl Codegen {
         let obj_val = self.emit_ident(var_name)
         let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
 
-        // Set string flag if this field is a string type
+        // Set string flag and list element type for this field
+        CG_LAST_LIST_ELEM_TYPE = ""
         mut si = 0
         while si < CG_STRUCT_NAMES.length {
             if CG_STRUCT_NAMES[si] == struct_type_name {
+                // Check field_is_str
                 let field_strs = CG_STRUCT_FIELD_IS_STR[si]
                 mut idx = 0
                 mut current = ""
@@ -1812,6 +1859,54 @@ impl Codegen {
                 }
                 if idx == fidx {
                     if current == "1" { CG_LAST_IS_STR = 1 }
+                }
+                // Check field type name for List element type
+                if si < CG_STRUCT_FIELD_TYPE_NAMES.length {
+                    let ftns = CG_STRUCT_FIELD_TYPE_NAMES[si]
+                    mut tidx = 0
+                    mut tcur = ""
+                    mut tfi = 0
+                    while tfi < ftns.length {
+                        let tch = ftns[tfi]
+                        if tch == "," {
+                            if tidx == fidx {
+                                // Check if type starts with "List:"
+                                if tcur.length > 5 {
+                                    if tcur[0] == "L" {
+                                        if tcur[1] == "i" {
+                                            if tcur[2] == "s" {
+                                                if tcur[3] == "t" {
+                                                    if tcur[4] == ":" {
+                                                        CG_LAST_LIST_ELEM_TYPE = tcur.substring(5, tcur.length)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            tidx = tidx + 1
+                            tcur = ""
+                        } else {
+                            tcur = tcur + tch
+                        }
+                        tfi = tfi + 1
+                    }
+                    if tidx == fidx {
+                        if tcur.length > 5 {
+                            if tcur[0] == "L" {
+                                if tcur[1] == "i" {
+                                    if tcur[2] == "s" {
+                                        if tcur[3] == "t" {
+                                            if tcur[4] == ":" {
+                                                CG_LAST_LIST_ELEM_TYPE = tcur.substring(5, tcur.length)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 break
             }
