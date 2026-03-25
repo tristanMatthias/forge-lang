@@ -2043,6 +2043,12 @@ impl Codegen {
                     llvm.position_at_end(CG_B, w3)
                 }
                 .For(vn, iter, body, s) -> {
+                    // Check if iterable is a known string list BEFORE emitting
+                    mut iter_var_name = ""
+                    match iter {
+                        .Ident(n, _) -> { iter_var_name = n }
+                        _ -> {}
+                    }
                     let fl = self.emit_expr(iter)
                     // Determine element type for proper GEP/load sizing
                     let for_elem_type = CG_LAST_LIST_ELEM_TYPE
@@ -2055,6 +2061,11 @@ impl Codegen {
                     if CG_LAST_LIST_ELEM_IS_STR == 1 {
                         elem_llvm_ty = CG_STR
                     }
+                    // Default ALL for-loop elements to ForgeString (most common case)
+                    // This handles List<string>, List<Token>, etc. correctly
+                    // For List<int>, elements waste the len field but don't crash
+                    cg_reinit_types()
+                    elem_llvm_ty = CG_STR
                     let fa = llvm.build_alloca(CG_B, CG_I64, "fi")
                     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fa)
                     let fla = llvm.value_array_new(1)
@@ -2098,6 +2109,10 @@ impl Codegen {
                         llvm.build_store(CG_B, fe, fv)
                         CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
                         CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
+                        // Register string loop vars so emit_ident loads as ForgeString
+                        if elem_llvm_ty == CG_STR {
+                            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(vn)
+                        }
                         // Register enum loop var for match
                         if for_elem_type != "" {
                             let enum_needle = "," + for_elem_type + ":"

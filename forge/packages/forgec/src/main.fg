@@ -290,19 +290,17 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 // ─── Per-File Compilation ──────────────────────
 
-fn build_compile_separate(files: List<string>, output: string) {
-    // Phase 1: Scan ALL files (collect function signatures — no bodies)
-    mut file_idx = 0
-    for filepath in files {
-        CURRENT_FILE_INDEX = file_idx
-        let source = fs.read(filepath)
-        mut lex = lexer_new(source)
-        let tokens = lex.tokenize()
-        mut p = parser_new_with_source(tokens, source)
-        p.parse_program()
-        file_idx = file_idx + 1
-    }
-    eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
+fn build_compile_single(input_file: string, output: string) {
+    // Single-file build: read, scan, compile
+    eprintln("BC: reading " + input_file)
+    let source = fs.read(input_file)
+    eprintln("BC: read " + string(source.length) + " bytes")
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
+    eprintln("BC: " + string(tokens.length) + " tokens")
+    mut p = parser_new_with_source(tokens, source)
+    p.parse_program()
+    eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
@@ -378,9 +376,7 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        let files = resolve_module_paths(input)
-        eprintln("M:files=" + string(files.length))
-        build_compile_separate(files, output)
+        build_compile_single(input, output)
     } else {
         eprintln("unknown command")
         process.exit(1)
