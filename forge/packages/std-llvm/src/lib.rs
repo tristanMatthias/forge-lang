@@ -381,6 +381,7 @@ pub extern "C" fn forge_llvm_const_int(ty: LLVMPtr, value: i64, sign_extend: c_i
         // Guard: if ty is not an integer type (corrupted global), get i64 from same context
         let kind = LLVMGetTypeKind(ty);
         if kind != 8 { // 8 = IntegerTypeKind
+            eprintln!("CONST_INT_FIX: kind={} value={}", kind, value);
             let ctx = LLVMGetTypeContext(ty);
             let i64_ty = LLVMInt64TypeInContext(ctx);
             return LLVMConstInt(i64_ty, value as c_ulonglong, sign_extend);
