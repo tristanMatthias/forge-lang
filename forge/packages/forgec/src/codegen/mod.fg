@@ -778,9 +778,6 @@ fn cg_init_runtime() {
     CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", make_fn_type(CG_I64, [CG_STR, CG_STR]))
     CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type(CG_STR, [CG_STR, CG_I64, CG_I64]))
     CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
-    llvm.add_function(CG_MOD, "forge_string_contains", make_fn_type(CG_I8, [CG_STR, CG_STR]))
-    llvm.add_function(CG_MOD, "forge_string_last_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
-    llvm.add_function(CG_MOD, "forge_list_push_str", make_fn_type(CG_STR, [CG_STR, CG_STR]))
     // Memory
     CG_RT_ALLOC = llvm.add_function(CG_MOD, "forge_alloc", make_fn_type(CG_PTR, [CG_I64]))
     CG_RT_MEMCPY = llvm.add_function(CG_MOD, "forge_memcpy", make_fn_type(CG_VOID, [CG_PTR, CG_PTR, CG_I64]))
@@ -1234,7 +1231,6 @@ impl Codegen {
                 // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
                 CG_LAST_VAR_PTR = null
                 self.emit_ident(name)
-                // Save target ptr BEFORE emit_expr (which overwrites CG_LAST_VAR_PTR)
                 let target_ptr = CG_LAST_VAR_PTR
                 let val = self.emit_expr(value)
                 if target_ptr != null {
@@ -1732,7 +1728,6 @@ impl Codegen {
                         llvm.value_array_free(arg_arr)
                         return result
                     }
-
                 }
             }
             .Feature(fe) -> {}
@@ -1751,9 +1746,6 @@ impl Codegen {
     }
 
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> ptr {
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_LIST = 0
-        CG_LAST_IS_MAP = 0
         // Find param offset for this function
         mut fn_param_offset = 0
         mut fn_idx = 0
@@ -1861,7 +1853,6 @@ impl Codegen {
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        // Reset str flag — set by arg emission, not by return type
         CG_LAST_IS_STR = 0
         if is_extern_str_return { CG_LAST_IS_STR = 1 }
         r
@@ -2230,7 +2221,6 @@ impl Codegen {
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
                     let w2 = llvm.append_basic_block(CG_CTX, wfn, "wb")
                     let w3 = llvm.append_basic_block(CG_CTX, wfn, "we")
-                    // Save/restore loop BBs for break/continue
                     let prev_cond = WHILE_COND_BB
                     let prev_end = WHILE_END_BB
                     WHILE_COND_BB = w1
@@ -2337,11 +2327,7 @@ impl Codegen {
                     }
                     llvm.position_at_end(CG_B, f4)
                 }
-                .Break(s) -> {
-                    if WHILE_END_BB != null {
-                        llvm.build_br(CG_B, WHILE_END_BB)
-                    }
-                }
+                .Break(s) -> {}  // TODO: emit branch to WHILE_END_BB (breaks bootstrap currently)
                 .Continue(s) -> {}
                 .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
