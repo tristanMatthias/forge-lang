@@ -57,6 +57,7 @@ export mut CG_NULLABLE_VAR_INNER: List<string> = []  // inner type name ("int", 
 // Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
 export mut CG_LIST_VAR_CSV: string = ""        // all list vars
 export mut CG_STR_GLOBALS_CSV: string = ""     // string/list globals (CSV, immune to corruption)
+export mut CG_STR_LOCALS_CSV: string = ""      // string/list locals (CSV, immune to corruption)
 export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
 // Track list element type names: ",varname:typename," format
 export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
@@ -1399,8 +1400,15 @@ impl Codegen {
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {
-                // Determine load type: nullable, string, struct, or int
+                cg_reinit_types()
+                // Check CSV for string type (immune to list corruption)
+                let str_needle = "," + name + ","
+                let is_str_local = CG_STR_LOCALS_CSV.index_of(str_needle) >= 0
                 mut load_ty = CG_I64
+                if is_str_local {
+                    load_ty = CG_STR
+                    CG_LAST_IS_STR = 1
+                }
                 CG_LAST_IS_NULLABLE = 0
                 // Check nullable first (takes precedence)
                 if is_nullable_var(name) {
@@ -2328,11 +2336,14 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        // Determine LLVM alloca type based on value type
         let is_str = ty is .String
         let is_map = CG_LAST_IS_MAP == 1
+        cg_reinit_types()
         mut alloca_ty = CG_I64
-        if is_str { alloca_ty = CG_STR }
+        if is_str {
+            alloca_ty = CG_STR
+            CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
+        }
         // For nullable types, use the {i8, T} struct type
         if CG_LAST_IS_NULLABLE == 1 {
             mut inner_ty3 = CG_I64
