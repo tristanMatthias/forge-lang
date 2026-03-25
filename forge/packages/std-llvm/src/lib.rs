@@ -181,10 +181,10 @@ extern "C" {
     fn LLVMBuildZExt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildSExt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildTrunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMBuildPtrToInt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildSIToFP(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildFPToSI(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildBitCast(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
-    fn LLVMBuildPtrToInt(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildIntToPtr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Bitwise operations
@@ -807,7 +807,16 @@ pub extern "C" fn forge_llvm_build_fcmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
     let dest_ty = ensure_int_type(dest_ty);
-    unsafe { LLVMBuildZExt(builder, val, dest_ty, safe_name(name)) }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        if val_kind == 12 { // PointerTypeKind — use ptrtoint instead of zext
+            return LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name));
+        }
+        if val_kind != 8 { // Not integer — return i64 0
+            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        }
+        LLVMBuildZExt(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
@@ -819,7 +828,14 @@ pub extern "C" fn forge_llvm_build_sext(builder: LLVMPtr, val: LLVMPtr, dest_ty:
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
     let dest_ty = ensure_int_type(dest_ty);
-    unsafe { LLVMBuildTrunc(builder, val, dest_ty, safe_name(name)) }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        if val_kind != 8 { // Not integer — can't trunc, return i1 0
+            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
+            return LLVMConstInt(i1, 0, 0);
+        }
+        LLVMBuildTrunc(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
@@ -861,22 +877,42 @@ pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, de
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildAnd(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
+            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        }
+        LLVMBuildAnd(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildOr(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
+            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        }
+        LLVMBuildOr(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildXor(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
+            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        }
+        LLVMBuildXor(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_shl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildShl(builder, lhs, rhs, safe_name(name)) }
+    unsafe {
+        if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
+            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        }
+        LLVMBuildShl(builder, lhs, rhs, safe_name(name))
+    }
 }
 
 #[no_mangle]
