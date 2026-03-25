@@ -1705,18 +1705,11 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    // Resolve "self" to actual struct type for correct mangling
-                    mut method_ns = ns
-                    if ns == "self" {
-                        let vst = var_struct_type("self")
-                        if vst != "" { method_ns = vst }
-                    }
-                    let method_name = method_ns + "__" + f
+                    let method_name = ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self (the object) — pass by pointer for mutability
-                        self.emit_ident(ns)
-                        let obj_val = CG_LAST_VAR_PTR
+                        // Prepend self (the object) as first arg
+                        let obj_val = self.emit_ident(ns)
                         // Emit all args + obj_val as first param
                         cg_reinit_types()
                         let total_args = args.length + 1
@@ -1860,7 +1853,6 @@ impl Codegen {
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        CG_LAST_IS_STR = 0
         if is_extern_str_return { CG_LAST_IS_STR = 1 }
         r
     }
@@ -2228,10 +2220,6 @@ impl Codegen {
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
                     let w2 = llvm.append_basic_block(CG_CTX, wfn, "wb")
                     let w3 = llvm.append_basic_block(CG_CTX, wfn, "we")
-                    let prev_cond = WHILE_COND_BB
-                    let prev_end = WHILE_END_BB
-                    WHILE_COND_BB = w1
-                    WHILE_END_BB = w3
                     llvm.build_br(CG_B, w1)
                     llvm.position_at_end(CG_B, w1)
                     let wv = self.emit_expr(cond)
@@ -2241,8 +2229,6 @@ impl Codegen {
                     self.emit_block(body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, w1) }
                     llvm.position_at_end(CG_B, w3)
-                    WHILE_COND_BB = prev_cond
-                    WHILE_END_BB = prev_end
                 }
                 .For(vn, iter, body, s) -> {
                     // Check if iterable is a known string list BEFORE emitting
@@ -2334,7 +2320,7 @@ impl Codegen {
                     }
                     llvm.position_at_end(CG_B, f4)
                 }
-                .Break(s) -> {}  // TODO: emit branch to WHILE_END_BB (breaks bootstrap currently)
+                .Break(s) -> {}
                 .Continue(s) -> {}
                 .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
@@ -2438,22 +2424,7 @@ impl Codegen {
         mut var_name = ""
         match obj {
             .Ident(name, span) -> { var_name = name }
-            _ -> {
-                // Chained access: evaluate obj, handle .length on result
-                let obj_val = self.emit_expr(obj)
-                if field == "length" {
-                    if CG_LAST_IS_STR == 1 {
-                        let ca = llvm.value_array_new(1)
-                        llvm.value_array_set(ca, 0, obj_val)
-                        let ft = make_fn_type(CG_I64, [CG_STR])
-                        let r = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
-                        llvm.value_array_free(ca)
-                        CG_LAST_IS_STR = 0
-                        return r
-                    }
-                }
-                return obj_val
-            }
+            _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 

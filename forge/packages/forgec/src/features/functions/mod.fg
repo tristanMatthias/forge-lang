@@ -394,15 +394,8 @@ export fn declare_all_fns() {
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
                 let tname = FN_ALL_PARAM_TYPES[pt_idx]
-                // self parameter: pass as pointer for mutability
-                mut pname = ""
-                if pt_idx < FN_ALL_PARAM_NAMES.length { pname = FN_ALL_PARAM_NAMES[pt_idx] }
-                if pname == "self" {
-                    param_ty = CG_PTR
-                } else {
-                    let resolved = resolve_type_to_llvm(tname)
-                    if resolved != null { param_ty = resolved }
-                }
+                let resolved = resolve_type_to_llvm(tname)
+                if resolved != null { param_ty = resolved }
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -478,12 +471,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             let resolved = resolve_type_to_llvm(param_type_name)
             if resolved != null && resolved != CG_I64 { p_ty = resolved }
         }
-        // self param: passed as ptr — use directly as alloca (no copy)
-        mut alloca = param_val
-        if pname != "self" {
-            alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            llvm.build_store(CG_B, param_val, alloca)
-        }
+        let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+        llvm.build_store(CG_B, param_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
         mut _vis = 0
         if param_type_name == "string" { _vis = 1 }
