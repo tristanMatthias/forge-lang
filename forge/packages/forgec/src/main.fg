@@ -213,7 +213,9 @@ fn resolve_modules(filepath: string) -> string {
 mut MODULE_PATHS_CSV: string = ""
 
 fn collect_module_paths(filepath: string) {
+    eprintln("collect_module_paths: " + filepath)
     let source = fs.read(filepath)
+    eprintln("  read " + string(source.length) + " bytes")
     mut dir = ""
     mut last_slash = -1
     mut ci = 0
@@ -269,6 +271,7 @@ fn collect_module_paths(filepath: string) {
 fn resolve_module_paths(filepath: string) -> List<string> {
     MODULE_PATHS_CSV = ""
     collect_module_paths(filepath)
+    eprintln("  CSV len=" + string(MODULE_PATHS_CSV.length))
     // Parse CSV into list
     mut paths: List<string> = []
     mut start = 0

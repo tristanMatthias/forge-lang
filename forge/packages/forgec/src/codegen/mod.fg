@@ -146,19 +146,12 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Check bitmask: bit i set = string/list type
-        mut bit = 1
-        mut shift = 0
-        while shift < i {
-            bit = bit * 2
-            shift = shift + 1
-        }
-        let is_str = (str_mask / bit) % 2 == 1
-        mut gty = CG_I64
-        if is_str { gty = CG_STR }
+        // Use ForgeString type for ALL globals (safe: ForgeString is 16 bytes, i64 fits in first 8)
+        // This ensures string globals work correctly with ForgeString operations
+        cg_reinit_types()
+        let gty = CG_STR
         let gv = llvm.add_global(CG_MOD, gty, name)
-        mut zero = llvm.const_int(CG_I64, 0, 0)
-        if is_str { zero = llvm.const_null(gty) }
+        let zero = llvm.const_null(gty)
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
