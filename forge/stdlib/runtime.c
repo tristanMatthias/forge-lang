@@ -436,6 +436,13 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
 
 // Lexicographic comparison: returns -1, 0, or 1
 int64_t forge_string_compare(ForgeString a, ForgeString b) {
+    if (a.ptr == NULL && b.ptr == NULL) return a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);
+    if (a.ptr == NULL) return b.len == 0 ? 0 : -1;
+    if (b.ptr == NULL) return a.len == 0 ? 0 : 1;
+    // Check for obviously bad pointers (< 4096 = likely tag/enum corruption)
+    if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) {
+        return a.ptr == b.ptr ? 0 : -1;
+    }
     int64_t min_len = a.len < b.len ? a.len : b.len;
     int result = memcmp(a.ptr, b.ptr, min_len);
     if (result < 0) return -1;
