@@ -1,4 +1,7 @@
 // Mini Forge Compiler — self-hosted (multi-file)
+use @std.process
+use @std.fs
+
 mod types
 mod lexer
 mod state

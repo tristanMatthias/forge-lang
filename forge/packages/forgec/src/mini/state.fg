@@ -386,7 +386,6 @@ fn enum_llvm_type_str(enum_idx: int) -> string {
     // Extraction: load ptr → GEP → load field
     "{ i8, ptr }"
 }
-}
 
 // Convert stored field type to LLVM load type
 fn type_to_llvm_field(fty: string) -> string {
@@ -539,7 +538,10 @@ fn parse_type_decl_top() {
             }
         }
         mut is_nullable = false
-        if check("?") { advance(); is_nullable = true }
+        if check("?") {
+            advance()
+            is_nullable = true
+        }
         mut ftype = type_to_llvm(ftype_name)
         // For List<T> fields, store as "list_ELEMTYPE" for element tracking
         if ftype_name == "List" && ftype_generic != "" {

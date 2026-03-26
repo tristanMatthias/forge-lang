@@ -1,8 +1,36 @@
 # Self-Hosting Progress
 
-**Status: Stage 1 compiles ALL 398 functions. Stage 2 IR generation succeeds. Two IR text issues remaining before Stage 2 binary.**
+**Status: SELF-HOSTING ACHIEVED (mini compiler). Fixed point reached — Stage 2 = Stage 3.**
 
 Last updated: 2026-03-26
+
+## Mini Compiler — FULLY SELF-HOSTED
+
+```
+Rust bootstrap ──→ mini Stage 1 ──→ mini Stage 2 ──→ mini Stage 3
+       ✅               ✅               ✅               ✅ (= Stage 2)
+```
+
+The mini compiler (`packages/forgec/src/mini/`) is a 5700-line self-hosted Forge compiler that:
+- Tokenizes, parses to AST, and emits LLVM IR text
+- Supports: structs, enums, match, functions, lists, maps, strings, closures, for-in, while, if/else
+- Compiles itself to identical IR at Stage 2 and Stage 3 (fixed point)
+- 185 functions, 26K lines of IR, ~1.1MB IR output
+
+### How to Build (mini)
+
+```bash
+cd forge/
+# Option 1: Use saved Stage 1 binary
+./mini_stage1 build packages/forgec/src/mini/main.fg /tmp/mini_stage2
+
+# Option 2: Bootstrap from Rust
+LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 cargo build --release
+target/release/forgec build packages/forgec/src/mini/main.fg --dev -o /tmp/mini_stage1
+/tmp/mini_stage1 build packages/forgec/src/mini/main.fg /tmp/mini_stage2
+```
+
+## Full Compiler (packages/forgec/src/main.fg) — IN PROGRESS
 
 ## Pipeline
 

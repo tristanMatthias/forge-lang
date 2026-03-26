@@ -1191,12 +1191,27 @@ fn gen_call(e: Expr) -> string {
     // Built-in: println/eprintln
     if name == "println" || name == "eprintln" {
         let arg = gen_expr_child(e, 0)
-        if name == "println" {
-            ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
+        if LAST_IS_STR == 1 {
+            if name == "println" {
+                ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
+            } else {
+                ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
+            }
+        } else if LAST_IS_FLOAT == 1 {
+            ir_line("call void @forge_println_float(double " + arg + ")")
         } else {
-            ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
+            // Default: int
+            if name == "println" {
+                ir_line("call void @forge_println_int(i64 " + arg + ")")
+            } else {
+                // Convert int to string for eprintln
+                let s = new_reg()
+                ir_line(s + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
+                ir_line("call void @forge_eprintln_string(%ForgeString " + s + ")")
+            }
         }
         LAST_IS_STR = 0
+        LAST_IS_FLOAT = 0
         LAST_IS_LIST = 0
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
@@ -1580,7 +1595,10 @@ fn codegen_let(s: Stmt) -> int {
     }
     // Final check: only override if register type is clearly more accurate
     let final_rt = reg_get_type(final_val)
-    if final_rt == "ptr" && ty == "%ForgeString" { ty = "ptr"; LAST_IS_PTR = 1 }
+    if final_rt == "ptr" && ty == "%ForgeString" {
+        ty = "ptr"
+        LAST_IS_PTR = 1
+    }
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {
@@ -1905,7 +1923,7 @@ fn codegen_assign(s: Stmt) -> int {
             let var_idx = find_var(target.str_val)
             if var_idx >= 0 {
                 let store_ty = VAR_TYPES[var_idx]
-                let load_ty = get_load_type(store_ty)
+                mut load_ty = get_load_type(store_ty)
                 let rt = reg_get_type(val)
                 // Handle type conversions
                 mut final_val = val
@@ -2577,7 +2595,11 @@ fn compile(source: string) -> string {
             skip_nl()
             let impl_name = advance().text
             skip_nl()
-            if check("for") { advance(); skip_nl(); advance() }
+            if check("for") {
+                advance()
+                skip_nl()
+                advance()
+            }
             skip_nl()
             while !check("{") && POS < TOKENS.length { advance() }
             advance() // consume {
@@ -2679,6 +2701,8 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_float_to_string(double)")
     ir_raw("declare void @forge_print_string(%ForgeString)")
     ir_raw("declare void @forge_println_string(%ForgeString)")
+    ir_raw("declare void @forge_println_int(i64)")
+    ir_raw("declare void @forge_println_float(double)")
     ir_raw("declare void @forge_eprintln_string(%ForgeString)")
     ir_raw("declare %ForgeString @forge_string_char_at(%ForgeString, i64)")
     ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
