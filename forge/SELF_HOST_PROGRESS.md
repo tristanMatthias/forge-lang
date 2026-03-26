@@ -183,3 +183,18 @@ Fixed: add IN_FUNCTION_BODY=1/0 around parse_block in parse_impl_method_as_fn.
 emit_expr's Binary dispatch still loads bindings from wrong allocas.
 With the globals fix, pre_binding_offset SHOULD accumulate correctly now.
 Need to verify the offset computation produces correct alloca indices.
+
+### Session 2 Continued (late night)
+
+**Breakthroughs:**
+- emit_block for loop now correctly loads list elements via GEP
+- emit_block returns actual last expression value (not 0)
+- Match binding extraction and body load use same allocas (name-based search)
+- CG_LAST_IS_STR set for known List struct fields
+- Stage 2 crash moved from infinite loop → segfault in Parser__peek (progress)
+
+**Current blocker:** is_alpha still returns 0
+- `(ch >= "a" && ch <= "z") || ...` produces only 1 comparison for `ch == "_"`
+- Inner emit_expr calls for sub-expressions return 0 (no IR produced)
+- Match bindings are correct but boxed Expr dereferencing may fail
+- Need to verify that boxed pointer extraction (inttoptr → load %Expr) works
