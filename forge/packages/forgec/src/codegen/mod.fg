@@ -986,8 +986,8 @@ impl Codegen {
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> {
-                // value is the runtime boolean (0 or 1) from match binding
-                return self.emit_ident("value")
+                if value { return llvm.const_int(CG_I64, 1, 0) }
+                return llvm.const_int(CG_I64, 0, 0)
             }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
@@ -1335,7 +1335,7 @@ impl Codegen {
             .Ident(name, span) -> {
                 // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
                 CG_LAST_VAR_PTR = null
-                self.emit_ident(name)
+                let _ident_val = self.emit_ident(name)
                 // Save target ptr BEFORE emit_expr (RHS may overwrite CG_LAST_VAR_PTR)
                 let target_ptr = CG_LAST_VAR_PTR
                 let val = self.emit_expr(value)
@@ -2415,7 +2415,6 @@ impl Codegen {
                         // (bootstrap: can't truncate lists, but pushing same names in next arm is fine
                         //  because emit_ident searches from end — new arm's bindings shadow old ones)
                         llvm.position_at_end(CG_B, next_bb)
-                        // Advance pre-binding offset by bindings in this arm
                         pre_binding_offset = pre_binding_offset + binding_ptr_idx
                         ai = ai + 1
                     }
