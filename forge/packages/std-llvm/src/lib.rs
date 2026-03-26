@@ -169,6 +169,7 @@ extern "C" {
     fn LLVMBuildAlloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildStore(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr;
     fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetStructElementTypes(struct_type: LLVMPtr, dest: *mut LLVMPtr);
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Aggregate operations (GEP, insert/extract)
@@ -418,20 +419,26 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                     if ret_kind == 0 { // Void
                         return LLVMBuildRetVoid(builder);
                     }
-                    // If return is ForgeString (2-field struct) but value is integer,
-                    // build ForgeString{val, 0} — common for list/string returns from i64 allocas
+                    // If return is ForgeString {ptr, i64} but value is integer,
+                    // build ForgeString{inttoptr(val), 0}
                     if ret_kind == 10 && val_kind == 8 {
                         let field_count = LLVMCountStructElementTypes(ret_ty);
                         if field_count == 2 {
-                            let undef = LLVMGetUndef(ret_ty);
-                            // Field 0 is ptr — convert i64 to ptr first
-                            let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
-                            let as_ptr = LLVMBuildIntToPtr(builder, value, ptr_ty, safe_name(std::ptr::null()));
-                            let with_ptr = LLVMBuildInsertValue(builder, undef, as_ptr, 0, safe_name(std::ptr::null()));
-                            let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
-                            let zero = LLVMConstInt(i64_ty, 0, 0);
-                            let with_len = LLVMBuildInsertValue(builder, with_ptr, zero, 1, safe_name(std::ptr::null()));
-                            return LLVMBuildRet(builder, with_len);
+                            // Check that field 0 is ptr (ForgeString) not i8 (enum tag)
+                            let mut field_types = [std::ptr::null_mut(); 2];
+                            LLVMGetStructElementTypes(ret_ty, field_types.as_mut_ptr());
+                            let f0_kind = LLVMGetTypeKind(field_types[0]);
+                            if f0_kind == 12 { // PointerTypeKind — this is a ForgeString
+                                let undef = LLVMGetUndef(ret_ty);
+                                let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
+                                let val_i64 = ensure_i64(builder, value);
+                                let as_ptr = LLVMBuildIntToPtr(builder, val_i64, ptr_ty, safe_name(std::ptr::null()));
+                                let with_ptr = LLVMBuildInsertValue(builder, undef, as_ptr, 0, safe_name(std::ptr::null()));
+                                let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+                                let zero = LLVMConstInt(i64_ty, 0, 0);
+                                let with_len = LLVMBuildInsertValue(builder, with_ptr, zero, 1, safe_name(std::ptr::null()));
+                                return LLVMBuildRet(builder, with_len);
+                            }
                         }
                     }
                     // Other mismatch — return undef of correct type
@@ -614,12 +621,15 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
         let alloca_ty = LLVMGetAllocatedType(ptr);
         let alloca_kind = if !alloca_ty.is_null() { LLVMGetTypeKind(alloca_ty) } else { 0 };
         let mut real_val = val;
-        // Widen narrow ints to match alloca type
+        // Widen narrow ints to match alloca type (only if alloca is wider)
         if val_kind == 8 { // IntegerTypeKind
             let bit_width = LLVMGetIntTypeWidth(val_ty);
-            if bit_width < 64 {
-                let target_ty = if !alloca_ty.is_null() && alloca_kind == 8 { alloca_ty }
-                    else { TYPE_CACHE.with(|c| c.borrow().i64) };
+            let target_ty = if !alloca_ty.is_null() && alloca_kind == 8 { alloca_ty }
+                else { TYPE_CACHE.with(|c| c.borrow().i64) };
+            let target_width = if !target_ty.is_null() && LLVMGetTypeKind(target_ty) == 8 {
+                LLVMGetIntTypeWidth(target_ty)
+            } else { 64 };
+            if bit_width < target_width {
                 real_val = LLVMBuildZExt(builder, val, target_ty, safe_name(std::ptr::null()));
             }
         }
