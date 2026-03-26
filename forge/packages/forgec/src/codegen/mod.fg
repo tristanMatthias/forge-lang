@@ -421,6 +421,19 @@ fn coerce_for_store(val: ptr, alloca_ty: ptr) -> ptr {
     val
 }
 
+// Look up a function's return type name from the registry
+fn lookup_fn_return_type(name: string) -> string {
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name {
+            if i < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[i] }
+            return ""
+        }
+        i = i + 1
+    }
+    ""
+}
+
 // ─── Enum Tagged Union Helpers ───────────────────
 export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
@@ -1973,15 +1986,14 @@ impl Codegen {
                         // Set return type flags for method call
                         CG_LAST_IS_STR = 0
                         CG_LAST_STRUCT_TYPE = ""
-                        mut mfi = 0
-                        while mfi < FN_NAMES.length {
-                            if FN_NAMES[mfi] == method_name {
-                                if mfi < FN_RETURN_TYPES.length {
-                                    if FN_RETURN_TYPES[mfi] == "string" { CG_LAST_IS_STR = 1 }
-                                }
-                                break
+                                        let rtn = lookup_fn_return_type(method_name)
+                        if rtn == "string" { CG_LAST_IS_STR = 1 }
+                        // Check if return type is a known struct
+                        if rtn != "" && rtn != "string" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
+                            let is_enum_ret = CG_ENUM_TYPE_CSV.index_of("," + rtn + ":") >= 0
+                            if !is_enum_ret {
+                                CG_LAST_STRUCT_TYPE = rtn
                             }
-                            mfi = mfi + 1
                         }
                         return result
                     }
@@ -2843,7 +2855,7 @@ impl Codegen {
 
         // Look up the variable's struct type
         let struct_type_name = var_struct_type(var_name)
-        if struct_type_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+        if struct_type_name == "" { return self.emit_ident(var_name) }
 
         // Find the field index in the struct's field list
         let fidx = struct_field_index(struct_type_name, field)
