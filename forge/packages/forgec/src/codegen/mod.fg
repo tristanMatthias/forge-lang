@@ -1255,14 +1255,17 @@ impl Codegen {
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
                 mut elem_ty = CG_I64
-                // Element type: default i64, override to CG_STR only for confirmed string lists
-                // Note: is_str_list is unreliable — all list inits register as string lists
-                if obj_list_elem == "string" { elem_ty = CG_STR }
-                if is_str_list && obj_list_elem == "" {
-                    // Only if there's no explicit element type, use str for known string sources
-                    // (process.args, string parameter lists, etc.)
-                    if obj_var_name == "args" { elem_ty = CG_STR }
-                }
+                // Element type: match what push uses (get_list_push_elem_type)
+                // Push checks item_is_str: if item was string, push uses CG_STR stride
+                // Index should use CG_STR when items were pushed as strings
+                // Heuristic: if the last push to this list used a string item, index as string
+                // For now: use CG_STR only when BOTH:
+                //   - The list was pushed with string items (obj_is_str from CG_STR_VAR_NAMES)
+                //   - AND the list was explicitly from a string source (not just [] init)
+                let actual_elem2 = list_elem_type(obj_var_name)
+                if actual_elem2 == "string" { elem_ty = CG_STR }
+                // Fallback: if the list is tracked as a string list from param/global registration
+                if is_str_list && actual_elem2 == "" { elem_ty = CG_STR }
                 // Use struct type for struct list elements (e.g., List<Token>)
                 if obj_list_elem != "" && obj_list_elem != "string" && obj_list_elem != "int" {
                     let resolved_ty = resolve_type_to_llvm(obj_list_elem)
