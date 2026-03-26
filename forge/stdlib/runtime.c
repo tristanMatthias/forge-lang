@@ -451,6 +451,9 @@ int64_t forge_string_compare(ForgeString a, ForgeString b) {
     if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) {
         return a.ptr == b.ptr ? 0 : -1;
     }
+    if (a.len < 0 || b.len < 0 || a.len > 1000000 || b.len > 1000000) {
+        return a.len == b.len ? 0 : -1;
+    }
     int64_t min_len = a.len < b.len ? a.len : b.len;
     int result = memcmp(a.ptr, b.ptr, min_len);
     if (result < 0) return -1;
