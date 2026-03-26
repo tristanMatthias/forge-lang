@@ -333,16 +333,8 @@ export fn declare_all_fns() {
             while ftn_pos < ftn.length {
                 let ch = ftn[ftn_pos]
                 if ch == "," {
-                    // Use saved values directly to avoid corruption from string operations
-                    mut fty = saved_i64
-                    if ftn_cur == "string" { fty = saved_str }
-                    else if ftn_cur == "int" { fty = saved_i64 }
-                    else if ftn_cur == "float" { fty = saved_i64 }
-                    else if ftn_cur == "bool" { fty = saved_i64 }
-                    else if ftn_cur == "ptr" { fty = saved_i64 }
-                    else if ftn_cur.length >= 4 {
-                        if ftn_cur[0] == "L" { fty = saved_str }
-                    }
+                    // Resolve field type — use resolve_type_to_llvm for proper enum/struct types
+                    let fty = resolve_type_to_llvm(ftn_cur)
                     llvm.type_array_set(fta, fi, fty)
                     fi = fi + 1
                     ftn_cur = ""
@@ -585,7 +577,74 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
 // emit_next_fn_body and materialize_struct_types removed — dead code that
 // caused LLVM verification errors (FN_BODIES was List<string> but emit_block expects Block).
-// All function emission goes through emit_all_fn_bodies which re-parses from source text.
+// Materialize LLVM struct types from registered field info
+export fn materialize_struct_types() {
+    cg_reinit_types()
+    let struct_count = CG_STRUCT_NAMES.length
+    mut si = 0
+    while si < struct_count {
+        let fields = CG_STRUCT_FIELDS[si]
+        mut fc = 1
+        mut ci = 0
+        while ci < fields.length {
+            if fields[ci] == "," { fc = fc + 1 }
+            ci = ci + 1
+        }
+        if fields.length == 0 { fc = 0 }
+        mut ftn = ""
+        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
+        let fta = llvm.type_array_new(fc)
+        if ftn.length > 0 {
+            mut fi = 0
+            mut ftn_pos = 0
+            mut ftn_cur = ""
+            while ftn_pos < ftn.length {
+                let ch = ftn[ftn_pos]
+                if ch == "," {
+                    llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+                    fi = fi + 1
+                    ftn_cur = ""
+                } else {
+                    ftn_cur = ftn_cur + ch
+                }
+                ftn_pos = ftn_pos + 1
+            }
+            if ftn_cur != "" {
+                llvm.type_array_set(fta, fi, resolve_type_to_llvm(ftn_cur))
+            }
+        } else {
+            let field_is_str = CG_STRUCT_FIELD_IS_STR[si]
+            mut fi = 0
+            mut fis_idx = 0
+            while fi < fc {
+                mut is_str_field = false
+                mut fis_cur = ""
+                while fis_idx < field_is_str.length {
+                    let fch = field_is_str[fis_idx]
+                    fis_idx = fis_idx + 1
+                    if fch == "," { break }
+                    fis_cur = fis_cur + fch
+                }
+                if fis_cur == "1" { is_str_field = true }
+                if is_str_field {
+                    llvm.type_array_set(fta, fi, CG_STR)
+                } else {
+                    llvm.type_array_set(fta, fi, CG_I64)
+                }
+                fi = fi + 1
+            }
+        }
+        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
+        llvm.struct_set_body(sty, fta, fc, 0)
+        llvm.type_array_free(fta)
+        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
+        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
+        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
+        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+        si = si + 1
+    }
+}
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
 export fn emit_all_fn_bodies(cg: Codegen) {

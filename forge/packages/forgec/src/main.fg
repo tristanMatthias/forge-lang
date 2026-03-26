@@ -19,7 +19,7 @@ use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
 use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup}
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
-use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source}
+use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source, materialize_struct_types}
 
 fn check(source: string, filename: string) -> bool {
     eprintln("check: " + filename + " len=" + string(source.length))
@@ -280,6 +280,8 @@ fn build_compile_separate(paths_csv: string, output: string) {
     mut cg = codegen_new()
     declare_all_fns()
     eprintln("  declared " + string(FN_NAMES.length) + " fns")
+    // Materialize struct types before emitting function bodies
+    materialize_struct_types()
     // Emit each function body
     mut param_offset = 0
     mut fi = 0

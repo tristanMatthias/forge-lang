@@ -182,12 +182,9 @@ fn resolve_field_llvm_type(type_name: string) -> ptr {
             }
         }
     }
-    // Check enum type
-    let emf = cg_enum_max_fields(type_name)
-    if emf > 0 {
-        let ety = cg_make_enum_type(type_name)
-        if ety != null { return ety }
-    }
+    // Check enum type — always use enum struct type (even zero-payload)
+    let ety = cg_make_enum_type(type_name)
+    if ety != null { return ety }
     // Check struct type
     mut sti = CG_STRUCT_NAMES.length - 1
     while sti >= 0 {
