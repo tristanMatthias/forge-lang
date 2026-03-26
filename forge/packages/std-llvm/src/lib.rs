@@ -918,7 +918,12 @@ pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, safe_name(name)) }
+    if ty.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let n = LLVMCountStructElementTypes(ty);
+        if (index as c_uint) >= n { return std::ptr::null_mut(); }
+        LLVMBuildStructGEP2(builder, ty, ptr, index as c_uint, safe_name(name))
+    }
 }
 
 #[no_mangle]
