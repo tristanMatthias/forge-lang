@@ -1715,8 +1715,9 @@ impl Codegen {
                     let method_name = method_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self (the object) as first arg
-                        let obj_val = self.emit_ident(ns)
+                        // Prepend self as pointer (for mutation)
+                        self.emit_ident(ns)
+                        let obj_val = CG_LAST_VAR_PTR
                         // Emit all args + obj_val as first param
                         cg_reinit_types()
                         let total_args = args.length + 1
