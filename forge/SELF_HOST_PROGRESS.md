@@ -171,3 +171,15 @@ Stage 2 hangs because Parser__check/is_alpha return 0. Root cause:
 extracts fields to alloca slots %7,%8,%9,%10 but reads from %18,%22,%20 (wrong allocas).
 Every function that matches on Expr.Binary passes garbage to emit_binary.
 This is a match field→alloca mapping bug in the codegen.
+
+### CRITICAL FIX: IN_FUNCTION_BODY for impl methods
+impl methods didn't set IN_FUNCTION_BODY=1 during body parsing.
+ALL local variables in methods were registered as GLOBALS (985 globals → 0).
+This caused: target_ptr fix didn't work (global shared across calls),
+pre_binding_offset didn't accumulate, loop vars corrupted across functions.
+Fixed: add IN_FUNCTION_BODY=1/0 around parse_block in parse_impl_method_as_fn.
+
+### Remaining: match binding alloca mapping
+emit_expr's Binary dispatch still loads bindings from wrong allocas.
+With the globals fix, pre_binding_offset SHOULD accumulate correctly now.
+Need to verify the offset computation produces correct alloca indices.
