@@ -753,3 +753,20 @@ export fn copy_string_rep_of_target_data(td: ptr) -> ptr {
 export fn dispose_target_data(td: ptr) {
     forge_llvm_dispose_target_data(td)
 }
+
+// ── Missing exports (needed by full compiler) ──
+extern fn forge_llvm_build_inttoptr(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_ptrtoint(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_position_before(builder: ptr, instr: ptr)
+
+export fn build_inttoptr(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_inttoptr(builder, val, dest_ty, name)
+}
+
+export fn build_ptrtoint(builder: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr {
+    forge_llvm_build_ptrtoint(builder, val, dest_ty, name)
+}
+
+export fn position_before(builder: ptr, instr: ptr) {
+    forge_llvm_position_before(builder, instr)
+}

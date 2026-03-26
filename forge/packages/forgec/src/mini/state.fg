@@ -120,6 +120,7 @@ mut IN_MATCH_ARM: int = 0
 mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
 mut NS_FN_NAMES: List<string> = []   // ["build_trunc", "context_create", ...]
 mut NS_MANGLED: List<string> = []    // ["llvm_build_trunc", "llvm_context_create", ...]
+mut AUTO_DECLARED: List<string> = [] // Auto-declared namespace functions (not in package.fg)
 
 fn find_ns_fn(ns: string, method: string) -> string {
     mut i = 0

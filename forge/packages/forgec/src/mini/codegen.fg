@@ -776,7 +776,26 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         ir_line(r2 + " = zext i1 " + r + " to i64")
         return r2
     }
-    ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+    // Check if either operand is ptr type and coerce
+    let lhs_ty = reg_get_type(lhs)
+    let rhs_ty = reg_get_type(rhs)
+    mut cmp_lhs = lhs
+    mut cmp_rhs = rhs
+    mut cmp_ty = "i64"
+    if lhs_ty == "ptr" || rhs_ty == "ptr" {
+        cmp_ty = "ptr"
+        if lhs_ty != "ptr" {
+            let conv = new_reg()
+            ir_line(conv + " = inttoptr i64 " + lhs + " to ptr")
+            cmp_lhs = conv
+        }
+        if rhs_ty != "ptr" {
+            let conv = new_reg()
+            ir_line(conv + " = inttoptr i64 " + rhs + " to ptr")
+            cmp_rhs = conv
+        }
+    }
+    ir_line(r + " = icmp " + pred + " " + cmp_ty + " " + cmp_lhs + ", " + cmp_rhs)
     let r2 = new_reg()
     ir_line(r2 + " = zext i1 " + r + " to i64")
     r2
@@ -814,7 +833,26 @@ fn gen_call(e: Expr) -> string {
     if e.children.length >= 1 {
         let first: Expr = e.children[0]
         if is_ident_expr(first) && first.str_val != "process" && first.str_val != "fs" {
-            let mangled = find_ns_fn(first.str_val, name)
+            mut mangled = find_ns_fn(first.str_val, name)
+            // Fallback: if namespace is known but method not found, try ns_method
+            if mangled.length == 0 && is_namespace(first.str_val) {
+                mangled = first.str_val + "_" + name
+                // Auto-declare if not yet seen
+                mut already = false
+                mut ai = 0
+                while ai < AUTO_DECLARED.length {
+                    if AUTO_DECLARED[ai] == mangled { already = true }
+                    ai = ai + 1
+                }
+                if !already {
+                    AUTO_DECLARED = AUTO_DECLARED.push(mangled)
+                    // Register in FN tables with i64 return (common for LLVM API)
+                    FN_NAMES = FN_NAMES.push(mangled)
+                    FN_RETTYPES = FN_RETTYPES.push("i64")
+                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+                }
+            }
             if mangled.length > 0 {
                 // Call the mangled wrapper function, skip children[0] (namespace ident)
                 let call_ret = find_fn_ret(mangled)
@@ -1304,8 +1342,12 @@ fn gen_call(e: Expr) -> string {
             let elem = gen_expr_child(e, 1)
             mut ety = "i64"
             if LAST_IS_STR == 1 { ety = "%ForgeString" }
+            if LAST_IS_PTR == 1 { ety = "ptr" }
             if LAST_STRUCT_TYPE != "" { ety = "%" + LAST_STRUCT_TYPE }
             if LAST_ENUM_TYPE != "" { ety = "%" + LAST_ENUM_TYPE }
+            // Also check register type for ptr values
+            let rt = reg_get_type(elem)
+            if rt == "ptr" { ety = "ptr" }
             return gen_list_push(obj, elem, ety, saved_elem)
         }
     }
@@ -2793,6 +2835,16 @@ fn compile(source: string) -> string {
         if fi % 50 == 0 { eprintln("  codegen: " + string(fi) + "/" + string(fns.length) + " " + f.name) }
         gen_fn_decl(f)
         fi = fi + 1
+    }
+
+    // Emit auto-declared namespace functions (discovered during codegen)
+    mut adi = 0
+    while adi < AUTO_DECLARED.length {
+        let ad_name = AUTO_DECLARED[adi]
+        // Emit variadic declare — use i64 return, varargs
+        // These are LLVM API wrappers that take ptr/i64 args
+        ir_raw("declare i64 @" + ad_name + "(...)")
+        adi = adi + 1
     }
 
     "done"
