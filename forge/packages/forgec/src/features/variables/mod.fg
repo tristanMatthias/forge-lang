@@ -118,6 +118,14 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         // Track list-initialized variables for define_var to use correct alloca type
         if value_tok_key == "LBracket" || ann_is_list == 1 {
             VAR_LIST_INIT_CSV = VAR_LIST_INIT_CSV + "," + var_name + ","
+            // Also register element type for list push sizing
+            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + var_name + ","
+            if ann_elem_name != "" {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + "," + var_name + ":" + ann_elem_name + ","
+            }
+            if ann_elem_name == "string" || ann_elem_name == "String" {
+                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + var_name + ","
+            }
         }
         PARSE_END_POS = p.pos
         return Statement.Let(var_name, value!, start)

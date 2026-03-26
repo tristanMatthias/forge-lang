@@ -424,10 +424,16 @@ fn resolve_struct_type(name: string) -> ptr {
 
 // Get the LLVM element type for list push (avoids assignment-in-if)
 fn get_list_push_elem_type(type_name: string, is_str: int) -> ptr {
-    if is_str == 1 { return CG_STR }
-    if type_name == "" { return CG_I64 }
+    // Check explicit type name FIRST (overrides is_str flag)
     if type_name == "string" { return CG_STR }
     if type_name == "int" { return CG_I64 }
+    if type_name != "" {
+        // Resolve struct/enum type
+        let resolved = resolve_type_to_llvm(type_name)
+        if resolved != null { return resolved }
+    }
+    if is_str == 1 { return CG_STR }
+    if type_name == "" { return CG_I64 }
     let resolved = resolve_type_to_llvm(type_name)
     if resolved != null { return resolved }
     CG_I64
