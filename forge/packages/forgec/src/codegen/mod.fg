@@ -800,8 +800,11 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_selfhost_process_exit", make_fn_type(CG_VOID, [CG_I64]))
     llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type(CG_STR, [CG_STR, CG_STR]))
     llvm.add_function(CG_MOD, "forge_eprintln_string", make_fn_type(CG_VOID, [CG_STR]))
-    // LLVM API — test if declarations now survive bootstrap
-    llvm.add_function(CG_MOD, "forge_llvm_build_extract_value", make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_I64, CG_STR]))
+    // Test LLVM API declaration
+    llvm.add_function(CG_MOD, "forge_llvm_test_fn", make_fn_type(CG_VOID, []))
+    let check = llvm.get_named_function(CG_MOD, "forge_llvm_test_fn")
+    if check != null { eprintln("LLVM API DECL WORKS!") }
+    else { eprintln("LLVM API DECL FAILED - check is null") }
 }
 
 fn cg_cleanup() {

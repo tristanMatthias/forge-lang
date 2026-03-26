@@ -320,6 +320,11 @@ impl Driver {
         codegen.compile_program(&program);
         bp.add("codegen", t.elapsed());
 
+        // Inject LLVM API declarations for self-hosted compiler (Stage 2+)
+        // These are needed because the self-hosted compiler calls forge_llvm_*
+        // functions at runtime, but can't declare them from its own codegen.
+        inject_llvm_api(&codegen);
+
         // Hand off to the action (AOT write+link or JIT execute)
         action(&codegen, &loaded_packages, &mut bp)
     }
@@ -1669,4 +1674,102 @@ fn inject_lifecycle_stmts(
             span: sp,
         });
     }
+}
+
+/// Inject forge_llvm_* function declarations into the compiled module.
+/// The self-hosted compiler calls these at runtime but can't declare them
+/// from its own codegen (cg_init_runtime additions don't survive the bootstrap).
+pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
+    use inkwell::types::BasicType;
+    let ctx = codegen.context;
+    let module = &codegen.module;
+    let ptr = ctx.ptr_type(inkwell::AddressSpace::default());
+    let i64t = ctx.i64_type();
+    let i32t = ctx.i32_type();
+    let void = ctx.void_type();
+
+    macro_rules! d {
+        ($n:expr, $r:expr, [ $($p:expr),* ]) => {
+            if module.get_function($n).is_none() {
+                module.add_function($n, $r.fn_type(&[$($p.into()),*], false), None);
+            }
+        };
+        ($n:expr, void, [ $($p:expr),* ]) => {
+            if module.get_function($n).is_none() {
+                module.add_function($n, void.fn_type(&[$($p.into()),*], false), None);
+            }
+        };
+    }
+
+    d!("forge_llvm_context_create", ptr, []);
+    d!("forge_llvm_context_dispose", void, [ptr]);
+    d!("forge_llvm_module_create", ptr, [ptr, ptr]);
+    d!("forge_llvm_module_dispose", void, [ptr]);
+    d!("forge_llvm_print_module_to_file", i32t, [ptr, ptr]);
+    d!("forge_llvm_int1_type", ptr, [ptr]);
+    d!("forge_llvm_int8_type", ptr, [ptr]);
+    d!("forge_llvm_int32_type", ptr, [ptr]);
+    d!("forge_llvm_int64_type", ptr, [ptr]);
+    d!("forge_llvm_double_type", ptr, [ptr]);
+    d!("forge_llvm_void_type", ptr, [ptr]);
+    d!("forge_llvm_pointer_type", ptr, [ptr]);
+    d!("forge_llvm_function_type", ptr, [ptr, ptr, i32t, i32t]);
+    d!("forge_llvm_struct_create_named", ptr, [ptr, ptr]);
+    d!("forge_llvm_struct_set_body", void, [ptr, ptr, i32t, i32t]);
+    d!("forge_llvm_type_array_new", ptr, [i32t]);
+    d!("forge_llvm_type_array_set", void, [ptr, i32t, ptr]);
+    d!("forge_llvm_type_array_free", void, [ptr]);
+    d!("forge_llvm_get_type_by_name", ptr, [ptr, ptr]);
+    d!("forge_llvm_size_of", i64t, [ptr]);
+    d!("forge_llvm_add_function", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_get_named_function", ptr, [ptr, ptr]);
+    d!("forge_llvm_get_param", ptr, [ptr, i32t]);
+    d!("forge_llvm_append_basic_block", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_get_insert_block", ptr, [ptr]);
+    d!("forge_llvm_get_basic_block_parent", ptr, [ptr]);
+    d!("forge_llvm_block_has_terminator", i64t, [ptr]);
+    d!("forge_llvm_create_builder", ptr, [ptr]);
+    d!("forge_llvm_dispose_builder", void, [ptr]);
+    d!("forge_llvm_position_at_end", void, [ptr, ptr]);
+    d!("forge_llvm_build_ret", ptr, [ptr, ptr]);
+    d!("forge_llvm_build_ret_void", ptr, [ptr]);
+    d!("forge_llvm_build_br", ptr, [ptr, ptr]);
+    d!("forge_llvm_build_cond_br", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_alloca", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_build_store", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_build_load", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_call", ptr, [ptr, ptr, ptr, ptr, i32t, ptr]);
+    d!("forge_llvm_build_add", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_sub", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_mul", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_sdiv", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_srem", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_and", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_or", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_xor", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_shl", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_ashr", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_icmp", ptr, [ptr, i32t, ptr, ptr, ptr]);
+    d!("forge_llvm_build_trunc", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_zext", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_bitcast", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_struct_gep2", ptr, [ptr, ptr, ptr, i32t, ptr]);
+    d!("forge_llvm_build_gep2", ptr, [ptr, ptr, ptr, ptr, i32t, ptr]);
+    d!("forge_llvm_build_extract_value", ptr, [ptr, ptr, i32t, ptr]);
+    d!("forge_llvm_build_insert_value", ptr, [ptr, ptr, ptr, i32t, ptr]);
+    d!("forge_llvm_build_phi", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_add_incoming_one", void, [ptr, ptr, ptr]);
+    d!("forge_llvm_build_ptr_to_int", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_build_int_to_ptr", ptr, [ptr, ptr, ptr, ptr]);
+    d!("forge_llvm_const_int", ptr, [ptr, i64t, i32t]);
+    d!("forge_llvm_const_null", ptr, [ptr]);
+    d!("forge_llvm_const_string", ptr, [ptr, ptr, i64t]);
+    d!("forge_llvm_get_undef", ptr, [ptr]);
+    d!("forge_llvm_value_array_new", ptr, [i32t]);
+    d!("forge_llvm_value_array_set", void, [ptr, i32t, ptr]);
+    d!("forge_llvm_value_array_free", void, [ptr]);
+    d!("forge_llvm_global_get_value_type", ptr, [ptr]);
+    d!("forge_llvm_type_of", ptr, [ptr]);
+    d!("forge_llvm_get_type_kind", i32t, [ptr]);
+    d!("forge_llvm_emit_object_file", i32t, [ptr, ptr]);
 }
