@@ -654,10 +654,8 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
             if val_kind == 10 && alloca_kind == 8 {
                 real_val = ensure_i64(builder, val);
             }
-            // i64 value → struct alloca: skip store
-            if val_kind == 8 && alloca_kind == 10 {
-                return std::ptr::null_mut();
-            }
+            // i64 value → struct alloca: allow (opaque pointers handle this)
+            // Previously skipped, but this broke enum match binding extraction
         }
         LLVMBuildStore(builder, real_val, ptr)
     }

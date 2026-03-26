@@ -2674,11 +2674,11 @@ impl Codegen {
                                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                                // Store to pre-created alloca found by name
-                                                CG_LAST_VAR_PTR = null
-                                                let _find = self.emit_ident(bpname)
-                                                if CG_LAST_VAR_PTR != null {
-                                                    llvm.build_store(CG_B, fsv, CG_LAST_VAR_PTR)
+                                                // Store to pre-created alloca by direct index
+                                                // (emit_ident generates stale load before store)
+                                                let bind_alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
+                                                if bind_alloca_idx < CG_VAR_PTRS.length {
+                                                    llvm.build_store(CG_B, fsv, CG_VAR_PTRS[bind_alloca_idx])
                                                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
@@ -2696,11 +2696,9 @@ impl Codegen {
                                                     let loaded = llvm.build_load(CG_B, expr_ty, ptr_val, "de")
                                                     if loaded != null { deref_val = loaded }
                                                 }
-                                                // Store the dereferenced full value
-                                                // Store to pre-created alloca found by name
-                                                CG_LAST_VAR_PTR = null
-                                                let _find = self.emit_ident(bpname)
-                                                if CG_LAST_VAR_PTR != null {
+                                                // Store by direct index (avoids emit_ident stale load)
+                                                let bind_alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
+                                                if bind_alloca_idx < CG_VAR_PTRS.length {
                                                     // For boxed Expr: alloca needs to be Expr-sized
                                                     // But pre-alloca is CG_STR (16 bytes). Expr is larger.
                                                     // Create a new alloca of the right type
@@ -2721,11 +2719,11 @@ impl Codegen {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                // Store to pre-created alloca found by name
-                                                CG_LAST_VAR_PTR = null
-                                                let _find = self.emit_ident(bpname)
-                                                if CG_LAST_VAR_PTR != null {
-                                                    llvm.build_store(CG_B, ev, CG_LAST_VAR_PTR)
+                                                // Store to pre-created alloca by direct index
+                                                // (emit_ident generates a load BEFORE the store, reading stale 0)
+                                                let bind_alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
+                                                if bind_alloca_idx < CG_VAR_PTRS.length {
+                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[bind_alloca_idx])
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
                                             }
