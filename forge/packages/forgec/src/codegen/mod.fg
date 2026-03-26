@@ -352,11 +352,13 @@ fn csv_contains(csv: string, name: string) -> bool {
 
 // Check if a variable is ANY kind of list
 export fn is_list_var(name: string) -> bool {
+    if name == "" { return false }
     csv_contains(CG_LIST_VAR_CSV, name)
 }
 
 // Check if a variable is a list with string elements (16-byte stride)
 export fn is_str_list_var(name: string) -> bool {
+    if name == "" { return false }
     csv_contains(CG_STR_LIST_VAR_CSV, name)
 }
 
@@ -1218,6 +1220,9 @@ impl Codegen {
                 // Use GEP only for explicitly known list variables
                 mut use_gep = is_known_list || is_str_list
                 if obj_list_elem != "" { use_gep = true }
+                // Force charAt for string values that aren't lists
+                // (handles MemberAccess like self.source[self.pos])
+                if use_gep && obj_is_str == 1 && obj_list_elem == "" && !is_known_list { use_gep = false }
                 if !use_gep {
                     let ca = llvm.value_array_new(2)
                     llvm.value_array_set(ca, 0, obj_val)
@@ -1231,6 +1236,21 @@ impl Codegen {
                     llvm.value_array_free(ca)
                     CG_LAST_IS_STR = 1
                     return result
+                }
+                // If we got here but obj is a plain string (not a list), use charAt instead
+                if obj_is_str == 1 && !is_known_list && obj_list_elem == "" {
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, obj_val)
+                    llvm.value_array_set(ca, 1, idx_val)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_I64)
+                    let cf = llvm.function_type(CG_STR, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let result2 = llvm.build_call(CG_B, cf, CG_RT_SCHARAT, ca, 2, "ch")
+                    llvm.value_array_free(ca)
+                    CG_LAST_IS_STR = 1
+                    return result2
                 }
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
