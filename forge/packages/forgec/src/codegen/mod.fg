@@ -2373,6 +2373,11 @@ impl Codegen {
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
+        // Reset type flags after call — set based on return type only
+        CG_LAST_IS_STR = 0
+        CG_LAST_STRUCT_TYPE = ""
+        CG_LAST_ENUM_TYPE = ""
+        CG_LAST_IS_LIST = 0
         if is_extern_str_return { CG_LAST_IS_STR = 1 }
         r
     }
