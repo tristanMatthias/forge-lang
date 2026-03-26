@@ -2053,11 +2053,11 @@ impl Codegen {
                                 let obj_val = self.emit_ident(ns)
                                 let elem_type_name = CG_LAST_LIST_ELEM_TYPE
                                 let elem_ty = get_list_push_elem_type(elem_type_name, item_is_str)
-                                let elem_size = get_list_push_elem_size(elem_type_name, item_is_str)
+                                // Use LLVM's size_of for correct element byte size
+                                let esv = llvm.size_of(elem_ty)
                                 // Extract old len, compute new len
                                 let old_len = llvm.build_extract_value(CG_B, obj_val, 1, "ol")
                                 let new_len = llvm.build_add(CG_B, old_len, llvm.const_int(CG_I64, 1, 0), "nl")
-                                let esv = llvm.const_int(CG_I64, elem_size, 0)
                                 let new_size = llvm.build_mul(CG_B, new_len, esv, "ns")
                                 let new_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, new_size, "np")
                                 // Conditional memcpy: only if old_len > 0
