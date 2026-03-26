@@ -487,6 +487,9 @@ static void forge_string_bounds_check(ForgeString s, int64_t index, const char* 
         fprintf(stderr, "error: %s index %lld out of bounds for string of length %lld\n",
                 method, (long long)index, (long long)s.len);
         fprintf(stderr, "  hint: valid indices are 0..%lld\n", (long long)(s.len - 1));
+        if (s.ptr && s.len > 0 && s.len < 200) {
+            fprintf(stderr, "  string content: \"%.*s\"\n", (int)s.len, s.ptr);
+        }
         exit(1);
     }
 }
