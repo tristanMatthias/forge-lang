@@ -198,8 +198,14 @@ void forge_print_bool(int8_t value) {
 }
 
 void forge_println_string(ForgeString s) {
+    if (s.ptr == NULL || (uintptr_t)s.ptr < 4096) {
+        fprintf(stderr, "<bad str ptr=%p len=%lld>\n", s.ptr, (long long)s.len);
+        fflush(stderr);
+        return;
+    }
     fwrite(s.ptr, 1, s.len, stdout);
     putchar('\n');
+    fflush(stdout);
 }
 
 void forge_println_int(int64_t value) {
@@ -429,6 +435,8 @@ double forge_string_parse_float(ForgeString s) {
 
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
     if (a.len != b.len) return 0;
+    if (a.ptr == NULL || b.ptr == NULL) return a.ptr == b.ptr ? 1 : 0;
+    if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) return 0;
     // Fast path for single-char comparison (common in lexer)
     if (a.len == 1) return a.ptr[0] == b.ptr[0] ? 1 : 0;
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;

@@ -2143,18 +2143,32 @@ impl Codegen {
             fn_idx = fn_idx + 1
         }
 
+        // Detect LLVM API extern functions (take raw ptr, not ForgeString)
+        // Note: forge_selfhost_* and forge_string_* take ForgeString — do NOT coerce
+        let is_extern = fn_name.index_of("forge_llvm_") >= 0
         let arg_arr = llvm.value_array_new(args.length)
         let param_arr = llvm.type_array_new(args.length)
         mut i = 0
         for arg in args {
-            llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
+            let arg_val = self.emit_expr(arg)
+            let arg_is_str = CG_LAST_IS_STR
+            // For extern functions: coerce ForgeString args to raw ptr
+            // (extern ABI expects ptr, not {ptr, i64})
+            mut coerced_val = arg_val
+            if is_extern && arg_is_str == 1 {
+                // Extract .ptr field from ForgeString
+                let raw_ptr = llvm.build_extract_value(CG_B, arg_val, 0, "ep")
+                if raw_ptr != null { coerced_val = raw_ptr }
+            }
+            llvm.value_array_set(arg_arr, i, coerced_val)
             // Look up param type
             mut pty = CG_I64
             let pt_idx = fn_param_offset + i
             if pt_idx < FN_ALL_PARAM_TYPES.length {
                 let ptn = FN_ALL_PARAM_TYPES[pt_idx]
                 if ptn == "string" {
-                    pty = CG_STR
+                    // For extern: use ptr; for Forge: use ForgeString
+                    if is_extern { pty = CG_PTR } else { pty = CG_STR }
                 } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
                     pty = resolve_type_to_llvm(ptn)
                 }
