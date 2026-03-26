@@ -2227,9 +2227,9 @@ impl Codegen {
                                 let item_is_str = CG_LAST_IS_STR
                                 cg_reinit_types()
                                 let obj_val = self.emit_ident(ns)
-                                // Look up element type from CSV (CG_LAST_LIST_ELEM_TYPE may not be set for variables)
-                                mut elem_type_name = CG_LAST_LIST_ELEM_TYPE
-                                if elem_type_name == "" { elem_type_name = list_elem_type(ns) }
+                                // Look up element type — check CSV first, then item type
+                                mut elem_type_name = list_elem_type(ns)
+                                if elem_type_name == "" { elem_type_name = CG_LAST_LIST_ELEM_TYPE }
                                 let elem_ty = get_list_push_elem_type(elem_type_name, item_is_str)
                                 // Use LLVM's size_of for correct element byte size
                                 let esv = llvm.size_of(elem_ty)
@@ -2528,7 +2528,11 @@ impl Codegen {
                     // Force list type: emit empty list value and register properly
                     cg_reinit_types()
                     CG_LAST_IS_LIST = 1
-                    CG_LAST_IS_STR = 1
+                    // Only set CG_LAST_IS_STR if it's actually a string list
+                    let init_elem = list_elem_type(name)
+                    if init_elem == "string" {
+                        CG_LAST_IS_STR = 1
+                    }
                     let empty_list = llvm.const_null(CG_STR)
                     self.define_var(name, Type.String, empty_list)
                 } else {
