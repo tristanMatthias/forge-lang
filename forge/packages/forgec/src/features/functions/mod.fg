@@ -309,6 +309,17 @@ export fn declare_all_fns() {
     cg_reinit_types()
     // Create struct LLVM types
     let struct_count = CG_STRUCT_NAMES.length
+    // Pass 1: create all opaque named types (handles circular references like Scope → Scope?)
+    mut pre = 0
+    while pre < struct_count {
+        let pname = CG_STRUCT_NAMES[pre]
+        let existing = llvm.get_type_by_name(CG_CTX, pname)
+        if existing == null {
+            llvm.struct_create_named(CG_CTX, pname)
+        }
+        pre = pre + 1
+    }
+    // Pass 2: set bodies with proper field types
     mut si = 0
     while si < struct_count {
         cg_reinit_types()

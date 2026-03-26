@@ -109,7 +109,10 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 if p.check(TokenKind.Gt) { p.advance() }
             }
             // Check for nullable ?
-            if p.check(TokenKind.Question) { p.advance() }
+            if p.check(TokenKind.Question) {
+                p.advance()
+                ftype_name = ftype_name + "?"
+            }
 
             if ftype_name == "string" {
                 field_is_str = field_is_str + "1"
@@ -165,37 +168,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
 // Resolve a type name to its LLVM type for struct fields
 fn resolve_field_llvm_type(type_name: string) -> ptr {
-    if type_name == "string" { return CG_STR }
-    if type_name == "int" { return CG_I64 }
-    if type_name == "float" { return CG_I64 }  // float is still i64-sized
-    if type_name == "bool" { return CG_I64 }
-    if type_name == "ptr" { return CG_I64 }
-    // Check if it starts with "List<" — list is {ptr, i64}
-    if type_name.length > 5 {
-        if type_name[0] == "L" {
-            if type_name[1] == "i" {
-                if type_name[2] == "s" {
-                    if type_name[3] == "t" {
-                        return CG_LIST
-                    }
-                }
-            }
-        }
-    }
-    // Check enum type — always use enum struct type (even zero-payload)
-    let ety = cg_make_enum_type(type_name)
-    if ety != null { return ety }
-    // Check struct type
-    mut sti = CG_STRUCT_NAMES.length - 1
-    while sti >= 0 {
-        if CG_STRUCT_NAMES[sti] == type_name {
-            let sty = CG_STRUCT_TYPES[sti]
-            if sty != null { return sty }
-        }
-        sti = sti - 1
-    }
-    // Default: i64
-    CG_I64
+    resolve_type_to_llvm(type_name)
 }
 
 // ─── Struct Literal Construction ────────────────
