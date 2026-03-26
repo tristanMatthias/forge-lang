@@ -66,69 +66,6 @@ fn check(source: string, filename: string) -> bool {
     true
 }
 
-fn build_compile(source: string, filename: string, output: string) {
-    mut lex = lexer_new(source)
-    let tokens = lex.tokenize()
-
-    if lex.diagnostics.length > 0 {
-        for d in lex.diagnostics {
-            eprintln(render_diagnostic(d, source, filename))
-        }
-    }
-
-    mut p = parser_new_with_source(tokens, source)
-    eprintln("BC:parsing")
-    p.parse_program()
-    eprintln("BC:parsed")
-
-    eprintln("BC:init")
-    codegen_init(filename)
-    eprintln("BC:globals")
-    create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
-    eprintln("BC:new")
-    eprintln("BC:i32=" + string(CG_I32))
-    mut cg = codegen_new()
-    eprintln("BC:i32_2=" + string(CG_I32))
-    eprintln("BC:emit")
-    cg.emit_program(program)
-
-    // Write IR for debugging
-    codegen_write_ir("output.ll")
-
-    // Emit object file
-    let obj_path = output + ".o"
-    if !codegen_emit_object(obj_path) {
-        eprintln("error: failed to emit object file")
-        // Fall back to IR output
-        codegen_write_ir("output.ll")
-        codegen_cleanup()
-        println("wrote output.ll (object emission failed)")
-        return
-    }
-
-    codegen_cleanup()
-
-    // Compile runtime if needed
-    let runtime_obj = "/tmp/forgec_runtime.o"
-    let runtime_src = "stdlib/runtime.c"
-    let rt_result = process.run("cc", ["-c", "-O0", runtime_src, "-o", runtime_obj])
-    if !rt_result.contains("\"code\":0") {
-        eprintln("error: failed to compile runtime (${runtime_src})")
-        eprintln(rt_result)
-        process.exit(1)
-    }
-
-    // Link: cc -o output obj_path runtime_obj -lm
-    let link_result = process.run("cc", ["-o", output, obj_path, runtime_obj, "-lm"])
-    if !link_result.contains("\"code\":0") {
-        eprintln("error: linker failed")
-        eprintln(link_result)
-        process.exit(1)
-    }
-
-    println("compiled: ${output}")
-}
-
 // ─── Module Resolution ─────────────────────────
 // Reads a .fg file, finds `mod` declarations, recursively loads
 // all module files, and returns concatenated source.
