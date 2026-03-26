@@ -358,10 +358,15 @@ export fn declare_all_fns() {
                 fi = fi + 1
             }
         }
-        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-        llvm.struct_set_body(sty, fta, fc, 0)
+        // Use existing named type if available, otherwise create new
+        let sname = CG_STRUCT_NAMES[si]
+        mut sty = llvm.get_type_by_name(CG_CTX, sname)
+        if sty == null {
+            sty = llvm.struct_create_named(CG_CTX, sname)
+            llvm.struct_set_body(sty, fta, fc, 0)
+        }
         llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
         CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
         CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
         CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
@@ -634,10 +639,15 @@ export fn materialize_struct_types() {
                 fi = fi + 1
             }
         }
-        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-        llvm.struct_set_body(sty, fta, fc, 0)
+        // Use existing named type if available, otherwise create new
+        let sname = CG_STRUCT_NAMES[si]
+        mut sty = llvm.get_type_by_name(CG_CTX, sname)
+        if sty == null {
+            sty = llvm.struct_create_named(CG_CTX, sname)
+            llvm.struct_set_body(sty, fta, fc, 0)
+        }
         llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
+        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
         CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
         CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
         CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
