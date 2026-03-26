@@ -2554,8 +2554,9 @@ impl Codegen {
                     }
                     let mfn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let merge_bb = llvm.append_basic_block(CG_CTX, mfn, "me")
-                    // Result alloca for match-as-expression (use ForgeString size — 16 bytes, fits i64 and strings)
-                    let match_result_alloca = llvm.build_alloca(CG_B, CG_STR, "mr")
+                    // Result alloca for match-as-expression
+                    // Use i64 — most match results are i64/ptr. String results need special handling.
+                    let match_result_alloca = llvm.build_alloca(CG_B, CG_I64, "mr")
                     // Parse tag CSV
                     mut tags: List<int> = []
                     mut tpos = 0
@@ -2761,8 +2762,8 @@ impl Codegen {
                     }
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
                     llvm.position_at_end(CG_B, merge_bb)
-                    // Load match result (use ForgeString type — same size as i64 pair)
-                    let match_result_val = llvm.build_load(CG_B, CG_STR, match_result_alloca, "mv")
+                    // Load match result
+                    let match_result_val = llvm.build_load(CG_B, CG_I64, match_result_alloca, "mv")
                     CG_LAST_VAL = match_result_val
                     return match_result_val
                 }
