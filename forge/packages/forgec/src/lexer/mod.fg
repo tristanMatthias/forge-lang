@@ -178,7 +178,9 @@ impl Lexer {
     // ─── Whitespace & Comments ─────────────────
 
     fn skip_whitespace(self) {
-        while self.pos < self.source.length && is_whitespace_not_newline(self.source[self.pos]) {
+        // No && in while condition (compiled output doesn't short-circuit)
+        while self.pos < self.source.length {
+            if !is_whitespace_not_newline(self.source[self.pos]) { return }
             self.advance()
         }
     }
