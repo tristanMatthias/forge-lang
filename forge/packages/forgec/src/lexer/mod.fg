@@ -145,6 +145,7 @@ impl Lexer {
 
     fn advance(self) -> string {
         let ch = self.source[self.pos]
+        eprintln("  adv:" + string(self.pos))
         self.pos = self.pos + 1
         if ch == "\n" {
             self.line = self.line + 1
@@ -222,18 +223,13 @@ impl Lexer {
     fn tokenize(self) -> List<Token> {
         mut tokens: List<Token> = []
 
+        self.skip_whitespace()
+        self.skip_comments()
         while !self.is_at_end() {
+            let token = self.next_token()
+            tokens = tokens.push(token)
             self.skip_whitespace()
             self.skip_comments()
-
-            if self.is_at_end() {
-                break
-            }
-
-            let token = self.next_token()
-            if token.kind_id != 99 {  // 99 = EOF
-                tokens = tokens.push(token)
-            }
         }
 
         // Add EOF (kind_id=99 for EOF detection)

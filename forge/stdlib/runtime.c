@@ -493,9 +493,11 @@ int64_t forge_string_byte_at(ForgeString s, int64_t index) {
     return (int64_t)(unsigned char)s.ptr[index];
 }
 
+static int char_at_count = 0;
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {
     forge_string_bounds_check(s, index, "char_at");
     unsigned char c = (unsigned char)s.ptr[index];
+    char_at_count++;
     // ASCII byte — return pointer to static char (no malloc!)
     if (c < 0x80) {
         ensure_ascii_chars();
@@ -1965,4 +1967,13 @@ void forge_mini_write_debug(ForgeString path, ForgeString content) {
     size_t w = fwrite(content.ptr, 1, content.len, f);
     fclose(f);
     fprintf(stderr, "  [write_debug] wrote %zu bytes\n", w);
+}
+
+// Debug: dump Lexer struct memory
+void forge_debug_lexer(void* ptr) {
+    if (!ptr) { fprintf(stderr, "  [dbg] lexer ptr=NULL\n"); fflush(stderr); return; }
+    long long* p = (long long*)ptr;
+    fprintf(stderr, "  [dbg] lexer@%p: [0]=%lld [1]=%lld [2]=%lld [3]=%lld [4]=%lld [5]=%lld [6]=%lld [7]=%lld\n",
+        ptr, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+    fflush(stderr);
 }
