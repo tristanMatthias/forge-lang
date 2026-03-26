@@ -2193,9 +2193,11 @@ impl Codegen {
                                     // String: 2 slots (ptr + len)
                                     let sptr = llvm.build_extract_value(CG_B, fval, 0, "sp")
                                     let slen = llvm.build_extract_value(CG_B, fval, 1, "sl")
-                                    let sp_i64 = llvm.build_ptr_to_int(CG_B, sptr, CG_I64, "si")
-                                    ev = llvm.build_insert_value(CG_B, ev, sp_i64, slot, "es")
-                                    ev = llvm.build_insert_value(CG_B, ev, slen, slot + 1, "el")
+                                    if sptr != null && slen != null {
+                                        let sp_i64 = llvm.build_ptr_to_int(CG_B, sptr, CG_I64, "si")
+                                        ev = llvm.build_insert_value(CG_B, ev, sp_i64, slot, "es")
+                                        ev = llvm.build_insert_value(CG_B, ev, slen, slot + 1, "el")
+                                    }
                                     slot_off = slot_off + 2
                                 } else if fc == "p" {
                                     // Boxed ptr: 1 slot

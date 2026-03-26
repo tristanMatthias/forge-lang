@@ -942,7 +942,12 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
         if field_kind != elem_kind {
             if field_kind == 8 && elem_kind == 10 {
                 // Field expects integer but got struct — extract field 1 (i64 part)
-                real_element = LLVMBuildExtractValue(builder, element, 1, safe_name(std::ptr::null()));
+                let elem_n = LLVMCountStructElementTypes(elem_ty);
+                if elem_n > 1 {
+                    real_element = LLVMBuildExtractValue(builder, element, 1, safe_name(std::ptr::null()));
+                } else {
+                    real_element = LLVMBuildExtractValue(builder, element, 0, safe_name(std::ptr::null()));
+                }
             } else if field_kind == 12 && elem_kind == 8 {
                 // Field expects ptr but got i64 — inttoptr
                 let ptr_ty = TYPE_CACHE.with(|c| c.borrow().ptr);
@@ -1094,11 +1099,13 @@ pub extern "C" fn forge_llvm_build_inttoptr(builder: LLVMPtr, val: LLVMPtr, dest
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if val.is_null() || dest_ty.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if val.is_null() || dest_ty.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
 }
 
