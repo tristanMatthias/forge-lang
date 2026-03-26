@@ -1529,6 +1529,20 @@ impl Codegen {
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
+        // Handle && and || with eager evaluation + i1 logic
+        match op {
+            .And -> {
+                let lv = self.emit_expr(left)
+                let rv = self.emit_expr(right)
+                return llvm.build_and(CG_B, lv, rv, "aa")
+            }
+            .Or -> {
+                let lv = self.emit_expr(left)
+                let rv = self.emit_expr(right)
+                return llvm.build_or(CG_B, lv, rv, "oo")
+            }
+            _ -> {}
+        }
         // Check if left is a string before emitting right (emit_expr resets flags)
         let lhs = self.emit_expr(left)
         let lhs_is_str = CG_LAST_IS_STR
