@@ -419,6 +419,15 @@ fn ast_parse_primary() -> Expr {
                 advance()
                 skip_nl()
                 while not_at_paren() {
+                    // Skip named parameter labels: name: value → just parse value
+                    if peek().kind == 1 && POS + 1 < TOKENS.length {
+                        let next: Tok = TOKENS[POS + 1]
+                        if next.text == ":" {
+                            advance()
+                            advance()
+                            skip_nl()
+                        }
+                    }
                     args = args.push(ast_parse_expr())
                     skip_nl()
                     if check(",") { advance() }
