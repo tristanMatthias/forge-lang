@@ -70,3 +70,31 @@ F0001 (syntax), F0002 (unterminated string), F0003 (unterminated template), F000
 - The `error_messages` feature has 50 tests covering all error codes and common user mistakes (semicolons, `=>`, `def`, `var`, `class`, single quotes, etc.)
 - Test format: `/// expect-error: F0012` in `.fg` file → test runner uses `forge check` and asserts stderr contains the code
 - Error tests run in <1s total (no linking needed)
+
+## Self-Hosting — MANDATORY RULES
+
+**Read `forge/SELF_HOST_PROGRESS.md` before touching ANY self-hosting code.**
+
+The self-hosted compiler (`packages/forgec/`) is compiled through a fragile bootstrap chain. These rules exist because violating them caused days of wasted work and regressions.
+
+### The Bootstrap Chain
+```
+Rust bootstrap (68 type errors, fragile) → Stage 1 binary → Stage 2 binary → Stage 3
+```
+`forge/stage1_bootstrap` is a saved working Stage 1 binary. It is the ONLY reliable way to produce Stage 2. If lost, recreate from commit 64299d9 source + pre-span runtime.
+
+### HARD RULES — NEVER VIOLATE
+
+1. **ONE change at a time.** Make a change. Test FULL pipeline (bootstrap → llc → link → Stage 1 runs → builds Stage 2 → Stage 2 runs). Commit. Then next change. NEVER batch changes.
+
+2. **NEVER modify `emit_fn_call_direct` or `emit_call` in codegen/mod.fg.** The Rust bootstrap generates fragile code. Adding even ONE line to these functions breaks the tokenizer (385 → 18 fns). Fix behavior OUTSIDE these functions (in callers, in the Let handler, in the parser).
+
+3. **NEVER rewrite working code to work around codegen bugs.** If `collect_module_paths` works with `stage1_bootstrap`, leave it alone. Fix the codegen, not the source it compiles.
+
+4. **NEVER add new runtime function declarations to codegen.** The bootstrap drops new `llvm.add_function` calls. Only 8 string functions work: `forge_string_new`, `forge_string_concat`, `forge_string_char_at`, `forge_string_length`, `forge_string_eq`, `forge_string_compare`, `forge_string_substring`, `forge_string_index_of`.
+
+5. **ALWAYS preserve working binaries.** After any successful Stage 1 build, copy to `forge/stage1_bootstrap`. /tmp files vanish on restart.
+
+6. **ASK before deviating from the plan in `SELF_HOST_PROGRESS.md`.** Do not silently change approach. Stop, explain what's happening, and ask.
+
+7. **If a change breaks the pipeline, REVERT immediately.** Do not try to fix the fix. Revert, understand why it broke, then try a different approach.
