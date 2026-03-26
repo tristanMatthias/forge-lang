@@ -253,6 +253,7 @@ fn lex_next() -> Tok {
         if b == 62 && b2 == 61 { is_two = true }
         if b == 38 && b2 == 38 { is_two = true }
         if b == 124 && b2 == 124 { is_two = true }
+        if b == 124 && b2 == 62 { is_two = true }
         if b == 45 && b2 == 62 { is_two = true }
         if is_two {
             let two = LEX_SRC.substring(LEX_POS, LEX_POS + 2)

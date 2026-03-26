@@ -798,13 +798,13 @@ fn ast_parse_program() -> List<FnDecl> {
             // Parse impl block: impl TypeName { fn method(self) { ... } }
             advance()
             skip_nl()
-            let impl_type = advance().text
-            // Skip "for TypeName" if present
+            mut impl_type = advance().text
+            // "impl Trait for Type" — use Type as the impl type for mangling
             skip_nl()
             if check("for") {
                 advance()
                 skip_nl()
-                advance()  // skip target type
+                impl_type = advance().text
             }
             skip_nl()
             expect("{")

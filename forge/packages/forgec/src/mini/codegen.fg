@@ -1655,11 +1655,12 @@ fn codegen_let(s: Stmt) -> int {
         ty = "{ ptr, i64 }"
         is_list = true
     }
-    if LAST_STRUCT_TYPE != "" {
+    // Only override with struct/enum type if NOT a list
+    if !is_list && LAST_STRUCT_TYPE != "" {
         ty = "%" + LAST_STRUCT_TYPE
         stype = LAST_STRUCT_TYPE
     }
-    if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
+    if !is_list && LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
     // Register type table fallback
     if ty == "i64" {
         let rt = reg_get_type(val)
@@ -2720,12 +2721,12 @@ fn compile(source: string) -> string {
             // Scan impl methods for fn signatures
             advance()
             skip_nl()
-            let impl_name = advance().text
+            mut impl_name = advance().text
             skip_nl()
             if check("for") {
                 advance()
                 skip_nl()
-                advance()
+                impl_name = advance().text
             }
             skip_nl()
             while !check("{") && POS < TOKENS.length { advance() }
