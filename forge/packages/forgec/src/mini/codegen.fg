@@ -2392,8 +2392,22 @@ fn gen_fn_decl(f: FnDecl) {
         }
         mut pty = type_to_llvm(base_type)
         // Self parameter: pass as ptr for mutability
-        if p.name == "self" && pty.length > 1 && pty.substring(0, 1) == "%" {
-            self_struct_type = pty.substring(1, pty.length)
+        if p.name == "self" {
+            if pty.length > 1 && pty.substring(0, 1) == "%" {
+                self_struct_type = pty.substring(1, pty.length)
+            }
+            // self is always passed as ptr, but track the underlying struct type
+            // from the original type_name (set by impl handler or from struct type)
+            if pty == "ptr" {
+                // Look up struct from mangled name: TypeName_method → TypeName
+                let uscore = name.index_of("_")
+                if uscore > 0 {
+                    let impl_type_name = name.substring(0, uscore)
+                    if find_struct(impl_type_name) >= 0 {
+                        self_struct_type = impl_type_name
+                    }
+                }
+            }
             pty = "ptr"
         }
         param_types = param_types.push(pty)
