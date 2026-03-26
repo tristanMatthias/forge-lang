@@ -2346,9 +2346,11 @@ impl Codegen {
                                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
-                                                    llvm.build_store(CG_B, fsv, CG_VAR_PTRS[alloca_idx])
+                                                // Store to pre-created alloca found by name
+                                                CG_LAST_VAR_PTR = null
+                                                let _find = self.emit_ident(bpname)
+                                                if CG_LAST_VAR_PTR != null {
+                                                    llvm.build_store(CG_B, fsv, CG_LAST_VAR_PTR)
                                                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
@@ -2367,8 +2369,10 @@ impl Codegen {
                                                     if loaded != null { deref_val = loaded }
                                                 }
                                                 // Store the dereferenced full value
-                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
+                                                // Store to pre-created alloca found by name
+                                                CG_LAST_VAR_PTR = null
+                                                let _find = self.emit_ident(bpname)
+                                                if CG_LAST_VAR_PTR != null {
                                                     // For boxed Expr: alloca needs to be Expr-sized
                                                     // But pre-alloca is CG_STR (16 bytes). Expr is larger.
                                                     // Create a new alloca of the right type
@@ -2380,7 +2384,7 @@ impl Codegen {
                                                         CG_VAR_PTRS = CG_VAR_PTRS.push(big_alloca)
                                                         CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + bpname + ":Expr,"
                                                     } else {
-                                                        llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
+                                                        llvm.build_store(CG_B, ev, CG_LAST_VAR_PTR)
                                                     }
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
@@ -2389,9 +2393,11 @@ impl Codegen {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
-                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
+                                                // Store to pre-created alloca found by name
+                                                CG_LAST_VAR_PTR = null
+                                                let _find = self.emit_ident(bpname)
+                                                if CG_LAST_VAR_PTR != null {
+                                                    llvm.build_store(CG_B, ev, CG_LAST_VAR_PTR)
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
                                             }
