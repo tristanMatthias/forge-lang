@@ -168,6 +168,7 @@ extern "C" {
     // Memory
     fn LLVMBuildAlloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMBuildStore(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Aggregate operations (GEP, insert/extract)
@@ -609,14 +610,26 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
         // (prevents garbage upper bits when loaded back as i64)
         let val_ty = LLVMTypeOf(val);
         let val_kind = LLVMGetTypeKind(val_ty);
+        // Try to get the alloca's type for compatibility check
+        let alloca_ty = LLVMGetAllocatedType(ptr);
+        let alloca_kind = if !alloca_ty.is_null() { LLVMGetTypeKind(alloca_ty) } else { 0 };
         let mut real_val = val;
-        // Widen narrow ints (i1, i8, i32) to i64 before storing
+        // Widen narrow ints to match alloca type
         if val_kind == 8 { // IntegerTypeKind
             let bit_width = LLVMGetIntTypeWidth(val_ty);
             if bit_width < 64 {
-                let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
-                real_val = LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null()));
+                let target_ty = if !alloca_ty.is_null() && alloca_kind == 8 { alloca_ty }
+                    else { TYPE_CACHE.with(|c| c.borrow().i64) };
+                real_val = LLVMBuildZExt(builder, val, target_ty, safe_name(std::ptr::null()));
             }
+        }
+        // Struct value → i64 alloca: coerce to i64
+        if val_kind == 10 && alloca_kind == 8 {
+            real_val = ensure_i64(builder, val);
+        }
+        // i64 value → struct alloca: skip store (can't safely coerce)
+        if val_kind == 8 && alloca_kind == 10 {
+            return std::ptr::null_mut();
         }
         LLVMBuildStore(builder, real_val, ptr)
     }
@@ -654,7 +667,13 @@ pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if lhs.is_null() || rhs.is_null() {
+        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i1, 0, 0) });
+    }
     unsafe {
+        // Coerce both operands to i64 for comparison
+        let lhs = ensure_i64(builder, lhs);
+        let rhs = ensure_i64(builder, rhs);
         let lhs_ty = LLVMTypeOf(lhs);
         let rhs_ty = LLVMTypeOf(rhs);
         let lhs_kind = LLVMGetTypeKind(lhs_ty);
