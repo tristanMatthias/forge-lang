@@ -2154,16 +2154,11 @@ impl Codegen {
                 if let_is_str == 1 {
                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
                 }
-                // Register list variables (unconditional to avoid assignment-in-if bug)
-                // Non-list vars get registered too but is_list_var checks CSV substring match
-                // which won't false-positive because var names are unique
-                let list_suffix = "," + name + ","
-                // Multiply by let_is_list: if 0 → empty string append, if 1 → real append
-                // Can't do string * int, so use a helper approach:
-                // Just always append — is_list_var will match any var, but push only
-                // triggers on MemberAccess which requires the var to actually BE a list
-                CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + list_suffix
-                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + list_suffix
+                // Register list variables only when CG_LAST_IS_LIST was set
+                if let_is_list == 1 {
+                    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
+                    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
+                }
                 CG_LAST_IS_LIST = 0
                 if CG_LAST_STRUCT_TYPE != "" {
                     CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
@@ -2439,6 +2434,9 @@ impl Codegen {
                     let w3 = llvm.append_basic_block(CG_CTX, wfn, "we")
                     llvm.build_br(CG_B, w1)
                     llvm.position_at_end(CG_B, w1)
+                    CG_LAST_STRUCT_TYPE = ""
+                    CG_LAST_IS_STR = 0
+                    CG_LAST_IS_MAP = 0
                     let wv = self.emit_expr(cond)
                     let wi = llvm.build_trunc(CG_B, wv, llvm.int1_type(CG_CTX), "wt")
                     llvm.build_cond_br(CG_B, wi, w2, w3)
