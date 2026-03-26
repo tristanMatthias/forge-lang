@@ -212,72 +212,71 @@ fn resolve_modules(filepath: string) -> string {
 // Use a CSV string for paths (avoid List<string> from recursive calls crashing bootstrap)
 mut MODULE_PATHS_CSV: string = ""
 
+// Helper: find directory from filepath (no assignments inside if blocks)
+fn filepath_dir(filepath: string) -> string {
+    // Find last "/" by searching for "/" in progressively shorter suffixes
+    let first = filepath.index_of("/")
+    if first < 0 { return "" }
+    // Walk forward finding all slashes
+    let after1 = filepath.substring(first + 1, filepath.length)
+    let second = after1.index_of("/")
+    if second < 0 { return filepath.substring(0, first + 1) }
+    let after2 = after1.substring(second + 1, after1.length)
+    let third = after2.index_of("/")
+    if third < 0 { return filepath.substring(0, first + 1 + second + 1) }
+    let after3 = after2.substring(third + 1, after2.length)
+    let fourth = after3.index_of("/")
+    if fourth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1) }
+    let after4 = after3.substring(fourth + 1, after3.length)
+    let fifth = after4.index_of("/")
+    if fifth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1) }
+    let after5 = after4.substring(fifth + 1, after4.length)
+    let sixth = after5.index_of("/")
+    if sixth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1 + fifth + 1) }
+    // 7+ levels deep — return up to 6th slash
+    return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1 + fifth + 1 + sixth + 1)
+}
+
+// Helper: extract mod name (text before first newline)
+fn mod_name_from(rest: string) -> string {
+    let nl = rest.index_of("\n")
+    if nl >= 0 { return rest.substring(0, nl) }
+    return rest
+}
+
+// Helper: try loading a module path, recurse if found
+fn try_load_mod(dir: string, mod_name: string) {
+    let p1 = dir + mod_name + "/mod.fg"
+    let p2 = dir + mod_name + ".fg"
+    let s1 = fs.read(p1)
+    if s1.length > 0 { collect_module_paths(p1) }
+    else {
+        let s2 = fs.read(p2)
+        if s2.length > 0 { collect_module_paths(p2) }
+    }
+}
+
+// Helper: scan for \nmod in remaining text, recurse
+fn scan_mods(src: string, dir: string) {
+    let found = src.index_of("\nmod ")
+    if found < 0 { return }
+    let name_start = found + 5
+    let rest = src.substring(name_start, src.length)
+    let mod_name = mod_name_from(rest)
+    try_load_mod(dir, mod_name)
+    // Recurse on remainder
+    let remaining = src.substring(name_start, src.length)
+    scan_mods(remaining, dir)
+}
+
 fn collect_module_paths(filepath: string) {
     eprintln("collect_module_paths: " + filepath)
     let source = fs.read(filepath)
     eprintln("  read " + string(source.length) + " bytes")
-    mut dir = ""
-    mut last_slash = -1
-    mut ci = 0
-    while ci < filepath.length {
-        if filepath[ci] == "/" { last_slash = ci }
-        ci = ci + 1
-    }
-    if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
-
-    // Find mod declarations — same logic as resolve_modules (which works)
-    eprintln("  scanning " + string(source.length) + " bytes for mod declarations")
-    mut pos = 0
-    mut dbg_count = 0
-    while pos < source.length {
-        mut at_line_start = pos == 0
-        if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
-        if pos == 85 {
-            let ch84 = source[84]
-            let is_nl = ch84 == "\n"
-            eprintln("  @85 is_nl=" + string(is_nl) + " als=" + string(at_line_start))
-        }
-        if at_line_start {
-            if dbg_count < 20 {
-                eprintln("  LINE@" + string(pos))
-            }
-            dbg_count = dbg_count + 1
-        }
-        if at_line_start {
-            if pos + 4 < source.length {
-                let c0 = source[pos]
-                let c1 = source[pos + 1]
-                let c2 = source[pos + 2]
-                let c3 = source[pos + 3]
-                if c0 == "m" {
-                    if c1 == "o" {
-                        if c2 == "d" {
-                            if c3 == " " {
-                                // Find end of mod name using indexOf
-                                let rest_str = source.substring(pos + 4, source.length)
-                                let nl_pos = rest_str.index_of("\n")
-                                mut mod_name = rest_str
-                                if nl_pos >= 0 { mod_name = rest_str.substring(0, nl_pos) }
-                                let mod_path1 = dir + mod_name + "/mod.fg"
-                                let mod_path2 = dir + mod_name + ".fg"
-                                let mod_src1 = fs.read(mod_path1)
-                                if mod_src1.length > 0 {
-                                    collect_module_paths(mod_path1)
-                                } else {
-                                    let mod_src2 = fs.read(mod_path2)
-                                    if mod_src2.length > 0 {
-                                        collect_module_paths(mod_path2)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        pos = pos + 1
-    }
-    // This file comes after its modules
+    let dir = filepath_dir(filepath)
+    // Prepend \n so "mod " at line 1 also matches "\nmod "
+    let src = "\n" + source
+    scan_mods(src, dir)
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
 }
 
@@ -303,17 +302,30 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 // ─── Per-File Compilation ──────────────────────
 
-fn build_compile_separate(files: List<string>, output: string) {
-    // Phase 1: Scan ALL files (collect function signatures — no bodies)
+fn scan_one_file(filepath: string, idx: int) {
+    CURRENT_FILE_INDEX = idx
+    let source = fs.read(filepath)
+    mut lex = lexer_new(source)
+    let tokens = lex.tokenize()
+    mut p = parser_new_with_source(tokens, source)
+    p.parse_program()
+}
+
+fn build_compile_separate(paths_csv: string, output: string) {
+    // Phase 1: Scan ALL files from newline-separated CSV
     mut file_idx = 0
-    for filepath in files {
-        CURRENT_FILE_INDEX = file_idx
-        let source = fs.read(filepath)
-        mut lex = lexer_new(source)
-        let tokens = lex.tokenize()
-        mut p = parser_new_with_source(tokens, source)
-        p.parse_program()
-        file_idx = file_idx + 1
+    mut start = 0
+    mut i = 0
+    while i < paths_csv.length {
+        if paths_csv[i] == "\n" {
+            if i > start {
+                let filepath = paths_csv.substring(start, i)
+                scan_one_file(filepath, file_idx)
+                file_idx = file_idx + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
@@ -431,6 +443,9 @@ fn main() {
     let command = args[1]
     let input = args[2]
 
+    // Reset CSV BEFORE any branching (avoids emit_assign-in-if bug)
+    MODULE_PATHS_CSV = ""
+
     eprintln("M:argc=" + string(args.length))
     eprintln("M:cmd=[" + command + "]")
     if command == "check" {
@@ -443,9 +458,9 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        let files = resolve_module_paths(input)
-        eprintln("M:files=" + string(files.length))
-        build_compile_separate(files, output)
+        collect_module_paths(input)
+        eprintln("M:csv_len=" + string(MODULE_PATHS_CSV.length))
+        build_compile_separate(MODULE_PATHS_CSV, output)
     } else {
         eprintln("unknown command")
         process.exit(1)
