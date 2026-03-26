@@ -143,7 +143,6 @@ impl Lexer {
 
     fn advance(self) -> string {
         let ch = self.source[self.pos]
-        eprintln("  adv:" + string(self.pos))
         self.pos = self.pos + 1
         if ch == "\n" {
             self.line = self.line + 1
@@ -179,13 +178,8 @@ impl Lexer {
     // ─── Whitespace & Comments ─────────────────
 
     fn skip_whitespace(self) {
-        while self.pos < self.source.length {
-            let ch = self.source[self.pos]
-            if is_whitespace_not_newline(ch) {
-                self.advance()
-            } else {
-                break
-            }
+        while self.pos < self.source.length && is_whitespace_not_newline(self.source[self.pos]) {
+            self.advance()
         }
     }
 

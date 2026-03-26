@@ -7,6 +7,12 @@
 #include <execinfo.h>
 #include <setjmp.h>
 
+// Forward declarations for debug tooling
+void forge_stack_init(void);
+int64_t forge_stack_used(void);
+void forge_stack_check(const char* fn_name);
+void forge_trace_enter(const char* fn_name);
+
 // ---- Try/catch for LLVM crashes ----
 static sigjmp_buf forge_try_jmp;
 static volatile int forge_try_active = 0;
@@ -56,6 +62,13 @@ static void forge_signal_handler(int signum) {
     write(STDERR_FILENO, name, strlen(name));
     write(STDERR_FILENO, "\n", 1);
 
+    // Check if stack overflow
+    int64_t used = forge_stack_used();
+    if (used > 7 * 1024 * 1024) {
+        const char* so_msg = " (likely STACK OVERFLOW)\n";
+        write(STDERR_FILENO, so_msg, strlen(so_msg));
+    }
+
     // Print backtrace for debugging
     void* frames[32];
     int nframes = backtrace(frames, 32);
@@ -76,6 +89,8 @@ __attribute__((constructor)) static void forge_install_signal_handlers(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGABRT, &sa, NULL);
     sigaction(SIGBUS, &sa, NULL);
+    // Init stack tracking
+    forge_stack_init();
 }
 
 // ---- Reference counting ----
@@ -433,7 +448,15 @@ double forge_string_parse_float(ForgeString s) {
 
 // ---- String comparison ----
 
+static int eq_call_count = 0;
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
+    eq_call_count++;
+    if (eq_call_count <= 5) {
+        fprintf(stderr, "  [eq] a.ptr=%p a.len=%lld b.ptr=%p b.len=%lld\n",
+            (void*)a.ptr, (long long)a.len, (void*)b.ptr, (long long)b.len);
+        fflush(stderr);
+    }
+    forge_stack_check("forge_string_eq");
     if (a.len != b.len) return 0;
     if (a.ptr == NULL || b.ptr == NULL) return a.ptr == b.ptr ? 1 : 0;
     if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) return 0;
@@ -443,7 +466,16 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
 }
 
 // Lexicographic comparison: returns -1, 0, or 1
+static int cmp_call_count = 0;
 int64_t forge_string_compare(ForgeString a, ForgeString b) {
+    cmp_call_count++;
+    if (cmp_call_count <= 20 || cmp_call_count % 10000 == 0) {
+        char a0 = (a.ptr && a.len > 0 && (uintptr_t)a.ptr > 4096) ? a.ptr[0] : '?';
+        char b0 = (b.ptr && b.len > 0 && (uintptr_t)b.ptr > 4096) ? b.ptr[0] : '?';
+        fprintf(stderr, "  [cmp#%d] '%c'(%lld) vs '%c'(%lld)\n",
+            cmp_call_count, a0, (long long)a.len, b0, (long long)b.len);
+        fflush(stderr);
+    }
     if (a.ptr == NULL && b.ptr == NULL) return a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);
     if (a.ptr == NULL) return b.len == 0 ? 0 : -1;
     if (b.ptr == NULL) return a.len == 0 ? 0 : 1;
@@ -1969,11 +2001,104 @@ void forge_mini_write_debug(ForgeString path, ForgeString content) {
     fprintf(stderr, "  [write_debug] wrote %zu bytes\n", w);
 }
 
-// Debug: dump Lexer struct memory
+// ===== Debug Tooling =====
+
+// 1. Debug print to stderr (always flushed)
+void forge_debug_print(const char* msg) {
+    fprintf(stderr, "%s\n", msg);
+    fflush(stderr);
+}
+
+void forge_debug_print_int(const char* label, int64_t val) {
+    fprintf(stderr, "%s%lld\n", label, (long long)val);
+    fflush(stderr);
+}
+
+void forge_debug_print_str(const char* label, ForgeString s) {
+    if (s.ptr && (uintptr_t)s.ptr > 4096 && s.len > 0 && s.len < 10000) {
+        fprintf(stderr, "%s\"%.*s\" (len=%lld)\n", label, (int)s.len, s.ptr, (long long)s.len);
+    } else {
+        fprintf(stderr, "%sptr=%p len=%lld\n", label, (void*)s.ptr, (long long)s.len);
+    }
+    fflush(stderr);
+}
+
+// 2. Stack usage tracking
+static void* forge_stack_base = NULL;
+void forge_stack_init(void) {
+    volatile int x;
+    forge_stack_base = (void*)&x;
+}
+
+int64_t forge_stack_used(void) {
+    volatile int x;
+    if (!forge_stack_base) return -1;
+    ptrdiff_t diff = (char*)forge_stack_base - (char*)&x;
+    return (int64_t)(diff > 0 ? diff : -diff);
+}
+
+void forge_stack_check(const char* fn_name) {
+    int64_t used = forge_stack_used();
+    if (used > 4 * 1024 * 1024) {  // 4MB = warn
+        fprintf(stderr, "STACK WARNING: %s — %lld bytes used (%.1f MB)\n",
+            fn_name, (long long)used, (double)used / (1024.0 * 1024.0));
+        fflush(stderr);
+    }
+}
+
+// 3. Function tracing (controlled by env var FORGE_TRACE=1)
+static int forge_trace_enabled = -1;  // -1 = unchecked
+static int forge_trace_depth = 0;
+static const char* forge_trace_last[8] = {0};
+
+void forge_trace_enter(const char* fn_name) {
+    if (forge_trace_enabled == -1) {
+        forge_trace_enabled = getenv("FORGE_TRACE") != NULL;
+    }
+    if (!forge_trace_enabled) return;
+    forge_trace_depth++;
+    // Store last 8 function names for crash diagnosis
+    forge_trace_last[forge_trace_depth & 7] = fn_name;
+    if (forge_trace_depth < 20) {  // Only print first 20 levels
+        fprintf(stderr, "%*s> %s\n", forge_trace_depth * 2, "", fn_name);
+        fflush(stderr);
+    }
+    // Auto-detect stack overflow risk
+    int64_t used = forge_stack_used();
+    if (used > 6 * 1024 * 1024) {
+        fprintf(stderr, "STACK OVERFLOW IMMINENT in %s — %lld bytes used!\n", fn_name, (long long)used);
+        fprintf(stderr, "Call chain: ");
+        for (int i = 0; i < 8; i++) {
+            const char* f = forge_trace_last[(forge_trace_depth - i) & 7];
+            if (f) fprintf(stderr, "%s <- ", f);
+        }
+        fprintf(stderr, "...\n");
+        fflush(stderr);
+        _exit(99);
+    }
+}
+
+void forge_trace_exit(const char* fn_name) {
+    if (forge_trace_enabled > 0) forge_trace_depth--;
+}
+
+// 4. Memory dump utility
+void forge_debug_hexdump(void* ptr, int64_t len) {
+    if (!ptr || len <= 0 || len > 256) return;
+    unsigned char* p = (unsigned char*)ptr;
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0 && i % 16 == 0) fprintf(stderr, "\n");
+        fprintf(stderr, "%02x ", p[i]);
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
+}
+
+// 5. Struct field dump
 void forge_debug_lexer(void* ptr) {
     if (!ptr) { fprintf(stderr, "  [dbg] lexer ptr=NULL\n"); fflush(stderr); return; }
     long long* p = (long long*)ptr;
-    fprintf(stderr, "  [dbg] lexer@%p: [0]=%lld [1]=%lld [2]=%lld [3]=%lld [4]=%lld [5]=%lld [6]=%lld [7]=%lld\n",
-        ptr, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+    fprintf(stderr, "  [dbg] lexer@%p: src.ptr=%p src.len=%lld pos=%lld line=%lld col=%lld start=%lld tok.ptr=%p tok.len=%lld\n",
+        ptr, (void*)p[0], p[1], p[2], p[3], p[4], p[5], (void*)p[6], p[7]);
     fflush(stderr);
 }
