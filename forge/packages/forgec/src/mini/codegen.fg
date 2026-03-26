@@ -2403,7 +2403,7 @@ fn gen_fn_decl(f: FnDecl) {
                 let uscore = name.index_of("_")
                 if uscore > 0 {
                     let impl_type_name = name.substring(0, uscore)
-                    if find_struct(impl_type_name) >= 0 {
+                    if find_struct(impl_type_name) >= 0 || find_enum(impl_type_name) >= 0 {
                         self_struct_type = impl_type_name
                     }
                 }
