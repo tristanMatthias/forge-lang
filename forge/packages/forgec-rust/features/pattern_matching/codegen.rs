@@ -433,6 +433,8 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Vec<(BasicValueEnum<'ctx>, Type)> {
         let mut results = Vec::new();
         if !subject_val.is_struct_value() || v.fields.is_empty() {
+            eprintln!("  [extract_enum_fields] EARLY RETURN: is_struct={}, fields_empty={}, val_type={:?}",
+                subject_val.is_struct_value(), v.fields.is_empty(), subject_val.get_type());
             return results;
         }
 
@@ -484,6 +486,8 @@ impl<'ctx> Codegen<'ctx> {
             variant_struct_type, typed_ptr, "variant_data"
         ).unwrap().into_struct_value();
 
+        eprintln!("  [extract_enum_fields] about to extract {} fields, variant_struct_fields={}",
+            v.fields.len(), variant_struct_type.count_fields());
         for (i, (_field_name, field_type)) in v.fields.iter().enumerate() {
             let field_val = self.builder.build_extract_value(
                 variant_val,
@@ -492,8 +496,27 @@ impl<'ctx> Codegen<'ctx> {
             ).unwrap();
 
             let (final_val, final_type) = if v.boxed_fields.contains(&i) {
-                let full_type = subject_type.clone();
-                let full_llvm_ty = self.type_to_llvm_basic(&full_type);
+                // Use the field's own type for unboxing.
+                // For self-referential stubs (empty variants), resolve to full type.
+                let full_type = if let Type::Enum { name: ref ename, variants: ref vv, .. } = field_type {
+                    if vv.is_empty() {
+                        self.type_checker.env.enum_types.get(ename.as_str())
+                            .cloned()
+                            .unwrap_or_else(|| field_type.clone())
+                    } else {
+                        field_type.clone()
+                    }
+                } else {
+                    field_type.clone()
+                };
+                // Try named LLVM type first (matches the type created by Forge codegen)
+                let full_llvm_ty = if let Type::Enum { name: ref ename, .. } = full_type {
+                    self.context.get_struct_type(ename)
+                        .map(|st| st.into())
+                        .unwrap_or_else(|| self.type_to_llvm_basic(&full_type))
+                } else {
+                    self.type_to_llvm_basic(&full_type)
+                };
                 let heap_ptr = self.builder.build_int_to_ptr(
                     field_val.into_int_value(),
                     self.context.ptr_type(inkwell::AddressSpace::default()),
@@ -555,7 +578,8 @@ impl<'ctx> Codegen<'ctx> {
                             self.define_var(name.clone(), alloca, payload_type.clone());
                         }
                     }
-                } else if let Type::Enum { variants, .. } = subject_type {
+                } else if let Type::Enum { name: ename, variants, .. } = subject_type {
+                    eprintln!("  [bind] enum={}, variant={}, fields={}, variant_count={}", ename, variant, fields.len(), variants.len());
                     if let Some(v) = variants.iter().find(|v| v.name == *variant) {
                         // Extract fields and recursively bind nested patterns
                         if subject_val.is_struct_value() && !fields.is_empty() {

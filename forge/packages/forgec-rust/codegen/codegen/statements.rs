@@ -402,12 +402,9 @@ impl<'ctx> Codegen<'ctx> {
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or(Type::Unknown);
 
-            // For mut-self methods: self is passed as ptr, resolve actual struct type
-            if param.name == "self" && param.mutable && ty == Type::Ptr {
-                // Incoming value is a pointer to the caller's struct alloca
-                // Use it directly — field access/mutation goes through this pointer
-                let self_ptr = param_val.into_pointer_value();
-                // Resolve the struct type from the mangled method name (TypeName_method)
+            // For self methods: resolve actual struct type from mangled name
+            if param.name == "self" {
+                // Resolve the struct type from the mangled method name (TypeName__method or TypeName_method)
                 let struct_type = name.find('_')
                     .and_then(|idx| {
                         let tn = &name[..idx];
@@ -415,7 +412,17 @@ impl<'ctx> Codegen<'ctx> {
                         if matches!(resolved, Type::Unknown | Type::Error) { None } else { Some(resolved) }
                     })
                     .unwrap_or(ty.clone());
-                self.define_var("self".to_string(), self_ptr, struct_type);
+
+                if param.mutable && ty == Type::Ptr {
+                    // Mutable self: passed as ptr, use directly for field mutation
+                    let self_ptr = param_val.into_pointer_value();
+                    self.define_var("self".to_string(), self_ptr, struct_type);
+                    continue;
+                }
+                // Non-mutable self: passed by value, store in alloca with resolved type
+                let alloca = self.create_entry_block_alloca(&struct_type, &param.name);
+                self.builder.build_store(alloca, param_val).unwrap();
+                self.define_var(param.name.clone(), alloca, struct_type);
                 continue;
             }
 

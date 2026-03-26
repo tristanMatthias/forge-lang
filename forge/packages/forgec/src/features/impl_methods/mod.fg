@@ -132,10 +132,11 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     IN_FUNCTION_BODY = 1
     let body = p.parse_block()
     IN_FUNCTION_BODY = 0
-    mut block_close_end = block_open_span.end
-    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
+    // Get close position directly (avoid if-assignment bug)
+    let close_tok_idx = p.pos - 1
+    let block_close_end = p.tokens[close_tok_idx].span.end
     mut body_src = ""
-    if p.source.length > 0 && block_close_end > block_open_span.start {
+    if p.source.length > 0 {
         body_src = p.source.substring(block_open_span.start, block_close_end + 1)
     }
 

@@ -8,6 +8,7 @@ use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
+use features.variables.VAR_LIST_INIT_CSV
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -98,6 +99,7 @@ export mut CG_LAST_IS_STR: int = 0
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
 export mut CG_LAST_VAL: ptr = null
 export mut CG_LAST_VAR_PTR: ptr = null  // alloca pointer from most recent emit_ident
+export mut CG_LAST_VAR_ALLOCA_TYPE: ptr = null  // LLVM type of the alloca (CG_I64 or CG_STR)
 export mut CG_HAS_LAST_VAL: int = 0
 export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
@@ -339,6 +341,125 @@ export fn list_elem_llvm_type(name: string) -> ptr {
         si = si - 1
     }
     CG_I64
+}
+
+// Resolve a struct type name to its LLVM type (or null if not found)
+fn resolve_struct_type(name: string) -> ptr {
+    mut si = CG_STRUCT_NAMES.length - 1
+    while si >= 0 {
+        if CG_STRUCT_NAMES[si] == name {
+            let sty = CG_STRUCT_TYPES[si]
+            if sty != null { return sty }
+        }
+        si = si - 1
+    }
+    null
+}
+
+// Get the LLVM element type for list push (avoids assignment-in-if)
+fn get_list_push_elem_type(type_name: string, is_str: int) -> ptr {
+    if is_str == 1 { return CG_STR }
+    if type_name == "" { return CG_I64 }
+    if type_name == "string" { return CG_STR }
+    if type_name == "int" { return CG_I64 }
+    let resolved = resolve_type_to_llvm(type_name)
+    if resolved != null { return resolved }
+    CG_I64
+}
+
+// Get the element byte size for list push (avoids assignment-in-if)
+fn get_list_push_elem_size(type_name: string, is_str: int) -> int {
+    if is_str == 1 { return 16 }
+    if type_name == "" { return 8 }
+    if type_name == "string" { return 16 }
+    if type_name == "int" { return 8 }
+    let resolved = resolve_type_to_llvm(type_name)
+    if resolved != null {
+        let nf = llvm.count_struct_element_types(resolved)
+        if nf > 0 { return nf * 8 }
+    }
+    8
+}
+
+// Emit list push: allocate new array, copy old, append item, return new list
+// Coerce value to match target alloca type for store operations
+fn coerce_for_store(val: ptr, alloca_ty: ptr) -> ptr {
+    if val == null { return llvm.const_int(CG_I64, 0, 0) }
+    if alloca_ty == null { return val }
+    // If alloca is i64 (most variables), try to coerce val to i64
+    if alloca_ty == CG_I64 {
+        // Try zext: works for i1→i64, i8→i64, i32→i64
+        let widened = llvm.build_zext(CG_B, val, CG_I64, "cfs")
+        if widened != null { return widened }
+        // Val might be a ForgeString struct — extract first field (ptr as i64)
+        let extracted = llvm.build_extract_value(CG_B, val, 0, "cfe")
+        if extracted != null {
+            // Convert ptr → i64
+            let as_int = llvm.build_ptrtoint(CG_B, extracted, CG_I64, "cfi")
+            if as_int != null { return as_int }
+            return extracted
+        }
+        return val
+    }
+    // If alloca is ForgeString and val is i64, wrap in struct
+    if alloca_ty == CG_STR {
+        // Try insert_value — if val is already ForgeString, this is a no-op identity
+        let test_extract = llvm.build_extract_value(CG_B, val, 0, "cft")
+        if test_extract != null { return val }  // Already a struct, use as-is
+        // Val is i64 — wrap as {ptr, 0}
+        let as_ptr = llvm.build_inttoptr(CG_B, val, CG_PTR, "cfp")
+        if as_ptr != null {
+            let undef = llvm.get_undef(CG_STR)
+            let s1 = llvm.build_insert_value(CG_B, undef, as_ptr, 0, "cw1")
+            let s2 = llvm.build_insert_value(CG_B, s1, llvm.const_int(CG_I64, 0, 0), 1, "cw2")
+            return s2
+        }
+    }
+    // For struct/enum alloca types — try zext first, then return as-is
+    let widened = llvm.build_zext(CG_B, val, CG_I64, "cfs2")
+    if widened != null { return widened }
+    val
+}
+
+fn emit_list_push(obj_val: ptr, item_val: ptr, elem_size: int, elem_ty: ptr) -> ptr {
+    if obj_val == null { return llvm.const_null(CG_STR) }
+    if item_val == null { return obj_val }
+    let old_len = llvm.build_extract_value(CG_B, obj_val, 1, "ol")
+    if old_len == null { return obj_val }
+    let new_len = llvm.build_add(CG_B, old_len, llvm.const_int(CG_I64, 1, 0), "nl")
+    let es = llvm.const_int(CG_I64, elem_size, 0)
+    let new_size = llvm.build_mul(CG_B, new_len, es, "ns")
+    let new_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, new_size, "np")
+    // Memcpy: only copy if old_len > 0 (conditional branch)
+    let old_size = llvm.build_mul(CG_B, old_len, es, "os")
+    let is_zero = llvm.build_icmp(CG_B, 0, old_len, llvm.const_int(CG_I64, 0, 0), "iz")
+    let ffn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let copy_bb = llvm.append_basic_block(CG_CTX, ffn, "pc")
+    let done_bb = llvm.append_basic_block(CG_CTX, ffn, "pd")
+    llvm.build_cond_br(CG_B, is_zero, done_bb, copy_bb)
+    llvm.position_at_end(CG_B, copy_bb)
+    // Extract old_ptr INSIDE the branch (so null constant isn't used as operand in dead code)
+    let old_ptr2 = llvm.build_extract_value(CG_B, obj_val, 0, "op2")
+    let mc = llvm.value_array_new(3)
+    llvm.value_array_set(mc, 0, new_ptr)
+    llvm.value_array_set(mc, 1, old_ptr2)
+    llvm.value_array_set(mc, 2, old_size)
+    let mft = make_fn_type(CG_VOID, [CG_PTR, CG_PTR, CG_I64])
+    llvm.build_call(CG_B, mft, CG_RT_MEMCPY, mc, 3, "")
+    llvm.value_array_free(mc)
+    llvm.build_br(CG_B, done_bb)
+    llvm.position_at_end(CG_B, done_bb)
+    // Store new element at index old_len
+    let gi = llvm.value_array_new(1)
+    llvm.value_array_set(gi, 0, old_len)
+    let ep = llvm.build_gep2(CG_B, elem_ty, new_ptr, gi, 1, "ep")
+    llvm.value_array_free(gi)
+    llvm.build_store(CG_B, item_val, ep)
+    // Build new list struct {new_ptr, new_len}
+    cg_reinit_types()
+    let undef = llvm.get_undef(CG_STR)
+    let s1 = llvm.build_insert_value(CG_B, undef, new_ptr, 0, "ls1")
+    llvm.build_insert_value(CG_B, s1, new_len, 1, "ls2")
 }
 
 // ─── Enum Tagged Union Helpers ───────────────────
@@ -913,8 +1034,6 @@ impl Codegen {
     fn init(self, name: string) { codegen_init(name) }
     fn verify(self) -> bool { llvm.verify_module(CG_MOD) == 0 }
     fn dispose(self) { codegen_cleanup() }
-    fn write_ir(self, path: string) { codegen_write_ir(path) }
-
     // ─── Program ───────────────────────────────
 
     fn emit_program(self, program: Program) {
@@ -934,19 +1053,6 @@ impl Codegen {
         llvm.position_at_end(CG_B, entry)
         self.emit_block(body)
         llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    }
-
-    fn emit_statement(self, stmt: Statement) {
-        match stmt {
-            .Expr(expr) -> {
-                let val = self.emit_expr(expr)
-                CG_LAST_VAL = val
-                CG_HAS_LAST_VAL = 1
-            }
-            .Assign(target, value, span) -> { self.emit_assign(target, value) }
-            .Return(value, span) -> { self.emit_return(value) }
-            .Feature(fe) -> { self.dispatch_stmt(fe) }
-        }
     }
 
     fn emit_return(self, value: Expr) {
@@ -1075,6 +1181,11 @@ impl Codegen {
                 if is_str_list { elem_ty = CG_STR }
                 // Also check CG_STR_VAR_NAMES (more reliable than CSV — handles process.args)
                 if obj_var_name != "" && obj_is_str == 1 { elem_ty = CG_STR }
+                // Use struct type for struct list elements (e.g., List<Token>)
+                if obj_list_elem != "" && obj_list_elem != "string" && obj_list_elem != "int" {
+                    let resolved_ty = resolve_type_to_llvm(obj_list_elem)
+                    if resolved_ty != null { elem_ty = resolved_ty }
+                }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
                 // Ensure index is integer (might be ForgeString if CG_LAST_IS_STR leaked)
@@ -1090,13 +1201,21 @@ impl Codegen {
                 if gp == null { return llvm.const_int(CG_I64, 0, 0) }
                 let ev = llvm.build_load(CG_B, elem_ty, gp, "ev")
                 if elem_ty == CG_STR { CG_LAST_IS_STR = 1 }
+                // Set struct type tracking for struct elements
+                if obj_list_elem != "" && obj_list_elem != "string" && obj_list_elem != "int" {
+                    CG_LAST_STRUCT_TYPE = obj_list_elem
+                }
                 return ev
             }
             .Block(block) -> {
                 // Empty block = [] list literal in AST mode
                 if block.statements.length == 0 {
+                    // Return proper empty list: ForgeString {null, 0}
+                    eprintln("  [DEBUG] empty block → const_null(CG_STR)")
+                    cg_reinit_types()
                     CG_LAST_IS_LIST = 1
                     CG_LAST_IS_STR = 1
+                    return llvm.const_null(CG_STR)
                 }
                 return self.emit_block(block)
             }
@@ -1336,15 +1455,17 @@ impl Codegen {
         // target should be an Ident — use emit_ident to find alloca, then store
         match target {
             .Ident(name, span) -> {
-                // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
+                // Find target alloca, evaluate RHS, store
                 CG_LAST_VAR_PTR = null
+                CG_LAST_VAR_ALLOCA_TYPE = null
                 let _ident_val = self.emit_ident(name)
                 let target_ptr = CG_LAST_VAR_PTR
+                let target_ty = CG_LAST_VAR_ALLOCA_TYPE
                 let val = self.emit_expr(value)
-                if target_ptr != null {
-                    llvm.build_store(CG_B, val, target_ptr)
-                    return
-                }
+                if target_ptr == null { return }
+                if val == null { return }
+                let store_val = coerce_for_store(val, target_ty)
+                llvm.build_store(CG_B, store_val, target_ptr)
                 // Fallback: search CG_VAR_NAMES
                 mut vi = CG_VAR_NAMES.length - 1
                 while vi >= 0 {
@@ -1514,6 +1635,13 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
+        // EMPTYLIST sentinel: return proper empty list {null, 0}
+        if name == "EMPTYLIST" {
+            cg_reinit_types()
+            CG_LAST_IS_LIST = 1
+            CG_LAST_IS_STR = 1
+            return llvm.const_null(CG_STR)
+        }
         // Search current function locals first (from END to scope start)
         // then globals (from scope start-1 to 0)
         // This prevents stale locals from other functions being found
@@ -1573,6 +1701,7 @@ impl Codegen {
                     }
                 }
                 CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
+                CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -1625,6 +1754,7 @@ impl Codegen {
                     }
                 }
                 CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
+                CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -1896,19 +2026,53 @@ impl Codegen {
                         }
                         return result
                     }
+                    // String methods: index_of, substring, length, contains
+                    if f == "index_of" && args.length >= 1 {
+                        let obj_val = self.emit_ident(ns)
+                        let sub_val = self.emit_expr(args[0])
+                        CG_LAST_IS_STR = 0
+                        return call_rt_2_ss(CG_RT_SINDEXOF, obj_val, sub_val, CG_I64, "io")
+                    }
+                    if f == "substring" && args.length >= 2 {
+                        let obj_val = self.emit_ident(ns)
+                        let start_val = self.emit_expr(args[0])
+                        let end_val = self.emit_expr(args[1])
+                        cg_reinit_types()
+                        let sa = llvm.value_array_new(3)
+                        llvm.value_array_set(sa, 0, obj_val)
+                        llvm.value_array_set(sa, 1, start_val)
+                        llvm.value_array_set(sa, 2, end_val)
+                        let sft = make_fn_type(CG_STR, [CG_STR, CG_I64, CG_I64])
+                        let r = llvm.build_call(CG_B, sft, CG_RT_SSUBSTR, sa, 3, "ss")
+                        llvm.value_array_free(sa)
+                        CG_LAST_IS_STR = 1
+                        return r
+                    }
+                    if f == "contains" && args.length >= 1 {
+                        let obj_val = self.emit_ident(ns)
+                        let sub_val = self.emit_expr(args[0])
+                        let r = call_rt_2_ss(CG_RT_SINDEXOF, obj_val, sub_val, CG_I64, "ci")
+                        CG_LAST_IS_STR = 0
+                        return llvm.build_icmp(CG_B, 5, r, llvm.const_int(CG_I64, 0, 0), "cn")
+                    }
                     // Enum constructors are not method calls — skip
                     let maybe_tag = match_enum_tag(ns + "." + f)
                     if maybe_tag < 0 {
                         // List push: ns.push(item) — always try, don't require list tracking
                         if f == "push" {
                             if args.length >= 1 {
-                                // Evaluate arg (for side effects) but return obj unchanged
-                                // TODO: implement proper list push once elem types are tracked
-                                self.emit_expr(args[0])
+                                // List.push — call runtime forge_list_push
+                                let item_val = self.emit_expr(args[0])
+                                let item_is_str = CG_LAST_IS_STR
+                                cg_reinit_types()
                                 let obj_val = self.emit_ident(ns)
+                                let elem_type_name = CG_LAST_LIST_ELEM_TYPE
+                                let elem_ty = get_list_push_elem_type(elem_type_name, item_is_str)
+                                let elem_size = get_list_push_elem_size(elem_type_name, item_is_str)
+                                let result = emit_list_push(obj_val, item_val, elem_size, elem_ty)
                                 CG_LAST_IS_STR = 1
                                 CG_LAST_IS_LIST = 1
-                                return obj_val
+                                return result
                             }
                         }
                         // Map has: ns.has(key)
@@ -2150,32 +2314,47 @@ impl Codegen {
             .Assign(t, v, s) -> { self.emit_assign(t, v) }
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
-                let ev = self.emit_expr(val)
-                // Correct CG_LAST_IS_STR for known i64-returning extern functions
-                match val {
-                    .Call(callee, _, _) -> {
-                        match callee {
-                            .Ident(cn, _) -> {
-                                if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
+                // Check if this variable was initialized with [] or has List type
+                let list_needle = "," + name + ","
+                let is_list_init = VAR_LIST_INIT_CSV.index_of(list_needle) >= 0
+                if is_list_init {
+                    // Force list type: emit empty list value and register properly
+                    cg_reinit_types()
+                    CG_LAST_IS_LIST = 1
+                    CG_LAST_IS_STR = 1
+                    let empty_list = llvm.const_null(CG_STR)
+                    self.define_var(name, Type.String, empty_list)
+                } else {
+                    let ev = self.emit_expr(val)
+                    // Correct CG_LAST_IS_STR for known i64-returning extern functions
+                    match val {
+                        .Call(callee, _, _) -> {
+                            match callee {
+                                .Ident(cn, _) -> {
+                                    if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
+                                    if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
+                                    if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
+                                }
+                                _ -> {}
                             }
-                            _ -> {}
                         }
+                        _ -> {}
                     }
-                    _ -> {}
+                    let let_is_str = CG_LAST_IS_STR
+                    let let_is_enum = CG_LAST_ENUM_TYPE
+                    mut ty = Type.Int
+                    if let_is_str == 1 { ty = Type.String }
+                    // Reset enum type for non-enum variables (prevents alloca type pollution)
+                    if let_is_str == 0 && let_is_enum == "" {
+                        CG_LAST_ENUM_TYPE = ""
+                    }
+                    self.define_var(name, ty, ev)
                 }
-                let let_is_list = CG_LAST_IS_LIST
-                let let_is_str = CG_LAST_IS_STR
-                mut ty = Type.Int
-                if let_is_str == 1 { ty = Type.String }
-                self.define_var(name, ty, ev)
-                // Explicitly register string vars (CG_LAST_IS_STR may be corrupted by define_var pushes)
-                if let_is_str == 1 {
+                // Register string/list vars
+                if is_list_init || CG_LAST_IS_STR == 1 {
                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
                 }
-                // Register list variables only when CG_LAST_IS_LIST was set
-                if let_is_list == 1 {
+                if is_list_init || CG_LAST_IS_LIST == 1 {
                     CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
                     CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
                 }
@@ -2558,11 +2737,13 @@ impl Codegen {
     // ─── Variable Definition ───────────────────
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        let is_str = ty is .String
+        // Use CG_LAST_IS_STR directly — 'ty is .String' doesn't work in compiled output
+        let is_str = CG_LAST_IS_STR == 1
+        let is_list = CG_LAST_IS_LIST == 1
         let is_map = CG_LAST_IS_MAP == 1
         cg_reinit_types()
         mut alloca_ty = CG_I64
-        if is_str {
+        if is_str || is_list {
             alloca_ty = CG_STR
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
         }
@@ -2672,6 +2853,7 @@ impl Codegen {
             let ft = make_fn_type(CG_I64, [CG_STR])
             let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
             llvm.value_array_free(ca)
+            CG_LAST_IS_STR = 0
             return result
         }
 
@@ -2771,7 +2953,7 @@ impl Codegen {
         let csv_result = cg_enum_variant_field_types(ename, vn2)
         if csv_result.length > 0 { return csv_result }
         // Hardcoded fallback table
-        let ft_table = "|IntLit:i4|FloatLit:i4|StringLit:s4|BoolLit:i4|NullLit:4|Ident:s4|Binary:pip4|Unary:ip4|Call:pl4|MemberAccess:ps4|Index:pp4|Expr:p|Assign:pp4|Return:p4|Let:sp4|If:ppp4i4|Match:pssli4|While:pp4|For:spp4|Block:l|Feature:p|"
+        let ft_table = "|IntLit:i4|FloatLit:i4|StringLit:s4|BoolLit:i4|NullLit:4|Ident:s4|Binary:ppp4|Unary:pp4|Call:pl4|MemberAccess:ps4|Index:pp4|Expr:p|Assign:pp4|Return:p4|Let:sp4|If:ppp4i4|Match:pssli4|While:pp4|For:spp4|Block:l|Feature:p|"
         let ft_needle = "|" + vn2 + ":"
         let ft_pos = ft_table.index_of(ft_needle)
         if ft_pos < 0 { return "" }

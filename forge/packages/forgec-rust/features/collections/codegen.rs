@@ -442,11 +442,20 @@ impl<'ctx> Codegen<'ctx> {
         let new_ptr = self.call_runtime("forge_alloc", &[new_total.into()], "new_data")?
             .into_pointer_value();
 
-        // Copy old data: memcpy old_len * elem_size bytes
+        // Copy old data if non-empty (null ptr for empty lists would crash memcpy)
         let old_total = self.builder.build_int_mul(elem_size, old_len, "old_total").unwrap();
-        self.builder.build_memcpy(
-            new_ptr, 1, data_ptr, 1, old_total
-        ).ok();
+        let is_empty = self.builder.build_int_compare(
+            inkwell::IntPredicate::EQ, old_len, self.context.i64_type().const_zero(), "is_empty"
+        ).unwrap();
+        let function = self.current_function();
+        let copy_bb = self.context.append_basic_block(function, "push_copy");
+        let done_bb = self.context.append_basic_block(function, "push_done");
+        self.builder.build_conditional_branch(is_empty, done_bb, copy_bb).unwrap();
+        self.builder.position_at_end(copy_bb);
+        // Use LLVM memcpy intrinsic (always available, no runtime dependency)
+        self.builder.build_memcpy(new_ptr, 1, data_ptr, 1, old_total).ok();
+        self.builder.build_unconditional_branch(done_bb).unwrap();
+        self.builder.position_at_end(done_bb);
 
         // Store new element at index old_len
         let new_elem_ptr = unsafe {

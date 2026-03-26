@@ -250,9 +250,6 @@ impl<'ctx> Codegen<'ctx> {
                 for _ in 0..max_slots {
                     field_types.push(self.context.i64_type().into());
                 }
-                // Always create fresh anonymous struct for enums.
-                // Named type caching causes stale types when nested enums
-                // are first seen as stubs and later with full variants.
                 let anon = self.context.struct_type(
                     &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
                     false,

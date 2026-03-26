@@ -10,7 +10,7 @@ use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
 use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
-use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
+use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY, VAR_LIST_INIT_CSV}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
 use features.while_loops.PARSE_END_POS
@@ -77,12 +77,11 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     IN_FUNCTION_BODY = 1
     let body = p.parse_block()
     IN_FUNCTION_BODY = 0
-    // The } token was consumed by parse_block, so peek_at(-1) is the }
-    // Use the source positions: from block_open to current position
-    mut block_close_end = block_open_span.end
-    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
+    // Get close position directly (avoid if-assignment bug)
+    let close_tok_idx = p.pos - 1
+    let block_close_end = p.tokens[close_tok_idx].span.end
     mut body_src = ""
-    if p.source.length > 0 && block_close_end > block_open_span.start {
+    if p.source.length > 0 {
         body_src = p.source.substring(block_open_span.start, block_close_end + 1)
     }
 
@@ -434,6 +433,7 @@ export fn declare_all_fns() {
 // Emit a single function body from source — called per-function (no re-declaration)
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = FN_NAMES[idx]
+    eprintln("  emit: " + name)
     let body_src = FN_BODY_SOURCES[idx]
     let is_main = name == "main"
     mut pc = 0
@@ -537,6 +537,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     cg_reinit_types()
 
     // Pure AST parse then emit
+    // Clear per-function list init tracking (prevents cross-function name collisions)
+    VAR_LIST_INIT_CSV = ""
     if body_src != "" {
         CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)
@@ -564,8 +566,12 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             } }
             cg_reinit_types()
             let ret_ty = resolve_type_to_llvm(ret_type_name)
-            if ret_ty != null && ret_ty != CG_I64 {
-                // Struct/enum return: always use undef (body expressions may be mistyped)
+            if ret_ty != null && ret_ty != CG_I64 && CG_HAS_LAST_VAL == 1 {
+                // Struct/enum return: use CG_LAST_VAL if available
+                llvm.build_ret(CG_B, CG_LAST_VAL)
+                CG_HAS_LAST_VAL = 0
+            } else if ret_ty != null && ret_ty != CG_I64 {
+                // No value available: fallback to undef
                 llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
                 CG_HAS_LAST_VAL = 0
             } else {

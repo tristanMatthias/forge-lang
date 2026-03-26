@@ -1447,7 +1447,8 @@ impl Parser {
             self.skip_newlines()
         }
         self.expect(TokenKind.RBracket)
-        Expr.Block(Block { statements: [], span: start })
+        // Use Ident sentinel — Block variant match is unreliable in compiled output
+        Expr.Ident("EMPTYLIST", start)
     }
 
     // ─── Dot Variant ───────────────────────────

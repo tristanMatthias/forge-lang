@@ -466,15 +466,44 @@ pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
 
 /// Guard for integer binary operations: both operands must be matching integer types.
 fn guard_int_binop(lhs: LLVMPtr, rhs: LLVMPtr) -> bool {
+    if lhs.is_null() || rhs.is_null() { return false; }
     unsafe {
         let lhs_ty = LLVMTypeOf(lhs);
         let rhs_ty = LLVMTypeOf(rhs);
+        if lhs_ty.is_null() || rhs_ty.is_null() { return false; }
         lhs_ty == rhs_ty && LLVMGetTypeKind(lhs_ty) == 8 // IntegerTypeKind
     }
 }
 
+// Ensure an LLVM value is i64 — widen if narrower, extract from struct if needed
+unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
+    if val.is_null() { return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0)); }
+    let ty = LLVMTypeOf(val);
+    let kind = LLVMGetTypeKind(ty);
+    let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+    if kind == 8 { // IntegerTypeKind
+        let w = LLVMGetIntTypeWidth(ty);
+        if w < 64 { return LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null())); }
+        return val;
+    }
+    if kind == 10 { // StructTypeKind — extract field 0 and convert to i64
+        let f0 = LLVMBuildExtractValue(builder, val, 0, safe_name(std::ptr::null()));
+        if !f0.is_null() {
+            let f0_kind = LLVMGetTypeKind(LLVMTypeOf(f0));
+            if f0_kind == 12 { // PointerTypeKind
+                return LLVMBuildPtrToInt(builder, f0, i64_ty, safe_name(std::ptr::null()));
+            }
+            if f0_kind == 8 { return f0; }
+        }
+    }
+    val
+}
+
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    // Try to coerce both operands to i64 first
+    let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
         // Auto-detect string concatenation: if either operand is a struct (ForgeString),
         // call forge_string_concat. Convert i64 operands to string first.
@@ -518,6 +547,8 @@ pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
         return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
     }
@@ -526,6 +557,8 @@ pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
         return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
     }
@@ -577,9 +610,10 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
         let val_ty = LLVMTypeOf(val);
         let val_kind = LLVMGetTypeKind(val_ty);
         let mut real_val = val;
+        // Widen narrow ints (i1, i8, i32) to i64 before storing
         if val_kind == 8 { // IntegerTypeKind
             let bit_width = LLVMGetIntTypeWidth(val_ty);
-            if bit_width == 1 {
+            if bit_width < 64 {
                 let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
                 real_val = LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null()));
             }
@@ -815,14 +849,23 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
     let ty = ensure_type(ty);
-    if ptr.is_null() || ty.is_null() {
+    if ptr.is_null() || ty.is_null() || indices.is_null() || num_indices <= 0 {
         return std::ptr::null_mut();
     }
     unsafe {
-        // GEP requires a pointer base — if we got a non-pointer, return null
+        // GEP requires a pointer base
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
-        if ptr_kind != 12 { // 12 = PointerTypeKind
-            return std::ptr::null_mut();
+        if ptr_kind != 12 { return std::ptr::null_mut(); }
+        // Validate indices — each must be an integer value
+        for i in 0..num_indices as usize {
+            let idx = *indices.add(i);
+            if idx.is_null() { return std::ptr::null_mut(); }
+            let idx_kind = LLVMGetTypeKind(LLVMTypeOf(idx));
+            if idx_kind != 8 { // Not IntegerTypeKind
+                // Try to coerce to i64
+                let coerced = ensure_i64(builder, idx);
+                *indices.add(i) = coerced;
+            }
         }
         LLVMBuildGEP2(builder, ty, ptr, indices, num_indices as c_uint, safe_name(name))
     }
@@ -1149,6 +1192,11 @@ pub extern "C" fn forge_llvm_get_basic_block_parent(bb: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_position_builder_before(builder: LLVMPtr, instr: LLVMPtr) {
+    unsafe { LLVMPositionBuilderBefore(builder, instr) }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_position_before(builder: LLVMPtr, instr: LLVMPtr) {
     unsafe { LLVMPositionBuilderBefore(builder, instr) }
 }
 

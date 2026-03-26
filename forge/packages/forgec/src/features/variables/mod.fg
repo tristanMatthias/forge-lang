@@ -16,6 +16,10 @@ use @std.llvm
 
 mut VAR_DECLS: Map<string, VarDeclData> = {}
 
+// Track variables initialized with [] or having List<T> type annotation
+// Used by emit_statement .Let handler when emit_expr can't match the value
+export mut VAR_LIST_INIT_CSV: string = ""  // comma-separated var names
+
 // ─── Data Types ──────────────────────────────────
 
 enum VarKind { Let, Mut, Const }
@@ -111,6 +115,10 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     // When CG_ACTIVE is off, return AST node for emit_block to handle
     if !CG_ACTIVE {
+        // Track list-initialized variables for define_var to use correct alloca type
+        if value_tok_key == "LBracket" || ann_is_list == 1 {
+            VAR_LIST_INIT_CSV = VAR_LIST_INIT_CSV + "," + var_name + ","
+        }
         PARSE_END_POS = p.pos
         return Statement.Let(var_name, value!, start)
     }
