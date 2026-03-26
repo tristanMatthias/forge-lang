@@ -30,9 +30,35 @@ target/release/forgec build packages/forgec/src/mini/main.fg --dev -o /tmp/mini_
 /tmp/mini_stage1 build packages/forgec/src/mini/main.fg /tmp/mini_stage2
 ```
 
-## Full Compiler (packages/forgec/src/main.fg) — IN PROGRESS
+## Mini Compiling the Full Compiler
 
-## Pipeline
+```
+Mini ──→ compiles full compiler (406 fns, 53K lines IR, 1.5s) ──→ binary runs
+  ✅                        ✅                                       ⚠️
+```
+
+The mini-compiled full compiler binary:
+- Starts, shows usage ✅
+- Tokenizes and parses input files ✅
+- Compiles simple programs (`hello world`, `fib`, `while` loops) ✅
+- **FAILS on**: match arm bodies produce no code (LLVM builder calls are no-ops)
+- **Root cause**: enum match destructuring generates empty arm bodies — the full compiler's
+  codegen calls `llvm.build_X()` inside match arms but the generated code doesn't execute them
+
+### Key Blocker: Match Arm Body Codegen
+
+The full compiler's match on `Statement` enum generates IR where each arm just branches to
+the merge label without executing the arm body. E.g., `match c { .Red -> "red" }` produces:
+```llvm
+11:  ; Red arm - should create "red" string
+  br label %10  ; ← empty! should have forge_string_new call
+```
+
+This suggests the LLVM builder position or the code emission path inside match arms is broken
+in the mini-compiled full compiler. Likely cause: the full compiler's `Codegen_emit_expr` or
+`Codegen_emit_block` returns wrong values when called from a match arm context.
+
+## Full Compiler via Rust Bootstrap — SEPARATE TRACK
 
 ```
 Bootstrap (Rust) ──→ Stage 2 IR ──→ Stage 2 binary ──→ Stage 3
