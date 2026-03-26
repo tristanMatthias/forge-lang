@@ -2051,7 +2051,9 @@ impl Codegen {
                                 let item_is_str = CG_LAST_IS_STR
                                 cg_reinit_types()
                                 let obj_val = self.emit_ident(ns)
-                                let elem_type_name = CG_LAST_LIST_ELEM_TYPE
+                                // Look up element type from CSV (CG_LAST_LIST_ELEM_TYPE may not be set for variables)
+                                mut elem_type_name = CG_LAST_LIST_ELEM_TYPE
+                                if elem_type_name == "" { elem_type_name = list_elem_type(ns) }
                                 let elem_ty = get_list_push_elem_type(elem_type_name, item_is_str)
                                 // Use LLVM's size_of for correct element byte size
                                 let esv = llvm.size_of(elem_ty)
