@@ -1255,10 +1255,14 @@ impl Codegen {
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
                 mut elem_ty = CG_I64
-                // Use CG_STR for string list elements
-                if is_str_list { elem_ty = CG_STR }
-                // Also check CG_STR_VAR_NAMES (more reliable than CSV — handles process.args)
-                if obj_var_name != "" && obj_is_str == 1 { elem_ty = CG_STR }
+                // Element type: default i64, override to CG_STR only for confirmed string lists
+                // Note: is_str_list is unreliable — all list inits register as string lists
+                if obj_list_elem == "string" { elem_ty = CG_STR }
+                if is_str_list && obj_list_elem == "" {
+                    // Only if there's no explicit element type, use str for known string sources
+                    // (process.args, string parameter lists, etc.)
+                    if obj_var_name == "args" { elem_ty = CG_STR }
+                }
                 // Use struct type for struct list elements (e.g., List<Token>)
                 if obj_list_elem != "" && obj_list_elem != "string" && obj_list_elem != "int" {
                     let resolved_ty = resolve_type_to_llvm(obj_list_elem)
