@@ -149,6 +149,39 @@ impl Parser {
             self.advance()
             return "_"
         }
+        // Keywords used as enum variant names — use tok.text instead of kind matching
+        // (bootstrap's large enum match is broken for high variant indices)
+        let txt = tok.text
+        if txt == "match" { self.advance()
+            return "Match" }
+        if txt == "while" { self.advance()
+            return "While" }
+        if txt == "for" { self.advance()
+            return "For" }
+        if txt == "break" { self.advance()
+            return "Break" }
+        if txt == "continue" { self.advance()
+            return "Continue" }
+        if txt == "if" { self.advance()
+            return "If" }
+        if txt == "return" { self.advance()
+            return "Return" }
+        if txt == "let" { self.advance()
+            return "Let" }
+        if txt == "mut" { self.advance()
+            return "Mut" }
+        if txt == "fn" { self.advance()
+            return "Fn" }
+        if txt == "enum" { self.advance()
+            return "Enum" }
+        if txt == "struct" { self.advance()
+            return "Struct" }
+        if txt == "impl" { self.advance()
+            return "Impl" }
+        if txt == "use" { self.advance()
+            return "Use" }
+        if txt == "mod" { self.advance()
+            return "Mod" }
         self.error("expected identifier")
         ""
     }
