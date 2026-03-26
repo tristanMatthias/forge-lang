@@ -142,6 +142,7 @@ impl Lexer {
     }
 
     fn advance(self) -> string {
+        if self.pos >= self.source.length { return "" }
         let ch = self.source[self.pos]
         self.pos = self.pos + 1
         if ch == "\n" {
