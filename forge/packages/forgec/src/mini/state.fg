@@ -405,6 +405,7 @@ fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "string" { return "%ForgeString" }
     if ty_name == "float" { return "double" }
     if ty_name == "List" { return "{ ptr, i64 }" }
+    if ty_name == "ptr" { return "ptr" }
     if ty_name == "fn" { return "ptr" }
     if ty_name == "Map" { return "ptr" }
     // Check if it's a known struct

@@ -677,7 +677,10 @@ fn ast_parse_fn_decl() -> FnDecl {
         if check("mut") { advance() }
         let pname = advance().text
         if !check(":") {
-            // self param or untyped param — skip
+            // self param or untyped param
+            if pname == "self" {
+                params = params.push(Param { name: "self", type_name: "self" })
+            }
             skip_nl()
             if check(",") { advance() }
             skip_nl()
@@ -803,16 +806,21 @@ fn ast_parse_program() -> List<FnDecl> {
                     mut f = ast_parse_fn_decl()
                     // Mangle name: TypeName_method
                     f.name = impl_type + "_" + f.name
-                    // Inject self param with impl type
-                    mut new_params: List<Param> = []
-                    new_params = new_params.push(Param { name: "self", type_name: impl_type })
-                    mut pi = 0
-                    while pi < f.params.length {
-                        let p: Param = f.params[pi]
-                        new_params = new_params.push(p)
-                        pi = pi + 1
+                    // Check if first param is "self" — set its type to ptr
+                    if f.params.length > 0 {
+                        let first_p: Param = f.params[0]
+                        if first_p.type_name == "self" {
+                            mut new_params: List<Param> = []
+                            new_params = new_params.push(Param { name: "self", type_name: "ptr" })
+                            mut pi = 1
+                            while pi < f.params.length {
+                                let p: Param = f.params[pi]
+                                new_params = new_params.push(p)
+                                pi = pi + 1
+                            }
+                            f.params = new_params
+                        }
                     }
-                    f.params = new_params
                     fns = fns.push(f)
                 } else {
                     advance()

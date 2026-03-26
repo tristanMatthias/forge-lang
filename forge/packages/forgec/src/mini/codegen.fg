@@ -784,25 +784,40 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         LAST_IS_FLOAT = 0
         return r2
     }
+    // Coerce ptr operands to i64 for integer arithmetic
+    mut ilhs = lhs
+    mut irhs = rhs
+    let lpty = reg_get_type(lhs)
+    let rpty = reg_get_type(rhs)
+    if lpty == "ptr" {
+        let conv = new_reg()
+        ir_line(conv + " = ptrtoint ptr " + lhs + " to i64")
+        ilhs = conv
+    }
+    if rpty == "ptr" {
+        let conv = new_reg()
+        ir_line(conv + " = ptrtoint ptr " + rhs + " to i64")
+        irhs = conv
+    }
     // Integer operations
     if op == "+" {
-        ir_line(r + " = add i64 " + lhs + ", " + rhs)
+        ir_line(r + " = add i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "-" {
-        ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+        ir_line(r + " = sub i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "*" {
-        ir_line(r + " = mul i64 " + lhs + ", " + rhs)
+        ir_line(r + " = mul i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "/" {
-        ir_line(r + " = sdiv i64 " + lhs + ", " + rhs)
+        ir_line(r + " = sdiv i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "%" {
-        ir_line(r + " = srem i64 " + lhs + ", " + rhs)
+        ir_line(r + " = srem i64 " + ilhs + ", " + irhs)
         return r
     }
     // Comparisons
