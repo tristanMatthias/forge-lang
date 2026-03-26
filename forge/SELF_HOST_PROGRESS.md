@@ -1,8 +1,8 @@
 # Self-Hosting Progress
 
-**Status: Stage 2 binary exists, crashes when compiling itself**
+**Status: Stage 2 finds all 38 modules, compiles Stage 3. Tokenizer broken (18/390 fns).**
 
-Last updated: 2026-03-25
+Last updated: 2026-03-25 18:00
 
 ## Pipeline
 
@@ -73,28 +73,57 @@ git checkout HEAD -- packages/forgec/src/
 
 The standalone 280KB binaries (produced by llc+link) have `@span` global conflicts with runtime.c's `span()` function. Fix: make `@span` internal in IR before llc, or remove `span()` from runtime.
 
+## Current Blockers (in order)
+
+### Blocker 1: list.push on untracked variables (CURRENT)
+`result.push(item)` panics because `result` isn't registered in `CG_LIST_VAR_CSV`.
+Root cause: `mut result: List<string> = []` — the `[]` literal returns `Expr.Block(empty)` in AST mode, which doesn't set `CG_LAST_IS_LIST`. The Let handler never registers it as a list.
+Fix needed: track list variables from type annotations or from `[]` initialization.
+
+### Blocker 2: LLVM API functions not declared in output module
+Stage 2's binary has ZERO `forge_llvm_*` declarations. Every `llvm.*` call (build_and, build_icmp, build_store, etc.) silently returns 0. The tokenizer, parser, codegen — nothing works because the compiler can't call ANY LLVM functions.
+Fix needed: declare all ~50 forge_llvm_* functions in the output module.
+Challenge: Rule 9 says bootstrap drops new declarations from cg_init_runtime.
+
+### Blocker 3: Tokenizer produces byte-level tokens
+Even with self-by-pointer and struct resolution, Stage 2 produces 1 token per byte. Root cause is Blocker 2 — `llvm.build_and`, `llvm.build_icmp` etc. all return 0, so `is_alpha`, `is_digit` etc. always return false/undef.
+
+## What Works Now
+
+- [x] Bootstrap reproduces from commit 90b642b (`target/release/forgec run`)
+- [x] Bootstrap → 38 files, 390 fns, valid IR, links
+- [x] Stage 2 runs, prints usage
+- [x] Stage 2 finds all 38 modules (collect_module_paths works)
+- [x] Stage 2 scans all 38 files (csv_len=1590)
+- [x] Stage 2 compiles Stage 3 (with 18 fns — incomplete)
+- [x] Stage 3 binary runs
+- [x] FATAL panic on unresolved calls (no more silent failures)
+- [x] struct.method() resolves for ALL struct variables (not just self)
+- [x] self passed by pointer (mutations persist)
+- [x] Chained member access (self.source.length)
+- [x] Parser desugaring for string methods
+- [x] emit_assign target_ptr fix
+- [x] BoolLit constant fix
+- [x] Let handler CG_LAST_IS_STR correction
+
 ## Concrete Plan to Full Self-Hosting
 
-### Step 1: Make stage1_bootstrap reproducible
-- [ ] Fix the `@span` global vs `span()` function conflict
-- [ ] Document exact command to recreate from clean checkout
-- [ ] Verify recreated binary matches ./stage1_bootstrap behavior (385 fns)
+### Step 1: Fix list.push (Blocker 1)
+- [ ] Track list variables from `[]` initialization in AST mode
+- [ ] Verify push works in AST codegen path
 
-### Step 2: Fix collect_module_paths crash in Stage 2
-Stage 2 was compiled by stage1_bootstrap. Its `collect_module_paths` has the emit_assign bug. Options:
-- [ ] Option A: Rewrite collect_module_paths to avoid assignments inside if blocks (work around the bug)
-- [ ] Option B: Use resolve_modules path for build command (it uses per-char scanning that works)
-- [ ] Option C: Fix the 68 Rust bootstrap type errors so the bootstrap can compile fixed codegen
+### Step 2: Declare LLVM API in output module (Blocker 2)
+- [ ] Find approach that doesn't get dropped by bootstrap
+- [ ] Declare all forge_llvm_* functions needed by the compiler
 
-### Step 3: Stage 2 compiles Stage 3
-- [ ] Stage 2 finds all 38 modules
-- [ ] Stage 2 tokenizes correctly (385 fns)
-- [ ] Stage 2 declares and emits all functions
-- [ ] Stage 2 produces valid IR
-- [ ] Stage 3 binary links and runs
+### Step 3: Stage 2 tokenizes correctly
+- [ ] is_alpha, is_digit, etc. return correct values
+- [ ] Stage 2 scans 390 fns (not 18)
+- [ ] Stage 2 declares all functions
 
-### Step 4: Stage 3 = Stage 2 (fixed point)
-- [ ] Stage 3 produces identical IR to Stage 2
+### Step 4: Stage 2 compiles Stage 3 correctly
+- [ ] Stage 3 binary produces same output as Stage 2
+- [ ] Fixed point achieved
 - [ ] Delete Rust bootstrap
 
 ## Key Files
