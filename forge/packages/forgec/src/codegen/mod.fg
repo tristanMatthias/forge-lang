@@ -2273,6 +2273,8 @@ impl Codegen {
                         pre_bi = pre_bi + 1
                     }
                     // Emit each arm as if-else chain
+                    // Track cumulative binding offset (pre-allocas are sequential across all arms)
+                    mut pre_binding_offset = 0
                     mut ai = 0
                     while ai < tags.length {
                         cg_reinit_types()
@@ -2344,7 +2346,7 @@ impl Codegen {
                                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
                                                 if alloca_idx < CG_VAR_PTRS.length {
                                                     llvm.build_store(CG_B, fsv, CG_VAR_PTRS[alloca_idx])
                                                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
@@ -2365,7 +2367,7 @@ impl Codegen {
                                                     if loaded != null { deref_val = loaded }
                                                 }
                                                 // Store the dereferenced full value
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
                                                 if alloca_idx < CG_VAR_PTRS.length {
                                                     // For boxed Expr: alloca needs to be Expr-sized
                                                     // But pre-alloca is CG_STR (16 bytes). Expr is larger.
@@ -2387,7 +2389,7 @@ impl Codegen {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
+                                                let alloca_idx = pre_start_idx + pre_binding_offset + binding_ptr_idx
                                                 if alloca_idx < CG_VAR_PTRS.length {
                                                     llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
                                                 }
@@ -2413,6 +2415,8 @@ impl Codegen {
                         // (bootstrap: can't truncate lists, but pushing same names in next arm is fine
                         //  because emit_ident searches from end — new arm's bindings shadow old ones)
                         llvm.position_at_end(CG_B, next_bb)
+                        // Advance pre-binding offset by bindings in this arm
+                        pre_binding_offset = pre_binding_offset + binding_ptr_idx
                         ai = ai + 1
                     }
                     // Default arm
