@@ -725,7 +725,7 @@ fn cg_init_ctx(name: string) {
     CG_CTX = llvm.context_create()
     if CG_CTX == null {
         eprintln("FATAL: LLVM context_create returned null!")
-        process.exit(1)
+        
     }
     CG_MOD = llvm.module_create(name, CG_CTX)
     CG_B = llvm.create_builder(CG_CTX)
@@ -1691,6 +1691,8 @@ impl Codegen {
                     }
                     return call_result
                 }
+                eprintln("FATAL: unresolved function call: " + name)
+                process.exit(1)
             }
             .MemberAccess(o, f, s) -> {
                 // Namespace.method call: process.args(), fs.read(), llvm.build_add(), etc.
@@ -1762,6 +1764,12 @@ impl Codegen {
                             mfi = mfi + 1
                         }
                         return result
+                    }
+                    // Enum constructors are not method calls — skip
+                    let maybe_tag = match_enum_tag(ns + "." + f)
+                    if maybe_tag < 0 {
+                        eprintln("FATAL: unresolved call: " + ns + "." + f)
+                        process.exit(1)
                     }
                 }
             }
