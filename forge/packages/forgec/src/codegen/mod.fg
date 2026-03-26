@@ -2294,29 +2294,8 @@ impl Codegen {
                                 variant_qname = raw_bind.substring(0, colon_pos)
                                 names_part = raw_bind.substring(colon_pos + 1, raw_bind.length)
                             }
-                            // Look up field types (hardcoded for key enums — CSV globals corrupted)
-                            mut field_types = ""
-                            let dot_pos = variant_qname.index_of(".")
-                            if dot_pos > 0 {
-                                let ename = variant_qname.substring(0, dot_pos)
-                                let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
-                                // Try CSV first
-                                field_types = cg_enum_variant_field_types(ename, vn2)
-                                // Hardcoded fallback — CSV table lookup (avoids assignment-in-if)
-                                let ft_table = ",IntLit=i4,FloatLit=i4,StringLit=s4,BoolLit=i4,NullLit=4,Ident=s4,Binary=pip4,Unary=ip4,Call=pl4,MemberAccess=ps4,Index=pp4,Expr=p,Assign=pp4,Return=p4,Let=sp4,If=ppp4i4,Match=pssli4,While=pp4,For=spp4,Block=l,Feature=p,"
-                                let ft_needle = "," + vn2 + "="
-                                let ft_nlen = ft_needle.length
-                                let ft_tlen = ft_table.length
-                                let ft_pos = ft_table.index_of(ft_needle)
-                                if ft_pos >= 0 {
-                                    let ft_start = ft_pos + ft_nlen
-                                    let ft_rest = ft_table.substring(ft_start, ft_tlen)
-                                    let ft_comma = ft_rest.index_of(",")
-                                    if ft_comma >= 0 {
-                                        field_types = ft_rest.substring(0, ft_comma)
-                                    }
-                                }
-                            }
+                            // Look up field types via method (avoids assignment-in-if)
+                            let field_types = self.lookup_variant_field_types(variant_qname)
                             mut field_idx = 0
                             mut binding_ptr_idx = 0  // index into pre-created allocas
                             mut bpi = 0
@@ -2329,8 +2308,11 @@ impl Codegen {
                                         cg_reinit_types()
                                         let slot_off = cg_enum_field_slot_offset(field_types, field_idx)
                                         let slot = 1 + slot_off
-                                        mut fcode = "i"
-                                        if field_idx < field_types.length { fcode = field_types[field_idx] }
+                                        let fcode_raw = field_types.substring(field_idx, field_idx + 1)
+                                        // Default to "i" if empty (unknown variant)
+                                        let fcode_len = fcode_raw.length
+                                        // Use fcode_raw directly — empty string won't match any handler
+                                        let fcode = fcode_raw
                                         let slots = field_type_slots(fcode)
                                         if slots >= 2 {
                                             // ForgeString/List: extract 2 slots, build struct
@@ -2759,5 +2741,25 @@ impl Codegen {
             si = si + 1
         }
         field_val
+    }
+
+    fn lookup_variant_field_types(self, variant_qname: string) -> string {
+        let dot_pos = variant_qname.index_of(".")
+        if dot_pos < 0 { return "" }
+        let ename = variant_qname.substring(0, dot_pos)
+        let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
+        // Try CSV registry first
+        let csv_result = cg_enum_variant_field_types(ename, vn2)
+        if csv_result.length > 0 { return csv_result }
+        // Hardcoded fallback table
+        let ft_table = "|IntLit:i4|FloatLit:i4|StringLit:s4|BoolLit:i4|NullLit:4|Ident:s4|Binary:pip4|Unary:ip4|Call:pl4|MemberAccess:ps4|Index:pp4|Expr:p|Assign:pp4|Return:p4|Let:sp4|If:ppp4i4|Match:pssli4|While:pp4|For:spp4|Block:l|Feature:p|"
+        let ft_needle = "|" + vn2 + ":"
+        let ft_pos = ft_table.index_of(ft_needle)
+        if ft_pos < 0 { return "" }
+        let ft_start = ft_pos + ft_needle.length
+        let ft_rest = ft_table.substring(ft_start, ft_table.length)
+        let ft_end = ft_rest.index_of("|")
+        if ft_end < 0 { return ft_rest }
+        return ft_rest.substring(0, ft_end)
     }
 }

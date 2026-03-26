@@ -109,6 +109,19 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                         field_slots = 4
                         field_code = "4"
                     }
+                    // Large enum/struct types: boxed as pointer
+                    if type_text == "Expr" {
+                        field_slots = 1
+                        field_code = "p"
+                    }
+                    if type_text == "Statement" {
+                        field_slots = 1
+                        field_code = "p"
+                    }
+                    if type_text == "Block" {
+                        field_slots = 1
+                        field_code = "p"
+                    }
                     p.parse_type_expr()
                 }
                 variant_slots = variant_slots + field_slots
