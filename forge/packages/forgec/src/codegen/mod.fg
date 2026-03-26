@@ -2308,13 +2308,10 @@ impl Codegen {
                                         cg_reinit_types()
                                         let slot_off = cg_enum_field_slot_offset(field_types, field_idx)
                                         let slot = 1 + slot_off
-                                        let fcode_raw = field_types.substring(field_idx, field_idx + 1)
-                                        // Default to "i" if empty (unknown variant)
-                                        let fcode_len = fcode_raw.length
-                                        // Use fcode_raw directly — empty string won't match any handler
-                                        let fcode = fcode_raw
-                                        let slots = field_type_slots(fcode)
-                                        if slots >= 2 {
+                                        // Check field type via methods (avoids variable assignment bugs)
+                                        let is_multi = self.field_is_multislot(field_types, field_idx)
+                                        let is_boxed = self.field_is_boxed(field_types, field_idx)
+                                        if is_multi {
                                             // ForgeString/List: extract 2 slots, build struct
                                             let ev0 = llvm.build_extract_value(CG_B, subj_raw, slot, "b0")
                                             let ev1 = llvm.build_extract_value(CG_B, subj_raw, slot + 1, "b1")
@@ -2333,7 +2330,7 @@ impl Codegen {
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
                                             }
-                                        } else if fcode == "p" {
+                                        } else if is_boxed {
                                             // Boxed pointer: extract ptr, load full value
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "bp")
                                             if ev != null {
@@ -2761,5 +2758,19 @@ impl Codegen {
         let ft_end = ft_rest.index_of("|")
         if ft_end < 0 { return ft_rest }
         return ft_rest.substring(0, ft_end)
+    }
+
+    fn field_is_boxed(self, ft: string, idx: int) -> bool {
+        let ch = ft.substring(idx, idx + 1)
+        if ch == "p" { return true }
+        return false
+    }
+
+    fn field_is_multislot(self, ft: string, idx: int) -> bool {
+        let ch = ft.substring(idx, idx + 1)
+        if ch == "s" { return true }
+        if ch == "l" { return true }
+        if ch == "4" { return true }
+        return false
     }
 }
