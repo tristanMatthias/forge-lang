@@ -117,10 +117,9 @@ impl Lexer {
     // to avoid force-unwrap codegen issues in && expressions.
     fn peek_ch(self) -> string {
         if self.pos < self.source.length {
-            self.source[self.pos]
-        } else {
-            ""
+            return self.source[self.pos]
         }
+        return ""
     }
 
     fn peek_at(self, offset: int) -> string? {
@@ -137,10 +136,9 @@ impl Lexer {
     fn peek_ch_at(self, offset: int) -> string {
         let idx = self.pos + offset
         if idx < self.source.length {
-            self.source[idx]
-        } else {
-            ""
+            return self.source[idx]
         }
+        return ""
     }
 
     fn advance(self) -> string {
@@ -192,29 +190,31 @@ impl Lexer {
     }
 
     fn skip_comments(self) {
-        // Skip // comments (but not /// doc comments)
-        if self.pos + 1 < self.source.length {
-            if self.source[self.pos] == "/" && self.source[self.pos + 1] == "/" {
-                // Check if it's a doc comment (///)
-                if self.pos + 2 < self.source.length && self.source[self.pos + 2] == "/" {
-                    // Check it's not //// (which is a regular comment)
-                    if self.pos + 3 < self.source.length && self.source[self.pos + 3] == "/" {
-                        // //// — regular comment, skip it
-                    } else {
-                        // /// — doc comment, don't skip (will be tokenized)
-                        return
-                    }
+        // Skip // comments — use explicit returns to avoid if-branch merge bug
+        if self.pos + 1 >= self.source.length { return }
+        let c0 = self.source[self.pos]
+        if c0 != "/" { return }
+        let c1 = self.source[self.pos + 1]
+        if c1 != "/" { return }
+        // Got // — check for doc comment ///
+        if self.pos + 2 < self.source.length {
+            let c2 = self.source[self.pos + 2]
+            if c2 == "/" {
+                // Check for //// (regular comment, not doc)
+                if self.pos + 3 < self.source.length {
+                    let c3 = self.source[self.pos + 3]
+                    if c3 != "/" { return }
+                } else {
+                    return
                 }
-                // Skip to end of line
-                while self.pos < self.source.length && self.source[self.pos] != "\n" {
-                    self.pos = self.pos + 1
-                    self.col = self.col + 1
-                }
-                // Skip whitespace after comment
-                self.skip_whitespace()
-                // Recursively skip more comments
-                self.skip_comments()
             }
+        }
+        // Skip to end of line
+        while self.pos < self.source.length {
+            let lch = self.source[self.pos]
+            if lch == "\n" { return }
+            self.pos = self.pos + 1
+            self.col = self.col + 1
         }
     }
 
