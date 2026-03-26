@@ -337,6 +337,12 @@ fn gen_expr(e: Expr) -> string {
                     // Fix literal 0 for non-i64 field types
                     if fty == "ptr" && (final_val == "0" || final_val == "zeroinitializer") { final_val = "null" }
                     if fty == "double" && final_val == "0" { final_val = "0.0" }
+                    if fty == "%ForgeString" && final_val == "0" { final_val = "zeroinitializer" }
+                    if fty == "{ ptr, i64 }" && final_val == "0" { final_val = "zeroinitializer" }
+                    // Any struct/enum type with literal 0
+                    if fty.length > 1 && fty.substring(0, 1) == "%" && fty != "%ForgeString" && final_val == "0" {
+                        final_val = "zeroinitializer"
+                    }
                     let nr = new_reg()
                     ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + final_val + ", " + string(fidx))
                     reg_set_type(nr, sty)
@@ -409,6 +415,16 @@ fn gen_expr(e: Expr) -> string {
                         if fty == "ptr" { store_val = "null" }
                         if fty == "double" { store_val = "0.0" }
                         if fty == "%ForgeString" { store_val = "zeroinitializer" }
+                    }
+                    // Fix literal 0 for non-i64 types
+                    if store_val == "0" && fty != "i64" && fty != "i8" {
+                        if fty == "%ForgeString" { store_val = "zeroinitializer" }
+                        if fty == "ptr" { store_val = "null" }
+                        if fty == "double" { store_val = "0.0" }
+                        if fty == "{ ptr, i64 }" { store_val = "zeroinitializer" }
+                        if fty.length > 1 && fty.substring(0, 1) == "%" && fty != "%ForgeString" {
+                            store_val = "zeroinitializer"
+                        }
                     }
                     ir_line("store " + fty + " " + store_val + ", ptr " + fptr)
                     fi = fi + 1
@@ -728,6 +744,46 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         return r2
     }
     LAST_IS_STR = 0
+    // Float operations
+    let lf = reg_get_type(lhs) == "double"
+    let rf = reg_get_type(rhs) == "double"
+    if lf || rf || LAST_IS_FLOAT == 1 {
+        // Ensure both operands are double
+        mut fl = lhs
+        mut fr = rhs
+        if !lf {
+            let conv = new_reg()
+            ir_line(conv + " = sitofp i64 " + lhs + " to double")
+            fl = conv
+        }
+        if !rf {
+            let conv = new_reg()
+            ir_line(conv + " = sitofp i64 " + rhs + " to double")
+            fr = conv
+        }
+        if op == "+" { ir_line(r + " = fadd double " + fl + ", " + fr) }
+        if op == "-" { ir_line(r + " = fsub double " + fl + ", " + fr) }
+        if op == "*" { ir_line(r + " = fmul double " + fl + ", " + fr) }
+        if op == "/" { ir_line(r + " = fdiv double " + fl + ", " + fr) }
+        if op == "%" { ir_line(r + " = frem double " + fl + ", " + fr) }
+        if op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
+            reg_set_type(r, "double")
+            LAST_IS_FLOAT = 1
+            return r
+        }
+        // Float comparison
+        mut fpred = "oeq"
+        if op == "!=" { fpred = "one" }
+        if op == "<" { fpred = "olt" }
+        if op == ">" { fpred = "ogt" }
+        if op == "<=" { fpred = "ole" }
+        if op == ">=" { fpred = "oge" }
+        ir_line(r + " = fcmp " + fpred + " double " + fl + ", " + fr)
+        let r2 = new_reg()
+        ir_line(r2 + " = zext i1 " + r + " to i64")
+        LAST_IS_FLOAT = 0
+        return r2
+    }
     // Integer operations
     if op == "+" {
         ir_line(r + " = add i64 " + lhs + ", " + rhs)
