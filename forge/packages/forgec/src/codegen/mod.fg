@@ -1722,12 +1722,10 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    // Resolve "self" → actual struct type (e.g. Lexer, Parser)
+                    // Resolve any struct variable to its type (self, p, cg, lex, etc.)
                     mut method_ns = ns
-                    if ns == "self" {
-                        let vst = var_struct_type("self")
-                        if vst != "" { method_ns = vst }
-                    }
+                    let vst = var_struct_type(ns)
+                    if vst != "" { method_ns = vst }
                     let method_name = method_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
@@ -1768,6 +1766,8 @@ impl Codegen {
                     // Enum constructors are not method calls — skip
                     let maybe_tag = match_enum_tag(ns + "." + f)
                     if maybe_tag < 0 {
+                        // List push: ns.push(item)
+                        // TODO: list.push needs proper handling
                         eprintln("FATAL: unresolved call: " + ns + "." + f)
                         process.exit(1)
                     }
