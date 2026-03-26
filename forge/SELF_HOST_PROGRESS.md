@@ -155,3 +155,19 @@ Even with self-by-pointer and struct resolution, Stage 2 produces 1 token per by
 4. **While BB save/restore** — safe alone, needed for Break handler
 5. **Chained member access** — safe alone, needed for `self.source.length`
 6. **Self by pointer** — breaks tokenizer (ForgeString vs ptr mismatch)
+
+## Session 2 End-of-Day Status (2026-03-25 19:30)
+
+### Major breakthroughs:
+- Bootstrap errors: 68 → 2 (int→ptr for LLVM type globals)
+- All 76 forge_llvm_* functions declared in output module
+- 391 fns scanned + declared, compilation completes
+- Stage 2 links with libforge_llvm.a + libLLVM (1.8MB)
+- FATAL panics on unresolved calls (no silent failures)
+
+### Current blocker: Expr match destructuring
+Stage 2 hangs because Parser__check/is_alpha return 0. Root cause:
+`match expr { .Binary(left, op, right, span) -> { emit_binary(left, op, right) } }`
+extracts fields to alloca slots %7,%8,%9,%10 but reads from %18,%22,%20 (wrong allocas).
+Every function that matches on Expr.Binary passes garbage to emit_binary.
+This is a match field→alloca mapping bug in the codegen.
