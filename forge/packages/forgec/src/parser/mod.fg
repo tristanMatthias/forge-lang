@@ -344,8 +344,8 @@ impl Parser {
                 return self.parse_expr_or_assign()
             }
             .Match -> {
-                if !CG_ACTIVE {
-                    // Parse match-statement as Statement.Match (avoids PENDING_MATCH forward refs)
+                if true {
+                    // Always use Statement.Match path (CG_ACTIVE feature path has stub emit_match)
                     let start = self.advance().span // consume 'match'
                     self.skip_newlines()
                     let scrutinee = self.parse_expr()

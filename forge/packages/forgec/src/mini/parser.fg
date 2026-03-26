@@ -253,6 +253,12 @@ fn ast_parse_primary() -> Expr {
         return expr_str(s)
     }
 
+    // Template string (backtick)
+    if tok.kind == 7 {
+        advance()
+        return expand_template(tok.text)
+    }
+
     // Bool literal
     if tok.kind == 6 {
         advance()

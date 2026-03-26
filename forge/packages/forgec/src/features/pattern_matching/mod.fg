@@ -290,10 +290,8 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     // Emit subject
     let subject_val = cg.emit_expr(data.subject)
 
-    // For now, compile as if-else chain
-    // TODO: proper tag-based dispatch for enum patterns, phi merging
-
     // Simple fallback: evaluate first arm's body
+    // NOTE: proper dispatch is handled by Statement.Match path (parser always uses it now)
     if data.arms.length > 0 {
         return cg.emit_expr(data.arms[0].body)
     }

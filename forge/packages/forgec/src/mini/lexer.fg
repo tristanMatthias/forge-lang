@@ -221,6 +221,18 @@ fn lex_next() -> Tok {
         return Tok { kind: 3, text: s, line: line }
     }
 
+    // Template string (byte 96 = backtick)
+    if b == 96 {
+        LEX_POS = LEX_POS + 1 // skip opening backtick
+        let start = LEX_POS
+        while LEX_POS < LEX_SRC.length && byte_at_pos(LEX_POS) != 96 {
+            LEX_POS = LEX_POS + 1
+        }
+        let tmpl = LEX_SRC.substring(start, LEX_POS)
+        if LEX_POS < LEX_SRC.length { LEX_POS = LEX_POS + 1 } // skip closing backtick
+        return Tok { kind: 7, text: tmpl, line: line }
+    }
+
     // Number — span-based
     if lex_is_digit_b(b) {
         let start = LEX_POS
