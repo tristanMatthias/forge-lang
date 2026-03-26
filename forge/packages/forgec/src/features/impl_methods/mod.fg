@@ -15,6 +15,7 @@ use checker.TypeChecker
 use codegen.Codegen
 use features.while_loops.PARSE_END_POS
 use features.functions.{store_fn_source, store_fn_param_count, store_fn_param_name, store_fn_param_type, store_fn_return_type}
+use features.variables.{IN_FUNCTION_BODY}
 
 // ─── Side Table ─────────────────────────────────
 
@@ -128,7 +129,9 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
 
     // Capture body source text (same as regular functions)
     let block_open_span = p.peek().span
+    IN_FUNCTION_BODY = 1
     let body = p.parse_block()
+    IN_FUNCTION_BODY = 0
     mut block_close_end = block_open_span.end
     if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
     mut body_src = ""
