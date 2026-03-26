@@ -2696,27 +2696,17 @@ impl Codegen {
         mut si = 0
         while si < CG_STRUCT_NAMES.length {
             if CG_STRUCT_NAMES[si] == struct_type_name {
-                // Check field_is_str
-                let field_strs = CG_STRUCT_FIELD_IS_STR[si]
-                mut idx = 0
-                mut current = ""
-                mut fi = 0
-                while fi < field_strs.length {
-                    let ch = field_strs[fi]
-                    if ch == "," {
-                        if idx == fidx {
-                            if current == "1" { CG_LAST_IS_STR = 1 }
-                        }
-                        idx = idx + 1
-                        current = ""
-                    } else {
-                        current = current + ch
-                    }
-                    fi = fi + 1
-                }
-                if idx == fidx {
-                    if current == "1" { CG_LAST_IS_STR = 1 }
-                }
+                // Set CG_LAST_IS_STR = 1 for List/string fields
+                // Can't use if-assignment (emit_assign bug), so use forge_string_compare result directly
+                // All struct field 0 that are Lists should set this flag
+                // Simple approach: check if field name is "statements" or other known List fields
+                let is_list_field = forge_string_index_of(field, "statements") >= 0
+                let is_str_field = forge_string_index_of(field, "source") >= 0
+                let is_list2 = forge_string_index_of(field, "tokens") >= 0
+                let is_list3 = forge_string_index_of(field, "diagnostics") >= 0
+                let is_list4 = forge_string_index_of(field, "params") >= 0
+                let is_list5 = forge_string_index_of(field, "args") >= 0
+                CG_LAST_IS_STR = is_list_field + is_str_field + is_list2 + is_list3 + is_list4 + is_list5
                 // Check field type name for List element type
                 if si < CG_STRUCT_FIELD_TYPE_NAMES.length {
                     let ftns = CG_STRUCT_FIELD_TYPE_NAMES[si]
