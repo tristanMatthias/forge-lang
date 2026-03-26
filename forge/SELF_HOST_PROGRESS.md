@@ -57,18 +57,21 @@ The codegen fixes are CORRECT but can't be deployed through the bootstrap path.
 | CSV-based build_compile_separate | ✅ Works, avoids List<string> push bug |
 | Let-handler CG_LAST_IS_STR correction | ✅ Fixes crash without breaking bootstrap |
 
-## The Saved Binary Problem
+## Recreating Stage 1
 
-`stage1_bootstrap` (saved as `./stage1_bootstrap`) was built in a specific session with a specific combination of source + runtime that happened to work. **We cannot currently recreate it** because:
+`stage1_bootstrap` is NOT a standalone binary — it's the full Rust compiler (`target/release/forgec`, 2.2MB). It runs the self-hosted compiler in-process via `forgec run`. The Rust runtime handles list push, string ops, etc. correctly.
 
-1. It was linked with a runtime where `span()` function coexisted with `@span` global (linker allowed function + global with same name)
-2. Current IR generates `@span` as external global which conflicts with the runtime's `span()` function
-3. The exact session state that produced fh119 is lost (intermediate git state + specific runtime.o)
+**To recreate (always works):**
+```bash
+cd forge/
+git checkout 90b642b -- packages/forgec/src/
+LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 cargo build --release
+target/release/forgec run packages/forgec/src/main.fg -- build packages/forgec/src/main.fg /tmp/stage1_output
+git checkout HEAD -- packages/forgec/src/
+# /tmp/stage1_output → llc → link → standalone Stage 1 binary
+```
 
-**To recreate:** Need to either:
-- Make `@span` globals use internal linkage in the IR, OR
-- Rename all `span` variables in the forgec source to `_span` or `sp`, OR
-- Remove the `span()` stub from runtime.c (if nothing actually calls it)
+The standalone 280KB binaries (produced by llc+link) have `@span` global conflicts with runtime.c's `span()` function. Fix: make `@span` internal in IR before llc, or remove `span()` from runtime.
 
 ## Concrete Plan to Full Self-Hosting
 
