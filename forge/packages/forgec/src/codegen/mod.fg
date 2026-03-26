@@ -2680,6 +2680,8 @@ impl Codegen {
         let obj_val = self.emit_ident(var_name)
         let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
 
+        // Clear struct type — extracted field is not the parent struct
+        CG_LAST_STRUCT_TYPE = ""
         // Set string flag and list element type for this field
         CG_LAST_LIST_ELEM_TYPE = ""
         mut si = 0
