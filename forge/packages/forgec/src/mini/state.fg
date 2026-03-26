@@ -582,6 +582,12 @@ fn check(text: string) -> bool {
     // Don't match string literals or numbers as keywords/symbols
     if t.kind == 3 { return false }
     if t.kind == 2 { return false }
+    // Fast reject: length mismatch
+    if t.text.length != text.length { return false }
+    // Fast reject: first byte mismatch
+    if t.text.length > 0 {
+        if t.text.byte_at(0) != text.byte_at(0) { return false }
+    }
     t.text == text
 }
 

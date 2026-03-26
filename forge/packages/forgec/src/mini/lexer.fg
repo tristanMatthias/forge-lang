@@ -30,6 +30,23 @@ fn lex_is_alnum(ch: string) -> bool {
     lex_is_digit(ch)
 }
 
+// Byte-based versions (no string allocation)
+fn lex_is_alpha_b(b: int) -> bool {
+    if b == 95 { return true }
+    if b >= 97 && b <= 122 { return true }
+    if b >= 65 && b <= 90 { return true }
+    false
+}
+
+fn lex_is_digit_b(b: int) -> bool {
+    b >= 48 && b <= 57
+}
+
+fn lex_is_alnum_b(b: int) -> bool {
+    if lex_is_alpha_b(b) { return true }
+    lex_is_digit_b(b)
+}
+
 
 // ─── Codegen helpers (defined early for forward reference) ────────
 
@@ -113,20 +130,20 @@ fn lex_char_at(pos: int) -> string {
 
 fn lex_skip_whitespace() {
     while LEX_POS < LEX_SRC.length {
-        let c = lex_peek()
-        if c == " " {
-            lex_advance()
-        } else if c == "\t" {
-            lex_advance()
-        } else if c == "\r" {
-            lex_advance()
-        } else if is_slash(c) {
+        let b = byte_at_pos(LEX_POS)
+        if b == 32 {
+            LEX_POS = LEX_POS + 1
+        } else if b == 9 {
+            LEX_POS = LEX_POS + 1
+        } else if b == 13 {
+            LEX_POS = LEX_POS + 1
+        } else if b == 47 {
             if LEX_POS + 1 < LEX_SRC.length {
-                if is_slash(lex_char_at(LEX_POS + 1)) {
-                    while LEX_POS < LEX_SRC.length {
-                        if lex_peek() == "\n" { return }
-                        lex_advance()
+                if byte_at_pos(LEX_POS + 1) == 47 {
+                    while LEX_POS < LEX_SRC.length && byte_at_pos(LEX_POS) != 10 {
+                        LEX_POS = LEX_POS + 1
                     }
+                    return
                 } else {
                     return
                 }
@@ -140,28 +157,47 @@ fn lex_skip_whitespace() {
 }
 
 fn lex_read_string() -> string {
-    lex_advance() // consume opening "
+    LEX_POS = LEX_POS + 1 // skip opening "
+    let start = LEX_POS
+    // Fast scan: check if string has any escape sequences
+    mut has_escape = false
+    mut scan = LEX_POS
+    while scan < LEX_SRC.length && byte_at_pos(scan) != 34 {
+        if byte_at_pos(scan) == 92 { has_escape = true }
+        scan = scan + 1
+    }
+    // Fast path: no escapes, just substring
+    if !has_escape {
+        let result = LEX_SRC.substring(start, scan)
+        LEX_POS = scan
+        if LEX_POS < LEX_SRC.length { LEX_POS = LEX_POS + 1 }
+        return result
+    }
+    // Slow path: handle escape sequences
     mut result = ""
     while LEX_POS < LEX_SRC.length && byte_at_pos(LEX_POS) != 34 {
-        let ch = lex_advance()
-        if ch == "\\" && LEX_POS < LEX_SRC.length {
-            let esc = lex_advance()
-            if esc == "n" {
+        let ch_b = byte_at_pos(LEX_POS)
+        if ch_b == 92 && LEX_POS + 1 < LEX_SRC.length {
+            LEX_POS = LEX_POS + 1
+            let esc_b = byte_at_pos(LEX_POS)
+            LEX_POS = LEX_POS + 1
+            if esc_b == 110 {
                 result = result + "\n"
-            } else if esc == "t" {
+            } else if esc_b == 116 {
                 result = result + "\t"
-            } else if esc == "\\" {
+            } else if esc_b == 92 {
                 result = result + "\\"
-            } else if esc == "\"" {
+            } else if esc_b == 34 {
                 result = result + "\""
             } else {
-                result = result + "\\" + esc
+                result = result + "\\" + LEX_SRC.substring(LEX_POS - 1, LEX_POS)
             }
         } else {
-            result = result + ch
+            result = result + LEX_SRC.substring(LEX_POS, LEX_POS + 1)
+            LEX_POS = LEX_POS + 1
         }
     }
-    if LEX_POS < LEX_SRC.length { lex_advance() } // consume closing "
+    if LEX_POS < LEX_SRC.length { LEX_POS = LEX_POS + 1 }
     result
 }
 
@@ -171,59 +207,64 @@ fn lex_next() -> Tok {
         return Tok { kind: 0, text: "", line: LEX_LINE }
     }
 
-    let ch = lex_peek()
     let line = LEX_LINE
-    let ch_byte = byte_at_pos(LEX_POS)
+    let b = byte_at_pos(LEX_POS)
 
     // Newline (byte 10)
-    if ch_byte == 10 {
-        lex_advance()
+    if b == 10 {
+        LEX_POS = LEX_POS + 1
         return Tok { kind: 4, text: "\n", line: line }
     }
-    if ch_byte == 34 {
+    // String literal (byte 34 = ")
+    if b == 34 {
         let s = lex_read_string()
         return Tok { kind: 3, text: s, line: line }
     }
 
-    // Number
-    if lex_is_digit(ch) {
-        mut num = ""
-        while LEX_POS < LEX_SRC.length && lex_is_digit(lex_peek()) {
-            num = num + lex_advance()
-        }
-        return Tok { kind: 2, text: num, line: line }
-    }
-
-    // Identifier / keyword
-    if lex_is_alpha(ch) {
-        mut word = ""
-        while LEX_POS < LEX_SRC.length {
-            let wch = lex_char_at(LEX_POS)
-            if !lex_is_alnum(wch) { break }
-            word = word + wch
+    // Number — span-based
+    if lex_is_digit_b(b) {
+        let start = LEX_POS
+        while LEX_POS < LEX_SRC.length && lex_is_digit_b(byte_at_pos(LEX_POS)) {
             LEX_POS = LEX_POS + 1
         }
-        // Check for bool literals
+        return Tok { kind: 2, text: LEX_SRC.substring(start, LEX_POS), line: line }
+    }
+
+    // Identifier / keyword — span-based
+    if lex_is_alpha_b(b) {
+        let start = LEX_POS
+        while LEX_POS < LEX_SRC.length && lex_is_alnum_b(byte_at_pos(LEX_POS)) {
+            LEX_POS = LEX_POS + 1
+        }
+        let word = LEX_SRC.substring(start, LEX_POS)
         if word == "true" || word == "false" {
             return Tok { kind: 6, text: word, line: line }
         }
         return Tok { kind: 1, text: word, line: line }
     }
 
-    // Two-character operators
+    // Two-character operators — byte-pair detection
     if LEX_POS + 1 < LEX_SRC.length {
-        let ch2 = lex_char_at(LEX_POS + 1)
-        mut two = ch + ch2
-        if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "->" {
-            lex_advance()
-            lex_advance()
+        let b2 = byte_at_pos(LEX_POS + 1)
+        mut is_two = false
+        if b == 61 && b2 == 61 { is_two = true }
+        if b == 33 && b2 == 61 { is_two = true }
+        if b == 60 && b2 == 61 { is_two = true }
+        if b == 62 && b2 == 61 { is_two = true }
+        if b == 38 && b2 == 38 { is_two = true }
+        if b == 124 && b2 == 124 { is_two = true }
+        if b == 45 && b2 == 62 { is_two = true }
+        if is_two {
+            let two = LEX_SRC.substring(LEX_POS, LEX_POS + 2)
+            LEX_POS = LEX_POS + 2
             return Tok { kind: 5, text: two, line: line }
         }
     }
 
-    // Single-character symbols
-    lex_advance()
-    Tok { kind: 5, text: ch, line: line }
+    // Single-character symbol
+    let sym = LEX_SRC.substring(LEX_POS, LEX_POS + 1)
+    LEX_POS = LEX_POS + 1
+    Tok { kind: 5, text: sym, line: line }
 }
 
 fn tokenize(source: string) -> List<Tok> {

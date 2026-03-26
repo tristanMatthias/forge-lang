@@ -450,17 +450,9 @@ double forge_string_parse_float(ForgeString s) {
 
 static int eq_call_count = 0;
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
-    eq_call_count++;
-    if (eq_call_count <= 5) {
-        fprintf(stderr, "  [eq] a.ptr=%p a.len=%lld b.ptr=%p b.len=%lld\n",
-            (void*)a.ptr, (long long)a.len, (void*)b.ptr, (long long)b.len);
-        fflush(stderr);
-    }
-    forge_stack_check("forge_string_eq");
     if (a.len != b.len) return 0;
     if (a.ptr == NULL || b.ptr == NULL) return a.ptr == b.ptr ? 1 : 0;
     if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) return 0;
-    // Fast path for single-char comparison (common in lexer)
     if (a.len == 1) return a.ptr[0] == b.ptr[0] ? 1 : 0;
     return memcmp(a.ptr, b.ptr, a.len) == 0 ? 1 : 0;
 }
@@ -468,14 +460,6 @@ int8_t forge_string_eq(ForgeString a, ForgeString b) {
 // Lexicographic comparison: returns -1, 0, or 1
 static int cmp_call_count = 0;
 int64_t forge_string_compare(ForgeString a, ForgeString b) {
-    cmp_call_count++;
-    if (cmp_call_count <= 20 || cmp_call_count % 10000 == 0) {
-        char a0 = (a.ptr && a.len > 0 && (uintptr_t)a.ptr > 4096) ? a.ptr[0] : '?';
-        char b0 = (b.ptr && b.len > 0 && (uintptr_t)b.ptr > 4096) ? b.ptr[0] : '?';
-        fprintf(stderr, "  [cmp#%d] '%c'(%lld) vs '%c'(%lld)\n",
-            cmp_call_count, a0, (long long)a.len, b0, (long long)b.len);
-        fflush(stderr);
-    }
     if (a.ptr == NULL && b.ptr == NULL) return a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);
     if (a.ptr == NULL) return b.len == 0 ? 0 : -1;
     if (b.ptr == NULL) return a.len == 0 ? 0 : 1;
@@ -2038,12 +2022,7 @@ int64_t forge_stack_used(void) {
 }
 
 void forge_stack_check(const char* fn_name) {
-    int64_t used = forge_stack_used();
-    if (used > 4 * 1024 * 1024) {  // 4MB = warn
-        fprintf(stderr, "STACK WARNING: %s — %lld bytes used (%.1f MB)\n",
-            fn_name, (long long)used, (double)used / (1024.0 * 1024.0));
-        fflush(stderr);
-    }
+    // Debug logging disabled for performance
 }
 
 // 3. Function tracing (controlled by env var FORGE_TRACE=1)
