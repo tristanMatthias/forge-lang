@@ -1196,14 +1196,41 @@ impl Codegen {
             .Block(block) -> {
                 // Empty block = [] list literal in AST mode
                 if block.statements.length == 0 {
-                    // Return proper empty list: ForgeString {null, 0}
-                    eprintln("  [DEBUG] empty block → const_null(CG_STR)")
                     cg_reinit_types()
                     CG_LAST_IS_LIST = 1
                     CG_LAST_IS_STR = 1
                     return llvm.const_null(CG_STR)
                 }
-                return self.emit_block(block)
+                // Non-empty block = [a, b, c] list literal
+                // Emit each element, collect values, build list struct
+                let count = block.statements.length
+                cg_reinit_types()
+                let elem_size = llvm.size_of(CG_I64)
+                let total_size = llvm.build_mul(CG_B, llvm.const_int(CG_I64, count, 0), elem_size, "lsz")
+                let data_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, total_size, "ld")
+                mut li = 0
+                let _stmts = block.statements
+                for stmt in _stmts {
+                    match stmt {
+                        .Expr(expr) -> {
+                            let elem_val = self.emit_expr(expr)
+                            let gi = llvm.value_array_new(1)
+                            llvm.value_array_set(gi, 0, llvm.const_int(CG_I64, li, 0))
+                            let ep = llvm.build_gep2(CG_B, CG_I64, data_ptr, gi, 1, "le")
+                            llvm.value_array_free(gi)
+                            llvm.build_store(CG_B, elem_val, ep)
+                        }
+                        _ -> {}
+                    }
+                    li = li + 1
+                }
+                cg_reinit_types()
+                let undef = llvm.get_undef(CG_STR)
+                let s1 = llvm.build_insert_value(CG_B, undef, data_ptr, 0, "ll1")
+                let s2 = llvm.build_insert_value(CG_B, s1, llvm.const_int(CG_I64, count, 0), 1, "ll2")
+                CG_LAST_IS_LIST = 1
+                CG_LAST_IS_STR = 1
+                return s2
             }
             .Feature(fe) -> {
                 return self.dispatch_expr(fe)
@@ -1493,9 +1520,10 @@ impl Codegen {
                                     if struct_ty != null {
                                         let fp = llvm.build_struct_gep2(CG_B, struct_ty, CG_VAR_PTRS[vi], fidx, "sf")
                                         if fp != null {
-                                            llvm.build_store(CG_B, val, fp)
-                                        }
-                                    }
+                                            let sr = llvm.build_store(CG_B, val, fp)
+                                            if sr == null { eprintln("WARN: struct field store failed: " + obj_name + "." + field) }
+                                        } else { eprintln("WARN: struct GEP null: " + obj_name + "." + field) }
+                                    } else { eprintln("WARN: struct type null: " + struct_type_name) }
                                     return
                                 }
                                 vi = vi - 1

@@ -170,6 +170,7 @@ extern "C" {
     fn LLVMBuildStore(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr;
     fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
     fn LLVMGetStructElementTypes(struct_type: LLVMPtr, dest: *mut LLVMPtr);
+    fn LLVMGetInstructionOpcode(inst: LLVMPtr) -> c_uint;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Aggregate operations (GEP, insert/extract)
@@ -633,13 +634,17 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
                 real_val = LLVMBuildZExt(builder, val, target_ty, safe_name(std::ptr::null()));
             }
         }
-        // Struct value → i64 alloca: coerce to i64
-        if val_kind == 10 && alloca_kind == 8 {
-            real_val = ensure_i64(builder, val);
-        }
-        // i64 value → struct alloca: skip store (can't safely coerce)
-        if val_kind == 8 && alloca_kind == 10 {
-            return std::ptr::null_mut();
+        // Only check type compat for ALLOCA instructions (opcode 26), not GEP results
+        let opcode = LLVMGetInstructionOpcode(ptr);
+        if opcode == 26 { // Alloca instruction
+            // Struct value → i64 alloca: coerce to i64
+            if val_kind == 10 && alloca_kind == 8 {
+                real_val = ensure_i64(builder, val);
+            }
+            // i64 value → struct alloca: skip store
+            if val_kind == 8 && alloca_kind == 10 {
+                return std::ptr::null_mut();
+            }
         }
         LLVMBuildStore(builder, real_val, ptr)
     }
