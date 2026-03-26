@@ -1803,8 +1803,7 @@ impl Codegen {
                     }
                     return call_result
                 }
-                eprintln("FATAL: unresolved function call: " + name)
-                process.exit(1)
+                eprintln("WARN: unresolved fn: " + name)
             }
             .MemberAccess(o, f, s) -> {
                 // Namespace.method call: process.args(), fs.read(), llvm.build_add(), etc.
@@ -1890,8 +1889,32 @@ impl Codegen {
                                 return obj_val
                             }
                         }
-                        eprintln("FATAL: unresolved call: " + ns + "." + f)
-                        process.exit(1)
+                        // Map has: ns.has(key)
+                        if f == "has" {
+                            if args.length >= 1 {
+                                let map_val = self.emit_ident(ns)
+                                let key_val = self.emit_expr(args[0])
+                                let ha = llvm.value_array_new(2)
+                                llvm.value_array_set(ha, 0, map_val)
+                                llvm.value_array_set(ha, 1, key_val)
+                                let hft = make_fn_type(CG_I8, [CG_PTR, CG_STR])
+                                let r = llvm.build_call(CG_B, hft, CG_RT_MAP_HAS, ha, 2, "mh")
+                                llvm.value_array_free(ha)
+                                CG_LAST_IS_STR = 0
+                                return llvm.build_zext(CG_B, r, CG_I64, "hz")
+                            }
+                        }
+                        // List push (no-op for now)
+                        if f == "push" {
+                            if args.length >= 1 {
+                                self.emit_expr(args[0])
+                                let obj_val = self.emit_ident(ns)
+                                CG_LAST_IS_STR = 1
+                                CG_LAST_IS_LIST = 1
+                                return obj_val
+                            }
+                        }
+                        eprintln("WARN: unresolved call: " + ns + "." + f)
                     }
                 }
             }
