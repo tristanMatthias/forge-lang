@@ -225,80 +225,95 @@ fn collect_module_paths(filepath: string) {
     }
     if last_slash >= 0 { dir = filepath.substring(0, last_slash + 1) }
 
-    // Find mod declarations using index_of("\nmod ") — avoids per-char assignment bug
-    mut search_from = 0
-    // Check if source starts with "mod " (no preceding newline needed)
-    if source.length >= 4 {
-        if source.substring(0, 4) == "mod " {
-            let rest = source.substring(4, source.length)
-            let nl = rest.index_of("\n")
-            mut mod_name = rest
-            if nl >= 0 { mod_name = rest.substring(0, nl) }
-            let p1 = dir + mod_name + "/mod.fg"
-            let p2 = dir + mod_name + ".fg"
-            let s1 = fs.read(p1)
-            if s1.length > 0 { collect_module_paths(p1) }
-            else {
-                let s2 = fs.read(p2)
-                if s2.length > 0 { collect_module_paths(p2) }
+    // Find mod declarations — same logic as resolve_modules (which works)
+    eprintln("  scanning " + string(source.length) + " bytes for mod declarations")
+    mut pos = 0
+    mut dbg_count = 0
+    while pos < source.length {
+        mut at_line_start = pos == 0
+        if !at_line_start { if source[pos - 1] == "\n" { at_line_start = true } }
+        if pos == 85 {
+            let ch84 = source[84]
+            let is_nl = ch84 == "\n"
+            eprintln("  @85 is_nl=" + string(is_nl) + " als=" + string(at_line_start))
+        }
+        if at_line_start {
+            if dbg_count < 20 {
+                eprintln("  LINE@" + string(pos))
+            }
+            dbg_count = dbg_count + 1
+        }
+        if at_line_start {
+            if pos + 4 < source.length {
+                let c0 = source[pos]
+                let c1 = source[pos + 1]
+                let c2 = source[pos + 2]
+                let c3 = source[pos + 3]
+                if c0 == "m" {
+                    if c1 == "o" {
+                        if c2 == "d" {
+                            if c3 == " " {
+                                // Find end of mod name using indexOf
+                                let rest_str = source.substring(pos + 4, source.length)
+                                let nl_pos = rest_str.index_of("\n")
+                                mut mod_name = rest_str
+                                if nl_pos >= 0 { mod_name = rest_str.substring(0, nl_pos) }
+                                let mod_path1 = dir + mod_name + "/mod.fg"
+                                let mod_path2 = dir + mod_name + ".fg"
+                                let mod_src1 = fs.read(mod_path1)
+                                if mod_src1.length > 0 {
+                                    collect_module_paths(mod_path1)
+                                } else {
+                                    let mod_src2 = fs.read(mod_path2)
+                                    if mod_src2.length > 0 {
+                                        collect_module_paths(mod_path2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-    }
-    // Search for "\nmod " throughout the source
-    mut found = source.index_of("\nmod ")
-    while found >= 0 {
-        let name_start = found + 5
-        let rest = source.substring(name_start, source.length)
-        let nl = rest.index_of("\n")
-        mut mod_name = rest
-        if nl >= 0 { mod_name = rest.substring(0, nl) }
-        let p1 = dir + mod_name + "/mod.fg"
-        let p2 = dir + mod_name + ".fg"
-        let s1 = fs.read(p1)
-        if s1.length > 0 { collect_module_paths(p1) }
-        else {
-            let s2 = fs.read(p2)
-            if s2.length > 0 { collect_module_paths(p2) }
-        }
-        // Continue searching after this match
-        if name_start < source.length {
-            let remaining = source.substring(name_start, source.length)
-            let next = remaining.index_of("\nmod ")
-            if next >= 0 { found = name_start + next }
-            else { found = -1 }
-        } else { found = -1 }
+        pos = pos + 1
     }
     // This file comes after its modules
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
 }
 
-// ─── Per-File Compilation ──────────────────────
-
-fn scan_one_file(filepath: string, idx: int) {
-    CURRENT_FILE_INDEX = idx
-    let source = fs.read(filepath)
-    mut lex = lexer_new(source)
-    let tokens = lex.tokenize()
-    eprintln("  " + string(tokens.length) + " tokens from " + filepath)
-    mut p = parser_new_with_source(tokens, source)
-    p.parse_program()
-}
-
-fn build_compile_separate(paths_csv: string, output: string) {
-    // Phase 1: Scan ALL files from newline-separated CSV
-    mut file_idx = 0
+fn resolve_module_paths(filepath: string) -> List<string> {
+    MODULE_PATHS_CSV = ""
+    collect_module_paths(filepath)
+    eprintln("  CSV len=" + string(MODULE_PATHS_CSV.length))
+    // Parse CSV into list
+    mut paths: List<string> = []
     mut start = 0
     mut i = 0
-    while i < paths_csv.length {
-        if paths_csv[i] == "\n" {
+    while i < MODULE_PATHS_CSV.length {
+        if MODULE_PATHS_CSV[i] == "\n" {
             if i > start {
-                let filepath = paths_csv.substring(start, i)
-                scan_one_file(filepath, file_idx)
-                file_idx = file_idx + 1
+                paths = paths.push(MODULE_PATHS_CSV.substring(start, i))
             }
             start = i + 1
         }
         i = i + 1
+    }
+    return paths
+}
+
+// ─── Per-File Compilation ──────────────────────
+
+fn build_compile_separate(files: List<string>, output: string) {
+    // Phase 1: Scan ALL files (collect function signatures — no bodies)
+    mut file_idx = 0
+    for filepath in files {
+        CURRENT_FILE_INDEX = file_idx
+        let source = fs.read(filepath)
+        mut lex = lexer_new(source)
+        let tokens = lex.tokenize()
+        mut p = parser_new_with_source(tokens, source)
+        p.parse_program()
+        file_idx = file_idx + 1
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
@@ -428,10 +443,9 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
-        MODULE_PATHS_CSV = ""
-        collect_module_paths(input)
-        eprintln("M:csv_len=" + string(MODULE_PATHS_CSV.length))
-        build_compile_separate(MODULE_PATHS_CSV, output)
+        let files = resolve_module_paths(input)
+        eprintln("M:files=" + string(files.length))
+        build_compile_separate(files, output)
     } else {
         eprintln("unknown command")
         process.exit(1)

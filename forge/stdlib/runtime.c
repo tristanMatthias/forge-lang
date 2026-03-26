@@ -1917,8 +1917,8 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new("{\"code\":0}", 10);
 }
 
-// Stub: forge_span() identity function (workaround for match binding issue)
-int64_t forge_span(int64_t val) { return val; }
+// Stub: span() identity function (workaround for match binding issue)
+int64_t span(int64_t val) { return val; }
 
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {

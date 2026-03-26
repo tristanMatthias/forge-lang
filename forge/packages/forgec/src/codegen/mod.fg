@@ -888,8 +888,8 @@ impl Codegen {
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> {
-                if value { return llvm.const_int(CG_I64, 1, 0) }
-                return llvm.const_int(CG_I64, 0, 0)
+                // value is the runtime boolean (0 or 1) from match binding
+                return self.emit_ident("value")
             }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
@@ -1231,10 +1231,10 @@ impl Codegen {
                 // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
                 CG_LAST_VAR_PTR = null
                 self.emit_ident(name)
-                let target_ptr = CG_LAST_VAR_PTR
                 let val = self.emit_expr(value)
-                if target_ptr != null {
-                    llvm.build_store(CG_B, val, target_ptr)
+                // Use CG_LAST_VAR_PTR from emit_ident (avoids corrupted list re-search)
+                if CG_LAST_VAR_PTR != null {
+                    llvm.build_store(CG_B, val, CG_LAST_VAR_PTR)
                     return
                 }
                 // Fallback: search CG_VAR_NAMES
@@ -1435,7 +1435,6 @@ impl Codegen {
                 while si >= 0 {
                     if CG_STR_VAR_NAMES[si] == name {
                         load_ty = CG_STR
-                        CG_LAST_IS_STR = 1
                         break
                     }
                     si = si - 1
@@ -1941,21 +1940,6 @@ impl Codegen {
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
                 let ev = self.emit_expr(val)
-                // Correct CG_LAST_IS_STR for known i64 extern functions
-                // (can't modify emit_fn_call_direct — breaks bootstrap)
-                match val {
-                    .Call(callee, _, _) -> {
-                        match callee {
-                            .Ident(cn, _) -> {
-                                if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
-                            }
-                            _ -> {}
-                        }
-                    }
-                    _ -> {}
-                }
                 let let_is_list = CG_LAST_IS_LIST
                 let let_is_str = CG_LAST_IS_STR
                 mut ty = Type.Int

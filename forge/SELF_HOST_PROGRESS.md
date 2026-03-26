@@ -1,150 +1,125 @@
 # Self-Hosting Progress
 
-**Status: 19% (7/37 files processed, 6 compiled in Stage 2)**
+**Status: Stage 2 binary exists, crashes when compiling itself**
 
-> Phase 1 scan: DONE (2s for all 37 files, 391 functions)
-> Phase 2: 7/37 files processed (6 compiled .o, 1 SKIP-IR error)
-> Current blocker: expressions.fg (file 7) stack overflow during compilation (117KB file)
-> Current blocker: lexer.fg double-typed value in `||` short-circuit chain
-
-Last updated: 2026-03-20
+Last updated: 2026-03-25
 
 ## Pipeline
 
 ```
-Bootstrap (Rust) ──→ Stage 1 binary ──→ Stage 2 binary ──→ Stage 2' (fixed point)
-       ✅                  ✅              IN PROGRESS           ❌
+Bootstrap (Rust) ──→ Stage 1 binary ──→ Stage 2 binary ──→ Stage 3 (self-hosting)
+       ✅                  ✅              ✅ (runs)         ❌ (crashes)
 ```
 
-## Stage 2 File Compilation (6/37)
+## What Works Right Now
 
-Phase 1 (scan all 37 files): **DONE** (2s)
-Phase 2 (compile each file to .o):
+1. **Bootstrap (Rust compiler)** compiles forgec source → self-hosted compiler runs in-process
+2. **stage1_bootstrap** binary (`./stage1_bootstrap`, saved from `/tmp/fh119`) — finds all 38 modules, tokenizes correctly (385 fns), declares and emits all functions, produces valid IR, links to working binary
+3. **Stage 2** binary exists, prints usage, accepts commands
+4. **Stage 2 crashes** at `collect_module_paths` → `forge_string_compare` when trying to compile itself
 
-| # | File | Status | Blocker |
-|---|------|--------|---------|
-| 0 | core/token.fg | ✅ | |
-| 1 | core/ast.fg | ✅ | |
-| 2 | core/types.fg | ✅ | |
-| 3 | core/error.fg | ✅ | |
-| 4 | core/registry.fg | ✅ | |
-| 5 | core/mod.fg | ✅ | |
-| 6 | lexer/mod.fg | ❌ SKIP | `double` in `||` short-circuit chain (is_alpha etc.) |
-| 7 | parser/expressions.fg | ❌ CRASH | Stack overflow — 117KB file too deep for recursive parser |
-| 8 | parser/mod.fg | ⏳ blocked | |
-| 9 | checker/env.fg | ⏳ blocked | |
-| 10 | checker/mod.fg | ⏳ blocked | |
-| 11 | codegen/mod.fg | ⏳ blocked | |
-| 12-35 | features/*.fg | ⏳ blocked | |
-| 36 | main.fg | ⏳ blocked | |
+## The One Bug Blocking Self-Hosting
 
-Phase 3 (link all .o + runtime): ❌ not reached
-Phase 4 (run Stage 2 binary): ❌ not reached
+**Stage 2's `collect_module_paths` crashes at `forge_string_compare + 96`.**
 
-## Root Cause Blocking Most Files
+Root cause chain:
+1. `stage1_bootstrap` was compiled by the Rust bootstrap from commit ~90b642b source
+2. The Rust bootstrap has 68 pre-existing type errors (`ptr` vs `int` mismatches) but "continues despite errors"
+3. The generated self-hosted compiler codegen has bugs from this error continuation
+4. Specifically: `emit_assign` overwrites `CG_LAST_VAR_PTR` (the RHS evaluation clobbers the target pointer) — causes `last_slash = ci` to store to wrong variable
+5. Also: `CG_LAST_IS_STR` not reset after function calls with string args — causes `let found = forge_string_index_of(...)` to create a ForgeString variable instead of int
+6. These two bugs corrupt `collect_module_paths` in any binary produced by `stage1_bootstrap`
 
-**Bootstrap match destructuring of nested enums is broken.**
+## Why We Can't Just Fix It
 
-When the Rust bootstrap compiles `match stmt { .Expr(expr) -> { ... } }`, the extracted `expr` (a nested Expr enum inside Statement) has a corrupted variant tag. This means:
+**Bootstrap fragility:** The Rust bootstrap compiles the forgec source with 68 type errors. It "continues despite errors" and generates code. ANY change to the codegen source — even adding a single `if` statement — shifts which code paths get corrupted. This means:
 
-1. The AST-based codegen path (Option B) can't work — emit_expr receives garbage
-2. The inline-emit path works around this by emitting LLVM IR during parsing (no extraction needed)
-3. But inline emit has its own bugs (stale CG_LAST_VAL, etc.) that cause crashes in complex files
+- Adding `CG_LAST_IS_STR = 0` in `emit_fn_call_direct` → breaks Lexer (385 → 18 fns)
+- Adding `self` resolution in `emit_call` MemberAccess → causes infinite loops
+- Adding Break handler → prevents bootstrap from producing IR
 
-**Partially fixed:** Bootstrap `type_to_llvm_basic` now updates stale cached enum types.
-The Expr type correctly shows 10 LLVM fields during extraction.
+The codegen fixes are CORRECT but can't be deployed through the bootstrap path.
 
-**Remaining issue:** The inline-emit crash in error.fg is NOT from the bootstrap match
-extraction — it's from the self-hosted compiler's inline struct literal codegen. When
-building `Diagnostic { ..., span: span, ... }`, the `span` parameter's LLVM type
-doesn't match the Diagnostic's field type because the struct type deduplication changes
-indices between scan and codegen phases.
+## What We Tried This Session (and what happened)
 
-## Completed Work
+| Approach | Result |
+|----------|--------|
+| Fix emit_assign target_ptr | ✅ Safe, doesn't break bootstrap |
+| Fix BoolLit constant | ✅ Safe, doesn't break bootstrap |
+| Fix CG_LAST_IS_STR in emit_ident | ✅ Safe, doesn't break bootstrap |
+| Fix CG_LAST_IS_STR reset in emit_fn_call_direct | ❌ Breaks bootstrap (385→18 fns) |
+| Fix self.method() → Type__method | ❌ Causes infinite loop when applied to all vars |
+| Fix self.method() for "self" only | ✅ Safe alone but combined with above → 18 fns |
+| Fix Break handler | ❌ Breaks bootstrap (no IR produced) |
+| Fix chained member access | ✅ Safe alone |
+| Pass self by pointer | ❌ Breaks tokenizer (385→18 fns) |
+| Rewrite main.fg with direct function calls | ❌ Rust bootstrap doesn't know about forge_string_* |
+| CSV-based build_compile_separate | ✅ Works, avoids List<string> push bug |
+| Let-handler CG_LAST_IS_STR correction | ✅ Fixes crash without breaking bootstrap |
 
-### Bootstrap Fixes
-- [x] `&&`/`||` short-circuit evaluation (was evaluating both sides)
-- [x] O2 optimization in write_object_file (was O0, making self-hosted binary 6000x slower)
-- [x] LLVM data layout set from target machine (fixes ARM64 ABI for large struct returns)
+## The Saved Binary Problem
 
-### Self-Hosted Compiler Codegen
-- [x] Match expression codegen (tag extraction, variant dispatch, field binding, phi merge)
-- [x] Implicit function returns (call expressions as last statement)
-- [x] Return inside if blocks (CG_HAS_LAST_VAL reset)
-- [x] Inline call emission with CALL_DEPTH tracking
-- [x] CG_LAST_VAL tracking in parse_postfix_expr
-- [x] Stale value prevention in variable bindings
-- [x] Nested struct member access (a.b.c)
-- [x] Struct literal shorthand syntax ({ field } = { field: field })
-- [x] List return type fix (resolve_type_to_llvm for "List")
-- [x] Unit enum min 1 slot registration
-- [x] render_diagnostic restored in error.fg
+`stage1_bootstrap` (saved as `./stage1_bootstrap`) was built in a specific session with a specific combination of source + runtime that happened to work. **We cannot currently recreate it** because:
 
-### Separate Compilation
-- [x] Two-pass struct type materialization (opaque first, then bodies)
-- [x] Struct type deduplication (scan phase registers duplicates)
-- [x] Enum type cache cleared per module
-- [x] Function declarations with correct param/return types
-- [x] Brace-balancing scan (skip function body parsing during scan phase)
+1. It was linked with a runtime where `span()` function coexisted with `@span` global (linker allowed function + global with same name)
+2. Current IR generates `@span` as external global which conflicts with the runtime's `span()` function
+3. The exact session state that produced fh119 is lost (intermediate git state + specific runtime.o)
 
-### Runtime Performance
-- [x] Static ASCII char table in forge_string_char_at (no malloc per char)
-- [x] forge_string_eq fast path for single-char comparisons
-- [x] forge_string_concat fast path for empty strings
-- [x] forge_string_byte_at added (int return, no allocation)
-- [x] Lexer: eliminate O(n²) string_to_chars — use source[pos] directly
+**To recreate:** Need to either:
+- Make `@span` globals use internal linkage in the IR, OR
+- Rename all `span` variables in the forgec source to `_span` or `sp`, OR
+- Remove the `span()` stub from runtime.c (if nothing actually calls it)
 
-### LLVM Bindings
-- [x] LLVMTypeOf wrapper
-- [x] Null guards in build_extract_value, build_store, build_insert_value
-- [x] Bounds check in build_insert_value
-- [x] emit_object_file sets data layout from target machine
+## Concrete Plan to Full Self-Hosting
 
-### Attempted but Reverted
-- [x] AST-based codegen (Option B) — blocked by bootstrap match bug
-- [x] Match arm body re-parsing via CSV — blocked by global persistence
-- [x] Various CG_LAST_VAL persistence workarounds
+### Step 1: Make stage1_bootstrap reproducible
+- [ ] Fix the `@span` global vs `span()` function conflict
+- [ ] Document exact command to recreate from clean checkout
+- [ ] Verify recreated binary matches ./stage1_bootstrap behavior (385 fns)
 
-## What Works (Programs compiled by self-hosted compiler)
-- Fibonacci, factorial, FizzBuzz
-- Enum match with field extraction (int, string fields)
-- Struct construction, field access, nested access (a.b.c)
-- List<Struct> operations
-- Multi-file separate compilation
-- Mini lexer (enums + structs + match + lists + function constructors)
-- Token type with 36+ enum variants
+### Step 2: Fix collect_module_paths crash in Stage 2
+Stage 2 was compiled by stage1_bootstrap. Its `collect_module_paths` has the emit_assign bug. Options:
+- [ ] Option A: Rewrite collect_module_paths to avoid assignments inside if blocks (work around the bug)
+- [ ] Option B: Use resolve_modules path for build command (it uses per-char scanning that works)
+- [ ] Option C: Fix the 68 Rust bootstrap type errors so the bootstrap can compile fixed codegen
 
-## Known Limitations
-- Match arms returning bool produce 0 (BoolLit value corrupted in List<MatchArm>)
-- Tokens with unique Span values per element get corrupted in some cases
-- Large file lexing is slow (~10s for 113KB) even with O2
+### Step 3: Stage 2 compiles Stage 3
+- [ ] Stage 2 finds all 38 modules
+- [ ] Stage 2 tokenizes correctly (385 fns)
+- [ ] Stage 2 declares and emits all functions
+- [ ] Stage 2 produces valid IR
+- [ ] Stage 3 binary links and runs
 
-## ACTUAL Root Cause (Discovered 2026-03-19)
+### Step 4: Stage 3 = Stage 2 (fixed point)
+- [ ] Stage 3 produces identical IR to Stage 2
+- [ ] Delete Rust bootstrap
 
-**The bootstrap's match codegen for large (100+) variant enums is broken.**
+## Key Files
 
-TokenKind has ~120 variants. When the bootstrap compiles `kind_to_key(kind)` or
-`check(TokenKind.Gt)`, the match on TokenKind doesn't correctly find high variant
-indices. All variants after some threshold (~90?) fall through to the default arm.
+| File | Role |
+|------|------|
+| `./stage1_bootstrap` | Saved working Stage 1 binary (from /tmp/fh119) |
+| `packages/forgec/src/main.fg` | CLI entry, module resolution, build pipeline |
+| `packages/forgec/src/codegen/mod.fg` | LLVM IR codegen (2500+ lines, most critical) |
+| `packages/forgec/src/features/functions/mod.fg` | Function scanning, declaration, body emission |
+| `packages/forgec/src/parser/expressions.fg` | Expression parser with inline codegen |
+| `packages/forgec/src/lexer/mod.fg` | Tokenizer |
+| `stdlib/runtime.c` | C runtime (string ops, list ops, process, fs) |
+| `packages/std-llvm/src/lib.rs` | LLVM C API wrappers with type guards |
 
-This breaks:
-- `parse_type_args`: can't find `>` to close `List<int>` → consumes past `=` and `[]`
-- `check(TokenKind.LBracket)`: fails → list globals not detected
-- `kind_to_key`: returns `""` for many token kinds → string comparisons fail
+## Codegen Fixes Applied (committed, safe for bootstrap)
 
-**Impact**: Type annotations like `List<int>` aren't parsed correctly. Global
-variables with list types aren't detected. The parser overconsumes tokens.
-This cascades into ALL compilation of files that use list/map globals.
+1. **BoolLit**: `if value { return const_int(1) }` instead of `emit_ident("value")`
+2. **emit_assign**: `let target_ptr = CG_LAST_VAR_PTR` saved before `emit_expr(value)`
+3. **emit_ident**: `CG_LAST_IS_STR = 1` when found in `CG_STR_VAR_NAMES`
+4. **Let handler**: Clear `CG_LAST_IS_STR` for known i64-returning extern functions
+5. **Parser desugaring**: `source.index_of(x)` → `Call(Ident("forge_string_index_of"), [source, x])`
 
-**Fix needed**: In the bootstrap's pattern matching codegen, the variant index
-comparison for large enums must work for ALL variant indices, not just low ones.
-The issue is likely in how the i8 tag is compared — the tag value might overflow
-or the comparison constants might be truncated.
+## Codegen Fixes Identified But NOT Applied (break bootstrap)
 
-## Next Steps (Priority Order)
-1. **Fix bootstrap match for large enums** — THE critical blocker
-2. **Fix error.fg crash** — Severity enum + Diagnostic struct literal
-3. **Get remaining 34 files compiling** — most share the same root causes
-4. **Link Stage 2 binary** — link all .o files + runtime
-5. **Test Stage 2** — run the Stage 2 binary on simple programs
-6. **Fixed point** — Stage 2 compiles itself to identical Stage 2'
+1. **CG_LAST_IS_STR reset in emit_fn_call_direct** — any code change to this function breaks tokenizer
+2. **self.method() → Type__method resolution** — works for "self" only but combined with other fixes → 18 fns
+3. **Break handler** — `llvm.build_br(CG_B, WHILE_END_BB)` prevents bootstrap IR output
+4. **While BB save/restore** — safe alone, needed for Break handler
+5. **Chained member access** — safe alone, needed for `self.source.length`
+6. **Self by pointer** — breaks tokenizer (ForgeString vs ptr mismatch)
