@@ -442,7 +442,13 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                             }
                         }
                     }
-                    // Other mismatch — return undef of correct type
+                    // Always coerce value to match return type
+                    let coerced = ensure_i64(builder, value);
+                    let coerced_ty = LLVMTypeOf(coerced);
+                    if coerced_ty == ret_ty {
+                        return LLVMBuildRet(builder, coerced);
+                    }
+                    // If coercion produced wrong type, use undef
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }
@@ -495,6 +501,9 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
         if w < 64 { return LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null())); }
         return val;
     }
+    if kind == 12 { // PointerTypeKind — convert to i64
+        return LLVMBuildPtrToInt(builder, val, i64_ty, safe_name(std::ptr::null()));
+    }
     if kind == 10 { // StructTypeKind — extract field 0 and convert to i64
         let f0 = LLVMBuildExtractValue(builder, val, 0, safe_name(std::ptr::null()));
         if !f0.is_null() {
@@ -504,6 +513,10 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
             }
             if f0_kind == 8 { return f0; }
         }
+    }
+    // For constants like null pointer: use const 0
+    if LLVMIsConstant(val) != 0 {
+        return LLVMConstInt(i64_ty, 0, 0);
     }
     val
 }
