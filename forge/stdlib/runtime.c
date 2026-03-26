@@ -164,6 +164,12 @@ ForgeString forge_string_concat(ForgeString a, ForgeString b) {
     // Fast path: empty + anything = anything (no alloc)
     if (a.len == 0) return b;
     if (b.len == 0) return a;
+    // Guard against bad pointers
+    if (a.ptr == NULL || (uintptr_t)a.ptr < 4096) return b;
+    if (b.ptr == NULL || (uintptr_t)b.ptr < 4096) return a;
+    if (a.len < 0 || b.len < 0 || a.len > 10000000 || b.len > 10000000) {
+        return (ForgeString){ .ptr = NULL, .len = 0 };
+    }
     int64_t new_len = a.len + b.len;
     char* buf = (char*)forge_string_alloc(new_len + 1);
     memcpy(buf, a.ptr, a.len);
