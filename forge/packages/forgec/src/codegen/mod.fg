@@ -652,6 +652,8 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
     return -1
 }
 
+// Look up field types from CSV table: ",Name=types,Name2=types2,"
+
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
     // Try CSV first (immune to list corruption)
@@ -2305,20 +2307,19 @@ impl Codegen {
                                 let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
                                 // Try CSV first
                                 field_types = cg_enum_variant_field_types(ename, vn2)
-                                // Hardcoded fallback for common Expr/Statement variants
-                                if field_types == "" {
-                                    // Expr variants: most have (value/name: s, span: 4)
-                                    if vn2 == "IntLit" { field_types = "i4" }
-                                    if vn2 == "FloatLit" { field_types = "i4" }
-                                    if vn2 == "StringLit" { field_types = "s4" }
-                                    if vn2 == "BoolLit" { field_types = "i4" }
-                                    if vn2 == "NullLit" { field_types = "4" }
-                                    if vn2 == "Ident" { field_types = "s4" }
-                                    // Statement variants
-                                    if vn2 == "Expr" { field_types = "p" }
-                                    if vn2 == "Assign" { field_types = "pp4" }
-                                    if vn2 == "Return" { field_types = "p4" }
-                                    if vn2 == "Let" { field_types = "sp4" }
+                                // Hardcoded fallback — CSV table lookup (avoids assignment-in-if)
+                                let ft_table = ",IntLit=i4,FloatLit=i4,StringLit=s4,BoolLit=i4,NullLit=4,Ident=s4,Binary=pip4,Unary=ip4,Call=pl4,MemberAccess=ps4,Index=pp4,Expr=p,Assign=pp4,Return=p4,Let=sp4,If=ppp4i4,Match=pssli4,While=pp4,For=spp4,Block=l,Feature=p,"
+                                let ft_needle = "," + vn2 + "="
+                                let ft_nlen = ft_needle.length
+                                let ft_tlen = ft_table.length
+                                let ft_pos = ft_table.index_of(ft_needle)
+                                if ft_pos >= 0 {
+                                    let ft_start = ft_pos + ft_nlen
+                                    let ft_rest = ft_table.substring(ft_start, ft_tlen)
+                                    let ft_comma = ft_rest.index_of(",")
+                                    if ft_comma >= 0 {
+                                        field_types = ft_rest.substring(0, ft_comma)
+                                    }
                                 }
                             }
                             mut field_idx = 0
