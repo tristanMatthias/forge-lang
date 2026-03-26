@@ -1811,6 +1811,21 @@ impl Parser {
             TokenKind::Table => Some("table".to_string()),
             TokenKind::Is => Some("is".to_string()),
             TokenKind::Underscore => Some("_".to_string()),
+            // Keywords used as enum variant names (Statement.Match, Statement.While, etc.)
+            TokenKind::Match => Some("Match".to_string()),
+            TokenKind::While => Some("While".to_string()),
+            TokenKind::For => Some("For".to_string()),
+            TokenKind::Break => Some("Break".to_string()),
+            TokenKind::Continue => Some("Continue".to_string()),
+            TokenKind::If => Some("If".to_string()),
+            TokenKind::Return => Some("Return".to_string()),
+            TokenKind::Let => Some("Let".to_string()),
+            TokenKind::Mut => Some("Mut".to_string()),
+            TokenKind::Fn => Some("Fn".to_string()),
+            TokenKind::Enum => Some("Enum".to_string()),
+            TokenKind::Impl => Some("Impl".to_string()),
+            TokenKind::Use => Some("Use".to_string()),
+            TokenKind::Mod => Some("Mod".to_string()),
             _ => None,
         };
         if let Some(name) = name {

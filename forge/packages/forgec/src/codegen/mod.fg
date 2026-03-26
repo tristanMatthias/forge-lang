@@ -2705,6 +2705,8 @@ impl Codegen {
                 let is_list4 = forge_string_index_of(field, "params") >= 0
                 let is_list5 = forge_string_index_of(field, "args") >= 0
                 CG_LAST_IS_STR = is_list_field + is_str_field + is_list2 + is_list3 + is_list4 + is_list5
+                // Set element type for known list fields (avoids if-assignment)
+                CG_LAST_LIST_ELEM_TYPE = self.lookup_list_elem_type(field)
                 // Check field type name for List element type
                 if si < CG_STRUCT_FIELD_TYPE_NAMES.length {
                     let ftns = CG_STRUCT_FIELD_TYPE_NAMES[si]
@@ -2778,6 +2780,19 @@ impl Codegen {
         let ft_end = ft_rest.index_of("|")
         if ft_end < 0 { return ft_rest }
         return ft_rest.substring(0, ft_end)
+    }
+
+    fn lookup_list_elem_type(self, field_name: string) -> string {
+        // Known list fields → element type (avoids if-assignment)
+        let lt_tbl = "|statements:Statement|tokens:Token|diagnostics:Diagnostic|params:Param|args:Expr|arm_bodies:Block|arm_tags:int|arm_bindings:string|"
+        let lt_needle = "|" + field_name + ":"
+        let lt_pos = lt_tbl.index_of(lt_needle)
+        if lt_pos < 0 { return "" }
+        let lt_start = lt_pos + lt_needle.length
+        let lt_rest = lt_tbl.substring(lt_start, lt_tbl.length)
+        let lt_end = lt_rest.index_of("|")
+        if lt_end < 0 { return lt_rest }
+        return lt_rest.substring(0, lt_end)
     }
 
     fn field_is_boxed(self, ft: string, idx: int) -> bool {
