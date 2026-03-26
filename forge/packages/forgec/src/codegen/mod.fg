@@ -1706,7 +1706,13 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    let method_name = ns + "__" + f
+                    // Resolve "self" → actual struct type (e.g. Lexer, Parser)
+                    mut method_ns = ns
+                    if ns == "self" {
+                        let vst = var_struct_type("self")
+                        if vst != "" { method_ns = vst }
+                    }
+                    let method_name = method_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
                         // Prepend self (the object) as first arg
@@ -1727,6 +1733,19 @@ impl Codegen {
                         let fn_ty = llvm.global_get_value_type(fn_ref3)
                         let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
                         llvm.value_array_free(arg_arr)
+                        // Set return type flags for method call
+                        CG_LAST_IS_STR = 0
+                        CG_LAST_STRUCT_TYPE = ""
+                        mut mfi = 0
+                        while mfi < FN_NAMES.length {
+                            if FN_NAMES[mfi] == method_name {
+                                if mfi < FN_RETURN_TYPES.length {
+                                    if FN_RETURN_TYPES[mfi] == "string" { CG_LAST_IS_STR = 1 }
+                                }
+                                break
+                            }
+                            mfi = mfi + 1
+                        }
                         return result
                     }
                 }
@@ -2439,7 +2458,22 @@ impl Codegen {
         mut var_name = ""
         match obj {
             .Ident(name, span) -> { var_name = name }
-            _ -> { return llvm.const_int(CG_I64, 0, 0) }
+            _ -> {
+                // Chained access (e.g. self.source.length): evaluate obj, handle .length
+                let obj_val = self.emit_expr(obj)
+                if field == "length" {
+                    if CG_LAST_IS_STR == 1 {
+                        let ca = llvm.value_array_new(1)
+                        llvm.value_array_set(ca, 0, obj_val)
+                        let ft = make_fn_type(CG_I64, [CG_STR])
+                        let r = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+                        llvm.value_array_free(ca)
+                        CG_LAST_IS_STR = 0
+                        return r
+                    }
+                }
+                return obj_val
+            }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
