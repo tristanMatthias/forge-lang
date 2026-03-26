@@ -406,6 +406,7 @@ impl Parser {
                         let prev_match = IN_MATCH_ARM
                         IN_MATCH_ARM = true
                         mut body = Block { statements: [], span: start }
+                        let _body_start = self.pos
                         if self.check(TokenKind.LBrace) {
                             body = self.parse_block()
                         } else {
@@ -416,6 +417,7 @@ impl Parser {
                                 body = Block { statements: body_stmts, span: start }
                             }
                         }
+                        eprintln("  ARM_BODY " + string(_body_start) + "→" + string(self.pos) + " tag=" + string(pat_tag))
                         IN_MATCH_ARM = prev_match
                         if pat_tag == -1 && has_default == 1 {
                             default_body = body
@@ -618,10 +620,15 @@ impl Parser {
     fn parse_block(self) -> Block {
         let start = self.current_span()
         let empty = Block { statements: [], span: start }
-        if self.expect(TokenKind.LBrace) == null { return empty }
+        let pb_open_pos = self.pos
+        if self.expect(TokenKind.LBrace) == null {
+            eprintln("PB_NO_BRACE pos=" + string(pb_open_pos))
+            return empty
+        }
 
         self.skip_newlines()
         mut statements: List<Statement> = []
+        mut _pb_count = 0
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             let before = self.pos
@@ -629,7 +636,11 @@ impl Parser {
             if stmt != null {
                 statements = statements.push(stmt!)
             }
-            if self.pos == before { self.advance() }
+            if self.pos == before {
+                eprintln("PB_STUCK pos=" + string(self.pos) + " tok=" + self.peek().text)
+                self.advance()
+            }
+            _pb_count = _pb_count + 1
             self.skip_newlines()
         }
 
