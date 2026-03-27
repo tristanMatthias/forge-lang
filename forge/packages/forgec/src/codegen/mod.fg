@@ -48,8 +48,16 @@ export mut CG_RT_MAP_SET: ptr = null
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
-// Map-based var ptr lookup (immune to list value corruption)
-mut CG_VAR_PTR_MAP: Map<string, ptr> = {}
+// Param allocas in dedicated globals (immune to list corruption)
+export mut CG_PA_NAMES: string = ""  // CSV: ",name0,name1,name2,..."
+export mut CG_PA_0: ptr = null
+export mut CG_PA_1: ptr = null
+export mut CG_PA_2: ptr = null
+export mut CG_PA_3: ptr = null
+export mut CG_PA_4: ptr = null
+export mut CG_PA_5: ptr = null
+export mut CG_PA_6: ptr = null
+export mut CG_PA_7: ptr = null
 mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELIABLE after many entries)
 export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
@@ -229,7 +237,6 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_PTR_MAP[name] = gv
         // Check bitmask for string type
         mut bit = 1
         mut shift = 0
@@ -302,7 +309,6 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        CG_VAR_PTR_MAP[name] = gv
         mut is_str_flag2 = 0
         if type_name == "string" || is_list { is_str_flag2 = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
@@ -1552,7 +1558,6 @@ impl Codegen {
         CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-        CG_VAR_PTR_MAP[tmp] = alloca
         CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
         // Get field names for var
         mut field_names = ""
@@ -1811,11 +1816,26 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                // Use Map for ptr lookup (immune to list value corruption)
+                // Try dedicated param globals first (immune to list corruption)
                 mut var_ptr = CG_VAR_PTRS[vi]
-                if CG_VAR_PTR_MAP.has(name) {
-                    var_ptr = CG_VAR_PTR_MAP[name]
+                let pa_needle = "," + name + ","
+                if CG_PA_NAMES.index_of(pa_needle) >= 0 {
+                    // Find which param index this is
+                    mut pa_found = false
+                    if CG_PA_0 != null {
+                        // Check all param slots
+                        let idx = vi - CG_VAR_SCOPE_START
+                        if idx == 0 && CG_PA_0 != null { var_ptr = CG_PA_0 }
+                        if idx == 1 && CG_PA_1 != null { var_ptr = CG_PA_1 }
+                        if idx == 2 && CG_PA_2 != null { var_ptr = CG_PA_2 }
+                        if idx == 3 && CG_PA_3 != null { var_ptr = CG_PA_3 }
+                        if idx == 4 && CG_PA_4 != null { var_ptr = CG_PA_4 }
+                        if idx == 5 && CG_PA_5 != null { var_ptr = CG_PA_5 }
+                        if idx == 6 && CG_PA_6 != null { var_ptr = CG_PA_6 }
+                        if idx == 7 && CG_PA_7 != null { var_ptr = CG_PA_7 }
+                    }
                 }
+                if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
@@ -1869,10 +1889,8 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                mut var_ptr = CG_VAR_PTRS[vi]
-                if CG_VAR_PTR_MAP.has(name) {
-                    var_ptr = CG_VAR_PTR_MAP[name]
-                }
+                let var_ptr = CG_VAR_PTRS[vi]
+                if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
@@ -2672,7 +2690,6 @@ impl Codegen {
                                     CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                                     CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                                 }
-                                    CG_VAR_PTR_MAP[pre_name] = pre_alloca
                                 pre_name = ""
                             } else {
                                 pre_name = pre_name + pc
@@ -2685,7 +2702,6 @@ impl Codegen {
                             CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                             CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                         }
-                            CG_VAR_PTR_MAP[pre_name] = pre_alloca
                         pre_bi = pre_bi + 1
                     }
                     // Emit each arm as if-else chain
@@ -3028,7 +3044,6 @@ impl Codegen {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-        CG_VAR_PTR_MAP[name] = alloca
     }
 
     fn is_map_var(self, name: string) -> bool {
