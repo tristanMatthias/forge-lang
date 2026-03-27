@@ -2847,6 +2847,8 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_mini_run_list(%ForgeString, { ptr, i64 })")
     ir_raw("declare void @forge_exit(i64)")
+    ir_raw("declare i64 @forge_try_begin()")
+    ir_raw("declare void @forge_try_end()")
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")

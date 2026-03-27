@@ -24,6 +24,33 @@ static void forge_try_handler(int signum) {
     }
 }
 
+// Simple crash guard: returns 1 if code between try_begin/try_end crashed
+static sigjmp_buf forge_guard_jmp;
+static volatile int forge_guard_active = 0;
+
+static void forge_guard_handler(int signum) {
+    if (forge_guard_active) {
+        forge_guard_active = 0;
+        siglongjmp(forge_guard_jmp, 1);
+    }
+}
+
+// Call before risky code. Returns 0 normally, 1 if recovering from crash.
+int64_t forge_try_begin(void) {
+    forge_guard_active = 1;
+    struct sigaction sa;
+    sa.sa_handler = forge_guard_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+    return sigsetjmp(forge_guard_jmp, 1);
+}
+
+void forge_try_end(void) {
+    forge_guard_active = 0;
+}
+
 // Returns 1 if the function crashed, 0 if OK
 int64_t forge_try_call(void (*fn)(void)) {
     forge_try_active = 1;
