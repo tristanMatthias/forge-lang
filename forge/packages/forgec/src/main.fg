@@ -275,13 +275,17 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
+    eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
+    eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    // Direct call — bypasses MemberAccess codegen bug
+    eprintln("  [scan] " + string(idx) + " lexer created")
     let tokens = Lexer_tokenize(lex)
-    eprintln("  " + string(tokens.length) + " tok " + filepath)
+    eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
     mut p = parser_new_with_source(tokens, source)
+    eprintln("  [scan] " + string(idx) + " parser created")
     Parser_parse_program(p)
+    eprintln("  [scan] " + string(idx) + " parsed OK")
 }
 
 fn declare_llvm_api() {
@@ -325,10 +329,18 @@ fn build_compile_separate(paths_csv: string, output: string) {
         csv = forge_mod_csv_get()
         eprintln("  using C-side CSV: " + string(csv.length) + " bytes")
     }
-    // Set callback and use C-side CSV scanner (immune to stack corruption)
-    forge_scan_csv_set_cb(scan_one_file)
-    let file_count = forge_scan_csv(csv)
-    eprintln("scanned " + string(file_count) + " files, " + string(FN_NAMES.length) + " fns")
+    // Save CSV to C heap, iterate with C-side state (all immune to Forge stack corruption)
+    forge_save_csv(csv)
+    forge_csv_scan_reset()
+    while forge_csv_has_next() == 1 {
+        let filepath = forge_csv_next()
+        if filepath.length > 0 {
+            let idx = forge_csv_scan_idx()
+            scan_one_file(filepath, idx)
+        }
+    }
+    let scan_count = forge_csv_scan_idx() + 1
+    eprintln("scanned " + string(scan_count) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     if csv.length != paths_csv.length {

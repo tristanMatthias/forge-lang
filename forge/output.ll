@@ -3,8 +3,6 @@ source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
 
-@0 = constant [5 x i8] c"hello"
-
 declare void @forge_println_string(%ForgeString)
 
 declare %ForgeString @forge_int_to_string(i64)
@@ -38,6 +36,12 @@ declare void @forge_fn_reg_add(%ForgeString, %ForgeString)
 declare %ForgeString @forge_fn_reg_get_ret(%ForgeString)
 
 declare i64 @forge_fn_reg_count()
+
+declare i64 @forge_scan_csv(%ForgeString)
+
+declare void @forge_scan_csv_set_cb(ptr)
+
+declare %ForgeString @forge_scan_csv_path(i64)
 
 declare void @forge_mod_csv_clear()
 
@@ -274,10 +278,3 @@ declare %ForgeString @forge_sh_substr.3(%ForgeString, i64, i64)
 declare i64 @forge_sh_byteat.4(%ForgeString, i64)
 
 declare i64 @forge_sh_length.5(%ForgeString)
-
-define i32 @main(i32 %0, ptr %1) {
-bb0:
-  call void @forge_set_args(i32 %0, ptr %1)
-  call void @forge_println_string({ ptr, i64 } { ptr @0, i64 5 })
-  ret i32 0
-}

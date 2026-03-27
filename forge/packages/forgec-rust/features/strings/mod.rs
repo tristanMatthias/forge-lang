@@ -87,6 +87,15 @@ crate::runtime_fn! { name: "forge_fn_reg_count", feature: "strings", params: [],
 
 crate::runtime_fn! { name: "forge_scan_csv", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_scan_csv_set_cb", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_save_csv", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_csv_byte_at", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_csv_length", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_csv_substr", feature: "strings", params: [I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_scan_csv_path", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_csv_next", feature: "strings", params: [], ret: ForgeString }
+crate::runtime_fn! { name: "forge_csv_scan_reset", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_csv_scan_idx", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_csv_has_next", feature: "strings", params: [], ret: I64 }
 
 // Module CSV accumulator
 crate::runtime_fn! { name: "forge_mod_csv_clear", feature: "strings", params: [], ret: Void }

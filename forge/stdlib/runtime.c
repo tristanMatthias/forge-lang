@@ -2069,22 +2069,66 @@ int64_t forge_scan_csv(ForgeString csv) {
             line_start = pos + 1;
         }
     }
-    // Phase 2: call callback for each path
-    // Use static counter (immune to stack corruption from scan_one_file)
-    static volatile int _scan_i = 0;
-    _scan_i = 0;
-    fprintf(stderr, "  [SCAN2] %d paths to scan, cb=%p\n", _scan_path_count, (void*)_scan_cb);
-    fflush(stderr);
-    while (_scan_i < _scan_path_count) {
-        int cur = _scan_i;
-        _scan_i++;
-        fprintf(stderr, "  [SCAN2] %d/%d: %.*s\n", cur, _scan_path_count, (int)_scan_paths[cur].len, _scan_paths[cur].ptr);
-        fflush(stderr);
-        _scan_cb(_scan_paths[cur], (int64_t)cur);
-        fprintf(stderr, "  [SCAN2] %d done, i=%d, count=%d\n", cur, _scan_i, _scan_path_count);
-        fflush(stderr);
-    }
+    // Don't call the callback here — let Forge iterate the paths
+    // (calling via C function pointer corrupts the ABI for struct args)
     return _scan_path_count;
+}
+
+// Save CSV string in C-side static storage so it survives stack corruption
+static char* _saved_csv_ptr = NULL;
+static int64_t _saved_csv_len = 0;
+
+void forge_save_csv(ForgeString csv) {
+    // Copy to heap (immune to stack corruption)
+    _saved_csv_ptr = (char*)malloc(csv.len + 1);
+    memcpy(_saved_csv_ptr, csv.ptr, csv.len);
+    _saved_csv_ptr[csv.len] = '\0';
+    _saved_csv_len = csv.len;
+}
+
+// Stateful CSV iterator — state lives in C (immune to Forge stack corruption)
+static int64_t _csv_scan_pos = 0;
+static int64_t _csv_scan_idx = 0;
+
+// Returns next filepath from CSV, or empty string when done
+ForgeString forge_csv_next(void) {
+    while (_csv_scan_pos < _saved_csv_len) {
+        int64_t line_start = _csv_scan_pos;
+        while (_csv_scan_pos < _saved_csv_len && _saved_csv_ptr[_csv_scan_pos] != '\n')
+            _csv_scan_pos++;
+        if (_csv_scan_pos > line_start) {
+            ForgeString path = forge_string_new(_saved_csv_ptr + line_start, _csv_scan_pos - line_start);
+            _csv_scan_pos++; // skip newline
+            _csv_scan_idx++;
+            return path;
+        }
+        _csv_scan_pos++; // skip empty line
+    }
+    return (ForgeString){NULL, 0};
+}
+
+void forge_csv_scan_reset(void) { _csv_scan_pos = 0; _csv_scan_idx = 0; }
+int64_t forge_csv_scan_idx(void) { return _csv_scan_idx - 1; }
+int64_t forge_csv_has_next(void) {
+    return _csv_scan_pos < _saved_csv_len ? 1 : 0;
+}
+
+int64_t forge_csv_byte_at(int64_t idx) {
+    if (idx < 0 || idx >= _saved_csv_len || !_saved_csv_ptr) return -1;
+    return (int64_t)(unsigned char)_saved_csv_ptr[idx];
+}
+
+int64_t forge_csv_length(void) { return _saved_csv_len; }
+
+ForgeString forge_csv_substr(int64_t start, int64_t end) {
+    if (!_saved_csv_ptr || start < 0 || end > _saved_csv_len || start >= end)
+        return (ForgeString){NULL, 0};
+    return forge_string_new(_saved_csv_ptr + start, end - start);
+}
+
+ForgeString forge_scan_csv_path(int64_t idx) {
+    if (idx < 0 || idx >= _scan_path_count) return (ForgeString){NULL, 0};
+    return _scan_paths[idx];
 }
 
 void forge_mod_csv_add(ForgeString path) {
