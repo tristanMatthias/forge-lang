@@ -2154,3 +2154,29 @@ void* forge_alloca_cache_get(ForgeString name) {
     }
     return NULL;
 }
+
+// ---- String var name cache (immune to Forge list corruption) ----
+#define STR_CACHE_SIZE 256
+static char _str_names[STR_CACHE_SIZE][64];
+static int _str_count = 0;
+
+int64_t forge_str_var_add(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
+    if (_str_count < STR_CACHE_SIZE) {
+        memcpy(_str_names[_str_count], name.ptr, name.len);
+        _str_names[_str_count][name.len] = '\0';
+        _str_count++;
+    }
+    return 0;
+}
+
+int64_t forge_str_var_check(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return 0;
+    for (int i = _str_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_str_names[i]) == name.len && memcmp(_str_names[i], name.ptr, name.len) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+int64_t forge_str_var_clear(void) { _str_count = 0; return 0; }
