@@ -2004,6 +2004,10 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new("{\"code\":0}", 10);
 }
 
+// Wrapper: llvm_type_of → forge_llvm_type_of (bridges Forge package naming to Rust wrapper)
+extern void* forge_llvm_type_of(void*);
+void* llvm_type_of(void* val) { return forge_llvm_type_of(val); }
+
 // span stub removed — conflicts with @span global in full compiler IR
 
 // ---- C-side module path CSV accumulator ----
