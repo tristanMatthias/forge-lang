@@ -113,11 +113,12 @@ impl Parser {
     }
 
     fn check(self, kind: TokenKind) -> bool {
-        // Bootstrap workaround: == on tagged unions compares full payload bytes.
-        // Use string key comparison instead.
-        let a = self.kind_to_key(self.peek().kind)
-        let b = self.kind_to_key(kind)
-        a != "" && a == b
+        // Use kind_id integer comparison — avoids broken TokenKind enum extraction at Stage 2
+        let tok = self.peek()
+        let expected = self.kind_to_id(kind)
+        if expected == 0 { return false }
+        if tok.kind_id == expected { return true }
+        return false
     }
 
     fn expect(self, kind: TokenKind) -> Token? {
@@ -1073,6 +1074,101 @@ impl Parser {
             .Eof -> "Eof"
             _ -> ""
         }
+    }
+
+    // Map TokenKind enum to kind_id integer (for check() dispatch)
+    // NOTE: uses match but with explicit return in each arm (works in bootstrap)
+    fn kind_to_id(self, kind: TokenKind) -> int {
+        match kind {
+            .Let -> { return 20 }
+            .Mut -> { return 21 }
+            .Const -> { return 22 }
+            .Fn -> { return 23 }
+            .Return -> { return 24 }
+            .If -> { return 25 }
+            .Else -> { return 26 }
+            .Match -> { return 27 }
+            .For -> { return 28 }
+            .In -> { return 29 }
+            .While -> { return 30 }
+            .Loop -> { return 31 }
+            .Break -> { return 32 }
+            .Continue -> { return 33 }
+            .Enum -> { return 34 }
+            .TypeKw -> { return 35 }
+            .Use -> { return 36 }
+            .Mod -> { return 37 }
+            .As -> { return 38 }
+            .Export -> { return 39 }
+            .Emit -> { return 40 }
+            .On -> { return 41 }
+            .Trait -> { return 42 }
+            .Impl -> { return 43 }
+            .Defer -> { return 44 }
+            .Errdefer -> { return 45 }
+            .Spawn -> { return 46 }
+            .Parallel -> { return 47 }
+            .With -> { return 48 }
+            .Catch -> { return 49 }
+            .Select -> { return 50 }
+            .Component -> { return 51 }
+            .Without -> { return 52 }
+            .Only -> { return 53 }
+            .Partial -> { return 54 }
+            .Is -> { return 55 }
+            .Table -> { return 56 }
+            .Null -> { return 57 }
+            .OkKw -> { return 58 }
+            .ErrKw -> { return 59 }
+            .NullLiteral -> { return 8 }
+            .Underscore -> { return 60 }
+            .Plus -> { return 70 }
+            .Minus -> { return 71 }
+            .Star -> { return 72 }
+            .Slash -> { return 73 }
+            .Percent -> { return 74 }
+            .Eq -> { return 75 }
+            .EqEq -> { return 76 }
+            .NotEq -> { return 77 }
+            .Lt -> { return 78 }
+            .LtEq -> { return 79 }
+            .Gt -> { return 80 }
+            .GtEq -> { return 81 }
+            .And -> { return 82 }
+            .Or -> { return 83 }
+            .Not -> { return 84 }
+            .Pipe -> { return 85 }
+            .Arrow -> { return 86 }
+            .LeftArrow -> { return 87 }
+            .Question -> { return 88 }
+            .QuestionDot -> { return 89 }
+            .DoubleQuestion -> { return 90 }
+            .DotDot -> { return 91 }
+            .DotDotEq -> { return 92 }
+            .Ampersand -> { return 93 }
+            .Bar -> { return 94 }
+            .Caret -> { return 95 }
+            .Tilde -> { return 96 }
+            .ShiftLeft -> { return 97 }
+            .ShiftRight -> { return 98 }
+            .LParen -> { return 100 }
+            .RParen -> { return 101 }
+            .LBrace -> { return 102 }
+            .RBrace -> { return 103 }
+            .LBracket -> { return 104 }
+            .RBracket -> { return 105 }
+            .Comma -> { return 110 }
+            .Dot -> { return 111 }
+            .Colon -> { return 112 }
+            .Semicolon -> { return 113 }
+            .At -> { return 114 }
+            .Hash -> { return 115 }
+            .Spread -> { return 116 }
+            .Newline -> { return 120 }
+            .Eof -> { return 99 }
+            _ -> { return 0 }
+        }
+        return 0
     }
 
     // ─── Expression Parsing (delegated) ────────
