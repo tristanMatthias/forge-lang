@@ -2180,3 +2180,18 @@ int64_t forge_str_var_check(ForgeString name) {
 }
 
 int64_t forge_str_var_clear(void) { _str_count = 0; return 0; }
+
+// ---- Index-based alloca cache (no string args needed) ----
+#define IDX_CACHE_SIZE 512
+static void* _idx_cache[IDX_CACHE_SIZE];
+static int _idx_cache_count = 0;
+
+int64_t forge_idx_cache_clear(void) { _idx_cache_count = 0; memset(_idx_cache, 0, sizeof(_idx_cache)); return 0; }
+int64_t forge_idx_cache_set(int64_t idx, void* ptr) { if (idx >= 0 && idx < IDX_CACHE_SIZE) _idx_cache[idx] = ptr; return 0; }
+void* forge_idx_cache_get(int64_t idx) { if (idx >= 0 && idx < IDX_CACHE_SIZE) return _idx_cache[idx]; return NULL; }
+
+// ---- Global var counter (immune to Forge length corruption) ----
+static int64_t _var_counter = 0;
+int64_t forge_var_counter_get(void) { return _var_counter; }
+int64_t forge_var_counter_inc(void) { return _var_counter++; }
+int64_t forge_var_counter_reset(int64_t val) { _var_counter = val; return 0; }
