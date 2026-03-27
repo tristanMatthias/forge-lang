@@ -367,10 +367,24 @@ fn gen_expr(e: Expr) -> string {
                 if find_enum(candidate) >= 0 { ename = candidate }
             }
             let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
-            let ei = find_enum(ename)
+            mut ei = find_enum(ename)
             // If enum not found, return 0 (unresolved shorthand)
             if ei < 0 { return "0" }
-            let vidx = enum_variant_index(ei, vname)
+            mut vidx = enum_variant_index(ei, vname)
+            // If variant not found in resolved enum, search ALL enums
+            if vidx < 0 {
+                mut search_ei = 0
+                while search_ei < ENUM_NAMES.length {
+                    let try_vidx = enum_variant_index(search_ei, vname)
+                    if try_vidx >= 0 {
+                        ei = search_ei
+                        ename = ENUM_NAMES[search_ei]
+                        vidx = try_vidx
+                        break
+                    }
+                    search_ei = search_ei + 1
+                }
+            }
             let ety = "%" + ename
 
             let gvi = ENUM_VARIANT_STARTS[ei] + vidx
