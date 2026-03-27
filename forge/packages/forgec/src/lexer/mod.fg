@@ -645,7 +645,7 @@ impl Lexer {
 
         // Check for tagged template: ident immediately followed by `
         // (only if not a keyword)
-        let kind = keyword_kind(text)
+        let kind = keyword_kind_from_id(kind_id_for_keyword(text))
         if kind == null && !self.is_at_end() && self.peek_ch() == "`" {
             self.advance() // consume `
             return self.lex_tagged_template(text, start_pos, start_line, start_col)
@@ -669,14 +669,10 @@ impl Lexer {
         // All other keywords get unique kind_id (20-60) for Stage 2 dispatch
         let kid = kind_id_for_keyword(text)
         if kid > 0 {
-            let kw = keyword_kind(text)
+            let kw = keyword_kind_from_id(kid)
             if kw != null {
                 return token_kw(kw!, text, span)
             }
-        }
-        if is_keyword(text) {
-            let kw = keyword_kind(text)
-            return Token { kind: kw!, span: span, text: text, kind_id: 0 }
         }
 
         token_ident(text, span)
@@ -965,99 +961,79 @@ impl Lexer {
 // ─── Keyword Lookup ────────────────────────────
 
 export fn is_keyword(text: string) -> bool {
-    if text == "let" { return true }
-    if text == "mut" { return true }
-    if text == "const" { return true }
-    if text == "fn" { return true }
-    if text == "return" { return true }
-    if text == "if" { return true }
-    if text == "else" { return true }
-    if text == "match" { return true }
-    if text == "for" { return true }
-    if text == "in" { return true }
-    if text == "while" { return true }
-    if text == "loop" { return true }
-    if text == "break" { return true }
-    if text == "continue" { return true }
-    if text == "enum" { return true }
-    if text == "type" { return true }
-    if text == "use" { return true }
-    if text == "mod" { return true }
-    if text == "as" { return true }
-    if text == "export" { return true }
-    if text == "emit" { return true }
-    if text == "on" { return true }
-    if text == "trait" { return true }
-    if text == "impl" { return true }
-    if text == "defer" { return true }
-    if text == "errdefer" { return true }
-    if text == "spawn" { return true }
-    if text == "parallel" { return true }
-    if text == "with" { return true }
-    if text == "without" { return true }
-    if text == "only" { return true }
-    if text == "partial" { return true }
-    if text == "catch" { return true }
-    if text == "select" { return true }
-    if text == "component" { return true }
-    if text == "is" { return true }
-    if text == "table" { return true }
-    if text == "true" { return true }
-    if text == "false" { return true }
-    if text == "null" { return true }
-    if text == "Ok" { return true }
-    if text == "Err" { return true }
-    if text == "_" { return true }
-    false
+    return false
 }
 
 export fn keyword_kind(text: string) -> TokenKind? {
-    match text {
-        "let" -> TokenKind.Let
-        "mut" -> TokenKind.Mut
-        "const" -> TokenKind.Const
-        "fn" -> TokenKind.Fn
-        "return" -> TokenKind.Return
-        "if" -> TokenKind.If
-        "else" -> TokenKind.Else
-        "match" -> TokenKind.Match
-        "for" -> TokenKind.For
-        "in" -> TokenKind.In
-        "while" -> TokenKind.While
-        "loop" -> TokenKind.Loop
-        "break" -> TokenKind.Break
-        "continue" -> TokenKind.Continue
-        "enum" -> TokenKind.Enum
-        "type" -> TokenKind.TypeKw
-        "use" -> TokenKind.Use
-        "mod" -> TokenKind.Mod
-        "as" -> TokenKind.As
-        "export" -> TokenKind.Export
-        "emit" -> TokenKind.Emit
-        "on" -> TokenKind.On
-        "trait" -> TokenKind.Trait
-        "impl" -> TokenKind.Impl
-        "defer" -> TokenKind.Defer
-        "errdefer" -> TokenKind.Errdefer
-        "spawn" -> TokenKind.Spawn
-        "parallel" -> TokenKind.Parallel
-        "with" -> TokenKind.With
-        "without" -> TokenKind.Without
-        "only" -> TokenKind.Only
-        "partial" -> TokenKind.Partial
-        "catch" -> TokenKind.Catch
-        "select" -> TokenKind.Select
-        "component" -> TokenKind.Component
-        "is" -> TokenKind.Is
-        "table" -> TokenKind.Table
-        "true" -> TokenKind.BoolLiteral(true)
-        "false" -> TokenKind.BoolLiteral(false)
-        "null" -> TokenKind.NullLiteral
-        "Ok" -> TokenKind.OkKw
-        "Err" -> TokenKind.ErrKw
-        "_" -> TokenKind.Underscore
-        _ -> null
-    }
+    return null
+}
+
+// Int-dispatched keyword lookup — avoids match on string (which has register collision in Stage 2 IR)
+export fn keyword_kind_from_id(kid: int) -> TokenKind? {
+    if kid == 0 { return null }
+    let r1 = kw_a(kid)
+    if r1 != null { return r1 }
+    let r2 = kw_b(kid)
+    if r2 != null { return r2 }
+    let r3 = kw_c(kid)
+    if r3 != null { return r3 }
+    return kw_d(kid)
+}
+
+fn kw_a(kid: int) -> TokenKind? {
+    if kid == 20 { return TokenKind.Let }
+    if kid == 21 { return TokenKind.Mut }
+    if kid == 22 { return TokenKind.Const }
+    if kid == 23 { return TokenKind.Fn }
+    if kid == 24 { return TokenKind.Return }
+    if kid == 25 { return TokenKind.If }
+    if kid == 26 { return TokenKind.Else }
+    if kid == 27 { return TokenKind.Match }
+    return null
+}
+
+fn kw_b(kid: int) -> TokenKind? {
+    if kid == 28 { return TokenKind.For }
+    if kid == 29 { return TokenKind.In }
+    if kid == 30 { return TokenKind.While }
+    if kid == 31 { return TokenKind.Loop }
+    if kid == 32 { return TokenKind.Break }
+    if kid == 33 { return TokenKind.Continue }
+    if kid == 34 { return TokenKind.Enum }
+    if kid == 35 { return TokenKind.TypeKw }
+    if kid == 36 { return TokenKind.Use }
+    if kid == 37 { return TokenKind.Mod }
+    if kid == 38 { return TokenKind.As }
+    if kid == 39 { return TokenKind.Export }
+    return null
+}
+
+fn kw_c(kid: int) -> TokenKind? {
+    if kid == 40 { return TokenKind.Emit }
+    if kid == 41 { return TokenKind.On }
+    if kid == 42 { return TokenKind.Trait }
+    if kid == 43 { return TokenKind.Impl }
+    if kid == 44 { return TokenKind.Defer }
+    if kid == 45 { return TokenKind.Errdefer }
+    if kid == 46 { return TokenKind.Spawn }
+    if kid == 47 { return TokenKind.Parallel }
+    if kid == 48 { return TokenKind.With }
+    if kid == 49 { return TokenKind.Catch }
+    if kid == 50 { return TokenKind.Select }
+    if kid == 51 { return TokenKind.Component }
+    return null
+}
+
+fn kw_d(kid: int) -> TokenKind? {
+    if kid == 52 { return TokenKind.Without }
+    if kid == 53 { return TokenKind.Only }
+    if kid == 54 { return TokenKind.Partial }
+    if kid == 55 { return TokenKind.Is }
+    if kid == 56 { return TokenKind.Table }
+    if kid == 58 { return TokenKind.OkKw }
+    if kid == 59 { return TokenKind.ErrKw }
+    if kid == 60 { return TokenKind.Underscore }
+    return null
 }
 
 // ─── Number Parsing Helpers ────────────────────

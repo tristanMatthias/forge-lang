@@ -1833,10 +1833,8 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                // Try C-side index cache first (immune to Forge ptr corruption)
-                mut var_ptr = forge_idx_cache_get(vi)
-                if var_ptr == null { var_ptr = forge_alloca_cache_get(name) }
-                if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
+                // Use ONLY the fn-scoped name cache — idx cache and CG_VAR_PTRS have stale cross-function entries
+                let var_ptr = forge_alloca_cache_get(name)
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty

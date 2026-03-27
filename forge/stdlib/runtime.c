@@ -2129,6 +2129,28 @@ static int _ac_count = 0;
 // Clear cache AND record current function pointer for staleness detection
 int64_t forge_alloca_cache_clear(void) { _ac_count = 0; return 0; }
 
+// Raw C-string version of cache_set — called from Rust side where name ptr is still valid
+int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void* ptr) {
+    if (!name_ptr || name_len <= 0 || name_len > 63) return 0;
+    // Update existing entry if same name AND same function
+    for (int i = 0; i < _ac_count; i++) {
+        if (_ac[i].fn == _ac_fn_ptr &&
+            (int64_t)strlen(_ac[i].name) == name_len &&
+            memcmp(_ac[i].name, name_ptr, name_len) == 0) {
+            _ac[i].ptr = ptr;
+            return 0;
+        }
+    }
+    if (_ac_count < ALLOCA_CACHE_SIZE) {
+        memcpy(_ac[_ac_count].name, name_ptr, name_len);
+        _ac[_ac_count].name[name_len] = '\0';
+        _ac[_ac_count].ptr = ptr;
+        _ac[_ac_count].fn = _ac_fn_ptr;
+        _ac_count++;
+    }
+    return 0;
+}
+
 // Set current function — called at start of each function body emission
 // All entries not matching this fn ptr are considered stale
 void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
@@ -2156,12 +2178,14 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
 
 void* forge_alloca_cache_get(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return NULL;
-    // Only return entries from CURRENT function
     for (int i = _ac_count - 1; i >= 0; i--) {
-        if (_ac[i].fn == _ac_fn_ptr &&
-            (int64_t)strlen(_ac[i].name) == name.len &&
-            memcmp(_ac[i].name, name.ptr, name.len) == 0)
+        if ((int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            if (_ac[i].fn != _ac_fn_ptr) {
+                continue;
+            }
             return _ac[i].ptr;
+        }
     }
     return NULL;
 }
