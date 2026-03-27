@@ -2193,9 +2193,17 @@ fn codegen_match(s: Stmt) -> int {
                 // 2. GEP to payload (field 1)
                 // 3. Cast to variant struct type
                 // 4. GEP to each field and load
-                // Extract heap payload ptr from enum { i8, ptr }
+                // GEP-based payload extraction (more correct than extractvalue for padding)
+                // 1. Store scrutinee to alloca
+                // 2. GEP to payload ptr (field 1 of { i8, ptr })
+                // 3. Load the payload ptr
+                let scrut_alloca = new_reg()
+                ir_line(scrut_alloca + " = alloca %" + scrut_enum)
+                ir_line("store %" + scrut_enum + " " + scrutinee + ", ptr " + scrut_alloca)
+                let payload_gep = new_reg()
+                ir_line(payload_gep + " = getelementptr inbounds %" + scrut_enum + ", ptr " + scrut_alloca + ", i32 0, i32 1")
                 let payload_ptr = new_reg()
-                ir_line(payload_ptr + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 1")
+                ir_line(payload_ptr + " = load ptr, ptr " + payload_gep)
 
                 // Null guard: skip extraction if payload is null
                 let null_chk = new_reg()
