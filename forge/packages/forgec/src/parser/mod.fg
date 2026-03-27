@@ -277,6 +277,31 @@ impl Parser {
         CG_LAST_IS_MAP = 0
         CG_IS_MAP_INDEX = 0
 
+        // kind_id fast dispatch (bootstrap: match tok.kind dispatch unreliable)
+        let stmt_kid = tok.kind_id
+        if stmt_kid == 20 { let r = parse_let(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 21 { let r = parse_mut(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 22 { let r = parse_const(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 23 { let r = parse_fn(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 39 { let r = parse_export(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 30 { let r = parse_while(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 28 { let r = parse_for(self)
+            self.sync_pos()
+            return r }
+        // Return, Break, Continue — fall through to match for complex handling
+
         match tok.kind {
             .Let -> {
                 let r = parse_let(self)

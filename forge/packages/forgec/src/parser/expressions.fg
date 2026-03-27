@@ -44,27 +44,50 @@ impl Parser {
     // Map current token to BinOp for a given precedence level.
     // Returns "" for no match (bootstrap workaround: nullable returns unreliable)
     fn token_to_binop_key(self, level: int) -> string {
-        let k = self.kind_to_key(self.peek().kind)
-        match level {
-            1  -> if k == "Pipe" { "Pipe" } else { "" }
-            2  -> if k == "Or" { "Or" } else { "" }
-            3  -> if k == "And" { "And" } else { "" }
-            4  -> if k == "EqEq" { "Eq" } else if k == "NotEq" { "NotEq" } else { "" }
-            5  -> {
-                if k == "Lt" { "Lt" }
-                else if k == "LtEq" { "LtEq" }
-                else if k == "Gt" { "Gt" }
-                else if k == "GtEq" { "GtEq" }
-                else { "" }
-            }
-            6  -> if k == "Bar" { "BitOr" } else { "" }
-            7  -> if k == "Caret" { "BitXor" } else { "" }
-            8  -> if k == "Ampersand" { "BitAnd" } else { "" }
-            9  -> if k == "ShiftLeft" { "Shl" } else if k == "ShiftRight" { "Shr" } else { "" }
-            10 -> if k == "Plus" { "Add" } else if k == "Minus" { "Sub" } else { "" }
-            11 -> if k == "Star" { "Mul" } else if k == "Slash" { "Div" } else if k == "Percent" { "Mod" } else { "" }
-            _  -> ""
+        // Use kind_id for dispatch (bootstrap: kind_to_key match unreliable)
+        let kid = self.peek().kind_id
+        if level == 1 {
+            if kid == 85 { return "Pipe" }
         }
+        if level == 2 {
+            if kid == 83 { return "Or" }
+        }
+        if level == 3 {
+            if kid == 82 { return "And" }
+        }
+        if level == 4 {
+            if kid == 76 { return "Eq" }
+            if kid == 77 { return "NotEq" }
+        }
+        if level == 5 {
+            if kid == 78 { return "Lt" }
+            if kid == 79 { return "LtEq" }
+            if kid == 80 { return "Gt" }
+            if kid == 81 { return "GtEq" }
+        }
+        if level == 6 {
+            if kid == 94 { return "BitOr" }
+        }
+        if level == 7 {
+            if kid == 95 { return "BitXor" }
+        }
+        if level == 8 {
+            if kid == 93 { return "BitAnd" }
+        }
+        if level == 9 {
+            if kid == 97 { return "Shl" }
+            if kid == 98 { return "Shr" }
+        }
+        if level == 10 {
+            if kid == 70 { return "Add" }
+            if kid == 71 { return "Sub" }
+        }
+        if level == 11 {
+            if kid == 72 { return "Mul" }
+            if kid == 73 { return "Div" }
+            if kid == 74 { return "Mod" }
+        }
+        return ""
     }
 
     fn binop_from_key(self, key: string) -> BinOp {
@@ -128,8 +151,8 @@ impl Parser {
             self.skip_newlines()
 
             // Null comparison fast-path: x == null or x != null
-            let rhs_key = self.kind_to_key(self.peek().kind)
-            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
+            let rhs_kid = self.peek().kind_id
+            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && (rhs_kid == 8 || self.peek().text == "null") {
                 self.advance() // consume 'null'
                 mut cg = codegen_new()
                 mut lhs = cg.emit_expr(result)
@@ -996,54 +1019,21 @@ impl Parser {
             return Expr.Ident(name, span)
         }
 
-        // Text fallback for null (bootstrap: kind match may not dispatch)
-        if tok.text == "null" {
+        // Use kind_id dispatch (bootstrap: match tok.kind doesn't dispatch reliably)
+        if tok.kind_id == 8 || tok.text == "null" {
             let span = self.advance().span
             return Expr.NullLit(span)
         }
+        if tok.kind_id == 100 { return self.parse_paren_expr() }
+        if tok.kind_id == 102 { return self.parse_block_expr() }
+        if tok.kind_id == 104 { return self.parse_list_literal() }
+        if tok.kind_id == 111 { return self.parse_dot_variant() }
+        if tok.kind_id == 25 { return self.parse_if_expr() }
+        if tok.kind_id == 27 { return self.parse_match_expr() }
 
-        match tok.kind {
-            .NullLiteral -> {
-                let span = self.advance().span
-                Expr.NullLit(span)
-            }
-
-            // Parenthesized expression or tuple
-            .LParen -> {
-                self.parse_paren_expr()
-            }
-
-            // Block expression { ... }
-            .LBrace -> {
-                self.parse_block_expr()
-            }
-
-            // List literal [ ... ]
-            .LBracket -> {
-                self.parse_list_literal()
-            }
-
-            // Dot-prefixed enum variant: .Variant
-            .Dot -> {
-                self.parse_dot_variant()
-            }
-
-            // If expression
-            .If -> {
-                self.parse_if_expr()
-            }
-
-            // Match expression (will be registered by pattern_matching feature)
-            .Match -> {
-                self.parse_match_expr()
-            }
-
-            _ -> {
-                self.error("unexpected token")
-                self.advance() // skip the bad token
-                null
-            }
-        }
+        self.error("unexpected token")
+        self.advance()
+        null
     }
 
     // ─── Parenthesized / Tuple ─────────────────
@@ -1095,13 +1085,13 @@ impl Parser {
         if CG_ACTIVE {
             // Peek: if next meaningful token after { is }, it's an empty map
             let next = self.peek_at(1)
-            if self.kind_to_key(next.kind) == "RBrace" || self.kind_to_key(next.kind) == "Newline" {
+            if next.kind_id == 103 || next.kind_id == 120 {
                 // Check if NEXT after newlines is RBrace
                 mut offset = 1
-                while self.kind_to_key(self.peek_at(offset).kind) == "Newline" {
+                while self.peek_at(offset).kind_id == 120 {
                     offset = offset + 1
                 }
-                if self.kind_to_key(self.peek_at(offset).kind) == "RBrace" {
+                if self.peek_at(offset).kind_id == 103 {
                     // Empty block → create a map via forge_map_new()
                     self.advance() // consume {
                     self.skip_newlines()
