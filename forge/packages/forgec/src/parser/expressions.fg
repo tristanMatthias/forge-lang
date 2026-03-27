@@ -687,6 +687,39 @@ impl Parser {
                     }
                 }
 
+                // Universal method call desugaring: obj.method(args) → Type__method(obj, args)
+                // This bypasses the broken MemberAccess codegen in the self-hosting chain
+                if CG_ACTIVE && self.check(TokenKind.LParen) {
+                    // Try to resolve as impl method
+                    let obj_var = LAST_IDENT_NAME
+                    let vst = var_struct_type(obj_var)
+                    if vst != "" {
+                        let method_name = vst + "__" + field
+                        // Check if this method exists in FN_NAMES
+                        mut found_method = false
+                        mut fni = 0
+                        while fni < FN_NAMES.length {
+                            if FN_NAMES[fni] == method_name {
+                                found_method = true
+                                break
+                            }
+                            fni = fni + 1
+                        }
+                        if found_method {
+                            self.advance() // consume (
+                            let method_args = self.parse_call_args()
+                            self.expect(TokenKind.RParen)
+                            let sp3 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+                            // Build args: [obj, ...method_args]
+                            mut all_args: List<Expr> = [result]
+                            for a in method_args { all_args = all_args.push(a) }
+                            result = Expr.Call(Expr.Ident(method_name, span), all_args, sp3)
+                            result_is_llvm = false
+                            continue
+                        }
+                    }
+                }
+
                 result = Expr.MemberAccess(result, field, span)
                 result_is_llvm = false
                 continue
