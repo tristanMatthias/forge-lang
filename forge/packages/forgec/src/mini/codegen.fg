@@ -4,6 +4,10 @@
 
 // Access child Expr from a List<Expr>
 fn gen_child(children: List<Expr>, idx: int) -> string {
+    if idx < 0 || idx >= children.length {
+        eprintln("  [gen_child] OOB idx=" + string(idx) + " len=" + string(children.length))
+        return "0"
+    }
     let child: Expr = children[idx]
     gen_expr(child)
 }
@@ -360,6 +364,7 @@ fn gen_expr(e: Expr) -> string {
             // Heap-allocated enum: { i8 tag, ptr payload }
             // Payload is a heap-allocated variant struct
             let dot_idx = e.str_val.index_of(".")
+            if dot_idx < 0 { return "0" }
             mut ename = e.str_val.substring(0, dot_idx)
             if ename.length == 0 && CUR_RET_TY.length > 1 && CUR_RET_TY.substring(0, 1) == "%" {
                 let candidate = CUR_RET_TY.substring(1, CUR_RET_TY.length)
@@ -387,7 +392,10 @@ fn gen_expr(e: Expr) -> string {
             }
             let ety = "%" + ename
 
+            if vidx < 0 { return "0" }
+            if ei < 0 || ei >= ENUM_VARIANT_STARTS.length { return "0" }
             let gvi = ENUM_VARIANT_STARTS[ei] + vidx
+            if gvi < 0 || gvi >= EVAR_FIELD_COUNTS.length { return "0" }
             let fc = EVAR_FIELD_COUNTS[gvi]
             let fs = EVAR_FIELD_STARTS[gvi]
 
@@ -396,7 +404,11 @@ fn gen_expr(e: Expr) -> string {
             mut vfi = 0
             while vfi < fc {
                 if vfi > 0 { variant_fields = variant_fields + ", " }
-                variant_fields = variant_fields + EFIELD_TYPES[fs + vfi]
+                if fs + vfi < EFIELD_TYPES.length {
+                    variant_fields = variant_fields + EFIELD_TYPES[fs + vfi]
+                } else {
+                    variant_fields = variant_fields + "i64"
+                }
                 vfi = vfi + 1
             }
             let variant_ty = "{ " + variant_fields + " }"
@@ -413,7 +425,8 @@ fn gen_expr(e: Expr) -> string {
                 mut fi = 0
                 while fi < fc && fi < e.children.length {
                     let fval = gen_expr_child(e, fi)
-                    let fty = EFIELD_TYPES[fs + fi]
+                    mut fty = "i64"
+                    if fs + fi < EFIELD_TYPES.length { fty = EFIELD_TYPES[fs + fi] }
                     let fptr = new_reg()
                     ir_line(fptr + " = getelementptr inbounds " + variant_ty + ", ptr " + payload_ptr + ", i32 0, i32 " + string(fi))
                     mut store_val = fval
@@ -2504,11 +2517,11 @@ fn gen_fn_decl(f: FnDecl) {
     mut gle: List<string> = []
     mut gi2 = 0
     while gi2 < gc {
-        gn = gn.push(VAR_NAMES[gi2])
-        gr = gr.push(VAR_REGS[gi2])
-        gt = gt.push(VAR_TYPES[gi2])
-        gs = gs.push(VAR_STRUCT_TYPE[gi2])
-        gle = gle.push(VAR_LIST_ELEM_TYPE[gi2])
+        if gi2 < VAR_NAMES.length { gn = gn.push(VAR_NAMES[gi2]) }
+        if gi2 < VAR_REGS.length { gr = gr.push(VAR_REGS[gi2]) }
+        if gi2 < VAR_TYPES.length { gt = gt.push(VAR_TYPES[gi2]) }
+        if gi2 < VAR_STRUCT_TYPE.length { gs = gs.push(VAR_STRUCT_TYPE[gi2]) }
+        if gi2 < VAR_LIST_ELEM_TYPE.length { gle = gle.push(VAR_LIST_ELEM_TYPE[gi2]) }
         gi2 = gi2 + 1
     }
     VAR_NAMES = gn
@@ -2702,6 +2715,57 @@ fn compile(source: string) -> string {
     GLOBAL_TYPES = []
     KNOWN_TYPE_NAMES = []
 
+    // Register runtime string functions with correct return types
+    FN_NAMES = FN_NAMES.push("forge_string_index_of")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
+    FN_NAMES = FN_NAMES.push("forge_string_substring")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int,int")
+    FN_NAMES = FN_NAMES.push("forge_string_length")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_string_compare")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
+    FN_NAMES = FN_NAMES.push("forge_string_eq")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
+    FN_NAMES = FN_NAMES.push("forge_string_concat")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
+    FN_NAMES = FN_NAMES.push("forge_string_char_at")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int")
+    FN_NAMES = FN_NAMES.push("forge_string_new")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("ptr,int")
+    FN_NAMES = FN_NAMES.push("forge_int_to_string")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    // Register C-side helper functions with correct return types
+    FN_NAMES = FN_NAMES.push("forge_sh_indexof")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
+    FN_NAMES = FN_NAMES.push("forge_sh_substr")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int,int")
+    FN_NAMES = FN_NAMES.push("forge_sh_length")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+
     // Pass 0: pre-scan type/enum names + load packages
     eprintln("  pass 0: scanning type names...")
     scan_type_names()
@@ -2882,6 +2946,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_try_begin()")
     ir_raw("declare void @forge_try_end()")
     ir_raw("declare i64 @forge_alloca_cache_clear()")
+    ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
     ir_raw("declare i64 @forge_alloca_cache_set(%ForgeString, ptr)")
     ir_raw("declare ptr @forge_alloca_cache_get(%ForgeString)")
     ir_raw("declare i64 @forge_str_var_add(%ForgeString)")
@@ -2902,7 +2967,16 @@ fn compile(source: string) -> string {
     ir_raw("declare ptr @forge_map_new()")
     ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
     ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
+    // Token accumulator (O(1) amortized push)
+    ir_raw("declare void @forge_tok_clear()")
+    ir_raw("declare void @forge_tok_push(i64, %ForgeString, i64)")
+    ir_raw("declare i64 @forge_tok_count()")
+    ir_raw("declare { ptr, i64 } @forge_tok_to_list()")
     ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
+    // C-side string helpers for Stage 2 bootstrap
+    ir_raw("declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)")
+    ir_raw("declare i64 @forge_sh_length(%ForgeString)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")

@@ -63,5 +63,14 @@ crate::runtime_fn! { name: "forge_string_last_index_of", feature: "strings", par
 crate::runtime_fn! { name: "forge_char_code", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "strlen", feature: "strings", params: [Ptr], ret: I64, conditional: true }
 
+// Token accumulator for mini compiler (O(1) amortized push)
+crate::runtime_fn! { name: "forge_tok_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_tok_push", feature: "strings", params: [I64, ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_tok_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_tok_to_list", feature: "strings", params: [], ret: ForgeString }
+
+// Alloca cache function-scoped validation
+crate::runtime_fn! { name: "forge_alloca_cache_set_fn", feature: "strings", params: [Ptr], ret: Void }
+
 pub mod checker;
 pub mod codegen;

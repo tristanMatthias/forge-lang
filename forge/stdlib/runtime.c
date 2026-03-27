@@ -1992,8 +1992,7 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new("{\"code\":0}", 10);
 }
 
-// Stub: span() identity function (workaround for match binding issue)
-int64_t span(int64_t val) { return val; }
+// span stub removed — conflicts with @span global in full compiler IR
 
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
@@ -2123,15 +2122,24 @@ void forge_debug_lexer(void* ptr) {
 
 // ---- Alloca cache (immune to Forge-level ptr corruption) ----
 #define ALLOCA_CACHE_SIZE 512
-static struct { char name[64]; void* ptr; } _ac[ALLOCA_CACHE_SIZE];
+static void* _ac_fn_ptr = NULL; // current LLVM function pointer — entries from other functions are stale
+static struct { char name[64]; void* ptr; void* fn; } _ac[ALLOCA_CACHE_SIZE];
 static int _ac_count = 0;
 
+// Clear cache AND record current function pointer for staleness detection
 int64_t forge_alloca_cache_clear(void) { _ac_count = 0; return 0; }
+
+// Set current function — called at start of each function body emission
+// All entries not matching this fn ptr are considered stale
+void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
 
 int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
     if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
+    // Update existing entry if same name AND same function
     for (int i = 0; i < _ac_count; i++) {
-        if ((int64_t)strlen(_ac[i].name) == name.len && memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+        if (_ac[i].fn == _ac_fn_ptr &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             _ac[i].ptr = ptr;
             return 0;
         }
@@ -2140,6 +2148,7 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
         memcpy(_ac[_ac_count].name, name.ptr, name.len);
         _ac[_ac_count].name[name.len] = '\0';
         _ac[_ac_count].ptr = ptr;
+        _ac[_ac_count].fn = _ac_fn_ptr;
         _ac_count++;
     }
     return 0;
@@ -2147,9 +2156,11 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
 
 void* forge_alloca_cache_get(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return NULL;
-    if (!name.ptr || name.len <= 0) return NULL;
+    // Only return entries from CURRENT function
     for (int i = _ac_count - 1; i >= 0; i--) {
-        if ((int64_t)strlen(_ac[i].name) == name.len && memcmp(_ac[i].name, name.ptr, name.len) == 0)
+        if (_ac[i].fn == _ac_fn_ptr &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0)
             return _ac[i].ptr;
     }
     return NULL;
@@ -2195,3 +2206,51 @@ static int64_t _var_counter = 0;
 int64_t forge_var_counter_get(void) { return _var_counter; }
 int64_t forge_var_counter_inc(void) { return _var_counter++; }
 int64_t forge_var_counter_reset(int64_t val) { _var_counter = val; return 0; }
+
+// ---- C-side string helpers for Stage 2 bootstrap ----
+// These bypass LLVM Value* corruption in the Forge-compiled codegen.
+// Stage 2 calls these directly instead of forge_string_* via MemberAccess.
+int64_t forge_sh_indexof(ForgeString s, ForgeString needle) {
+    return forge_string_index_of(s, needle);
+}
+ForgeString forge_sh_substr(ForgeString s, int64_t start, int64_t end) {
+    return forge_string_substring(s, start, end);
+}
+int64_t forge_sh_length(ForgeString s) {
+    return s.len;
+}
+
+// ---- C-side token accumulator for mini compiler ----
+// Avoids O(n²) list push in tokenizer. Stores tokens as flat array of {i64, ForgeString, i64}.
+typedef struct { int64_t kind; ForgeString text; int64_t line; } MiniTok;
+static MiniTok* _tok_buf = NULL;
+static int64_t _tok_count = 0;
+static int64_t _tok_cap = 0;
+
+void forge_tok_clear(void) {
+    _tok_count = 0;
+}
+void forge_tok_push(int64_t kind, ForgeString text, int64_t line) {
+    if (_tok_count >= _tok_cap) {
+        int64_t new_cap = _tok_cap < 1024 ? 1024 : _tok_cap * 2;
+        MiniTok* new_buf = (MiniTok*)malloc(new_cap * sizeof(MiniTok));
+        if (_tok_buf && _tok_count > 0) {
+            memcpy(new_buf, _tok_buf, _tok_count * sizeof(MiniTok));
+        }
+        free(_tok_buf);
+        _tok_buf = new_buf;
+        _tok_cap = new_cap;
+    }
+    _tok_buf[_tok_count++] = (MiniTok){kind, text, line};
+}
+int64_t forge_tok_count(void) { return _tok_count; }
+// Build a Forge List<Tok> from the accumulated tokens
+ForgeString forge_tok_to_list(void) {
+    // List<Tok> is {ptr, i64} where ptr→array of Tok structs
+    int64_t elem_size = sizeof(MiniTok);
+    char* data = (char*)malloc(sizeof(int64_t) + _tok_count * elem_size);
+    *(int64_t*)data = _tok_count; // capacity header
+    char* elems = data + sizeof(int64_t);
+    memcpy(elems, _tok_buf, _tok_count * elem_size);
+    return (ForgeString){elems, _tok_count};
+}

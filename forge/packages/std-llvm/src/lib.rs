@@ -13,11 +13,33 @@ use std::cell::RefCell;
 // Opaque pointer type used for all LLVM refs
 type LLVMPtr = *mut c_void;
 
-// All LLVM instruction names go through this: use empty string to avoid
-// crashes from non-null-terminated ForgeString ptrs passed via extern FFI
+// LLVM instruction names: use empty string for value names (registers get auto-numbered),
+// but generate unique names for basic blocks to prevent register/block numbering collisions.
 const EMPTY_NAME: &[u8] = b"\0";
+
 fn safe_name(_name: *const c_char) -> *const c_char {
     EMPTY_NAME.as_ptr() as *const c_char
+}
+
+// Generate unique block names: "bb0", "bb1", ... to avoid colliding with %N registers
+thread_local! {
+    static BB_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static BB_NAME_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(16));
+}
+
+fn unique_block_name() -> *const c_char {
+    BB_COUNTER.with(|c| {
+        let n = c.get();
+        c.set(n + 1);
+        BB_NAME_BUF.with(|buf| {
+            let mut buf = buf.borrow_mut();
+            buf.clear();
+            buf.extend_from_slice(b"bb");
+            buf.extend_from_slice(n.to_string().as_bytes());
+            buf.push(0); // null terminator
+            buf.as_ptr() as *const c_char
+        })
+    })
 }
 
 // ── Type Cache (immune to bootstrap global corruption) ──────────────
@@ -383,8 +405,8 @@ pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
 // ── Basic Blocks & Builder ──
 
 #[no_mangle]
-pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMAppendBasicBlockInContext(ctx, f, safe_name(name)) }
+pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name: *const c_char) -> LLVMPtr {
+    unsafe { LLVMAppendBasicBlockInContext(ctx, f, unique_block_name()) }
 }
 
 #[no_mangle]
