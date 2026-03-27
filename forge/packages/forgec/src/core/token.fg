@@ -169,8 +169,9 @@ export fn token_with_id(kind: TokenKind, span: Span, kid: int) -> Token {
     Token { kind: kind, span: span, text: "", kind_id: kid }
 }
 
-// Token with text and kind_id
-export fn token_kw(kind: TokenKind, text: string, span: Span, kid: int) -> Token {
+// Token with text and kind_id (3 params to avoid 4-param entry block numbering issue)
+export fn token_kw(kind: TokenKind, text: string, span: Span) -> Token {
+    let kid = kind_id_for_keyword(text)
     Token { kind: kind, span: span, text: text, kind_id: kid }
 }
 

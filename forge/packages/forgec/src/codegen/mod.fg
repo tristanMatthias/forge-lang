@@ -547,20 +547,13 @@ export fn cg_get_enum_ty_for(name: string) -> ptr {
         }
         ci = ci + 1
     }
-    // Create: {i8, i64 x max_fields}
-    let mf = cg_enum_max_fields(name)
-    mut fc = 2  // minimum {i8, i64}
-    if mf > 0 { fc = mf + 1 }
-    let fields = llvm.type_array_new(fc)
+    // Create: { i8, ptr } — heap-allocated enum (matches mini's type declarations)
+    let fields = llvm.type_array_new(2)
     llvm.type_array_set(fields, 0, CG_I8)
-    mut fi = 1
-    while fi < fc {
-        llvm.type_array_set(fields, fi, CG_I64)
-        fi = fi + 1
-    }
-    // Named enum type (like Rust) for proper LLVM ABI handling
+    llvm.type_array_set(fields, 1, CG_PTR)
+    // Named enum type
     let ty = llvm.struct_create_named(CG_CTX, name)
-    llvm.struct_set_body(ty, fields, fc, 0)
+    llvm.struct_set_body(ty, fields, 2, 0)
     llvm.type_array_free(fields)
     // Cache it
     CG_ENUM_TYPE_CACHE_NAMES = CG_ENUM_TYPE_CACHE_NAMES.push(name)
@@ -2170,52 +2163,47 @@ impl Codegen {
                     // Enum constructors: Wrap.Val(42) → { i8 tag, i64 42, ... }
                     let maybe_tag = match_enum_tag(ns + "." + f)
                     if maybe_tag >= 0 {
-                        let emf = cg_enum_max_fields(ns)
-                        let ety = cg_get_enum_ty_for(ns)
-                        if ety != null {
-                            // Build enum value: start with zeroinitializer, set tag
-                            mut ev = llvm.const_null(ety)
-                            let tag_val = llvm.const_int(CG_I8, maybe_tag, 0)
-                            ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")
-                            // Insert field values at slots 1+
-                            let vft = cg_enum_variant_field_types(ns, f)
-                            mut fi = 0
-                            mut slot_off = 0
-                            while fi < args.length {
-                                let fval = self.emit_expr(args[fi])
-                                let fis_str = CG_LAST_IS_STR
-                                cg_reinit_types()
-                                let slot = 1 + slot_off
-                                // Check field type code
-                                mut fc = "i"
-                                if fi < vft.length { fc = vft.substring(fi, fi + 1) }
-                                if fc == "s" {
-                                    // String: 2 slots (ptr + len)
-                                    let sptr = llvm.build_extract_value(CG_B, fval, 0, "sp")
-                                    let slen = llvm.build_extract_value(CG_B, fval, 1, "sl")
-                                    if sptr != null && slen != null {
-                                        let sp_i64 = llvm.build_ptr_to_int(CG_B, sptr, CG_I64, "si")
-                                        ev = llvm.build_insert_value(CG_B, ev, sp_i64, slot, "es")
-                                        ev = llvm.build_insert_value(CG_B, ev, slen, slot + 1, "el")
-                                    }
-                                    slot_off = slot_off + 2
-                                } else if fc == "p" {
-                                    // Boxed ptr: 1 slot
-                                    ev = llvm.build_insert_value(CG_B, ev, fval, slot, "ep")
-                                    slot_off = slot_off + 1
-                                } else if fc == "4" {
-                                    // Span: 4 slots
-                                    slot_off = slot_off + 4
-                                } else if fc == "l" {
-                                    // List: 2 slots
-                                    slot_off = slot_off + 2
-                                } else {
-                                    // Int/bool: 1 slot
-                                    ev = llvm.build_insert_value(CG_B, ev, fval, slot, "ei")
-                                    slot_off = slot_off + 1
-                                }
-                                fi = fi + 1
+                        // Heap-allocated enum: { i8 tag, ptr payload }
+                        // Matches extraction in Statement.Match and mini's codegen
+                        let ety = llvm.get_type_by_name(CG_CTX, ns)
+                        if ety == null {
+                            // Fallback: use cg_get_enum_ty_for
+                            let ety2 = cg_get_enum_ty_for(ns)
+                            if ety2 != null {
+                                // Simple tag-only variant (no fields)
+                                mut ev = llvm.const_null(ety2)
+                                let tag_val = llvm.const_int(CG_I8, maybe_tag, 0)
+                                ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")
+                                CG_LAST_ENUM_TYPE = ns
+                                return ev
                             }
+                        }
+                        if ety != null {
+                            // Build { i8 tag, ptr payload }
+                            let tag_val = llvm.const_int(CG_I8, maybe_tag, 0)
+                            if args.length == 0 {
+                                // Unit variant: { tag, null }
+                                mut ev = llvm.const_null(ety)
+                                ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")
+                                CG_LAST_ENUM_TYPE = ns
+                                return ev
+                            }
+                            // Data variant: store payload to alloca, use alloca ptr as payload
+                            let payload_val = self.emit_expr(args[0])
+                            cg_reinit_types()
+                            // Alloca for the payload, store value, use alloca as ptr
+                            mut payload_ptr = llvm.const_null(CG_PTR)
+                            if payload_val != null {
+                                let payload_ty = llvm.type_of(payload_val)
+                                if payload_ty != null {
+                                    let pa = llvm.build_alloca(CG_B, payload_ty, "ep")
+                                    llvm.build_store(CG_B, payload_val, pa)
+                                    payload_ptr = pa
+                                }
+                            }
+                            mut ev = llvm.const_null(ety)
+                            ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")
+                            ev = llvm.build_insert_value(CG_B, ev, payload_ptr, 1, "ep")
                             CG_LAST_ENUM_TYPE = ns
                             return ev
                         }

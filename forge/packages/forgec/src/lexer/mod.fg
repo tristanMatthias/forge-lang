@@ -671,7 +671,7 @@ impl Lexer {
         if kid > 0 {
             let kw = keyword_kind(text)
             if kw != null {
-                return token_kw(kw!, text, span, kid)
+                return token_kw(kw!, text, span)
             }
         }
         if is_keyword(text) {
