@@ -274,10 +274,19 @@ export fn store_fn_param_name(name: string) {
 
 export fn store_fn_param_type(type_name: string) {
     FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
+    forge_param_type_add(type_name)
 }
 
 export fn store_fn_return_type(type_name: string) {
     FN_RETURN_TYPES = FN_RETURN_TYPES.push(type_name)
+    // Register name+return_type pair in C-side registry (immune to list corruption)
+    // Use the most recently added FN_NAMES entry as the function name
+    let fn_count = forge_fn_reg_count()
+    let names_len = FN_NAMES.length
+    if names_len > fn_count {
+        let fn_name = FN_NAMES[names_len - 1]
+        forge_fn_reg_add(fn_name, type_name)
+    }
 }
 
 // Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
@@ -517,10 +526,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
         let param_val = llvm.get_param(fn_val, pi)
         let pt_idx = param_offset + pi
-        mut param_type_name = "int"
-        if pt_idx < FN_ALL_PARAM_TYPES.length {
-            param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
-        }
+        // Use C-side param type registry (immune to Forge list corruption)
+        let param_type_name = forge_param_type_get(pt_idx)
         let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
         mut p_ty = CG_I64
         if param_type_name == "string" { p_ty = CG_STR }

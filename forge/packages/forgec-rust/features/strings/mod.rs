@@ -69,6 +69,17 @@ crate::runtime_fn! { name: "forge_tok_push", feature: "strings", params: [I64, F
 crate::runtime_fn! { name: "forge_tok_count", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_tok_to_list", feature: "strings", params: [], ret: ForgeString }
 
+// Param type registry
+crate::runtime_fn! { name: "forge_param_type_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_param_type_get", feature: "strings", params: [I64], ret: ForgeString }
+
+// Function name/return-type registry (immune to Forge list corruption)
+crate::runtime_fn! { name: "forge_fn_reg_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_fn_reg_add", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_fn_reg_get_ret", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_fn_reg_count", feature: "strings", params: [], ret: I64 }
+
 // Module CSV accumulator
 crate::runtime_fn! { name: "forge_mod_csv_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_mod_csv_add", feature: "strings", params: [ForgeString], ret: Void }

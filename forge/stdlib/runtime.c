@@ -2026,6 +2026,66 @@ ForgeString forge_mod_csv_get(void) {
     return forge_string_new(_mod_csv, _mod_csv_len);
 }
 
+// ---- C-side function name/return-type registry (immune to Forge list corruption) ----
+// This is the ROOT FIX for type tracking bugs: FN_NAMES/FN_RETURN_TYPES stored in C.
+#define FN_REG_MAX 1024
+static struct { char name[128]; char ret_type[64]; } _fn_reg[FN_REG_MAX];
+static int _fn_reg_count = 0;
+
+void forge_fn_reg_clear(void) { _fn_reg_count = 0; }
+
+void forge_fn_reg_add(ForgeString name, ForgeString ret_type) {
+    if (_fn_reg_count >= FN_REG_MAX) return;
+    if (!name.ptr || name.len <= 0 || name.len > 127) return;
+    memcpy(_fn_reg[_fn_reg_count].name, name.ptr, name.len);
+    _fn_reg[_fn_reg_count].name[name.len] = '\0';
+    if (ret_type.ptr && ret_type.len > 0 && ret_type.len < 64) {
+        memcpy(_fn_reg[_fn_reg_count].ret_type, ret_type.ptr, ret_type.len);
+        _fn_reg[_fn_reg_count].ret_type[ret_type.len] = '\0';
+    } else {
+        _fn_reg[_fn_reg_count].ret_type[0] = '\0';
+    }
+    _fn_reg_count++;
+}
+
+// Look up return type by function name. Returns empty string if not found.
+ForgeString forge_fn_reg_get_ret(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return (ForgeString){NULL, 0};
+    for (int i = _fn_reg_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_fn_reg[i].name) == name.len &&
+            memcmp(_fn_reg[i].name, name.ptr, name.len) == 0) {
+            int64_t rlen = strlen(_fn_reg[i].ret_type);
+            if (rlen == 0) return (ForgeString){NULL, 0};
+            return forge_string_new(_fn_reg[i].ret_type, rlen);
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
+int64_t forge_fn_reg_count(void) { return _fn_reg_count; }
+
+// ---- C-side param type storage (immune to Forge list corruption) ----
+#define PARAM_REG_MAX 4096
+static char _param_types[PARAM_REG_MAX][64];
+static int _param_type_count = 0;
+
+void forge_param_type_clear(void) { _param_type_count = 0; }
+void forge_param_type_add(ForgeString type_name) {
+    if (_param_type_count >= PARAM_REG_MAX) return;
+    if (type_name.ptr && type_name.len > 0 && type_name.len < 64) {
+        memcpy(_param_types[_param_type_count], type_name.ptr, type_name.len);
+        _param_types[_param_type_count][type_name.len] = '\0';
+    } else {
+        strcpy(_param_types[_param_type_count], "int");
+    }
+    _param_type_count++;
+}
+ForgeString forge_param_type_get(int64_t idx) {
+    if (idx < 0 || idx >= _param_type_count) return forge_string_new("int", 3);
+    int64_t len = strlen(_param_types[idx]);
+    return forge_string_new(_param_types[idx], len);
+}
+
 // ---- C-side function body storage (immune to Forge list push corruption) ----
 #define FN_STORE_MAX 1024
 static struct { char name[128]; char* body; int64_t body_len; } _fn_store[FN_STORE_MAX];

@@ -2982,6 +2982,15 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_mod_csv_clear()")
     ir_raw("declare void @forge_mod_csv_add(%ForgeString)")
     ir_raw("declare %ForgeString @forge_mod_csv_get()")
+    // Param type registry
+    ir_raw("declare void @forge_param_type_clear()")
+    ir_raw("declare void @forge_param_type_add(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_param_type_get(i64)")
+    // Function name/return-type registry
+    ir_raw("declare void @forge_fn_reg_clear()")
+    ir_raw("declare void @forge_fn_reg_add(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_fn_reg_get_ret(%ForgeString)")
+    ir_raw("declare i64 @forge_fn_reg_count()")
     ir_raw("declare void @forge_fn_store_clear()")
     ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_fn_store_get_body(i64)")

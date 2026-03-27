@@ -964,6 +964,15 @@ fn cg_init_runtime() {
     CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", make_fn_type_2(CG_I64, CG_STR, CG_STR))
     CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
     CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type_2(CG_I64, CG_STR, CG_STR))
+    // Param type registry
+    llvm.add_function(CG_MOD, "forge_param_type_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_param_type_add", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_param_type_get", make_fn_type_1(CG_STR, CG_I64))
+    // Function name/return-type registry (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_fn_reg_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_fn_reg_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_reg_get_ret", make_fn_type_1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_reg_count", make_fn_type_0(CG_I64))
     // Module CSV accumulator (immune to global assignment corruption)
     llvm.add_function(CG_MOD, "forge_mod_csv_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_mod_csv_add", make_fn_type_1(CG_VOID, CG_STR))
@@ -2071,39 +2080,42 @@ impl Codegen {
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
-                    // Reset type flags — the call consumed the enum arg
+                    // Use C-side registry for return type lookup (immune to Forge list corruption)
                     CG_LAST_IS_NULLABLE = 0
                     CG_LAST_ENUM_TYPE = ""
+                    CG_LAST_STRUCT_TYPE = ""
                     CG_HAS_LAST_VAL = 0
-                    mut fi = 0
-                    while fi < FN_NAMES.length {
-                        if FN_NAMES[fi] == name {
-                            if fi < FN_RETURN_TYPES.length {
-                                mut rtn = FN_RETURN_TYPES[fi]
-                                // Detect nullable return (ends with ?)
-                                let rtn_len = rtn.length
-                                if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                                    CG_LAST_IS_NULLABLE = 1
-                                    rtn = rtn.substring(0, rtn_len - 1)
-                                } }
-                                if rtn == "string" {
-                                    CG_LAST_IS_STR = 1
-                                } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                                    // Check if it's an enum return type
-                                    let post_emf = cg_enum_max_fields(rtn)
-                                    if post_emf > 0 {
-                                        CG_LAST_ENUM_TYPE = rtn
-                                    } else {
-                                        CG_LAST_STRUCT_TYPE = rtn
+                    let rtn = forge_fn_reg_get_ret(name)
+                    if rtn.length > 0 {
+                        // Detect nullable return (ends with ?)
+                        let rtn_len = rtn.length
+                        mut rtn_clean = rtn
+                        if rtn_len > 1 {
+                            if forge_string_byte_at(rtn, rtn_len - 1) == 63 {
+                                CG_LAST_IS_NULLABLE = 1
+                                rtn_clean = forge_string_substring(rtn, 0, rtn_len - 1)
+                            }
+                        }
+                        if rtn_clean == "string" {
+                            CG_LAST_IS_STR = 1
+                        } else if rtn_clean != "" {
+                            if rtn_clean != "int" {
+                                if rtn_clean != "float" {
+                                    if rtn_clean != "bool" {
+                                        if rtn_clean != "ptr" {
+                                            let post_emf = cg_enum_max_fields(rtn_clean)
+                                            if post_emf > 0 {
+                                                CG_LAST_ENUM_TYPE = rtn_clean
+                                            } else {
+                                                CG_LAST_STRUCT_TYPE = rtn_clean
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            break
                         }
-                        fi = fi + 1
                     }
                     // Final override: known non-string runtime functions
-                    // (FN_NAMES search above may have corrupted CG_LAST_IS_STR)
                     if name == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
                     if name == "forge_string_length" { CG_LAST_IS_STR = 0 }
                     if name == "forge_string_compare" { CG_LAST_IS_STR = 0 }
@@ -2422,48 +2434,43 @@ impl Codegen {
         if fn_name == "forge_string_compare" { call_ret_ty = CG_I64 }
         if fn_name == "forge_string_eq" { call_ret_ty = CG_I8 }
         if fn_name == "forge_string_byte_at" { call_ret_ty = CG_I64 }
-        mut fi = 0
-        while fi < FN_NAMES.length {
-            if FN_NAMES[fi] == fn_name {
-                if fi < FN_RETURN_TYPES.length {
-                    mut rtn = FN_RETURN_TYPES[fi]
-                    // Detect nullable return type
-                    let rtn_len = rtn.length
-                    if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                        call_is_nullable = true
-                        rtn = rtn.substring(0, rtn_len - 1)
-                    } }
-                    if rtn == "string" {
-                        call_ret_ty = CG_STR
-                        CG_LAST_IS_STR = 1
-                    } else if rtn.length >= 4 {
-                        // Check specifically for "List" prefix (not just "L")
-                        mut is_list_ret = false
-                        if rtn[0] == "L" {
-                            if rtn[1] == "i" {
-                                if rtn[2] == "s" {
-                                    if rtn[3] == "t" { is_list_ret = true }
-                                }
-                            }
+        // Use C-side registry (immune to Forge list corruption)
+        let rtn_raw = forge_fn_reg_get_ret(fn_name)
+        if rtn_raw.length > 0 {
+            mut rtn = rtn_raw
+            let rtn_len = rtn.length
+            if rtn_len > 1 {
+                if forge_string_byte_at(rtn, rtn_len - 1) == 63 {
+                    call_is_nullable = true
+                    rtn = forge_string_substring(rtn, 0, rtn_len - 1)
+                }
+            }
+            if rtn == "string" {
+                call_ret_ty = CG_STR
+                CG_LAST_IS_STR = 1
+            } else if rtn.length >= 4 {
+                mut is_list_ret = false
+                if forge_string_byte_at(rtn, 0) == 76 {
+                    if forge_string_byte_at(rtn, 1) == 105 {
+                        if forge_string_byte_at(rtn, 2) == 115 {
+                            if forge_string_byte_at(rtn, 3) == 116 { is_list_ret = true }
                         }
-                        if is_list_ret {
-                            call_ret_ty = CG_STR
-                            CG_LAST_IS_STR = 1
-                            CG_LAST_IS_LIST = 1
-                        } else {
-                            call_ret_ty = resolve_type_to_llvm(rtn)
-                            let ret_emf = cg_enum_max_fields(rtn)
-                            if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
-                        }
-                    } else if rtn != "" {
-                        call_ret_ty = resolve_type_to_llvm(rtn)
-                        let ret_emf = cg_enum_max_fields(rtn)
-                        if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
                     }
                 }
-                break
+                if is_list_ret {
+                    call_ret_ty = CG_STR
+                    CG_LAST_IS_STR = 1
+                    CG_LAST_IS_LIST = 1
+                } else {
+                    call_ret_ty = resolve_type_to_llvm(rtn)
+                    let ret_emf = cg_enum_max_fields(rtn)
+                    if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
+                }
+            } else if rtn != "" {
+                call_ret_ty = resolve_type_to_llvm(rtn)
+                let ret_emf = cg_enum_max_fields(rtn)
+                if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
             }
-            fi = fi + 1
         }
         // Wrap return type for nullable
         if call_is_nullable {
