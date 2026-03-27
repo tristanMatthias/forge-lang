@@ -334,6 +334,8 @@ pub extern "C" fn forge_llvm_pointer_type(ctx: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_function_type(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_int, is_vararg: c_int) -> LLVMPtr {
+    if ret.is_null() { return std::ptr::null_mut(); }
+    if params.is_null() && param_count > 0 { return std::ptr::null_mut(); }
     unsafe { LLVMFunctionType(ret, params, param_count as c_uint, is_vararg) }
 }
 
@@ -753,6 +755,7 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
+    if fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name)) }
 }
 
@@ -764,6 +767,7 @@ pub extern "C" fn forge_llvm_value_array_new(count: c_int) -> *mut LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_value_array_set(arr: *mut LLVMPtr, index: c_int, val: LLVMPtr) {
+    if arr.is_null() { return; }
     unsafe { *arr.offset(index as isize) = val; }
 }
 

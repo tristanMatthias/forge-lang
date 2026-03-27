@@ -27,6 +27,10 @@ export fn parse_for(p: Parser) -> Statement? {
 
 export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Block) {
     let lv = cg.emit_expr(iterable)
+    if lv == null {
+        eprintln("  WARN: for-in iterable is null, skipping")
+        return
+    }
     let ia = llvm.build_alloca(CG_B, CG_I64, "fi")
     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), ia)
     let la = llvm.value_array_new(1)

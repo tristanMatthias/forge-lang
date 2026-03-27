@@ -2197,6 +2197,16 @@ fn codegen_match(s: Stmt) -> int {
                 let payload_ptr = new_reg()
                 ir_line(payload_ptr + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 1")
 
+                // Null guard: skip extraction if payload is null
+                let null_chk = new_reg()
+                ir_line(null_chk + " = icmp eq ptr " + payload_ptr + ", null")
+                let safe_l = new_label("payload_ok")
+                let skip_l = new_label("payload_null")
+                ir_line("br i1 " + null_chk + ", label %" + skip_l + ", label %" + safe_l)
+                ir_raw(skip_l + ":")
+                ir_line("br label %" + merge_l)
+                ir_raw(safe_l + ":")
+
                 // Build variant struct type string
                 let gvi_arm = ENUM_VARIANT_STARTS[ei] + vidx
                 let fs_arm = EVAR_FIELD_STARTS[gvi_arm]
