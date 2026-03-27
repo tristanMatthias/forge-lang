@@ -84,6 +84,8 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     if p.source.length > 0 {
         body_src = p.source.substring(block_open_span.start, block_close_end + 1)
     }
+    // Debug: log body extraction for all functions
+    eprintln("  BODY " + name + " open=" + string(block_open_span.start) + " close=" + string(block_close_end) + " len=" + string(body_src.length) + " src_len=" + string(p.source.length))
 
     // Store for codegen — name, body, param count, names, types, return type
     store_fn_source(name, body_src)
@@ -258,6 +260,8 @@ export fn store_fn_source(name: string, body_source: string) {
     FN_NAMES = FN_NAMES.push(name)
     FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
     FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
+    // Also store in C-side array (immune to Forge list push corruption)
+    forge_fn_store_add(name, body_source)
 }
 
 export fn store_fn_param_count(count: int) {
@@ -454,7 +458,8 @@ export fn declare_all_fns() {
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = FN_NAMES[idx]
     eprintln("  emit: " + name)
-    let body_src = FN_BODY_SOURCES[idx]
+    // Use C-side body store (immune to Forge list corruption that misaligns indices)
+    let body_src = forge_fn_store_get_body(idx)
     let is_main = name == "main"
     mut pc = 0
     if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }

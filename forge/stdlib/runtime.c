@@ -1994,6 +1994,34 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
 
 // span stub removed — conflicts with @span global in full compiler IR
 
+// ---- C-side function body storage (immune to Forge list push corruption) ----
+#define FN_STORE_MAX 1024
+static struct { char name[128]; char* body; int64_t body_len; } _fn_store[FN_STORE_MAX];
+static int _fn_store_count = 0;
+
+void forge_fn_store_clear(void) { _fn_store_count = 0; }
+
+void forge_fn_store_add(ForgeString name, ForgeString body) {
+    if (_fn_store_count >= FN_STORE_MAX) return;
+    if (!name.ptr || name.len <= 0 || name.len > 127) return;
+    memcpy(_fn_store[_fn_store_count].name, name.ptr, name.len);
+    _fn_store[_fn_store_count].name[name.len] = '\0';
+    // Copy body
+    char* b = (char*)malloc(body.len + 1);
+    if (body.ptr && body.len > 0) memcpy(b, body.ptr, body.len);
+    b[body.len] = '\0';
+    _fn_store[_fn_store_count].body = b;
+    _fn_store[_fn_store_count].body_len = body.len;
+    _fn_store_count++;
+}
+
+ForgeString forge_fn_store_get_body(int64_t idx) {
+    if (idx < 0 || idx >= _fn_store_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_fn_store[idx].body, _fn_store[idx].body_len};
+}
+
+int64_t forge_fn_store_count(void) { return _fn_store_count; }
+
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
     int64_t old_count = list.len;

@@ -72,5 +72,11 @@ crate::runtime_fn! { name: "forge_tok_to_list", feature: "strings", params: [], 
 // Alloca cache function-scoped validation
 crate::runtime_fn! { name: "forge_alloca_cache_set_fn", feature: "strings", params: [Ptr], ret: Void }
 
+// C-side function body store (immune to Forge list push corruption)
+crate::runtime_fn! { name: "forge_fn_store_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_fn_store_add", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_fn_store_get_body", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_fn_store_count", feature: "strings", params: [], ret: I64 }
+
 pub mod checker;
 pub mod codegen;

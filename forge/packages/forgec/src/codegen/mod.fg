@@ -2399,6 +2399,13 @@ impl Codegen {
             is_extern_str_return = true }
         if fn_name == "forge_int_to_string" { call_ret_ty = CG_STR
             is_extern_str_return = true }
+        // Explicit non-string return types for runtime functions
+        // (prevents CG_LAST_IS_STR pollution from "string" in the function name)
+        if fn_name == "forge_string_index_of" { call_ret_ty = CG_I64 }
+        if fn_name == "forge_string_length" { call_ret_ty = CG_I64 }
+        if fn_name == "forge_string_compare" { call_ret_ty = CG_I64 }
+        if fn_name == "forge_string_eq" { call_ret_ty = CG_I8 }
+        if fn_name == "forge_string_byte_at" { call_ret_ty = CG_I64 }
         mut fi = 0
         while fi < FN_NAMES.length {
             if FN_NAMES[fi] == fn_name {

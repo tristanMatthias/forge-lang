@@ -2752,6 +2752,10 @@ fn compile(source: string) -> string {
     FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_NAMES = FN_NAMES.push("forge_string_byte_at")
+    FN_RETTYPES = FN_RETTYPES.push("i64")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int")
     // Register C-side helper functions with correct return types
     FN_NAMES = FN_NAMES.push("forge_sh_indexof")
     FN_RETTYPES = FN_RETTYPES.push("i64")
@@ -2973,6 +2977,11 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_tok_count()")
     ir_raw("declare { ptr, i64 } @forge_tok_to_list()")
     ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
+    // C-side function body store (immune to Forge list corruption)
+    ir_raw("declare void @forge_fn_store_clear()")
+    ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_fn_store_get_body(i64)")
+    ir_raw("declare i64 @forge_fn_store_count()")
     // C-side string helpers for Stage 2 bootstrap
     ir_raw("declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)")
