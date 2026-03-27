@@ -69,6 +69,11 @@ crate::runtime_fn! { name: "forge_tok_push", feature: "strings", params: [I64, F
 crate::runtime_fn! { name: "forge_tok_count", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_tok_to_list", feature: "strings", params: [], ret: ForgeString }
 
+crate::runtime_fn! { name: "forge_write_lines_append", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_ir_open", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_ir_line", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_ir_close", feature: "strings", params: [], ret: Void }
+
 // Param type registry
 crate::runtime_fn! { name: "forge_param_type_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }

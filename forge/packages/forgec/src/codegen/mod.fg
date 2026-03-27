@@ -2256,12 +2256,12 @@ impl Codegen {
                             // Alloca for the payload, store value, use alloca as ptr
                             mut payload_ptr = llvm.const_null(CG_PTR)
                             if payload_val != null {
-                                let payload_ty = llvm.type_of(payload_val)
-                                if payload_ty != null {
-                                    let pa = llvm.build_alloca(CG_B, payload_ty, "ep")
-                                    llvm.build_store(CG_B, payload_val, pa)
-                                    payload_ptr = pa
-                                }
+                                // Use CG_I64 as default payload type (most common)
+                                mut payload_ty = CG_I64
+                                if CG_LAST_IS_STR == 1 { payload_ty = CG_STR }
+                                let pa = llvm.build_alloca(CG_B, payload_ty, "ep")
+                                llvm.build_store(CG_B, payload_val, pa)
+                                payload_ptr = pa
                             }
                             mut ev = llvm.const_null(ety)
                             ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")

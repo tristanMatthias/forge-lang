@@ -1740,6 +1740,18 @@ fn codegen_let(s: Stmt) -> int {
         ty = "ptr"
         LAST_IS_PTR = 1
     }
+    // Coerce value type to match alloca type
+    let store_rt = reg_get_type(final_val)
+    if store_rt == "ptr" && ty == "i64" {
+        let conv = new_reg()
+        ir_line(conv + " = ptrtoint ptr " + final_val + " to i64")
+        final_val = conv
+    }
+    if store_rt == "i64" && ty == "ptr" {
+        let conv = new_reg()
+        ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
+        final_val = conv
+    }
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {
@@ -2756,7 +2768,23 @@ fn compile(source: string) -> string {
     FN_RETTYPES = FN_RETTYPES.push("i64")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int")
-    // Register C-side helper functions with correct return types
+    // Register C-side functions with correct return types
+    FN_NAMES = FN_NAMES.push("forge_mod_csv_get")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+    FN_NAMES = FN_NAMES.push("forge_fn_store_get_body")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_NAMES = FN_NAMES.push("forge_fn_reg_get_ret")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_param_type_get")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
     FN_NAMES = FN_NAMES.push("forge_sh_indexof")
     FN_RETTYPES = FN_RETTYPES.push("i64")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
@@ -3004,6 +3032,10 @@ fn compile(source: string) -> string {
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
     ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
+    ir_raw("declare void @forge_write_lines_append(%ForgeString, { ptr, i64 })")
+    ir_raw("declare void @forge_ir_open(%ForgeString)")
+    ir_raw("declare void @forge_ir_line(%ForgeString)")
+    ir_raw("declare void @forge_ir_close()")
     ir_raw("declare { ptr, i64 } @forge_list_push({ ptr, i64 }, ptr, i64)")
     ir_raw("")
     // Emit package extern function declarations

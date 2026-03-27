@@ -103,27 +103,22 @@ fn main() {
         process.exit(1)
     }
 
+    let ir_path = "/tmp/mini_output.ll"
+    // Open IR file BEFORE compile — ir_line/ir_raw write directly to it
+    forge_ir_open(ir_path)
     eprintln("  lex + parse + codegen: " + input)
     compile(source)
     eprintln("  IR: " + string(IR.length) + " + " + string(STR_DECLS.length) + " lines")
-
-    // Write IR to file: IR (header+functions) then STR_DECLS (string constants)
-    let ir_path = "/tmp/mini_output.ll"
-    mut all_lines: List<string> = []
-    mut ii = 0
-    while ii < IR.length {
-        all_lines = all_lines.push(IR[ii])
-        ii = ii + 1
-    }
-    all_lines = all_lines.push("")
+    // IR lines were already written by ir_line/ir_raw during compile()
+    // Now write STR_DECLS (string constants) and close
+    forge_ir_line("")
     mut si = 0
     while si < STR_DECLS.length {
-        all_lines = all_lines.push(STR_DECLS[si])
+        forge_ir_line(STR_DECLS[si])
         si = si + 1
     }
-    let full_ir = forge_join_lines(all_lines)
-    fs.write(ir_path, full_ir)
-    eprintln("  wrote " + string(full_ir.length) + " chars to " + ir_path)
+    forge_ir_close()
+    eprintln("  wrote IR to " + ir_path)
 
     // Compile
     mut output = "a.out"

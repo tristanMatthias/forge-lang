@@ -618,6 +618,7 @@ fn ir_line(s: string) {
     mut fixed = s
     if s.contains("ptr 0,") { fixed = s.substring(0, s.index_of("ptr 0,")) + "ptr null," + s.substring(s.index_of("ptr 0,") + 6, s.length) }
     if fixed.length > 6 && fixed.substring(fixed.length - 5, fixed.length) == "ptr 0" { fixed = fixed.substring(0, fixed.length - 1) + "null" }
+    forge_ir_line("  " + fixed)
     IR = IR.push("  " + fixed)
     // Auto-track register types from emitted IR
     if s.length > 6 && s.substring(0, 2) == "%r" {
@@ -676,6 +677,7 @@ fn ir_line(s: string) {
 }
 
 fn ir_raw(s: string) {
+    forge_ir_line(s)
     IR = IR.push(s)
 }
 

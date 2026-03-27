@@ -1894,6 +1894,23 @@ void forge_write_lines(ForgeString path, ForgeList lines) {
     fclose(f);
 }
 
+void forge_write_lines_append(ForgeString path, ForgeList lines) {
+    char cpath[4096];
+    if (path.len >= sizeof(cpath)) return;
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+    FILE* f = fopen(cpath, "ab");
+    if (!f) return;
+    ForgeString* items = (ForgeString*)lines.ptr;
+    for (int64_t i = 0; i < lines.len; i++) {
+        if (items[i].len > 0) {
+            fwrite(items[i].ptr, 1, items[i].len, f);
+        }
+        fputc('\n', f);
+    }
+    fclose(f);
+}
+
 // Write a large ForgeString to file — workaround for potential ABI issues
 void forge_mini_write_file(ForgeString path, ForgeString content) {
     char cpath[4096];
@@ -2004,11 +2021,25 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
     return forge_string_new("{\"code\":0}", 10);
 }
 
-// Wrapper: llvm_type_of → forge_llvm_type_of (bridges Forge package naming to Rust wrapper)
-extern void* forge_llvm_type_of(void*);
-void* llvm_type_of(void* val) { return forge_llvm_type_of(val); }
-
 // span stub removed — conflicts with @span global in full compiler IR
+
+// ---- C-side IR line accumulator (avoids O(n²) Forge list push for 56K+ lines) ----
+static FILE* _ir_file = NULL;
+void forge_ir_open(ForgeString path) {
+    char cpath[4096];
+    if (path.len >= sizeof(cpath)) return;
+    memcpy(cpath, path.ptr, path.len);
+    cpath[path.len] = '\0';
+    _ir_file = fopen(cpath, "wb");
+}
+void forge_ir_line(ForgeString line) {
+    if (!_ir_file) return;
+    if (line.ptr && line.len > 0) fwrite(line.ptr, 1, line.len, _ir_file);
+    fputc('\n', _ir_file);
+}
+void forge_ir_close(void) {
+    if (_ir_file) { fclose(_ir_file); _ir_file = NULL; }
+}
 
 // ---- C-side module path CSV accumulator ----
 // Bypasses Forge global variable assignment corruption in Stage 2

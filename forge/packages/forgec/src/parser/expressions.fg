@@ -694,13 +694,21 @@ impl Parser {
                     let obj_var = LAST_IDENT_NAME
                     let vst = var_struct_type(obj_var)
                     if vst != "" {
-                        let method_name = vst + "__" + field
-                        // Check if this method exists in FN_NAMES
+                        // Try both Type__method (full compiler) and Type_method (mini) naming
+                        let method_name_2 = vst + "__" + field
+                        let method_name_1 = vst + "_" + field
+                        mut method_name = method_name_2
                         mut found_method = false
                         mut fni = 0
                         while fni < FN_NAMES.length {
-                            if FN_NAMES[fni] == method_name {
+                            if FN_NAMES[fni] == method_name_2 {
                                 found_method = true
+                                method_name = method_name_2
+                                break
+                            }
+                            if FN_NAMES[fni] == method_name_1 {
+                                found_method = true
+                                method_name = method_name_1
                                 break
                             }
                             fni = fni + 1
