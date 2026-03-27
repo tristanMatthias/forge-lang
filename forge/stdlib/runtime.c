@@ -2046,6 +2046,47 @@ void forge_ir_close(void) {
 static char _mod_csv[65536];
 static int _mod_csv_len = 0;
 void forge_mod_csv_clear(void) { _mod_csv_len = 0; _mod_csv[0] = '\0'; }
+// Scan CSV and call a callback for each line — callback set at runtime
+typedef void (*scan_callback_t)(ForgeString filepath, int64_t idx);
+static scan_callback_t _scan_cb = NULL;
+void forge_scan_csv_set_cb(void* cb) { _scan_cb = (scan_callback_t)cb; }
+// Two-phase scan: first split CSV into paths (in C), then call callback for each
+// This prevents scan_one_file from corrupting the CSV scanner's stack
+#define MAX_SCAN_FILES 256
+static ForgeString _scan_paths[MAX_SCAN_FILES];
+static int _scan_path_count = 0;
+
+int64_t forge_scan_csv(ForgeString csv) {
+    if (!_scan_cb || !csv.ptr) return 0;
+    // Phase 1: split CSV into paths array (pure C, no callbacks)
+    _scan_path_count = 0;
+    int64_t line_start = 0;
+    for (int64_t pos = 0; pos <= csv.len; pos++) {
+        if (pos == csv.len || csv.ptr[pos] == '\n') {
+            if (pos > line_start && _scan_path_count < MAX_SCAN_FILES) {
+                _scan_paths[_scan_path_count++] = forge_string_new(csv.ptr + line_start, pos - line_start);
+            }
+            line_start = pos + 1;
+        }
+    }
+    // Phase 2: call callback for each path
+    // Use static counter (immune to stack corruption from scan_one_file)
+    static volatile int _scan_i = 0;
+    _scan_i = 0;
+    fprintf(stderr, "  [SCAN2] %d paths to scan, cb=%p\n", _scan_path_count, (void*)_scan_cb);
+    fflush(stderr);
+    while (_scan_i < _scan_path_count) {
+        int cur = _scan_i;
+        _scan_i++;
+        fprintf(stderr, "  [SCAN2] %d/%d: %.*s\n", cur, _scan_path_count, (int)_scan_paths[cur].len, _scan_paths[cur].ptr);
+        fflush(stderr);
+        _scan_cb(_scan_paths[cur], (int64_t)cur);
+        fprintf(stderr, "  [SCAN2] %d done, i=%d, count=%d\n", cur, _scan_i, _scan_path_count);
+        fflush(stderr);
+    }
+    return _scan_path_count;
+}
+
 void forge_mod_csv_add(ForgeString path) {
     if (!path.ptr || path.len <= 0 || _mod_csv_len + path.len + 2 > 65535) return;
     memcpy(_mod_csv + _mod_csv_len, path.ptr, path.len);

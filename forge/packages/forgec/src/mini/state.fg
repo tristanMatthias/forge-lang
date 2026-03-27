@@ -1,0 +1,957 @@
+// ═══════════════════════════════════════════════════════════════════
+// CODEGEN STATE
+// Parser globals, IR emission, variable/struct/enum tracking
+// ═══════════════════════════════════════════════════════════════════
+
+mut TOKENS: List<Tok> = []
+mut POS: int = 0
+mut IR: List<string> = []
+mut REG_N: int = 0
+mut LBL_N: int = 0
+mut STR_N: int = 0
+mut STR_DECLS: List<string> = []
+
+// Register type table — parallel arrays (reg name → LLVM type)
+mut REG_TY_NAMES: List<string> = []
+mut REG_TY_VALS: List<string> = []
+
+fn reg_set_type(reg: string, ty: string) {
+    REG_TY_NAMES = REG_TY_NAMES.push(reg)
+    REG_TY_VALS = REG_TY_VALS.push(ty)
+}
+
+fn reg_get_type(reg: string) -> string {
+    // Search backwards (latest definition wins)
+    mut i = REG_TY_NAMES.length - 1
+    while i >= 0 {
+        if REG_TY_NAMES[i] == reg { return REG_TY_VALS[i] }
+        i = i - 1
+    }
+    ""
+}
+
+// Get the best known type for any value (register, literal, or global)
+fn val_type(val: string) -> string {
+    if val == "0" { return "i64" }
+    if val == "zeroinitializer" { return "" }
+    if val == "null" { return "ptr" }
+    if val.length < 2 { return "i64" }
+    if val.substring(0, 1) == "@" { return "ptr" }
+    let rt = reg_get_type(val)
+    if rt.length > 0 { return rt }
+    if LAST_IS_STR == 1 { return "%ForgeString" }
+    if LAST_IS_PTR == 1 { return "ptr" }
+    if LAST_IS_LIST == 1 { return "{ ptr, i64 }" }
+    if LAST_IS_FLOAT == 1 { return "double" }
+    if LAST_STRUCT_TYPE.length > 0 { return "%" + LAST_STRUCT_TYPE }
+    if LAST_ENUM_TYPE.length > 0 { return "%" + LAST_ENUM_TYPE }
+    "i64"
+}
+
+// Variable tracking — flat lists
+mut VAR_NAMES: List<string> = []
+mut VAR_REGS: List<string> = []
+mut VAR_TYPES: List<string> = [] // "i64", "%ForgeString", etc.
+
+// Struct type tracking
+// Flat representation: all fields from all structs in order
+// STRUCT_NAMES[i] = "Tok"
+// STRUCT_FIELD_STARTS[i] = index into SFIELD_* arrays
+// STRUCT_FIELD_COUNTS[i] = number of fields
+mut STRUCT_NAMES: List<string> = []
+mut STRUCT_FIELD_STARTS: List<int> = []
+mut STRUCT_FIELD_COUNTS: List<int> = []
+// Flat arrays of all struct fields
+mut SFIELD_NAMES: List<string> = []
+mut SFIELD_TYPES: List<string> = []
+
+// Track which variables hold struct values: VAR_STRUCT_TYPE[i] = "Tok" or ""
+mut VAR_STRUCT_TYPE: List<string> = []
+mut LAST_STRUCT_TYPE: string = ""
+
+// Enum tracking
+// ENUM_NAMES[i] = "Color"
+// ENUM_VARIANT_STARTS[i] = index into EVAR_* arrays
+// ENUM_VARIANT_COUNTS[i] = number of variants
+mut ENUM_NAMES: List<string> = []
+mut ENUM_VARIANT_STARTS: List<int> = []
+mut ENUM_VARIANT_COUNTS: List<int> = []
+// Flat arrays of variant names/field info
+mut EVAR_NAMES: List<string> = []
+// For data-carrying variants: field starts/counts into EFIELD_* arrays
+mut EVAR_FIELD_STARTS: List<int> = []
+mut EVAR_FIELD_COUNTS: List<int> = []
+mut EFIELD_NAMES: List<string> = []
+mut EFIELD_TYPES: List<string> = []
+
+mut LAST_ENUM_TYPE: string = ""
+mut LAST_IS_LIST: int = 0
+mut LAST_LIST_ELEM_TYPE: string = "i64"  // element LLVM type for last list expr
+// For struct field assignment: track the object being accessed
+// Per-variable list element type: "" for non-lists
+mut VAR_LIST_ELEM_TYPE: List<string> = []
+
+// Function forward declarations
+mut FN_NAMES: List<string> = []
+mut FN_RETTYPES: List<string> = []
+mut FN_PARAMCOUNTS: List<int> = []
+mut FN_PARAM_TYPES: List<string> = []  // CSV per function: "i64,%ForgeString,i64"
+
+// Loop labels for break/continue
+mut LOOP_COND: List<string> = []
+mut LOOP_END: List<string> = []
+
+// Current function return type
+mut CUR_RET_TY: string = "i64"
+mut LAST_EXPR_VAL: string = "0"
+mut LAST_IS_STR: int = 0  // 1 if last expression produced a string
+mut CLOSURE_COUNT: int = 0
+mut CLOSURE_IR: List<string> = []  // closure function definitions, emitted after current fn
+mut LAST_IS_PTR: int = 0  // 1 if last expr produced a raw pointer (fn ptr, etc.)
+mut LAST_IS_FLOAT: int = 0  // 1 if last expr produced a double
+mut PENDING_MATCH_STMTS: List<Stmt> = []
+mut IF_IS_EXPR: int = 0
+mut CUR_RETVAL: string = ""
+mut IF_DEPTH: int = 0
+mut IN_FN_BODY: int = 0
+mut IN_MATCH_ARM: int = 0
+
+// ─── Namespace tracking (package exports) ────────
+mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
+mut NS_FN_NAMES: List<string> = []   // ["build_trunc", "context_create", ...]
+mut NS_MANGLED: List<string> = []    // ["llvm_build_trunc", "llvm_context_create", ...]
+mut AUTO_DECLARED: List<string> = [] // Auto-declared namespace functions (not in package.fg)
+
+fn find_ns_fn(ns: string, method: string) -> string {
+    mut i = 0
+    while i < NS_NAMES.length {
+        if NS_NAMES[i] == ns && NS_FN_NAMES[i] == method {
+            return NS_MANGLED[i]
+        }
+        i = i + 1
+    }
+    ""
+}
+
+fn is_namespace(name: string) -> bool {
+    mut i = 0
+    while i < NS_NAMES.length {
+        if NS_NAMES[i] == name { return true }
+        i = i + 1
+    }
+    false
+}
+
+// ─── Struct helpers ───────────────────────────────
+
+fn find_struct(name: string) -> int {
+    mut i = 0
+    while i < STRUCT_NAMES.length {
+        if STRUCT_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn struct_field_index(struct_idx: int, field_name: string) -> int {
+    let start = STRUCT_FIELD_STARTS[struct_idx]
+    let count = STRUCT_FIELD_COUNTS[struct_idx]
+    mut i = 0
+    while i < count {
+        if SFIELD_NAMES[start + i] == field_name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn struct_field_type_raw(struct_idx: int, field_idx: int) -> string {
+    let start = STRUCT_FIELD_STARTS[struct_idx]
+    SFIELD_TYPES[start + field_idx]
+}
+
+fn struct_field_type(struct_idx: int, field_idx: int) -> string {
+    let raw = struct_field_type_raw(struct_idx, field_idx)
+    // Convert list_X → { ptr, i64 } for LLVM IR
+    if is_list_type(raw) { return "{ ptr, i64 }" }
+    raw
+}
+
+fn struct_field_count(struct_idx: int) -> int {
+    STRUCT_FIELD_COUNTS[struct_idx]
+}
+
+fn struct_llvm_type(name: string) -> string {
+    "%" + name
+}
+
+fn load_var_by_type(name: string, idx: int, vty: string) -> string {
+    // Self ptr: load ptr from alloca, then load struct from ptr (double indirection)
+    if vty == "ptr" && VAR_STRUCT_TYPE[idx].length > 0 {
+        let sty = VAR_STRUCT_TYPE[idx]
+        let p = new_reg()
+        ir_line(p + " = load ptr, ptr " + VAR_REGS[idx])
+        let r = new_reg()
+        ir_line(r + " = load %" + sty + ", ptr " + p)
+        reg_set_type(r, "%" + sty)
+        LAST_STRUCT_TYPE = sty
+        LAST_ENUM_TYPE = sty
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_IS_PTR = 0
+        return r
+    }
+    detect_var_type(vty)
+    let load_ty = get_load_type(vty)
+    let r = new_reg()
+    ir_line(r + " = load " + load_ty + ", ptr " + VAR_REGS[idx])
+    reg_set_type(r, load_ty)
+    r
+}
+
+fn get_load_type(vty: string) -> string {
+    if is_list_type(vty) { return "{ ptr, i64 }" }
+    vty
+}
+
+fn detect_var_type(vty: string) {
+    LAST_IS_STR = 0
+    LAST_IS_LIST = 0
+    LAST_IS_PTR = 0
+    LAST_IS_FLOAT = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    if vty == "%ForgeString" {
+        LAST_IS_STR = 1
+        return
+    }
+    if vty == "ptr" {
+        LAST_IS_PTR = 1
+        return
+    }
+    if vty == "double" {
+        LAST_IS_FLOAT = 1
+        return
+    }
+    if is_list_type(vty) {
+        LAST_IS_LIST = 1
+        LAST_LIST_ELEM_TYPE = vty.substring(5, vty.length)
+        return
+    }
+    if vty.length > 1 {
+        if vty.substring(0, 1) == "%" {
+            LAST_STRUCT_TYPE = vty.substring(1, vty.length)
+            LAST_ENUM_TYPE = vty.substring(1, vty.length)
+        }
+    }
+}
+
+fn load_list_var(name: string, idx: int, vty: string) -> string {
+    let r = new_reg()
+    ir_line(r + " = load { ptr, i64 }, ptr " + VAR_REGS[idx])
+    LAST_IS_LIST = 1
+    LAST_IS_STR = 0
+    LAST_STRUCT_TYPE = ""
+    LAST_ENUM_TYPE = ""
+    LAST_LIST_ELEM_TYPE = vty.substring(5, vty.length)
+    r
+}
+
+fn is_list_type(ty: string) -> bool {
+    if ty.length < 6 { return false }
+    // Check "list_" prefix char by char
+    if ty.substring(0, 1) != "l" { return false }
+    if ty.substring(1, 2) != "i" { return false }
+    if ty.substring(2, 3) != "s" { return false }
+    if ty.substring(3, 4) != "t" { return false }
+    if ty.substring(4, 5) != "_" { return false }
+    true
+}
+
+
+fn set_type_from_llvm(ty: string) {
+    // Given an LLVM return type, set LAST_IS_STR/LAST_IS_LIST/LAST_STRUCT_TYPE/LAST_ENUM_TYPE
+    if ty == "%ForgeString" {
+        LAST_IS_STR = 1
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
+    if ty == "{ ptr, i64 }" {
+        LAST_IS_LIST = 1
+        LAST_IS_STR = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
+    if ty == "ptr" {
+        LAST_IS_PTR = 1
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
+    if ty.length > 1 {
+        if ty.substring(0, 1) == "%" {
+            let tname = ty.substring(1, ty.length)
+            LAST_STRUCT_TYPE = tname
+            LAST_ENUM_TYPE = tname
+            LAST_IS_STR = 0
+            LAST_IS_LIST = 0
+        }
+    }
+}
+
+fn find_enum(name: string) -> int {
+    mut i = 0
+    while i < ENUM_NAMES.length {
+        if ENUM_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn enum_variant_index(enum_idx: int, variant_name: string) -> int {
+    let start = ENUM_VARIANT_STARTS[enum_idx]
+    let count = ENUM_VARIANT_COUNTS[enum_idx]
+    mut i = 0
+    while i < count {
+        if EVAR_NAMES[start + i] == variant_name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// Compute max payload size across all variants (in i64 slots)
+mut SLOT_COUNT_DEPTH: int = 0
+
+fn type_slot_count(fty: string) -> int {
+    if fty == "%ForgeString" { return 2 }
+    if fty == "{ ptr, i64 }" { return 2 }
+    if is_list_type(fty) { return 2 }
+    if fty == "double" { return 1 }
+    if fty == "ptr" { return 1 }
+    if fty == "i64" { return 1 }
+    // For struct/enum types: compute size but cap struct recursion
+    if SLOT_COUNT_DEPTH > 1 { return 1 }
+    SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH + 1
+    mut result = 1
+    if fty.length > 1 && fty.substring(0, 1) == "%" {
+        let tname = fty.substring(1, fty.length)
+        let si = find_struct(tname)
+        if si >= 0 {
+            let nf = struct_field_count(si)
+            mut total = 0
+            mut k = 0
+            while k < nf {
+                let sf = struct_field_type(si, k)
+                total = total + type_slot_count(sf)
+                k = k + 1
+            }
+            result = total
+        } else {
+            let ei = find_enum(tname)
+            if ei >= 0 { result = enum_max_slots(ei) + 1 }
+        }
+    }
+    SLOT_COUNT_DEPTH = SLOT_COUNT_DEPTH - 1
+    result
+}
+
+fn enum_max_slots(enum_idx: int) -> int {
+    let start = ENUM_VARIANT_STARTS[enum_idx]
+    let count = ENUM_VARIANT_COUNTS[enum_idx]
+    mut max_slots = 0
+    mut i = 0
+    while i < count {
+        let fc = EVAR_FIELD_COUNTS[start + i]
+        let fs = EVAR_FIELD_STARTS[start + i]
+        mut slots = 0
+        mut j = 0
+        while j < fc {
+            let fty = EFIELD_TYPES[fs + j]
+            slots = slots + type_slot_count(fty)
+            j = j + 1
+        }
+        if slots > max_slots { max_slots = slots }
+        i = i + 1
+    }
+    if max_slots == 0 { max_slots = 1 }
+    max_slots
+}
+
+fn enum_llvm_type_str(enum_idx: int) -> string {
+    // Heap-allocated payload: { i8 tag, ptr payload }
+    // Construction: alloc variant struct → store fields → store ptr in enum
+    // Extraction: load ptr → GEP → load field
+    "{ i8, ptr }"
+}
+
+// Convert stored field type to LLVM load type
+fn type_to_llvm_field(fty: string) -> string {
+    if fty == "%ForgeString" { return "%ForgeString" }
+    if fty == "{ ptr, i64 }" { return "{ ptr, i64 }" }
+    if is_list_type(fty) { return "{ ptr, i64 }" }
+    if fty == "double" { return "double" }
+    if fty == "ptr" { return "ptr" }
+    if fty.length > 1 && fty.substring(0, 1) == "%" { return fty }
+    "i64"
+}
+
+fn type_to_llvm(ty_name: string) -> string {
+    if ty_name == "int" { return "i64" }
+    if ty_name == "bool" { return "i64" }
+    if ty_name == "string" { return "%ForgeString" }
+    if ty_name == "float" { return "double" }
+    if ty_name == "List" { return "{ ptr, i64 }" }
+    if ty_name == "ptr" { return "ptr" }
+    if ty_name == "fn" { return "ptr" }
+    if ty_name == "Map" { return "ptr" }
+    // Check if it's a known struct
+    let si = find_struct(ty_name)
+    if si >= 0 { return "%" + ty_name }
+    // Check if it's a known enum
+    let ei = find_enum(ty_name)
+    if ei >= 0 { return "%" + ty_name }
+    // Check pre-scanned type names (for self-referential types)
+    if is_known_type(ty_name) { return "%" + ty_name }
+    "i64"
+}
+
+fn parse_enum_decl_top() {
+    expect("enum")
+    let name = advance().text
+    // Skip if already registered (multi-module dedup)
+    if find_enum(name) >= 0 {
+        while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+        if check("{") { skip_block() }
+        return
+    }
+    expect("{")
+    skip_nl()
+    let vstart = EVAR_NAMES.length
+    mut vcount = 0
+    while not_at_brace() {
+        let vname = advance().text
+        let fstart = EFIELD_NAMES.length
+        mut fcount = 0
+        if check("(") {
+            advance()
+            skip_nl()
+            while not_at_paren() {
+                let fname = advance().text
+                expect(":")
+                skip_nl()
+                let ftname = peek().text
+                advance()
+                if check("<") {
+                    advance()
+                    mut td = 1
+                    while td > 0 && POS < TOKENS.length {
+                        if check("<") { td = td + 1 }
+                        if check(">") { td = td - 1 }
+                        advance()
+                    }
+                }
+                if check("?") { advance() }
+                EFIELD_NAMES = EFIELD_NAMES.push(fname)
+                EFIELD_TYPES = EFIELD_TYPES.push(type_to_llvm(ftname))
+                fcount = fcount + 1
+                skip_nl()
+                if check(",") { advance() }
+                skip_nl()
+            }
+            expect(")")
+        }
+        EVAR_NAMES = EVAR_NAMES.push(vname)
+        EVAR_FIELD_STARTS = EVAR_FIELD_STARTS.push(fstart)
+        EVAR_FIELD_COUNTS = EVAR_FIELD_COUNTS.push(fcount)
+        vcount = vcount + 1
+        skip_nl()
+    }
+    expect("}")
+    ENUM_NAMES = ENUM_NAMES.push(name)
+    ENUM_VARIANT_STARTS = ENUM_VARIANT_STARTS.push(vstart)
+    ENUM_VARIANT_COUNTS = ENUM_VARIANT_COUNTS.push(vcount)
+}
+
+fn parse_type_decl_top() {
+    expect("type")
+    let name = advance().text
+    expect("=")
+    skip_nl()
+    // Skip if already registered (multi-module dedup)
+    if find_struct(name) >= 0 {
+        // Already parsed — skip the body
+        if check("fn") {
+            skip_to_newline()
+        } else {
+            while !check("{") && !check_kind(4) && POS < TOKENS.length { advance() }
+            if check("{") { skip_block() }
+        }
+        return
+    }
+    // Type alias to fn type: type Handler = fn(X) -> Y
+    if check("fn") {
+        advance()
+        if check("(") {
+            advance()
+            mut fd = 1
+            while fd > 0 && POS < TOKENS.length {
+                if check("(") { fd = fd + 1 }
+                if check(")") { fd = fd - 1 }
+                advance()
+            }
+            if check("->") {
+                advance()
+                skip_nl()
+                advance()
+                if check("?") { advance() }
+            }
+        }
+        // Register as empty struct (ptr at runtime)
+        STRUCT_NAMES = STRUCT_NAMES.push(name)
+        STRUCT_FIELD_STARTS = STRUCT_FIELD_STARTS.push(SFIELD_NAMES.length)
+        STRUCT_FIELD_COUNTS = STRUCT_FIELD_COUNTS.push(0)
+        return
+    }
+    expect("{")
+    skip_nl()
+    let start_idx = SFIELD_NAMES.length
+    mut count = 0
+    while not_at_brace() {
+        if check("mut") { advance() }
+        let fname = advance().text
+        expect(":")
+        skip_nl()
+        let ftype_name = peek().text
+        // Capture generic param for List<T>
+        advance()
+        mut ftype_generic = ""
+        if check("<") {
+            advance()
+            ftype_generic = peek().text
+            mut ftd = 1
+            while ftd > 0 && POS < TOKENS.length {
+                if check("<") { ftd = ftd + 1 }
+                if check(">") { ftd = ftd - 1 }
+                advance()
+            }
+        }
+        mut is_nullable = false
+        if check("?") {
+            advance()
+            is_nullable = true
+        }
+        mut ftype = type_to_llvm(ftype_name)
+        // For List<T> fields, store as "list_ELEMTYPE" for element tracking
+        if ftype_name == "List" && ftype_generic != "" {
+            ftype = "list_" + type_to_llvm(ftype_generic)
+        }
+        // Nullable struct/enum fields → ptr (avoids infinite-size types)
+        // But NOT for ForgeString — nullable strings stay as %ForgeString (zeroinitializer = null)
+        if is_nullable && ftype.length > 1 && ftype != "%ForgeString" {
+            if ftype.substring(0, 1) == "%" { ftype = "ptr" }
+        }
+        SFIELD_NAMES = SFIELD_NAMES.push(fname)
+        SFIELD_TYPES = SFIELD_TYPES.push(ftype)
+        count = count + 1
+        skip_nl()
+        if check(",") { advance() }
+        skip_nl()
+    }
+    expect("}")
+    STRUCT_NAMES = STRUCT_NAMES.push(name)
+    STRUCT_FIELD_STARTS = STRUCT_FIELD_STARTS.push(start_idx)
+    STRUCT_FIELD_COUNTS = STRUCT_FIELD_COUNTS.push(count)
+}
+
+fn peek() -> Tok {
+    if POS >= TOKENS.length { return Tok { kind: 0, text: "", line: 0 } }
+    TOKENS[POS]
+}
+
+fn advance() -> Tok {
+    let tok: Tok = peek()
+    POS = POS + 1
+    tok
+}
+
+fn check(text: string) -> bool {
+    if POS >= TOKENS.length { return false }
+    let t: Tok = TOKENS[POS]
+    // Don't match string literals or numbers as keywords/symbols
+    if t.kind == 3 { return false }
+    if t.kind == 2 { return false }
+    // Fast reject: length mismatch
+    if t.text.length != text.length { return false }
+    // Fast reject: first byte mismatch
+    if t.text.length > 0 {
+        if t.text.byte_at(0) != text.byte_at(0) { return false }
+    }
+    t.text == text
+}
+
+fn check_kind(k: int) -> bool {
+    if POS >= TOKENS.length { return false }
+    TOKENS[POS].kind == k
+}
+
+fn expect(text: string) {
+    if !check(text) {
+        if POS > 2 {
+            eprintln("  ctx: [" + string(POS - 2) + "]='" + TOKENS[POS - 2].text + "' [" + string(POS - 1) + "]='" + TOKENS[POS - 1].text + "'")
+        }
+        eprintln("error: expected '" + text + "' got '" + peek().text + "' line " + string(peek().line) + " pos=" + string(POS))
+        process.exit(1)
+    }
+    advance()
+}
+
+fn skip_nl() {
+    while check_kind(4) { advance() }
+}
+
+fn ir_line(s: string) {
+    // Fix ptr 0 → ptr null globally
+    mut fixed = s
+    if s.contains("ptr 0,") { fixed = s.substring(0, s.index_of("ptr 0,")) + "ptr null," + s.substring(s.index_of("ptr 0,") + 6, s.length) }
+    if fixed.length > 6 && fixed.substring(fixed.length - 5, fixed.length) == "ptr 0" { fixed = fixed.substring(0, fixed.length - 1) + "null" }
+    forge_ir_line("  " + fixed)
+    IR = IR.push("  " + fixed)
+    // Auto-track register types from emitted IR
+    if s.length > 6 && s.substring(0, 2) == "%r" {
+        let eq_pos = s.index_of(" = ")
+        if eq_pos > 0 {
+            let reg = s.substring(0, eq_pos)
+            let rest = s.substring(eq_pos + 3, s.length)
+            if rest.length > 5 {
+                // "load %Type, ptr ..."
+                if rest.substring(0, 5) == "load " {
+                    let comma = rest.index_of(",")
+                    if comma > 5 {
+                        reg_set_type(reg, rest.substring(5, comma))
+                    }
+                }
+                // "call %Type @..."
+                if rest.substring(0, 5) == "call " {
+                    let at_pos = rest.index_of(" @")
+                    if at_pos > 5 {
+                        reg_set_type(reg, rest.substring(5, at_pos))
+                    }
+                }
+                // "insertvalue %Type ..."
+                if rest.length > 12 && rest.substring(0, 12) == "insertvalue " {
+                    let after = rest.substring(12, rest.length)
+                    let sp = after.index_of(" ")
+                    if sp > 0 {
+                        reg_set_type(reg, after.substring(0, sp))
+                    }
+                }
+                // "extractvalue %Type %rN, <idx>"
+                if rest.length > 13 && rest.substring(0, 13) == "extractvalue " {
+                    let ev_rest = rest.substring(13, rest.length)
+                    if ev_rest.length > 1 && ev_rest.substring(0, 1) == "%" {
+                        let ev_sp = ev_rest.index_of(" ")
+                        if ev_sp > 0 {
+                            let ev_ty = ev_rest.substring(0, ev_sp)
+                            // Find field index (last number after ", ")
+                            let ev_comma = rest.index_of(", ")
+                            if ev_comma > 0 {
+                                let ev_idx_str = rest.substring(ev_comma + 2, rest.length)
+                                let ev_idx = int(ev_idx_str)
+                                // Look up struct field type
+                                let si = find_struct(ev_ty.substring(1, ev_ty.length))
+                                if si >= 0 {
+                                    let ft = struct_field_type(si, ev_idx)
+                                    reg_set_type(reg, ft)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn ir_raw(s: string) {
+    forge_ir_line(s)
+    IR = IR.push(s)
+}
+
+fn new_reg() -> string {
+    REG_N = REG_N + 1
+    "%r" + string(REG_N)
+}
+
+fn new_label(prefix: string) -> string {
+    LBL_N = LBL_N + 1
+    prefix + string(LBL_N)
+}
+
+fn new_str_const(text: string) -> string {
+    STR_N = STR_N + 1
+    let name = "@.str." + string(STR_N)
+    let escaped = ir_escape(text)
+    // Collect string constants in STR_DECLS (emitted at top of IR)
+    // Size = escaped byte count + 1 (for NUL). Each \XX escape = 1 byte, regular char = 1 byte.
+    let byte_len = count_ir_bytes(escaped)
+    STR_DECLS = STR_DECLS.push(name + " = private unnamed_addr constant [" + string(byte_len + 1) + " x i8] c\"" + escaped + "\\00\"")
+    name
+}
+
+fn hex_digit(n: int) -> string {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 10 { return "A" }
+    if n == 11 { return "B" }
+    if n == 12 { return "C" }
+    if n == 13 { return "D" }
+    if n == 14 { return "E" }
+    if n == 15 { return "F" }
+    "0"
+}
+
+fn count_ir_bytes(escaped: string) -> int {
+    // Count actual bytes in an IR escaped string
+    // \XX (hex escape) = 1 byte (3 chars)
+    // \\ (literal backslash) = 1 byte (2 chars)
+    // regular char = 1 byte (1 char)
+    mut bytes = 0
+    mut i = 0
+    while i < escaped.length {
+        let c = escaped.byte_at(i)
+        if c == 92 {
+            // Backslash: check next char
+            if i + 1 < escaped.length {
+                let next = escaped.byte_at(i + 1)
+                if next == 92 {
+                    // \\ = literal backslash = 1 byte
+                    bytes = bytes + 1
+                    i = i + 2
+                } else {
+                    // \XX = hex escape = 1 byte
+                    bytes = bytes + 1
+                    i = i + 3
+                }
+            } else {
+                bytes = bytes + 1
+                i = i + 1
+            }
+        } else {
+            bytes = bytes + 1
+            i = i + 1
+        }
+    }
+    bytes
+}
+
+fn ir_escape(s: string) -> string {
+    mut r = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        let byte = s.byte_at(i)
+        if byte == 10 {
+            r = r + "\\0A"
+        } else if byte == 9 {
+            r = r + "\\09"
+        } else if byte == 13 {
+            r = r + "\\0D"
+        } else if byte == 92 {
+            r = r + "\\\\"
+        } else if byte == 34 {
+            r = r + "\\22"
+        } else if byte == 0 {
+            r = r + "\\00"
+        } else if byte < 32 || byte > 126 {
+            // Non-printable or non-ASCII: hex escape
+            let hi = byte / 16
+            let lo = byte - hi * 16
+            r = r + "\\" + hex_digit(hi) + hex_digit(lo)
+        } else {
+            r = r + ch
+        }
+        i = i + 1
+    }
+    r
+}
+
+fn find_var(name: string) -> int {
+    mut i = VAR_NAMES.length - 1
+    while i >= 0 {
+        if VAR_NAMES[i] == name { return i }
+        i = i - 1
+    }
+    -1
+}
+
+// Split into 2 calls to stay under ARM64's 8-register limit
+fn push_var(name: string, reg_name: string, ty: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push("")
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push("")
+}
+
+fn push_var_with_struct(name: string, reg_name: string, ty: string, stype: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push(stype)
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push("")
+}
+
+fn push_var_list(name: string, reg_name: string, ty: string, lelem: string) {
+    VAR_NAMES = VAR_NAMES.push(name)
+    VAR_REGS = VAR_REGS.push(reg_name)
+    VAR_TYPES = VAR_TYPES.push(ty)
+    VAR_STRUCT_TYPE = VAR_STRUCT_TYPE.push("")
+    VAR_LIST_ELEM_TYPE = VAR_LIST_ELEM_TYPE.push(lelem)
+}
+
+mut FIND_FN_RET_RESULT: string = "i64"
+
+fn do_find_fn_ret(name: string) {
+    FIND_FN_RET_RESULT = "i64"
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name {
+            FIND_FN_RET_RESULT = FN_RETTYPES[i]
+            return
+        }
+        i = i + 1
+    }
+}
+
+fn find_fn_ret(name: string) -> string {
+    do_find_fn_ret(name)
+    FIND_FN_RET_RESULT
+}
+
+fn find_fn_index(name: string) -> int {
+    mut i = 0
+    while i < FN_NAMES.length {
+        if FN_NAMES[i] == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
+
+fn skip_block() {
+    // Skip a { ... } block including nested blocks
+    if !check("{") { return }
+    advance()
+    mut depth = 1
+    while depth > 0 && POS < TOKENS.length {
+        if check("{") { depth = depth + 1 }
+        if check("}") { depth = depth - 1 }
+        advance()
+    }
+}
+
+fn scan_fn_sig() {
+    advance() // consume 'fn'
+    let name = advance().text
+    // scan fn sig
+    // Skip params
+    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+    mut ret_ty = "void"
+    if check("->") {
+        advance()
+        skip_nl()
+        let rt = advance().text
+        if rt == "int" { ret_ty = "i64" }
+        if rt == "bool" { ret_ty = "i64" }
+        if rt == "string" { ret_ty = "%ForgeString" }
+        if rt == "ptr" { ret_ty = "ptr" }
+        if find_struct(rt) >= 0 { ret_ty = "%" + rt }
+        if find_enum(rt) >= 0 { ret_ty = "%" + rt }
+        // Fallback: check known type names from pass 0
+        if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
+        if rt == "List" { ret_ty = "{ ptr, i64 }" }
+        // Skip generic params
+        if check("<") {
+            while !check(">") && POS < TOKENS.length { advance() }
+            if check(">") { advance() }
+        }
+        if check("?") { advance() }
+    }
+    // Skip to body and skip it
+    while !check("{") && POS < TOKENS.length { advance() }
+    skip_block()
+    // Register
+    
+    FN_NAMES = FN_NAMES.push(name)
+    FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+}
+
+// Global variable tracking for pass 1
+mut GLOBAL_NAMES: List<string> = []
+mut GLOBAL_TYPES: List<string> = []  // LLVM types
+
+fn parse_global_decl() {
+    // mut NAME: TYPE = VALUE  or  let NAME: TYPE = VALUE
+    advance() // consume mut/let
+    let name = advance().text
+    mut gty = "i64"
+    if check(":") {
+        advance()
+        skip_nl()
+        let ty_name = peek().text
+        advance()
+        // Capture generic param for List<T>
+        mut gen_param = ""
+        if check("<") {
+            advance()
+            gen_param = peek().text
+            // Skip rest of type
+            mut td = 1
+            while td > 0 && POS < TOKENS.length {
+                if check("<") { td = td + 1 }
+                if check(">") { td = td - 1 }
+                advance()
+            }
+        }
+        if check("?") { advance() }
+        gty = type_to_llvm(ty_name)
+        if ty_name == "List" {
+            let ety = type_to_llvm(gen_param)
+            gty = "list_" + ety
+        }
+    }
+    // Skip = and initial value (we just zero-init globals)
+    if check("=") {
+        advance()
+        skip_nl()
+        // Skip the value expression — consume until newline
+        mut depth = 0
+        while POS < TOKENS.length {
+            if check("\n") && depth == 0 { break }
+            if check("{") || check("[") || check("(") { depth = depth + 1 }
+            if check("}") || check("]") || check(")") { depth = depth - 1 }
+            advance()
+        }
+    }
+    GLOBAL_NAMES = GLOBAL_NAMES.push(name)
+    GLOBAL_TYPES = GLOBAL_TYPES.push(gty)
+}
+
+fn skip_to_newline() {
+    while !check("\n") && POS < TOKENS.length { advance() }
+}
+
