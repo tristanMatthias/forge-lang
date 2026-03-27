@@ -996,6 +996,12 @@ impl Parser {
             return Expr.Ident(name, span)
         }
 
+        // Text fallback for null (bootstrap: kind match may not dispatch)
+        if tok.text == "null" {
+            let span = self.advance().span
+            return Expr.NullLit(span)
+        }
+
         match tok.kind {
             .NullLiteral -> {
                 let span = self.advance().span
