@@ -777,6 +777,7 @@ void* forge_map_new() {
 
 // Check if a key exists
 int8_t forge_map_has(void* map_ptr, ForgeString key) {
+    if (!map_ptr) { return 0; }
     ForgeMap* m = (ForgeMap*)map_ptr;
     for (int64_t i = 0; i < m->count; i++) {
         if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
@@ -788,6 +789,7 @@ int8_t forge_map_has(void* map_ptr, ForgeString key) {
 
 // Get value by key (returns 0 if not found)
 int64_t forge_map_get(void* map_ptr, ForgeString key) {
+    if (!map_ptr) { return 0; }
     ForgeMap* m = (ForgeMap*)map_ptr;
     for (int64_t i = 0; i < m->count; i++) {
         if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
@@ -799,6 +801,7 @@ int64_t forge_map_get(void* map_ptr, ForgeString key) {
 
 // Set value by key (inserts or updates)
 void forge_map_set(void* map_ptr, ForgeString key, int64_t value) {
+    if (!map_ptr) { return; }
     ForgeMap* m = (ForgeMap*)map_ptr;
     for (int64_t i = 0; i < m->count; i++) {
         if (m->keys[i].len == key.len && memcmp(m->keys[i].ptr, key.ptr, key.len) == 0) {
