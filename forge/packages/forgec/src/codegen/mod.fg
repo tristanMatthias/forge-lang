@@ -48,6 +48,8 @@ export mut CG_RT_MAP_SET: ptr = null
 // Global variable storage (bootstrap workaround: struct fields don't survive method calls)
 mut CG_VAR_NAMES: List<string> = []
 mut CG_VAR_PTRS: List<ptr> = []
+// Map-based var ptr lookup (immune to list value corruption)
+mut CG_VAR_PTR_MAP: Map<string, ptr> = {}
 mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELIABLE after many entries)
 export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
 export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
@@ -227,6 +229,7 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         llvm.set_initializer(gv, zero)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
+        CG_VAR_PTR_MAP[name] = gv
         // Check bitmask for string type
         mut bit = 1
         mut shift = 0
@@ -299,6 +302,7 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         // Register in CG_VAR system
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
+        CG_VAR_PTR_MAP[name] = gv
         mut is_str_flag2 = 0
         if type_name == "string" || is_list { is_str_flag2 = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
@@ -1548,6 +1552,7 @@ impl Codegen {
         CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
+        CG_VAR_PTR_MAP[tmp] = alloca
         CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
         // Get field names for var
         mut field_names = ""
@@ -1806,9 +1811,14 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
+                // Use Map for ptr lookup (immune to list value corruption)
+                mut var_ptr = CG_VAR_PTRS[vi]
+                if CG_VAR_PTR_MAP.has(name) {
+                    var_ptr = CG_VAR_PTR_MAP[name]
+                }
+                CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
-                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+                return llvm.build_load(CG_B, load_ty, var_ptr, name)
             }
             vi = vi - 1
         }
@@ -1859,9 +1869,13 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
+                mut var_ptr = CG_VAR_PTRS[vi]
+                if CG_VAR_PTR_MAP.has(name) {
+                    var_ptr = CG_VAR_PTR_MAP[name]
+                }
+                CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
-                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+                return llvm.build_load(CG_B, load_ty, var_ptr, name)
             }
             vi = vi - 1
         }
@@ -2658,6 +2672,7 @@ impl Codegen {
                                     CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                                     CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                                 }
+                                    CG_VAR_PTR_MAP[pre_name] = pre_alloca
                                 pre_name = ""
                             } else {
                                 pre_name = pre_name + pc
@@ -2670,6 +2685,7 @@ impl Codegen {
                             CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
                             CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
                         }
+                            CG_VAR_PTR_MAP[pre_name] = pre_alloca
                         pre_bi = pre_bi + 1
                     }
                     // Emit each arm as if-else chain
@@ -3012,6 +3028,7 @@ impl Codegen {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        CG_VAR_PTR_MAP[name] = alloca
     }
 
     fn is_map_var(self, name: string) -> bool {

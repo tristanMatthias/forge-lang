@@ -530,6 +530,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        CG_VAR_PTR_MAP[pname] = alloca
         // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
         if param_type_name == "string" {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
