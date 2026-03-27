@@ -964,6 +964,11 @@ fn cg_init_runtime() {
     CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", make_fn_type_2(CG_I64, CG_STR, CG_STR))
     CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
     CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type_2(CG_I64, CG_STR, CG_STR))
+    // C-side string helpers (non-"string" names for correct type tracking)
+    llvm.add_function(CG_MOD, "forge_sh_indexof", make_fn_type_2(CG_I64, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_sh_substr", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_byteat", make_fn_type_2(CG_I64, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_length", make_fn_type_1(CG_I64, CG_STR))
     // Memory
     CG_RT_ALLOC = llvm.add_function(CG_MOD, "forge_alloc", make_fn_type_1(CG_PTR, CG_I64))
     CG_RT_MEMCPY = llvm.add_function(CG_MOD, "forge_memcpy", make_fn_type_3(CG_VOID, CG_PTR, CG_PTR, CG_I64))
@@ -2093,6 +2098,13 @@ impl Codegen {
                         }
                         fi = fi + 1
                     }
+                    // Final override: known non-string runtime functions
+                    // (FN_NAMES search above may have corrupted CG_LAST_IS_STR)
+                    if name == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
+                    if name == "forge_string_length" { CG_LAST_IS_STR = 0 }
+                    if name == "forge_string_compare" { CG_LAST_IS_STR = 0 }
+                    if name == "forge_string_eq" { CG_LAST_IS_STR = 0 }
+                    if name == "forge_string_byte_at" { CG_LAST_IS_STR = 0 }
                     return call_result
                 }
                 eprintln("WARN: unresolved fn: " + name)

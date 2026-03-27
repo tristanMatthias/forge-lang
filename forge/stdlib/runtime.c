@@ -496,7 +496,19 @@ int64_t forge_string_compare(ForgeString a, ForgeString b) {
     if (a.ptr == NULL && b.ptr == NULL) return a.len == b.len ? 0 : (a.len < b.len ? -1 : 1);
     if (a.ptr == NULL) return b.len == 0 ? 0 : -1;
     if (b.ptr == NULL) return a.len == 0 ? 0 : 1;
-    // Check for obviously bad pointers (< 4096 = likely tag/enum corruption)
+    // Self-hosting workaround: i64 values stored as ForgeString due to type tracking bugs.
+    // When comparing with 0: treat the ForgeString as an i64 if it looks like a small number.
+    // An i64 stored as ForgeString: ptr field = the value, len field = uninitialized.
+    // A valid ForgeString: ptr is a heap pointer (> 0x1000), len is non-negative and < 1M.
+    if (b.ptr == NULL && b.len == 0) {
+        // b is zero. Check if a is a misinterpreted i64.
+        int64_t a_as_i64 = (int64_t)(intptr_t)a.ptr;
+        // If a.ptr looks like a small integer (-1000..1000) or is clearly not a heap pointer,
+        // treat it as numeric comparison
+        if (a_as_i64 >= -10000 && a_as_i64 <= 10000) {
+            return a_as_i64 < 0 ? -1 : (a_as_i64 > 0 ? 1 : 0);
+        }
+    }
     if ((uintptr_t)a.ptr < 4096 || (uintptr_t)b.ptr < 4096) {
         return a.ptr == b.ptr ? 0 : -1;
     }
@@ -2270,6 +2282,35 @@ ForgeString forge_sh_substr(ForgeString s, int64_t start, int64_t end) {
 }
 int64_t forge_sh_length(ForgeString s) {
     return s.len;
+}
+int64_t forge_sh_byteat(ForgeString s, int64_t idx) {
+    return forge_string_byte_at(s, idx);
+}
+// scan_mods helper: find "\nmod " in source, return position or -1
+// This replaces forge_string_index_of for the self-hosting scan phase
+int64_t forge_find_nmod(ForgeString src) {
+    if (!src.ptr || src.len < 5) return -1;
+    for (int64_t i = 0; i <= src.len - 5; i++) {
+        if (src.ptr[i] == '\n' && src.ptr[i+1] == 'm' && src.ptr[i+2] == 'o' && src.ptr[i+3] == 'd' && src.ptr[i+4] == ' ')
+            return i;
+    }
+    return -1;
+}
+// scan_mods helper: find "\n" in source
+int64_t forge_find_nl(ForgeString src) {
+    if (!src.ptr) return -1;
+    for (int64_t i = 0; i < src.len; i++) {
+        if (src.ptr[i] == '\n') return i;
+    }
+    return -1;
+}
+// scan_mods helper: find "/" in source
+int64_t forge_find_slash(ForgeString src) {
+    if (!src.ptr) return -1;
+    for (int64_t i = 0; i < src.len; i++) {
+        if (src.ptr[i] == '/') return i;
+    }
+    return -1;
 }
 
 // ---- C-side token accumulator for mini compiler ----

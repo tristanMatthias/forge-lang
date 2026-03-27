@@ -21,6 +21,7 @@ use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, 
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source, materialize_struct_types}
 
+
 fn check(source: string, filename: string) -> bool {
     eprintln("check: " + filename + " len=" + string(source.length))
     eprintln("  creating lexer...")
@@ -252,6 +253,11 @@ fn scan_one_file(filepath: string, idx: int) {
 fn declare_llvm_api() {
     // LLVM API functions needed by self-hosted compiler (Stage 2+)
     llvm.add_function(CG_MOD, "forge_llvm_build_extract_value", make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_I64, CG_STR]))
+    // Declare C-side string helpers (non-"string" names to avoid type tracking corruption)
+    llvm.add_function(CG_MOD, "forge_sh_indexof", make_fn_type_2(CG_I64, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_sh_substr", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_byteat", make_fn_type_2(CG_I64, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_length", make_fn_type_1(CG_I64, CG_STR))
 }
 
 // Recursively scan files from newline-separated CSV
@@ -275,6 +281,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
+    declare_llvm_api()
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
