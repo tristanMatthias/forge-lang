@@ -2687,8 +2687,10 @@ impl Codegen {
                     // Emit each arm as if-else chain
                     // Track cumulative binding offset (pre-allocas are sequential across all arms)
                     mut pre_binding_offset = 0
+                    mut binding_ptr_idx = 0
                     mut ai = 0
                     while ai < tags.length {
+                        binding_ptr_idx = 0
                         cg_reinit_types()
                         let arm_bb = llvm.append_basic_block(CG_CTX, mfn, "ma")
                         let next_bb = llvm.append_basic_block(CG_CTX, mfn, "mn")
@@ -2712,7 +2714,7 @@ impl Codegen {
                             // Look up field types via method (avoids assignment-in-if)
                             let field_types = self.lookup_variant_field_types(variant_qname)
                             mut field_idx = 0
-                            mut binding_ptr_idx = 0  // index into pre-created allocas
+                            // binding_ptr_idx declared before while loop (entry-block alloca)
                             mut bpi = 0
                             mut bpname = ""
                             while bpi <= names_part.length {

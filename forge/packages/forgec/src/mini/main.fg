@@ -129,7 +129,7 @@ fn main() {
     mut output = "a.out"
     if args.length > 3 { output = args[3] }
 
-    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", ["-O2", "-filetype=obj", ir_path, "-o", "/tmp/mini_output.o", "--disable-verify"])
+    let llc_result = process.run("/opt/homebrew/opt/llvm@18/bin/llc", ["-O2", "-filetype=obj", ir_path, "-o", "/tmp/mini_output.o"])
     if !llc_result.contains("\"code\":0") {
         eprintln("error: llc failed")
         eprintln(llc_result)
