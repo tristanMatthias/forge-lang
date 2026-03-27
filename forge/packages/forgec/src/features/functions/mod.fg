@@ -430,9 +430,20 @@ export fn declare_all_fns() {
                 if resolved != null { ret_ty = resolved }
             }
         }
-        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+        mut fn_val: ptr = null
+        if is_main {
+            // main gets (i32, ptr) for argc/argv
+            let main_params = llvm.type_array_new(2)
+            llvm.type_array_set(main_params, 0, CG_I32)
+            llvm.type_array_set(main_params, 1, CG_PTR)
+            let main_ft = llvm.function_type(CG_I32, main_params, 2, 0)
+            llvm.type_array_free(main_params)
+            fn_val = llvm.add_function(CG_MOD, "main", main_ft)
+        } else {
+            let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
+            fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        }
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
         DECLARED_FNS[name] = fn_val
         param_offset = param_offset + pc
         i = i + 1
@@ -456,6 +467,25 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
     llvm.position_at_end(CG_B, entry)
+
+    // main: call forge_set_args(argc, argv) to make process.args() work
+    if is_main {
+        let argc_val = llvm.get_param(fn_val, 0)
+        let argv_val = llvm.get_param(fn_val, 1)
+        let sa = llvm.value_array_new(2)
+        llvm.value_array_set(sa, 0, argc_val)
+        llvm.value_array_set(sa, 1, argv_val)
+        let sa_params = llvm.type_array_new(2)
+        llvm.type_array_set(sa_params, 0, CG_I32)
+        llvm.type_array_set(sa_params, 1, CG_PTR)
+        let sa_ft = llvm.function_type(CG_VOID, sa_params, 2, 0)
+        llvm.type_array_free(sa_params)
+        let set_args_fn = llvm.get_named_function(CG_MOD, "forge_set_args")
+        if set_args_fn != null {
+            llvm.build_call(CG_B, sa_ft, set_args_fn, sa, 2, "")
+        }
+        llvm.value_array_free(sa)
+    }
 
     CG_VAR_SCOPE_START = CG_VAR_NAMES.length
     CG_STR_VAR_NAMES = []
