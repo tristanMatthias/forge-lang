@@ -2978,6 +2978,10 @@ fn compile(source: string) -> string {
     ir_raw("declare { ptr, i64 } @forge_tok_to_list()")
     ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
     // C-side function body store (immune to Forge list corruption)
+    // Module CSV accumulator
+    ir_raw("declare void @forge_mod_csv_clear()")
+    ir_raw("declare void @forge_mod_csv_add(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_mod_csv_get()")
     ir_raw("declare void @forge_fn_store_clear()")
     ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_fn_store_get_body(i64)")

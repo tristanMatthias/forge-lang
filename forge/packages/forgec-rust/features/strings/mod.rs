@@ -69,6 +69,11 @@ crate::runtime_fn! { name: "forge_tok_push", feature: "strings", params: [I64, F
 crate::runtime_fn! { name: "forge_tok_count", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_tok_to_list", feature: "strings", params: [], ret: ForgeString }
 
+// Module CSV accumulator
+crate::runtime_fn! { name: "forge_mod_csv_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_mod_csv_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_mod_csv_get", feature: "strings", params: [], ret: ForgeString }
+
 // Alloca cache function-scoped validation
 crate::runtime_fn! { name: "forge_alloca_cache_set_fn", feature: "strings", params: [Ptr], ret: Void }
 

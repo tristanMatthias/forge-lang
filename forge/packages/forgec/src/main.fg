@@ -50,13 +50,13 @@ fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
     eprintln("  lexer created, len=" + string(source.length))
     eprintln("  tokenizing...")
-    let tokens = lex.tokenize()
+    let tokens = Lexer__tokenize(lex)
     eprintln("  " + string(tokens.length) + " tokens")
 
     eprintln("  parsing...")
     mut p = parser_new_with_source(tokens, source)
     eprintln("  parser created, parsing program...")
-    let program = p.parse_program()
+    let program = Parser__parse_program(p)
     eprintln("  parsed!")
     eprintln("OK")
     return true
@@ -68,7 +68,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut p = parser_new_with_source(tokens, source)
-    let program = p.parse_program()
+    let program = Parser__parse_program(p)
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -78,7 +78,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut tc = type_checker_new()
-    tc.check_program(program)
+    TypeChecker__check_program(tc, program)
 
     if tc.diagnostics.has_errors {
         let err_output = render_all(tc.diagnostics, source, filename)
@@ -254,6 +254,8 @@ fn collect_module_paths(filepath: string) {
     // Prepend \n so "mod " at line 1 also matches "\nmod "
     let src = "\n" + source
     scan_mods(src, dir)
+    // Use C-side CSV accumulator (Forge global assignment is corrupted in Stage 2)
+    forge_mod_csv_add(filepath)
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
 }
 
@@ -283,10 +285,11 @@ fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
     let source = fs.read(filepath)
     mut lex = lexer_new(source)
-    let tokens = lex.tokenize()
+    // Direct call — bypasses MemberAccess codegen bug
+    let tokens = Lexer__tokenize(lex)
     eprintln("  " + string(tokens.length) + " tok " + filepath)
     mut p = parser_new_with_source(tokens, source)
-    p.parse_program()
+    Parser__parse_program(p)
 }
 
 fn declare_llvm_api() {
@@ -321,12 +324,25 @@ fn scan_csv(csv: string, start_idx: int) -> int {
 
 fn build_compile_separate(paths_csv: string, output: string) {
     // Phase 1: Scan ALL files from newline-separated CSV
-    let file_count = scan_csv(paths_csv, 0)
+    // Use C-side CSV if Forge global is empty (Stage 2 global assignment is broken)
+    mut csv = paths_csv
+    if csv.length == 0 {
+        codegen_init("forgec_output")
+        declare_llvm_api()
+        // NOW forge_mod_csv_get is declared in the LLVM module
+        csv = forge_mod_csv_get()
+        eprintln("  using C-side CSV: " + string(csv.length) + " bytes")
+    }
+    let file_count = scan_csv(csv, 0)
     eprintln("scanned " + string(file_count) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
-    codegen_init("forgec_output")
-    declare_llvm_api()
+    if csv.length != paths_csv.length {
+        // codegen_init already called above
+    } else {
+        codegen_init("forgec_output")
+        declare_llvm_api()
+    }
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
@@ -374,10 +390,10 @@ fn build_compile_single(input_file: string, output: string) {
     let source = fs.read(input_file)
     eprintln("BC: read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = lex.tokenize()
+    let tokens = Lexer__tokenize(lex)
     eprintln("BC: " + string(tokens.length) + " tokens")
     mut p = parser_new_with_source(tokens, source)
-    p.parse_program()
+    Parser__parse_program(p)
     eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
@@ -457,6 +473,7 @@ fn main() {
     } else if command == "build" {
         mut output = "a.out"
         if args.length > 3 { output = args[3] }
+        forge_mod_csv_clear()
         collect_module_paths(input)
         eprintln("M:csv_len=" + string(MODULE_PATHS_CSV.length))
         build_compile_separate(MODULE_PATHS_CSV, output)

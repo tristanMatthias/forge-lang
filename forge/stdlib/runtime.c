@@ -2006,6 +2006,22 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
 
 // span stub removed — conflicts with @span global in full compiler IR
 
+// ---- C-side module path CSV accumulator ----
+// Bypasses Forge global variable assignment corruption in Stage 2
+static char _mod_csv[65536];
+static int _mod_csv_len = 0;
+void forge_mod_csv_clear(void) { _mod_csv_len = 0; _mod_csv[0] = '\0'; }
+void forge_mod_csv_add(ForgeString path) {
+    if (!path.ptr || path.len <= 0 || _mod_csv_len + path.len + 2 > 65535) return;
+    memcpy(_mod_csv + _mod_csv_len, path.ptr, path.len);
+    _mod_csv_len += path.len;
+    _mod_csv[_mod_csv_len++] = '\n';
+    _mod_csv[_mod_csv_len] = '\0';
+}
+ForgeString forge_mod_csv_get(void) {
+    return forge_string_new(_mod_csv, _mod_csv_len);
+}
+
 // ---- C-side function body storage (immune to Forge list push corruption) ----
 #define FN_STORE_MAX 1024
 static struct { char name[128]; char* body; int64_t body_len; } _fn_store[FN_STORE_MAX];
