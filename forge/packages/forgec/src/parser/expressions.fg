@@ -932,8 +932,8 @@ impl Parser {
             CG_LAST_IS_STR = 1
             return Expr.StringLit(tok.text, span)
         }
-        if tok.kind_id == 5 {
-            // BoolLiteral
+        if tok.kind_id == 5 || tok.text == "true" || tok.text == "false" {
+            // BoolLiteral (text fallback for bootstrap — kind_id may not be set)
             let span = self.advance().span
             return Expr.BoolLit(tok.text == "true", span)
         }
