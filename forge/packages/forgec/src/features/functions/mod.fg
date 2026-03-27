@@ -488,6 +488,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
 
     CG_VAR_SCOPE_START = CG_VAR_NAMES.length
+    // Reset C-side alloca cache for this function
+    forge_alloca_cache_clear()
     CG_STR_VAR_NAMES = []
     CG_STR_LOCALS_CSV = ""
     CG_STRUCT_VAR_CSV = ""
@@ -522,24 +524,21 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut alloca = param_val
         if pname != "self" {
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
+            // Save to C cache IMMEDIATELY before any other call clobbers it
+            forge_alloca_cache_set(pname, alloca)
             llvm.build_store(CG_B, param_val, alloca)
+        } else {
+            forge_alloca_cache_set(pname, alloca)
         }
+        // Retrieve from C cache (the local 'alloca' may be clobbered by now)
+        let safe_alloca = forge_alloca_cache_get(pname)
+        if safe_alloca != null { alloca = safe_alloca }
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
         mut _vis = 0
         if param_type_name == "string" { _vis = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-        // Store param alloca in dedicated global (immune to list corruption)
-        CG_PA_NAMES = CG_PA_NAMES + "," + pname + ","
-        if pi == 0 { CG_PA_0 = alloca }
-        if pi == 1 { CG_PA_1 = alloca }
-        if pi == 2 { CG_PA_2 = alloca }
-        if pi == 3 { CG_PA_3 = alloca }
-        if pi == 4 { CG_PA_4 = alloca }
-        if pi == 5 { CG_PA_5 = alloca }
-        if pi == 6 { CG_PA_6 = alloca }
-        if pi == 7 { CG_PA_7 = alloca }
         // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
         if param_type_name == "string" {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)

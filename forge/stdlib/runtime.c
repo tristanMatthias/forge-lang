@@ -2120,3 +2120,37 @@ void forge_debug_lexer(void* ptr) {
         ptr, (void*)p[0], p[1], p[2], p[3], p[4], p[5], (void*)p[6], p[7]);
     fflush(stderr);
 }
+
+// ---- Alloca cache (immune to Forge-level ptr corruption) ----
+#define ALLOCA_CACHE_SIZE 512
+static struct { char name[64]; void* ptr; } _ac[ALLOCA_CACHE_SIZE];
+static int _ac_count = 0;
+
+int64_t forge_alloca_cache_clear(void) { _ac_count = 0; return 0; }
+
+int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
+    if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
+    for (int i = 0; i < _ac_count; i++) {
+        if ((int64_t)strlen(_ac[i].name) == name.len && memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            _ac[i].ptr = ptr;
+            return 0;
+        }
+    }
+    if (_ac_count < ALLOCA_CACHE_SIZE) {
+        memcpy(_ac[_ac_count].name, name.ptr, name.len);
+        _ac[_ac_count].name[name.len] = '\0';
+        _ac[_ac_count].ptr = ptr;
+        _ac_count++;
+    }
+    return 0;
+}
+
+void* forge_alloca_cache_get(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return NULL;
+    if (!name.ptr || name.len <= 0) return NULL;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ac[i].name) == name.len && memcmp(_ac[i].name, name.ptr, name.len) == 0)
+            return _ac[i].ptr;
+    }
+    return NULL;
+}

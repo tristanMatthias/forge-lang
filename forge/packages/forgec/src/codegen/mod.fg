@@ -1085,6 +1085,10 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_type_of", p1)
     llvm.add_function(CG_MOD, "forge_llvm_get_type_kind", p1)
     llvm.add_function(CG_MOD, "forge_llvm_emit_object_file", p2)
+    // C-side alloca cache (immune to Forge ptr corruption)
+    llvm.add_function(CG_MOD, "forge_alloca_cache_clear", make_fn_type_0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set", make_fn_type_2(CG_I64, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_get", make_fn_type_1(CG_PTR, CG_STR))
 }
 
 fn cg_cleanup() {
@@ -1816,25 +1820,9 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                // Try dedicated param globals first (immune to list corruption)
-                mut var_ptr = CG_VAR_PTRS[vi]
-                let pa_needle = "," + name + ","
-                if CG_PA_NAMES.index_of(pa_needle) >= 0 {
-                    // Find which param index this is
-                    mut pa_found = false
-                    if CG_PA_0 != null {
-                        // Check all param slots
-                        let idx = vi - CG_VAR_SCOPE_START
-                        if idx == 0 && CG_PA_0 != null { var_ptr = CG_PA_0 }
-                        if idx == 1 && CG_PA_1 != null { var_ptr = CG_PA_1 }
-                        if idx == 2 && CG_PA_2 != null { var_ptr = CG_PA_2 }
-                        if idx == 3 && CG_PA_3 != null { var_ptr = CG_PA_3 }
-                        if idx == 4 && CG_PA_4 != null { var_ptr = CG_PA_4 }
-                        if idx == 5 && CG_PA_5 != null { var_ptr = CG_PA_5 }
-                        if idx == 6 && CG_PA_6 != null { var_ptr = CG_PA_6 }
-                        if idx == 7 && CG_PA_7 != null { var_ptr = CG_PA_7 }
-                    }
-                }
+                // Try C-side alloca cache first (immune to Forge ptr corruption)
+                mut var_ptr = forge_alloca_cache_get(name)
+                if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -1889,7 +1877,8 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                let var_ptr = CG_VAR_PTRS[vi]
+                mut var_ptr = forge_alloca_cache_get(name)
+                if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -3030,6 +3019,8 @@ impl Codegen {
             llvm.position_at_end(CG_B, entry_bb)
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
+        // Save to C cache immediately (before any other call clobbers it)
+        forge_alloca_cache_set(name, alloca)
         // Restore builder position and store value
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
