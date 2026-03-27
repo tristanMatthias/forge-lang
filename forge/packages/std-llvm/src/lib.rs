@@ -420,6 +420,18 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                     if ret_kind == 0 { // Void
                         return LLVMBuildRetVoid(builder);
                     }
+                    // Both struct types with same layout: bitcast via alloca
+                    // (handles named %ForgeString vs anonymous {ptr, i64})
+                    if ret_kind == 10 && val_kind == 10 {
+                        let ret_fields = LLVMCountStructElementTypes(ret_ty);
+                        let val_fields = LLVMCountStructElementTypes(val_ty);
+                        if ret_fields == val_fields && ret_fields > 0 {
+                            let alloca = LLVMBuildAlloca(builder, ret_ty, safe_name(std::ptr::null()));
+                            LLVMBuildStore(builder, value, alloca);
+                            let loaded = LLVMBuildLoad2(builder, ret_ty, alloca, safe_name(std::ptr::null()));
+                            return LLVMBuildRet(builder, loaded);
+                        }
+                    }
                     // If return is ForgeString {ptr, i64} but value is integer,
                     // build ForgeString{inttoptr(val), 0}
                     if ret_kind == 10 && val_kind == 8 {
