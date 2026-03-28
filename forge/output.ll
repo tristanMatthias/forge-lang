@@ -2,18 +2,8 @@
 source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
-%Type = type { i8, i64, i64, i64, i64 }
 
-@0 = constant [3 x i8] c"int"
-@1 = constant [5 x i8] c"float"
-@2 = constant [4 x i8] c"bool"
-@3 = constant [6 x i8] c"string"
-@4 = constant [4 x i8] c"void"
-@5 = constant [5 x i8] c"never"
-@6 = constant [3 x i8] c"ptr"
-@7 = constant [7 x i8] c"unknown"
-@8 = constant [5 x i8] c"error"
-@9 = constant [1 x i8] c"?"
+@0 = constant [27 x i8] c"hello from clean bootstrap!"
 
 declare void @forge_println_string(%ForgeString)
 
@@ -34,6 +24,60 @@ declare i64 @forge_string_compare(%ForgeString, %ForgeString)
 declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)
 
 declare i64 @forge_string_index_of(%ForgeString, %ForgeString)
+
+declare void @forge_param_type_clear()
+
+declare void @forge_param_type_add(%ForgeString)
+
+declare %ForgeString @forge_param_type_get(i64)
+
+declare void @forge_fn_reg_clear()
+
+declare void @forge_fn_reg_add(%ForgeString, %ForgeString)
+
+declare %ForgeString @forge_fn_reg_get_ret(%ForgeString)
+
+declare i64 @forge_fn_reg_count()
+
+declare i64 @forge_scan_csv(%ForgeString)
+
+declare void @forge_scan_csv_set_cb(ptr)
+
+declare void @forge_save_csv(%ForgeString)
+
+declare i64 @forge_csv_byte_at(i64)
+
+declare i64 @forge_csv_length()
+
+declare %ForgeString @forge_csv_substr(i64, i64)
+
+declare %ForgeString @forge_scan_csv_path(i64)
+
+declare %ForgeString @forge_csv_next()
+
+declare void @forge_csv_scan_reset()
+
+declare i64 @forge_csv_scan_idx()
+
+declare i64 @forge_csv_has_next()
+
+declare void @forge_mod_csv_clear()
+
+declare void @forge_mod_csv_add(%ForgeString)
+
+declare %ForgeString @forge_mod_csv_get()
+
+declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)
+
+declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)
+
+declare i64 @forge_sh_byteat(%ForgeString, i64)
+
+declare i64 @forge_sh_length(%ForgeString)
+
+declare %ForgeString @forge_list_push(%ForgeString, ptr, i64)
+
+declare %ForgeString @forge_list_push_str(%ForgeString, %ForgeString)
 
 declare ptr @forge_alloc(i64)
 
@@ -59,258 +103,207 @@ declare %ForgeString @forge_selfhost_process_run(%ForgeString, %ForgeString)
 
 declare void @forge_eprintln_string(%ForgeString)
 
-define i64 @type_is_numeric(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  %4 = extractvalue %Type %3, 0
-  %5 = zext i8 %4 to i64
-  %6 = icmp eq i64 %5, 0
-  br i1 %6, label %8, label %9
-
-7:                                                ; preds = %12, %11, %8
-  ret i64 undef
-
-8:                                                ; preds = %1
-  br label %7
-
-9:                                                ; preds = %1
-  %10 = icmp eq i64 %5, 1
-  br i1 %10, label %11, label %12
-
-11:                                               ; preds = %9
-  br label %7
-
-12:                                               ; preds = %9
-  br label %7
-}
-
-define i64 @type_is_nullable(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  %4 = extractvalue %Type %3, 0
-  %5 = zext i8 %4 to i64
-  %6 = icmp eq i64 %5, 7
-  br i1 %6, label %8, label %9
-
-7:                                                ; preds = %9, %8
-  ret i64 undef
-
-8:                                                ; preds = %1
-  br label %7
-
-9:                                                ; preds = %1
-  br label %7
-}
-
-define i64 @type_is_primitive(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  %4 = extractvalue %Type %3, 0
-  %5 = zext i8 %4 to i64
-  %6 = icmp eq i64 %5, 0
-  br i1 %6, label %8, label %9
-
-7:                                                ; preds = %21, %20, %17, %14, %11, %8
-  ret i64 undef
-
-8:                                                ; preds = %1
-  br label %7
-
-9:                                                ; preds = %1
-  %10 = icmp eq i64 %5, 1
-  br i1 %10, label %11, label %12
-
-11:                                               ; preds = %9
-  br label %7
-
-12:                                               ; preds = %9
-  %13 = icmp eq i64 %5, 2
-  br i1 %13, label %14, label %15
-
-14:                                               ; preds = %12
-  br label %7
-
-15:                                               ; preds = %12
-  %16 = icmp eq i64 %5, 3
-  br i1 %16, label %17, label %18
-
-17:                                               ; preds = %15
-  br label %7
-
-18:                                               ; preds = %15
-  %19 = icmp eq i64 %5, 4
-  br i1 %19, label %20, label %21
-
-20:                                               ; preds = %18
-  br label %7
-
-21:                                               ; preds = %18
-  br label %7
-}
-
-define i64 @type_is_container(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  %4 = extractvalue %Type %3, 0
-  %5 = zext i8 %4 to i64
-  %6 = icmp eq i64 %5, 8
-  br i1 %6, label %8, label %9
-
-7:                                                ; preds = %15, %14, %11, %8
-  ret i64 undef
+declare i64 @forge_string_to_int(%ForgeString)
 
-8:                                                ; preds = %1
-  br label %7
+declare ptr @forge_llvm_context_create()
 
-9:                                                ; preds = %1
-  %10 = icmp eq i64 %5, 9
-  br i1 %10, label %11, label %12
+declare void @forge_llvm_context_dispose(ptr)
 
-11:                                               ; preds = %9
-  br label %7
+declare ptr @forge_llvm_module_create(ptr, ptr)
 
-12:                                               ; preds = %9
-  %13 = icmp eq i64 %5, 10
-  br i1 %13, label %14, label %15
+declare void @forge_llvm_module_dispose(ptr)
 
-14:                                               ; preds = %12
-  br label %7
+declare ptr @forge_llvm_print_module_to_file(ptr, ptr)
 
-15:                                               ; preds = %12
-  br label %7
-}
+declare ptr @forge_llvm_verify_module(ptr)
 
-define i64 @type_is_callable(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  %4 = extractvalue %Type %3, 0
-  %5 = zext i8 %4 to i64
-  %6 = icmp eq i64 %5, 13
-  br i1 %6, label %8, label %9
+declare ptr @forge_llvm_int1_type(ptr)
 
-7:                                                ; preds = %9, %8
-  ret i64 undef
+declare ptr @forge_llvm_int8_type(ptr)
 
-8:                                                ; preds = %1
-  br label %7
+declare ptr @forge_llvm_int32_type(ptr)
 
-9:                                                ; preds = %1
-  br label %7
-}
+declare ptr @forge_llvm_int64_type(ptr)
 
-define %Type @unwrap_nullable(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  %3 = load %Type, ptr %2, align 4
-  ret %Type %3
-}
+declare ptr @forge_llvm_double_type(ptr)
 
-define %Type @unwrap_list_element(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  ret %Type undef
-}
+declare ptr @forge_llvm_void_type(ptr)
 
-define %Type @unwrap_result_ok(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  ret %Type undef
-}
+declare ptr @forge_llvm_pointer_type(ptr)
 
-define %Type @unwrap_result_err(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  ret %Type undef
-}
+declare ptr @forge_llvm_function_type(ptr, ptr, ptr, ptr)
 
-define %ForgeString @type_to_string(%Type %0) {
-  %2 = alloca %Type, align 8
-  store %Type %0, ptr %2, align 4
-  br i1 false, label %3, label %4
+declare ptr @forge_llvm_struct_create_named(ptr, ptr)
 
-3:                                                ; preds = %1
-  ret %ForgeString undef
+declare ptr @forge_llvm_struct_set_body(ptr, ptr, ptr, ptr)
 
-4:                                                ; preds = %1
-  br label %5
+declare ptr @forge_llvm_struct_type(ptr, ptr, ptr)
 
-5:                                                ; preds = %4
-  br i1 false, label %6, label %7
+declare ptr @forge_llvm_get_type_by_name(ptr, ptr)
 
-6:                                                ; preds = %5
-  ret %ForgeString undef
+declare ptr @forge_llvm_size_of(ptr)
 
-7:                                                ; preds = %5
-  br label %8
+declare ptr @forge_llvm_type_array_new(ptr)
 
-8:                                                ; preds = %7
-  br i1 false, label %9, label %10
+declare void @forge_llvm_type_array_set(ptr, ptr, ptr)
 
-9:                                                ; preds = %8
-  ret %ForgeString undef
+declare void @forge_llvm_type_array_free(ptr)
 
-10:                                               ; preds = %8
-  br label %11
+declare ptr @forge_llvm_add_function(ptr, ptr, ptr)
 
-11:                                               ; preds = %10
-  br i1 false, label %12, label %13
+declare ptr @forge_llvm_get_named_function(ptr, ptr)
 
-12:                                               ; preds = %11
-  ret %ForgeString undef
+declare ptr @forge_llvm_get_param(ptr, ptr)
 
-13:                                               ; preds = %11
-  br label %14
+declare ptr @forge_llvm_append_basic_block(ptr, ptr, ptr)
 
-14:                                               ; preds = %13
-  br i1 false, label %15, label %16
+declare ptr @forge_llvm_get_insert_block(ptr)
 
-15:                                               ; preds = %14
-  ret %ForgeString undef
+declare ptr @forge_llvm_get_basic_block_parent(ptr)
 
-16:                                               ; preds = %14
-  br label %17
+declare ptr @forge_llvm_block_has_terminator(ptr)
 
-17:                                               ; preds = %16
-  br i1 false, label %18, label %19
+declare ptr @forge_llvm_get_entry_basic_block(ptr)
 
-18:                                               ; preds = %17
-  ret %ForgeString undef
+declare ptr @forge_llvm_get_first_instruction(ptr)
 
-19:                                               ; preds = %17
-  br label %20
+declare ptr @forge_llvm_create_builder(ptr)
 
-20:                                               ; preds = %19
-  br i1 false, label %21, label %22
+declare void @forge_llvm_dispose_builder(ptr)
 
-21:                                               ; preds = %20
-  ret %ForgeString undef
+declare void @forge_llvm_position_at_end(ptr, ptr)
 
-22:                                               ; preds = %20
-  br label %23
+declare void @forge_llvm_position_before(ptr, ptr)
 
-23:                                               ; preds = %22
-  br i1 false, label %24, label %25
+declare ptr @forge_llvm_build_ret(ptr, ptr)
 
-24:                                               ; preds = %23
-  ret %ForgeString undef
+declare ptr @forge_llvm_build_ret_void(ptr)
 
-25:                                               ; preds = %23
-  br label %26
+declare ptr @forge_llvm_build_br(ptr, ptr)
 
-26:                                               ; preds = %25
-  br i1 false, label %27, label %28
+declare ptr @forge_llvm_build_cond_br(ptr, ptr, ptr, ptr)
 
-27:                                               ; preds = %26
-  ret %ForgeString undef
+declare ptr @forge_llvm_build_alloca(ptr, ptr, ptr)
 
-28:                                               ; preds = %26
-  br label %29
+declare ptr @forge_llvm_build_store(ptr, ptr, ptr)
 
-29:                                               ; preds = %28
-  ret %ForgeString undef
+declare ptr @forge_llvm_build_load(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_call(ptr, ptr, ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_add(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_sub(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_mul(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_sdiv(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_srem(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_and(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_or(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_xor(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_shl(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_ashr(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_icmp(ptr, ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_trunc(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_zext(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_bitcast(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_struct_gep2(ptr, ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_gep2(ptr, ptr, ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_extract_value(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_insert_value(ptr, ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_phi(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_add_incoming(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_ptr_to_int(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_inttoptr(ptr, ptr, ptr, ptr)
+
+declare ptr @forge_llvm_build_global_string_ptr(ptr, ptr, ptr)
+
+declare void @forge_llvm_set_initializer(ptr, ptr)
+
+declare ptr @forge_llvm_add_global(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_const_int(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_const_null(ptr)
+
+declare ptr @forge_llvm_const_real(ptr, ptr)
+
+declare ptr @forge_llvm_const_string(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_get_undef(ptr)
+
+declare ptr @forge_llvm_value_array_new(ptr)
+
+declare void @forge_llvm_value_array_set(ptr, ptr, ptr)
+
+declare ptr @forge_llvm_value_array_get(ptr, ptr)
+
+declare void @forge_llvm_value_array_free(ptr)
+
+declare ptr @forge_llvm_global_get_value_type(ptr)
+
+declare ptr @forge_llvm_type_of(ptr)
+
+declare ptr @forge_llvm_get_type_kind(ptr)
+
+declare ptr @forge_llvm_emit_object_file(ptr, ptr)
+
+declare i64 @forge_alloca_cache_clear()
+
+declare i64 @forge_alloca_cache_set(%ForgeString, ptr)
+
+declare ptr @forge_alloca_cache_get(%ForgeString)
+
+declare i64 @forge_str_var_add(%ForgeString)
+
+declare i64 @forge_str_var_check(%ForgeString)
+
+declare i64 @forge_str_var_clear()
+
+declare i64 @forge_idx_cache_clear()
+
+declare i64 @forge_idx_cache_set(i64, ptr)
+
+declare ptr @forge_idx_cache_get(i64)
+
+declare i64 @forge_var_counter_get()
+
+declare i64 @forge_var_counter_inc()
+
+declare i64 @forge_var_counter_reset(i64)
+
+declare ptr @forge_llvm_build_extract_value.1(ptr, ptr, i64, %ForgeString)
+
+declare i64 @forge_sh_indexof.2(%ForgeString, %ForgeString)
+
+declare %ForgeString @forge_sh_substr.3(%ForgeString, i64, i64)
+
+declare i64 @forge_sh_byteat.4(%ForgeString, i64)
+
+declare i64 @forge_sh_length.5(%ForgeString)
+
+define i32 @main(i32 %0, ptr %1) {
+bb0:
+  call void @forge_set_args(i32 %0, ptr %1)
+  call void @forge_println_string({ ptr, i64 } { ptr @0, i64 27 })
+  ret i32 0
 }

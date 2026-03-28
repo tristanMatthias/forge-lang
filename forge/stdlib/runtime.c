@@ -143,9 +143,7 @@ void forge_rc_release(void* ptr) {
 }
 
 void* forge_alloc(int64_t size) {
-    ForgeHeapObj* obj = (ForgeHeapObj*)malloc(sizeof(int64_t) + size);
-    obj->rc = 1;
-    return (void*)((char*)obj + sizeof(int64_t));
+    return malloc(size);
 }
 
 // ---- Deep-copy helpers for bootstrap workaround ----
