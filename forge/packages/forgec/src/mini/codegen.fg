@@ -2000,6 +2000,17 @@ fn codegen_for(s: Stmt) -> int {
 
     // Get length and set up element access
     mut elem_ty = LAST_LIST_ELEM_TYPE
+    // If element type unknown, look up from variable's stored element type
+    if elem_ty == "i64" || elem_ty == "" {
+        let iter_expr: Expr = s.children[0]
+        if iter_expr.kind is .Ident {
+            let vi = find_var(iter_expr.str_val)
+            if vi >= 0 && vi < VAR_LIST_ELEM_TYPE.length {
+                let stored = VAR_LIST_ELEM_TYPE[vi]
+                if stored != "" { elem_ty = stored }
+            }
+        }
+    }
     let len_r = new_reg()
     let data_r = new_reg()
 
@@ -3123,6 +3134,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_get_self_type()")
     // Debug
     ir_raw("declare void @forge_debug_enum({ i64, ptr })")
+    ir_raw("declare void @forge_debug_str(%ForgeString)")
     // C-side variable name tracking
     ir_raw("declare void @forge_var_name_clear()")
     ir_raw("declare void @forge_var_name_push(%ForgeString)")

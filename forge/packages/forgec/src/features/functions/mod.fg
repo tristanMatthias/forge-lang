@@ -46,7 +46,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     if name == "" { return null }
 
     let type_params = p.parse_type_params()
-    let params = p.parse_params()
+    let params: List<Param> = p.parse_params()
 
     mut return_type_name = ""
     mut return_type: TypeExpr? = null

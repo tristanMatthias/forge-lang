@@ -2537,10 +2537,17 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
 // Debug: print Expr tag (for tracing enum dispatch)
 typedef struct { int64_t tag; void* payload; } ForgeEnum;
 void forge_debug_enum(ForgeEnum e) {
-    static int _de_count = 0;
-    if (_de_count < 10) {
-        fprintf(stderr, "  [enum] tag=%lld payload=%p\n", (long long)e.tag, e.payload);
-        _de_count++;
+    fprintf(stderr, "  [enum] tag=%lld payload=%p\n", (long long)e.tag, e.payload);
+}
+void forge_debug_str(ForgeString s) {
+    static int _ds_count = 0;
+    if (_ds_count < 10) {
+        if (s.ptr && s.len > 0 && s.len < 100) {
+            fprintf(stderr, "  [str] len=%lld text='%.*s'\n", (long long)s.len, (int)s.len, (char*)s.ptr);
+        } else {
+            fprintf(stderr, "  [str] len=%lld ptr=%p (invalid)\n", (long long)s.len, s.ptr);
+        }
+        _ds_count++;
     }
 }
 

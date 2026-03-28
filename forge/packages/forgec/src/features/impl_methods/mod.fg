@@ -115,7 +115,7 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let fn_name = "${type_name}__${method_name}"
 
     PARSED_PARAM_TYPES = []
-    let params = p.parse_params()
+    let params: List<Param> = p.parse_params()
 
     mut return_type_name = ""
     if p.check_id(86) {  // Arrow
@@ -193,7 +193,7 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
         return null
     }
 
-    let params = p.parse_params()
+    let params: List<Param> = p.parse_params()
     if params == null { return null }
 
     mut return_type: TypeExpr? = null
