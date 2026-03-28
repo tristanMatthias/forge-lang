@@ -137,7 +137,7 @@ fn gen_expr(e: Expr) -> string {
                         let cmp = new_reg()
                         mut cmp_pred = "eq"
                         if e.str_val == "!=" { cmp_pred = "ne" }
-                        ir_line(cmp + " = icmp " + cmp_pred + " i8 " + tag + ", " + string(vidx))
+                        ir_line(cmp + " = icmp " + cmp_pred + " i64 " + tag + ", " + string(vidx))
                         let r = new_reg()
                         ir_line(r + " = zext i1 " + cmp + " to i64")
                         LAST_IS_STR = 0
@@ -161,7 +161,7 @@ fn gen_expr(e: Expr) -> string {
                 let cmp = new_reg()
                 mut is_pred = "eq"
                 if e.str_val == "is_not" { is_pred = "ne" }
-                ir_line(cmp + " = icmp " + is_pred + " i8 " + tag + ", " + string(vidx))
+                ir_line(cmp + " = icmp " + is_pred + " i64 " + tag + ", " + string(vidx))
                 let r = new_reg()
                 ir_line(r + " = zext i1 " + cmp + " to i64")
                 LAST_IS_STR = 0
@@ -198,34 +198,26 @@ fn gen_expr(e: Expr) -> string {
                 let rrt2 = reg_get_type(rhs)
                 mut lt_val = ""
                 mut rt_val = ""
-                // LHS: extract tag if it's the enum type, otherwise truncate i64→i8
+                // LHS: extract tag if it's the enum type, otherwise use as i64
                 if lrt == ety || lrt == "" {
                     let lt = new_reg()
                     ir_line(lt + " = extractvalue " + ety + " " + lhs + ", 0")
                     lt_val = lt
-                } else if lrt == "i8" {
-                    lt_val = lhs
                 } else {
-                    let lt = new_reg()
-                    ir_line(lt + " = trunc i64 " + lhs + " to i8")
-                    lt_val = lt
+                    lt_val = lhs
                 }
                 // RHS: same logic
                 if rrt2 == ety || rrt2 == "" {
                     let rt = new_reg()
                     ir_line(rt + " = extractvalue " + ety + " " + rhs + ", 0")
                     rt_val = rt
-                } else if rrt2 == "i8" {
-                    rt_val = rhs
                 } else {
-                    let rt = new_reg()
-                    ir_line(rt + " = trunc i64 " + rhs + " to i8")
-                    rt_val = rt
+                    rt_val = rhs
                 }
                 let cmp = new_reg()
                 mut pred = "eq"
                 if e.str_val == "!=" { pred = "ne" }
-                ir_line(cmp + " = icmp " + pred + " i8 " + lt_val + ", " + rt_val)
+                ir_line(cmp + " = icmp " + pred + " i64 " + lt_val + ", " + rt_val)
                 let r = new_reg()
                 ir_line(r + " = zext i1 " + cmp + " to i64")
                 LAST_IS_STR = 0
@@ -361,7 +353,7 @@ fn gen_expr(e: Expr) -> string {
             return cur
         }
         .EnumLit -> {
-            // Heap-allocated enum: { i8 tag, ptr payload }
+            // Heap-allocated enum: { i64 tag, ptr payload }
             // Payload is a heap-allocated variant struct
             let dot_idx = e.str_val.index_of(".")
             if dot_idx < 0 { return "0" }
@@ -458,9 +450,9 @@ fn gen_expr(e: Expr) -> string {
                 }
             }
 
-            // Build enum value: { i8 tag, ptr payload }
+            // Build enum value: { i64 tag, ptr payload }
             let e1 = new_reg()
-            ir_line(e1 + " = insertvalue " + ety + " zeroinitializer, i8 " + string(vidx) + ", 0")
+            ir_line(e1 + " = insertvalue " + ety + " zeroinitializer, i64 " + string(vidx) + ", 0")
             let e2 = new_reg()
             ir_line(e2 + " = insertvalue " + ety + " " + e1 + ", ptr " + payload_ptr + ", 1")
             reg_set_type(e2, ety)
@@ -2255,7 +2247,7 @@ fn codegen_match(s: Stmt) -> int {
             let arm_l = new_label("match_arm")
             let next_l = new_label("match_next")
             let cmp = new_reg()
-            ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
+            ir_line(cmp + " = icmp eq i64 " + tag_r + ", " + string(vidx))
             ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
             ir_raw(arm_l + ":")
             if arm.str2.length > 0 {

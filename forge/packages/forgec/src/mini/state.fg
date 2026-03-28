@@ -382,10 +382,11 @@ fn enum_max_slots(enum_idx: int) -> int {
 }
 
 fn enum_llvm_type_str(enum_idx: int) -> string {
-    // Heap-allocated payload: { i8 tag, ptr payload }
+    // Heap-allocated payload: { i64 tag, ptr payload }
+    // Using i64 for tag (not i8) to avoid ABI issues with { i8, ptr } struct returns
     // Construction: alloc variant struct → store fields → store ptr in enum
     // Extraction: load ptr → GEP → load field
-    "{ i8, ptr }"
+    "{ i64, ptr }"
 }
 
 // Convert stored field type to LLVM load type

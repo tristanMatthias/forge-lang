@@ -2534,6 +2534,22 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
     return 0;
 }
 
+// C-side pending Statement for parse-emit cycle
+// Avoids ABI corruption when returning { i8, ptr } from mini-built functions
+typedef struct { uint8_t tag; char _pad[7]; void* payload; } Statement;
+static Statement _pending_stmt;
+static int _has_pending_stmt = 0;
+void forge_stmt_store(Statement s) {
+    _pending_stmt = s;
+    _has_pending_stmt = 1;
+}
+Statement forge_stmt_load(void) {
+    _has_pending_stmt = 0;
+    return _pending_stmt;
+}
+int64_t forge_stmt_has(void) { return _has_pending_stmt; }
+void forge_stmt_clear(void) { _has_pending_stmt = 0; }
+
 // C-side variable name tracking (immune to Forge list corruption)
 // Tracks variable names pushed during emit_fn_body_from_source param setup
 #define VAR_NAME_MAX 256

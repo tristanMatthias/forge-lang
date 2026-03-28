@@ -646,23 +646,35 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_set_self_type("")
     }
 
-    // Pure AST parse then emit
+    // Parse-then-emit each statement individually (avoids List<Statement> corruption)
+    // Statement enum payloads are corrupted when stored in lists, so we parse
+    // and emit ONE statement at a time, never building a Statement list
     VAR_LIST_INIT_CSV = ""
     if body_src != "" {
         CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
         mut body_parser = parser_new(body_tokens)
-        let body = body_parser.parse_block()
+        // Consume opening {
+        body_parser.expect_id(102)
+        body_parser.skip_newlines()
         CG_ACTIVE = true
         cg_reinit_types()
-        mut last = llvm.const_int(CG_I64, 0, 0)
-        let _bsl = body.statements.length
-        if _bsl >= 0 && _bsl < 10000 {
-            last = cg.emit_block(body)
+        // Parse and emit each statement individually
+        while !body_parser.check_id(103) && !body_parser.is_at_end() {
+            CG_ACTIVE = false
+            let before = body_parser.pos
+            let stmt = body_parser.parse_statement()
+            CG_ACTIVE = true
+            cg_reinit_types()
+            if stmt != null {
+                cg.emit_statement(stmt!)
+            }
+            if body_parser.pos == before {
+                body_parser.advance()
+            }
+            body_parser.skip_newlines()
         }
-        CG_LAST_VAL = last
-        CG_HAS_LAST_VAL = 1
     }
 
     // Implicit return — must match declared return type

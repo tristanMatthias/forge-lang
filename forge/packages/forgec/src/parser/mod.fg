@@ -501,6 +501,12 @@ impl Parser {
             }
             return self.parse_expr_or_assign()
         }
+        // Catch-all: any token not handled above is an expression or assignment
+        // This replaces the broken `_ ->` match arm in mini-built binaries
+        if stmt_kid == 1 || stmt_kid == 2 || stmt_kid == 3 || stmt_kid == 4 || stmt_kid == 5 || stmt_kid == 6 || stmt_kid == 7 || stmt_kid == 8 || stmt_kid == 100 || stmt_kid == 84 || stmt_kid == 71 {
+            // Ident(1), IntLit(2), FloatLit(3), StringLit(4), BoolLit(5), TemplateLit(6), DollarStr(7), NullLit(8), LParen(100), Not(84), Minus(71)
+            return self.parse_expr_or_assign()
+        }
         // Fallback to pattern match (Rust compiler only — mini binary uses kind_id dispatch above)
 
         match tok.kind {
