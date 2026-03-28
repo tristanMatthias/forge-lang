@@ -119,7 +119,16 @@ def fix_function(fn_lines):
                             best = areg
                             break
 
-                if best is not None and best != ref:
+                # Also exclude the register being defined on this line
+                def_on_line = re.match(r'\s+%(\d+)\s*=', line)
+                def_reg = int(def_on_line.group(1)) if def_on_line else -1
+                # Last-last resort: use first param alloca
+                if best is None or best == ref or best == def_reg:
+                    for areg in sorted(allocas.keys()):
+                        if areg in seen and areg != ref and areg != def_reg:
+                            best = areg
+                            break
+                if best is not None and best != ref and best != def_reg:
                     start = m.start(1)
                     end = m.end(1)
                     fixed_line = fixed_line[:start] + str(best) + fixed_line[end:]
