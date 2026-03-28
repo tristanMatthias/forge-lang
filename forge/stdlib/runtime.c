@@ -2097,18 +2097,17 @@ int64_t forge_scan_csv(ForgeString csv) {
             line_start = pos + 1;
         }
     }
-    // Phase 2: call callback — use static vars (immune to stack corruption)
-    static volatile int _sci;
-    static volatile int _scn;
-    _scn = _scan_path_count;
-    fprintf(stderr, "  [CSV] %d paths\n", _scn); fflush(stderr);
-    for (_sci = 0; _sci < _scn; _sci++) {
-        fprintf(stderr, "  [CSV] %d/%d\n", _sci, _scn); fflush(stderr);
-        _scan_cb(_scan_paths[_sci], (int64_t)_sci);
-        fprintf(stderr, "  [CSV] %d ok, sci=%d scn=%d\n", _sci, _sci, _scn); fflush(stderr);
+    // Phase 2: call callback
+    // IMPORTANT: forge_scan_csv may be called RECURSIVELY (scan_one_file → parse →
+    // feature dispatch → ...). Save/restore path count to handle reentrancy.
+    int saved_count = _scan_path_count;
+    ForgeString saved_paths[MAX_SCAN_FILES];
+    memcpy(saved_paths, _scan_paths, saved_count * sizeof(ForgeString));
+
+    for (int i = 0; i < saved_count; i++) {
+        _scan_cb(saved_paths[i], (int64_t)i);
     }
-    fprintf(stderr, "  [CSV] done %d\n", _scn); fflush(stderr);
-    return _scn;
+    return saved_count;
 }
 
 // Save CSV string in C-side static storage so it survives stack corruption
