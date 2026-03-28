@@ -15,7 +15,7 @@ export fn parse_for(p: Parser) -> Statement? {
     p.skip_newlines()
     let var_name = p.expect_ident()
     if var_name == "" { return null }
-    if p.expect(.In) == null { return null }
+    if p.expect_id(29) == null { return null }  // In
     p.skip_newlines()
     let iterable = p.parse_expr()
     if iterable == null { return null }

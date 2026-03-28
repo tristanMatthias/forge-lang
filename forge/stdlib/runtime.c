@@ -148,7 +148,11 @@ void forge_rc_release(void* ptr) {
 static char* _arena = NULL;
 static int64_t _arena_pos = 0;
 
+static int64_t _alloc_count = 0;
+static int64_t _alloc_bytes = 0;
 void* forge_alloc(int64_t size) {
+    _alloc_count++;
+    _alloc_bytes += size;
     // Align to 16 bytes
     size = (size + 15) & ~15;
     if (!_arena) {
@@ -164,6 +168,11 @@ void* forge_alloc(int64_t size) {
     return ptr;
 }
 int64_t forge_arena_used(void) { return _arena_pos; }
+void forge_alloc_stats(void) {
+    fprintf(stderr, "  [alloc] %lld calls, %lldMB total\n",
+        (long long)_alloc_count, (long long)(_alloc_bytes / (1024*1024)));
+    fflush(stderr);
+}
 
 // ---- Parser watchdog: detects infinite loops ----
 static int64_t _wd_pos = -1;
@@ -173,6 +182,13 @@ static const char* _wd_last_fn = "";
 
 void forge_watchdog(int64_t pos, const char* fn_name) {
     _wd_total++;
+    // Report every 1000 calls with alloc stats
+    if (_wd_total % 1000 == 0) {
+        fprintf(stderr, "  [wd] %lld calls pos=%lld allocs=%lld/%lldMB\n",
+            (long long)_wd_total, (long long)pos,
+            (long long)_alloc_count, (long long)(_alloc_bytes/(1024*1024)));
+        fflush(stderr);
+    }
     if (pos == _wd_pos) {
         _wd_count++;
         if (_wd_count == 5000) {
@@ -1985,6 +2001,13 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
         // Read capacity from before data pointer
         raw = (char*)list.ptr - sizeof(int64_t);
         cap = *(int64_t*)raw;
+        // Validate: cap must be >= len and reasonable
+        if (cap < len || cap > len * 4 + 16 || cap > 1000000) {
+            // No valid capacity header — this list was created by inline push
+            // Copy to a new capacity-aware buffer
+            cap = 0;
+            raw = NULL;
+        }
     }
 
     if (len >= cap) {
@@ -2261,6 +2284,42 @@ ForgeString forge_param_type_get(int64_t idx) {
     if (idx < 0 || idx >= _param_type_count) return forge_string_new("int", 3);
     int64_t len = strlen(_param_types[idx]);
     return forge_string_new(_param_types[idx], len);
+}
+
+// ---- C-side current self type (for method desugaring) ----
+static char _current_self_type[128] = "";
+void forge_set_self_type(ForgeString type_name) {
+    if (type_name.ptr && type_name.len > 0 && type_name.len < 128) {
+        memcpy(_current_self_type, type_name.ptr, type_name.len);
+        _current_self_type[type_name.len] = '\0';
+    } else {
+        _current_self_type[0] = '\0';
+    }
+}
+ForgeString forge_get_self_type(void) {
+    int64_t len = strlen(_current_self_type);
+    return forge_string_new(_current_self_type, len);
+}
+
+// ---- C-side param name storage (immune to Forge list corruption) ----
+static char _param_names[PARAM_REG_MAX][64];
+static int _param_name_count = 0;
+
+void forge_param_name_clear(void) { _param_name_count = 0; }
+void forge_param_name_add(ForgeString name) {
+    if (_param_name_count >= PARAM_REG_MAX) return;
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_param_names[_param_name_count], name.ptr, name.len);
+        _param_names[_param_name_count][name.len] = '\0';
+    } else {
+        _param_names[_param_name_count][0] = '\0';
+    }
+    _param_name_count++;
+}
+ForgeString forge_param_name_get(int64_t idx) {
+    if (idx < 0 || idx >= _param_name_count) return forge_string_new("", 0);
+    int64_t len = strlen(_param_names[idx]);
+    return forge_string_new(_param_names[idx], len);
 }
 
 // ---- C-side function body storage (immune to Forge list push corruption) ----

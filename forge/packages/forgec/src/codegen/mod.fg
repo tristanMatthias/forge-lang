@@ -968,6 +968,13 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_param_type_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_param_type_add", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_param_type_get", make_fn_type_1(CG_STR, CG_I64))
+    // Param name registry (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_param_name_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_param_name_add", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_param_name_get", make_fn_type_1(CG_STR, CG_I64))
+    // Self type tracking for method desugaring
+    llvm.add_function(CG_MOD, "forge_set_self_type", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_get_self_type", make_fn_type_0(CG_STR))
     // Function name/return-type registry (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_fn_reg_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_fn_reg_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))

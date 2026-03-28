@@ -41,10 +41,10 @@ fn parse_use(p: Parser) -> Statement? {
     }
     path = path.push(first!)
 
-    while p.check(.Dot) {
+    while p.check_id(111) {  // Dot
         p.advance()
         // Check for destructured imports: { item1, item2 }
-        if p.check(.LBrace) { break }
+        if p.check_id(102) { break }  // LBrace
         let segment = p.expect_ident()
         if segment == null { break }
         path = path.push(segment!)
@@ -52,19 +52,19 @@ fn parse_use(p: Parser) -> Statement? {
 
     // Optional destructured imports: .{ item1, item2 }
     mut items: List<string> = []
-    if p.check(.LBrace) {
+    if p.check_id(102) {  // LBrace
         p.advance()
         p.skip_newlines()
-        while !p.check(.RBrace) && !p.is_at_end() {
+        while !p.check_id(103) && !p.is_at_end() {  // RBrace
             p.skip_newlines()
             let item = p.expect_ident()
             if item != null {
                 items = items.push(item!)
             }
             p.skip_newlines()
-            if p.check(.Comma) { p.advance() }
+            if p.check_id(110) { p.advance() }  // Comma
         }
-        if p.expect(.RBrace) == null { return null }
+        if p.expect_id(103) == null { return null }  // RBrace
     }
 
     let id = next_node_id()

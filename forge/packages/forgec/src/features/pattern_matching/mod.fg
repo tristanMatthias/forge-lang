@@ -67,12 +67,12 @@ fn parse_match(p: Parser) -> Expr? {
     if subject == null { return null }
 
     p.skip_newlines()
-    if p.expect(.LBrace) == null { return null }
+    if p.expect_id(102) == null { return null }  // LBrace
     p.skip_newlines()
 
     mut arms: List<MatchArm> = []
 
-    while !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check_id(103) && !p.is_at_end() {  // RBrace
         p.skip_newlines()
         let arm = parse_match_arm(p)
         if arm != null {
@@ -81,7 +81,7 @@ fn parse_match(p: Parser) -> Expr? {
         p.skip_newlines()
     }
 
-    if p.expect(.RBrace) == null { return null }
+    if p.expect_id(103) == null { return null }  // RBrace
 
     make_match_expr(subject!, arms, start)
 }
@@ -95,14 +95,14 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     // Optional guard: if condition
     // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
     mut guard: Expr? = null
-    if p.check(.If) {
+    if p.check_id(24) {  // If
         p.advance()
         guard = p.parse_expr()
     }
 
     // Expect -> body
     p.skip_newlines()
-    if p.expect(.Arrow) == null {
+    if p.expect_id(86) == null {  // Arrow
         p.error("expected '->' in match arm")
         return null
     }
@@ -111,7 +111,7 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     // Body: block or expression
     // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
     mut body: Expr? = null
-    if p.check(.LBrace) {
+    if p.check_id(102) {  // LBrace
         let block = p.parse_block()
         if block != null { body = Expr.Block(block!) }
     } else {
@@ -143,9 +143,9 @@ fn parse_pattern(p: Parser) -> Pattern? {
     if first == null { return null }
 
     // Check for or-pattern: pattern | pattern
-    if p.check(.Bar) {
+    if p.check_id(94) {  // Bar
         mut alternatives: List<Pattern> = [first!]
-        while p.check(.Bar) {
+        while p.check_id(94) {  // Bar
             p.advance()
             p.skip_newlines()
             let next = parse_simple_pattern(p)
@@ -180,19 +180,19 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
             if name == null { return null }
 
             // Optional sub-patterns: .Variant(p1, p2)
-            if p.check(.LParen) {
+            if p.check_id(100) {  // LParen
                 p.advance()
                 mut fields: List<Pattern> = []
-                while !p.check(.RParen) && !p.is_at_end() {
+                while !p.check_id(101) && !p.is_at_end() {  // RParen
                     p.skip_newlines()
                     let sub = parse_pattern(p)
                     if sub != null {
                         fields = fields.push(sub!)
                     }
                     p.skip_newlines()
-                    if p.check(.Comma) { p.advance() }
+                    if p.check_id(110) { p.advance() }  // Comma
                 }
-                p.expect(.RParen)
+                p.expect_id(101)  // RParen
                 LAST_PATTERN_VARIANT = name!
                 Pattern.EnumVariant(name!, fields, start)
             } else {
@@ -235,16 +235,16 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
         .LParen -> {
             let start = p.advance().span
             mut elements: List<Pattern> = []
-            while !p.check(.RParen) && !p.is_at_end() {
+            while !p.check_id(101) && !p.is_at_end() {  // RParen
                 p.skip_newlines()
                 let sub = parse_pattern(p)
                 if sub != null {
                     elements = elements.push(sub!)
                 }
                 p.skip_newlines()
-                if p.check(.Comma) { p.advance() }
+                if p.check_id(110) { p.advance() }  // Comma
             }
-            p.expect(.RParen)
+            p.expect_id(101)  // RParen
             Pattern.Tuple(elements, start)
         }
 

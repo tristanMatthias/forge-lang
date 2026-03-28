@@ -115,8 +115,14 @@ impl Parser {
 
     // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
+        forge_watchdog(self.pos, "check_id")
         if self.pos >= self.tokens.length { return kid == 99 }
-        self.tokens[self.pos].kind_id == kid
+        let actual = self.tokens[self.pos].kind_id
+        // Debug: print when stuck
+        if self.pos == 247 {
+            eprintln("  [DBG] pos=247 kid=" + string(kid) + " actual=" + string(actual) + " text=" + self.tokens[self.pos].text)
+        }
+        actual == kid
     }
 
     fn check(self, kind: TokenKind) -> bool {
@@ -156,6 +162,11 @@ impl Parser {
         if tok.kind_id == 1 {
             self.advance()
             return tok.text
+        }
+        // Underscore as identifier (kind_id=60) — must use kind_id, not pattern match
+        if tok.kind_id == 60 {
+            self.advance()
+            return "_"
         }
         // Keywords that can be used as identifiers
         if tok.kind is .Is {
@@ -321,7 +332,176 @@ impl Parser {
         if stmt_kid == 28 { let r = parse_for(self)
             self.sync_pos()
             return r }
-        // Return, Break, Continue — fall through to match for complex handling
+        if stmt_kid == 43 { let r = parse_impl_block(self)  // Impl
+            self.sync_pos()
+            return r }
+        if stmt_kid == 34 { let r = parse_enum_decl(self)  // Enum
+            self.sync_pos()
+            return r }
+        if stmt_kid == 35 {  // TypeKw
+            let r = parse_type_decl(self)
+            self.sync_pos()
+            return r }
+        if stmt_kid == 42 {  // Trait - skip
+            self.advance()
+            self.expect_ident()
+            while !self.check_id(103) && !self.is_at_end() { self.advance() }
+            if self.check_id(103) { self.advance() }
+            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+        if stmt_kid == 36 {  // Use - skip
+            self.advance()
+            while !self.is_at_end() && !self.check_id(120) { self.advance() }
+            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+        if stmt_kid == 37 {  // Mod - skip
+            self.advance()
+            self.expect_ident()
+            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+        // Return (24), Break (32), Continue (33) — fast dispatch
+        if stmt_kid == 24 { return self.parse_return() }
+        if stmt_kid == 32 {  // Break
+            self.advance()
+            if CG_ACTIVE && WHILE_END_BB != null {
+                llvm.build_br(CG_B, WHILE_END_BB)
+            }
+            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+        if stmt_kid == 33 {  // Continue
+            self.advance()
+            if CG_ACTIVE && WHILE_COND_BB != null {
+                llvm.build_br(CG_B, WHILE_COND_BB)
+            }
+            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+        // If (25) — inline handler
+        if stmt_kid == 25 {
+            if !CG_ACTIVE {
+                let start = self.advance().span
+                self.skip_newlines()
+                let cond = self.parse_expr()
+                if cond == null { return null }
+                self.skip_newlines()
+                let then_block = self.parse_block()
+                self.skip_newlines()
+                mut has_else = 0
+                mut else_block = Block { statements: [], span: start }
+                if self.check_id(26) {  // Else
+                    has_else = 1
+                    self.advance()
+                    self.skip_newlines()
+                    if self.check_id(25) {  // else if
+                        let nested = self.parse_statement()
+                        if nested != null {
+                            mut stmts: List<Statement> = []
+                            stmts = stmts.push(nested!)
+                            else_block = Block { statements: stmts, span: start }
+                        }
+                    } else {
+                        else_block = self.parse_block()
+                    }
+                }
+                return Statement.If(cond!, then_block, else_block, has_else, start)
+            }
+            return self.parse_expr_or_assign()
+        }
+        // Match (27) — inline handler
+        if stmt_kid == 27 {
+            if !CG_ACTIVE {
+                let start = self.advance().span
+                self.skip_newlines()
+                let scrutinee = self.parse_expr()
+                if scrutinee == null { return null }
+                let scrutinee_var = LAST_IDENT_NAME
+                self.skip_newlines()
+                if self.expect_id(102) == null { return null }
+                self.skip_newlines()
+                let enum_type = cg_var_enum_type(scrutinee_var)
+                mut arm_tags: List<int> = []
+                mut arm_bodies: List<Block> = []
+                mut arm_bindings_list: List<string> = []
+                mut has_default = 0
+                mut default_body = Block { statements: [], span: start }
+                while !self.check_id(103) && !self.is_at_end() {
+                    self.skip_newlines()
+                    mut pat_tag = -1
+                    mut arm_bind_csv = ""
+                    if self.check_id(111) {
+                        self.advance()
+                        let vname = self.expect_ident()
+                        let qname = enum_type + "." + vname
+                        arm_bind_csv = qname + ":"
+                        pat_tag = match_enum_tag(qname)
+                        if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
+                        if self.check_id(100) {
+                            self.advance()
+                            mut bind_idx = 0
+                            while !self.check_id(101) && !self.is_at_end() {
+                                let bname = self.expect_ident()
+                                if bname != "" && bname != "_" {
+                                    if bind_idx > 0 { arm_bind_csv = arm_bind_csv + "," }
+                                    arm_bind_csv = arm_bind_csv + bname
+                                } else {
+                                    if bind_idx > 0 { arm_bind_csv = arm_bind_csv + "," }
+                                    arm_bind_csv = arm_bind_csv + "_"
+                                }
+                                bind_idx = bind_idx + 1
+                                if self.check_id(110) { self.advance() }
+                                self.skip_newlines()
+                            }
+                            if self.check_id(101) { self.advance() }
+                        }
+                    } else if self.check_id(60) {
+                        self.advance()
+                        pat_tag = -1
+                        has_default = 1
+                    } else {
+                        self.advance()
+                    }
+                    self.skip_newlines()
+                    if self.check_id(86) { self.advance() }
+                    self.skip_newlines()
+                    let prev_match = IN_MATCH_ARM
+                    IN_MATCH_ARM = true
+                    mut body = Block { statements: [], span: start }
+                    if self.check_id(102) {
+                        body = self.parse_block()
+                    } else {
+                        let e = self.parse_expr()
+                        if e != null {
+                            mut body_stmts: List<Statement> = []
+                            body_stmts = body_stmts.push(Statement.Expr(e!))
+                            body = Block { statements: body_stmts, span: start }
+                        }
+                    }
+                    IN_MATCH_ARM = prev_match
+                    if pat_tag == -1 && has_default == 1 {
+                        default_body = body
+                    } else {
+                        arm_tags = arm_tags.push(pat_tag)
+                        arm_bodies = arm_bodies.push(body)
+                        arm_bindings_list = arm_bindings_list.push(arm_bind_csv)
+                    }
+                    self.skip_newlines()
+                    if self.check_id(110) { self.advance() }
+                    self.skip_newlines()
+                }
+                if self.check_id(103) { self.advance() }
+                mut tag_csv = ""
+                mut ti = 0
+                while ti < arm_tags.length {
+                    if ti > 0 { tag_csv = tag_csv + "," }
+                    tag_csv = tag_csv + string(arm_tags[ti])
+                    ti = ti + 1
+                }
+                mut bindings_csv = ""
+                mut bi = 0
+                while bi < arm_bindings_list.length {
+                    if bi > 0 { bindings_csv = bindings_csv + ";" }
+                    bindings_csv = bindings_csv + arm_bindings_list[bi]
+                    bi = bi + 1
+                }
+                return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
+            }
+            return self.parse_expr_or_assign()
+        }
+        // Fallback to pattern match (Rust compiler only — mini binary uses kind_id dispatch above)
 
         match tok.kind {
             .Let -> {
@@ -902,7 +1082,7 @@ impl Parser {
             }
             let name = self.expect_ident()
             if name == null { return null }
-            if self.expect_id(113) == null { return null }
+            if self.expect_id(112) == null { return null }
             let ty = self.parse_type_expr()
             if ty == null { return null }
             fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
@@ -925,11 +1105,17 @@ impl Parser {
 
         while !self.check_id(101) && !self.is_at_end() {
             self.skip_newlines()
+            let before_pos = self.pos
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
             }
             if self.check_id(110) {
+                self.advance()
+            }
+            // Safety: if parse_param didn't advance, skip one token to avoid infinite loop
+            if self.pos == before_pos {
+                eprintln("  [WARN] parse_params stuck at pos=" + string(self.pos) + " kind_id=" + string(self.peek().kind_id) + " text=" + self.peek().text)
                 self.advance()
             }
         }
@@ -952,7 +1138,7 @@ impl Parser {
         // Capture the type name text before parsing (for struct type lookup)
         mut type_name_text = "int"  // default
         mut type_ann: TypeExpr? = null
-        if self.check_id(113) {
+        if self.check_id(112) {
             self.advance()
             // Capture the next token's text as the type name
             let type_tok = self.peek()

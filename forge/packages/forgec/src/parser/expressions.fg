@@ -689,10 +689,15 @@ impl Parser {
 
                 // Universal method call desugaring: obj.method(args) → Type__method(obj, args)
                 // This bypasses the broken MemberAccess codegen in the self-hosting chain
-                if CG_ACTIVE && self.check_id(100) {
+                // Works even when CG_ACTIVE=false (body re-parse) since it only transforms AST, no LLVM emit
+                if self.check_id(100) {
                     // Try to resolve as impl method
                     let obj_var = LAST_IDENT_NAME
-                    let vst = var_struct_type(obj_var)
+                    // For "self", use C-side self type (immune to global assignment bugs)
+                    mut vst = var_struct_type(obj_var)
+                    if obj_var == "self" && vst == "" {
+                        vst = forge_get_self_type()
+                    }
                     if vst != "" {
                         // Try both Type__method (full compiler) and Type_method (mini) naming
                         let method_name_2 = vst + "__" + field
@@ -1203,7 +1208,7 @@ impl Parser {
                     if field_count > 0 { parsed_fields = parsed_fields + "," }
                     parsed_fields = parsed_fields + fname
                     self.advance() // consume field name
-                    if self.check_id(113) {
+                    if self.check_id(112) {
                         self.advance() // consume :
                         // Reset type flags before emitting field value
                         CG_LAST_ENUM_TYPE = ""
@@ -1370,7 +1375,7 @@ impl Parser {
             let field_tok = self.peek()
             if field_tok.kind_id == 1 {
                 self.advance()
-                if self.check_id(113) {
+                if self.check_id(112) {
                     self.advance()
                     let fval = self.parse_expr()
                     if fval != null {

@@ -63,13 +63,13 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
     let type_params = p.parse_type_params()
 
-    if p.expect(TokenKind.Eq) == null {
+    if p.expect_id(75) == null {  // Eq
         p.error("expected '=' in type declaration")
         return null
     }
 
     // Parse the struct body { field: type, ... }
-    if p.check(TokenKind.LBrace) {
+    if p.check_id(102) {  // LBrace
         p.advance() // consume {
         p.skip_newlines()
 
@@ -79,20 +79,20 @@ fn parse_type_decl(p: Parser) -> Statement? {
         mut field_types_str = ""  // comma-separated type names
         mut field_count = 0
 
-        while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+        while !p.check_id(103) && !p.is_at_end() {  // RBrace
             if field_count > 0 {
                 field_names = field_names + ","
                 field_is_str = field_is_str + ","
                 field_types_str = field_types_str + ","
             }
             // Skip optional 'mut' modifier on fields
-            if p.check(TokenKind.Mut) { p.advance() }
+            if p.check_id(21) { p.advance() }  // Mut
             let fname = p.expect_ident()
-            p.expect(TokenKind.Colon)
+            p.expect_id(112)  // Colon
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
             // Capture generic arg for List<T> → store as "List:T"
-            if p.check(TokenKind.Lt) {
+            if p.check_id(78) {  // Lt
                 p.advance()
                 let gen_arg = p.expect_ident()
                 // Store as "List:Diagnostic" so element type is recoverable
@@ -102,14 +102,14 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 // Skip remaining generic args
                 mut depth = 1
                 while depth > 0 && !p.is_at_end() {
-                    if p.check(TokenKind.Lt) { depth = depth + 1 }
-                    if p.check(TokenKind.Gt) { depth = depth - 1 }
+                    if p.check_id(78) { depth = depth + 1 }  // Lt
+                    if p.check_id(80) { depth = depth - 1 }  // Gt
                     if depth > 0 { p.advance() }
                 }
-                if p.check(TokenKind.Gt) { p.advance() }
+                if p.check_id(80) { p.advance() }  // Gt
             }
             // Check for nullable ?
-            if p.check(TokenKind.Question) {
+            if p.check_id(88) {  // Question
                 p.advance()
                 ftype_name = ftype_name + "?"
             }
@@ -124,10 +124,10 @@ fn parse_type_decl(p: Parser) -> Statement? {
             field_count = field_count + 1
 
             p.skip_newlines()
-            if p.check(TokenKind.Comma) { p.advance() }
+            if p.check_id(110) { p.advance() }  // Comma
             p.skip_newlines()
         }
-        p.expect(TokenKind.RBrace)
+        p.expect_id(103)  // RBrace
 
         // Register struct type — create LLVM type if codegen is active
         if CG_ACTIVE {

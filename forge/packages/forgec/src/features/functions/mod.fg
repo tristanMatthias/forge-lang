@@ -50,7 +50,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
 
     mut return_type_name = ""
     mut return_type: TypeExpr? = null
-    if p.check(TokenKind.Arrow) {
+    if p.check_id(86) {  // Arrow
         p.advance()
         // Capture return type name
         let ret_tok = p.peek()
@@ -130,7 +130,7 @@ fn parse_export(p: Parser) -> Statement? {
             // export trait — skip (trait is no-op for codegen)
             p.advance() // consume 'trait'
             p.expect_ident() // trait name
-            if p.check(TokenKind.LBrace) {
+            if p.check_id(102) {  // LBrace
                 p.parse_block() // skip body
             }
             PARSE_END_POS = p.pos
@@ -270,6 +270,7 @@ export fn store_fn_param_count(count: int) {
 
 export fn store_fn_param_name(name: string) {
     FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(name)
+    forge_param_name_add(name)
 }
 
 export fn store_fn_param_type(type_name: string) {
@@ -523,10 +524,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     // Define params
     mut pi = 0
     while pi < pc {
-        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
-        let param_val = llvm.get_param(fn_val, pi)
         let pt_idx = param_offset + pi
-        // Use C-side param type registry (immune to Forge list corruption)
+        // Use C-side param name/type registries (immune to Forge list corruption)
+        let pname = forge_param_name_get(pt_idx)
+        let param_val = llvm.get_param(fn_val, pi)
         let param_type_name = forge_param_type_get(pt_idx)
         let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
         mut p_ty = CG_I64
@@ -628,6 +629,20 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_PA_6 = null
     CG_PA_7 = null
     cg_reinit_types()
+
+    // Set self type for method desugaring (C-side, immune to global assignment bugs)
+    // Check if first param is "self" and set its type
+    if pc > 0 {
+        let first_pname = forge_param_name_get(param_offset)
+        let first_ptype = forge_param_type_get(param_offset)
+        if first_pname == "self" {
+            forge_set_self_type(first_ptype)
+        } else {
+            forge_set_self_type("")
+        }
+    } else {
+        forge_set_self_type("")
+    }
 
     // Pure AST parse then emit
     // Clear per-function list init tracking (prevents cross-function name collisions)

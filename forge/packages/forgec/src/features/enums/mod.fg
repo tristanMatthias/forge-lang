@@ -69,12 +69,12 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         return null
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(102) == null { return null }  // LBrace
     p.skip_newlines()
 
     mut tag = 0
     mut max_slots = 0
-    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+    while !p.check_id(103) && !p.is_at_end() {  // RBrace
         p.skip_newlines()
         let variant_name = p.expect_ident()
         if variant_name == "" { break }
@@ -85,13 +85,13 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         // Parse optional fields, track types, and count slots
         mut variant_slots = 0
         mut field_types_str = ""
-        if p.check(TokenKind.LParen) {
+        if p.check_id(100) {  // LParen
             p.advance()
-            while !p.check(TokenKind.RParen) && !p.is_at_end() {
+            while !p.check_id(101) && !p.is_at_end() {  // RParen
                 p.expect_ident()
                 mut field_slots = 1  // default: 1 slot (int, bool, ptr, etc.)
                 mut field_code = "i"
-                if p.check(TokenKind.Colon) {
+                if p.check_id(112) {  // Colon
                     p.advance()
                     // Check the type name BEFORE parse_type_expr consumes it
                     let type_text = p.peek().text
@@ -126,9 +126,9 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                 }
                 variant_slots = variant_slots + field_slots
                 field_types_str = field_types_str + field_code
-                if p.check(TokenKind.Comma) { p.advance() }
+                if p.check_id(110) { p.advance() }  // Comma
             }
-            p.expect(TokenKind.RParen)
+            p.expect_id(101)  // RParen
         }
         if variant_slots > max_slots { max_slots = variant_slots }
         // Register per-variant field type info
@@ -138,11 +138,11 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
         tag = tag + 1
         p.skip_newlines()
-        if p.check(TokenKind.Comma) { p.advance() }
+        if p.check_id(110) { p.advance() }  // Comma
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(103)  // RBrace
 
     CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
     // Enum declarations register tags + max field count.
@@ -164,15 +164,15 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
 
     // Optional fields: Variant(field1: Type, field2: Type)
     mut fields: List<EnumVariantField> = []
-    if p.check(.LParen) {
+    if p.check_id(100) {  // LParen
         p.advance()
         mut field_idx = 0
-        while !p.check(.RParen) && !p.is_at_end() {
+        while !p.check_id(101) && !p.is_at_end() {  // RParen
             p.skip_newlines()
             let field_name_or_type = p.expect_ident()
             if field_name_or_type == null { break }
 
-            if p.check(.Colon) {
+            if p.check_id(112) {  // Colon
                 p.advance()
                 let type_ann = p.parse_type_expr()
                 mut ann = TypeExpr.Named("unknown", start)
@@ -189,9 +189,9 @@ fn parse_enum_variant(p: Parser) -> EnumVariant? {
 
             field_idx = field_idx + 1
             p.skip_newlines()
-            if p.check(.Comma) { p.advance() }
+            if p.check_id(110) { p.advance() }  // Comma
         }
-        if p.expect(.RParen) == null { return null }
+        if p.expect_id(101) == null { return null }  // RParen
     }
 
     EnumVariant { name: name!, fields, span: start }

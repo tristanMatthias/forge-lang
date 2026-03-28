@@ -74,6 +74,8 @@ crate::runtime_fn! { name: "forge_ir_open", feature: "strings", params: [ForgeSt
 crate::runtime_fn! { name: "forge_ir_line", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_ir_close", feature: "strings", params: [], ret: Void }
 
+crate::runtime_fn! { name: "forge_alloc_stats", feature: "strings", params: [], ret: Void }
+
 // Parser watchdog
 crate::runtime_fn! { name: "forge_watchdog", feature: "strings", params: [I64, Ptr], ret: Void }
 crate::runtime_fn! { name: "forge_watchdog_reset", feature: "strings", params: [], ret: Void }
@@ -82,6 +84,15 @@ crate::runtime_fn! { name: "forge_watchdog_reset", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_param_type_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_get", feature: "strings", params: [I64], ret: ForgeString }
+
+// Param name registry
+crate::runtime_fn! { name: "forge_param_name_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_param_name_get", feature: "strings", params: [I64], ret: ForgeString }
+
+// Self type tracking for method desugaring
+crate::runtime_fn! { name: "forge_set_self_type", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_get_self_type", feature: "strings", params: [], ret: ForgeString }
 
 // Function name/return-type registry (immune to Forge list corruption)
 crate::runtime_fn! { name: "forge_fn_reg_clear", feature: "strings", params: [], ret: Void }
