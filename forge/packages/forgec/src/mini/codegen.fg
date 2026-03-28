@@ -944,9 +944,13 @@ fn gen_call(e: Expr) -> string {
                 }
                 if !already {
                     AUTO_DECLARED = AUTO_DECLARED.push(mangled)
-                    // Register in FN tables with i64 return (common for LLVM API)
+                    // Register in FN tables — LLVM API functions return ptr, others i64
                     FN_NAMES = FN_NAMES.push(mangled)
-                    FN_RETTYPES = FN_RETTYPES.push("i64")
+                    if mangled.substring(0, 10) == "forge_llvm" {
+                        FN_RETTYPES = FN_RETTYPES.push("ptr")
+                    } else {
+                        FN_RETTYPES = FN_RETTYPES.push("i64")
+                    }
                     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
                     FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
                 }
@@ -2862,6 +2866,15 @@ fn compile(source: string) -> string {
     FN_RETTYPES = FN_RETTYPES.push("void")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    // Alloca cache returns ptr (not i64!) — critical for correct Value* handling
+    FN_NAMES = FN_NAMES.push("forge_alloca_cache_get")
+    FN_RETTYPES = FN_RETTYPES.push("ptr")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_idx_cache_get")
+    FN_RETTYPES = FN_RETTYPES.push("ptr")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
     FN_NAMES = FN_NAMES.push("forge_get_self_type")
     FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
