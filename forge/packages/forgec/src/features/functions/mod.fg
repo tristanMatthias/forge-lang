@@ -675,6 +675,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             let stmt = body_parser.parse_statement()
             CG_ACTIVE = true
             cg_reinit_types()
+            forge_let_to_alloca_name()
             if stmt != null {
                 cg.emit_statement(stmt!)
             }

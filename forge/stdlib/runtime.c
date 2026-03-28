@@ -2116,13 +2116,17 @@ void forge_set_last_let_name(ForgeString name) {
         _last_let_name_len = name.len;
     }
 }
-// Copy last let name to pending alloca name (called before build_alloca)
+// Copy last let name to pending alloca name (called before build_alloca in define_var)
+static int _pending_is_define_var = 0;
 void forge_let_to_alloca_name(void) {
     if (_last_let_name_len > 0) {
         memcpy(forge_pending_alloca_name, _last_let_name, _last_let_name_len + 1);
         forge_pending_alloca_name_len = _last_let_name_len;
+        _pending_is_define_var = 1;  // flag: next build_alloca should use this name
     }
 }
+int forge_is_define_var_pending(void) { return _pending_is_define_var; }
+void forge_clear_define_var_pending(void) { _pending_is_define_var = 0; }
 
 // C-side pending alloca name setter (called from Forge define_var)
 void forge_set_alloca_name_c(ForgeString name) {

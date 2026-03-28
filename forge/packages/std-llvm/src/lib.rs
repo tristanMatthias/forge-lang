@@ -690,16 +690,23 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
                 cache_len = name_bytes.len() as i64;
             }
         }
-        // Fallback: use pending alloca name (set by forge_param_name_get or forge_set_alloca_name)
+        // Fallback: use pending alloca name (set by forge_param_name_get or forge_let_to_alloca_name)
+        // Only use if the define_var flag is set (prevents temps from consuming the name)
         if cache_len == 0 {
             extern "C" {
                 static mut forge_pending_alloca_name: [c_char; 64];
                 static mut forge_pending_alloca_name_len: i64;
+                fn forge_is_define_var_pending() -> c_int;
+                fn forge_clear_define_var_pending();
             }
             unsafe {
-                if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
-                    cache_name = forge_pending_alloca_name.as_ptr();
-                    cache_len = forge_pending_alloca_name_len;
+                let from_param = forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64;
+                let from_define = forge_is_define_var_pending() != 0;
+                if from_param || from_define {
+                    if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
+                        cache_name = forge_pending_alloca_name.as_ptr();
+                        cache_len = forge_pending_alloca_name_len;
+                    }
                 }
             }
         }
@@ -717,16 +724,17 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
                         }
                     }
                 }
-                // Clear Rust-side pending name
+                // Clear pending names
                 PENDING_ALLOCA_NAME = [0u8; 64];
-                // Clear C-side pending name
                 {
                     extern "C" {
                         static mut forge_pending_alloca_name: [c_char; 64];
                         static mut forge_pending_alloca_name_len: i64;
+                        fn forge_clear_define_var_pending();
                     }
                     forge_pending_alloca_name[0] = 0;
                     forge_pending_alloca_name_len = 0;
+                    forge_clear_define_var_pending();
                 }
             }
         }
