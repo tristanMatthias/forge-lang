@@ -2051,6 +2051,14 @@ static void _forge_capture_args(int argc, char** argv) {
 }
 
 // process.args() → List<string> (ForgeString elements)
+// Get a specific arg by index (avoids list indexing issues in codegen)
+ForgeString forge_selfhost_get_arg(int64_t idx) {
+    if (idx < 0 || idx >= _forge_argc || !_forge_argv) {
+        return forge_string_new("", 0);
+    }
+    return forge_string_new(_forge_argv[idx], strlen(_forge_argv[idx]));
+}
+
 ForgeList forge_selfhost_process_args(void) {
     if (_forge_argc == 0 || _forge_argv == NULL) {
         return (ForgeList){ .ptr = NULL, .len = 0 };

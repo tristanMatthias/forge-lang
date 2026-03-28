@@ -441,8 +441,8 @@ fn main() {
         process.exit(1)
     }
 
-    let command = args[1]
-    let input = args[2]
+    let command = forge_selfhost_get_arg(1)
+    let input = forge_selfhost_get_arg(2)
 
     // Reset CSV BEFORE any branching (avoids emit_assign-in-if bug)
     MODULE_PATHS_CSV = ""
@@ -458,7 +458,7 @@ fn main() {
         println("OK")
     } else if command == "build" {
         mut output = "a.out"
-        if args.length > 3 { output = args[3] }
+        if args.length > 3 { output = forge_selfhost_get_arg(3) }
         forge_mod_csv_clear()
         collect_module_paths(input)
         eprintln("M:csv_len=" + string(MODULE_PATHS_CSV.length))
