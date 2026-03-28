@@ -74,6 +74,10 @@ crate::runtime_fn! { name: "forge_ir_open", feature: "strings", params: [ForgeSt
 crate::runtime_fn! { name: "forge_ir_line", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_ir_close", feature: "strings", params: [], ret: Void }
 
+// Parser watchdog
+crate::runtime_fn! { name: "forge_watchdog", feature: "strings", params: [I64, Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_watchdog_reset", feature: "strings", params: [], ret: Void }
+
 // Param type registry
 crate::runtime_fn! { name: "forge_param_type_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }

@@ -146,6 +146,36 @@ void* forge_alloc(int64_t size) {
     return malloc(size);
 }
 
+// ---- Parser watchdog: detects infinite loops ----
+static int64_t _wd_pos = -1;
+static int64_t _wd_count = 0;
+static int64_t _wd_total = 0;
+static const char* _wd_last_fn = "";
+
+void forge_watchdog(int64_t pos, const char* fn_name) {
+    _wd_total++;
+    if (pos == _wd_pos) {
+        _wd_count++;
+        if (_wd_count == 5000) {
+            fprintf(stderr, "\n!!! PARSER LOOP DETECTED at pos=%lld fn=%s (after %lld total calls) !!!\n",
+                (long long)pos, fn_name ? fn_name : "?", (long long)_wd_total);
+            fflush(stderr);
+            // Print stack trace and abort
+            abort();
+        }
+    } else {
+        _wd_pos = pos;
+        _wd_count = 0;
+    }
+    // Progress every 10000 calls
+    if (_wd_total % 10000 == 0) {
+        fprintf(stderr, "  [wd] %lld calls, pos=%lld\n", (long long)_wd_total, (long long)pos);
+        fflush(stderr);
+    }
+}
+
+void forge_watchdog_reset(void) { _wd_pos = -1; _wd_count = 0; _wd_total = 0; }
+
 // ---- Deep-copy helpers for bootstrap workaround ----
 // The bootstrap compiler's codegen corrupts stack locals across extern
 // function calls. These functions box values on the heap so they survive.
@@ -2067,9 +2097,16 @@ int64_t forge_scan_csv(ForgeString csv) {
             line_start = pos + 1;
         }
     }
-    // Phase 2: call callback for each path (C controls the loop — no Forge stack corruption)
+    // Phase 2: call callback for each path
+    fprintf(stderr, "  [CSV] %d paths to process\n", _scan_path_count);
+    fflush(stderr);
     for (int i = 0; i < _scan_path_count; i++) {
+        fprintf(stderr, "  [CSV] %d/%d: %.*s\n", i, _scan_path_count,
+            (int)_scan_paths[i].len, _scan_paths[i].ptr);
+        fflush(stderr);
         _scan_cb(_scan_paths[i], (int64_t)i);
+        fprintf(stderr, "  [CSV] %d done\n", i);
+        fflush(stderr);
     }
     return _scan_path_count;
 }
