@@ -17,7 +17,7 @@ use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
-use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup}
+use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup, CG_ACTIVE}
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source, materialize_struct_types}
 
@@ -60,13 +60,13 @@ fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
     eprintln("  lexer created, len=" + string(source.length))
     eprintln("  tokenizing...")
-    let tokens = Lexer_tokenize(lex)
+    let tokens = lex.tokenize()
     eprintln("  " + string(tokens.length) + " tokens")
 
     eprintln("  parsing...")
     mut p = parser_new_with_source(tokens, source)
     eprintln("  parser created, parsing program...")
-    let program = Parser_parse_program(p)
+    let program = p.parse_program()
     eprintln("  parsed!")
     eprintln("OK")
     return true
@@ -78,7 +78,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut p = parser_new_with_source(tokens, source)
-    let program = Parser_parse_program(p)
+    let program = p.parse_program()
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -88,7 +88,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut tc = type_checker_new()
-    TypeChecker_check_program(tc, program)
+    tc.check_program(program)
 
     if tc.diagnostics.has_errors {
         let err_output = render_all(tc.diagnostics, source, filename)
@@ -262,7 +262,7 @@ fn resolve_module_paths(filepath: string) -> List<string> {
     while i < MODULE_PATHS_CSV.length {
         if MODULE_PATHS_CSV[i] == "\n" {
             if i > start {
-                paths = forge_list_push_str(paths, forge_string_substring(MODULE_PATHS_CSV, start, i))
+                paths = paths.push(forge_string_substring(MODULE_PATHS_CSV, start, i))
             }
             start = i + 1
         }
@@ -275,16 +275,17 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
+    CG_ACTIVE = false
     eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
     eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
     eprintln("  [scan] " + string(idx) + " lexer created")
-    let tokens = Lexer_tokenize(lex)
+    let tokens = lex.tokenize()
     eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
-    Parser_parse_program(p)
+    p.parse_program()
     eprintln("  [scan] " + string(idx) + " parsed OK")
 }
 
@@ -298,24 +299,10 @@ fn declare_llvm_api() {
     llvm.add_function(CG_MOD, "forge_sh_length", make_fn_type_1(CG_I64, CG_STR))
 }
 
-// Iterative CSV scanner — no recursion, no index_of, just position tracking
+// Entirely C-side scan loop (Forge stack corruption makes any Forge loop fail)
 fn scan_csv(csv: string, start_idx: int) -> int {
-    let csv_len = csv.length
-    mut idx = start_idx
-    mut line_start = 0
-    mut pos = 0
-    while pos < csv_len {
-        if forge_string_byte_at(csv, pos) == 10 {
-            if pos > line_start {
-                let filepath = forge_string_substring(csv, line_start, pos)
-                scan_one_file(filepath, idx)
-                idx = idx + 1
-            }
-            line_start = pos + 1
-        }
-        pos = pos + 1
-    }
-    return idx
+    forge_scan_csv_set_cb(scan_one_file)
+    return forge_scan_csv(csv)
 }
 
 fn build_compile_separate(paths_csv: string, output: string) {
@@ -329,18 +316,9 @@ fn build_compile_separate(paths_csv: string, output: string) {
         csv = forge_mod_csv_get()
         eprintln("  using C-side CSV: " + string(csv.length) + " bytes")
     }
-    // Save CSV to C heap, iterate with C-side state (all immune to Forge stack corruption)
-    forge_save_csv(csv)
-    forge_csv_scan_reset()
-    while forge_csv_has_next() == 1 {
-        let filepath = forge_csv_next()
-        if filepath.length > 0 {
-            let idx = forge_csv_scan_idx()
-            scan_one_file(filepath, idx)
-        }
-    }
-    let scan_count = forge_csv_scan_idx() + 1
-    eprintln("scanned " + string(scan_count) + " files, " + string(FN_NAMES.length) + " fns")
+    // Use recursive scan (works with Rust-compiled bootstrap)
+    let file_count = scan_csv(csv, 0)
+    eprintln("scanned " + string(file_count) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     if csv.length != paths_csv.length {
@@ -396,10 +374,10 @@ fn build_compile_single(input_file: string, output: string) {
     let source = fs.read(input_file)
     eprintln("BC: read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = Lexer_tokenize(lex)
+    let tokens = lex.tokenize()
     eprintln("BC: " + string(tokens.length) + " tokens")
     mut p = parser_new_with_source(tokens, source)
-    Parser_parse_program(p)
+    p.parse_program()
     eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
@@ -442,10 +420,10 @@ fn build_compile_single(input_file: string, output: string) {
     // Phase 4: Link all .o files
     mut link_args: List<string> = ["-o", output]
     for obj in obj_files {
-        link_args = forge_list_push_str(link_args, obj)
+        link_args = link_args.push(obj)
     }
-    link_args = forge_list_push_str(link_args, runtime_obj)
-    link_args = forge_list_push_str(link_args, "-lm")
+    link_args = link_args.push(runtime_obj)
+    link_args = link_args.push("-lm")
     let link_result = process.run("cc", link_args)
 
     println("compiled: ${output}")

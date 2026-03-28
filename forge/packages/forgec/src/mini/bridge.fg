@@ -1,0 +1,73 @@
+// ═══════════════════════════════════════════════════════════════════
+// BRIDGE — connects target feature methods to mini/'s global engine
+//
+// Target features call: p.advance(), tc.check_block(), cg.emit_expr()
+// Method resolution maps: p.advance() → Parser_advance(p)
+// These bridge functions delegate to mini/'s global functions.
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Parser methods ─────────────────────────────
+
+fn Parser_check(p: Parser, text: string) -> bool {
+    check(text)
+}
+
+fn Parser_advance(p: Parser) -> Tok {
+    advance()
+}
+
+fn Parser_peek(p: Parser) -> Tok {
+    peek()
+}
+
+fn Parser_expect(p: Parser, text: string) {
+    expect(text)
+}
+
+fn Parser_expect_ident(p: Parser) -> string {
+    advance().text
+}
+
+fn Parser_skip_newlines(p: Parser) {
+    skip_nl()
+}
+
+fn Parser_is_at_end(p: Parser) -> bool {
+    POS >= TOKENS.length
+}
+
+fn Parser_parse_block(p: Parser) -> List<Stmt> {
+    ast_parse_block()
+}
+
+fn Parser_parse_expr(p: Parser) -> Expr {
+    ast_parse_expr()
+}
+
+// ─── TypeChecker methods ────────────────────────
+
+fn TypeChecker_check_block(tc: TypeChecker, block: List<Stmt>) -> string {
+    "void"
+}
+
+fn TypeChecker_infer_expr(tc: TypeChecker, expr: Expr) -> string {
+    "int"
+}
+
+fn TypeChecker_resolve_type_expr(tc: TypeChecker, name: string) -> string {
+    type_to_llvm(name)
+}
+
+// ─── Codegen methods ────────────────────────────
+
+fn Codegen_emit_expr(cg: Codegen, expr: Expr) -> string {
+    gen_expr(expr)
+}
+
+fn Codegen_emit_block(cg: Codegen, stmts: List<Stmt>) {
+    gen_block(stmts)
+}
+
+fn Codegen_define_var(cg: Codegen, name: string, alloca: string, ty: string) {
+    push_var(name, alloca, ty)
+}

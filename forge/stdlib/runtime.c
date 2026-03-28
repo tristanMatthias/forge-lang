@@ -2069,8 +2069,10 @@ int64_t forge_scan_csv(ForgeString csv) {
             line_start = pos + 1;
         }
     }
-    // Don't call the callback here — let Forge iterate the paths
-    // (calling via C function pointer corrupts the ABI for struct args)
+    // Phase 2: call callback for each path (C controls the loop — no Forge stack corruption)
+    for (int i = 0; i < _scan_path_count; i++) {
+        _scan_cb(_scan_paths[i], (int64_t)i);
+    }
     return _scan_path_count;
 }
 
@@ -2232,10 +2234,20 @@ int64_t forge_fn_store_count(void) { return _fn_store_count; }
 
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
-    // Delegate to efficient forge_list_push (amortized O(1))
-    ForgeList fl = { .ptr = list.ptr, .len = list.len };
-    ForgeList result_list = forge_list_push(fl, &item, sizeof(ForgeString));
-    return (ForgeString){ .ptr = result_list.ptr, .len = result_list.len };
+    // Amortized O(1) push with realloc — no memory leak
+    int64_t old_count = list.len;
+    int64_t elem_size = sizeof(ForgeString);
+    ForgeString* data = (ForgeString*)list.ptr;
+
+    // Use realloc for in-place growth when possible
+    data = (ForgeString*)realloc(data, (old_count + 1) * elem_size);
+    if (!data) {
+        // realloc failed — allocate fresh
+        data = (ForgeString*)malloc((old_count + 1) * elem_size);
+        if (list.ptr && old_count > 0) memcpy(data, list.ptr, old_count * elem_size);
+    }
+    data[old_count] = item;
+    return (ForgeString){ .ptr = (char*)data, .len = old_count + 1 };
 }
 
 // Debug: write ForgeString to file, print debug info

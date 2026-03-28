@@ -1,8 +1,8 @@
 // ─── Core Module ───────────────────────────────
 // Re-exports all core types for the compiler.
 
+mod types
 mod token
 mod ast
-mod types
 mod error
 mod registry
