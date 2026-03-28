@@ -49,6 +49,11 @@ def fix_function(fn_lines):
     # Fix pass: iterate through lines, track what's been defined
     result = []
     seen = set()
+    # Pre-populate with function parameters (they're defined in the signature, not via %N =)
+    fn_m = re.match(r'define .+ @\w+\((.*?)\)', fn_lines[0])
+    if fn_m:
+        for pm in re.finditer(r'%(\d+)', fn_m.group(1)):
+            seen.add(int(pm.group(1)))
     # Track most recent store target for each alloca type
     last_stored_alloca = {}  # alloca_type -> reg_num (most recently stored to)
 

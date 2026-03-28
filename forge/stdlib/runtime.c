@@ -2785,7 +2785,6 @@ void* forge_alloca_cache_get(ForgeString name) {
     }
     _ac_miss_count++;
     if (_ac_miss_count <= 5 && name.ptr && name.len > 0 && name.len < 30) {
-        fprintf(stderr, "  [miss] '%.*s' pending='%s' last_let='%s'\n", (int)name.len, (char*)name.ptr, forge_pending_alloca_name, _last_let_name);
     }
     return NULL;
 }
