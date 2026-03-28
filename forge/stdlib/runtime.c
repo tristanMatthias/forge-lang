@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <execinfo.h>
 #include <setjmp.h>
+#include <sys/mman.h>
 
 // Forward declarations for debug tooling
 void forge_stack_init(void);
@@ -142,9 +143,27 @@ void forge_rc_release(void* ptr) {
     }
 }
 
+// Arena allocator — bump pointer, never frees (compiler is short-lived)
+#define ARENA_SIZE (8LL * 1024 * 1024 * 1024)  // 1GB arena
+static char* _arena = NULL;
+static int64_t _arena_pos = 0;
+
 void* forge_alloc(int64_t size) {
-    return malloc(size);
+    // Align to 16 bytes
+    size = (size + 15) & ~15;
+    if (!_arena) {
+        _arena = (char*)mmap(NULL, ARENA_SIZE, PROT_READ | PROT_WRITE,
+                             MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (_arena == MAP_FAILED) { _arena = NULL; return malloc(size); }
+    }
+    if (_arena_pos + size > ARENA_SIZE) {
+        return malloc(size); // fallback
+    }
+    void* ptr = _arena + _arena_pos;
+    _arena_pos += size;
+    return ptr;
 }
+int64_t forge_arena_used(void) { return _arena_pos; }
 
 // ---- Parser watchdog: detects infinite loops ----
 static int64_t _wd_pos = -1;
@@ -2097,17 +2116,23 @@ int64_t forge_scan_csv(ForgeString csv) {
             line_start = pos + 1;
         }
     }
-    // Phase 2: call callback
-    // IMPORTANT: forge_scan_csv may be called RECURSIVELY (scan_one_file → parse →
-    // feature dispatch → ...). Save/restore path count to handle reentrancy.
-    int saved_count = _scan_path_count;
-    ForgeString saved_paths[MAX_SCAN_FILES];
-    memcpy(saved_paths, _scan_paths, saved_count * sizeof(ForgeString));
-
-    for (int i = 0; i < saved_count; i++) {
-        _scan_cb(saved_paths[i], (int64_t)i);
+    // Phase 2: call callback for each path
+    // Use explicit index tracking to survive any stack corruption
+    int total = _scan_path_count;
+    int idx = 0;
+next_file:
+    if (idx >= total) return total;
+    {
+        ForgeString path = _scan_paths[idx];
+        int64_t cur_idx = idx;
+        idx++;
+        fprintf(stderr, "  [CSV] %d/%d: %.*s\n", (int)cur_idx, total, (int)path.len, path.ptr);
+        fflush(stderr);
+        _scan_cb(path, cur_idx);
+        fprintf(stderr, "  [CSV] %d done\n", (int)cur_idx);
+        fflush(stderr);
     }
-    return saved_count;
+    goto next_file;
 }
 
 // Save CSV string in C-side static storage so it survives stack corruption

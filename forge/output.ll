@@ -2746,7 +2746,6 @@ declare i64 @forge_string_compare(%ForgeString, %ForgeString)
 declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)
 
 declare i64 @forge_string_index_of(%ForgeString, %ForgeString)
-declare i64 @forge_string_byte_at(%ForgeString, i64)
 
 declare ptr @forge_alloc(i64)
 
@@ -2947,7 +2946,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %3, label %4
 
 3:                                                ; preds = %1
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 4:                                                ; preds = %1
   br label %5
@@ -2956,7 +2955,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %6, label %7
 
 6:                                                ; preds = %5
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 7:                                                ; preds = %5
   br label %8
@@ -2965,7 +2964,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %9, label %10
 
 9:                                                ; preds = %8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 10:                                               ; preds = %8
   br label %11
@@ -2974,7 +2973,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %12, label %13
 
 12:                                               ; preds = %11
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 13:                                               ; preds = %11
   br label %14
@@ -2983,7 +2982,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %15, label %16
 
 15:                                               ; preds = %14
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 16:                                               ; preds = %14
   br label %17
@@ -2992,7 +2991,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %18, label %19
 
 18:                                               ; preds = %17
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 19:                                               ; preds = %17
   br label %20
@@ -3001,7 +3000,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %21, label %22
 
 21:                                               ; preds = %20
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 22:                                               ; preds = %20
   br label %23
@@ -3010,7 +3009,7 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %24, label %25
 
 24:                                               ; preds = %23
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 25:                                               ; preds = %23
   br label %26
@@ -3019,13 +3018,13 @@ define %ForgeString @type_to_string(%Type %0) {
   br i1 false, label %27, label %28
 
 27:                                               ; preds = %26
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 28:                                               ; preds = %26
   br label %29
 
 29:                                               ; preds = %28
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %Span @span_new(i64 %0, i64 %1, i64 %2, i64 %3) {
@@ -4523,7 +4522,7 @@ define %ForgeString @severity_to_string(i64 %0) {
   br i1 %6, label %8, label %9
 
 7:                                                ; preds = %15, %14, %11, %8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 8:                                                ; preds = %1
   br label %7
@@ -4631,7 +4630,7 @@ define %ForgeString @render_diagnostic(%Diagnostic %0, %ForgeString %1, %ForgeSt
 
 66:                                               ; preds = %65, %56
   %67 = load %Diagnostic, ptr %23, align 8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @render_all(%DiagnosticBag %0, %ForgeString %1, %ForgeString %2) {
@@ -4675,7 +4674,7 @@ define %ForgeString @render_all(%DiagnosticBag %0, %ForgeString %1, %ForgeString
 
 27:                                               ; preds = %14
   %28 = load %ForgeString, ptr %7, align 8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 29:                                               ; preds = %17
   %30 = load %ForgeString, ptr %7, align 8
@@ -4840,9 +4839,9 @@ define %Lexer @lexer_with_offset(%ForgeString %0, i64 %1, i64 %2, i64 %3) {
 define %ForgeString @string_to_chars(%ForgeString %0) {
   %2 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %2, align 8
-  %3 = load %ForgeString, ptr %2, align 4
-  %4 = call i64 @forge_string_length(%ForgeString %3)
-  %5 = alloca i64, align 8
+  %3 = load %Severity, ptr %2, align 4
+  %4 = call i64 @forge_string_length(%Severity %3)
+  %5 = alloca %Severity, align 8
   store i64 %4, ptr %5, align 4
   %6 = alloca i64, align 8
   store double 5.434720e-323, ptr %6, align 8
@@ -4867,7 +4866,7 @@ define %ForgeString @string_to_chars(%ForgeString %0) {
 
 17:                                               ; preds = %8
   %18 = load i64, ptr %6, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define i64 @is_alpha(%ForgeString %0) {
@@ -5050,7 +5049,7 @@ define %ForgeString @Lexer__peek(%Lexer %0) {
   br label %15
 
 15:                                               ; preds = %14, %6
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Lexer__peek_ch(%Lexer %0) {
@@ -5075,7 +5074,7 @@ define %ForgeString @Lexer__peek_ch(%Lexer %0) {
   br label %15
 
 15:                                               ; preds = %14
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Lexer__peek_at(%Lexer %0, i64 %1) {
@@ -5106,7 +5105,7 @@ define %ForgeString @Lexer__peek_at(%Lexer %0, i64 %1) {
   br label %20
 
 20:                                               ; preds = %19, %12
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Lexer__peek_ch_at(%Lexer %0, i64 %1) {
@@ -5137,7 +5136,7 @@ define %ForgeString @Lexer__peek_ch_at(%Lexer %0, i64 %1) {
   br label %20
 
 20:                                               ; preds = %19
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Lexer__advance(%Lexer %0) {
@@ -5149,7 +5148,7 @@ define %ForgeString @Lexer__advance(%Lexer %0) {
   br i1 %5, label %6, label %7
 
 6:                                                ; preds = %1
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 7:                                                ; preds = %1
   br label %8
@@ -5194,7 +5193,7 @@ define %ForgeString @Lexer__advance(%Lexer %0) {
 
 35:                                               ; preds = %30, %24
   %36 = load %Lexer, ptr %16, align 8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %Span @Lexer__make_span(%Lexer %0, i64 %1, i64 %2, i64 %3) {
@@ -5510,7 +5509,7 @@ define %ForgeString @Lexer__tokenize(%Lexer %0) {
   %9 = load i64, ptr %3, align 4
   store i64 0, ptr %3, align 4
   %10 = load i64, ptr %3, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %Token @Lexer__next_token(%Lexer %0) {
@@ -6553,7 +6552,7 @@ define %ForgeString @Lexer__capture_interpolation_expr(%Lexer %0) {
 
 13:                                               ; preds = %5
   %14 = load %ForgeString, ptr %4, align 8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 15:                                               ; preds = %8
   %16 = load i64, ptr %3, align 4
@@ -8107,7 +8106,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %14, label %18, label %21
 
 15:                                               ; preds = %8
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 16:                                               ; preds = %8
   br label %17
@@ -8129,7 +8128,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %24, label %28, label %31
 
 25:                                               ; preds = %18
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 26:                                               ; preds = %18
   br label %27
@@ -8151,7 +8150,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %34, label %38, label %41
 
 35:                                               ; preds = %28
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 36:                                               ; preds = %28
   br label %37
@@ -8173,7 +8172,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %44, label %53, label %56
 
 45:                                               ; preds = %38
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 46:                                               ; preds = %38
   br label %47
@@ -8184,7 +8183,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %49, label %50, label %51
 
 50:                                               ; preds = %47
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 51:                                               ; preds = %47
   br label %52
@@ -8206,7 +8205,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %59, label %78, label %81
 
 60:                                               ; preds = %53
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 61:                                               ; preds = %53
   br label %62
@@ -8217,7 +8216,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %64, label %65, label %66
 
 65:                                               ; preds = %62
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 66:                                               ; preds = %62
   br label %67
@@ -8228,7 +8227,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %69, label %70, label %71
 
 70:                                               ; preds = %67
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 71:                                               ; preds = %67
   br label %72
@@ -8239,7 +8238,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %74, label %75, label %76
 
 75:                                               ; preds = %72
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 76:                                               ; preds = %72
   br label %77
@@ -8261,7 +8260,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %84, label %88, label %91
 
 85:                                               ; preds = %78
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 86:                                               ; preds = %78
   br label %87
@@ -8283,7 +8282,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %94, label %98, label %101
 
 95:                                               ; preds = %88
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 96:                                               ; preds = %88
   br label %97
@@ -8305,7 +8304,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %104, label %108, label %111
 
 105:                                              ; preds = %98
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 106:                                              ; preds = %98
   br label %107
@@ -8327,7 +8326,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %114, label %123, label %126
 
 115:                                              ; preds = %108
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 116:                                              ; preds = %108
   br label %117
@@ -8338,7 +8337,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %119, label %120, label %121
 
 120:                                              ; preds = %117
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 121:                                              ; preds = %117
   br label %122
@@ -8360,7 +8359,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %129, label %138, label %141
 
 130:                                              ; preds = %123
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 131:                                              ; preds = %123
   br label %132
@@ -8371,7 +8370,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %134, label %135, label %136
 
 135:                                              ; preds = %132
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 136:                                              ; preds = %132
   br label %137
@@ -8388,10 +8387,10 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br label %142
 
 142:                                              ; preds = %141, %155
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 143:                                              ; preds = %138
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 144:                                              ; preds = %138
   br label %145
@@ -8402,7 +8401,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %147, label %148, label %149
 
 148:                                              ; preds = %145
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 149:                                              ; preds = %145
   br label %150
@@ -8413,7 +8412,7 @@ define %ForgeString @Parser__token_to_binop_key(%Parser %0, i64 %1) {
   br i1 %152, label %153, label %154
 
 153:                                              ; preds = %150
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 154:                                              ; preds = %150
   br label %155
@@ -11525,7 +11524,7 @@ define %ForgeString @Parser__parse_call_args(%Parser %0) {
 
 8:                                                ; preds = %4
   %9 = load i64, ptr %3, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 10:                                               ; preds = %5
   %11 = load i64, ptr %3, align 4
@@ -14199,7 +14198,7 @@ define %ForgeString @var_struct_type_for_expr(%Expr %0) {
   %2 = alloca %Expr, align 8
   store %Expr %0, ptr %2, align 4
   %3 = load i64, ptr @LAST_IDENT_NAME, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @get_struct_field_type(%ForgeString %0, i64 %1) {
@@ -14228,7 +14227,7 @@ define %ForgeString @get_struct_field_type(%ForgeString %0, i64 %1) {
   br i1 %17, label %19, label %24
 
 18:                                               ; preds = %6
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 19:                                               ; preds = %11
   %20 = load i64, ptr %5, align 4
@@ -14248,7 +14247,7 @@ define %ForgeString @get_struct_field_type(%ForgeString %0, i64 %1) {
   br label %6
 
 29:                                               ; preds = %19
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 30:                                               ; preds = %19
   br label %31
@@ -14336,7 +14335,7 @@ define %ForgeString @get_struct_field_type(%ForgeString %0, i64 %1) {
   br label %80
 
 80:                                               ; preds = %79
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define i64 @is_struct_field_str(%ForgeString %0, i64 %1) {
@@ -16720,7 +16719,7 @@ define %ForgeString @csv_var_enum_type(%ForgeString %0) {
   br label %23
 
 22:                                               ; preds = %14
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 23:                                               ; preds = %44, %19
   %24 = load i64, ptr %21, align 4
@@ -17557,7 +17556,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 false, label %7, label %8
 
 7:                                                ; preds = %6
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 8:                                                ; preds = %6
   br label %9
@@ -17566,7 +17565,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 false, label %10, label %11
 
 10:                                               ; preds = %9
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 11:                                               ; preds = %9
   br label %12
@@ -17575,7 +17574,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 false, label %13, label %14
 
 13:                                               ; preds = %12
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 14:                                               ; preds = %12
   br label %15
@@ -17589,7 +17588,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %19, label %20, label %21
 
 20:                                               ; preds = %15
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 21:                                               ; preds = %15
   br label %22
@@ -17601,7 +17600,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %25, label %26, label %27
 
 26:                                               ; preds = %22
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 27:                                               ; preds = %22
   br label %28
@@ -17613,7 +17612,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %31, label %32, label %33
 
 32:                                               ; preds = %28
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 33:                                               ; preds = %28
   br label %34
@@ -17625,7 +17624,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %37, label %38, label %39
 
 38:                                               ; preds = %34
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 39:                                               ; preds = %34
   br label %40
@@ -17637,7 +17636,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %43, label %44, label %45
 
 44:                                               ; preds = %40
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 45:                                               ; preds = %40
   br label %46
@@ -17649,7 +17648,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %49, label %50, label %51
 
 50:                                               ; preds = %46
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 51:                                               ; preds = %46
   br label %52
@@ -17661,7 +17660,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %55, label %56, label %57
 
 56:                                               ; preds = %52
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 57:                                               ; preds = %52
   br label %58
@@ -17673,7 +17672,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %61, label %62, label %63
 
 62:                                               ; preds = %58
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 63:                                               ; preds = %58
   br label %64
@@ -17685,7 +17684,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %67, label %68, label %69
 
 68:                                               ; preds = %64
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 69:                                               ; preds = %64
   br label %70
@@ -17697,7 +17696,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %73, label %74, label %75
 
 74:                                               ; preds = %70
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 75:                                               ; preds = %70
   br label %76
@@ -17709,7 +17708,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %79, label %80, label %81
 
 80:                                               ; preds = %76
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 81:                                               ; preds = %76
   br label %82
@@ -17721,7 +17720,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %85, label %86, label %87
 
 86:                                               ; preds = %82
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 87:                                               ; preds = %82
   br label %88
@@ -17733,7 +17732,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %91, label %92, label %93
 
 92:                                               ; preds = %88
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 93:                                               ; preds = %88
   br label %94
@@ -17745,7 +17744,7 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %97, label %98, label %99
 
 98:                                               ; preds = %94
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 99:                                               ; preds = %94
   br label %100
@@ -17757,13 +17756,13 @@ define %ForgeString @Parser__expect_ident(%Parser %0) {
   br i1 %103, label %104, label %105
 
 104:                                              ; preds = %100
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 105:                                              ; preds = %100
   br label %106
 
 106:                                              ; preds = %105
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define i64 @Parser__skip_newlines(%Parser %0) {
@@ -19334,7 +19333,7 @@ define %ForgeString @Parser__parse_type_args(%Parser %0) {
   br i1 false, label %3, label %4
 
 3:                                                ; preds = %1
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 4:                                                ; preds = %1
   br label %5
@@ -19384,10 +19383,10 @@ define %ForgeString @Parser__parse_type_args(%Parser %0) {
 
 21:                                               ; preds = %25, %19
   %22 = load i64, ptr %6, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 23:                                               ; preds = %20
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 24:                                               ; preds = %20
   br label %25
@@ -19717,7 +19716,7 @@ define %ForgeString @Parser__parse_params(%Parser %0) {
 
 9:                                                ; preds = %5
   %10 = load i64, ptr %4, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 11:                                               ; preds = %6
   %12 = load i64, ptr %4, align 4
@@ -19843,7 +19842,7 @@ define %ForgeString @Parser__parse_type_params(%Parser %0) {
   br i1 true, label %3, label %4
 
 3:                                                ; preds = %1
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 4:                                                ; preds = %1
   br label %5
@@ -19897,7 +19896,7 @@ define %ForgeString @Parser__parse_type_params(%Parser %0) {
 
 25:                                               ; preds = %24
   %26 = load i64, ptr %6, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Parser__parse_delimited(%Parser %0, %TokenKind %1) {
@@ -19920,7 +19919,7 @@ define %ForgeString @Parser__parse_delimited(%Parser %0, %TokenKind %1) {
 
 10:                                               ; preds = %6
   %11 = load i64, ptr %5, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 12:                                               ; preds = %7
   %13 = load i64, ptr %5, align 4
@@ -19948,7 +19947,7 @@ define %ForgeString @Parser__token_kind_key(%Parser %0, %TokenKind %1) {
   store %Parser %0, ptr %3, align 8
   %4 = alloca %TokenKind, align 8
   store %TokenKind %1, ptr %4, align 4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %ForgeString @Parser__kind_to_key(%Parser %0, %TokenKind %1) {
@@ -19963,7 +19962,7 @@ define %ForgeString @Parser__kind_to_key(%Parser %0, %TokenKind %1) {
   br i1 %8, label %10, label %11
 
 9:                                                ; preds = %266, %265, %262, %259, %256, %253, %250, %247, %244, %241, %238, %235, %232, %229, %226, %223, %220, %217, %214, %211, %208, %205, %202, %199, %196, %193, %190, %187, %184, %181, %178, %175, %172, %169, %166, %163, %160, %157, %154, %151, %148, %145, %142, %139, %136, %133, %130, %127, %124, %121, %118, %115, %112, %109, %106, %103, %100, %97, %94, %91, %88, %85, %82, %79, %76, %73, %70, %67, %64, %61, %58, %55, %52, %49, %46, %43, %40, %37, %34, %31, %28, %25, %22, %19, %16, %13, %10
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 10:                                               ; preds = %2
   br label %9
@@ -23335,7 +23334,7 @@ define %ForgeString @list_elem_type(%ForgeString %0) {
   br label %24
 
 23:                                               ; preds = %15
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 24:                                               ; preds = %44, %20
   %25 = load i64, ptr %22, align 4
@@ -23929,7 +23928,7 @@ define %ForgeString @lookup_fn_return_type(%ForgeString %0) {
   br i1 %15, label %17, label %22
 
 16:                                               ; preds = %4
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 17:                                               ; preds = %9
   %18 = load i64, ptr %3, align 4
@@ -23958,7 +23957,7 @@ define %ForgeString @lookup_fn_return_type(%ForgeString %0) {
   br label %32
 
 32:                                               ; preds = %31
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define i64 @cg_enum_max_fields(%ForgeString %0) {
@@ -24156,7 +24155,7 @@ define %ForgeString @cg_var_enum_type(%ForgeString %0) {
   br label %23
 
 22:                                               ; preds = %14
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 23:                                               ; preds = %44, %19
   %24 = load i64, ptr %21, align 4
@@ -24295,7 +24294,7 @@ define %ForgeString @cg_enum_variant_field_types(%ForgeString %0, %ForgeString %
   br label %28
 
 27:                                               ; preds = %19
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 28:                                               ; preds = %49, %24
   %29 = load i64, ptr %26, align 4
@@ -24729,7 +24728,7 @@ define %ForgeString @nullable_var_inner_type(%ForgeString %0) {
   br i1 %16, label %18, label %22
 
 17:                                               ; preds = %7
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 18:                                               ; preds = %10
   %19 = load i64, ptr @CG_NULLABLE_VAR_INNER, align 4
@@ -25315,7 +25314,7 @@ define %ForgeString @var_struct_type(%ForgeString %0) {
   br i1 %33, label %35, label %39
 
 34:                                               ; preds = %24
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 35:                                               ; preds = %27
   %36 = load i64, ptr @CG_STRUCT_VAR_TYPES, align 4
@@ -33217,7 +33216,7 @@ define %ForgeString @Codegen__lookup_variant_field_types(%Codegen %0, %ForgeStri
   br i1 %7, label %8, label %9
 
 8:                                                ; preds = %2
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 9:                                                ; preds = %2
   br label %10
@@ -33260,7 +33259,7 @@ define %ForgeString @Codegen__lookup_variant_field_types(%Codegen %0, %ForgeStri
   br i1 %32, label %33, label %34
 
 33:                                               ; preds = %23
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 34:                                               ; preds = %23
   br label %35
@@ -33313,7 +33312,7 @@ define %ForgeString @Codegen__lookup_list_elem_type(%Codegen %0, %ForgeString %1
   br i1 %12, label %13, label %14
 
 13:                                               ; preds = %2
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 14:                                               ; preds = %2
   br label %15
@@ -41293,7 +41292,7 @@ define %ForgeString @get_list_lit(i64 %0) {
   br label %11
 
 11:                                               ; preds = %10, %6
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 }
 
 define %MapLitData @get_map_lit(i64 %0) {
@@ -42776,82 +42775,133 @@ define i64 @dispatch_emit_expr(%Codegen %0, %NodeRef %1) {
 }
 
 define i64 @find_byte(%ForgeString %0, i64 %1) {
-  %s = alloca %ForgeString, align 8
-  store %ForgeString %0, ptr %s, align 8
-  %bv = alloca i64, align 8
-  store i64 %1, ptr %bv, align 4
-  %sval = load %ForgeString, ptr %s, align 8
-  %len = call i64 @forge_string_length(%ForgeString %sval)
-  %target = load i64, ptr %bv, align 4
-  br label %loop
-loop:
-  %i = phi i64 [ 0, %2 ], [ %i_next, %no_match ]
-  %done = icmp sge i64 %i, %len
-  br i1 %done, label %ret_neg, label %check
-check:
-  %sv = load %ForgeString, ptr %s, align 8
-  %b = call i64 @forge_string_byte_at(%ForgeString %sv, i64 %i)
-  %eq = icmp eq i64 %b, %target
-  br i1 %eq, label %found, label %no_match
-found:
-  ret i64 %i
-no_match:
-  %i_next = add i64 %i, 1
-  br label %loop
-ret_neg:
+  %3 = alloca %ForgeString, align 8
+  store %ForgeString %0, ptr %3, align 8
+  %4 = alloca i64, align 8
+  store i64 %1, ptr %4, align 4
+  %5 = load %Severity, ptr %3, align 4
+  %6 = call i64 @forge_string_length(%Severity %5)
+  %7 = alloca %Severity, align 8
+  store i64 %6, ptr %7, align 4
+  %8 = alloca i64, align 8
+  store i64 0, ptr %8, align 4
+  br label %9
+
+9:                                                ; preds = %20, %2
+  %10 = load i64, ptr %8, align 4
+  %11 = load i64, ptr %7, align 4
+  %12 = icmp slt i64 %10, %11
+  br i1 %12, label %13, label %16
+
+13:                                               ; preds = %9
+  %14 = load i64, ptr %4, align 4
+  %15 = icmp eq i64 0, %14
+  br i1 %15, label %17, label %19
+
+16:                                               ; preds = %9
   ret i64 -1
+
+17:                                               ; preds = %13
+  %18 = load i64, ptr %8, align 4
+  ret i64 %18
+
+19:                                               ; preds = %13
+  br label %20
+
+20:                                               ; preds = %19
+  %21 = load i64, ptr %8, align 4
+  %22 = load i64, ptr %8, align 4
+  %23 = add i64 %22, 1
+  store i64 %23, ptr %8, align 4
+  br label %9
 }
+
 define i64 @find_nmod(%ForgeString %0) {
-  %s = alloca %ForgeString, align 8
-  store %ForgeString %0, ptr %s, align 8
-  %sval = load %ForgeString, ptr %s, align 8
-  %len = call i64 @forge_string_length(%ForgeString %sval)
-  %too_short = icmp slt i64 %len, 5
-  br i1 %too_short, label %ret_neg, label %loop_init
-ret_neg:
+  %2 = alloca %ForgeString, align 8
+  store %ForgeString %0, ptr %2, align 8
+  %3 = load %Severity, ptr %2, align 4
+  %4 = call i64 @forge_string_length(%Severity %3)
+  %5 = alloca %Severity, align 8
+  store i64 %4, ptr %5, align 4
+  %6 = load i64, ptr %5, align 4
+  %7 = icmp slt i64 %6, 5
+  br i1 %7, label %8, label %9
+
+8:                                                ; preds = %1
   ret i64 -1
-loop_init:
-  %limit = sub i64 %len, 4
-  br label %loop
-loop:
-  %i = phi i64 [ 0, %loop_init ], [ %i_next, %no_match ]
-  %done = icmp sge i64 %i, %limit
-  br i1 %done, label %ret_neg, label %check_nl
-check_nl:
-  %sv1 = load %ForgeString, ptr %s, align 8
-  %b0 = call i64 @forge_string_byte_at(%ForgeString %sv1, i64 %i)
-  %is_nl = icmp eq i64 %b0, 10
-  br i1 %is_nl, label %check_m, label %no_match
-check_m:
-  %i1 = add i64 %i, 1
-  %sv2 = load %ForgeString, ptr %s, align 8
-  %b1 = call i64 @forge_string_byte_at(%ForgeString %sv2, i64 %i1)
-  %is_m = icmp eq i64 %b1, 109
-  br i1 %is_m, label %check_o, label %no_match
-check_o:
-  %i2 = add i64 %i, 2
-  %sv3 = load %ForgeString, ptr %s, align 8
-  %b2 = call i64 @forge_string_byte_at(%ForgeString %sv3, i64 %i2)
-  %is_o = icmp eq i64 %b2, 111
-  br i1 %is_o, label %check_d, label %no_match
-check_d:
-  %i3 = add i64 %i, 3
-  %sv4 = load %ForgeString, ptr %s, align 8
-  %b3 = call i64 @forge_string_byte_at(%ForgeString %sv4, i64 %i3)
-  %is_d = icmp eq i64 %b3, 100
-  br i1 %is_d, label %check_sp, label %no_match
-check_sp:
-  %i4 = add i64 %i, 4
-  %sv5 = load %ForgeString, ptr %s, align 8
-  %b4 = call i64 @forge_string_byte_at(%ForgeString %sv5, i64 %i4)
-  %is_sp = icmp eq i64 %b4, 32
-  br i1 %is_sp, label %found, label %no_match
-found:
-  ret i64 %i
-no_match:
-  %i_next = add i64 %i, 1
-  br label %loop
+
+9:                                                ; preds = %1
+  br label %10
+
+10:                                               ; preds = %9
+  %11 = alloca i64, align 8
+  store i64 0, ptr %11, align 4
+  br label %12
+
+12:                                               ; preds = %21, %10
+  %13 = load i64, ptr %11, align 4
+  %14 = load i64, ptr %5, align 4
+  %15 = sub i64 %14, 4
+  %16 = icmp slt i64 %13, %15
+  br i1 %16, label %17, label %18
+
+17:                                               ; preds = %12
+  br i1 false, label %19, label %20
+
+18:                                               ; preds = %12
+  ret i64 -1
+
+19:                                               ; preds = %17
+  br i1 false, label %25, label %26
+
+20:                                               ; preds = %17
+  br label %21
+
+21:                                               ; preds = %20, %27
+  %22 = load i64, ptr %11, align 4
+  %23 = load i64, ptr %11, align 4
+  %24 = add i64 %23, 1
+  store i64 %24, ptr %11, align 4
+  br label %12
+
+25:                                               ; preds = %19
+  br i1 false, label %28, label %29
+
+26:                                               ; preds = %19
+  br label %27
+
+27:                                               ; preds = %26, %30
+  br label %21
+
+28:                                               ; preds = %25
+  br i1 false, label %31, label %32
+
+29:                                               ; preds = %25
+  br label %30
+
+30:                                               ; preds = %29, %33
+  br label %27
+
+31:                                               ; preds = %28
+  br i1 false, label %34, label %36
+
+32:                                               ; preds = %28
+  br label %33
+
+33:                                               ; preds = %32, %37
+  br label %30
+
+34:                                               ; preds = %31
+  %35 = load i64, ptr %11, align 4
+  ret i64 %35
+
+36:                                               ; preds = %31
+  br label %37
+
+37:                                               ; preds = %36
+  br label %33
 }
+
 define i64 @check(%ForgeString %0, %ForgeString %1) {
   %3 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %3, align 8
@@ -43240,7 +43290,7 @@ define %ForgeString @filepath_dir(%ForgeString %0) {
   br i1 %7, label %8, label %9
 
 8:                                                ; preds = %1
-  ret %ForgeString zeroinitializer
+  ret %ForgeString undef
 
 9:                                                ; preds = %1
   br label %10
@@ -43496,16 +43546,16 @@ define i64 @try_load_mod(%ForgeString %0, %ForgeString %1) {
   %6 = load %ForgeString, ptr %4, align 8
   %7 = call %ForgeString @forge_string_concat(%ForgeString %5, %ForgeString %6)
   %8 = call %ForgeString @forge_string_concat(%ForgeString %7, { ptr, i64 } { ptr @1276, i64 7 })
-  %9 = alloca %ForgeString, align 8
+  %9 = alloca i64, align 8
   store %ForgeString %8, ptr %9, align 8
   %10 = load %ForgeString, ptr %3, align 8
   %11 = load %ForgeString, ptr %4, align 8
   %12 = call %ForgeString @forge_string_concat(%ForgeString %10, %ForgeString %11)
   %13 = call %ForgeString @forge_string_concat(%ForgeString %12, { ptr, i64 } { ptr @1277, i64 3 })
-  %14 = alloca %ForgeString, align 8
+  %14 = alloca i64, align 8
   store %ForgeString %13, ptr %14, align 8
-  %15 = load %ForgeString, ptr %9, align 8
-  %16 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %15)
+  %15 = load i64, ptr %9, align 4
+  %16 = call %ForgeString @forge_selfhost_fs_read(i64 %15)
   %17 = alloca %ForgeString, align 8
   store %ForgeString %16, ptr %17, align 8
   %18 = load %ForgeString, ptr %17, align 8
@@ -43514,13 +43564,13 @@ define i64 @try_load_mod(%ForgeString %0, %ForgeString %1) {
   br i1 %20, label %21, label %24
 
 21:                                               ; preds = %2
-  %22 = load %ForgeString, ptr %9, align 8
-  %23 = call i64 @collect_module_paths(%ForgeString %22)
+  %22 = load i64, ptr %9, align 4
+  %23 = call i64 @collect_module_paths(i64 %22)
   br label %31
 
 24:                                               ; preds = %2
-  %25 = load %ForgeString, ptr %14, align 8
-  %26 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %25)
+  %25 = load i64, ptr %14, align 4
+  %26 = call %ForgeString @forge_selfhost_fs_read(i64 %25)
   %27 = alloca %ForgeString, align 8
   store %ForgeString %26, ptr %27, align 8
   %28 = load %ForgeString, ptr %27, align 8
@@ -43532,8 +43582,8 @@ define i64 @try_load_mod(%ForgeString %0, %ForgeString %1) {
   ret i64 0
 
 32:                                               ; preds = %24
-  %33 = load %ForgeString, ptr %14, align 8
-  %34 = call i64 @collect_module_paths(%ForgeString %33)
+  %33 = load i64, ptr %14, align 4
+  %34 = call i64 @collect_module_paths(i64 %33)
   br label %36
 
 35:                                               ; preds = %24
@@ -43627,7 +43677,7 @@ define i64 @collect_module_paths(%ForgeString %0) {
   %25 = load %ForgeString, ptr %2, align 8
   %26 = call %ForgeString @forge_string_concat(%ForgeString %24, %ForgeString %25)
   %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1282, i64 1 })
-  store %ForgeString %27, ptr @MODULE_PATHS_CSV, align 8
+  store %ForgeString %27, ptr %2, align 8
   ret i64 0
 }
 

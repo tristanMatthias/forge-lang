@@ -113,10 +113,10 @@ impl Parser {
         tok
     }
 
-    // Check by kind_id integer — bypasses kind_to_id match which fails in mini-built binaries
+    // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
-        let tok = self.peek()
-        tok.kind_id == kid
+        if self.pos >= self.tokens.length { return kid == 99 }
+        self.tokens[self.pos].kind_id == kid
     }
 
     fn check(self, kind: TokenKind) -> bool {
