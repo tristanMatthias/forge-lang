@@ -712,6 +712,7 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
         // load requires a pointer operand — if not pointer, return zero/undef
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { // Not PointerTypeKind
+                // non-ptr used as load source — log and return zero
             let ty_kind = LLVMGetTypeKind(ty);
             if ty_kind == 8 { return LLVMConstInt(ty, 0, 0); }
             return LLVMGetUndef(ty);
