@@ -155,7 +155,7 @@ fn check_fn(tc: TypeChecker, node: NodeRef) {
     mut param_types: List<Type> = []
     for param in data.params {
         // TODO: resolve param type from annotation
-        param_types = param_types.push(Type.Unknown)
+        param_types = forge_list_push_str(param_types, Type.Unknown)
     }
     let ret_type = Type.Void // TODO: resolve from return_type annotation
     let fn_type = Type.Function(param_types, ret_type)
@@ -187,7 +187,7 @@ fn top_level_fn(tc: TypeChecker, node: NodeRef) {
     // Pre-register function type for forward references
     mut param_types: List<Type> = []
     for param in data.params {
-        param_types = param_types.push(Type.Unknown)
+        param_types = forge_list_push_str(param_types, Type.Unknown)
     }
     tc.env.define(data.name, Type.Function(param_types, Type.Void), false)
 }
@@ -257,28 +257,28 @@ export mut EMIT_FILE_IDX: int = -1               // -1 = all files, >= 0 = only 
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
-    FN_NAMES = FN_NAMES.push(name)
-    FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
-    FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
+    FN_NAMES = forge_list_push_str(FN_NAMES, name)
+    FN_BODY_SOURCES = forge_list_push_str(FN_BODY_SOURCES, body_source)
+    FN_FILE_INDEX = forge_list_push_str(FN_FILE_INDEX, CURRENT_FILE_INDEX)
     // Also store in C-side array (immune to Forge list push corruption)
     forge_fn_store_add(name, body_source)
 }
 
 export fn store_fn_param_count(count: int) {
-    FN_PARAM_COUNTS = FN_PARAM_COUNTS.push(count)
+    FN_PARAM_COUNTS = forge_list_push_str(FN_PARAM_COUNTS, count)
 }
 
 export fn store_fn_param_name(name: string) {
-    FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(name)
+    FN_ALL_PARAM_NAMES = forge_list_push_str(FN_ALL_PARAM_NAMES, name)
 }
 
 export fn store_fn_param_type(type_name: string) {
-    FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
+    FN_ALL_PARAM_TYPES = forge_list_push_str(FN_ALL_PARAM_TYPES, type_name)
     forge_param_type_add(type_name)
 }
 
 export fn store_fn_return_type(type_name: string) {
-    FN_RETURN_TYPES = FN_RETURN_TYPES.push(type_name)
+    FN_RETURN_TYPES = forge_list_push_str(FN_RETURN_TYPES, type_name)
     // Register name+return_type pair in C-side registry (immune to list corruption)
     // Use the most recently added FN_NAMES entry as the function name
     let fn_count = forge_fn_reg_count()
@@ -391,11 +391,11 @@ export fn declare_all_fns() {
         // Always set body (updates fields to match resolve_type_to_llvm)
         llvm.struct_set_body(sty, fta, fc, 0)
         llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+        CG_STRUCT_NAMES = forge_list_push_str(CG_STRUCT_NAMES, sname)
+        CG_STRUCT_FIELDS = forge_list_push_str(CG_STRUCT_FIELDS, fields)
+        CG_STRUCT_FIELD_IS_STR = forge_list_push_str(CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_IS_STR[si])
+        CG_STRUCT_FIELD_TYPE_NAMES = forge_list_push_str(CG_STRUCT_FIELD_TYPE_NAMES, ftn)
+        CG_STRUCT_TYPES = forge_list_push_str(CG_STRUCT_TYPES, sty)
         si = si + 1
     }
     // Declare all function signatures — use i64 for all params/returns
@@ -414,7 +414,7 @@ export fn declare_all_fns() {
             let pt_idx = param_offset + pi
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let tname = FN_ALL_PARAM_TYPES[pt_idx]
+                let tname = forge_param_type_get(pt_idx)
                 // self param: use ptr for mutability (methods modify self.pos etc.)
                 mut pname = ""
                 if pt_idx < FN_ALL_PARAM_NAMES.length { pname = FN_ALL_PARAM_NAMES[pt_idx] }
@@ -548,15 +548,15 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         // Save alloca by C counter (immune to Forge list length corruption)
         let var_idx = forge_var_counter_inc()
         forge_idx_cache_set(var_idx, alloca)
-        CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
+        CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, pname)
         mut _vis = 0
         if param_type_name == "string" { _vis = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        CG_VAR_IS_STR = forge_list_push_str(CG_VAR_IS_STR, _vis)
+        CG_VAR_IS_MAP = forge_list_push_str(CG_VAR_IS_MAP, 0)
+        CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
         // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
         if param_type_name == "string" {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
+            CG_STR_VAR_NAMES = forge_list_push_str(CG_STR_VAR_NAMES, pname)
             forge_str_var_add(pname)
         // Also handle: param_type_name might be corrupted — check text match
         } else if pname == "text" || pname == "source" || pname == "name" || pname == "value" || pname == "message" || pname == "key" || pname == "path" || pname == "code" || pname == "help" || pname == "filename" || pname == "pattern" || pname == "prefix" {
@@ -564,7 +564,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             forge_str_var_add(pname)
         } else if param_type_name.length >= 4 {
             if param_type_name[0] == "L" {
-                CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
+                CG_STR_VAR_NAMES = forge_list_push_str(CG_STR_VAR_NAMES, pname)
                 CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + pname + ","
                 // Extract element type from "List<Elem>" and register
                 let lt_pos = param_type_name.index_of("<")
@@ -591,8 +591,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             if is_enum {
                 CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
             } else {
-                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
+                CG_STRUCT_VAR_NAMES = forge_list_push_str(CG_STRUCT_VAR_NAMES, pname)
+                CG_STRUCT_VAR_TYPES = forge_list_push_str(CG_STRUCT_VAR_TYPES, param_type_name)
                 CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + pname + ":" + param_type_name + ","
                 mut field_info = ""
                 mut sri = CG_STRUCT_FIELDS.length - 1
@@ -603,7 +603,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                     }
                     sri = sri - 1
                 }
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
+                CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, field_info)
             }
         }
         pi = pi + 1
@@ -744,11 +744,11 @@ export fn materialize_struct_types() {
         // Always set body (updates fields to match resolve_type_to_llvm)
         llvm.struct_set_body(sty, fta, fc, 0)
         llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(sname)
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+        CG_STRUCT_NAMES = forge_list_push_str(CG_STRUCT_NAMES, sname)
+        CG_STRUCT_FIELDS = forge_list_push_str(CG_STRUCT_FIELDS, fields)
+        CG_STRUCT_FIELD_IS_STR = forge_list_push_str(CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_IS_STR[si])
+        CG_STRUCT_FIELD_TYPE_NAMES = forge_list_push_str(CG_STRUCT_FIELD_TYPE_NAMES, ftn)
+        CG_STRUCT_TYPES = forge_list_push_str(CG_STRUCT_TYPES, sty)
         si = si + 1
     }
 }
@@ -824,11 +824,11 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             llvm.struct_set_body(sty, fta, fc, 0)
             llvm.type_array_free(fta)
             // Re-register with LLVM type
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-            CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+            CG_STRUCT_NAMES = forge_list_push_str(CG_STRUCT_NAMES, CG_STRUCT_NAMES[si])
+            CG_STRUCT_FIELDS = forge_list_push_str(CG_STRUCT_FIELDS, fields)
+            CG_STRUCT_FIELD_IS_STR = forge_list_push_str(CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_IS_STR[si])
+            CG_STRUCT_FIELD_TYPE_NAMES = forge_list_push_str(CG_STRUCT_FIELD_TYPE_NAMES, ftn)
+            CG_STRUCT_TYPES = forge_list_push_str(CG_STRUCT_TYPES, sty)
         }
         si = si + 1
     }
@@ -850,7 +850,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             let pt_idx = param_offset + pi
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let type_name = FN_ALL_PARAM_TYPES[pt_idx]
+                let type_name = forge_param_type_get(pt_idx)
                 param_ty = resolve_type_to_llvm(type_name)
             }
             llvm.type_array_set(param_arr, pi, param_ty)
@@ -925,7 +925,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             let pt_idx = param_offset + pi
             mut param_type_name = "int"
             if pt_idx < FN_ALL_PARAM_TYPES.length {
-                param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
+                param_type_name = forge_param_type_get(pt_idx)
             }
             // Define param — alloca + store with correct LLVM type
             // Determine the LLVM alloca type: string, struct, or i64
@@ -943,13 +943,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             }
             let alloca = llvm.build_alloca(CG_B, p_ty, pname)
             llvm.build_store(CG_B, param_val, alloca)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
+            CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, pname)
             mut _vis2 = 0
             if param_type_name == "string" { _vis2 = 1 }
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis2)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
+            CG_VAR_IS_STR = forge_list_push_str(CG_VAR_IS_STR, _vis2)
+            CG_VAR_IS_MAP = forge_list_push_str(CG_VAR_IS_MAP, 0)
+            CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
+            if param_type_name == "string" { CG_STR_VAR_NAMES = forge_list_push_str(CG_STR_VAR_NAMES, pname) }
             // Register struct/enum-typed params for member access and type tracking
             if is_struct_param {
                 // Check if this is an enum type (has data-carrying variants)
@@ -959,8 +959,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
                 } else {
                     // Struct type — register for field access
-                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
+                    CG_STRUCT_VAR_NAMES = forge_list_push_str(CG_STRUCT_VAR_NAMES, pname)
+                    CG_STRUCT_VAR_TYPES = forge_list_push_str(CG_STRUCT_VAR_TYPES, param_type_name)
                     // Get field info from struct registry
                     mut field_info = ""
                     mut sri = CG_STRUCT_FIELDS.length - 1
@@ -971,7 +971,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                         }
                         sri = sri - 1
                     }
-                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
+                    CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, field_info)
                 }
             }
             pi = pi + 1

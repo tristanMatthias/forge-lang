@@ -679,7 +679,7 @@ impl Parser {
                         self.expect(TokenKind.RParen)
                         let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                         mut aa: List<Expr> = [result]
-                        for a in ma { aa = aa.push(a) }
+                        for a in ma { aa = forge_list_push_str(aa, a) }
                         result = Expr.Call(Expr.Ident("forge_string_" + field, span), aa, sp2)
                         result_is_llvm = false
                         result_is_str = field == "substring"
@@ -720,7 +720,7 @@ impl Parser {
                             let sp3 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                             // Build args: [obj, ...method_args]
                             mut all_args: List<Expr> = [result]
-                            for a in method_args { all_args = all_args.push(a) }
+                            for a in method_args { all_args = forge_list_push_str(all_args, a) }
                             result = Expr.Call(Expr.Ident(method_name, span), all_args, sp3)
                             result_is_llvm = false
                             continue
@@ -928,18 +928,18 @@ impl Parser {
             }
             // If result is a struct, register temp var in struct tracking
             if CG_LAST_STRUCT_TYPE != "" {
-                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+                CG_STRUCT_VAR_NAMES = forge_list_push_str(CG_STRUCT_VAR_NAMES, tmp)
+                CG_STRUCT_VAR_TYPES = forge_list_push_str(CG_STRUCT_VAR_TYPES, CG_LAST_STRUCT_TYPE)
                 // Copy field info from the struct registry
                 mut sfi = CG_STRUCT_FIELDS.length - 1
                 while sfi >= 0 {
                     if CG_STRUCT_NAMES[sfi] == CG_LAST_STRUCT_TYPE {
-                        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_FIELDS[sfi])
+                        CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, CG_STRUCT_FIELDS[sfi])
                         break
                     }
                     sfi = sfi - 1
                 }
-                if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
+                if sfi < 0 { CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, "") }
             }
             mut cg_str_flag2 = 0
             if result_is_str { cg_str_flag2 = 1 }
@@ -962,7 +962,7 @@ impl Parser {
             self.skip_newlines()
             let arg = self.parse_expr()
             if arg != null {
-                args = args.push(arg!)
+                args = forge_list_push_str(args, arg!)
             }
             self.skip_newlines()
             if self.check(TokenKind.Comma) {
@@ -1225,20 +1225,20 @@ impl Parser {
                         if field_count > 0 { parsed_field_types = parsed_field_types + "," }
                         if CG_LAST_ENUM_TYPE != "" {
                             parsed_field_types = parsed_field_types + "e"
-                            field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
+                            field_enum_names = forge_list_push_str(field_enum_names, CG_LAST_ENUM_TYPE)
                         } else if CG_LAST_STRUCT_TYPE != "" {
                             // Struct-typed field: use the struct type name
                             parsed_field_types = parsed_field_types + "t"
-                            field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
+                            field_enum_names = forge_list_push_str(field_enum_names, CG_LAST_STRUCT_TYPE)
                         } else if CG_LAST_IS_STR == 1 {
                             parsed_field_types = parsed_field_types + "s"
-                            field_enum_names = field_enum_names.push("")
+                            field_enum_names = forge_list_push_str(field_enum_names, "")
                         } else if CG_LAST_IS_LIST == 1 {
                             parsed_field_types = parsed_field_types + "l"
-                            field_enum_names = field_enum_names.push("")
+                            field_enum_names = forge_list_push_str(field_enum_names, "")
                         } else {
                             parsed_field_types = parsed_field_types + "i"
-                            field_enum_names = field_enum_names.push("")
+                            field_enum_names = forge_list_push_str(field_enum_names, "")
                         }
                         field_count = field_count + 1
                     }
@@ -1334,27 +1334,27 @@ impl Parser {
                 fi = fi + 1
             }
             llvm.value_array_free(vals)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(0)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+            CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, tmp)
+            CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
+            CG_VAR_IS_STR = forge_list_push_str(CG_VAR_IS_STR, 0)
+            CG_VAR_IS_MAP = forge_list_push_str(CG_VAR_IS_MAP, 0)
             // Register as struct variable so emit_ident loads with correct type
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
-            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(parsed_fields)
+            CG_STRUCT_VAR_NAMES = forge_list_push_str(CG_STRUCT_VAR_NAMES, tmp)
+            CG_STRUCT_VAR_TYPES = forge_list_push_str(CG_STRUCT_VAR_TYPES, struct_name)
+            CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, parsed_fields)
 
             // Register struct type in codegen (with LLVM type this time)
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(struct_name)
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(parsed_fields)
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push("")
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(struct_ty)
+            CG_STRUCT_NAMES = forge_list_push_str(CG_STRUCT_NAMES, struct_name)
+            CG_STRUCT_FIELDS = forge_list_push_str(CG_STRUCT_FIELDS, parsed_fields)
+            CG_STRUCT_FIELD_IS_STR = forge_list_push_str(CG_STRUCT_FIELD_IS_STR, "")
+            CG_STRUCT_TYPES = forge_list_push_str(CG_STRUCT_TYPES, struct_ty)
 
             // Register struct variable + type + field names
             CG_LAST_IS_STR = 0
             CG_LAST_STRUCT_TYPE = struct_name
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
-            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(parsed_fields)
+            CG_STRUCT_VAR_NAMES = forge_list_push_str(CG_STRUCT_VAR_NAMES, tmp)
+            CG_STRUCT_VAR_TYPES = forge_list_push_str(CG_STRUCT_VAR_TYPES, struct_name)
+            CG_STRUCT_VAR_FIELDS = forge_list_push_str(CG_STRUCT_VAR_FIELDS, parsed_fields)
             // Load the completed struct from alloca
             let completed = llvm.build_load(CG_B, struct_ty, alloca, "sv")
             CG_LAST_VAL = completed
@@ -1374,11 +1374,11 @@ impl Parser {
                     self.advance()
                     let fval = self.parse_expr()
                     if fval != null {
-                        field_values = field_values.push(fval!)
+                        field_values = forge_list_push_str(field_values, fval!)
                     }
                 } else {
                     // Shorthand: { name } means { name: name }
-                    field_values = field_values.push(Expr.Ident(field_tok.text, field_tok.span))
+                    field_values = forge_list_push_str(field_values, Expr.Ident(field_tok.text, field_tok.span))
                 }
             } else {
                 break
@@ -1721,8 +1721,8 @@ impl Parser {
                     IN_MATCH_ARM = prev_match
                     if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                     if !llvm.block_has_terminator(CG_B) {
-                        arm_vals = arm_vals.push(arm_result)
-                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
+                        arm_vals = forge_list_push_str(arm_vals, arm_result)
+                        arm_bbs = forge_list_push_str(arm_bbs, llvm.get_insert_block(CG_B))
                         llvm.build_br(CG_B, merge_bb)
                     }
                     self.skip_newlines()
@@ -1739,7 +1739,7 @@ impl Parser {
                         self.advance()
                         while !self.check(TokenKind.RParen) && !self.is_at_end() {
                             let bname = self.expect_ident()
-                            if bname != "" { binding_names = binding_names.push(bname) }
+                            if bname != "" { binding_names = forge_list_push_str(binding_names, bname) }
                             if self.check(TokenKind.Comma) { self.advance() }
                             self.skip_newlines()
                         }
@@ -1795,9 +1795,9 @@ impl Parser {
                                     let fv = llvm.build_load(CG_B, CG_STR, str_bptr, bname)
                                     let alloca = llvm.build_alloca(CG_B, CG_STR, bname)
                                     llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bname)
+                                    CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, bname)
+                                    CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
+                                    CG_STR_VAR_NAMES = forge_list_push_str(CG_STR_VAR_NAMES, bname)
                                     CG_LAST_IS_STR = 1
                                 } else if bind_fc == "l" {
                                     // List field: load {ptr, i64} through bitcasted ptr
@@ -1805,15 +1805,15 @@ impl Parser {
                                     let fv = llvm.build_load(CG_B, CG_LIST, list_bptr, bname)
                                     let alloca = llvm.build_alloca(CG_B, CG_LIST, bname)
                                     llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                    CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, bname)
+                                    CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
                                 } else {
                                     // Int/ptr/other: load i64 directly
                                     let fv = llvm.build_load(CG_B, CG_I64, bind_ptr, bname)
                                     let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
                                     llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+                                    CG_VAR_NAMES = forge_list_push_str(CG_VAR_NAMES, bname)
+                                    CG_VAR_PTRS = forge_list_push_str(CG_VAR_PTRS, alloca)
                                 }
                                 bi = bi + 1
                             }
@@ -1838,8 +1838,8 @@ impl Parser {
                     IN_MATCH_ARM = prev_match2
                     if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                     if !llvm.block_has_terminator(CG_B) {
-                        arm_vals = arm_vals.push(arm_result)
-                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
+                        arm_vals = forge_list_push_str(arm_vals, arm_result)
+                        arm_bbs = forge_list_push_str(arm_bbs, llvm.get_insert_block(CG_B))
                         llvm.build_br(CG_B, merge_bb)
                     }
 
@@ -1896,8 +1896,8 @@ impl Parser {
                 IN_MATCH_ARM = prev_match3
                 if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
                 if !llvm.block_has_terminator(CG_B) {
-                    arm_vals = arm_vals.push(arm_result)
-                    arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
+                    arm_vals = forge_list_push_str(arm_vals, arm_result)
+                    arm_bbs = forge_list_push_str(arm_bbs, llvm.get_insert_block(CG_B))
                     llvm.build_br(CG_B, merge_bb)
                 }
 
@@ -1913,11 +1913,11 @@ impl Parser {
                     let undef = llvm.get_undef(CG_STR)
                     let z1 = llvm.build_insert_value(CG_B, undef, llvm.const_null(CG_PTR), 0, "dp")
                     let z2 = llvm.build_insert_value(CG_B, z1, llvm.const_int(CG_I64, 0, 0), 1, "dl")
-                    arm_vals = arm_vals.push(z2)
+                    arm_vals = forge_list_push_str(arm_vals, z2)
                 } else {
-                    arm_vals = arm_vals.push(llvm.const_int(CG_I64, 0, 0))
+                    arm_vals = forge_list_push_str(arm_vals, llvm.const_int(CG_I64, 0, 0))
                 }
-                arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
+                arm_bbs = forge_list_push_str(arm_bbs, llvm.get_insert_block(CG_B))
                 llvm.build_br(CG_B, merge_bb)
             }
 
@@ -1999,8 +1999,8 @@ impl Parser {
             if pat_tag == -1 && has_default {
                 default_body = body
             } else {
-                arm_tags = arm_tags.push(pat_tag)
-                arm_bodies = arm_bodies.push(body)
+                arm_tags = forge_list_push_str(arm_tags, pat_tag)
+                arm_bodies = forge_list_push_str(arm_bodies, body)
             }
 
             self.skip_newlines()
@@ -2674,11 +2674,11 @@ export mut ENUM_VARIANT_TAGS: List<int> = []        // 0, 1, 2, etc.
 
 export fn register_enum_variant(enum_name: string, variant_name: string, tag: int) {
     let full_name = "${enum_name}.${variant_name}"
-    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(full_name)
-    ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
+    ENUM_VARIANT_NAMES = forge_list_push_str(ENUM_VARIANT_NAMES, full_name)
+    ENUM_VARIANT_TAGS = forge_list_push_str(ENUM_VARIANT_TAGS, tag)
     // Also register short name (just variant)
-    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
-    ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
+    ENUM_VARIANT_NAMES = forge_list_push_str(ENUM_VARIANT_NAMES, variant_name)
+    ENUM_VARIANT_TAGS = forge_list_push_str(ENUM_VARIANT_TAGS, tag)
 }
 
 export fn register_enum_type(name: string, max_fields: int) {

@@ -2232,18 +2232,10 @@ int64_t forge_fn_store_count(void) { return _fn_store_count; }
 
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
-    int64_t old_count = list.len;
-    int64_t new_count = old_count + 1;
-    int64_t elem_size = sizeof(ForgeString);
-    ForgeString* new_data = (ForgeString*)forge_alloc(new_count * elem_size);
-    if (old_count > 0 && list.ptr) {
-        forge_memcpy(new_data, list.ptr, old_count * elem_size);
-    }
-    new_data[old_count] = item;
-    ForgeString result;
-    result.ptr = (char*)new_data;
-    result.len = new_count;
-    return result;
+    // Delegate to efficient forge_list_push (amortized O(1))
+    ForgeList fl = { .ptr = list.ptr, .len = list.len };
+    ForgeList result_list = forge_list_push(fl, &item, sizeof(ForgeString));
+    return (ForgeString){ .ptr = result_list.ptr, .len = result_list.len };
 }
 
 // Debug: write ForgeString to file, print debug info

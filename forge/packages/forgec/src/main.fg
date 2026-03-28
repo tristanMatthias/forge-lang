@@ -262,7 +262,7 @@ fn resolve_module_paths(filepath: string) -> List<string> {
     while i < MODULE_PATHS_CSV.length {
         if MODULE_PATHS_CSV[i] == "\n" {
             if i > start {
-                paths = paths.push(forge_string_substring(MODULE_PATHS_CSV, start, i))
+                paths = forge_list_push_str(paths, forge_string_substring(MODULE_PATHS_CSV, start, i))
             }
             start = i + 1
         }
@@ -442,10 +442,10 @@ fn build_compile_single(input_file: string, output: string) {
     // Phase 4: Link all .o files
     mut link_args: List<string> = ["-o", output]
     for obj in obj_files {
-        link_args = link_args.push(obj)
+        link_args = forge_list_push_str(link_args, obj)
     }
-    link_args = link_args.push(runtime_obj)
-    link_args = link_args.push("-lm")
+    link_args = forge_list_push_str(link_args, runtime_obj)
+    link_args = forge_list_push_str(link_args, "-lm")
     let link_result = process.run("cc", link_args)
 
     println("compiled: ${output}")
