@@ -661,10 +661,28 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
     let result = unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) };
     // Auto-cache: store alloca in C-side cache (bypasses Forge variable clobbering)
     if !name.is_null() && !result.is_null() {
-        extern "C" { fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64; }
+        extern "C" {
+            fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
+            fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
+        }
         let len = unsafe { std::ffi::CStr::from_ptr(name).to_bytes().len() } as i64;
         if len > 0 && len < 100 {
-            unsafe { forge_alloca_cache_set_raw(name, len, result); }
+            unsafe {
+                forge_alloca_cache_set_raw(name, len, result);
+                // If the alloca type is a struct type (ForgeString, etc.), register as string var
+                // ForgeString is { ptr, i64 } which is a struct with 2 elements
+                let alloca_ty = LLVMGetAllocatedType(result);
+                if !alloca_ty.is_null() {
+                    let kind = LLVMGetTypeKind(alloca_ty);
+                    if kind == 11 { // StructTypeKind
+                        let elem_count = LLVMCountStructElementTypes(alloca_ty);
+                        if elem_count == 2 {
+                            // Likely ForgeString { ptr, i64 } — register as string var
+                            forge_str_var_add_raw(name, len);
+                        }
+                    }
+                }
+            }
         }
     }
     result
@@ -1273,10 +1291,17 @@ pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_
     let result = unsafe { LLVMAddGlobal(m, ty, name) };
     // Auto-cache global Value* so emit_ident can find globals via alloca cache
     if !name.is_null() && !result.is_null() {
-        extern "C" { fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64; }
+        extern "C" {
+            fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
+            fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
+        }
         let len = unsafe { std::ffi::CStr::from_ptr(name).to_bytes().len() } as i64;
         if len > 0 && len < 100 {
-            unsafe { forge_alloca_cache_set_raw(name, len, result); }
+            unsafe {
+                forge_alloca_cache_set_raw(name, len, result);
+                // ALL globals are ForgeString-typed (create_globals_typed uses CG_STR for all)
+                forge_str_var_add_raw(name, len);
+            }
         }
     }
     result
