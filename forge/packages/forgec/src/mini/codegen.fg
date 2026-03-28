@@ -3135,6 +3135,10 @@ fn compile(source: string) -> string {
     // Debug
     ir_raw("declare void @forge_debug_enum({ i64, ptr })")
     ir_raw("declare void @forge_debug_str(%ForgeString)")
+    // C-side struct var type tracking
+    ir_raw("declare void @forge_struct_var_clear()")
+    ir_raw("declare void @forge_struct_var_add(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_struct_var_get(%ForgeString)")
     // C-side variable name tracking
     ir_raw("declare void @forge_var_name_clear()")
     ir_raw("declare void @forge_var_name_push(%ForgeString)")

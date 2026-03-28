@@ -2567,6 +2567,34 @@ Statement forge_stmt_load(void) {
 int64_t forge_stmt_has(void) { return _has_pending_stmt; }
 void forge_stmt_clear(void) { _has_pending_stmt = 0; }
 
+// C-side struct var type tracking (immune to global string assignment corruption)
+#define STRUCT_VAR_MAX 128
+static struct { char name[64]; char type[64]; } _struct_vars[STRUCT_VAR_MAX];
+static int _struct_var_count = 0;
+
+void forge_struct_var_clear(void) { _struct_var_count = 0; }
+void forge_struct_var_add(ForgeString name, ForgeString type_name) {
+    if (_struct_var_count >= STRUCT_VAR_MAX) return;
+    if (name.ptr && name.len > 0 && name.len < 64 && type_name.ptr && type_name.len > 0 && type_name.len < 64) {
+        memcpy(_struct_vars[_struct_var_count].name, name.ptr, name.len);
+        _struct_vars[_struct_var_count].name[name.len] = '\0';
+        memcpy(_struct_vars[_struct_var_count].type, type_name.ptr, type_name.len);
+        _struct_vars[_struct_var_count].type[type_name.len] = '\0';
+        _struct_var_count++;
+    }
+}
+ForgeString forge_struct_var_get(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return forge_string_new("", 0);
+    for (int i = _struct_var_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_struct_vars[i].name) == name.len &&
+            memcmp(_struct_vars[i].name, name.ptr, name.len) == 0) {
+            int64_t len = strlen(_struct_vars[i].type);
+            return forge_string_new(_struct_vars[i].type, len);
+        }
+    }
+    return forge_string_new("", 0);
+}
+
 // C-side variable name tracking (immune to Forge list corruption)
 // Tracks variable names pushed during emit_fn_body_from_source param setup
 #define VAR_NAME_MAX 256

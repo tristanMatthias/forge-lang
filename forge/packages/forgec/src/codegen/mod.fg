@@ -848,6 +848,9 @@ export fn var_struct_type(name: string) -> string {
         let comma = after.index_of(",")
         if comma >= 0 { return after.substring(0, comma) }
     }
+    // C-side struct var cache (immune to global string corruption)
+    let c_type = forge_struct_var_get(name)
+    if c_type != "" { return c_type }
     // Fallback to list (may be corrupted)
     mut vi = CG_STRUCT_VAR_NAMES.length - 1
     while vi >= 0 {
@@ -978,6 +981,10 @@ fn cg_init_runtime() {
     // Debug
     let dbg_enum_ty = llvm.function_type(CG_VOID, llvm.type_array_new(0), 0, 0)
     llvm.add_function(CG_MOD, "forge_debug_enum", dbg_enum_ty)
+    // C-side struct var type tracking
+    llvm.add_function(CG_MOD, "forge_struct_var_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_struct_var_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_var_get", make_fn_type_1(CG_STR, CG_STR))
     // C-side variable name tracking (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_var_name_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_var_name_push", make_fn_type_1(CG_VOID, CG_STR))
@@ -3050,8 +3057,9 @@ impl Codegen {
             let ety = cg_get_enum_ty_for(CG_LAST_ENUM_TYPE)
             if ety != null { alloca_ty = ety }
         }
-        // For struct types, use the registered struct LLVM type
+        // For struct types, use the registered struct LLVM type + C-side cache
         if CG_LAST_STRUCT_TYPE != "" {
+            forge_struct_var_add(name, CG_LAST_STRUCT_TYPE)
             // Search from END to find the most recent entry (with LLVM type)
             mut si = CG_STRUCT_NAMES.length - 1
             while si >= 0 {
