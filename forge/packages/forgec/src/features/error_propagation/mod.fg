@@ -74,51 +74,44 @@ fn make_catch(try_expr: Expr, error_name: string?, catch_body: Block, span: Span
 // ─── Check ──────────────────────────────────────
 
 fn check_error_prop(tc: TypeChecker, node: NodeRef) -> Type {
-    match node.kind_name {
-        "result_expr" -> {
-            let d = get_result_expr(node.node_id)
-            if d == null { return Type.Unknown }
-            let data = d!
-            let inner_type = tc.infer_expr(data.inner)
-            match data.kind {
-                .Ok -> Type.Result(inner_type, Type.String)
-                .Err -> Type.Result(Type.Unknown, inner_type)
-                .Propagate -> inner_type  // Unwraps Result<T,E> to T
-            }
+    if node.kind_name == "result_expr" {
+        let d = get_result_expr(node.node_id)
+        if d == null { return Type.Unknown }
+        let data = d!
+        let inner_type = tc.infer_expr(data.inner)
+        return match data.kind {
+            .Ok -> Type.Result(inner_type, Type.String)
+            .Err -> Type.Result(Type.Unknown, inner_type)
+            .Propagate -> inner_type
         }
-        "propagate" -> {
-            let d = get_result_expr(node.node_id)
-            if d == null { return Type.Unknown }
-            let data = d!
-            let inner_type = tc.infer_expr(data.inner)
-            // ? on Result<T,E> yields T
-            match inner_type {
-                .Result(ok_type, _) -> ok_type
-                _ -> inner_type
-            }
-        }
-        "catch" -> {
-            let d = get_catch(node.node_id)
-            if d == null { return Type.Unknown }
-            let data = d!
-            let try_type = tc.infer_expr(data.try_expr)
-
-            // Bind error name in catch scope
-            tc.env.push_scope()
-            if data.error_name != null {
-                tc.env.define(data.error_name!, Type.String, false)
-            }
-            let catch_type = tc.check_block(data.catch_body)
-            tc.env.pop_scope()
-
-            // Result unwraps to ok type, catch provides fallback
-            match try_type {
-                .Result(ok_type, _) -> ok_type
-                _ -> try_type
-            }
-        }
-        _ -> Type.Unknown
     }
+    if node.kind_name == "propagate" {
+        let d = get_result_expr(node.node_id)
+        if d == null { return Type.Unknown }
+        let data = d!
+        let inner_type = tc.infer_expr(data.inner)
+        return match inner_type {
+            .Result(ok_type, _) -> ok_type
+            _ -> inner_type
+        }
+    }
+    if node.kind_name == "catch" {
+        let d = get_catch(node.node_id)
+        if d == null { return Type.Unknown }
+        let data = d!
+        let try_type = tc.infer_expr(data.try_expr)
+        tc.env.push_scope()
+        if data.error_name != null {
+            tc.env.define(data.error_name!, Type.String, false)
+        }
+        let catch_type = tc.check_block(data.catch_body)
+        tc.env.pop_scope()
+        return match try_type {
+            .Result(ok_type, _) -> ok_type
+            _ -> try_type
+        }
+    }
+    Type.Unknown
 }
 
 // ─── Emit ───────────────────────────────────────

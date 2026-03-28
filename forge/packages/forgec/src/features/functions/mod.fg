@@ -655,7 +655,14 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         let body = body_parser.parse_block()
         CG_ACTIVE = true
         cg_reinit_types()
-        let last = cg.emit_block(body)
+        mut last = llvm.const_int(CG_I64, 0, 0)
+        // Safety: check block has valid statements before emitting
+        let _bsl = body.statements.length
+        if _bsl >= 0 && _bsl < 10000 {
+            last = cg.emit_block(body)
+        } else {
+            eprintln("  [WARN] skipping fn " + name + " — block.statements.length=" + string(_bsl))
+        }
         CG_LAST_VAL = last
         CG_HAS_LAST_VAL = 1
     }

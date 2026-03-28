@@ -115,20 +115,17 @@ impl Parser {
 
     // Parse the next-higher precedence level for a given level.
     fn parse_next_level(self, level: int) -> Expr? {
-        match level {
-            1  -> self.parse_binary_level(2)    // pipe → or
-            2  -> self.parse_binary_level(3)    // or → and
-            3  -> self.parse_binary_level(4)    // and → equality
-            4  -> self.parse_binary_level(5)    // eq → comparison
-            5  -> self.parse_binary_level(6)    // cmp → bitor
-            6  -> self.parse_binary_level(7)    // bitor → bitxor
-            7  -> self.parse_binary_level(8)    // bitxor → bitand
-            8  -> self.parse_binary_level(9)    // bitand → shift
-            9  -> self.parse_binary_level(10)   // shift → add
-            10 -> self.parse_binary_level(11)   // add → mul
-            11 -> self.parse_unary_expr()       // mul → unary (base case)
-            _  -> self.parse_unary_expr()
-        }
+        if level == 1  { return self.parse_binary_level(2) }
+        if level == 2  { return self.parse_binary_level(3) }
+        if level == 3  { return self.parse_binary_level(4) }
+        if level == 4  { return self.parse_binary_level(5) }
+        if level == 5  { return self.parse_binary_level(6) }
+        if level == 6  { return self.parse_binary_level(7) }
+        if level == 7  { return self.parse_binary_level(8) }
+        if level == 8  { return self.parse_binary_level(9) }
+        if level == 9  { return self.parse_binary_level(10) }
+        if level == 10 { return self.parse_binary_level(11) }
+        self.parse_unary_expr()
     }
 
     // Generic binary operator loop for any precedence level.
