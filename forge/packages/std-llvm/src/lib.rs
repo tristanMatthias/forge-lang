@@ -665,19 +665,19 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
             fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
             fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
         }
-        let len = unsafe { std::ffi::CStr::from_ptr(name).to_bytes().len() } as i64;
+        let name_bytes = unsafe { std::ffi::CStr::from_ptr(name).to_bytes() };
+        let len = name_bytes.len() as i64;
         if len > 0 && len < 100 {
             unsafe {
                 forge_alloca_cache_set_raw(name, len, result);
-                // If the alloca type is a struct type (ForgeString, etc.), register as string var
-                // ForgeString is { ptr, i64 } which is a struct with 2 elements
+                // Detect ForgeString-typed allocas via LLVM type inspection
                 let alloca_ty = LLVMGetAllocatedType(result);
                 if !alloca_ty.is_null() {
                     let kind = LLVMGetTypeKind(alloca_ty);
-                    if kind == 11 { // StructTypeKind
-                        let elem_count = LLVMCountStructElementTypes(alloca_ty);
-                        if elem_count == 2 {
-                            // Likely ForgeString { ptr, i64 } — register as string var
+                    // 10 = LLVMStructTypeKind — ForgeString is { ptr, i64 }
+                    if kind == 10 {
+                        let ec = LLVMCountStructElementTypes(alloca_ty);
+                        if ec == 2 {
                             forge_str_var_add_raw(name, len);
                         }
                     }

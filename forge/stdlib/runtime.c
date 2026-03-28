@@ -2678,6 +2678,7 @@ void* forge_alloca_cache_get(ForgeString name) {
 static char _str_names[STR_CACHE_SIZE][64];
 static int _str_count = 0;
 
+
 int64_t forge_str_var_add_raw(const char* name_ptr, int64_t name_len) {
     if (!name_ptr || name_len <= 0 || name_len > 63) return 0;
     if (_str_count < STR_CACHE_SIZE) {
