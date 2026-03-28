@@ -90,6 +90,9 @@ crate::runtime_fn! { name: "forge_param_name_clear", feature: "strings", params:
 crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_param_name_get", feature: "strings", params: [I64], ret: ForgeString }
 
+// Debug
+crate::runtime_fn! { name: "forge_debug_enum", feature: "strings", params: [I64, Ptr], ret: Void }
+
 // Self type tracking for method desugaring
 crate::runtime_fn! { name: "forge_set_self_type", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_get_self_type", feature: "strings", params: [], ret: ForgeString }

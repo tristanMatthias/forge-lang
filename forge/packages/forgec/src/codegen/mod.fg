@@ -975,6 +975,9 @@ fn cg_init_runtime() {
     // Self type tracking for method desugaring
     llvm.add_function(CG_MOD, "forge_set_self_type", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_get_self_type", make_fn_type_0(CG_STR))
+    // Debug
+    let dbg_enum_ty = llvm.function_type(CG_VOID, llvm.type_array_new(0), 0, 0)
+    llvm.add_function(CG_MOD, "forge_debug_enum", dbg_enum_ty)
     // C-side variable name tracking (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_var_name_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_var_name_push", make_fn_type_1(CG_VOID, CG_STR))

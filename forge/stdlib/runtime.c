@@ -2534,6 +2534,16 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
     return 0;
 }
 
+// Debug: print Expr tag (for tracing enum dispatch)
+typedef struct { int64_t tag; void* payload; } ForgeEnum;
+void forge_debug_enum(ForgeEnum e) {
+    static int _de_count = 0;
+    if (_de_count < 10) {
+        fprintf(stderr, "  [enum] tag=%lld payload=%p\n", (long long)e.tag, e.payload);
+        _de_count++;
+    }
+}
+
 // C-side pending Statement for parse-emit cycle
 // Avoids ABI corruption when returning { i8, ptr } from mini-built functions
 typedef struct { uint8_t tag; char _pad[7]; void* payload; } Statement;

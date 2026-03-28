@@ -3121,6 +3121,8 @@ fn compile(source: string) -> string {
     // Self type tracking for method desugaring
     ir_raw("declare void @forge_set_self_type(%ForgeString)")
     ir_raw("declare %ForgeString @forge_get_self_type()")
+    // Debug
+    ir_raw("declare void @forge_debug_enum({ i64, ptr })")
     // C-side variable name tracking
     ir_raw("declare void @forge_var_name_clear()")
     ir_raw("declare void @forge_var_name_push(%ForgeString)")
