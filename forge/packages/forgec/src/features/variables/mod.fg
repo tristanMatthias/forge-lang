@@ -58,6 +58,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         p.error("expected variable name")
         return null
     }
+    // Store name in C-side cache for build_alloca auto-cache fallback
+    forge_set_last_let_name(var_name)
 
     // Optional type annotation: : Type
     // Capture type annotation info for global type detection

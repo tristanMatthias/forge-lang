@@ -2102,6 +2102,40 @@ void forge_ir_open(ForgeString path) {
     cpath[path.len] = '\0';
     _ir_file = fopen(cpath, "wb");
 }
+// Forward declare shared pending alloca name (defined near forge_param_name_get)
+extern char forge_pending_alloca_name[64];
+extern int64_t forge_pending_alloca_name_len;
+
+// Last parsed let-variable name — set during parsing, used during emission
+static char _last_let_name[64] = "";
+static int64_t _last_let_name_len = 0;
+void forge_set_last_let_name(ForgeString name) {
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_last_let_name, name.ptr, name.len);
+        _last_let_name[name.len] = '\0';
+        _last_let_name_len = name.len;
+    }
+}
+// Copy last let name to pending alloca name (called before build_alloca)
+void forge_let_to_alloca_name(void) {
+    if (_last_let_name_len > 0) {
+        memcpy(forge_pending_alloca_name, _last_let_name, _last_let_name_len + 1);
+        forge_pending_alloca_name_len = _last_let_name_len;
+    }
+}
+
+// C-side pending alloca name setter (called from Forge define_var)
+void forge_set_alloca_name_c(ForgeString name) {
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(forge_pending_alloca_name, name.ptr, name.len);
+        forge_pending_alloca_name[name.len] = '\0';
+        forge_pending_alloca_name_len = name.len;
+    } else {
+        forge_pending_alloca_name[0] = '\0';
+        forge_pending_alloca_name_len = 0;
+    }
+}
+
 // Alloca hoisting: when active, alloca lines are buffered and emitted
 // at the entry block (right after "entry:" label) instead of inline.
 #define IR_ALLOCA_BUF_SIZE 2048
@@ -2378,9 +2412,23 @@ void forge_param_name_add(ForgeString name) {
     }
     _param_name_count++;
 }
+// Shared pending alloca name — set by param_name_get, read by build_alloca auto-cache
+char forge_pending_alloca_name[64] = "";
+int64_t forge_pending_alloca_name_len = 0;
+
 ForgeString forge_param_name_get(int64_t idx) {
-    if (idx < 0 || idx >= _param_name_count) return forge_string_new("", 0);
+    if (idx < 0 || idx >= _param_name_count) {
+        forge_pending_alloca_name[0] = '\0';
+        forge_pending_alloca_name_len = 0;
+        return forge_string_new("", 0);
+    }
     int64_t len = strlen(_param_names[idx]);
+    // Also set pending alloca name for build_alloca auto-cache fallback
+    if (len > 0 && len < 64) {
+        memcpy(forge_pending_alloca_name, _param_names[idx], len);
+        forge_pending_alloca_name[len] = '\0';
+        forge_pending_alloca_name_len = len;
+    }
     return forge_string_new(_param_names[idx], len);
 }
 
@@ -2732,7 +2780,8 @@ void* forge_alloca_cache_get(ForgeString name) {
         }
     }
     _ac_miss_count++;
-    if (_ac_miss_count <= 20 && name.ptr && name.len > 0 && name.len < 30) {
+    if (_ac_miss_count <= 5 && name.ptr && name.len > 0 && name.len < 30) {
+        fprintf(stderr, "  [miss] '%.*s' pending='%s' last_let='%s'\n", (int)name.len, (char*)name.ptr, forge_pending_alloca_name, _last_let_name);
     }
     return NULL;
 }

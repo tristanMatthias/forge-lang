@@ -541,6 +541,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         // self param: already a pointer, use directly (no copy)
         mut alloca = param_val
         if pname != "self" {
+            forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
             // build_alloca auto-caches in C-side (forge_alloca_cache_set_raw)
             // Don't call forge_alloca_cache_set here — the Forge variable 'alloca'

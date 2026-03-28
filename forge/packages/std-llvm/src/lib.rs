@@ -21,6 +21,20 @@ fn safe_name(_name: *const c_char) -> *const c_char {
     EMPTY_NAME.as_ptr() as *const c_char
 }
 
+// Pending alloca name: set before build_alloca to ensure the name survives
+// even if the Forge wrapper corrupts the ForgeString during the call.
+static mut PENDING_ALLOCA_NAME: [u8; 64] = [0u8; 64];
+
+#[no_mangle]
+pub extern "C" fn forge_set_alloca_name(name_ptr: *const c_char, name_len: i64) {
+    unsafe {
+        PENDING_ALLOCA_NAME = [0u8; 64];
+        if !name_ptr.is_null() && name_len > 0 && name_len < 64 {
+            std::ptr::copy_nonoverlapping(name_ptr as *const u8, PENDING_ALLOCA_NAME.as_mut_ptr(), name_len as usize);
+        }
+    }
+}
+
 // Generate unique block names: "bb0", "bb1", ... to avoid colliding with %N registers
 thread_local! {
     static BB_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -660,27 +674,59 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
     }
     let result = unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) };
     // Auto-cache: store alloca in C-side cache (bypasses Forge variable clobbering)
-    if !name.is_null() && !result.is_null() {
+    if !result.is_null() {
         extern "C" {
             fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
             fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
         }
-        let name_bytes = unsafe { std::ffi::CStr::from_ptr(name).to_bytes() };
-        let len = name_bytes.len() as i64;
-        if len > 0 && len < 100 {
+        // Try direct name first, fall back to pending name from forge_set_alloca_name
+        let mut cache_name: *const c_char = std::ptr::null();
+        let mut cache_len: i64 = 0;
+
+        if !name.is_null() {
+            let name_bytes = unsafe { std::ffi::CStr::from_ptr(name).to_bytes() };
+            if !name_bytes.is_empty() {
+                cache_name = name;
+                cache_len = name_bytes.len() as i64;
+            }
+        }
+        // Fallback: use pending alloca name (set by forge_param_name_get or forge_set_alloca_name)
+        if cache_len == 0 {
+            extern "C" {
+                static mut forge_pending_alloca_name: [c_char; 64];
+                static mut forge_pending_alloca_name_len: i64;
+            }
             unsafe {
-                forge_alloca_cache_set_raw(name, len, result);
-                // Detect ForgeString-typed allocas via LLVM type inspection
+                if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
+                    cache_name = forge_pending_alloca_name.as_ptr();
+                    cache_len = forge_pending_alloca_name_len;
+                }
+            }
+        }
+        if cache_len > 0 && cache_len < 100 {
+            unsafe {
+                forge_alloca_cache_set_raw(cache_name, cache_len, result);
+                // Detect ForgeString-typed allocas (struct with 2 elements)
                 let alloca_ty = LLVMGetAllocatedType(result);
                 if !alloca_ty.is_null() {
                     let kind = LLVMGetTypeKind(alloca_ty);
-                    // 10 = LLVMStructTypeKind — ForgeString is { ptr, i64 }
-                    if kind == 10 {
+                    if kind == 10 { // LLVMStructTypeKind
                         let ec = LLVMCountStructElementTypes(alloca_ty);
                         if ec == 2 {
-                            forge_str_var_add_raw(name, len);
+                            forge_str_var_add_raw(cache_name, cache_len);
                         }
                     }
+                }
+                // Clear Rust-side pending name
+                PENDING_ALLOCA_NAME = [0u8; 64];
+                // Clear C-side pending name
+                {
+                    extern "C" {
+                        static mut forge_pending_alloca_name: [c_char; 64];
+                        static mut forge_pending_alloca_name_len: i64;
+                    }
+                    forge_pending_alloca_name[0] = 0;
+                    forge_pending_alloca_name_len = 0;
                 }
             }
         }
