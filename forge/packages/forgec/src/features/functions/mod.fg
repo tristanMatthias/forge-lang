@@ -542,8 +542,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut alloca = param_val
         if pname != "self" {
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            // Save to C cache IMMEDIATELY before any other call clobbers it
-            forge_alloca_cache_set(pname, alloca)
+            // build_alloca auto-caches in C-side (forge_alloca_cache_set_raw)
+            // Don't call forge_alloca_cache_set here — the Forge variable 'alloca'
+            // may be clobbered, overwriting the correct auto-cached value
             llvm.build_store(CG_B, param_val, alloca)
         } else {
             forge_alloca_cache_set(pname, alloca)

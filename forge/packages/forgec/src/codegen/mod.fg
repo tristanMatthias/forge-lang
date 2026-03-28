@@ -3093,8 +3093,7 @@ impl Codegen {
             llvm.position_at_end(CG_B, entry_bb)
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
-        // Save to C caches immediately (before any other call clobbers it)
-        forge_alloca_cache_set(name, alloca)
+        // build_alloca auto-caches in C-side — don't overwrite with potentially clobbered Forge var
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
         // Restore builder position and store value
         llvm.position_at_end(CG_B, cur_bb)
