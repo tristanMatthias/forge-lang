@@ -286,6 +286,7 @@ fn scan_one_file(filepath: string, idx: int) {
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
     p.parse_program()
+    forge_alloc_stats()
     eprintln("  [scan] " + string(idx) + " parsed OK")
 }
 

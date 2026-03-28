@@ -2534,6 +2534,42 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
     return 0;
 }
 
+// C-side variable name tracking (immune to Forge list corruption)
+// Tracks variable names pushed during emit_fn_body_from_source param setup
+#define VAR_NAME_MAX 256
+static char _var_names[VAR_NAME_MAX][64];
+static int _var_name_count = 0;
+static int _var_name_scope_start = 0;
+
+void forge_var_name_clear(void) { _var_name_count = 0; _var_name_scope_start = 0; }
+void forge_var_name_set_scope(int64_t start) { _var_name_scope_start = (int)start; }
+void forge_var_name_push(ForgeString name) {
+    if (_var_name_count >= VAR_NAME_MAX) return;
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_var_names[_var_name_count], name.ptr, name.len);
+        _var_names[_var_name_count][name.len] = '\0';
+    } else {
+        _var_names[_var_name_count][0] = '\0';
+    }
+    _var_name_count++;
+}
+// Returns 1 if name found in current scope, 0 otherwise
+int64_t forge_var_name_exists(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return 0;
+    for (int i = _var_name_count - 1; i >= _var_name_scope_start; i--) {
+        if ((int64_t)strlen(_var_names[i]) == name.len &&
+            memcmp(_var_names[i], name.ptr, name.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int _ac_dbg_fn = 0;  // 1 = debugging active
+void forge_ac_debug_on(void) { _ac_dbg_fn = 1; }
+void forge_ac_debug_off(void) { _ac_dbg_fn = 0; }
+
+static int _ac_dbg_count = 0;
 void* forge_alloca_cache_get(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return NULL;
     for (int i = _ac_count - 1; i >= 0; i--) {
@@ -2541,6 +2577,11 @@ void* forge_alloca_cache_get(ForgeString name) {
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             if (_ac[i].fn != _ac_fn_ptr) {
                 continue;
+            }
+            if (_ac_dbg_count < 5 && name.len < 20) {
+                char nbuf[32]; memcpy(nbuf, name.ptr, name.len); nbuf[name.len] = 0;
+                fprintf(stderr, "  [ac_get] '%s' -> %p\n", nbuf, _ac[i].ptr);
+                _ac_dbg_count++;
             }
             return _ac[i].ptr;
         }

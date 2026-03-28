@@ -975,6 +975,11 @@ fn cg_init_runtime() {
     // Self type tracking for method desugaring
     llvm.add_function(CG_MOD, "forge_set_self_type", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_get_self_type", make_fn_type_0(CG_STR))
+    // C-side variable name tracking (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_var_name_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_var_name_push", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_var_name_exists", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_var_name_set_scope", make_fn_type_1(CG_VOID, CG_I64))
     // Function name/return-type registry (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_fn_reg_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_fn_reg_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
@@ -1811,9 +1816,22 @@ impl Codegen {
             CG_LAST_IS_STR = 1
             return llvm.const_null(CG_STR)
         }
-        // Search current function locals first (from END to scope start)
-        // then globals (from scope start-1 to 0)
-        // This prevents stale locals from other functions being found
+        // C-side fast path: check if name exists in var registry, then load from alloca cache
+        // This bypasses CG_VAR_NAMES list (corrupted in mini-built binary)
+        if forge_var_name_exists(name) == 1 {
+            let var_ptr = forge_alloca_cache_get(name)
+            if var_ptr != null {
+                cg_reinit_types()
+                // Determine load type from C-side caches
+                mut load_ty = CG_I64
+                if forge_str_var_check(name) == 1 { load_ty = CG_STR
+                    CG_LAST_IS_STR = 1 }
+                CG_LAST_VAR_PTR = var_ptr
+                CG_LAST_VAR_ALLOCA_TYPE = load_ty
+                return llvm.build_load(CG_B, load_ty, var_ptr, name)
+            }
+        }
+        // Fallback: Search current function locals (Forge list)
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {

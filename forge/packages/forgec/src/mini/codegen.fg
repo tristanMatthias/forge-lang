@@ -3129,6 +3129,11 @@ fn compile(source: string) -> string {
     // Self type tracking for method desugaring
     ir_raw("declare void @forge_set_self_type(%ForgeString)")
     ir_raw("declare %ForgeString @forge_get_self_type()")
+    // C-side variable name tracking
+    ir_raw("declare void @forge_var_name_clear()")
+    ir_raw("declare void @forge_var_name_push(%ForgeString)")
+    ir_raw("declare i64 @forge_var_name_exists(%ForgeString)")
+    ir_raw("declare void @forge_var_name_set_scope(i64)")
     // Function name/return-type registry
     ir_raw("declare void @forge_fn_reg_clear()")
     ir_raw("declare void @forge_fn_reg_add(%ForgeString, %ForgeString)")

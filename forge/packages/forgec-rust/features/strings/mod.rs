@@ -94,6 +94,12 @@ crate::runtime_fn! { name: "forge_param_name_get", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_set_self_type", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_get_self_type", feature: "strings", params: [], ret: ForgeString }
 
+// C-side variable name tracking (immune to Forge list corruption)
+crate::runtime_fn! { name: "forge_var_name_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_var_name_push", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_var_name_exists", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_var_name_set_scope", feature: "strings", params: [I64], ret: Void }
+
 // Function name/return-type registry (immune to Forge list corruption)
 crate::runtime_fn! { name: "forge_fn_reg_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_fn_reg_add", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
