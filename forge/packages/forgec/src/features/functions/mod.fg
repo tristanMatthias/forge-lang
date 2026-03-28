@@ -660,6 +660,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         body_parser.skip_newlines()
         CG_ACTIVE = true
         cg_reinit_types()
+        CG_LAST_VAL = llvm.const_int(CG_I64, 0, 0)
+        CG_HAS_LAST_VAL = 0
         // Parse and emit each statement individually
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             CG_ACTIVE = false

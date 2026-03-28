@@ -1819,20 +1819,18 @@ impl Codegen {
             CG_LAST_IS_STR = 1
             return llvm.const_null(CG_STR)
         }
-        // C-side fast path: check if name exists in var registry, then load from alloca cache
-        // This bypasses CG_VAR_NAMES list (corrupted in mini-built binary)
-        if forge_var_name_exists(name) == 1 {
-            let var_ptr = forge_alloca_cache_get(name)
-            if var_ptr != null {
-                cg_reinit_types()
-                // Determine load type from C-side caches
-                mut load_ty = CG_I64
-                if forge_str_var_check(name) == 1 { load_ty = CG_STR
-                    CG_LAST_IS_STR = 1 }
-                CG_LAST_VAR_PTR = var_ptr
-                CG_LAST_VAR_ALLOCA_TYPE = load_ty
-                return llvm.build_load(CG_B, load_ty, var_ptr, name)
-            }
+        // C-side fast path: check alloca cache directly (bypasses corrupted CG_VAR_NAMES)
+        // The alloca cache stores all variables registered via forge_alloca_cache_set
+        // (params from emit_fn_body_from_source + locals from define_var)
+        let cached_ptr = forge_alloca_cache_get(name)
+        if cached_ptr != null {
+            cg_reinit_types()
+            mut load_ty = CG_I64
+            if forge_str_var_check(name) == 1 { load_ty = CG_STR
+                CG_LAST_IS_STR = 1 }
+            CG_LAST_VAR_PTR = cached_ptr
+            CG_LAST_VAR_ALLOCA_TYPE = load_ty
+            return llvm.build_load(CG_B, load_ty, cached_ptr, name)
         }
         // Fallback: Search current function locals (Forge list)
         mut vi = CG_VAR_NAMES.length - 1
