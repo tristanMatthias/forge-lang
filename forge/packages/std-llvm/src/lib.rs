@@ -1270,7 +1270,16 @@ pub extern "C" fn forge_llvm_const_struct(ctx: LLVMPtr, values: *mut LLVMPtr, co
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMAddGlobal(m, ty, name) }
+    let result = unsafe { LLVMAddGlobal(m, ty, name) };
+    // Auto-cache global Value* so emit_ident can find globals via alloca cache
+    if !name.is_null() && !result.is_null() {
+        extern "C" { fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64; }
+        let len = unsafe { std::ffi::CStr::from_ptr(name).to_bytes().len() } as i64;
+        if len > 0 && len < 100 {
+            unsafe { forge_alloca_cache_set_raw(name, len, result); }
+        }
+    }
+    result
 }
 
 #[no_mangle]

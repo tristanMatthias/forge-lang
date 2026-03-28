@@ -2485,7 +2485,18 @@ static struct { char name[64]; void* ptr; void* fn; } _ac[ALLOCA_CACHE_SIZE];
 static int _ac_count = 0;
 
 // Clear cache AND record current function pointer for staleness detection
-int64_t forge_alloca_cache_clear(void) { _ac_count = 0; return 0; }
+int64_t forge_alloca_cache_clear(void) {
+    // Preserve global entries (fn == NULL) — only clear function-scoped entries
+    int write = 0;
+    for (int i = 0; i < _ac_count; i++) {
+        if (_ac[i].fn == NULL) {
+            if (write != i) _ac[write] = _ac[i];
+            write++;
+        }
+    }
+    _ac_count = write;
+    return 0;
+}
 
 // Raw C-string version of cache_set — called from Rust side where name ptr is still valid
 int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void* ptr) {
@@ -2630,23 +2641,35 @@ static int _ac_dbg_fn = 0;  // 1 = debugging active
 void forge_ac_debug_on(void) { _ac_dbg_fn = 1; }
 void forge_ac_debug_off(void) { _ac_dbg_fn = 0; }
 
-static int _ac_dbg_count = 0;
+static int _ac_miss_count = 0;
+static int _ac_hit_count = 0;
+void forge_alloca_cache_stats(void) {
+    fprintf(stderr, "  [ac_stats] hits=%d misses=%d\n", _ac_hit_count, _ac_miss_count);
+}
 void* forge_alloca_cache_get(ForgeString name) {
-    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return NULL;
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) {
+        _ac_miss_count++;
+        return NULL;
+    }
+    // First pass: search current function scope
     for (int i = _ac_count - 1; i >= 0; i--) {
         if ((int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
-            if (_ac[i].fn != _ac_fn_ptr) {
-                continue;
+            if (_ac[i].fn == _ac_fn_ptr) {
+                _ac_hit_count++;
+                return _ac[i].ptr;
             }
-            if (_ac_dbg_count < 5 && name.len < 20) {
-                char nbuf[32]; memcpy(nbuf, name.ptr, name.len); nbuf[name.len] = 0;
-                fprintf(stderr, "  [ac_get] '%s' -> %p\n", nbuf, _ac[i].ptr);
-                _ac_dbg_count++;
-            }
+        }
+    }
+    // Second pass: search ANY scope (the fn_ptr might be wrong due to clobbering)
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            _ac_hit_count++;
             return _ac[i].ptr;
         }
     }
+    _ac_miss_count++;
     return NULL;
 }
 

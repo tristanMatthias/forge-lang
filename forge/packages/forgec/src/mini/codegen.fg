@@ -3083,6 +3083,7 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_watchdog_reset()")
     ir_raw("declare i64 @forge_alloca_cache_clear()")
     ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
+    ir_raw("declare void @forge_alloca_cache_stats()")
     ir_raw("declare i64 @forge_alloca_cache_set(%ForgeString, ptr)")
     ir_raw("declare ptr @forge_alloca_cache_get(%ForgeString)")
     ir_raw("declare i64 @forge_str_var_add(%ForgeString)")

@@ -350,6 +350,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
         fi = fi + 1
     }
     codegen_write_ir("output.ll")
+    forge_alloca_cache_stats()
     eprintln("  emit done")
 
     // Use external llc for object emission

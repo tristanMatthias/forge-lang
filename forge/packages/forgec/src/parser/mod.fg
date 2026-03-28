@@ -20,6 +20,7 @@ use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
 export mut PARSED_PARAM_TYPES: List<string> = []
+export mut PARSED_PARAM_NAMES: List<string> = []
 use @std.llvm
 
 // ─── Param Type ────────────────────────────────
@@ -1106,6 +1107,7 @@ impl Parser {
 
     fn parse_params(self) -> List<Param> {
         PARSED_PARAM_TYPES = []
+        PARSED_PARAM_NAMES = []
         self.expect_id(100)
         mut params: List<Param> = []
 
@@ -1156,6 +1158,7 @@ impl Parser {
         // Store the type name for function param type tracking
         LAST_PARAM_TYPE_NAME = type_name_text
         PARSED_PARAM_TYPES = PARSED_PARAM_TYPES.push(type_name_text)
+        PARSED_PARAM_NAMES = PARSED_PARAM_NAMES.push(name!)
 
         // Optional default value: = expr
         mut default_value: Expr? = null

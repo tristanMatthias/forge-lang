@@ -10,7 +10,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
-use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
+use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES, PARSED_PARAM_NAMES}
 use checker.TypeChecker
 use codegen.Codegen
 use features.while_loops.PARSE_END_POS
@@ -156,10 +156,14 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
         FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
         param_count = 1
     }
-    // Remaining params (non-self)
+    // Remaining params (non-self) — use PARSED_PARAM_NAMES for actual names
     pi = 1
     while pi < params.length {
-        forge_param_name_add("p")  // placeholder name for non-self params
+        if pi < PARSED_PARAM_NAMES.length {
+            forge_param_name_add(PARSED_PARAM_NAMES[pi])
+        } else {
+            forge_param_name_add("p")
+        }
         if pi < PARSED_PARAM_TYPES.length {
             forge_param_type_add(PARSED_PARAM_TYPES[pi])
             FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(PARSED_PARAM_TYPES[pi])
@@ -167,7 +171,11 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
             forge_param_type_add("int")
             FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push("int")
         }
-        FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push("p")
+        if pi < PARSED_PARAM_NAMES.length {
+            FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(PARSED_PARAM_NAMES[pi])
+        } else {
+            FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push("p")
+        }
         param_count = param_count + 1
         pi = pi + 1
     }
