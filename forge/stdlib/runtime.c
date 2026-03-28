@@ -2832,7 +2832,10 @@ int64_t forge_str_var_check(ForgeString name) {
     return 0;
 }
 
-int64_t forge_str_var_clear(void) { _str_count = 0; return 0; }
+// Track how many string vars are globals (preserved across clear)
+static int _str_global_count = 0;
+void forge_str_var_set_global_count(void) { _str_global_count = _str_count; }
+int64_t forge_str_var_clear(void) { _str_count = _str_global_count; return 0; }
 
 // ---- Index-based alloca cache (no string args needed) ----
 #define IDX_CACHE_SIZE 512

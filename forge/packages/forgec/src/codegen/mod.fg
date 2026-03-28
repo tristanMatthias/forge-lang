@@ -1043,6 +1043,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_set_args", make_fn_type_2(CG_VOID, CG_I32, CG_PTR))
     llvm.add_function(CG_MOD, "forge_selfhost_process_args", make_fn_type_0(CG_STR))
     llvm.add_function(CG_MOD, "forge_selfhost_get_arg", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_str_var_set_global_count", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_selfhost_fs_read", make_fn_type_1(CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_selfhost_process_exit", make_fn_type_1(CG_VOID, CG_I64))
     llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type_2(CG_STR, CG_STR, CG_STR))

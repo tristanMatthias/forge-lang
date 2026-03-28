@@ -329,6 +329,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
         declare_llvm_api()
     }
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    forge_str_var_set_global_count()
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
@@ -385,6 +386,7 @@ fn build_compile_single(input_file: string, output: string) {
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    forge_str_var_set_global_count()
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
