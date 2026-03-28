@@ -2102,9 +2102,71 @@ void forge_ir_open(ForgeString path) {
     cpath[path.len] = '\0';
     _ir_file = fopen(cpath, "wb");
 }
+// Alloca hoisting: when active, alloca lines are buffered and emitted
+// at the entry block (right after "entry:" label) instead of inline.
+#define IR_ALLOCA_BUF_SIZE 2048
+#define IR_ALLOCA_LINE_SIZE 128
+static char _ir_alloca_buf[IR_ALLOCA_BUF_SIZE][IR_ALLOCA_LINE_SIZE];
+static int _ir_alloca_count = 0;
+static int _ir_alloca_hoist = 0;  // 1 = hoisting active
+
+void forge_ir_hoist_begin(void) {
+    _ir_alloca_count = 0;
+    _ir_alloca_hoist = 1;
+}
+
+void forge_ir_hoist_flush(void) {
+    // Emit all buffered allocas
+    if (!_ir_file) return;
+    for (int i = 0; i < _ir_alloca_count; i++) {
+        fputs(_ir_alloca_buf[i], _ir_file);
+        fputc('\n', _ir_file);
+    }
+    _ir_alloca_count = 0;
+}
+
+void forge_ir_hoist_end(void) {
+    _ir_alloca_hoist = 0;
+    _ir_alloca_count = 0;
+}
+
 void forge_ir_line(ForgeString line) {
     if (!_ir_file) return;
-    if (line.ptr && line.len > 0) fwrite(line.ptr, 1, line.len, _ir_file);
+    if (line.ptr && line.len > 0) {
+        // Detect alloca lines and buffer them when hoisting is active
+        // Pattern: "  %rN = alloca TYPE"
+        if (_ir_alloca_hoist && line.len > 12 && line.len < IR_ALLOCA_LINE_SIZE - 1) {
+            // Check for "  %r" prefix followed by "= alloca "
+            const char* p = line.ptr;
+            if (p[0] == ' ' && p[1] == ' ' && p[2] == '%' && p[3] == 'r') {
+                // Find "= alloca "
+                const char* eq = NULL;
+                for (int i = 4; i < line.len - 8; i++) {
+                    if (p[i] == '=' && p[i+1] == ' ' && p[i+2] == 'a' && p[i+3] == 'l' && p[i+4] == 'l') {
+                        eq = p + i;
+                        break;
+                    }
+                }
+                if (eq && memcmp(eq, "= alloca ", 9) == 0) {
+                    // Buffer this alloca line
+                    if (_ir_alloca_count < IR_ALLOCA_BUF_SIZE) {
+                        memcpy(_ir_alloca_buf[_ir_alloca_count], p, line.len);
+                        _ir_alloca_buf[_ir_alloca_count][line.len] = '\0';
+                        _ir_alloca_count++;
+                        return;  // Don't write inline
+                    }
+                }
+            }
+        }
+        // Detect "entry:" label and flush buffered allocas
+        if (line.len >= 6 && memcmp(line.ptr, "entry:", 6) == 0) {
+            fwrite(line.ptr, 1, line.len, _ir_file);
+            fputc('\n', _ir_file);
+            forge_ir_hoist_flush();
+            return;
+        }
+        fwrite(line.ptr, 1, line.len, _ir_file);
+    }
     fputc('\n', _ir_file);
 }
 void forge_ir_close(void) {
@@ -2670,6 +2732,8 @@ void* forge_alloca_cache_get(ForgeString name) {
         }
     }
     _ac_miss_count++;
+    if (_ac_miss_count <= 20 && name.ptr && name.len > 0 && name.len < 30) {
+    }
     return NULL;
 }
 

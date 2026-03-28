@@ -2610,6 +2610,9 @@ fn gen_fn_decl(f: FnDecl) {
         i = i + 1
     }
 
+    // Enable alloca hoisting — allocas in the body will be buffered and flushed to entry
+    forge_ir_hoist_begin()
+
     // Generate body
     IN_FN_BODY = 1
     let terminated = gen_stmts(f.body)
@@ -2657,6 +2660,7 @@ fn gen_fn_decl(f: FnDecl) {
         }
     }
 
+    forge_ir_hoist_end()
     ir_raw("}")
     ir_raw("")
     // Emit any closure functions generated during this function
@@ -3084,6 +3088,16 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_alloca_cache_clear()")
     ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
     ir_raw("declare void @forge_alloca_cache_stats()")
+    ir_raw("declare void @forge_ir_hoist_begin()")
+    ir_raw("declare void @forge_ir_hoist_end()")
+    FN_NAMES = FN_NAMES.push("forge_ir_hoist_begin")
+    FN_RETTYPES = FN_RETTYPES.push("void")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+    FN_NAMES = FN_NAMES.push("forge_ir_hoist_end")
+    FN_RETTYPES = FN_RETTYPES.push("void")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
     ir_raw("declare i64 @forge_alloca_cache_set(%ForgeString, ptr)")
     ir_raw("declare ptr @forge_alloca_cache_get(%ForgeString)")
     ir_raw("declare i64 @forge_str_var_add(%ForgeString)")
