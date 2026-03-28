@@ -1835,6 +1835,13 @@ impl Codegen {
             mut load_ty = CG_I64
             if forge_str_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1 }
+            // Check struct type (for method desugaring and field access)
+            let st = forge_struct_var_get(name)
+            if st != "" {
+                CG_LAST_STRUCT_TYPE = st
+                let resolved = resolve_type_to_llvm(st)
+                if resolved != null && resolved != CG_I64 { load_ty = resolved }
+            }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
             return llvm.build_load(CG_B, load_ty, cached_ptr, name)
