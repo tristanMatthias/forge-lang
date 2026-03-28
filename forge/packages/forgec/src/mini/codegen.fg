@@ -279,7 +279,7 @@ fn gen_expr(e: Expr) -> string {
             let field_csv = e.str_val.substring(pipe_idx + 1, e.str_val.length)
             let si = find_struct(sname)
             let sty = struct_llvm_type(sname)
-            mut cur = "undef"
+            mut cur = "zeroinitializer"
             mut fi = 0
             while fi < e.children.length {
                 // Get field name from CSV
@@ -500,7 +500,7 @@ fn gen_expr(e: Expr) -> string {
                 ei = ei + 1
             }
             let ls1 = new_reg()
-            ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
+            ir_line(ls1 + " = insertvalue { ptr, i64 } zeroinitializer, ptr " + data + ", 0")
             let ls2 = new_reg()
             ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + string(count) + ", 1")
             LAST_IS_LIST = 1
@@ -672,7 +672,7 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
                 let lp = new_reg()
                 ir_line(lp + " = inttoptr i64 " + lhs + " to ptr")
                 let ls = new_reg()
-                ir_line(ls + " = insertvalue %ForgeString undef, ptr " + lp + ", 0")
+                ir_line(ls + " = insertvalue %ForgeString zeroinitializer, ptr " + lp + ", 0")
                 let ls2 = new_reg()
                 ir_line(ls2 + " = insertvalue %ForgeString " + ls + ", i64 0, 1")
                 str_lhs = ls2
@@ -681,7 +681,7 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
                 let rp = new_reg()
                 ir_line(rp + " = inttoptr i64 " + rhs + " to ptr")
                 let rs = new_reg()
-                ir_line(rs + " = insertvalue %ForgeString undef, ptr " + rp + ", 0")
+                ir_line(rs + " = insertvalue %ForgeString zeroinitializer, ptr " + rp + ", 0")
                 let rs2 = new_reg()
                 ir_line(rs2 + " = insertvalue %ForgeString " + rs + ", i64 0, 1")
                 str_rhs = rs2
@@ -1184,7 +1184,7 @@ fn gen_call(e: Expr) -> string {
                     ir_line("br label %" + cond_l)
                     ir_raw(end_l + ":")
                     let ls1 = new_reg()
-                    ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
+                    ir_line(ls1 + " = insertvalue { ptr, i64 } zeroinitializer, ptr " + data + ", 0")
                     let ls2 = new_reg()
                     ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + argc + ", 1")
                     LAST_IS_LIST = 1
@@ -1413,7 +1413,7 @@ fn gen_call(e: Expr) -> string {
                 let kp = new_reg()
                 ir_line(kp + " = inttoptr i64 " + key + " to ptr")
                 let ks = new_reg()
-                ir_line(ks + " = insertvalue %ForgeString undef, ptr " + kp + ", 0")
+                ir_line(ks + " = insertvalue %ForgeString zeroinitializer, ptr " + kp + ", 0")
                 let ks2 = new_reg()
                 ir_line(ks2 + " = insertvalue %ForgeString " + ks + ", i64 0, 1")
                 key_str = ks2
@@ -1614,7 +1614,7 @@ fn gen_call(e: Expr) -> string {
                 let sptr = new_reg()
                 ir_line(sptr + " = inttoptr i64 " + final_a + " to ptr")
                 let fs = new_reg()
-                ir_line(fs + " = insertvalue %ForgeString undef, ptr " + sptr + ", 0")
+                ir_line(fs + " = insertvalue %ForgeString zeroinitializer, ptr " + sptr + ", 0")
                 let fs2 = new_reg()
                 ir_line(fs2 + " = insertvalue %ForgeString " + fs + ", i64 0, 1")
                 final_a = fs2
@@ -2016,7 +2016,7 @@ fn codegen_for(s: Stmt) -> int {
         if it_rt == "i64" || (it_rt == "" && iter_is_list == 0) {
             // Value is i64 (enum field) — create an empty list
             let empty_ls = new_reg()
-            ir_line(empty_ls + " = insertvalue { ptr, i64 } undef, i64 0, 1")
+            ir_line(empty_ls + " = insertvalue { ptr, i64 } zeroinitializer, i64 0, 1")
             list_val = empty_ls
         }
         if true {
