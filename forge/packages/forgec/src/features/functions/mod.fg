@@ -647,7 +647,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
 
     // Pure AST parse then emit
-    // Clear per-function list init tracking (prevents cross-function name collisions)
     VAR_LIST_INIT_CSV = ""
     if body_src != "" {
         CG_ACTIVE = false
@@ -658,12 +657,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         CG_ACTIVE = true
         cg_reinit_types()
         mut last = llvm.const_int(CG_I64, 0, 0)
-        // Safety: check block has valid statements before emitting
         let _bsl = body.statements.length
         if _bsl >= 0 && _bsl < 10000 {
             last = cg.emit_block(body)
-        } else {
-            eprintln("  [WARN] skipping fn " + name + " — block.statements.length=" + string(_bsl))
         }
         CG_LAST_VAL = last
         CG_HAS_LAST_VAL = 1

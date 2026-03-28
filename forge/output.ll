@@ -320,17 +320,16 @@ declare i64 @forge_sh_length.5(%ForgeString)
 define i64 @add(i64 %0, i64 %1) {
 bb0:
   %2 = alloca i64, align 8
-  store i64 %0, ptr %2, align 4
   %3 = alloca i64, align 8
-  store i64 %1, ptr %3, align 4
+  store i64 %0, ptr %3, align 4
+  %4 = alloca i64, align 8
+  store i64 %1, ptr %4, align 4
+  store i64 0, ptr %2, align 4
   ret i64 0
 }
 
 define i32 @main(i32 %0, ptr %1) {
 bb1:
   call void @forge_set_args(i32 %0, ptr %1)
-  %2 = call i64 @add(i64 1, i64 2)
-  %3 = call %ForgeString @forge_int_to_string(i64 %2)
-  call void @forge_println_string(%ForgeString %3)
   ret i32 0
 }
