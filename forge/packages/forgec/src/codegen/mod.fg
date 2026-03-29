@@ -2621,7 +2621,10 @@ impl Codegen {
         } else {
             CG_LAST_IS_NULLABLE = 0
         }
-        let ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0)
+        // Prefer the declared function's type — ensures struct/enum params
+        // are passed as {i64, ptr} not plain i64 (resolve_type_to_llvm may fail for enums)
+        mut ft = llvm.global_get_value_type(fn_val)
+        if ft == null { ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0) }
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)

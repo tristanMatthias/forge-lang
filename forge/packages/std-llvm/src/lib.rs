@@ -1347,6 +1347,7 @@ pub extern "C" fn forge_llvm_get_undef(ty: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
+    if val.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMGlobalGetValueType(val) }
 }
 
