@@ -403,6 +403,11 @@ pub extern "C" fn forge_llvm_type_array_free(arr: *mut LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_function(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr {
+    if m.is_null() || fn_type.is_null() || name.is_null() {
+        let n = if !name.is_null() { unsafe { std::ffi::CStr::from_ptr(name).to_string_lossy().into_owned() } } else { "null".to_string() };
+        eprintln!("WARNING: add_function null arg: m={:?} name={} type={:?}", m, n, fn_type);
+        return std::ptr::null_mut();
+    }
     unsafe { LLVMAddFunction(m, name, fn_type) }
 }
 
