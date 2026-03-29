@@ -2401,6 +2401,47 @@ ForgeString forge_fn_reg_get_ret(ForgeString name) {
 
 int64_t forge_fn_reg_count(void) { return _fn_reg_count; }
 
+// C-side list variable tracking
+#define LIST_VAR_CACHE_SIZE 256
+static char _list_var_names[LIST_VAR_CACHE_SIZE][64];
+static int _list_var_count = 0;
+static int _list_var_global_count = 0;
+void forge_list_var_add(ForgeString name) {
+    if (_list_var_count >= LIST_VAR_CACHE_SIZE) return;
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_list_var_names[_list_var_count], name.ptr, name.len);
+        _list_var_names[_list_var_count][name.len] = '\0';
+        _list_var_count++;
+    }
+}
+int64_t forge_list_var_check(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return 0;
+    for (int i = _list_var_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_list_var_names[i]) == name.len &&
+            memcmp(_list_var_names[i], name.ptr, name.len) == 0)
+            return 1;
+    }
+    return 0;
+}
+void forge_list_var_clear(void) { _list_var_count = _list_var_global_count; }
+void forge_list_var_set_global(void) { _list_var_global_count = _list_var_count; }
+
+// Check if a function's return type is "string" or starts with "List"
+// Done entirely in C — immune to Forge ForgeString corruption
+int64_t forge_fn_is_str_return(ForgeString fn_name) {
+    if (!fn_name.ptr || fn_name.len <= 0) return 0;
+    for (int i = 0; i < _fn_reg_count; i++) {
+        if ((int64_t)strlen(_fn_reg[i].name) == fn_name.len &&
+            memcmp(_fn_reg[i].name, fn_name.ptr, fn_name.len) == 0) {
+            const char* ret = _fn_reg[i].ret_type;
+            if (strcmp(ret, "string") == 0) return 1;
+            if (strncmp(ret, "List", 4) == 0) return 2; // 2 = list
+            return 0;
+        }
+    }
+    return 0;
+}
+
 // ---- C-side param type storage (immune to Forge list corruption) ----
 #define PARAM_REG_MAX 4096
 static char _param_types[PARAM_REG_MAX][64];

@@ -1045,6 +1045,10 @@ fn cg_init_runtime() {
     cg_reinit_types()
     llvm.add_function(CG_MOD, "forge_set_args", make_fn_type_2(CG_VOID, CG_I32, CG_PTR))
     llvm.add_function(CG_MOD, "forge_selfhost_process_args", make_fn_type_0(CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_is_str_return", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_list_var_add", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_list_var_check", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_list_var_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_selfhost_get_arg", make_fn_type_1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_str_var_set_global_count", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_selfhost_fs_read", make_fn_type_1(CG_STR, CG_STR))
@@ -1845,6 +1849,9 @@ impl Codegen {
             mut load_ty = CG_I64
             if forge_str_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1 }
+            if forge_list_var_check(name) == 1 { load_ty = CG_STR
+                CG_LAST_IS_STR = 1
+                CG_LAST_IS_LIST = 1 }
             // Check struct type (for method desugaring and field access)
             let st = forge_struct_var_get(name)
             if st != "" {
@@ -2452,19 +2459,25 @@ impl Codegen {
         cg_reinit_types()
         mut call_ret_ty = CG_I64
         mut call_is_nullable = false
-        // For extern runtime functions, use known return types
+        // Check return type via C-side registry (immune to Forge corruption)
         mut is_extern_str_return = false
+        let str_ret_check = forge_fn_is_str_return(fn_name)
+        if str_ret_check == 1 {
+            // Returns string
+            call_ret_ty = CG_STR
+            is_extern_str_return = true
+        }
+        if str_ret_check == 2 {
+            // Returns List<T>
+            call_ret_ty = CG_STR
+            is_extern_str_return = true
+            CG_LAST_IS_LIST = 1
+        }
+        // Explicit overrides for extern C functions not in the registry
         if fn_name == "forge_selfhost_process_args" { call_ret_ty = CG_STR
             is_extern_str_return = true
             CG_LAST_IS_LIST = 1 }
         if fn_name == "forge_selfhost_get_arg" { call_ret_ty = CG_STR
-            is_extern_str_return = true }
-        // Impl methods that return List<T> or string
-        if fn_name == "Lexer__tokenize" { call_ret_ty = CG_STR
-            is_extern_str_return = true
-            CG_LAST_IS_LIST = 1 }
-        if fn_name == "Lexer__advance" || fn_name == "Lexer__peek" || fn_name == "Lexer__peek_ch" || fn_name == "Lexer__peek_at" || fn_name == "Lexer__peek_ch_at" {
-            call_ret_ty = CG_STR
             is_extern_str_return = true }
         if fn_name == "forge_selfhost_fs_read" { call_ret_ty = CG_STR
             is_extern_str_return = true }
@@ -3123,6 +3136,10 @@ impl Codegen {
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        // Register list vars in C-side cache
+        if CG_LAST_IS_LIST == 1 {
+            forge_list_var_add(name)
+        }
         mut is_str_flag3 = 0
         if is_str { is_str_flag3 = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag3)
