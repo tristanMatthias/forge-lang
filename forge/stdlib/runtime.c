@@ -672,6 +672,16 @@ int64_t forge_kind_id_for_keyword(ForgeString text) {
     return 0;
 }
 
+// C-side parser position tracking
+static int64_t _c_parser_pos = 0;
+static void* _c_parser_ptr = NULL;  // pointer to Parser struct
+void forge_parser_set_pos(int64_t pos) { _c_parser_pos = pos; }
+int64_t forge_parser_get_pos(void) {
+    return _c_parser_pos;
+}
+void forge_parser_advance_pos(void) { _c_parser_pos++; }
+void forge_parser_set_ptr(void* ptr) { _c_parser_ptr = ptr; }
+
 // C-side token list storage (immune to Token struct return value corruption)
 static ForgeString _c_token_list = {NULL, 0};
 void forge_set_token_list(ForgeString list) { _c_token_list = list; }
