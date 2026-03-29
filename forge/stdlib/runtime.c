@@ -718,6 +718,21 @@ int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
 int64_t forge_peek_kind_id(int64_t pos) {
     return forge_token_kind_id(_c_token_list, pos);
 }
+// C-side expect_ident: advances parser, returns ident text
+// Completely bypasses Forge let/return/if statement corruption
+ForgeString forge_expect_ident(void) {
+    int64_t pos = _c_parser_pos;
+    int64_t kid = forge_token_kind_id(_c_token_list, pos);
+    if (kid == 1 || kid == 60) {
+        _c_parser_pos++;
+        if (kid == 60) return forge_string_new("_", 1);
+        return forge_token_text(_c_token_list, pos);
+    }
+    // Check for keyword identifiers (is=55, table=56)
+    if (kid == 55) { _c_parser_pos++; return forge_string_new("is", 2); }
+    if (kid == 56) { _c_parser_pos++; return forge_string_new("table", 5); }
+    return (ForgeString){NULL, 0};
+}
 ForgeString forge_peek_text(int64_t pos) {
     return forge_token_text(_c_token_list, pos);
 }
@@ -2596,6 +2611,24 @@ int64_t forge_fn_is_str_return(ForgeString fn_name) {
     if (fn_name.len > 10 && memcmp(fn_name.ptr, "forge_llvm", 10) == 0) return 3;
     // All llvm_* wrapper functions return ptr
     if (fn_name.len > 4 && memcmp(fn_name.ptr, "llvm_", 5) == 0) return 3;
+    // C-side functions that return ForgeString (must be registered for correct call type)
+    #define STR_RET(s) if (fn_name.len == sizeof(s)-1 && memcmp(fn_name.ptr, s, sizeof(s)-1) == 0) return 1;
+    STR_RET("forge_peek_text")
+    STR_RET("forge_expect_ident")
+    STR_RET("forge_fn_store_get_name")
+    STR_RET("forge_fn_store_get_body")
+    STR_RET("forge_fn_reg_get_ret")
+    STR_RET("forge_param_type_get")
+    STR_RET("forge_param_name_get")
+    STR_RET("forge_selfhost_get_arg")
+    STR_RET("forge_get_self_type")
+    STR_RET("forge_struct_var_get")
+    STR_RET("forge_csv_next")
+    STR_RET("forge_csv_substr")
+    STR_RET("forge_scan_csv_path")
+    STR_RET("forge_mod_csv_get")
+    STR_RET("forge_sh_substr")
+    #undef STR_RET
     // Check registry
     for (int i = 0; i < _fn_reg_count; i++) {
         if ((int64_t)strlen(_fn_reg[i].name) == fn_name.len &&

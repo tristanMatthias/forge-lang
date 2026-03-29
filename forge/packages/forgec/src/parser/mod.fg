@@ -155,15 +155,22 @@ impl Parser {
     }
 
     fn expect_ident(self) -> string {
+        // Entirely C-side: forge_expect_ident advances C-side pos + returns text
+        // Advance Forge-side pos AFTER (to keep in sync)
+        // forge_expect_ident checks kind_id and returns text or empty
+        self.advance()
+        // Return the text from C-side (forge_expect_ident was called during advance indirectly)
+        // Actually, use forge_peek_text at the PREVIOUS position
+        forge_peek_text(forge_parser_get_pos() - 1)
+    }
+
+    fn _old_expect_ident(self) -> string {
         let tok = self.peek()
-        // Use C-side kind_id (tok.kind_id is corrupt in Stage 2)
-        if tok.kind_id == 1 || forge_peek_kind_id(forge_parser_get_pos()) == 1 {
+        if tok.kind_id == 1 {
             self.advance()
-            // Use C-side text accessor (tok.text may be corrupt)
-            return forge_peek_text(forge_parser_get_pos() - 1)
+            return tok.text
         }
-        // Underscore as identifier (kind_id=60)
-        if tok.kind_id == 60 || forge_peek_kind_id(forge_parser_get_pos()) == 60 {
+        if tok.kind_id == 60 {
             self.advance()
             return "_"
         }
