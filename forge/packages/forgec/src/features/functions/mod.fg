@@ -690,7 +690,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 forge_let_to_alloca_name()
             }
             if stmt != null {
-                cg.emit_statement(stmt!)
+                let last = cg.emit_statement(stmt!)
+                if last != null {
+                    CG_LAST_VAL = last
+                    CG_HAS_LAST_VAL = 1
+                }
             }
             if body_parser.pos == before {
                 body_parser.advance()
