@@ -259,6 +259,7 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         if is_str_global {
             CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+            forge_str_var_add(name)
         }
         i = i + 1
     }
@@ -3236,7 +3237,9 @@ impl Codegen {
                 let is_list3 = forge_string_index_of(field, "diagnostics") >= 0
                 let is_list4 = forge_string_index_of(field, "params") >= 0
                 let is_list5 = forge_string_index_of(field, "args") >= 0
-                CG_LAST_IS_STR = is_list_field + is_str_field + is_list2 + is_list3 + is_list4 + is_list5
+                let any_list = is_list_field + is_list2 + is_list3 + is_list4 + is_list5
+                CG_LAST_IS_STR = any_list + is_str_field
+                if any_list > 0 { CG_LAST_IS_LIST = 1 }
                 // Set element type for known list fields (avoids if-assignment)
                 CG_LAST_LIST_ELEM_TYPE = self.lookup_list_elem_type(field)
                 // Check field type name for List element type

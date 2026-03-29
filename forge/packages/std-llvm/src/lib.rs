@@ -1349,8 +1349,8 @@ pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_
         if len > 0 && len < 100 {
             unsafe {
                 forge_alloca_cache_set_raw(name, len, result);
-                // ALL globals are ForgeString-typed (create_globals_typed uses CG_STR for all)
-                forge_str_var_add_raw(name, len);
+                // Don't auto-register as string var — only string-typed
+                // globals should be registered (done by Forge code via str_mask)
             }
         }
     }
