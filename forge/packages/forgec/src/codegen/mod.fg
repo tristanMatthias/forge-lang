@@ -2459,14 +2459,13 @@ impl Codegen {
             CG_LAST_IS_LIST = 1 }
         if fn_name == "forge_selfhost_get_arg" { call_ret_ty = CG_STR
             is_extern_str_return = true }
-        // Impl methods that return List<T> (need CG_STR for { ptr, i64 } type)
+        // Impl methods that return List<T> or string
         if fn_name == "Lexer__tokenize" { call_ret_ty = CG_STR
-            CG_LAST_IS_LIST = 1
-            CG_LAST_IS_STR = 1 }
-        // Impl methods that return string
+            is_extern_str_return = true
+            CG_LAST_IS_LIST = 1 }
         if fn_name == "Lexer__advance" || fn_name == "Lexer__peek" || fn_name == "Lexer__peek_ch" || fn_name == "Lexer__peek_at" || fn_name == "Lexer__peek_ch_at" {
             call_ret_ty = CG_STR
-            CG_LAST_IS_STR = 1 }
+            is_extern_str_return = true }
         if fn_name == "forge_selfhost_fs_read" { call_ret_ty = CG_STR
             is_extern_str_return = true }
         if fn_name == "forge_selfhost_process_run" { call_ret_ty = CG_STR

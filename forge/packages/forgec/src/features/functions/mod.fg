@@ -703,12 +703,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 let fi2 = llvm.get_first_instruction(eb2)
                 if fi2 != null { llvm.position_before(CG_B, fi2) }
                 else { llvm.position_at_end(CG_B, eb2) }
-                // Create alloca with pending name — use CG_STR if last value is string/list
+                // Create alloca — default to CG_STR since most compiler variables are strings/lists
+                // (ForgeString and List<T> both use { ptr, i64 }, i64 fits in the first 8 bytes)
                 forge_let_to_alloca_name()
                 forge_arm_pending_alloca()
-                mut alloca_ty2 = CG_I64
-                if CG_LAST_IS_STR == 1 || CG_LAST_IS_LIST == 1 { alloca_ty2 = CG_STR }
-                let va = llvm.build_alloca(CG_B, alloca_ty2, "")
+                let va = llvm.build_alloca(CG_B, CG_STR, "")
                 llvm.position_at_end(CG_B, cur2)
                 // Store last value
                 if CG_LAST_VAL != null && va != null {
