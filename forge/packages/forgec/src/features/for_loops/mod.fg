@@ -21,7 +21,7 @@ export fn parse_for(p: Parser) -> Statement? {
     if iterable == null { return null }
     p.skip_newlines()
     let body = p.parse_block()
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     Statement.For(var_name, iterable!, body, start)
 }
 

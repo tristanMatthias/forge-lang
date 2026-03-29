@@ -107,19 +107,20 @@ impl Parser {
     }
 
     fn advance(self) -> Token {
-        forge_watchdog(self.pos, "advance")
+        forge_watchdog(forge_parser_get_pos(), "advance")
         let tok = self.peek()
-        if self.pos < self.tokens.length {
-            self.pos = self.pos + 1
-        }
+        // Advance both Forge-side and C-side position
+        self.pos = self.pos + 1
+        forge_parser_advance_pos()
         tok
     }
 
     // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
-        forge_watchdog(self.pos, "check_id")
-        if self.pos >= self.tokens.length { return kid == 99 }
-        self.tokens[self.pos].kind_id == kid
+        forge_watchdog(forge_parser_get_pos(), "check_id")
+        if forge_parser_get_pos() >= forge_token_list_len() { return kid == 99 }
+        // Use C-side kind_id accessor with C-side position
+        forge_peek_kind_id(forge_parser_get_pos()) == kid
     }
 
     fn check(self, kind: TokenKind) -> bool {
@@ -155,13 +156,14 @@ impl Parser {
 
     fn expect_ident(self) -> string {
         let tok = self.peek()
-        // Bootstrap workaround: use kind_id instead of pattern matching on .Ident(name)
-        if tok.kind_id == 1 {
+        // Use C-side kind_id (tok.kind_id is corrupt in Stage 2)
+        if tok.kind_id == 1 || forge_peek_kind_id(forge_parser_get_pos()) == 1 {
             self.advance()
-            return tok.text
+            // Use C-side text accessor (tok.text may be corrupt)
+            return forge_peek_text(forge_parser_get_pos() - 1)
         }
-        // Underscore as identifier (kind_id=60) — must use kind_id, not pattern match
-        if tok.kind_id == 60 {
+        // Underscore as identifier (kind_id=60)
+        if tok.kind_id == 60 || forge_peek_kind_id(forge_parser_get_pos()) == 60 {
             self.advance()
             return "_"
         }
@@ -762,8 +764,10 @@ impl Parser {
     }
 
     fn sync_pos(self) {
+        eprintln("  [sync_pos] PARSE_END_POS=" + string(PARSE_END_POS) + " c_pos=" + string(forge_parser_get_pos()))
         if PARSE_END_POS >= 0 {
             self.pos = PARSE_END_POS
+            forge_parser_set_pos(PARSE_END_POS)
             PARSE_END_POS = -1
         }
     }

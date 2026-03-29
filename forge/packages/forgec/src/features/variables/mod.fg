@@ -129,7 +129,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
                 CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + var_name + ","
             }
         }
-        PARSE_END_POS = p.pos
+        PARSE_END_POS = forge_parser_get_pos()
         return Statement.Let(var_name, value!, start)
     }
 
@@ -216,7 +216,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         CG_HAS_LAST_VAL = 0
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("variables", "let_decl", id, start)
 }

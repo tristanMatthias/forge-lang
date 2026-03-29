@@ -40,9 +40,13 @@ fn get_fn_decl(node_id: int) -> FnDeclData? {
 // ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
+    eprintln("  [parse_fn_decl] start cpos=" + string(forge_parser_get_pos()))
     let start = p.advance().span // consume 'fn'
+    eprintln("  [parse_fn_decl] after advance cpos=" + string(forge_parser_get_pos()))
 
+    eprintln("  [parse_fn_decl] before_ident kid=" + string(forge_peek_kind_id(forge_parser_get_pos())) + " text=" + forge_peek_text(forge_parser_get_pos()))
     let name = p.expect_ident()
+    eprintln("  [parse_fn_decl] name=" + name + " cpos=" + string(forge_parser_get_pos()))
     if name == "" { return null }
 
     let type_params = p.parse_type_params()
@@ -103,7 +107,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         pi = pi + 1
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }
@@ -133,7 +137,7 @@ fn parse_export(p: Parser) -> Statement? {
             if p.check_id(102) {  // LBrace
                 p.parse_block() // skip body
             }
-            PARSE_END_POS = p.pos
+            PARSE_END_POS = forge_parser_get_pos()
             let id = next_node_id()
             feature_stmt("functions", "noop", id, start)
         }
