@@ -49,8 +49,12 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     eprintln("  [parse_fn_decl] name=" + name + " cpos=" + string(forge_parser_get_pos()))
     if name == "" { return null }
 
+    forge_debug_parser_state("pre-tparams")
     let type_params = p.parse_type_params()
+    forge_debug_parser_state("post-tparams")
+    forge_enable_peek_trace()
     let params: List<Param> = p.parse_params()
+    forge_debug_parser_state("post-params")
 
     mut return_type_name = ""
     mut return_type: TypeExpr? = null

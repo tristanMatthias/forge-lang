@@ -1095,741 +1095,746 @@ source_filename = "forgec_output"
 @859 = constant [20 x i8] c"forge_parser_get_pos"
 @860 = constant [24 x i8] c"forge_parser_advance_pos"
 @861 = constant [20 x i8] c"forge_parser_set_ptr"
-@862 = constant [20 x i8] c"forge_set_token_list"
-@863 = constant [18 x i8] c"forge_peek_kind_id"
-@864 = constant [15 x i8] c"forge_peek_text"
-@865 = constant [20 x i8] c"forge_token_list_len"
-@866 = constant [14 x i8] c"forge_is_alpha"
-@867 = constant [14 x i8] c"forge_is_digit"
-@868 = constant [14 x i8] c"forge_is_alnum"
-@869 = constant [20 x i8] c"forge_is_ident_start"
-@870 = constant [23 x i8] c"forge_is_ident_continue"
-@871 = constant [18 x i8] c"forge_is_hex_digit"
-@872 = constant [31 x i8] c"forge_is_whitespace_not_newline"
-@873 = constant [15 x i8] c"forge_list_push"
-@874 = constant [19 x i8] c"forge_list_push_str"
-@875 = constant [20 x i8] c"forge_fn_store_clear"
-@876 = constant [18 x i8] c"forge_fn_store_add"
-@877 = constant [23 x i8] c"forge_fn_store_get_body"
-@878 = constant [23 x i8] c"forge_fn_store_get_name"
-@879 = constant [20 x i8] c"forge_fn_store_count"
-@880 = constant [21 x i8] c"forge_dump_token_list"
-@881 = constant [11 x i8] c"forge_alloc"
-@882 = constant [12 x i8] c"forge_memcpy"
-@883 = constant [13 x i8] c"forge_map_new"
-@884 = constant [13 x i8] c"forge_map_has"
-@885 = constant [13 x i8] c"forge_map_get"
-@886 = constant [13 x i8] c"forge_map_set"
-@887 = constant [14 x i8] c"forge_set_args"
-@888 = constant [27 x i8] c"forge_selfhost_process_args"
-@889 = constant [22 x i8] c"forge_fn_is_str_return"
-@890 = constant [18 x i8] c"forge_list_var_add"
-@891 = constant [17 x i8] c"forge_ptr_var_add"
-@892 = constant [19 x i8] c"forge_ptr_var_check"
-@893 = constant [19 x i8] c"forge_ptr_var_clear"
-@894 = constant [24 x i8] c"forge_ptr_var_set_global"
-@895 = constant [20 x i8] c"forge_list_var_check"
-@896 = constant [20 x i8] c"forge_list_var_clear"
-@897 = constant [22 x i8] c"forge_selfhost_get_arg"
-@898 = constant [30 x i8] c"forge_str_var_set_global_count"
-@899 = constant [22 x i8] c"forge_selfhost_fs_read"
-@900 = constant [27 x i8] c"forge_selfhost_process_exit"
-@901 = constant [26 x i8] c"forge_selfhost_process_run"
-@902 = constant [21 x i8] c"forge_eprintln_string"
-@903 = constant [19 x i8] c"forge_string_to_int"
-@904 = constant [25 x i8] c"forge_llvm_context_create"
-@905 = constant [26 x i8] c"forge_llvm_context_dispose"
-@906 = constant [24 x i8] c"forge_llvm_module_create"
-@907 = constant [25 x i8] c"forge_llvm_module_dispose"
-@908 = constant [31 x i8] c"forge_llvm_print_module_to_file"
-@909 = constant [24 x i8] c"forge_llvm_verify_module"
-@910 = constant [20 x i8] c"forge_llvm_int1_type"
-@911 = constant [20 x i8] c"forge_llvm_int8_type"
-@912 = constant [21 x i8] c"forge_llvm_int32_type"
-@913 = constant [21 x i8] c"forge_llvm_int64_type"
-@914 = constant [22 x i8] c"forge_llvm_double_type"
-@915 = constant [20 x i8] c"forge_llvm_void_type"
-@916 = constant [23 x i8] c"forge_llvm_pointer_type"
-@917 = constant [24 x i8] c"forge_llvm_function_type"
-@918 = constant [30 x i8] c"forge_llvm_struct_create_named"
-@919 = constant [26 x i8] c"forge_llvm_struct_set_body"
-@920 = constant [22 x i8] c"forge_llvm_struct_type"
-@921 = constant [27 x i8] c"forge_llvm_get_type_by_name"
-@922 = constant [18 x i8] c"forge_llvm_size_of"
-@923 = constant [25 x i8] c"forge_llvm_type_array_new"
-@924 = constant [25 x i8] c"forge_llvm_type_array_set"
-@925 = constant [26 x i8] c"forge_llvm_type_array_free"
-@926 = constant [23 x i8] c"forge_llvm_add_function"
-@927 = constant [29 x i8] c"forge_llvm_get_named_function"
-@928 = constant [20 x i8] c"forge_llvm_get_param"
-@929 = constant [29 x i8] c"forge_llvm_append_basic_block"
-@930 = constant [27 x i8] c"forge_llvm_get_insert_block"
-@931 = constant [33 x i8] c"forge_llvm_get_basic_block_parent"
-@932 = constant [31 x i8] c"forge_llvm_block_has_terminator"
-@933 = constant [32 x i8] c"forge_llvm_get_entry_basic_block"
-@934 = constant [32 x i8] c"forge_llvm_get_first_instruction"
-@935 = constant [25 x i8] c"forge_llvm_create_builder"
-@936 = constant [26 x i8] c"forge_llvm_dispose_builder"
-@937 = constant [26 x i8] c"forge_llvm_position_at_end"
-@938 = constant [26 x i8] c"forge_llvm_position_before"
-@939 = constant [20 x i8] c"forge_llvm_build_ret"
-@940 = constant [25 x i8] c"forge_llvm_build_ret_void"
-@941 = constant [19 x i8] c"forge_llvm_build_br"
-@942 = constant [24 x i8] c"forge_llvm_build_cond_br"
-@943 = constant [23 x i8] c"forge_llvm_build_alloca"
-@944 = constant [22 x i8] c"forge_llvm_build_store"
-@945 = constant [21 x i8] c"forge_llvm_build_load"
-@946 = constant [21 x i8] c"forge_llvm_build_call"
-@947 = constant [20 x i8] c"forge_llvm_build_add"
-@948 = constant [20 x i8] c"forge_llvm_build_sub"
-@949 = constant [20 x i8] c"forge_llvm_build_mul"
-@950 = constant [21 x i8] c"forge_llvm_build_sdiv"
-@951 = constant [21 x i8] c"forge_llvm_build_srem"
-@952 = constant [20 x i8] c"forge_llvm_build_and"
-@953 = constant [19 x i8] c"forge_llvm_build_or"
-@954 = constant [20 x i8] c"forge_llvm_build_xor"
-@955 = constant [20 x i8] c"forge_llvm_build_shl"
-@956 = constant [21 x i8] c"forge_llvm_build_ashr"
-@957 = constant [21 x i8] c"forge_llvm_build_icmp"
-@958 = constant [22 x i8] c"forge_llvm_build_trunc"
-@959 = constant [21 x i8] c"forge_llvm_build_zext"
-@960 = constant [24 x i8] c"forge_llvm_build_bitcast"
-@961 = constant [28 x i8] c"forge_llvm_build_struct_gep2"
-@962 = constant [21 x i8] c"forge_llvm_build_gep2"
-@963 = constant [30 x i8] c"forge_llvm_build_extract_value"
-@964 = constant [29 x i8] c"forge_llvm_build_insert_value"
-@965 = constant [20 x i8] c"forge_llvm_build_phi"
-@966 = constant [23 x i8] c"forge_llvm_add_incoming"
-@967 = constant [27 x i8] c"forge_llvm_build_ptr_to_int"
-@968 = constant [25 x i8] c"forge_llvm_build_inttoptr"
-@969 = constant [34 x i8] c"forge_llvm_build_global_string_ptr"
-@970 = constant [26 x i8] c"forge_llvm_set_initializer"
-@971 = constant [21 x i8] c"forge_llvm_add_global"
-@972 = constant [20 x i8] c"forge_llvm_const_int"
-@973 = constant [21 x i8] c"forge_llvm_const_null"
-@974 = constant [21 x i8] c"forge_llvm_const_real"
-@975 = constant [23 x i8] c"forge_llvm_const_string"
-@976 = constant [20 x i8] c"forge_llvm_get_undef"
-@977 = constant [26 x i8] c"forge_llvm_value_array_new"
-@978 = constant [26 x i8] c"forge_llvm_value_array_set"
-@979 = constant [26 x i8] c"forge_llvm_value_array_get"
-@980 = constant [27 x i8] c"forge_llvm_value_array_free"
-@981 = constant [32 x i8] c"forge_llvm_global_get_value_type"
-@982 = constant [18 x i8] c"forge_llvm_type_of"
-@983 = constant [24 x i8] c"forge_llvm_get_type_kind"
-@984 = constant [27 x i8] c"forge_llvm_emit_object_file"
-@985 = constant [24 x i8] c"forge_alloca_cache_clear"
-@986 = constant [22 x i8] c"forge_alloca_cache_set"
-@987 = constant [22 x i8] c"forge_alloca_cache_get"
-@988 = constant [17 x i8] c"forge_str_var_add"
-@989 = constant [19 x i8] c"forge_str_var_check"
-@990 = constant [19 x i8] c"forge_str_var_clear"
-@991 = constant [21 x i8] c"forge_idx_cache_clear"
-@992 = constant [19 x i8] c"forge_idx_cache_set"
-@993 = constant [19 x i8] c"forge_idx_cache_get"
-@994 = constant [21 x i8] c"forge_var_counter_get"
-@995 = constant [21 x i8] c"forge_var_counter_inc"
-@996 = constant [23 x i8] c"forge_var_counter_reset"
-@997 = constant [4 x i8] c"main"
-@998 = constant [2 x i8] c"en"
-@999 = constant [2 x i8] c"ic"
-@1000 = constant [2 x i8] c"th"
-@1001 = constant [2 x i8] c"el"
-@1002 = constant [2 x i8] c"mg"
-@1003 = constant [2 x i8] c"iv"
-@1004 = constant [2 x i8] c"me"
-@1005 = constant [0 x i8] zeroinitializer
-@1006 = constant [1 x i8] c","
-@1007 = constant [2 x i8] c"ma"
-@1008 = constant [2 x i8] c"mn"
-@1009 = constant [1 x i8] c"_"
-@1010 = constant [0 x i8] zeroinitializer
-@1011 = constant [2 x i8] c"tg"
-@1012 = constant [2 x i8] c"te"
-@1013 = constant [2 x i8] c"mc"
-@1014 = constant [1 x i8] c"_"
-@1015 = constant [2 x i8] c"mv"
-@1016 = constant [2 x i8] c"tg"
-@1017 = constant [2 x i8] c"te"
-@1018 = constant [2 x i8] c"me"
-@1019 = constant [0 x i8] zeroinitializer
-@1020 = constant [1 x i8] c","
+@862 = constant [24 x i8] c"forge_debug_parser_state"
+@863 = constant [23 x i8] c"forge_enable_peek_trace"
+@864 = constant [20 x i8] c"forge_set_token_list"
+@865 = constant [18 x i8] c"forge_peek_kind_id"
+@866 = constant [15 x i8] c"forge_peek_text"
+@867 = constant [20 x i8] c"forge_token_list_len"
+@868 = constant [14 x i8] c"forge_is_alpha"
+@869 = constant [14 x i8] c"forge_is_digit"
+@870 = constant [14 x i8] c"forge_is_alnum"
+@871 = constant [20 x i8] c"forge_is_ident_start"
+@872 = constant [23 x i8] c"forge_is_ident_continue"
+@873 = constant [18 x i8] c"forge_is_hex_digit"
+@874 = constant [31 x i8] c"forge_is_whitespace_not_newline"
+@875 = constant [15 x i8] c"forge_list_push"
+@876 = constant [19 x i8] c"forge_list_push_str"
+@877 = constant [20 x i8] c"forge_fn_store_clear"
+@878 = constant [18 x i8] c"forge_fn_store_add"
+@879 = constant [23 x i8] c"forge_fn_store_get_body"
+@880 = constant [23 x i8] c"forge_fn_store_get_name"
+@881 = constant [20 x i8] c"forge_fn_store_count"
+@882 = constant [21 x i8] c"forge_dump_token_list"
+@883 = constant [11 x i8] c"forge_alloc"
+@884 = constant [12 x i8] c"forge_memcpy"
+@885 = constant [13 x i8] c"forge_map_new"
+@886 = constant [13 x i8] c"forge_map_has"
+@887 = constant [13 x i8] c"forge_map_get"
+@888 = constant [13 x i8] c"forge_map_set"
+@889 = constant [14 x i8] c"forge_set_args"
+@890 = constant [27 x i8] c"forge_selfhost_process_args"
+@891 = constant [22 x i8] c"forge_fn_is_str_return"
+@892 = constant [18 x i8] c"forge_list_var_add"
+@893 = constant [17 x i8] c"forge_ptr_var_add"
+@894 = constant [19 x i8] c"forge_ptr_var_check"
+@895 = constant [19 x i8] c"forge_ptr_var_clear"
+@896 = constant [24 x i8] c"forge_ptr_var_set_global"
+@897 = constant [20 x i8] c"forge_list_var_check"
+@898 = constant [20 x i8] c"forge_list_var_clear"
+@899 = constant [22 x i8] c"forge_selfhost_get_arg"
+@900 = constant [30 x i8] c"forge_str_var_set_global_count"
+@901 = constant [22 x i8] c"forge_selfhost_fs_read"
+@902 = constant [27 x i8] c"forge_selfhost_process_exit"
+@903 = constant [26 x i8] c"forge_selfhost_process_run"
+@904 = constant [21 x i8] c"forge_eprintln_string"
+@905 = constant [19 x i8] c"forge_string_to_int"
+@906 = constant [25 x i8] c"forge_llvm_context_create"
+@907 = constant [26 x i8] c"forge_llvm_context_dispose"
+@908 = constant [24 x i8] c"forge_llvm_module_create"
+@909 = constant [25 x i8] c"forge_llvm_module_dispose"
+@910 = constant [31 x i8] c"forge_llvm_print_module_to_file"
+@911 = constant [24 x i8] c"forge_llvm_verify_module"
+@912 = constant [20 x i8] c"forge_llvm_int1_type"
+@913 = constant [20 x i8] c"forge_llvm_int8_type"
+@914 = constant [21 x i8] c"forge_llvm_int32_type"
+@915 = constant [21 x i8] c"forge_llvm_int64_type"
+@916 = constant [22 x i8] c"forge_llvm_double_type"
+@917 = constant [20 x i8] c"forge_llvm_void_type"
+@918 = constant [23 x i8] c"forge_llvm_pointer_type"
+@919 = constant [24 x i8] c"forge_llvm_function_type"
+@920 = constant [30 x i8] c"forge_llvm_struct_create_named"
+@921 = constant [26 x i8] c"forge_llvm_struct_set_body"
+@922 = constant [22 x i8] c"forge_llvm_struct_type"
+@923 = constant [27 x i8] c"forge_llvm_get_type_by_name"
+@924 = constant [18 x i8] c"forge_llvm_size_of"
+@925 = constant [25 x i8] c"forge_llvm_type_array_new"
+@926 = constant [25 x i8] c"forge_llvm_type_array_set"
+@927 = constant [26 x i8] c"forge_llvm_type_array_free"
+@928 = constant [23 x i8] c"forge_llvm_add_function"
+@929 = constant [29 x i8] c"forge_llvm_get_named_function"
+@930 = constant [20 x i8] c"forge_llvm_get_param"
+@931 = constant [29 x i8] c"forge_llvm_append_basic_block"
+@932 = constant [27 x i8] c"forge_llvm_get_insert_block"
+@933 = constant [33 x i8] c"forge_llvm_get_basic_block_parent"
+@934 = constant [31 x i8] c"forge_llvm_block_has_terminator"
+@935 = constant [32 x i8] c"forge_llvm_get_entry_basic_block"
+@936 = constant [32 x i8] c"forge_llvm_get_first_instruction"
+@937 = constant [25 x i8] c"forge_llvm_create_builder"
+@938 = constant [26 x i8] c"forge_llvm_dispose_builder"
+@939 = constant [26 x i8] c"forge_llvm_position_at_end"
+@940 = constant [26 x i8] c"forge_llvm_position_before"
+@941 = constant [20 x i8] c"forge_llvm_build_ret"
+@942 = constant [25 x i8] c"forge_llvm_build_ret_void"
+@943 = constant [19 x i8] c"forge_llvm_build_br"
+@944 = constant [24 x i8] c"forge_llvm_build_cond_br"
+@945 = constant [23 x i8] c"forge_llvm_build_alloca"
+@946 = constant [22 x i8] c"forge_llvm_build_store"
+@947 = constant [21 x i8] c"forge_llvm_build_load"
+@948 = constant [21 x i8] c"forge_llvm_build_call"
+@949 = constant [20 x i8] c"forge_llvm_build_add"
+@950 = constant [20 x i8] c"forge_llvm_build_sub"
+@951 = constant [20 x i8] c"forge_llvm_build_mul"
+@952 = constant [21 x i8] c"forge_llvm_build_sdiv"
+@953 = constant [21 x i8] c"forge_llvm_build_srem"
+@954 = constant [20 x i8] c"forge_llvm_build_and"
+@955 = constant [19 x i8] c"forge_llvm_build_or"
+@956 = constant [20 x i8] c"forge_llvm_build_xor"
+@957 = constant [20 x i8] c"forge_llvm_build_shl"
+@958 = constant [21 x i8] c"forge_llvm_build_ashr"
+@959 = constant [21 x i8] c"forge_llvm_build_icmp"
+@960 = constant [22 x i8] c"forge_llvm_build_trunc"
+@961 = constant [21 x i8] c"forge_llvm_build_zext"
+@962 = constant [24 x i8] c"forge_llvm_build_bitcast"
+@963 = constant [28 x i8] c"forge_llvm_build_struct_gep2"
+@964 = constant [21 x i8] c"forge_llvm_build_gep2"
+@965 = constant [30 x i8] c"forge_llvm_build_extract_value"
+@966 = constant [29 x i8] c"forge_llvm_build_insert_value"
+@967 = constant [20 x i8] c"forge_llvm_build_phi"
+@968 = constant [23 x i8] c"forge_llvm_add_incoming"
+@969 = constant [27 x i8] c"forge_llvm_build_ptr_to_int"
+@970 = constant [25 x i8] c"forge_llvm_build_inttoptr"
+@971 = constant [34 x i8] c"forge_llvm_build_global_string_ptr"
+@972 = constant [26 x i8] c"forge_llvm_set_initializer"
+@973 = constant [21 x i8] c"forge_llvm_add_global"
+@974 = constant [20 x i8] c"forge_llvm_const_int"
+@975 = constant [21 x i8] c"forge_llvm_const_null"
+@976 = constant [21 x i8] c"forge_llvm_const_real"
+@977 = constant [23 x i8] c"forge_llvm_const_string"
+@978 = constant [20 x i8] c"forge_llvm_get_undef"
+@979 = constant [26 x i8] c"forge_llvm_value_array_new"
+@980 = constant [26 x i8] c"forge_llvm_value_array_set"
+@981 = constant [26 x i8] c"forge_llvm_value_array_get"
+@982 = constant [27 x i8] c"forge_llvm_value_array_free"
+@983 = constant [32 x i8] c"forge_llvm_global_get_value_type"
+@984 = constant [18 x i8] c"forge_llvm_type_of"
+@985 = constant [24 x i8] c"forge_llvm_get_type_kind"
+@986 = constant [27 x i8] c"forge_llvm_emit_object_file"
+@987 = constant [24 x i8] c"forge_alloca_cache_clear"
+@988 = constant [22 x i8] c"forge_alloca_cache_set"
+@989 = constant [22 x i8] c"forge_alloca_cache_get"
+@990 = constant [17 x i8] c"forge_str_var_add"
+@991 = constant [19 x i8] c"forge_str_var_check"
+@992 = constant [19 x i8] c"forge_str_var_clear"
+@993 = constant [21 x i8] c"forge_idx_cache_clear"
+@994 = constant [19 x i8] c"forge_idx_cache_set"
+@995 = constant [19 x i8] c"forge_idx_cache_get"
+@996 = constant [21 x i8] c"forge_var_counter_get"
+@997 = constant [21 x i8] c"forge_var_counter_inc"
+@998 = constant [23 x i8] c"forge_var_counter_reset"
+@999 = constant [4 x i8] c"main"
+@1000 = constant [2 x i8] c"en"
+@1001 = constant [2 x i8] c"ic"
+@1002 = constant [2 x i8] c"th"
+@1003 = constant [2 x i8] c"el"
+@1004 = constant [2 x i8] c"mg"
+@1005 = constant [2 x i8] c"iv"
+@1006 = constant [2 x i8] c"me"
+@1007 = constant [0 x i8] zeroinitializer
+@1008 = constant [1 x i8] c","
+@1009 = constant [2 x i8] c"ma"
+@1010 = constant [2 x i8] c"mn"
+@1011 = constant [1 x i8] c"_"
+@1012 = constant [0 x i8] zeroinitializer
+@1013 = constant [2 x i8] c"tg"
+@1014 = constant [2 x i8] c"te"
+@1015 = constant [2 x i8] c"mc"
+@1016 = constant [1 x i8] c"_"
+@1017 = constant [2 x i8] c"mv"
+@1018 = constant [2 x i8] c"tg"
+@1019 = constant [2 x i8] c"te"
+@1020 = constant [2 x i8] c"me"
 @1021 = constant [0 x i8] zeroinitializer
-@1022 = constant [0 x i8] zeroinitializer
-@1023 = constant [2 x i8] c"ma"
-@1024 = constant [2 x i8] c"mn"
-@1025 = constant [2 x i8] c"mc"
-@1026 = constant [0 x i8] zeroinitializer
-@1027 = constant [2 x i8] c"mv"
-@1028 = constant [2 x i8] c"sl"
-@1029 = constant [2 x i8] c"sf"
-@1030 = constant [2 x i8] c"sv"
-@1031 = constant [2 x i8] c"_s"
-@1032 = constant [0 x i8] zeroinitializer
-@1033 = constant [3 x i8] c"ifc"
-@1034 = constant [2 x i8] c"th"
-@1035 = constant [2 x i8] c"ic"
-@1036 = constant [3 x i8] c"ifc"
-@1037 = constant [2 x i8] c"th"
-@1038 = constant [2 x i8] c"ic"
-@1039 = constant [3 x i8] c"l2s"
-@1040 = constant [3 x i8] c"r2s"
-@1041 = constant [2 x i8] c"cc"
-@1042 = constant [9 x i8] c"EMPTYLIST"
-@1043 = constant [0 x i8] zeroinitializer
-@1044 = constant [1 x i8] c","
-@1045 = constant [1 x i8] c","
-@1046 = constant [6 x i8] c"string"
-@1047 = constant [0 x i8] zeroinitializer
-@1048 = constant [0 x i8] zeroinitializer
+@1022 = constant [1 x i8] c","
+@1023 = constant [0 x i8] zeroinitializer
+@1024 = constant [0 x i8] zeroinitializer
+@1025 = constant [2 x i8] c"ma"
+@1026 = constant [2 x i8] c"mn"
+@1027 = constant [2 x i8] c"mc"
+@1028 = constant [0 x i8] zeroinitializer
+@1029 = constant [2 x i8] c"mv"
+@1030 = constant [2 x i8] c"sl"
+@1031 = constant [2 x i8] c"sf"
+@1032 = constant [2 x i8] c"sv"
+@1033 = constant [2 x i8] c"_s"
+@1034 = constant [0 x i8] zeroinitializer
+@1035 = constant [3 x i8] c"ifc"
+@1036 = constant [2 x i8] c"th"
+@1037 = constant [2 x i8] c"ic"
+@1038 = constant [3 x i8] c"ifc"
+@1039 = constant [2 x i8] c"th"
+@1040 = constant [2 x i8] c"ic"
+@1041 = constant [3 x i8] c"l2s"
+@1042 = constant [3 x i8] c"r2s"
+@1043 = constant [2 x i8] c"cc"
+@1044 = constant [9 x i8] c"EMPTYLIST"
+@1045 = constant [0 x i8] zeroinitializer
+@1046 = constant [1 x i8] c","
+@1047 = constant [1 x i8] c","
+@1048 = constant [6 x i8] c"string"
 @1049 = constant [0 x i8] zeroinitializer
 @1050 = constant [0 x i8] zeroinitializer
-@1051 = constant [1 x i8] c","
-@1052 = constant [1 x i8] c","
-@1053 = constant [6 x i8] c"string"
-@1054 = constant [0 x i8] zeroinitializer
-@1055 = constant [0 x i8] zeroinitializer
+@1051 = constant [0 x i8] zeroinitializer
+@1052 = constant [0 x i8] zeroinitializer
+@1053 = constant [1 x i8] c","
+@1054 = constant [1 x i8] c","
+@1055 = constant [6 x i8] c"string"
 @1056 = constant [0 x i8] zeroinitializer
-@1057 = constant [11 x i8] c"forge_llvm_"
-@1058 = constant [2 x i8] c"__"
-@1059 = constant [0 x i8] zeroinitializer
-@1060 = constant [2 x i8] c"ep"
-@1061 = constant [6 x i8] c"string"
-@1062 = constant [3 x i8] c"int"
-@1063 = constant [5 x i8] c"float"
-@1064 = constant [4 x i8] c"bool"
-@1065 = constant [3 x i8] c"ptr"
-@1066 = constant [0 x i8] zeroinitializer
-@1067 = constant [27 x i8] c"forge_selfhost_process_args"
-@1068 = constant [22 x i8] c"forge_selfhost_get_arg"
-@1069 = constant [22 x i8] c"forge_selfhost_fs_read"
-@1070 = constant [26 x i8] c"forge_selfhost_process_run"
-@1071 = constant [19 x i8] c"forge_string_concat"
-@1072 = constant [16 x i8] c"forge_string_new"
-@1073 = constant [20 x i8] c"forge_string_char_at"
-@1074 = constant [22 x i8] c"forge_string_substring"
-@1075 = constant [19 x i8] c"forge_int_to_string"
-@1076 = constant [21 x i8] c"forge_string_index_of"
-@1077 = constant [19 x i8] c"forge_string_length"
-@1078 = constant [20 x i8] c"forge_string_compare"
-@1079 = constant [15 x i8] c"forge_string_eq"
-@1080 = constant [20 x i8] c"forge_string_byte_at"
-@1081 = constant [6 x i8] c"string"
-@1082 = constant [0 x i8] zeroinitializer
-@1083 = constant [4 x i8] c"call"
+@1057 = constant [0 x i8] zeroinitializer
+@1058 = constant [0 x i8] zeroinitializer
+@1059 = constant [11 x i8] c"forge_llvm_"
+@1060 = constant [2 x i8] c"__"
+@1061 = constant [0 x i8] zeroinitializer
+@1062 = constant [2 x i8] c"ep"
+@1063 = constant [6 x i8] c"string"
+@1064 = constant [3 x i8] c"int"
+@1065 = constant [5 x i8] c"float"
+@1066 = constant [4 x i8] c"bool"
+@1067 = constant [3 x i8] c"ptr"
+@1068 = constant [0 x i8] zeroinitializer
+@1069 = constant [27 x i8] c"forge_selfhost_process_args"
+@1070 = constant [22 x i8] c"forge_selfhost_get_arg"
+@1071 = constant [22 x i8] c"forge_selfhost_fs_read"
+@1072 = constant [26 x i8] c"forge_selfhost_process_run"
+@1073 = constant [19 x i8] c"forge_string_concat"
+@1074 = constant [16 x i8] c"forge_string_new"
+@1075 = constant [20 x i8] c"forge_string_char_at"
+@1076 = constant [22 x i8] c"forge_string_substring"
+@1077 = constant [19 x i8] c"forge_int_to_string"
+@1078 = constant [21 x i8] c"forge_string_index_of"
+@1079 = constant [19 x i8] c"forge_string_length"
+@1080 = constant [20 x i8] c"forge_string_compare"
+@1081 = constant [15 x i8] c"forge_string_eq"
+@1082 = constant [20 x i8] c"forge_string_byte_at"
+@1083 = constant [6 x i8] c"string"
 @1084 = constant [0 x i8] zeroinitializer
-@1085 = constant [0 x i8] zeroinitializer
-@1086 = constant [2 x i8] c"ts"
+@1085 = constant [4 x i8] c"call"
+@1086 = constant [0 x i8] zeroinitializer
 @1087 = constant [0 x i8] zeroinitializer
-@1088 = constant [0 x i8] zeroinitializer
+@1088 = constant [2 x i8] c"ts"
 @1089 = constant [0 x i8] zeroinitializer
-@1090 = constant [1 x i8] c","
-@1091 = constant [1 x i8] c","
-@1092 = constant [0 x i8] zeroinitializer
-@1093 = constant [0 x i8] zeroinitializer
+@1090 = constant [0 x i8] zeroinitializer
+@1091 = constant [0 x i8] zeroinitializer
+@1092 = constant [1 x i8] c","
+@1093 = constant [1 x i8] c","
 @1094 = constant [0 x i8] zeroinitializer
-@1095 = constant [6 x i8] c"length"
-@1096 = constant [3 x i8] c"len"
-@1097 = constant [0 x i8] zeroinitializer
-@1098 = constant [1 x i8] c"."
-@1099 = constant [2 x i8] c"et"
-@1100 = constant [6 x i8] c"length"
-@1101 = constant [3 x i8] c"len"
-@1102 = constant [0 x i8] zeroinitializer
-@1103 = constant [0 x i8] zeroinitializer
+@1095 = constant [0 x i8] zeroinitializer
+@1096 = constant [0 x i8] zeroinitializer
+@1097 = constant [6 x i8] c"length"
+@1098 = constant [3 x i8] c"len"
+@1099 = constant [0 x i8] zeroinitializer
+@1100 = constant [1 x i8] c"."
+@1101 = constant [2 x i8] c"et"
+@1102 = constant [6 x i8] c"length"
+@1103 = constant [3 x i8] c"len"
 @1104 = constant [0 x i8] zeroinitializer
-@1105 = constant [10 x i8] c"statements"
-@1106 = constant [6 x i8] c"source"
-@1107 = constant [6 x i8] c"tokens"
-@1108 = constant [11 x i8] c"diagnostics"
-@1109 = constant [6 x i8] c"params"
-@1110 = constant [4 x i8] c"args"
-@1111 = constant [0 x i8] zeroinitializer
-@1112 = constant [1 x i8] c","
-@1113 = constant [1 x i8] c"L"
-@1114 = constant [1 x i8] c"i"
-@1115 = constant [1 x i8] c"s"
-@1116 = constant [1 x i8] c"t"
-@1117 = constant [1 x i8] c":"
-@1118 = constant [0 x i8] zeroinitializer
-@1119 = constant [1 x i8] c"L"
-@1120 = constant [1 x i8] c"i"
-@1121 = constant [1 x i8] c"s"
-@1122 = constant [1 x i8] c"t"
-@1123 = constant [1 x i8] c":"
-@1124 = constant [1 x i8] c"."
-@1125 = constant [0 x i8] zeroinitializer
-@1126 = constant [220 x i8] c"|IntLit:i4|FloatLit:i4|StringLit:s4|BoolLit:i4|NullLit:4|Ident:s4|Binary:ppp4|Unary:pp4|Call:pl4|MemberAccess:ps4|Index:pp4|Expr:p|Assign:pp4|Return:p4|Let:sp4|If:ppp4i4|Match:pssli4|While:pp4|For:spp4|Block:l|Feature:p|"
-@1127 = constant [1 x i8] c"|"
-@1128 = constant [1 x i8] c":"
-@1129 = constant [0 x i8] zeroinitializer
-@1130 = constant [1 x i8] c"|"
-@1131 = constant [131 x i8] c"|statements:Statement|tokens:Token|diagnostics:Diagnostic|params:Param|args:Expr|arm_bodies:Block|arm_tags:int|arm_bindings:string|"
+@1105 = constant [0 x i8] zeroinitializer
+@1106 = constant [0 x i8] zeroinitializer
+@1107 = constant [10 x i8] c"statements"
+@1108 = constant [6 x i8] c"source"
+@1109 = constant [6 x i8] c"tokens"
+@1110 = constant [11 x i8] c"diagnostics"
+@1111 = constant [6 x i8] c"params"
+@1112 = constant [4 x i8] c"args"
+@1113 = constant [0 x i8] zeroinitializer
+@1114 = constant [1 x i8] c","
+@1115 = constant [1 x i8] c"L"
+@1116 = constant [1 x i8] c"i"
+@1117 = constant [1 x i8] c"s"
+@1118 = constant [1 x i8] c"t"
+@1119 = constant [1 x i8] c":"
+@1120 = constant [0 x i8] zeroinitializer
+@1121 = constant [1 x i8] c"L"
+@1122 = constant [1 x i8] c"i"
+@1123 = constant [1 x i8] c"s"
+@1124 = constant [1 x i8] c"t"
+@1125 = constant [1 x i8] c":"
+@1126 = constant [1 x i8] c"."
+@1127 = constant [0 x i8] zeroinitializer
+@1128 = constant [220 x i8] c"|IntLit:i4|FloatLit:i4|StringLit:s4|BoolLit:i4|NullLit:4|Ident:s4|Binary:ppp4|Unary:pp4|Call:pl4|MemberAccess:ps4|Index:pp4|Expr:p|Assign:pp4|Return:p4|Let:sp4|If:ppp4i4|Match:pssli4|While:pp4|For:spp4|Block:l|Feature:p|"
+@1129 = constant [1 x i8] c"|"
+@1130 = constant [1 x i8] c":"
+@1131 = constant [0 x i8] zeroinitializer
 @1132 = constant [1 x i8] c"|"
-@1133 = constant [1 x i8] c":"
-@1134 = constant [0 x i8] zeroinitializer
-@1135 = constant [1 x i8] c"|"
-@1136 = constant [1 x i8] c"p"
-@1137 = constant [1 x i8] c"s"
-@1138 = constant [1 x i8] c"l"
-@1139 = constant [1 x i8] c"4"
-@1140 = constant [0 x i8] zeroinitializer
-@1141 = constant [0 x i8] zeroinitializer
-@1142 = constant [4 x i8] c"List"
-@1143 = constant [8 x i8] c"LBracket"
-@1144 = constant [6 x i8] c"LBrace"
+@1133 = constant [131 x i8] c"|statements:Statement|tokens:Token|diagnostics:Diagnostic|params:Param|args:Expr|arm_bodies:Block|arm_tags:int|arm_bindings:string|"
+@1134 = constant [1 x i8] c"|"
+@1135 = constant [1 x i8] c":"
+@1136 = constant [0 x i8] zeroinitializer
+@1137 = constant [1 x i8] c"|"
+@1138 = constant [1 x i8] c"p"
+@1139 = constant [1 x i8] c"s"
+@1140 = constant [1 x i8] c"l"
+@1141 = constant [1 x i8] c"4"
+@1142 = constant [0 x i8] zeroinitializer
+@1143 = constant [0 x i8] zeroinitializer
+@1144 = constant [4 x i8] c"List"
 @1145 = constant [8 x i8] c"LBracket"
-@1146 = constant [1 x i8] c","
-@1147 = constant [1 x i8] c","
+@1146 = constant [6 x i8] c"LBrace"
+@1147 = constant [8 x i8] c"LBracket"
 @1148 = constant [1 x i8] c","
 @1149 = constant [1 x i8] c","
-@1150 = constant [0 x i8] zeroinitializer
+@1150 = constant [1 x i8] c","
 @1151 = constant [1 x i8] c","
-@1152 = constant [1 x i8] c":"
+@1152 = constant [0 x i8] zeroinitializer
 @1153 = constant [1 x i8] c","
-@1154 = constant [6 x i8] c"string"
-@1155 = constant [6 x i8] c"String"
-@1156 = constant [1 x i8] c","
-@1157 = constant [1 x i8] c","
-@1158 = constant [8 x i8] c"LBracket"
+@1154 = constant [1 x i8] c":"
+@1155 = constant [1 x i8] c","
+@1156 = constant [6 x i8] c"string"
+@1157 = constant [6 x i8] c"String"
+@1158 = constant [1 x i8] c","
 @1159 = constant [1 x i8] c","
-@1160 = constant [1 x i8] c","
-@1161 = constant [6 x i8] c"string"
-@1162 = constant [6 x i8] c"String"
-@1163 = constant [1 x i8] c","
-@1164 = constant [1 x i8] c","
+@1160 = constant [8 x i8] c"LBracket"
+@1161 = constant [1 x i8] c","
+@1162 = constant [1 x i8] c","
+@1163 = constant [6 x i8] c"string"
+@1164 = constant [6 x i8] c"String"
 @1165 = constant [1 x i8] c","
-@1166 = constant [8 x i8] c":string,"
-@1167 = constant [0 x i8] zeroinitializer
-@1168 = constant [1 x i8] c","
-@1169 = constant [1 x i8] c":"
+@1166 = constant [1 x i8] c","
+@1167 = constant [1 x i8] c","
+@1168 = constant [8 x i8] c":string,"
+@1169 = constant [0 x i8] zeroinitializer
 @1170 = constant [1 x i8] c","
-@1171 = constant [1 x i8] c","
-@1172 = constant [5 x i8] c":int,"
-@1173 = constant [0 x i8] zeroinitializer
-@1174 = constant [1 x i8] c","
-@1175 = constant [1 x i8] c":"
+@1171 = constant [1 x i8] c":"
+@1172 = constant [1 x i8] c","
+@1173 = constant [1 x i8] c","
+@1174 = constant [5 x i8] c":int,"
+@1175 = constant [0 x i8] zeroinitializer
 @1176 = constant [1 x i8] c","
-@1177 = constant [0 x i8] zeroinitializer
-@1178 = constant [3 x i8] c"int"
-@1179 = constant [6 x i8] c"string"
-@1180 = constant [0 x i8] zeroinitializer
-@1181 = constant [0 x i8] zeroinitializer
+@1177 = constant [1 x i8] c":"
+@1178 = constant [1 x i8] c","
+@1179 = constant [0 x i8] zeroinitializer
+@1180 = constant [3 x i8] c"int"
+@1181 = constant [6 x i8] c"string"
 @1182 = constant [0 x i8] zeroinitializer
-@1183 = constant [9 x i8] c"variables"
-@1184 = constant [8 x i8] c"let_decl"
-@1185 = constant [29 x i8] c"  [parse_fn_decl] start cpos="
-@1186 = constant [37 x i8] c"  [parse_fn_decl] after advance cpos="
-@1187 = constant [35 x i8] c"  [parse_fn_decl] before_ident kid="
-@1188 = constant [6 x i8] c" text="
-@1189 = constant [23 x i8] c"  [parse_fn_decl] name="
-@1190 = constant [6 x i8] c" cpos="
-@1191 = constant [0 x i8] zeroinitializer
-@1192 = constant [0 x i8] zeroinitializer
+@1183 = constant [0 x i8] zeroinitializer
+@1184 = constant [0 x i8] zeroinitializer
+@1185 = constant [9 x i8] c"variables"
+@1186 = constant [8 x i8] c"let_decl"
+@1187 = constant [29 x i8] c"  [parse_fn_decl] start cpos="
+@1188 = constant [37 x i8] c"  [parse_fn_decl] after advance cpos="
+@1189 = constant [35 x i8] c"  [parse_fn_decl] before_ident kid="
+@1190 = constant [6 x i8] c" text="
+@1191 = constant [23 x i8] c"  [parse_fn_decl] name="
+@1192 = constant [6 x i8] c" cpos="
 @1193 = constant [0 x i8] zeroinitializer
-@1194 = constant [7 x i8] c"  BODY "
-@1195 = constant [6 x i8] c" open="
-@1196 = constant [7 x i8] c" close="
-@1197 = constant [5 x i8] c" len="
-@1198 = constant [9 x i8] c" src_len="
-@1199 = constant [3 x i8] c"int"
-@1200 = constant [9 x i8] c"functions"
-@1201 = constant [7 x i8] c"fn_decl"
-@1202 = constant [54 x i8] c"expected 'fn', 'let', 'mut', or 'const' after 'export'"
-@1203 = constant [4 x i8] c"main"
-@1204 = constant [5 x i8] c"entry"
-@1205 = constant [4 x i8] c"main"
-@1206 = constant [1 x i8] c","
-@1207 = constant [0 x i8] zeroinitializer
-@1208 = constant [0 x i8] zeroinitializer
-@1209 = constant [1 x i8] c","
-@1210 = constant [0 x i8] zeroinitializer
-@1211 = constant [0 x i8] zeroinitializer
-@1212 = constant [6 x i8] c"string"
-@1213 = constant [1 x i8] c"L"
-@1214 = constant [4 x i8] c"main"
+@1194 = constant [11 x i8] c"pre-tparams"
+@1195 = constant [12 x i8] c"post-tparams"
+@1196 = constant [11 x i8] c"post-params"
+@1197 = constant [0 x i8] zeroinitializer
+@1198 = constant [0 x i8] zeroinitializer
+@1199 = constant [7 x i8] c"  BODY "
+@1200 = constant [6 x i8] c" open="
+@1201 = constant [7 x i8] c" close="
+@1202 = constant [5 x i8] c" len="
+@1203 = constant [9 x i8] c" src_len="
+@1204 = constant [3 x i8] c"int"
+@1205 = constant [9 x i8] c"functions"
+@1206 = constant [7 x i8] c"fn_decl"
+@1207 = constant [54 x i8] c"expected 'fn', 'let', 'mut', or 'const' after 'export'"
+@1208 = constant [4 x i8] c"main"
+@1209 = constant [5 x i8] c"entry"
+@1210 = constant [4 x i8] c"main"
+@1211 = constant [1 x i8] c","
+@1212 = constant [0 x i8] zeroinitializer
+@1213 = constant [0 x i8] zeroinitializer
+@1214 = constant [1 x i8] c","
 @1215 = constant [0 x i8] zeroinitializer
-@1216 = constant [4 x i8] c"self"
-@1217 = constant [1 x i8] c"?"
-@1218 = constant [6 x i8] c"string"
-@1219 = constant [0 x i8] zeroinitializer
-@1220 = constant [4 x i8] c"main"
-@1221 = constant [8 x i8] c"  emit: "
-@1222 = constant [4 x i8] c"main"
-@1223 = constant [5 x i8] c"entry"
-@1224 = constant [14 x i8] c"forge_set_args"
-@1225 = constant [0 x i8] zeroinitializer
-@1226 = constant [0 x i8] zeroinitializer
-@1227 = constant [0 x i8] zeroinitializer
-@1228 = constant [0 x i8] zeroinitializer
-@1229 = constant [0 x i8] zeroinitializer
-@1230 = constant [3 x i8] c"int"
-@1231 = constant [6 x i8] c"string"
-@1232 = constant [5 x i8] c"float"
-@1233 = constant [4 x i8] c"bool"
-@1234 = constant [3 x i8] c"ptr"
-@1235 = constant [6 x i8] c"string"
-@1236 = constant [3 x i8] c"ptr"
-@1237 = constant [4 x i8] c"self"
-@1238 = constant [6 x i8] c"string"
-@1239 = constant [6 x i8] c"string"
-@1240 = constant [4 x i8] c"text"
-@1241 = constant [6 x i8] c"source"
-@1242 = constant [4 x i8] c"name"
-@1243 = constant [5 x i8] c"value"
-@1244 = constant [7 x i8] c"message"
-@1245 = constant [3 x i8] c"key"
-@1246 = constant [4 x i8] c"path"
-@1247 = constant [4 x i8] c"code"
-@1248 = constant [4 x i8] c"help"
-@1249 = constant [8 x i8] c"filename"
-@1250 = constant [7 x i8] c"pattern"
-@1251 = constant [6 x i8] c"prefix"
-@1252 = constant [1 x i8] c"L"
-@1253 = constant [1 x i8] c","
-@1254 = constant [1 x i8] c","
-@1255 = constant [1 x i8] c"<"
-@1256 = constant [1 x i8] c">"
-@1257 = constant [1 x i8] c","
-@1258 = constant [1 x i8] c":"
+@1216 = constant [0 x i8] zeroinitializer
+@1217 = constant [6 x i8] c"string"
+@1218 = constant [1 x i8] c"L"
+@1219 = constant [4 x i8] c"main"
+@1220 = constant [0 x i8] zeroinitializer
+@1221 = constant [4 x i8] c"self"
+@1222 = constant [1 x i8] c"?"
+@1223 = constant [6 x i8] c"string"
+@1224 = constant [0 x i8] zeroinitializer
+@1225 = constant [4 x i8] c"main"
+@1226 = constant [8 x i8] c"  emit: "
+@1227 = constant [4 x i8] c"main"
+@1228 = constant [5 x i8] c"entry"
+@1229 = constant [14 x i8] c"forge_set_args"
+@1230 = constant [0 x i8] zeroinitializer
+@1231 = constant [0 x i8] zeroinitializer
+@1232 = constant [0 x i8] zeroinitializer
+@1233 = constant [0 x i8] zeroinitializer
+@1234 = constant [0 x i8] zeroinitializer
+@1235 = constant [3 x i8] c"int"
+@1236 = constant [6 x i8] c"string"
+@1237 = constant [5 x i8] c"float"
+@1238 = constant [4 x i8] c"bool"
+@1239 = constant [3 x i8] c"ptr"
+@1240 = constant [6 x i8] c"string"
+@1241 = constant [3 x i8] c"ptr"
+@1242 = constant [4 x i8] c"self"
+@1243 = constant [6 x i8] c"string"
+@1244 = constant [6 x i8] c"string"
+@1245 = constant [4 x i8] c"text"
+@1246 = constant [6 x i8] c"source"
+@1247 = constant [4 x i8] c"name"
+@1248 = constant [5 x i8] c"value"
+@1249 = constant [7 x i8] c"message"
+@1250 = constant [3 x i8] c"key"
+@1251 = constant [4 x i8] c"path"
+@1252 = constant [4 x i8] c"code"
+@1253 = constant [4 x i8] c"help"
+@1254 = constant [8 x i8] c"filename"
+@1255 = constant [7 x i8] c"pattern"
+@1256 = constant [6 x i8] c"prefix"
+@1257 = constant [1 x i8] c"L"
+@1258 = constant [1 x i8] c","
 @1259 = constant [1 x i8] c","
-@1260 = constant [6 x i8] c"string"
-@1261 = constant [1 x i8] c","
+@1260 = constant [1 x i8] c"<"
+@1261 = constant [1 x i8] c">"
 @1262 = constant [1 x i8] c","
-@1263 = constant [1 x i8] c","
+@1263 = constant [1 x i8] c":"
 @1264 = constant [1 x i8] c","
-@1265 = constant [1 x i8] c","
-@1266 = constant [1 x i8] c":"
+@1265 = constant [6 x i8] c"string"
+@1266 = constant [1 x i8] c","
 @1267 = constant [1 x i8] c","
-@1268 = constant [1 x i8] c":"
+@1268 = constant [1 x i8] c","
 @1269 = constant [1 x i8] c","
 @1270 = constant [1 x i8] c","
 @1271 = constant [1 x i8] c":"
 @1272 = constant [1 x i8] c","
-@1273 = constant [0 x i8] zeroinitializer
-@1274 = constant [0 x i8] zeroinitializer
-@1275 = constant [0 x i8] zeroinitializer
-@1276 = constant [4 x i8] c"self"
-@1277 = constant [0 x i8] zeroinitializer
+@1273 = constant [1 x i8] c":"
+@1274 = constant [1 x i8] c","
+@1275 = constant [1 x i8] c","
+@1276 = constant [1 x i8] c":"
+@1277 = constant [1 x i8] c","
 @1278 = constant [0 x i8] zeroinitializer
 @1279 = constant [0 x i8] zeroinitializer
 @1280 = constant [0 x i8] zeroinitializer
-@1281 = constant [0 x i8] zeroinitializer
+@1281 = constant [4 x i8] c"self"
 @1282 = constant [0 x i8] zeroinitializer
-@1283 = constant [1 x i8] c"?"
-@1284 = constant [1 x i8] c","
+@1283 = constant [0 x i8] zeroinitializer
+@1284 = constant [0 x i8] zeroinitializer
 @1285 = constant [0 x i8] zeroinitializer
 @1286 = constant [0 x i8] zeroinitializer
-@1287 = constant [1 x i8] c","
-@1288 = constant [0 x i8] zeroinitializer
-@1289 = constant [0 x i8] zeroinitializer
+@1287 = constant [0 x i8] zeroinitializer
+@1288 = constant [1 x i8] c"?"
+@1289 = constant [1 x i8] c","
 @1290 = constant [0 x i8] zeroinitializer
-@1291 = constant [1 x i8] c","
-@1292 = constant [1 x i8] c"1"
-@1293 = constant [1 x i8] c","
+@1291 = constant [0 x i8] zeroinitializer
+@1292 = constant [1 x i8] c","
+@1293 = constant [0 x i8] zeroinitializer
 @1294 = constant [0 x i8] zeroinitializer
 @1295 = constant [0 x i8] zeroinitializer
 @1296 = constant [1 x i8] c","
-@1297 = constant [0 x i8] zeroinitializer
-@1298 = constant [0 x i8] zeroinitializer
+@1297 = constant [1 x i8] c"1"
+@1298 = constant [1 x i8] c","
 @1299 = constant [0 x i8] zeroinitializer
-@1300 = constant [1 x i8] c","
-@1301 = constant [1 x i8] c"1"
-@1302 = constant [4 x i8] c"main"
-@1303 = constant [1 x i8] c"?"
-@1304 = constant [6 x i8] c"string"
-@1305 = constant [0 x i8] zeroinitializer
-@1306 = constant [5 x i8] c"entry"
-@1307 = constant [0 x i8] zeroinitializer
-@1308 = constant [3 x i8] c"int"
+@1300 = constant [0 x i8] zeroinitializer
+@1301 = constant [1 x i8] c","
+@1302 = constant [0 x i8] zeroinitializer
+@1303 = constant [0 x i8] zeroinitializer
+@1304 = constant [0 x i8] zeroinitializer
+@1305 = constant [1 x i8] c","
+@1306 = constant [1 x i8] c"1"
+@1307 = constant [4 x i8] c"main"
+@1308 = constant [1 x i8] c"?"
 @1309 = constant [6 x i8] c"string"
-@1310 = constant [3 x i8] c"int"
-@1311 = constant [5 x i8] c"float"
-@1312 = constant [4 x i8] c"bool"
-@1313 = constant [3 x i8] c"ptr"
+@1310 = constant [0 x i8] zeroinitializer
+@1311 = constant [5 x i8] c"entry"
+@1312 = constant [0 x i8] zeroinitializer
+@1313 = constant [3 x i8] c"int"
 @1314 = constant [6 x i8] c"string"
-@1315 = constant [6 x i8] c"string"
-@1316 = constant [1 x i8] c","
-@1317 = constant [1 x i8] c":"
-@1318 = constant [1 x i8] c","
-@1319 = constant [0 x i8] zeroinitializer
-@1320 = constant [0 x i8] zeroinitializer
-@1321 = constant [0 x i8] zeroinitializer
-@1322 = constant [4 x i8] c"main"
-@1323 = constant [5 x i8] c"entry"
-@1324 = constant [4 x i8] c"main"
-@1325 = constant [5 x i8] c"entry"
-@1326 = constant [7 x i8] c"if_else"
-@1327 = constant [7 x i8] c"if_expr"
-@1328 = constant [3 x i8] c"ifc"
-@1329 = constant [2 x i8] c"th"
-@1330 = constant [2 x i8] c"el"
-@1331 = constant [2 x i8] c"ic"
-@1332 = constant [2 x i8] c"iv"
-@1333 = constant [2 x i8] c"iv"
-@1334 = constant [5 x i8] c"print"
-@1335 = constant [7 x i8] c"println"
-@1336 = constant [6 x i8] c"eprint"
-@1337 = constant [8 x i8] c"eprintln"
-@1338 = constant [3 x i8] c"int"
-@1339 = constant [5 x i8] c"float"
-@1340 = constant [4 x i8] c"bool"
-@1341 = constant [6 x i8] c"string"
-@1342 = constant [4 x i8] c"void"
-@1343 = constant [3 x i8] c"ptr"
-@1344 = constant [3 x i8] c"int"
-@1345 = constant [5 x i8] c"float"
-@1346 = constant [4 x i8] c"bool"
-@1347 = constant [6 x i8] c"string"
-@1348 = constant [4 x i8] c"void"
-@1349 = constant [3 x i8] c"ptr"
-@1350 = constant [3 x i8] c"int"
-@1351 = constant [5 x i8] c"float"
-@1352 = constant [0 x i8] zeroinitializer
-@1353 = constant [0 x i8] zeroinitializer
-@1354 = constant [0 x i8] zeroinitializer
-@1355 = constant [1 x i8] c"i"
-@1356 = constant [6 x i8] c"string"
-@1357 = constant [1 x i8] c"s"
-@1358 = constant [4 x i8] c"List"
-@1359 = constant [1 x i8] c"l"
-@1360 = constant [4 x i8] c"Span"
-@1361 = constant [1 x i8] c"4"
-@1362 = constant [4 x i8] c"Expr"
-@1363 = constant [1 x i8] c"p"
-@1364 = constant [9 x i8] c"Statement"
-@1365 = constant [1 x i8] c"p"
-@1366 = constant [5 x i8] c"Block"
-@1367 = constant [1 x i8] c"p"
-@1368 = constant [1 x i8] c","
-@1369 = constant [1 x i8] c":"
-@1370 = constant [1 x i8] c","
-@1371 = constant [5 x i8] c"enums"
-@1372 = constant [9 x i8] c"enum_decl"
-@1373 = constant [7 x i8] c"unknown"
-@1374 = constant [5 x i8] c"enums"
-@1375 = constant [14 x i8] c"enum_construct"
-@1376 = constant [16 x i8] c"pattern_matching"
-@1377 = constant [10 x i8] c"match_expr"
-@1378 = constant [0 x i8] zeroinitializer
-@1379 = constant [16 x i8] c"expected pattern"
-@1380 = constant [2 x i8] c"tg"
-@1381 = constant [2 x i8] c"te"
-@1382 = constant [2 x i8] c"me"
-@1383 = constant [2 x i8] c"mr"
-@1384 = constant [2 x i8] c"ma"
-@1385 = constant [2 x i8] c"mn"
-@1386 = constant [2 x i8] c"mc"
-@1387 = constant [2 x i8] c"mv"
-@1388 = constant [0 x i8] zeroinitializer
-@1389 = constant [0 x i8] zeroinitializer
-@1390 = constant [0 x i8] zeroinitializer
-@1391 = constant [0 x i8] zeroinitializer
-@1392 = constant [1 x i8] c","
-@1393 = constant [1 x i8] c","
-@1394 = constant [1 x i8] c","
-@1395 = constant [4 x i8] c"List"
-@1396 = constant [3 x i8] c"Map"
-@1397 = constant [1 x i8] c":"
-@1398 = constant [1 x i8] c"?"
-@1399 = constant [6 x i8] c"string"
-@1400 = constant [1 x i8] c"1"
-@1401 = constant [1 x i8] c"0"
-@1402 = constant [0 x i8] zeroinitializer
-@1403 = constant [1 x i8] c","
-@1404 = constant [0 x i8] zeroinitializer
-@1405 = constant [0 x i8] zeroinitializer
-@1406 = constant [7 x i8] c"structs"
-@1407 = constant [9 x i8] c"type_decl"
-@1408 = constant [7 x i8] c"structs"
-@1409 = constant [10 x i8] c"struct_lit"
+@1315 = constant [3 x i8] c"int"
+@1316 = constant [5 x i8] c"float"
+@1317 = constant [4 x i8] c"bool"
+@1318 = constant [3 x i8] c"ptr"
+@1319 = constant [6 x i8] c"string"
+@1320 = constant [6 x i8] c"string"
+@1321 = constant [1 x i8] c","
+@1322 = constant [1 x i8] c":"
+@1323 = constant [1 x i8] c","
+@1324 = constant [0 x i8] zeroinitializer
+@1325 = constant [0 x i8] zeroinitializer
+@1326 = constant [0 x i8] zeroinitializer
+@1327 = constant [4 x i8] c"main"
+@1328 = constant [5 x i8] c"entry"
+@1329 = constant [4 x i8] c"main"
+@1330 = constant [5 x i8] c"entry"
+@1331 = constant [7 x i8] c"if_else"
+@1332 = constant [7 x i8] c"if_expr"
+@1333 = constant [3 x i8] c"ifc"
+@1334 = constant [2 x i8] c"th"
+@1335 = constant [2 x i8] c"el"
+@1336 = constant [2 x i8] c"ic"
+@1337 = constant [2 x i8] c"iv"
+@1338 = constant [2 x i8] c"iv"
+@1339 = constant [5 x i8] c"print"
+@1340 = constant [7 x i8] c"println"
+@1341 = constant [6 x i8] c"eprint"
+@1342 = constant [8 x i8] c"eprintln"
+@1343 = constant [3 x i8] c"int"
+@1344 = constant [5 x i8] c"float"
+@1345 = constant [4 x i8] c"bool"
+@1346 = constant [6 x i8] c"string"
+@1347 = constant [4 x i8] c"void"
+@1348 = constant [3 x i8] c"ptr"
+@1349 = constant [3 x i8] c"int"
+@1350 = constant [5 x i8] c"float"
+@1351 = constant [4 x i8] c"bool"
+@1352 = constant [6 x i8] c"string"
+@1353 = constant [4 x i8] c"void"
+@1354 = constant [3 x i8] c"ptr"
+@1355 = constant [3 x i8] c"int"
+@1356 = constant [5 x i8] c"float"
+@1357 = constant [0 x i8] zeroinitializer
+@1358 = constant [0 x i8] zeroinitializer
+@1359 = constant [0 x i8] zeroinitializer
+@1360 = constant [1 x i8] c"i"
+@1361 = constant [6 x i8] c"string"
+@1362 = constant [1 x i8] c"s"
+@1363 = constant [4 x i8] c"List"
+@1364 = constant [1 x i8] c"l"
+@1365 = constant [4 x i8] c"Span"
+@1366 = constant [1 x i8] c"4"
+@1367 = constant [4 x i8] c"Expr"
+@1368 = constant [1 x i8] c"p"
+@1369 = constant [9 x i8] c"Statement"
+@1370 = constant [1 x i8] c"p"
+@1371 = constant [5 x i8] c"Block"
+@1372 = constant [1 x i8] c"p"
+@1373 = constant [1 x i8] c","
+@1374 = constant [1 x i8] c":"
+@1375 = constant [1 x i8] c","
+@1376 = constant [5 x i8] c"enums"
+@1377 = constant [9 x i8] c"enum_decl"
+@1378 = constant [7 x i8] c"unknown"
+@1379 = constant [5 x i8] c"enums"
+@1380 = constant [14 x i8] c"enum_construct"
+@1381 = constant [16 x i8] c"pattern_matching"
+@1382 = constant [10 x i8] c"match_expr"
+@1383 = constant [0 x i8] zeroinitializer
+@1384 = constant [16 x i8] c"expected pattern"
+@1385 = constant [2 x i8] c"tg"
+@1386 = constant [2 x i8] c"te"
+@1387 = constant [2 x i8] c"me"
+@1388 = constant [2 x i8] c"mr"
+@1389 = constant [2 x i8] c"ma"
+@1390 = constant [2 x i8] c"mn"
+@1391 = constant [2 x i8] c"mc"
+@1392 = constant [2 x i8] c"mv"
+@1393 = constant [0 x i8] zeroinitializer
+@1394 = constant [0 x i8] zeroinitializer
+@1395 = constant [0 x i8] zeroinitializer
+@1396 = constant [0 x i8] zeroinitializer
+@1397 = constant [1 x i8] c","
+@1398 = constant [1 x i8] c","
+@1399 = constant [1 x i8] c","
+@1400 = constant [4 x i8] c"List"
+@1401 = constant [3 x i8] c"Map"
+@1402 = constant [1 x i8] c":"
+@1403 = constant [1 x i8] c"?"
+@1404 = constant [6 x i8] c"string"
+@1405 = constant [1 x i8] c"1"
+@1406 = constant [1 x i8] c"0"
+@1407 = constant [0 x i8] zeroinitializer
+@1408 = constant [1 x i8] c","
+@1409 = constant [0 x i8] zeroinitializer
 @1410 = constant [0 x i8] zeroinitializer
-@1411 = constant [0 x i8] zeroinitializer
-@1412 = constant [30 x i8] c"expected type name after 'for'"
-@1413 = constant [12 x i8] c"impl_methods"
-@1414 = constant [10 x i8] c"impl_block"
+@1411 = constant [7 x i8] c"structs"
+@1412 = constant [9 x i8] c"type_decl"
+@1413 = constant [7 x i8] c"structs"
+@1414 = constant [10 x i8] c"struct_lit"
 @1415 = constant [0 x i8] zeroinitializer
-@1416 = constant [2 x i8] c"__"
-@1417 = constant [0 x i8] zeroinitializer
-@1418 = constant [0 x i8] zeroinitializer
-@1419 = constant [4 x i8] c"self"
-@1420 = constant [4 x i8] c"self"
-@1421 = constant [1 x i8] c"p"
-@1422 = constant [3 x i8] c"int"
-@1423 = constant [3 x i8] c"int"
-@1424 = constant [1 x i8] c"p"
-@1425 = constant [2 x i8] c"wc"
-@1426 = constant [2 x i8] c"wb"
-@1427 = constant [2 x i8] c"we"
-@1428 = constant [2 x i8] c"wt"
-@1429 = constant [0 x i8] zeroinitializer
-@1430 = constant [41 x i8] c"  WARN: for-in iterable is null, skipping"
-@1431 = constant [2 x i8] c"fi"
-@1432 = constant [2 x i8] c"ln"
-@1433 = constant [2 x i8] c"fc"
-@1434 = constant [2 x i8] c"fb"
-@1435 = constant [2 x i8] c"fx"
-@1436 = constant [2 x i8] c"fe"
-@1437 = constant [2 x i8] c"ci"
-@1438 = constant [2 x i8] c"cc"
-@1439 = constant [2 x i8] c"bi"
-@1440 = constant [2 x i8] c"dp"
-@1441 = constant [2 x i8] c"ep"
-@1442 = constant [2 x i8] c"ev"
-@1443 = constant [2 x i8] c"iv"
-@1444 = constant [2 x i8] c"ic"
-@1445 = constant [2 x i8] c"ni"
-@1446 = constant [6 x i8] c"ranges"
-@1447 = constant [5 x i8] c"range"
-@1448 = constant [11 x i8] c"collections"
-@1449 = constant [8 x i8] c"list_lit"
-@1450 = constant [11 x i8] c"collections"
-@1451 = constant [7 x i8] c"map_lit"
-@1452 = constant [8 x i8] c"list_lit"
-@1453 = constant [7 x i8] c"map_lit"
-@1454 = constant [16 x i8] c"string_templates"
-@1455 = constant [8 x i8] c"template"
-@1456 = constant [8 x i8] c"closures"
-@1457 = constant [7 x i8] c"closure"
-@1458 = constant [11 x i8] c"null_safety"
-@1459 = constant [12 x i8] c"force_unwrap"
-@1460 = constant [11 x i8] c"null_safety"
-@1461 = constant [8 x i8] c"coalesce"
-@1462 = constant [11 x i8] c"null_safety"
-@1463 = constant [14 x i8] c"optional_chain"
+@1416 = constant [0 x i8] zeroinitializer
+@1417 = constant [30 x i8] c"expected type name after 'for'"
+@1418 = constant [12 x i8] c"impl_methods"
+@1419 = constant [10 x i8] c"impl_block"
+@1420 = constant [0 x i8] zeroinitializer
+@1421 = constant [2 x i8] c"__"
+@1422 = constant [0 x i8] zeroinitializer
+@1423 = constant [0 x i8] zeroinitializer
+@1424 = constant [4 x i8] c"self"
+@1425 = constant [4 x i8] c"self"
+@1426 = constant [1 x i8] c"p"
+@1427 = constant [3 x i8] c"int"
+@1428 = constant [3 x i8] c"int"
+@1429 = constant [1 x i8] c"p"
+@1430 = constant [2 x i8] c"wc"
+@1431 = constant [2 x i8] c"wb"
+@1432 = constant [2 x i8] c"we"
+@1433 = constant [2 x i8] c"wt"
+@1434 = constant [0 x i8] zeroinitializer
+@1435 = constant [41 x i8] c"  WARN: for-in iterable is null, skipping"
+@1436 = constant [2 x i8] c"fi"
+@1437 = constant [2 x i8] c"ln"
+@1438 = constant [2 x i8] c"fc"
+@1439 = constant [2 x i8] c"fb"
+@1440 = constant [2 x i8] c"fx"
+@1441 = constant [2 x i8] c"fe"
+@1442 = constant [2 x i8] c"ci"
+@1443 = constant [2 x i8] c"cc"
+@1444 = constant [2 x i8] c"bi"
+@1445 = constant [2 x i8] c"dp"
+@1446 = constant [2 x i8] c"ep"
+@1447 = constant [2 x i8] c"ev"
+@1448 = constant [2 x i8] c"iv"
+@1449 = constant [2 x i8] c"ic"
+@1450 = constant [2 x i8] c"ni"
+@1451 = constant [6 x i8] c"ranges"
+@1452 = constant [5 x i8] c"range"
+@1453 = constant [11 x i8] c"collections"
+@1454 = constant [8 x i8] c"list_lit"
+@1455 = constant [11 x i8] c"collections"
+@1456 = constant [7 x i8] c"map_lit"
+@1457 = constant [8 x i8] c"list_lit"
+@1458 = constant [7 x i8] c"map_lit"
+@1459 = constant [16 x i8] c"string_templates"
+@1460 = constant [8 x i8] c"template"
+@1461 = constant [8 x i8] c"closures"
+@1462 = constant [7 x i8] c"closure"
+@1463 = constant [11 x i8] c"null_safety"
 @1464 = constant [12 x i8] c"force_unwrap"
-@1465 = constant [8 x i8] c"coalesce"
-@1466 = constant [14 x i8] c"optional_chain"
-@1467 = constant [6 x i8] c"traits"
-@1468 = constant [10 x i8] c"trait_decl"
-@1469 = constant [4 x i8] c"self"
-@1470 = constant [7 x i8] c"modules"
-@1471 = constant [8 x i8] c"use_decl"
-@1472 = constant [9 x i8] c"variables"
-@1473 = constant [9 x i8] c"functions"
-@1474 = constant [5 x i8] c"enums"
-@1475 = constant [7 x i8] c"structs"
-@1476 = constant [12 x i8] c"impl_methods"
-@1477 = constant [11 x i8] c"while_loops"
-@1478 = constant [9 x i8] c"for_loops"
-@1479 = constant [38 x i8] c"[dispatch_emit_stmt] unknown feature: "
-@1480 = constant [7 x i8] c"if_else"
-@1481 = constant [16 x i8] c"pattern_matching"
-@1482 = constant [11 x i8] c"collections"
-@1483 = constant [6 x i8] c"ranges"
-@1484 = constant [16 x i8] c"string_templates"
-@1485 = constant [8 x i8] c"closures"
-@1486 = constant [11 x i8] c"null_safety"
-@1487 = constant [7 x i8] c"structs"
-@1488 = constant [38 x i8] c"[dispatch_emit_expr] unknown feature: "
-@1489 = constant [7 x i8] c"check: "
-@1490 = constant [5 x i8] c" len="
-@1491 = constant [19 x i8] c"  creating lexer..."
-@1492 = constant [21 x i8] c"  lexer created, len="
-@1493 = constant [15 x i8] c"  tokenizing..."
-@1494 = constant [2 x i8] c"  "
-@1495 = constant [7 x i8] c" tokens"
-@1496 = constant [12 x i8] c"  parsing..."
-@1497 = constant [36 x i8] c"  parser created, parsing program..."
-@1498 = constant [9 x i8] c"  parsed!"
-@1499 = constant [2 x i8] c"OK"
-@1500 = constant [17 x i8] c"resolve_modules: "
-@1501 = constant [17 x i8] c"  source length: "
-@1502 = constant [0 x i8] zeroinitializer
-@1503 = constant [1 x i8] c"/"
-@1504 = constant [0 x i8] zeroinitializer
-@1505 = constant [1 x i8] c"\0A"
-@1506 = constant [1 x i8] c"m"
-@1507 = constant [1 x i8] c"o"
-@1508 = constant [1 x i8] c"d"
-@1509 = constant [1 x i8] c" "
-@1510 = constant [7 x i8] c"/mod.fg"
-@1511 = constant [3 x i8] c".fg"
-@1512 = constant [1 x i8] c"\0A"
-@1513 = constant [1 x i8] c"\0A"
-@1514 = constant [0 x i8] zeroinitializer
+@1465 = constant [11 x i8] c"null_safety"
+@1466 = constant [8 x i8] c"coalesce"
+@1467 = constant [11 x i8] c"null_safety"
+@1468 = constant [14 x i8] c"optional_chain"
+@1469 = constant [12 x i8] c"force_unwrap"
+@1470 = constant [8 x i8] c"coalesce"
+@1471 = constant [14 x i8] c"optional_chain"
+@1472 = constant [6 x i8] c"traits"
+@1473 = constant [10 x i8] c"trait_decl"
+@1474 = constant [4 x i8] c"self"
+@1475 = constant [7 x i8] c"modules"
+@1476 = constant [8 x i8] c"use_decl"
+@1477 = constant [9 x i8] c"variables"
+@1478 = constant [9 x i8] c"functions"
+@1479 = constant [5 x i8] c"enums"
+@1480 = constant [7 x i8] c"structs"
+@1481 = constant [12 x i8] c"impl_methods"
+@1482 = constant [11 x i8] c"while_loops"
+@1483 = constant [9 x i8] c"for_loops"
+@1484 = constant [38 x i8] c"[dispatch_emit_stmt] unknown feature: "
+@1485 = constant [7 x i8] c"if_else"
+@1486 = constant [16 x i8] c"pattern_matching"
+@1487 = constant [11 x i8] c"collections"
+@1488 = constant [6 x i8] c"ranges"
+@1489 = constant [16 x i8] c"string_templates"
+@1490 = constant [8 x i8] c"closures"
+@1491 = constant [11 x i8] c"null_safety"
+@1492 = constant [7 x i8] c"structs"
+@1493 = constant [38 x i8] c"[dispatch_emit_expr] unknown feature: "
+@1494 = constant [7 x i8] c"check: "
+@1495 = constant [5 x i8] c" len="
+@1496 = constant [19 x i8] c"  creating lexer..."
+@1497 = constant [21 x i8] c"  lexer created, len="
+@1498 = constant [15 x i8] c"  tokenizing..."
+@1499 = constant [2 x i8] c"  "
+@1500 = constant [7 x i8] c" tokens"
+@1501 = constant [12 x i8] c"  parsing..."
+@1502 = constant [36 x i8] c"  parser created, parsing program..."
+@1503 = constant [9 x i8] c"  parsed!"
+@1504 = constant [2 x i8] c"OK"
+@1505 = constant [17 x i8] c"resolve_modules: "
+@1506 = constant [17 x i8] c"  source length: "
+@1507 = constant [0 x i8] zeroinitializer
+@1508 = constant [1 x i8] c"/"
+@1509 = constant [0 x i8] zeroinitializer
+@1510 = constant [1 x i8] c"\0A"
+@1511 = constant [1 x i8] c"m"
+@1512 = constant [1 x i8] c"o"
+@1513 = constant [1 x i8] c"d"
+@1514 = constant [1 x i8] c" "
 @1515 = constant [7 x i8] c"/mod.fg"
 @1516 = constant [3 x i8] c".fg"
-@1517 = constant [22 x i8] c"collect_module_paths: "
-@1518 = constant [7 x i8] c"  read "
-@1519 = constant [6 x i8] c" bytes"
-@1520 = constant [1 x i8] c"\0A"
-@1521 = constant [1 x i8] c"\0A"
-@1522 = constant [0 x i8] zeroinitializer
-@1523 = constant [10 x i8] c"  CSV len="
-@1524 = constant [1 x i8] c"\0A"
-@1525 = constant [9 x i8] c"  [scan] "
-@1526 = constant [9 x i8] c" reading "
-@1527 = constant [9 x i8] c"  [scan] "
-@1528 = constant [6 x i8] c" read "
-@1529 = constant [6 x i8] c" bytes"
+@1517 = constant [1 x i8] c"\0A"
+@1518 = constant [1 x i8] c"\0A"
+@1519 = constant [0 x i8] zeroinitializer
+@1520 = constant [7 x i8] c"/mod.fg"
+@1521 = constant [3 x i8] c".fg"
+@1522 = constant [22 x i8] c"collect_module_paths: "
+@1523 = constant [7 x i8] c"  read "
+@1524 = constant [6 x i8] c" bytes"
+@1525 = constant [1 x i8] c"\0A"
+@1526 = constant [1 x i8] c"\0A"
+@1527 = constant [0 x i8] zeroinitializer
+@1528 = constant [10 x i8] c"  CSV len="
+@1529 = constant [1 x i8] c"\0A"
 @1530 = constant [9 x i8] c"  [scan] "
-@1531 = constant [14 x i8] c" lexer created"
+@1531 = constant [9 x i8] c" reading "
 @1532 = constant [9 x i8] c"  [scan] "
-@1533 = constant [1 x i8] c" "
-@1534 = constant [4 x i8] c" tok"
+@1533 = constant [6 x i8] c" read "
+@1534 = constant [6 x i8] c" bytes"
 @1535 = constant [9 x i8] c"  [scan] "
-@1536 = constant [15 x i8] c" parser created"
+@1536 = constant [14 x i8] c" lexer created"
 @1537 = constant [9 x i8] c"  [scan] "
-@1538 = constant [10 x i8] c" parsed OK"
-@1539 = constant [30 x i8] c"forge_llvm_build_extract_value"
-@1540 = constant [16 x i8] c"forge_sh_indexof"
-@1541 = constant [15 x i8] c"forge_sh_substr"
-@1542 = constant [15 x i8] c"forge_sh_byteat"
-@1543 = constant [15 x i8] c"forge_sh_length"
-@1544 = constant [13 x i8] c"forgec_output"
-@1545 = constant [20 x i8] c"  using C-side CSV: "
-@1546 = constant [6 x i8] c" bytes"
-@1547 = constant [8 x i8] c"scanned "
-@1548 = constant [8 x i8] c" files, "
-@1549 = constant [4 x i8] c" fns"
-@1550 = constant [13 x i8] c"forgec_output"
-@1551 = constant [11 x i8] c"  declared "
-@1552 = constant [4 x i8] c" fns"
-@1553 = constant [9 x i8] c"output.ll"
-@1554 = constant [11 x i8] c"  emit done"
-@1555 = constant [9 x i8] c"output.ll"
-@1556 = constant [2 x i8] c".o"
-@1557 = constant [33 x i8] c"/opt/homebrew/opt/llvm@18/bin/llc"
-@1558 = constant [21 x i8] c"/tmp/forgec_runtime.o"
-@1559 = constant [2 x i8] c"cc"
-@1560 = constant [2 x i8] c"cc"
-@1561 = constant [10 x i8] c"compiled: "
-@1562 = constant [12 x i8] c"BC: reading "
-@1563 = constant [9 x i8] c"BC: read "
-@1564 = constant [6 x i8] c" bytes"
-@1565 = constant [4 x i8] c"BC: "
-@1566 = constant [7 x i8] c" tokens"
-@1567 = constant [12 x i8] c"BC: parsed, "
-@1568 = constant [4 x i8] c" fns"
-@1569 = constant [13 x i8] c"forgec_output"
-@1570 = constant [11 x i8] c"  declared "
-@1571 = constant [4 x i8] c" fns"
-@1572 = constant [5 x i8] c"  >> "
-@1573 = constant [5 x i8] c"    ["
-@1574 = constant [2 x i8] c"] "
-@1575 = constant [9 x i8] c"output.ll"
-@1576 = constant [11 x i8] c"  emit done"
-@1577 = constant [18 x i8] c"/tmp/forgec_out.ll"
-@1578 = constant [2 x i8] c".o"
-@1579 = constant [33 x i8] c"/opt/homebrew/opt/llvm@18/bin/llc"
-@1580 = constant [21 x i8] c"/tmp/forgec_runtime.o"
-@1581 = constant [2 x i8] c"cc"
-@1582 = constant [3 x i8] c"-lm"
-@1583 = constant [2 x i8] c"cc"
-@1584 = constant [10 x i8] c"compiled: "
-@1585 = constant [42 x i8] c"forgec v0.1.0 - self-hosted Forge compiler"
-@1586 = constant [37 x i8] c"Usage: forgec <check|build> <file.fg>"
-@1587 = constant [0 x i8] zeroinitializer
-@1588 = constant [7 x i8] c"M:argc="
-@1589 = constant [7 x i8] c"M:cmd=["
-@1590 = constant [1 x i8] c"]"
-@1591 = constant [5 x i8] c"check"
-@1592 = constant [2 x i8] c"OK"
-@1593 = constant [5 x i8] c"build"
-@1594 = constant [5 x i8] c"a.out"
-@1595 = constant [10 x i8] c"M:csv_len="
-@1596 = constant [15 x i8] c"unknown command"
+@1538 = constant [1 x i8] c" "
+@1539 = constant [4 x i8] c" tok"
+@1540 = constant [9 x i8] c"  [scan] "
+@1541 = constant [15 x i8] c" parser created"
+@1542 = constant [9 x i8] c"  [scan] "
+@1543 = constant [10 x i8] c" parsed OK"
+@1544 = constant [30 x i8] c"forge_llvm_build_extract_value"
+@1545 = constant [16 x i8] c"forge_sh_indexof"
+@1546 = constant [15 x i8] c"forge_sh_substr"
+@1547 = constant [15 x i8] c"forge_sh_byteat"
+@1548 = constant [15 x i8] c"forge_sh_length"
+@1549 = constant [13 x i8] c"forgec_output"
+@1550 = constant [20 x i8] c"  using C-side CSV: "
+@1551 = constant [6 x i8] c" bytes"
+@1552 = constant [8 x i8] c"scanned "
+@1553 = constant [8 x i8] c" files, "
+@1554 = constant [4 x i8] c" fns"
+@1555 = constant [13 x i8] c"forgec_output"
+@1556 = constant [11 x i8] c"  declared "
+@1557 = constant [4 x i8] c" fns"
+@1558 = constant [9 x i8] c"output.ll"
+@1559 = constant [11 x i8] c"  emit done"
+@1560 = constant [9 x i8] c"output.ll"
+@1561 = constant [2 x i8] c".o"
+@1562 = constant [33 x i8] c"/opt/homebrew/opt/llvm@18/bin/llc"
+@1563 = constant [21 x i8] c"/tmp/forgec_runtime.o"
+@1564 = constant [2 x i8] c"cc"
+@1565 = constant [2 x i8] c"cc"
+@1566 = constant [10 x i8] c"compiled: "
+@1567 = constant [12 x i8] c"BC: reading "
+@1568 = constant [9 x i8] c"BC: read "
+@1569 = constant [6 x i8] c" bytes"
+@1570 = constant [4 x i8] c"BC: "
+@1571 = constant [7 x i8] c" tokens"
+@1572 = constant [12 x i8] c"BC: parsed, "
+@1573 = constant [4 x i8] c" fns"
+@1574 = constant [13 x i8] c"forgec_output"
+@1575 = constant [11 x i8] c"  declared "
+@1576 = constant [4 x i8] c" fns"
+@1577 = constant [5 x i8] c"  >> "
+@1578 = constant [5 x i8] c"    ["
+@1579 = constant [2 x i8] c"] "
+@1580 = constant [9 x i8] c"output.ll"
+@1581 = constant [11 x i8] c"  emit done"
+@1582 = constant [18 x i8] c"/tmp/forgec_out.ll"
+@1583 = constant [2 x i8] c".o"
+@1584 = constant [33 x i8] c"/opt/homebrew/opt/llvm@18/bin/llc"
+@1585 = constant [21 x i8] c"/tmp/forgec_runtime.o"
+@1586 = constant [2 x i8] c"cc"
+@1587 = constant [3 x i8] c"-lm"
+@1588 = constant [2 x i8] c"cc"
+@1589 = constant [10 x i8] c"compiled: "
+@1590 = constant [42 x i8] c"forgec v0.1.0 - self-hosted Forge compiler"
+@1591 = constant [37 x i8] c"Usage: forgec <check|build> <file.fg>"
+@1592 = constant [0 x i8] zeroinitializer
+@1593 = constant [7 x i8] c"M:argc="
+@1594 = constant [7 x i8] c"M:cmd=["
+@1595 = constant [1 x i8] c"]"
+@1596 = constant [5 x i8] c"check"
+@1597 = constant [2 x i8] c"OK"
+@1598 = constant [5 x i8] c"build"
+@1599 = constant [5 x i8] c"a.out"
+@1600 = constant [10 x i8] c"M:csv_len="
+@1601 = constant [15 x i8] c"unknown command"
 
 declare void @forge_println_string(%ForgeString)
 
@@ -1950,6 +1955,10 @@ declare i64 @forge_parser_get_pos()
 declare void @forge_parser_advance_pos()
 
 declare void @forge_parser_set_ptr(ptr)
+
+declare void @forge_debug_parser_state(%ForgeString)
+
+declare void @forge_enable_peek_trace()
 
 declare void @forge_set_token_list(%ForgeString)
 
@@ -32218,223 +32227,223 @@ bb3965:
   %331 = call ptr @make_fn_type_1(ptr %329, ptr %330)
   %332 = call ptr @forge_llvm_add_function(ptr %328, ptr @862, ptr %331)
   %333 = load ptr, ptr @CG_MOD, align 8
-  %334 = load ptr, ptr @CG_I64, align 8
-  %335 = load ptr, ptr @CG_I64, align 8
-  %336 = call ptr @make_fn_type_1(ptr %334, ptr %335)
-  %337 = call ptr @forge_llvm_add_function(ptr %333, ptr @863, ptr %336)
-  %338 = load ptr, ptr @CG_MOD, align 8
+  %334 = load ptr, ptr @CG_VOID, align 8
+  %335 = call ptr @make_fn_type_0(ptr %334)
+  %336 = call ptr @forge_llvm_add_function(ptr %333, ptr @863, ptr %335)
+  %337 = load ptr, ptr @CG_MOD, align 8
+  %338 = load ptr, ptr @CG_VOID, align 8
   %339 = load ptr, ptr @CG_STR, align 8
-  %340 = load ptr, ptr @CG_I64, align 8
-  %341 = call ptr @make_fn_type_1(ptr %339, ptr %340)
-  %342 = call ptr @forge_llvm_add_function(ptr %338, ptr @864, ptr %341)
-  %343 = load ptr, ptr @CG_MOD, align 8
+  %340 = call ptr @make_fn_type_1(ptr %338, ptr %339)
+  %341 = call ptr @forge_llvm_add_function(ptr %337, ptr @864, ptr %340)
+  %342 = load ptr, ptr @CG_MOD, align 8
+  %343 = load ptr, ptr @CG_I64, align 8
   %344 = load ptr, ptr @CG_I64, align 8
-  %345 = call ptr @make_fn_type_0(ptr %344)
-  %346 = call ptr @forge_llvm_add_function(ptr %343, ptr @865, ptr %345)
+  %345 = call ptr @make_fn_type_1(ptr %343, ptr %344)
+  %346 = call ptr @forge_llvm_add_function(ptr %342, ptr @865, ptr %345)
   %347 = load ptr, ptr @CG_MOD, align 8
-  %348 = load ptr, ptr @CG_I64, align 8
-  %349 = load ptr, ptr @CG_STR, align 8
+  %348 = load ptr, ptr @CG_STR, align 8
+  %349 = load ptr, ptr @CG_I64, align 8
   %350 = call ptr @make_fn_type_1(ptr %348, ptr %349)
   %351 = call ptr @forge_llvm_add_function(ptr %347, ptr @866, ptr %350)
   %352 = load ptr, ptr @CG_MOD, align 8
   %353 = load ptr, ptr @CG_I64, align 8
-  %354 = load ptr, ptr @CG_STR, align 8
-  %355 = call ptr @make_fn_type_1(ptr %353, ptr %354)
-  %356 = call ptr @forge_llvm_add_function(ptr %352, ptr @867, ptr %355)
-  %357 = load ptr, ptr @CG_MOD, align 8
-  %358 = load ptr, ptr @CG_I64, align 8
-  %359 = load ptr, ptr @CG_STR, align 8
-  %360 = call ptr @make_fn_type_1(ptr %358, ptr %359)
-  %361 = call ptr @forge_llvm_add_function(ptr %357, ptr @868, ptr %360)
-  %362 = load ptr, ptr @CG_MOD, align 8
-  %363 = load ptr, ptr @CG_I64, align 8
-  %364 = load ptr, ptr @CG_STR, align 8
-  %365 = call ptr @make_fn_type_1(ptr %363, ptr %364)
-  %366 = call ptr @forge_llvm_add_function(ptr %362, ptr @869, ptr %365)
-  %367 = load ptr, ptr @CG_MOD, align 8
-  %368 = load ptr, ptr @CG_I64, align 8
-  %369 = load ptr, ptr @CG_STR, align 8
-  %370 = call ptr @make_fn_type_1(ptr %368, ptr %369)
-  %371 = call ptr @forge_llvm_add_function(ptr %367, ptr @870, ptr %370)
-  %372 = load ptr, ptr @CG_MOD, align 8
-  %373 = load ptr, ptr @CG_I64, align 8
-  %374 = load ptr, ptr @CG_STR, align 8
-  %375 = call ptr @make_fn_type_1(ptr %373, ptr %374)
-  %376 = call ptr @forge_llvm_add_function(ptr %372, ptr @871, ptr %375)
-  %377 = load ptr, ptr @CG_MOD, align 8
-  %378 = load ptr, ptr @CG_I64, align 8
-  %379 = load ptr, ptr @CG_STR, align 8
-  %380 = call ptr @make_fn_type_1(ptr %378, ptr %379)
-  %381 = call ptr @forge_llvm_add_function(ptr %377, ptr @872, ptr %380)
-  %382 = load ptr, ptr @CG_MOD, align 8
+  %354 = call ptr @make_fn_type_0(ptr %353)
+  %355 = call ptr @forge_llvm_add_function(ptr %352, ptr @867, ptr %354)
+  %356 = load ptr, ptr @CG_MOD, align 8
+  %357 = load ptr, ptr @CG_I64, align 8
+  %358 = load ptr, ptr @CG_STR, align 8
+  %359 = call ptr @make_fn_type_1(ptr %357, ptr %358)
+  %360 = call ptr @forge_llvm_add_function(ptr %356, ptr @868, ptr %359)
+  %361 = load ptr, ptr @CG_MOD, align 8
+  %362 = load ptr, ptr @CG_I64, align 8
+  %363 = load ptr, ptr @CG_STR, align 8
+  %364 = call ptr @make_fn_type_1(ptr %362, ptr %363)
+  %365 = call ptr @forge_llvm_add_function(ptr %361, ptr @869, ptr %364)
+  %366 = load ptr, ptr @CG_MOD, align 8
+  %367 = load ptr, ptr @CG_I64, align 8
+  %368 = load ptr, ptr @CG_STR, align 8
+  %369 = call ptr @make_fn_type_1(ptr %367, ptr %368)
+  %370 = call ptr @forge_llvm_add_function(ptr %366, ptr @870, ptr %369)
+  %371 = load ptr, ptr @CG_MOD, align 8
+  %372 = load ptr, ptr @CG_I64, align 8
+  %373 = load ptr, ptr @CG_STR, align 8
+  %374 = call ptr @make_fn_type_1(ptr %372, ptr %373)
+  %375 = call ptr @forge_llvm_add_function(ptr %371, ptr @871, ptr %374)
+  %376 = load ptr, ptr @CG_MOD, align 8
+  %377 = load ptr, ptr @CG_I64, align 8
+  %378 = load ptr, ptr @CG_STR, align 8
+  %379 = call ptr @make_fn_type_1(ptr %377, ptr %378)
+  %380 = call ptr @forge_llvm_add_function(ptr %376, ptr @872, ptr %379)
+  %381 = load ptr, ptr @CG_MOD, align 8
+  %382 = load ptr, ptr @CG_I64, align 8
   %383 = load ptr, ptr @CG_STR, align 8
-  %384 = load ptr, ptr @CG_STR, align 8
-  %385 = load ptr, ptr @CG_PTR, align 8
-  %386 = load ptr, ptr @CG_I64, align 8
-  %387 = call ptr @make_fn_type_3(ptr %383, ptr %384, ptr %385, ptr %386)
-  %388 = call ptr @forge_llvm_add_function(ptr %382, ptr @873, ptr %387)
-  %389 = load ptr, ptr @CG_MOD, align 8
-  %390 = load ptr, ptr @CG_STR, align 8
-  %391 = load ptr, ptr @CG_STR, align 8
+  %384 = call ptr @make_fn_type_1(ptr %382, ptr %383)
+  %385 = call ptr @forge_llvm_add_function(ptr %381, ptr @873, ptr %384)
+  %386 = load ptr, ptr @CG_MOD, align 8
+  %387 = load ptr, ptr @CG_I64, align 8
+  %388 = load ptr, ptr @CG_STR, align 8
+  %389 = call ptr @make_fn_type_1(ptr %387, ptr %388)
+  %390 = call ptr @forge_llvm_add_function(ptr %386, ptr @874, ptr %389)
+  %391 = load ptr, ptr @CG_MOD, align 8
   %392 = load ptr, ptr @CG_STR, align 8
-  %393 = call ptr @make_fn_type_2(ptr %390, ptr %391, ptr %392)
-  %394 = call ptr @forge_llvm_add_function(ptr %389, ptr @874, ptr %393)
-  %395 = load ptr, ptr @CG_MOD, align 8
-  %396 = load ptr, ptr @CG_VOID, align 8
-  %397 = call ptr @make_fn_type_0(ptr %396)
-  %398 = call ptr @forge_llvm_add_function(ptr %395, ptr @875, ptr %397)
-  %399 = load ptr, ptr @CG_MOD, align 8
-  %400 = load ptr, ptr @CG_VOID, align 8
+  %393 = load ptr, ptr @CG_STR, align 8
+  %394 = load ptr, ptr @CG_PTR, align 8
+  %395 = load ptr, ptr @CG_I64, align 8
+  %396 = call ptr @make_fn_type_3(ptr %392, ptr %393, ptr %394, ptr %395)
+  %397 = call ptr @forge_llvm_add_function(ptr %391, ptr @875, ptr %396)
+  %398 = load ptr, ptr @CG_MOD, align 8
+  %399 = load ptr, ptr @CG_STR, align 8
+  %400 = load ptr, ptr @CG_STR, align 8
   %401 = load ptr, ptr @CG_STR, align 8
-  %402 = load ptr, ptr @CG_STR, align 8
-  %403 = call ptr @make_fn_type_2(ptr %400, ptr %401, ptr %402)
-  %404 = call ptr @forge_llvm_add_function(ptr %399, ptr @876, ptr %403)
-  %405 = load ptr, ptr @CG_MOD, align 8
-  %406 = load ptr, ptr @CG_STR, align 8
-  %407 = load ptr, ptr @CG_I64, align 8
-  %408 = call ptr @make_fn_type_1(ptr %406, ptr %407)
-  %409 = call ptr @forge_llvm_add_function(ptr %405, ptr @877, ptr %408)
-  %410 = load ptr, ptr @CG_MOD, align 8
+  %402 = call ptr @make_fn_type_2(ptr %399, ptr %400, ptr %401)
+  %403 = call ptr @forge_llvm_add_function(ptr %398, ptr @876, ptr %402)
+  %404 = load ptr, ptr @CG_MOD, align 8
+  %405 = load ptr, ptr @CG_VOID, align 8
+  %406 = call ptr @make_fn_type_0(ptr %405)
+  %407 = call ptr @forge_llvm_add_function(ptr %404, ptr @877, ptr %406)
+  %408 = load ptr, ptr @CG_MOD, align 8
+  %409 = load ptr, ptr @CG_VOID, align 8
+  %410 = load ptr, ptr @CG_STR, align 8
   %411 = load ptr, ptr @CG_STR, align 8
-  %412 = load ptr, ptr @CG_I64, align 8
-  %413 = call ptr @make_fn_type_1(ptr %411, ptr %412)
-  %414 = call ptr @forge_llvm_add_function(ptr %410, ptr @878, ptr %413)
-  %415 = load ptr, ptr @CG_MOD, align 8
+  %412 = call ptr @make_fn_type_2(ptr %409, ptr %410, ptr %411)
+  %413 = call ptr @forge_llvm_add_function(ptr %408, ptr @878, ptr %412)
+  %414 = load ptr, ptr @CG_MOD, align 8
+  %415 = load ptr, ptr @CG_STR, align 8
   %416 = load ptr, ptr @CG_I64, align 8
-  %417 = call ptr @make_fn_type_0(ptr %416)
-  %418 = call ptr @forge_llvm_add_function(ptr %415, ptr @879, ptr %417)
+  %417 = call ptr @make_fn_type_1(ptr %415, ptr %416)
+  %418 = call ptr @forge_llvm_add_function(ptr %414, ptr @879, ptr %417)
   %419 = load ptr, ptr @CG_MOD, align 8
-  %420 = load ptr, ptr @CG_VOID, align 8
-  %421 = load ptr, ptr @CG_STR, align 8
+  %420 = load ptr, ptr @CG_STR, align 8
+  %421 = load ptr, ptr @CG_I64, align 8
   %422 = call ptr @make_fn_type_1(ptr %420, ptr %421)
   %423 = call ptr @forge_llvm_add_function(ptr %419, ptr @880, ptr %422)
-  %424 = load ptr, ptr @CG_RT_ALLOC, align 8
-  %425 = load ptr, ptr @CG_MOD, align 8
-  %426 = load ptr, ptr @CG_PTR, align 8
-  %427 = load ptr, ptr @CG_I64, align 8
-  %428 = call ptr @make_fn_type_1(ptr %426, ptr %427)
-  %429 = call ptr @forge_llvm_add_function(ptr %425, ptr @881, ptr %428)
-  %430 = ptrtoint ptr %429 to i64
-  store i64 %430, ptr @CG_RT_ALLOC, align 4
-  store ptr %429, ptr @CG_RT_ALLOC, align 8
-  %431 = load ptr, ptr @CG_RT_MEMCPY, align 8
-  %432 = load ptr, ptr @CG_MOD, align 8
-  %433 = load ptr, ptr @CG_VOID, align 8
-  %434 = load ptr, ptr @CG_PTR, align 8
+  %424 = load ptr, ptr @CG_MOD, align 8
+  %425 = load ptr, ptr @CG_I64, align 8
+  %426 = call ptr @make_fn_type_0(ptr %425)
+  %427 = call ptr @forge_llvm_add_function(ptr %424, ptr @881, ptr %426)
+  %428 = load ptr, ptr @CG_MOD, align 8
+  %429 = load ptr, ptr @CG_VOID, align 8
+  %430 = load ptr, ptr @CG_STR, align 8
+  %431 = call ptr @make_fn_type_1(ptr %429, ptr %430)
+  %432 = call ptr @forge_llvm_add_function(ptr %428, ptr @882, ptr %431)
+  %433 = load ptr, ptr @CG_RT_ALLOC, align 8
+  %434 = load ptr, ptr @CG_MOD, align 8
   %435 = load ptr, ptr @CG_PTR, align 8
   %436 = load ptr, ptr @CG_I64, align 8
-  %437 = call ptr @make_fn_type_3(ptr %433, ptr %434, ptr %435, ptr %436)
-  %438 = call ptr @forge_llvm_add_function(ptr %432, ptr @882, ptr %437)
+  %437 = call ptr @make_fn_type_1(ptr %435, ptr %436)
+  %438 = call ptr @forge_llvm_add_function(ptr %434, ptr @883, ptr %437)
   %439 = ptrtoint ptr %438 to i64
-  store i64 %439, ptr @CG_RT_MEMCPY, align 4
-  store ptr %438, ptr @CG_RT_MEMCPY, align 8
-  %440 = call ptr @forge_llvm_type_array_new(i64 2)
-  store ptr %440, ptr %10, align 8
-  %441 = load i64, ptr %10, align 4
-  %442 = load ptr, ptr @CG_PTR, align 8
-  %443 = call ptr @forge_llvm_type_array_set(i64 %441, i64 0, ptr %442)
-  %444 = load i64, ptr %10, align 4
+  store i64 %439, ptr @CG_RT_ALLOC, align 4
+  store ptr %438, ptr @CG_RT_ALLOC, align 8
+  %440 = load ptr, ptr @CG_RT_MEMCPY, align 8
+  %441 = load ptr, ptr @CG_MOD, align 8
+  %442 = load ptr, ptr @CG_VOID, align 8
+  %443 = load ptr, ptr @CG_PTR, align 8
+  %444 = load ptr, ptr @CG_PTR, align 8
   %445 = load ptr, ptr @CG_I64, align 8
-  %446 = call ptr @forge_llvm_type_array_set(i64 %444, i64 1, ptr %445)
-  %447 = load ptr, ptr @CG_LIST, align 8
-  %448 = load ptr, ptr @CG_CTX, align 8
-  %449 = load i64, ptr %10, align 4
-  %450 = call ptr @forge_llvm_struct_type(ptr %448, i64 %449, i64 2, i64 0)
-  %451 = ptrtoint ptr %450 to i64
-  store i64 %451, ptr @CG_LIST, align 4
-  store ptr %450, ptr @CG_LIST, align 8
-  %452 = load i64, ptr %10, align 4
-  %453 = call ptr @forge_llvm_type_array_free(i64 %452)
-  %454 = load ptr, ptr @CG_RT_MAP_NEW, align 8
-  %455 = load ptr, ptr @CG_MOD, align 8
-  %456 = load ptr, ptr @CG_PTR, align 8
-  %457 = call ptr @make_fn_type_0(ptr %456)
-  %458 = call ptr @forge_llvm_add_function(ptr %455, ptr @883, ptr %457)
-  %459 = ptrtoint ptr %458 to i64
-  store i64 %459, ptr @CG_RT_MAP_NEW, align 4
-  store ptr %458, ptr @CG_RT_MAP_NEW, align 8
-  %460 = load ptr, ptr @CG_RT_MAP_HAS, align 8
-  %461 = load ptr, ptr @CG_MOD, align 8
-  %462 = load ptr, ptr @CG_I8, align 8
-  %463 = load ptr, ptr @CG_PTR, align 8
-  %464 = load ptr, ptr @CG_STR, align 8
-  %465 = call ptr @make_fn_type_2(ptr %462, ptr %463, ptr %464)
-  %466 = call ptr @forge_llvm_add_function(ptr %461, ptr @884, ptr %465)
-  %467 = ptrtoint ptr %466 to i64
-  store i64 %467, ptr @CG_RT_MAP_HAS, align 4
-  store ptr %466, ptr @CG_RT_MAP_HAS, align 8
-  %468 = load ptr, ptr @CG_RT_MAP_GET, align 8
-  %469 = load ptr, ptr @CG_MOD, align 8
-  %470 = load ptr, ptr @CG_I64, align 8
-  %471 = load ptr, ptr @CG_PTR, align 8
-  %472 = load ptr, ptr @CG_STR, align 8
-  %473 = call ptr @make_fn_type_2(ptr %470, ptr %471, ptr %472)
-  %474 = call ptr @forge_llvm_add_function(ptr %469, ptr @885, ptr %473)
-  %475 = ptrtoint ptr %474 to i64
-  store i64 %475, ptr @CG_RT_MAP_GET, align 4
-  store ptr %474, ptr @CG_RT_MAP_GET, align 8
-  %476 = load ptr, ptr @CG_RT_MAP_SET, align 8
-  %477 = load ptr, ptr @CG_MOD, align 8
-  %478 = load ptr, ptr @CG_VOID, align 8
-  %479 = load ptr, ptr @CG_PTR, align 8
-  %480 = load ptr, ptr @CG_STR, align 8
-  %481 = load ptr, ptr @CG_I64, align 8
-  %482 = call ptr @make_fn_type_3(ptr %478, ptr %479, ptr %480, ptr %481)
-  %483 = call ptr @forge_llvm_add_function(ptr %477, ptr @886, ptr %482)
+  %446 = call ptr @make_fn_type_3(ptr %442, ptr %443, ptr %444, ptr %445)
+  %447 = call ptr @forge_llvm_add_function(ptr %441, ptr @884, ptr %446)
+  %448 = ptrtoint ptr %447 to i64
+  store i64 %448, ptr @CG_RT_MEMCPY, align 4
+  store ptr %447, ptr @CG_RT_MEMCPY, align 8
+  %449 = call ptr @forge_llvm_type_array_new(i64 2)
+  store ptr %449, ptr %10, align 8
+  %450 = load i64, ptr %10, align 4
+  %451 = load ptr, ptr @CG_PTR, align 8
+  %452 = call ptr @forge_llvm_type_array_set(i64 %450, i64 0, ptr %451)
+  %453 = load i64, ptr %10, align 4
+  %454 = load ptr, ptr @CG_I64, align 8
+  %455 = call ptr @forge_llvm_type_array_set(i64 %453, i64 1, ptr %454)
+  %456 = load ptr, ptr @CG_LIST, align 8
+  %457 = load ptr, ptr @CG_CTX, align 8
+  %458 = load i64, ptr %10, align 4
+  %459 = call ptr @forge_llvm_struct_type(ptr %457, i64 %458, i64 2, i64 0)
+  %460 = ptrtoint ptr %459 to i64
+  store i64 %460, ptr @CG_LIST, align 4
+  store ptr %459, ptr @CG_LIST, align 8
+  %461 = load i64, ptr %10, align 4
+  %462 = call ptr @forge_llvm_type_array_free(i64 %461)
+  %463 = load ptr, ptr @CG_RT_MAP_NEW, align 8
+  %464 = load ptr, ptr @CG_MOD, align 8
+  %465 = load ptr, ptr @CG_PTR, align 8
+  %466 = call ptr @make_fn_type_0(ptr %465)
+  %467 = call ptr @forge_llvm_add_function(ptr %464, ptr @885, ptr %466)
+  %468 = ptrtoint ptr %467 to i64
+  store i64 %468, ptr @CG_RT_MAP_NEW, align 4
+  store ptr %467, ptr @CG_RT_MAP_NEW, align 8
+  %469 = load ptr, ptr @CG_RT_MAP_HAS, align 8
+  %470 = load ptr, ptr @CG_MOD, align 8
+  %471 = load ptr, ptr @CG_I8, align 8
+  %472 = load ptr, ptr @CG_PTR, align 8
+  %473 = load ptr, ptr @CG_STR, align 8
+  %474 = call ptr @make_fn_type_2(ptr %471, ptr %472, ptr %473)
+  %475 = call ptr @forge_llvm_add_function(ptr %470, ptr @886, ptr %474)
+  %476 = ptrtoint ptr %475 to i64
+  store i64 %476, ptr @CG_RT_MAP_HAS, align 4
+  store ptr %475, ptr @CG_RT_MAP_HAS, align 8
+  %477 = load ptr, ptr @CG_RT_MAP_GET, align 8
+  %478 = load ptr, ptr @CG_MOD, align 8
+  %479 = load ptr, ptr @CG_I64, align 8
+  %480 = load ptr, ptr @CG_PTR, align 8
+  %481 = load ptr, ptr @CG_STR, align 8
+  %482 = call ptr @make_fn_type_2(ptr %479, ptr %480, ptr %481)
+  %483 = call ptr @forge_llvm_add_function(ptr %478, ptr @887, ptr %482)
   %484 = ptrtoint ptr %483 to i64
-  store i64 %484, ptr @CG_RT_MAP_SET, align 4
-  store ptr %483, ptr @CG_RT_MAP_SET, align 8
-  %485 = call i64 @cg_reinit_types()
+  store i64 %484, ptr @CG_RT_MAP_GET, align 4
+  store ptr %483, ptr @CG_RT_MAP_GET, align 8
+  %485 = load ptr, ptr @CG_RT_MAP_SET, align 8
   %486 = load ptr, ptr @CG_MOD, align 8
   %487 = load ptr, ptr @CG_VOID, align 8
-  %488 = load ptr, ptr @CG_I32, align 8
-  %489 = load ptr, ptr @CG_PTR, align 8
-  %490 = call ptr @make_fn_type_2(ptr %487, ptr %488, ptr %489)
-  %491 = call ptr @forge_llvm_add_function(ptr %486, ptr @887, ptr %490)
-  %492 = load ptr, ptr @CG_MOD, align 8
-  %493 = load ptr, ptr @CG_STR, align 8
-  %494 = call ptr @make_fn_type_0(ptr %493)
-  %495 = call ptr @forge_llvm_add_function(ptr %492, ptr @888, ptr %494)
-  %496 = load ptr, ptr @CG_MOD, align 8
-  %497 = load ptr, ptr @CG_I64, align 8
-  %498 = load ptr, ptr @CG_STR, align 8
-  %499 = call ptr @make_fn_type_1(ptr %497, ptr %498)
-  %500 = call ptr @forge_llvm_add_function(ptr %496, ptr @889, ptr %499)
+  %488 = load ptr, ptr @CG_PTR, align 8
+  %489 = load ptr, ptr @CG_STR, align 8
+  %490 = load ptr, ptr @CG_I64, align 8
+  %491 = call ptr @make_fn_type_3(ptr %487, ptr %488, ptr %489, ptr %490)
+  %492 = call ptr @forge_llvm_add_function(ptr %486, ptr @888, ptr %491)
+  %493 = ptrtoint ptr %492 to i64
+  store i64 %493, ptr @CG_RT_MAP_SET, align 4
+  store ptr %492, ptr @CG_RT_MAP_SET, align 8
+  %494 = call i64 @cg_reinit_types()
+  %495 = load ptr, ptr @CG_MOD, align 8
+  %496 = load ptr, ptr @CG_VOID, align 8
+  %497 = load ptr, ptr @CG_I32, align 8
+  %498 = load ptr, ptr @CG_PTR, align 8
+  %499 = call ptr @make_fn_type_2(ptr %496, ptr %497, ptr %498)
+  %500 = call ptr @forge_llvm_add_function(ptr %495, ptr @889, ptr %499)
   %501 = load ptr, ptr @CG_MOD, align 8
-  %502 = load ptr, ptr @CG_VOID, align 8
-  %503 = load ptr, ptr @CG_STR, align 8
-  %504 = call ptr @make_fn_type_1(ptr %502, ptr %503)
-  %505 = call ptr @forge_llvm_add_function(ptr %501, ptr @890, ptr %504)
-  %506 = load ptr, ptr @CG_MOD, align 8
-  %507 = load ptr, ptr @CG_VOID, align 8
-  %508 = load ptr, ptr @CG_STR, align 8
-  %509 = call ptr @make_fn_type_1(ptr %507, ptr %508)
-  %510 = call ptr @forge_llvm_add_function(ptr %506, ptr @891, ptr %509)
-  %511 = load ptr, ptr @CG_MOD, align 8
-  %512 = load ptr, ptr @CG_I64, align 8
-  %513 = load ptr, ptr @CG_STR, align 8
-  %514 = call ptr @make_fn_type_1(ptr %512, ptr %513)
-  %515 = call ptr @forge_llvm_add_function(ptr %511, ptr @892, ptr %514)
-  %516 = load ptr, ptr @CG_MOD, align 8
-  %517 = load ptr, ptr @CG_VOID, align 8
-  %518 = call ptr @make_fn_type_0(ptr %517)
-  %519 = call ptr @forge_llvm_add_function(ptr %516, ptr @893, ptr %518)
+  %502 = load ptr, ptr @CG_STR, align 8
+  %503 = call ptr @make_fn_type_0(ptr %502)
+  %504 = call ptr @forge_llvm_add_function(ptr %501, ptr @890, ptr %503)
+  %505 = load ptr, ptr @CG_MOD, align 8
+  %506 = load ptr, ptr @CG_I64, align 8
+  %507 = load ptr, ptr @CG_STR, align 8
+  %508 = call ptr @make_fn_type_1(ptr %506, ptr %507)
+  %509 = call ptr @forge_llvm_add_function(ptr %505, ptr @891, ptr %508)
+  %510 = load ptr, ptr @CG_MOD, align 8
+  %511 = load ptr, ptr @CG_VOID, align 8
+  %512 = load ptr, ptr @CG_STR, align 8
+  %513 = call ptr @make_fn_type_1(ptr %511, ptr %512)
+  %514 = call ptr @forge_llvm_add_function(ptr %510, ptr @892, ptr %513)
+  %515 = load ptr, ptr @CG_MOD, align 8
+  %516 = load ptr, ptr @CG_VOID, align 8
+  %517 = load ptr, ptr @CG_STR, align 8
+  %518 = call ptr @make_fn_type_1(ptr %516, ptr %517)
+  %519 = call ptr @forge_llvm_add_function(ptr %515, ptr @893, ptr %518)
   %520 = load ptr, ptr @CG_MOD, align 8
-  %521 = load ptr, ptr @CG_VOID, align 8
-  %522 = call ptr @make_fn_type_0(ptr %521)
-  %523 = call ptr @forge_llvm_add_function(ptr %520, ptr @894, ptr %522)
-  %524 = load ptr, ptr @CG_MOD, align 8
-  %525 = load ptr, ptr @CG_I64, align 8
-  %526 = load ptr, ptr @CG_STR, align 8
-  %527 = call ptr @make_fn_type_1(ptr %525, ptr %526)
-  %528 = call ptr @forge_llvm_add_function(ptr %524, ptr @895, ptr %527)
+  %521 = load ptr, ptr @CG_I64, align 8
+  %522 = load ptr, ptr @CG_STR, align 8
+  %523 = call ptr @make_fn_type_1(ptr %521, ptr %522)
+  %524 = call ptr @forge_llvm_add_function(ptr %520, ptr @894, ptr %523)
+  %525 = load ptr, ptr @CG_MOD, align 8
+  %526 = load ptr, ptr @CG_VOID, align 8
+  %527 = call ptr @make_fn_type_0(ptr %526)
+  %528 = call ptr @forge_llvm_add_function(ptr %525, ptr @895, ptr %527)
   %529 = load ptr, ptr @CG_MOD, align 8
   %530 = load ptr, ptr @CG_VOID, align 8
   %531 = call ptr @make_fn_type_0(ptr %530)
   %532 = call ptr @forge_llvm_add_function(ptr %529, ptr @896, ptr %531)
   %533 = load ptr, ptr @CG_MOD, align 8
-  %534 = load ptr, ptr @CG_STR, align 8
-  %535 = load ptr, ptr @CG_I64, align 8
+  %534 = load ptr, ptr @CG_I64, align 8
+  %535 = load ptr, ptr @CG_STR, align 8
   %536 = call ptr @make_fn_type_1(ptr %534, ptr %535)
   %537 = call ptr @forge_llvm_add_function(ptr %533, ptr @897, ptr %536)
   %538 = load ptr, ptr @CG_MOD, align 8
@@ -32443,389 +32452,398 @@ bb3965:
   %541 = call ptr @forge_llvm_add_function(ptr %538, ptr @898, ptr %540)
   %542 = load ptr, ptr @CG_MOD, align 8
   %543 = load ptr, ptr @CG_STR, align 8
-  %544 = load ptr, ptr @CG_STR, align 8
+  %544 = load ptr, ptr @CG_I64, align 8
   %545 = call ptr @make_fn_type_1(ptr %543, ptr %544)
   %546 = call ptr @forge_llvm_add_function(ptr %542, ptr @899, ptr %545)
   %547 = load ptr, ptr @CG_MOD, align 8
   %548 = load ptr, ptr @CG_VOID, align 8
-  %549 = load ptr, ptr @CG_I64, align 8
-  %550 = call ptr @make_fn_type_1(ptr %548, ptr %549)
-  %551 = call ptr @forge_llvm_add_function(ptr %547, ptr @900, ptr %550)
-  %552 = load ptr, ptr @CG_MOD, align 8
+  %549 = call ptr @make_fn_type_0(ptr %548)
+  %550 = call ptr @forge_llvm_add_function(ptr %547, ptr @900, ptr %549)
+  %551 = load ptr, ptr @CG_MOD, align 8
+  %552 = load ptr, ptr @CG_STR, align 8
   %553 = load ptr, ptr @CG_STR, align 8
-  %554 = load ptr, ptr @CG_STR, align 8
-  %555 = load ptr, ptr @CG_STR, align 8
-  %556 = call ptr @make_fn_type_2(ptr %553, ptr %554, ptr %555)
-  %557 = call ptr @forge_llvm_add_function(ptr %552, ptr @901, ptr %556)
-  %558 = load ptr, ptr @CG_MOD, align 8
-  %559 = load ptr, ptr @CG_VOID, align 8
-  %560 = load ptr, ptr @CG_STR, align 8
-  %561 = call ptr @make_fn_type_1(ptr %559, ptr %560)
-  %562 = call ptr @forge_llvm_add_function(ptr %558, ptr @902, ptr %561)
-  %563 = load ptr, ptr @CG_MOD, align 8
-  %564 = load ptr, ptr @CG_I64, align 8
-  %565 = load ptr, ptr @CG_STR, align 8
-  %566 = call ptr @make_fn_type_1(ptr %564, ptr %565)
-  %567 = call ptr @forge_llvm_add_function(ptr %563, ptr @903, ptr %566)
-  %568 = load ptr, ptr @CG_PTR, align 8
-  %569 = load ptr, ptr @CG_PTR, align 8
+  %554 = call ptr @make_fn_type_1(ptr %552, ptr %553)
+  %555 = call ptr @forge_llvm_add_function(ptr %551, ptr @901, ptr %554)
+  %556 = load ptr, ptr @CG_MOD, align 8
+  %557 = load ptr, ptr @CG_VOID, align 8
+  %558 = load ptr, ptr @CG_I64, align 8
+  %559 = call ptr @make_fn_type_1(ptr %557, ptr %558)
+  %560 = call ptr @forge_llvm_add_function(ptr %556, ptr @902, ptr %559)
+  %561 = load ptr, ptr @CG_MOD, align 8
+  %562 = load ptr, ptr @CG_STR, align 8
+  %563 = load ptr, ptr @CG_STR, align 8
+  %564 = load ptr, ptr @CG_STR, align 8
+  %565 = call ptr @make_fn_type_2(ptr %562, ptr %563, ptr %564)
+  %566 = call ptr @forge_llvm_add_function(ptr %561, ptr @903, ptr %565)
+  %567 = load ptr, ptr @CG_MOD, align 8
+  %568 = load ptr, ptr @CG_VOID, align 8
+  %569 = load ptr, ptr @CG_STR, align 8
   %570 = call ptr @make_fn_type_1(ptr %568, ptr %569)
-  store ptr %570, ptr %9, align 8
-  %571 = load ptr, ptr @CG_PTR, align 8
-  %572 = load ptr, ptr @CG_PTR, align 8
-  %573 = load ptr, ptr @CG_PTR, align 8
-  %574 = call ptr @make_fn_type_2(ptr %571, ptr %572, ptr %573)
-  store ptr %574, ptr %8, align 8
-  %575 = load ptr, ptr @CG_PTR, align 8
-  %576 = load ptr, ptr @CG_PTR, align 8
+  %571 = call ptr @forge_llvm_add_function(ptr %567, ptr @904, ptr %570)
+  %572 = load ptr, ptr @CG_MOD, align 8
+  %573 = load ptr, ptr @CG_I64, align 8
+  %574 = load ptr, ptr @CG_STR, align 8
+  %575 = call ptr @make_fn_type_1(ptr %573, ptr %574)
+  %576 = call ptr @forge_llvm_add_function(ptr %572, ptr @905, ptr %575)
   %577 = load ptr, ptr @CG_PTR, align 8
   %578 = load ptr, ptr @CG_PTR, align 8
-  %579 = call ptr @make_fn_type_3(ptr %575, ptr %576, ptr %577, ptr %578)
-  store ptr %579, ptr %7, align 8
+  %579 = call ptr @make_fn_type_1(ptr %577, ptr %578)
+  store ptr %579, ptr %9, align 8
   %580 = load ptr, ptr @CG_PTR, align 8
   %581 = load ptr, ptr @CG_PTR, align 8
   %582 = load ptr, ptr @CG_PTR, align 8
-  %583 = load ptr, ptr @CG_PTR, align 8
+  %583 = call ptr @make_fn_type_2(ptr %580, ptr %581, ptr %582)
+  store ptr %583, ptr %8, align 8
   %584 = load ptr, ptr @CG_PTR, align 8
-  %585 = call ptr @make_fn_type_4(ptr %580, ptr %581, ptr %582, ptr %583, ptr %584)
-  store ptr %585, ptr %6, align 8
+  %585 = load ptr, ptr @CG_PTR, align 8
   %586 = load ptr, ptr @CG_PTR, align 8
   %587 = load ptr, ptr @CG_PTR, align 8
-  %588 = load ptr, ptr @CG_PTR, align 8
+  %588 = call ptr @make_fn_type_3(ptr %584, ptr %585, ptr %586, ptr %587)
+  store ptr %588, ptr %7, align 8
   %589 = load ptr, ptr @CG_PTR, align 8
   %590 = load ptr, ptr @CG_PTR, align 8
   %591 = load ptr, ptr @CG_PTR, align 8
-  %592 = call ptr @make_fn_type_5(ptr %586, ptr %587, ptr %588, ptr %589, ptr %590, ptr %591)
-  store ptr %592, ptr %5, align 8
+  %592 = load ptr, ptr @CG_PTR, align 8
   %593 = load ptr, ptr @CG_PTR, align 8
-  %594 = load ptr, ptr @CG_PTR, align 8
+  %594 = call ptr @make_fn_type_4(ptr %589, ptr %590, ptr %591, ptr %592, ptr %593)
+  store ptr %594, ptr %6, align 8
   %595 = load ptr, ptr @CG_PTR, align 8
   %596 = load ptr, ptr @CG_PTR, align 8
   %597 = load ptr, ptr @CG_PTR, align 8
   %598 = load ptr, ptr @CG_PTR, align 8
   %599 = load ptr, ptr @CG_PTR, align 8
-  %600 = call ptr @make_fn_type_6(ptr %593, ptr %594, ptr %595, ptr %596, ptr %597, ptr %598, ptr %599)
-  store ptr %600, ptr %4, align 8
-  %601 = load ptr, ptr @CG_VOID, align 8
+  %600 = load ptr, ptr @CG_PTR, align 8
+  %601 = call ptr @make_fn_type_5(ptr %595, ptr %596, ptr %597, ptr %598, ptr %599, ptr %600)
+  store ptr %601, ptr %5, align 8
   %602 = load ptr, ptr @CG_PTR, align 8
-  %603 = call ptr @make_fn_type_1(ptr %601, ptr %602)
-  store ptr %603, ptr %3, align 8
-  %604 = load ptr, ptr @CG_VOID, align 8
+  %603 = load ptr, ptr @CG_PTR, align 8
+  %604 = load ptr, ptr @CG_PTR, align 8
   %605 = load ptr, ptr @CG_PTR, align 8
   %606 = load ptr, ptr @CG_PTR, align 8
-  %607 = call ptr @make_fn_type_2(ptr %604, ptr %605, ptr %606)
-  store ptr %607, ptr %2, align 8
-  %608 = load ptr, ptr @CG_VOID, align 8
-  %609 = load ptr, ptr @CG_PTR, align 8
-  %610 = load ptr, ptr @CG_PTR, align 8
+  %607 = load ptr, ptr @CG_PTR, align 8
+  %608 = load ptr, ptr @CG_PTR, align 8
+  %609 = call ptr @make_fn_type_6(ptr %602, ptr %603, ptr %604, ptr %605, ptr %606, ptr %607, ptr %608)
+  store ptr %609, ptr %4, align 8
+  %610 = load ptr, ptr @CG_VOID, align 8
   %611 = load ptr, ptr @CG_PTR, align 8
-  %612 = call ptr @make_fn_type_3(ptr %608, ptr %609, ptr %610, ptr %611)
-  store ptr %612, ptr %1, align 8
-  %613 = load ptr, ptr @CG_PTR, align 8
-  %614 = call ptr @make_fn_type_0(ptr %613)
-  store ptr %614, ptr %0, align 8
-  %615 = load ptr, ptr @CG_MOD, align 8
-  %616 = load i64, ptr %0, align 4
-  %617 = call ptr @forge_llvm_add_function(ptr %615, ptr @904, i64 %616)
-  %618 = load ptr, ptr @CG_MOD, align 8
-  %619 = load i64, ptr %3, align 4
-  %620 = call ptr @forge_llvm_add_function(ptr %618, ptr @905, i64 %619)
-  %621 = load ptr, ptr @CG_MOD, align 8
-  %622 = load i64, ptr %8, align 4
-  %623 = call ptr @forge_llvm_add_function(ptr %621, ptr @906, i64 %622)
+  %612 = call ptr @make_fn_type_1(ptr %610, ptr %611)
+  store ptr %612, ptr %3, align 8
+  %613 = load ptr, ptr @CG_VOID, align 8
+  %614 = load ptr, ptr @CG_PTR, align 8
+  %615 = load ptr, ptr @CG_PTR, align 8
+  %616 = call ptr @make_fn_type_2(ptr %613, ptr %614, ptr %615)
+  store ptr %616, ptr %2, align 8
+  %617 = load ptr, ptr @CG_VOID, align 8
+  %618 = load ptr, ptr @CG_PTR, align 8
+  %619 = load ptr, ptr @CG_PTR, align 8
+  %620 = load ptr, ptr @CG_PTR, align 8
+  %621 = call ptr @make_fn_type_3(ptr %617, ptr %618, ptr %619, ptr %620)
+  store ptr %621, ptr %1, align 8
+  %622 = load ptr, ptr @CG_PTR, align 8
+  %623 = call ptr @make_fn_type_0(ptr %622)
+  store ptr %623, ptr %0, align 8
   %624 = load ptr, ptr @CG_MOD, align 8
-  %625 = load i64, ptr %3, align 4
-  %626 = call ptr @forge_llvm_add_function(ptr %624, ptr @907, i64 %625)
+  %625 = load i64, ptr %0, align 4
+  %626 = call ptr @forge_llvm_add_function(ptr %624, ptr @906, i64 %625)
   %627 = load ptr, ptr @CG_MOD, align 8
-  %628 = load i64, ptr %8, align 4
-  %629 = call ptr @forge_llvm_add_function(ptr %627, ptr @908, i64 %628)
+  %628 = load i64, ptr %3, align 4
+  %629 = call ptr @forge_llvm_add_function(ptr %627, ptr @907, i64 %628)
   %630 = load ptr, ptr @CG_MOD, align 8
-  %631 = load i64, ptr %9, align 4
-  %632 = call ptr @forge_llvm_add_function(ptr %630, ptr @909, i64 %631)
+  %631 = load i64, ptr %8, align 4
+  %632 = call ptr @forge_llvm_add_function(ptr %630, ptr @908, i64 %631)
   %633 = load ptr, ptr @CG_MOD, align 8
-  %634 = load i64, ptr %9, align 4
-  %635 = call ptr @forge_llvm_add_function(ptr %633, ptr @910, i64 %634)
+  %634 = load i64, ptr %3, align 4
+  %635 = call ptr @forge_llvm_add_function(ptr %633, ptr @909, i64 %634)
   %636 = load ptr, ptr @CG_MOD, align 8
-  %637 = load i64, ptr %9, align 4
-  %638 = call ptr @forge_llvm_add_function(ptr %636, ptr @911, i64 %637)
+  %637 = load i64, ptr %8, align 4
+  %638 = call ptr @forge_llvm_add_function(ptr %636, ptr @910, i64 %637)
   %639 = load ptr, ptr @CG_MOD, align 8
   %640 = load i64, ptr %9, align 4
-  %641 = call ptr @forge_llvm_add_function(ptr %639, ptr @912, i64 %640)
+  %641 = call ptr @forge_llvm_add_function(ptr %639, ptr @911, i64 %640)
   %642 = load ptr, ptr @CG_MOD, align 8
   %643 = load i64, ptr %9, align 4
-  %644 = call ptr @forge_llvm_add_function(ptr %642, ptr @913, i64 %643)
+  %644 = call ptr @forge_llvm_add_function(ptr %642, ptr @912, i64 %643)
   %645 = load ptr, ptr @CG_MOD, align 8
   %646 = load i64, ptr %9, align 4
-  %647 = call ptr @forge_llvm_add_function(ptr %645, ptr @914, i64 %646)
+  %647 = call ptr @forge_llvm_add_function(ptr %645, ptr @913, i64 %646)
   %648 = load ptr, ptr @CG_MOD, align 8
   %649 = load i64, ptr %9, align 4
-  %650 = call ptr @forge_llvm_add_function(ptr %648, ptr @915, i64 %649)
+  %650 = call ptr @forge_llvm_add_function(ptr %648, ptr @914, i64 %649)
   %651 = load ptr, ptr @CG_MOD, align 8
   %652 = load i64, ptr %9, align 4
-  %653 = call ptr @forge_llvm_add_function(ptr %651, ptr @916, i64 %652)
+  %653 = call ptr @forge_llvm_add_function(ptr %651, ptr @915, i64 %652)
   %654 = load ptr, ptr @CG_MOD, align 8
-  %655 = load i64, ptr %6, align 4
-  %656 = call ptr @forge_llvm_add_function(ptr %654, ptr @917, i64 %655)
+  %655 = load i64, ptr %9, align 4
+  %656 = call ptr @forge_llvm_add_function(ptr %654, ptr @916, i64 %655)
   %657 = load ptr, ptr @CG_MOD, align 8
-  %658 = load i64, ptr %8, align 4
-  %659 = call ptr @forge_llvm_add_function(ptr %657, ptr @918, i64 %658)
+  %658 = load i64, ptr %9, align 4
+  %659 = call ptr @forge_llvm_add_function(ptr %657, ptr @917, i64 %658)
   %660 = load ptr, ptr @CG_MOD, align 8
-  %661 = load i64, ptr %6, align 4
-  %662 = call ptr @forge_llvm_add_function(ptr %660, ptr @919, i64 %661)
+  %661 = load i64, ptr %9, align 4
+  %662 = call ptr @forge_llvm_add_function(ptr %660, ptr @918, i64 %661)
   %663 = load ptr, ptr @CG_MOD, align 8
-  %664 = load i64, ptr %7, align 4
-  %665 = call ptr @forge_llvm_add_function(ptr %663, ptr @920, i64 %664)
+  %664 = load i64, ptr %6, align 4
+  %665 = call ptr @forge_llvm_add_function(ptr %663, ptr @919, i64 %664)
   %666 = load ptr, ptr @CG_MOD, align 8
   %667 = load i64, ptr %8, align 4
-  %668 = call ptr @forge_llvm_add_function(ptr %666, ptr @921, i64 %667)
+  %668 = call ptr @forge_llvm_add_function(ptr %666, ptr @920, i64 %667)
   %669 = load ptr, ptr @CG_MOD, align 8
-  %670 = load i64, ptr %9, align 4
-  %671 = call ptr @forge_llvm_add_function(ptr %669, ptr @922, i64 %670)
+  %670 = load i64, ptr %6, align 4
+  %671 = call ptr @forge_llvm_add_function(ptr %669, ptr @921, i64 %670)
   %672 = load ptr, ptr @CG_MOD, align 8
-  %673 = load i64, ptr %9, align 4
-  %674 = call ptr @forge_llvm_add_function(ptr %672, ptr @923, i64 %673)
+  %673 = load i64, ptr %7, align 4
+  %674 = call ptr @forge_llvm_add_function(ptr %672, ptr @922, i64 %673)
   %675 = load ptr, ptr @CG_MOD, align 8
-  %676 = load i64, ptr %1, align 4
-  %677 = call ptr @forge_llvm_add_function(ptr %675, ptr @924, i64 %676)
+  %676 = load i64, ptr %8, align 4
+  %677 = call ptr @forge_llvm_add_function(ptr %675, ptr @923, i64 %676)
   %678 = load ptr, ptr @CG_MOD, align 8
-  %679 = load i64, ptr %3, align 4
-  %680 = call ptr @forge_llvm_add_function(ptr %678, ptr @925, i64 %679)
+  %679 = load i64, ptr %9, align 4
+  %680 = call ptr @forge_llvm_add_function(ptr %678, ptr @924, i64 %679)
   %681 = load ptr, ptr @CG_MOD, align 8
-  %682 = load i64, ptr %7, align 4
-  %683 = call ptr @forge_llvm_add_function(ptr %681, ptr @926, i64 %682)
+  %682 = load i64, ptr %9, align 4
+  %683 = call ptr @forge_llvm_add_function(ptr %681, ptr @925, i64 %682)
   %684 = load ptr, ptr @CG_MOD, align 8
-  %685 = load i64, ptr %8, align 4
-  %686 = call ptr @forge_llvm_add_function(ptr %684, ptr @927, i64 %685)
+  %685 = load i64, ptr %1, align 4
+  %686 = call ptr @forge_llvm_add_function(ptr %684, ptr @926, i64 %685)
   %687 = load ptr, ptr @CG_MOD, align 8
-  %688 = load i64, ptr %8, align 4
-  %689 = call ptr @forge_llvm_add_function(ptr %687, ptr @928, i64 %688)
+  %688 = load i64, ptr %3, align 4
+  %689 = call ptr @forge_llvm_add_function(ptr %687, ptr @927, i64 %688)
   %690 = load ptr, ptr @CG_MOD, align 8
   %691 = load i64, ptr %7, align 4
-  %692 = call ptr @forge_llvm_add_function(ptr %690, ptr @929, i64 %691)
+  %692 = call ptr @forge_llvm_add_function(ptr %690, ptr @928, i64 %691)
   %693 = load ptr, ptr @CG_MOD, align 8
-  %694 = load i64, ptr %9, align 4
-  %695 = call ptr @forge_llvm_add_function(ptr %693, ptr @930, i64 %694)
+  %694 = load i64, ptr %8, align 4
+  %695 = call ptr @forge_llvm_add_function(ptr %693, ptr @929, i64 %694)
   %696 = load ptr, ptr @CG_MOD, align 8
-  %697 = load i64, ptr %9, align 4
-  %698 = call ptr @forge_llvm_add_function(ptr %696, ptr @931, i64 %697)
+  %697 = load i64, ptr %8, align 4
+  %698 = call ptr @forge_llvm_add_function(ptr %696, ptr @930, i64 %697)
   %699 = load ptr, ptr @CG_MOD, align 8
-  %700 = load i64, ptr %9, align 4
-  %701 = call ptr @forge_llvm_add_function(ptr %699, ptr @932, i64 %700)
+  %700 = load i64, ptr %7, align 4
+  %701 = call ptr @forge_llvm_add_function(ptr %699, ptr @931, i64 %700)
   %702 = load ptr, ptr @CG_MOD, align 8
   %703 = load i64, ptr %9, align 4
-  %704 = call ptr @forge_llvm_add_function(ptr %702, ptr @933, i64 %703)
+  %704 = call ptr @forge_llvm_add_function(ptr %702, ptr @932, i64 %703)
   %705 = load ptr, ptr @CG_MOD, align 8
   %706 = load i64, ptr %9, align 4
-  %707 = call ptr @forge_llvm_add_function(ptr %705, ptr @934, i64 %706)
+  %707 = call ptr @forge_llvm_add_function(ptr %705, ptr @933, i64 %706)
   %708 = load ptr, ptr @CG_MOD, align 8
   %709 = load i64, ptr %9, align 4
-  %710 = call ptr @forge_llvm_add_function(ptr %708, ptr @935, i64 %709)
+  %710 = call ptr @forge_llvm_add_function(ptr %708, ptr @934, i64 %709)
   %711 = load ptr, ptr @CG_MOD, align 8
-  %712 = load i64, ptr %3, align 4
-  %713 = call ptr @forge_llvm_add_function(ptr %711, ptr @936, i64 %712)
+  %712 = load i64, ptr %9, align 4
+  %713 = call ptr @forge_llvm_add_function(ptr %711, ptr @935, i64 %712)
   %714 = load ptr, ptr @CG_MOD, align 8
-  %715 = load i64, ptr %2, align 4
-  %716 = call ptr @forge_llvm_add_function(ptr %714, ptr @937, i64 %715)
+  %715 = load i64, ptr %9, align 4
+  %716 = call ptr @forge_llvm_add_function(ptr %714, ptr @936, i64 %715)
   %717 = load ptr, ptr @CG_MOD, align 8
-  %718 = load i64, ptr %2, align 4
-  %719 = call ptr @forge_llvm_add_function(ptr %717, ptr @938, i64 %718)
+  %718 = load i64, ptr %9, align 4
+  %719 = call ptr @forge_llvm_add_function(ptr %717, ptr @937, i64 %718)
   %720 = load ptr, ptr @CG_MOD, align 8
-  %721 = load i64, ptr %8, align 4
-  %722 = call ptr @forge_llvm_add_function(ptr %720, ptr @939, i64 %721)
+  %721 = load i64, ptr %3, align 4
+  %722 = call ptr @forge_llvm_add_function(ptr %720, ptr @938, i64 %721)
   %723 = load ptr, ptr @CG_MOD, align 8
-  %724 = load i64, ptr %9, align 4
-  %725 = call ptr @forge_llvm_add_function(ptr %723, ptr @940, i64 %724)
+  %724 = load i64, ptr %2, align 4
+  %725 = call ptr @forge_llvm_add_function(ptr %723, ptr @939, i64 %724)
   %726 = load ptr, ptr @CG_MOD, align 8
-  %727 = load i64, ptr %8, align 4
-  %728 = call ptr @forge_llvm_add_function(ptr %726, ptr @941, i64 %727)
+  %727 = load i64, ptr %2, align 4
+  %728 = call ptr @forge_llvm_add_function(ptr %726, ptr @940, i64 %727)
   %729 = load ptr, ptr @CG_MOD, align 8
-  %730 = load i64, ptr %6, align 4
-  %731 = call ptr @forge_llvm_add_function(ptr %729, ptr @942, i64 %730)
+  %730 = load i64, ptr %8, align 4
+  %731 = call ptr @forge_llvm_add_function(ptr %729, ptr @941, i64 %730)
   %732 = load ptr, ptr @CG_MOD, align 8
-  %733 = load i64, ptr %7, align 4
-  %734 = call ptr @forge_llvm_add_function(ptr %732, ptr @943, i64 %733)
+  %733 = load i64, ptr %9, align 4
+  %734 = call ptr @forge_llvm_add_function(ptr %732, ptr @942, i64 %733)
   %735 = load ptr, ptr @CG_MOD, align 8
-  %736 = load i64, ptr %7, align 4
-  %737 = call ptr @forge_llvm_add_function(ptr %735, ptr @944, i64 %736)
+  %736 = load i64, ptr %8, align 4
+  %737 = call ptr @forge_llvm_add_function(ptr %735, ptr @943, i64 %736)
   %738 = load ptr, ptr @CG_MOD, align 8
   %739 = load i64, ptr %6, align 4
-  %740 = call ptr @forge_llvm_add_function(ptr %738, ptr @945, i64 %739)
+  %740 = call ptr @forge_llvm_add_function(ptr %738, ptr @944, i64 %739)
   %741 = load ptr, ptr @CG_MOD, align 8
-  %742 = load i64, ptr %4, align 4
-  %743 = call ptr @forge_llvm_add_function(ptr %741, ptr @946, i64 %742)
+  %742 = load i64, ptr %7, align 4
+  %743 = call ptr @forge_llvm_add_function(ptr %741, ptr @945, i64 %742)
   %744 = load ptr, ptr @CG_MOD, align 8
-  %745 = load i64, ptr %6, align 4
-  %746 = call ptr @forge_llvm_add_function(ptr %744, ptr @947, i64 %745)
+  %745 = load i64, ptr %7, align 4
+  %746 = call ptr @forge_llvm_add_function(ptr %744, ptr @946, i64 %745)
   %747 = load ptr, ptr @CG_MOD, align 8
   %748 = load i64, ptr %6, align 4
-  %749 = call ptr @forge_llvm_add_function(ptr %747, ptr @948, i64 %748)
+  %749 = call ptr @forge_llvm_add_function(ptr %747, ptr @947, i64 %748)
   %750 = load ptr, ptr @CG_MOD, align 8
-  %751 = load i64, ptr %6, align 4
-  %752 = call ptr @forge_llvm_add_function(ptr %750, ptr @949, i64 %751)
+  %751 = load i64, ptr %4, align 4
+  %752 = call ptr @forge_llvm_add_function(ptr %750, ptr @948, i64 %751)
   %753 = load ptr, ptr @CG_MOD, align 8
   %754 = load i64, ptr %6, align 4
-  %755 = call ptr @forge_llvm_add_function(ptr %753, ptr @950, i64 %754)
+  %755 = call ptr @forge_llvm_add_function(ptr %753, ptr @949, i64 %754)
   %756 = load ptr, ptr @CG_MOD, align 8
   %757 = load i64, ptr %6, align 4
-  %758 = call ptr @forge_llvm_add_function(ptr %756, ptr @951, i64 %757)
+  %758 = call ptr @forge_llvm_add_function(ptr %756, ptr @950, i64 %757)
   %759 = load ptr, ptr @CG_MOD, align 8
   %760 = load i64, ptr %6, align 4
-  %761 = call ptr @forge_llvm_add_function(ptr %759, ptr @952, i64 %760)
+  %761 = call ptr @forge_llvm_add_function(ptr %759, ptr @951, i64 %760)
   %762 = load ptr, ptr @CG_MOD, align 8
   %763 = load i64, ptr %6, align 4
-  %764 = call ptr @forge_llvm_add_function(ptr %762, ptr @953, i64 %763)
+  %764 = call ptr @forge_llvm_add_function(ptr %762, ptr @952, i64 %763)
   %765 = load ptr, ptr @CG_MOD, align 8
   %766 = load i64, ptr %6, align 4
-  %767 = call ptr @forge_llvm_add_function(ptr %765, ptr @954, i64 %766)
+  %767 = call ptr @forge_llvm_add_function(ptr %765, ptr @953, i64 %766)
   %768 = load ptr, ptr @CG_MOD, align 8
   %769 = load i64, ptr %6, align 4
-  %770 = call ptr @forge_llvm_add_function(ptr %768, ptr @955, i64 %769)
+  %770 = call ptr @forge_llvm_add_function(ptr %768, ptr @954, i64 %769)
   %771 = load ptr, ptr @CG_MOD, align 8
   %772 = load i64, ptr %6, align 4
-  %773 = call ptr @forge_llvm_add_function(ptr %771, ptr @956, i64 %772)
+  %773 = call ptr @forge_llvm_add_function(ptr %771, ptr @955, i64 %772)
   %774 = load ptr, ptr @CG_MOD, align 8
-  %775 = load i64, ptr %5, align 4
-  %776 = call ptr @forge_llvm_add_function(ptr %774, ptr @957, i64 %775)
+  %775 = load i64, ptr %6, align 4
+  %776 = call ptr @forge_llvm_add_function(ptr %774, ptr @956, i64 %775)
   %777 = load ptr, ptr @CG_MOD, align 8
   %778 = load i64, ptr %6, align 4
-  %779 = call ptr @forge_llvm_add_function(ptr %777, ptr @958, i64 %778)
+  %779 = call ptr @forge_llvm_add_function(ptr %777, ptr @957, i64 %778)
   %780 = load ptr, ptr @CG_MOD, align 8
   %781 = load i64, ptr %6, align 4
-  %782 = call ptr @forge_llvm_add_function(ptr %780, ptr @959, i64 %781)
+  %782 = call ptr @forge_llvm_add_function(ptr %780, ptr @958, i64 %781)
   %783 = load ptr, ptr @CG_MOD, align 8
-  %784 = load i64, ptr %6, align 4
-  %785 = call ptr @forge_llvm_add_function(ptr %783, ptr @960, i64 %784)
+  %784 = load i64, ptr %5, align 4
+  %785 = call ptr @forge_llvm_add_function(ptr %783, ptr @959, i64 %784)
   %786 = load ptr, ptr @CG_MOD, align 8
-  %787 = load i64, ptr %5, align 4
-  %788 = call ptr @forge_llvm_add_function(ptr %786, ptr @961, i64 %787)
+  %787 = load i64, ptr %6, align 4
+  %788 = call ptr @forge_llvm_add_function(ptr %786, ptr @960, i64 %787)
   %789 = load ptr, ptr @CG_MOD, align 8
-  %790 = load i64, ptr %4, align 4
-  %791 = call ptr @forge_llvm_add_function(ptr %789, ptr @962, i64 %790)
+  %790 = load i64, ptr %6, align 4
+  %791 = call ptr @forge_llvm_add_function(ptr %789, ptr @961, i64 %790)
   %792 = load ptr, ptr @CG_MOD, align 8
   %793 = load i64, ptr %6, align 4
-  %794 = call ptr @forge_llvm_add_function(ptr %792, ptr @963, i64 %793)
+  %794 = call ptr @forge_llvm_add_function(ptr %792, ptr @962, i64 %793)
   %795 = load ptr, ptr @CG_MOD, align 8
   %796 = load i64, ptr %5, align 4
-  %797 = call ptr @forge_llvm_add_function(ptr %795, ptr @964, i64 %796)
+  %797 = call ptr @forge_llvm_add_function(ptr %795, ptr @963, i64 %796)
   %798 = load ptr, ptr @CG_MOD, align 8
-  %799 = load i64, ptr %7, align 4
-  %800 = call ptr @forge_llvm_add_function(ptr %798, ptr @965, i64 %799)
+  %799 = load i64, ptr %4, align 4
+  %800 = call ptr @forge_llvm_add_function(ptr %798, ptr @964, i64 %799)
   %801 = load ptr, ptr @CG_MOD, align 8
-  %802 = load i64, ptr %7, align 4
-  %803 = call ptr @forge_llvm_add_function(ptr %801, ptr @966, i64 %802)
+  %802 = load i64, ptr %6, align 4
+  %803 = call ptr @forge_llvm_add_function(ptr %801, ptr @965, i64 %802)
   %804 = load ptr, ptr @CG_MOD, align 8
-  %805 = load i64, ptr %6, align 4
-  %806 = call ptr @forge_llvm_add_function(ptr %804, ptr @967, i64 %805)
+  %805 = load i64, ptr %5, align 4
+  %806 = call ptr @forge_llvm_add_function(ptr %804, ptr @966, i64 %805)
   %807 = load ptr, ptr @CG_MOD, align 8
-  %808 = load i64, ptr %6, align 4
-  %809 = call ptr @forge_llvm_add_function(ptr %807, ptr @968, i64 %808)
+  %808 = load i64, ptr %7, align 4
+  %809 = call ptr @forge_llvm_add_function(ptr %807, ptr @967, i64 %808)
   %810 = load ptr, ptr @CG_MOD, align 8
   %811 = load i64, ptr %7, align 4
-  %812 = call ptr @forge_llvm_add_function(ptr %810, ptr @969, i64 %811)
+  %812 = call ptr @forge_llvm_add_function(ptr %810, ptr @968, i64 %811)
   %813 = load ptr, ptr @CG_MOD, align 8
-  %814 = load i64, ptr %2, align 4
-  %815 = call ptr @forge_llvm_add_function(ptr %813, ptr @970, i64 %814)
+  %814 = load i64, ptr %6, align 4
+  %815 = call ptr @forge_llvm_add_function(ptr %813, ptr @969, i64 %814)
   %816 = load ptr, ptr @CG_MOD, align 8
-  %817 = load i64, ptr %7, align 4
-  %818 = call ptr @forge_llvm_add_function(ptr %816, ptr @971, i64 %817)
+  %817 = load i64, ptr %6, align 4
+  %818 = call ptr @forge_llvm_add_function(ptr %816, ptr @970, i64 %817)
   %819 = load ptr, ptr @CG_MOD, align 8
   %820 = load i64, ptr %7, align 4
-  %821 = call ptr @forge_llvm_add_function(ptr %819, ptr @972, i64 %820)
+  %821 = call ptr @forge_llvm_add_function(ptr %819, ptr @971, i64 %820)
   %822 = load ptr, ptr @CG_MOD, align 8
-  %823 = load i64, ptr %9, align 4
-  %824 = call ptr @forge_llvm_add_function(ptr %822, ptr @973, i64 %823)
+  %823 = load i64, ptr %2, align 4
+  %824 = call ptr @forge_llvm_add_function(ptr %822, ptr @972, i64 %823)
   %825 = load ptr, ptr @CG_MOD, align 8
-  %826 = load i64, ptr %8, align 4
-  %827 = call ptr @forge_llvm_add_function(ptr %825, ptr @974, i64 %826)
+  %826 = load i64, ptr %7, align 4
+  %827 = call ptr @forge_llvm_add_function(ptr %825, ptr @973, i64 %826)
   %828 = load ptr, ptr @CG_MOD, align 8
   %829 = load i64, ptr %7, align 4
-  %830 = call ptr @forge_llvm_add_function(ptr %828, ptr @975, i64 %829)
+  %830 = call ptr @forge_llvm_add_function(ptr %828, ptr @974, i64 %829)
   %831 = load ptr, ptr @CG_MOD, align 8
   %832 = load i64, ptr %9, align 4
-  %833 = call ptr @forge_llvm_add_function(ptr %831, ptr @976, i64 %832)
+  %833 = call ptr @forge_llvm_add_function(ptr %831, ptr @975, i64 %832)
   %834 = load ptr, ptr @CG_MOD, align 8
-  %835 = load i64, ptr %9, align 4
-  %836 = call ptr @forge_llvm_add_function(ptr %834, ptr @977, i64 %835)
+  %835 = load i64, ptr %8, align 4
+  %836 = call ptr @forge_llvm_add_function(ptr %834, ptr @976, i64 %835)
   %837 = load ptr, ptr @CG_MOD, align 8
-  %838 = load i64, ptr %1, align 4
-  %839 = call ptr @forge_llvm_add_function(ptr %837, ptr @978, i64 %838)
+  %838 = load i64, ptr %7, align 4
+  %839 = call ptr @forge_llvm_add_function(ptr %837, ptr @977, i64 %838)
   %840 = load ptr, ptr @CG_MOD, align 8
-  %841 = load i64, ptr %8, align 4
-  %842 = call ptr @forge_llvm_add_function(ptr %840, ptr @979, i64 %841)
+  %841 = load i64, ptr %9, align 4
+  %842 = call ptr @forge_llvm_add_function(ptr %840, ptr @978, i64 %841)
   %843 = load ptr, ptr @CG_MOD, align 8
-  %844 = load i64, ptr %3, align 4
-  %845 = call ptr @forge_llvm_add_function(ptr %843, ptr @980, i64 %844)
+  %844 = load i64, ptr %9, align 4
+  %845 = call ptr @forge_llvm_add_function(ptr %843, ptr @979, i64 %844)
   %846 = load ptr, ptr @CG_MOD, align 8
-  %847 = load i64, ptr %9, align 4
-  %848 = call ptr @forge_llvm_add_function(ptr %846, ptr @981, i64 %847)
+  %847 = load i64, ptr %1, align 4
+  %848 = call ptr @forge_llvm_add_function(ptr %846, ptr @980, i64 %847)
   %849 = load ptr, ptr @CG_MOD, align 8
-  %850 = load i64, ptr %9, align 4
-  %851 = call ptr @forge_llvm_add_function(ptr %849, ptr @982, i64 %850)
+  %850 = load i64, ptr %8, align 4
+  %851 = call ptr @forge_llvm_add_function(ptr %849, ptr @981, i64 %850)
   %852 = load ptr, ptr @CG_MOD, align 8
-  %853 = load i64, ptr %9, align 4
-  %854 = call ptr @forge_llvm_add_function(ptr %852, ptr @983, i64 %853)
+  %853 = load i64, ptr %3, align 4
+  %854 = call ptr @forge_llvm_add_function(ptr %852, ptr @982, i64 %853)
   %855 = load ptr, ptr @CG_MOD, align 8
-  %856 = load i64, ptr %8, align 4
-  %857 = call ptr @forge_llvm_add_function(ptr %855, ptr @984, i64 %856)
+  %856 = load i64, ptr %9, align 4
+  %857 = call ptr @forge_llvm_add_function(ptr %855, ptr @983, i64 %856)
   %858 = load ptr, ptr @CG_MOD, align 8
-  %859 = load ptr, ptr @CG_I64, align 8
-  %860 = call ptr @make_fn_type_0(ptr %859)
-  %861 = call ptr @forge_llvm_add_function(ptr %858, ptr @985, ptr %860)
-  %862 = load ptr, ptr @CG_MOD, align 8
-  %863 = load ptr, ptr @CG_I64, align 8
-  %864 = load ptr, ptr @CG_STR, align 8
-  %865 = load ptr, ptr @CG_PTR, align 8
-  %866 = call ptr @make_fn_type_2(ptr %863, ptr %864, ptr %865)
-  %867 = call ptr @forge_llvm_add_function(ptr %862, ptr @986, ptr %866)
-  %868 = load ptr, ptr @CG_MOD, align 8
-  %869 = load ptr, ptr @CG_PTR, align 8
-  %870 = load ptr, ptr @CG_STR, align 8
-  %871 = call ptr @make_fn_type_1(ptr %869, ptr %870)
-  %872 = call ptr @forge_llvm_add_function(ptr %868, ptr @987, ptr %871)
-  %873 = load ptr, ptr @CG_MOD, align 8
-  %874 = load ptr, ptr @CG_I64, align 8
-  %875 = load ptr, ptr @CG_STR, align 8
-  %876 = call ptr @make_fn_type_1(ptr %874, ptr %875)
-  %877 = call ptr @forge_llvm_add_function(ptr %873, ptr @988, ptr %876)
-  %878 = load ptr, ptr @CG_MOD, align 8
-  %879 = load ptr, ptr @CG_I64, align 8
-  %880 = load ptr, ptr @CG_STR, align 8
-  %881 = call ptr @make_fn_type_1(ptr %879, ptr %880)
-  %882 = call ptr @forge_llvm_add_function(ptr %878, ptr @989, ptr %881)
-  %883 = load ptr, ptr @CG_MOD, align 8
-  %884 = load ptr, ptr @CG_I64, align 8
-  %885 = call ptr @make_fn_type_0(ptr %884)
-  %886 = call ptr @forge_llvm_add_function(ptr %883, ptr @990, ptr %885)
+  %859 = load i64, ptr %9, align 4
+  %860 = call ptr @forge_llvm_add_function(ptr %858, ptr @984, i64 %859)
+  %861 = load ptr, ptr @CG_MOD, align 8
+  %862 = load i64, ptr %9, align 4
+  %863 = call ptr @forge_llvm_add_function(ptr %861, ptr @985, i64 %862)
+  %864 = load ptr, ptr @CG_MOD, align 8
+  %865 = load i64, ptr %8, align 4
+  %866 = call ptr @forge_llvm_add_function(ptr %864, ptr @986, i64 %865)
+  %867 = load ptr, ptr @CG_MOD, align 8
+  %868 = load ptr, ptr @CG_I64, align 8
+  %869 = call ptr @make_fn_type_0(ptr %868)
+  %870 = call ptr @forge_llvm_add_function(ptr %867, ptr @987, ptr %869)
+  %871 = load ptr, ptr @CG_MOD, align 8
+  %872 = load ptr, ptr @CG_I64, align 8
+  %873 = load ptr, ptr @CG_STR, align 8
+  %874 = load ptr, ptr @CG_PTR, align 8
+  %875 = call ptr @make_fn_type_2(ptr %872, ptr %873, ptr %874)
+  %876 = call ptr @forge_llvm_add_function(ptr %871, ptr @988, ptr %875)
+  %877 = load ptr, ptr @CG_MOD, align 8
+  %878 = load ptr, ptr @CG_PTR, align 8
+  %879 = load ptr, ptr @CG_STR, align 8
+  %880 = call ptr @make_fn_type_1(ptr %878, ptr %879)
+  %881 = call ptr @forge_llvm_add_function(ptr %877, ptr @989, ptr %880)
+  %882 = load ptr, ptr @CG_MOD, align 8
+  %883 = load ptr, ptr @CG_I64, align 8
+  %884 = load ptr, ptr @CG_STR, align 8
+  %885 = call ptr @make_fn_type_1(ptr %883, ptr %884)
+  %886 = call ptr @forge_llvm_add_function(ptr %882, ptr @990, ptr %885)
   %887 = load ptr, ptr @CG_MOD, align 8
   %888 = load ptr, ptr @CG_I64, align 8
-  %889 = call ptr @make_fn_type_0(ptr %888)
-  %890 = call ptr @forge_llvm_add_function(ptr %887, ptr @991, ptr %889)
-  %891 = load ptr, ptr @CG_MOD, align 8
-  %892 = load ptr, ptr @CG_I64, align 8
+  %889 = load ptr, ptr @CG_STR, align 8
+  %890 = call ptr @make_fn_type_1(ptr %888, ptr %889)
+  %891 = call ptr @forge_llvm_add_function(ptr %887, ptr @991, ptr %890)
+  %892 = load ptr, ptr @CG_MOD, align 8
   %893 = load ptr, ptr @CG_I64, align 8
-  %894 = load ptr, ptr @CG_PTR, align 8
-  %895 = call ptr @make_fn_type_2(ptr %892, ptr %893, ptr %894)
-  %896 = call ptr @forge_llvm_add_function(ptr %891, ptr @992, ptr %895)
-  %897 = load ptr, ptr @CG_MOD, align 8
-  %898 = load ptr, ptr @CG_PTR, align 8
-  %899 = load ptr, ptr @CG_I64, align 8
-  %900 = call ptr @make_fn_type_1(ptr %898, ptr %899)
-  %901 = call ptr @forge_llvm_add_function(ptr %897, ptr @993, ptr %900)
-  %902 = load ptr, ptr @CG_MOD, align 8
-  %903 = load ptr, ptr @CG_I64, align 8
-  %904 = call ptr @make_fn_type_0(ptr %903)
-  %905 = call ptr @forge_llvm_add_function(ptr %902, ptr @994, ptr %904)
+  %894 = call ptr @make_fn_type_0(ptr %893)
+  %895 = call ptr @forge_llvm_add_function(ptr %892, ptr @992, ptr %894)
+  %896 = load ptr, ptr @CG_MOD, align 8
+  %897 = load ptr, ptr @CG_I64, align 8
+  %898 = call ptr @make_fn_type_0(ptr %897)
+  %899 = call ptr @forge_llvm_add_function(ptr %896, ptr @993, ptr %898)
+  %900 = load ptr, ptr @CG_MOD, align 8
+  %901 = load ptr, ptr @CG_I64, align 8
+  %902 = load ptr, ptr @CG_I64, align 8
+  %903 = load ptr, ptr @CG_PTR, align 8
+  %904 = call ptr @make_fn_type_2(ptr %901, ptr %902, ptr %903)
+  %905 = call ptr @forge_llvm_add_function(ptr %900, ptr @994, ptr %904)
   %906 = load ptr, ptr @CG_MOD, align 8
-  %907 = load ptr, ptr @CG_I64, align 8
-  %908 = call ptr @make_fn_type_0(ptr %907)
-  %909 = call ptr @forge_llvm_add_function(ptr %906, ptr @995, ptr %908)
-  %910 = load ptr, ptr @CG_MOD, align 8
-  %911 = load ptr, ptr @CG_I64, align 8
+  %907 = load ptr, ptr @CG_PTR, align 8
+  %908 = load ptr, ptr @CG_I64, align 8
+  %909 = call ptr @make_fn_type_1(ptr %907, ptr %908)
+  %910 = call ptr @forge_llvm_add_function(ptr %906, ptr @995, ptr %909)
+  %911 = load ptr, ptr @CG_MOD, align 8
   %912 = load ptr, ptr @CG_I64, align 8
-  %913 = call ptr @make_fn_type_1(ptr %911, ptr %912)
-  %914 = call ptr @forge_llvm_add_function(ptr %910, ptr @996, ptr %913)
-  %915 = ptrtoint ptr %914 to i64
-  ret i64 %915
+  %913 = call ptr @make_fn_type_0(ptr %912)
+  %914 = call ptr @forge_llvm_add_function(ptr %911, ptr @996, ptr %913)
+  %915 = load ptr, ptr @CG_MOD, align 8
+  %916 = load ptr, ptr @CG_I64, align 8
+  %917 = call ptr @make_fn_type_0(ptr %916)
+  %918 = call ptr @forge_llvm_add_function(ptr %915, ptr @997, ptr %917)
+  %919 = load ptr, ptr @CG_MOD, align 8
+  %920 = load ptr, ptr @CG_I64, align 8
+  %921 = load ptr, ptr @CG_I64, align 8
+  %922 = call ptr @make_fn_type_1(ptr %920, ptr %921)
+  %923 = call ptr @forge_llvm_add_function(ptr %919, ptr @998, ptr %922)
+  %924 = ptrtoint ptr %923 to i64
+  ret i64 %924
 }
 
 define i64 @cg_cleanup() {
@@ -32892,14 +32910,14 @@ bb3971:
   %12 = call ptr @forge_llvm_type_array_free(i64 %11)
   %13 = load ptr, ptr @CG_MOD, align 8
   %14 = load i64, ptr %4, align 4
-  %15 = call ptr @forge_llvm_add_function(ptr %13, ptr @997, i64 %14)
+  %15 = call ptr @forge_llvm_add_function(ptr %13, ptr @999, i64 %14)
   store ptr %15, ptr %3, align 8
   %16 = load i64, ptr %3, align 4
   %17 = getelementptr inbounds %Codegen, ptr %0, i32 0, i32 0
   store i64 %16, ptr %17, align 4
   %18 = load ptr, ptr @CG_CTX, align 8
   %19 = load i64, ptr %3, align 4
-  %20 = call ptr @forge_llvm_append_basic_block(ptr %18, i64 %19, ptr @998)
+  %20 = call ptr @forge_llvm_append_basic_block(ptr %18, i64 %19, ptr @1000)
   store ptr %20, ptr %2, align 8
   %21 = load ptr, ptr @CG_B, align 8
   %22 = load i64, ptr %2, align 4
@@ -33243,7 +33261,7 @@ bb4013:
   %19 = load i64, ptr %13, align 4
   %20 = load ptr, ptr @CG_CTX, align 8
   %21 = call ptr @forge_llvm_int1_type(ptr %20)
-  %22 = call ptr @forge_llvm_build_trunc(ptr %18, i64 %19, ptr %21, ptr @999)
+  %22 = call ptr @forge_llvm_build_trunc(ptr %18, i64 %19, ptr %21, ptr @1001)
   store ptr %22, ptr %12, align 8
   %23 = load ptr, ptr @CG_B, align 8
   %24 = call ptr @forge_llvm_get_insert_block(ptr %23)
@@ -33251,15 +33269,15 @@ bb4013:
   store ptr %25, ptr %11, align 8
   %26 = load ptr, ptr @CG_CTX, align 8
   %27 = load i64, ptr %11, align 4
-  %28 = call ptr @forge_llvm_append_basic_block(ptr %26, i64 %27, ptr @1000)
+  %28 = call ptr @forge_llvm_append_basic_block(ptr %26, i64 %27, ptr @1002)
   store ptr %28, ptr %10, align 8
   %29 = load ptr, ptr @CG_CTX, align 8
   %30 = load i64, ptr %11, align 4
-  %31 = call ptr @forge_llvm_append_basic_block(ptr %29, i64 %30, ptr @1001)
+  %31 = call ptr @forge_llvm_append_basic_block(ptr %29, i64 %30, ptr @1003)
   store ptr %31, ptr %9, align 8
   %32 = load ptr, ptr @CG_CTX, align 8
   %33 = load i64, ptr %11, align 4
-  %34 = call ptr @forge_llvm_append_basic_block(ptr %32, i64 %33, ptr @1002)
+  %34 = call ptr @forge_llvm_append_basic_block(ptr %32, i64 %33, ptr @1004)
   store ptr %34, ptr %8, align 8
   %35 = load ptr, ptr @CG_B, align 8
   %36 = load i64, ptr %12, align 4
@@ -33357,7 +33375,7 @@ bb4022:                                           ; preds = %bb4021, %bb4020
 bb4023:                                           ; preds = %bb4022
   %91 = load ptr, ptr @CG_B, align 8
   %92 = load ptr, ptr @CG_I64, align 8
-  %93 = call ptr @forge_llvm_build_phi(ptr %91, ptr %92, ptr @1003)
+  %93 = call ptr @forge_llvm_build_phi(ptr %91, ptr %92, ptr @1005)
   store ptr %93, ptr %1, align 8
   %94 = load i64, ptr %1, align 4
   %95 = load i64, ptr %7, align 4
@@ -33433,7 +33451,7 @@ bb4029:                                           ; preds = %bb4028
   store ptr %38, ptr %20, align 8
   %39 = load ptr, ptr @CG_CTX, align 8
   %40 = load i64, ptr %20, align 4
-  %41 = call ptr @forge_llvm_append_basic_block(ptr %39, i64 %40, ptr @1004)
+  %41 = call ptr @forge_llvm_append_basic_block(ptr %39, i64 %40, ptr @1006)
   store ptr %41, ptr %19, align 8
   store i64 0, ptr %18, align 4
   store i64 0, ptr %17, align 4
@@ -33450,7 +33468,7 @@ bb4030:                                           ; preds = %bb4053, %bb4029
   br i1 %46, label %bb4031, label %bb4032
 
 bb4031:                                           ; preds = %bb4030
-  store { ptr, i64 } { ptr @1005, i64 0 }, ptr %14, align 8
+  store { ptr, i64 } { ptr @1007, i64 0 }, ptr %14, align 8
   br label %bb4033
 
 bb4032:                                           ; preds = %bb4030
@@ -33480,14 +33498,14 @@ bb4034:                                           ; preds = %bb4033
   store i64 %62, ptr %17, align 4
   store i64 %62, ptr %17, align 4
   %63 = load %ForgeString, ptr %13, align 8
-  %64 = call i64 @forge_string_compare(%ForgeString %63, { ptr, i64 } { ptr @1006, i64 1 })
+  %64 = call i64 @forge_string_compare(%ForgeString %63, { ptr, i64 } { ptr @1008, i64 1 })
   %65 = icmp eq i64 %64, 0
   br i1 %65, label %bb4036, label %bb4037
 
 bb4035:                                           ; preds = %bb4033
   %66 = load ptr, ptr @CG_CTX, align 8
   %67 = load i64, ptr %20, align 4
-  %68 = call ptr @forge_llvm_append_basic_block(ptr %66, i64 %67, ptr @1007)
+  %68 = call ptr @forge_llvm_append_basic_block(ptr %66, i64 %67, ptr @1009)
   store ptr %68, ptr %12, align 8
   %69 = load i64, ptr %19, align 4
   store i64 %69, ptr %11, align 4
@@ -33518,7 +33536,7 @@ bb4039:                                           ; preds = %bb4035
   %80 = load i64, ptr %11, align 4
   %81 = load ptr, ptr @CG_CTX, align 8
   %82 = load i64, ptr %20, align 4
-  %83 = call ptr @forge_llvm_append_basic_block(ptr %81, i64 %82, ptr @1008)
+  %83 = call ptr @forge_llvm_append_basic_block(ptr %81, i64 %82, ptr @1010)
   %84 = ptrtoint ptr %83 to i64
   store i64 %84, ptr %11, align 4
   store ptr %83, ptr %11, align 8
@@ -33529,7 +33547,7 @@ bb4040:                                           ; preds = %bb4035
 
 bb4041:                                           ; preds = %bb4040, %bb4039
   %85 = load %ForgeString, ptr %14, align 8
-  %86 = call i64 @forge_string_compare(%ForgeString %85, { ptr, i64 } { ptr @1009, i64 1 })
+  %86 = call i64 @forge_string_compare(%ForgeString %85, { ptr, i64 } { ptr @1011, i64 1 })
   %87 = icmp eq i64 %86, 0
   br i1 %87, label %bb4042, label %bb4043
 
@@ -33548,7 +33566,7 @@ bb4043:                                           ; preds = %bb4041
   %95 = load i64, ptr %21, align 4
   store i64 %95, ptr %9, align 4
   %96 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
-  %97 = call i64 @forge_string_compare(ptr %96, { ptr, i64 } { ptr @1010, i64 0 })
+  %97 = call i64 @forge_string_compare(ptr %96, { ptr, i64 } { ptr @1012, i64 0 })
   %98 = icmp ne i64 %97, 0
   br i1 %98, label %bb4045, label %bb4046
 
@@ -33579,13 +33597,13 @@ bb4044:                                           ; preds = %bb4047, %bb4042
 bb4045:                                           ; preds = %bb4043
   %118 = load ptr, ptr @CG_B, align 8
   %119 = load i64, ptr %21, align 4
-  %120 = call ptr @forge_llvm_build_extract_value(ptr %118, i64 %119, i64 0, ptr @1011)
+  %120 = call ptr @forge_llvm_build_extract_value(ptr %118, i64 %119, i64 0, ptr @1013)
   store ptr %120, ptr %8, align 8
   %121 = load i64, ptr %9, align 4
   %122 = load ptr, ptr @CG_B, align 8
   %123 = load i64, ptr %8, align 4
   %124 = load ptr, ptr @CG_I64, align 8
-  %125 = call ptr @forge_llvm_build_zext(ptr %122, i64 %123, ptr %124, ptr @1012)
+  %125 = call ptr @forge_llvm_build_zext(ptr %122, i64 %123, ptr %124, ptr @1014)
   %126 = ptrtoint ptr %125 to i64
   store i64 %126, ptr %9, align 4
   store ptr %125, ptr %9, align 8
@@ -33598,7 +33616,7 @@ bb4047:                                           ; preds = %bb4046, %bb4045
   %127 = load ptr, ptr @CG_B, align 8
   %128 = load i64, ptr %9, align 4
   %129 = load i64, ptr %10, align 4
-  %130 = call ptr @forge_llvm_build_icmp(ptr %127, i64 32, i64 %128, i64 %129, ptr @1013)
+  %130 = call ptr @forge_llvm_build_icmp(ptr %127, i64 32, i64 %128, i64 %129, ptr @1015)
   store ptr %130, ptr %7, align 8
   %131 = load ptr, ptr @CG_B, align 8
   %132 = load i64, ptr %7, align 4
@@ -33636,7 +33654,7 @@ bb4050:                                           ; preds = %bb4049, %bb4048
   store %ForgeString %149, ptr %15, align 8
   store %ForgeString %149, ptr %15, align 8
   %151 = load %ForgeString, ptr %14, align 8
-  %152 = call i64 @forge_string_compare(%ForgeString %151, { ptr, i64 } { ptr @1014, i64 1 })
+  %152 = call i64 @forge_string_compare(%ForgeString %151, { ptr, i64 } { ptr @1016, i64 1 })
   %153 = icmp ne i64 %152, 0
   %154 = load i64, ptr %18, align 4
   %155 = load %ForgeString, ptr %23, align 8
@@ -33666,7 +33684,7 @@ bb4053:                                           ; preds = %bb4052, %bb4051
 bb4054:                                           ; preds = %bb4032
   %166 = load ptr, ptr @CG_B, align 8
   %167 = load ptr, ptr @CG_I64, align 8
-  %168 = call ptr @forge_llvm_build_phi(ptr %166, ptr %167, ptr @1015)
+  %168 = call ptr @forge_llvm_build_phi(ptr %166, ptr %167, ptr @1017)
   store ptr %168, ptr %4, align 8
   store i64 0, ptr %3, align 4
   br label %bb4057
@@ -33747,7 +33765,7 @@ bb4060:
   store i64 %29, ptr %24, align 4
   %30 = load ptr, ptr @CG_B, align 8
   %31 = load i64, ptr %25, align 4
-  %32 = call ptr @forge_llvm_build_extract_value(ptr %30, i64 %31, i64 0, ptr @1016)
+  %32 = call ptr @forge_llvm_build_extract_value(ptr %30, i64 %31, i64 0, ptr @1018)
   store ptr %32, ptr %23, align 8
   %33 = load i64, ptr %23, align 4
   %34 = icmp ne i64 %33, 0
@@ -33758,7 +33776,7 @@ bb4061:                                           ; preds = %bb4060
   %36 = load ptr, ptr @CG_B, align 8
   %37 = load i64, ptr %23, align 4
   %38 = load ptr, ptr @CG_I64, align 8
-  %39 = call ptr @forge_llvm_build_zext(ptr %36, i64 %37, ptr %38, ptr @1017)
+  %39 = call ptr @forge_llvm_build_zext(ptr %36, i64 %37, ptr %38, ptr @1019)
   %40 = ptrtoint ptr %39 to i64
   store i64 %40, ptr %24, align 4
   store ptr %39, ptr %24, align 8
@@ -33774,11 +33792,11 @@ bb4063:                                           ; preds = %bb4062, %bb4061
   store ptr %43, ptr %22, align 8
   %44 = load ptr, ptr @CG_CTX, align 8
   %45 = load i64, ptr %22, align 4
-  %46 = call ptr @forge_llvm_append_basic_block(ptr %44, i64 %45, ptr @1018)
+  %46 = call ptr @forge_llvm_append_basic_block(ptr %44, i64 %45, ptr @1020)
   store ptr %46, ptr %21, align 8
   store %ForgeString zeroinitializer, ptr %20, align 8
   store i64 0, ptr %19, align 4
-  store { ptr, i64 } { ptr @1019, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1021, i64 0 }, ptr %18, align 8
   br label %bb4064
 
 bb4064:                                           ; preds = %bb4069, %bb4063
@@ -33794,13 +33812,13 @@ bb4065:                                           ; preds = %bb4064
   %53 = call %ForgeString @forge_string_char_at(ptr %51, i64 %52)
   store %ForgeString %53, ptr %17, align 8
   %54 = load %ForgeString, ptr %17, align 8
-  %55 = call i64 @forge_string_compare(%ForgeString %54, { ptr, i64 } { ptr @1020, i64 1 })
+  %55 = call i64 @forge_string_compare(%ForgeString %54, { ptr, i64 } { ptr @1022, i64 1 })
   %56 = icmp eq i64 %55, 0
   br i1 %56, label %bb4067, label %bb4068
 
 bb4066:                                           ; preds = %bb4064
   %57 = load %ForgeString, ptr %18, align 8
-  %58 = call i64 @forge_string_compare(%ForgeString %57, { ptr, i64 } { ptr @1022, i64 0 })
+  %58 = call i64 @forge_string_compare(%ForgeString %57, { ptr, i64 } { ptr @1024, i64 0 })
   %59 = icmp ne i64 %58, 0
   br i1 %59, label %bb4070, label %bb4071
 
@@ -33816,8 +33834,8 @@ bb4067:                                           ; preds = %bb4065
   store %ForgeString %65, ptr %20, align 8
   store %ForgeString %65, ptr %20, align 8
   %67 = load %ForgeString, ptr %18, align 8
-  store { ptr, i64 } { ptr @1021, i64 0 }, ptr %18, align 8
-  store { ptr, i64 } { ptr @1021, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1023, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1023, i64 0 }, ptr %18, align 8
   br label %bb4069
 
 bb4068:                                           ; preds = %bb4065
@@ -33873,11 +33891,11 @@ bb4074:                                           ; preds = %bb4073
   %88 = call i64 @cg_reinit_types()
   %89 = load ptr, ptr @CG_CTX, align 8
   %90 = load i64, ptr %22, align 4
-  %91 = call ptr @forge_llvm_append_basic_block(ptr %89, i64 %90, ptr @1023)
+  %91 = call ptr @forge_llvm_append_basic_block(ptr %89, i64 %90, ptr @1025)
   store ptr %91, ptr %12, align 8
   %92 = load ptr, ptr @CG_CTX, align 8
   %93 = load i64, ptr %22, align 4
-  %94 = call ptr @forge_llvm_append_basic_block(ptr %92, i64 %93, ptr @1024)
+  %94 = call ptr @forge_llvm_append_basic_block(ptr %92, i64 %93, ptr @1026)
   store ptr %94, ptr %11, align 8
   %95 = load ptr, ptr @CG_I64, align 8
   %96 = load %ForgeString, ptr %20, align 8
@@ -33890,7 +33908,7 @@ bb4074:                                           ; preds = %bb4073
   %102 = load ptr, ptr @CG_B, align 8
   %103 = load i64, ptr %24, align 4
   %104 = load i64, ptr %10, align 4
-  %105 = call ptr @forge_llvm_build_icmp(ptr %102, i64 32, i64 %103, i64 %104, ptr @1025)
+  %105 = call ptr @forge_llvm_build_icmp(ptr %102, i64 32, i64 %103, i64 %104, ptr @1027)
   store ptr %105, ptr %9, align 8
   %106 = load ptr, ptr @CG_B, align 8
   %107 = load i64, ptr %9, align 4
@@ -34026,7 +34044,7 @@ bb4084:                                           ; preds = %bb4083, %bb4082
 bb4085:                                           ; preds = %bb4080
   %186 = load i64, ptr %4, align 4
   %187 = load %Codegen, ptr %0, align 8
-  %188 = call ptr @Codegen__emit_string(ptr %0, { ptr, i64 } { ptr @1026, i64 0 })
+  %188 = call ptr @Codegen__emit_string(ptr %0, { ptr, i64 } { ptr @1028, i64 0 })
   %189 = ptrtoint ptr %188 to i64
   store i64 %189, ptr %4, align 4
   store ptr %188, ptr %4, align 8
@@ -34091,7 +34109,7 @@ bb4092:                                           ; preds = %bb4088
 bb4093:                                           ; preds = %bb4092, %bb4091
   %216 = load ptr, ptr @CG_B, align 8
   %217 = load i64, ptr %3, align 4
-  %218 = call ptr @forge_llvm_build_phi(ptr %216, i64 %217, ptr @1027)
+  %218 = call ptr @forge_llvm_build_phi(ptr %216, i64 %217, ptr @1029)
   store ptr %218, ptr %2, align 8
   store i64 0, ptr %1, align 4
   br label %bb4094
@@ -34216,7 +34234,7 @@ bb4108:                                           ; preds = %bb4100
 bb4109:                                           ; preds = %bb4108
   %43 = load ptr, ptr @CG_B, align 8
   %44 = load i64, ptr %12, align 4
-  %45 = call ptr @forge_llvm_build_alloca(ptr %43, i64 %44, ptr @1028)
+  %45 = call ptr @forge_llvm_build_alloca(ptr %43, i64 %44, ptr @1030)
   store ptr %45, ptr %10, align 8
   %46 = load ptr, ptr @CG_B, align 8
   %47 = load i64, ptr %12, align 4
@@ -34251,7 +34269,7 @@ bb4111:                                           ; preds = %bb4110
   %65 = load i64, ptr %12, align 4
   %66 = load i64, ptr %10, align 4
   %67 = load i64, ptr %53, align 4
-  %68 = call ptr @forge_llvm_build_struct_gep2(ptr %64, i64 %65, i64 %66, i64 %67, ptr @1029)
+  %68 = call ptr @forge_llvm_build_struct_gep2(ptr %64, i64 %65, i64 %66, i64 %67, ptr @1031)
   store ptr %68, ptr %6, align 8
   %69 = load ptr, ptr @CG_B, align 8
   %70 = load i64, ptr %7, align 4
@@ -34274,7 +34292,7 @@ bb4113:                                           ; preds = %bb4110
   %78 = load ptr, ptr @CG_B, align 8
   %79 = load i64, ptr %12, align 4
   %80 = load i64, ptr %10, align 4
-  %81 = call ptr @forge_llvm_build_load(ptr %78, i64 %79, i64 %80, ptr @1030)
+  %81 = call ptr @forge_llvm_build_load(ptr %78, i64 %79, i64 %80, ptr @1032)
   store ptr %81, ptr %5, align 8
   %82 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   %83 = load %ForgeString, ptr %13, align 8
@@ -34282,7 +34300,7 @@ bb4113:                                           ; preds = %bb4110
   store %ForgeString %83, ptr @CG_LAST_STRUCT_TYPE, align 8
   %84 = load i64, ptr %53, align 4
   %85 = call %ForgeString @forge_int_to_string(i64 %84)
-  %86 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1031, i64 2 }, %ForgeString %85)
+  %86 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1033, i64 2 }, %ForgeString %85)
   store %ForgeString %86, ptr %4, align 8
   %87 = load %ForgeString, ptr @CG_VAR_NAMES, align 8
   %88 = load %ForgeString, ptr %4, align 8
@@ -34318,7 +34336,7 @@ bb4113:                                           ; preds = %bb4110
   %108 = call %ForgeString @forge_list_push(ptr %106, ptr %107, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @CG_STRUCT_VAR_TYPES, align 4
   store %ForgeString %108, ptr @CG_STRUCT_VAR_TYPES, align 8
-  store { ptr, i64 } { ptr @1032, i64 0 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1034, i64 0 }, ptr %3, align 8
   %109 = load i64, ptr %11, align 4
   %110 = icmp sge i64 %109, 0
   br i1 %110, label %bb4114, label %bb4115
@@ -34449,7 +34467,7 @@ bb4126:                                           ; preds = %bb4128, %bb4127
   %29 = load i64, ptr %6, align 4
   %30 = load ptr, ptr @CG_CTX, align 8
   %31 = call ptr @forge_llvm_int1_type(ptr %30)
-  %32 = call ptr @forge_llvm_build_trunc(ptr %28, i64 %29, ptr %31, ptr @1033)
+  %32 = call ptr @forge_llvm_build_trunc(ptr %28, i64 %29, ptr %31, ptr @1035)
   store ptr %32, ptr %5, align 8
   %33 = load %Codegen, ptr %0, align 8
   %34 = extractvalue %Codegen %33, 0
@@ -34482,11 +34500,11 @@ bb4130:                                           ; preds = %bb4126
 bb4131:                                           ; preds = %bb4130
   %44 = load ptr, ptr @CG_CTX, align 8
   %45 = load i64, ptr %4, align 4
-  %46 = call ptr @forge_llvm_append_basic_block(ptr %44, i64 %45, ptr @1034)
+  %46 = call ptr @forge_llvm_append_basic_block(ptr %44, i64 %45, ptr @1036)
   store ptr %46, ptr %3, align 8
   %47 = load ptr, ptr @CG_CTX, align 8
   %48 = load i64, ptr %4, align 4
-  %49 = call ptr @forge_llvm_append_basic_block(ptr %47, i64 %48, ptr @1035)
+  %49 = call ptr @forge_llvm_append_basic_block(ptr %47, i64 %48, ptr @1037)
   store ptr %49, ptr %2, align 8
   %50 = load ptr, ptr @CG_B, align 8
   %51 = load i64, ptr %5, align 4
@@ -34543,7 +34561,7 @@ bb4135:
   %10 = load i64, ptr %5, align 4
   %11 = load ptr, ptr @CG_CTX, align 8
   %12 = call ptr @forge_llvm_int1_type(ptr %11)
-  %13 = call ptr @forge_llvm_build_trunc(ptr %9, i64 %10, ptr %12, ptr @1036)
+  %13 = call ptr @forge_llvm_build_trunc(ptr %9, i64 %10, ptr %12, ptr @1038)
   store ptr %13, ptr %4, align 8
   %14 = load %Codegen, ptr %0, align 8
   %15 = extractvalue %Codegen %14, 0
@@ -34565,11 +34583,11 @@ bb4137:                                           ; preds = %bb4135
 bb4138:                                           ; preds = %bb4137
   %22 = load ptr, ptr @CG_CTX, align 8
   %23 = load i64, ptr %3, align 4
-  %24 = call ptr @forge_llvm_append_basic_block(ptr %22, i64 %23, ptr @1037)
+  %24 = call ptr @forge_llvm_append_basic_block(ptr %22, i64 %23, ptr @1039)
   store ptr %24, ptr %2, align 8
   %25 = load ptr, ptr @CG_CTX, align 8
   %26 = load i64, ptr %3, align 4
-  %27 = call ptr @forge_llvm_append_basic_block(ptr %25, i64 %26, ptr @1038)
+  %27 = call ptr @forge_llvm_append_basic_block(ptr %25, i64 %26, ptr @1040)
   store ptr %27, ptr %1, align 8
   %28 = load ptr, ptr @CG_B, align 8
   %29 = load i64, ptr %4, align 4
@@ -34636,7 +34654,7 @@ bb4140:                                           ; preds = %bb4139
   %31 = load i64, ptr %10, align 4
   %32 = load ptr, ptr @CG_RT_I2S, align 8
   %33 = load i64, ptr %11, align 4
-  %34 = call ptr @forge_llvm_build_call(ptr %30, i64 %31, ptr %32, i64 %33, i64 1, ptr @1039)
+  %34 = call ptr @forge_llvm_build_call(ptr %30, i64 %31, ptr %32, i64 %33, i64 1, ptr @1041)
   %35 = ptrtoint ptr %34 to i64
   store i64 %35, ptr %13, align 4
   store ptr %34, ptr %13, align 8
@@ -34667,7 +34685,7 @@ bb4143:                                           ; preds = %bb4142
   %49 = load i64, ptr %8, align 4
   %50 = load ptr, ptr @CG_RT_I2S, align 8
   %51 = load i64, ptr %9, align 4
-  %52 = call ptr @forge_llvm_build_call(ptr %48, i64 %49, ptr %50, i64 %51, i64 1, ptr @1040)
+  %52 = call ptr @forge_llvm_build_call(ptr %48, i64 %49, ptr %50, i64 %51, i64 1, ptr @1042)
   %53 = ptrtoint ptr %52 to i64
   store i64 %53, ptr %12, align 4
   store ptr %52, ptr %12, align 8
@@ -34696,7 +34714,7 @@ bb4145:                                           ; preds = %bb4144, %bb4143
   %68 = load i64, ptr %6, align 4
   %69 = load ptr, ptr @CG_RT_SCONCAT, align 8
   %70 = load i64, ptr %7, align 4
-  %71 = call ptr @forge_llvm_build_call(ptr %67, i64 %68, ptr %69, i64 %70, i64 2, ptr @1041)
+  %71 = call ptr @forge_llvm_build_call(ptr %67, i64 %68, ptr %69, i64 %70, i64 2, ptr @1043)
   store ptr %71, ptr %5, align 8
   %72 = load i64, ptr %7, align 4
   %73 = call ptr @forge_llvm_value_array_free(i64 %72)
@@ -34758,7 +34776,7 @@ bb4147:
   %31 = alloca %ForgeString, align 8
   store %ForgeString %1, ptr %31, align 8
   %32 = load %ForgeString, ptr %31, align 8
-  %33 = call i64 @forge_string_compare(%ForgeString %32, { ptr, i64 } { ptr @1042, i64 9 })
+  %33 = call i64 @forge_string_compare(%ForgeString %32, { ptr, i64 } { ptr @1044, i64 9 })
   %34 = icmp eq i64 %33, 0
   br i1 %34, label %bb4148, label %bb4149
 
@@ -34864,7 +34882,7 @@ bb4162:                                           ; preds = %bb4161, %bb4160
   %72 = call %ForgeString @forge_struct_var_get(%ForgeString %71)
   store %ForgeString %72, ptr %28, align 8
   %73 = load %ForgeString, ptr %28, align 8
-  %74 = call i64 @forge_string_compare(%ForgeString %73, { ptr, i64 } { ptr @1043, i64 0 })
+  %74 = call i64 @forge_string_compare(%ForgeString %73, { ptr, i64 } { ptr @1045, i64 0 })
   %75 = icmp ne i64 %74, 0
   br i1 %75, label %bb4163, label %bb4164
 
@@ -34949,8 +34967,8 @@ bb4171:                                           ; preds = %bb4169
 bb4172:                                           ; preds = %bb4170
   %116 = call i64 @cg_reinit_types()
   %117 = load %ForgeString, ptr %31, align 8
-  %118 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1044, i64 1 }, %ForgeString %117)
-  %119 = call %ForgeString @forge_string_concat(%ForgeString %118, { ptr, i64 } { ptr @1045, i64 1 })
+  %118 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1046, i64 1 }, %ForgeString %117)
+  %119 = call %ForgeString @forge_string_concat(%ForgeString %118, { ptr, i64 } { ptr @1047, i64 1 })
   store %ForgeString %119, ptr %25, align 8
   %120 = load %ForgeString, ptr @CG_STR_LOCALS_CSV, align 8
   %121 = load %ForgeString, ptr %25, align 8
@@ -35033,7 +35051,7 @@ bb4184:                                           ; preds = %bb4183
   %149 = load ptr, ptr @CG_I64, align 8
   store ptr %149, ptr %21, align 8
   %150 = load %ForgeString, ptr %22, align 8
-  %151 = call i64 @forge_string_compare(%ForgeString %150, { ptr, i64 } { ptr @1046, i64 6 })
+  %151 = call i64 @forge_string_compare(%ForgeString %150, { ptr, i64 } { ptr @1048, i64 6 })
   %152 = icmp eq i64 %151, 0
   br i1 %152, label %bb4187, label %bb4188
 
@@ -35086,13 +35104,13 @@ bb4191:                                           ; preds = %bb4190
 bb4192:                                           ; preds = %bb4190
   %171 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   store i64 0, ptr @CG_LAST_ENUM_TYPE, align 4
-  store { ptr, i64 } { ptr @1047, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
+  store { ptr, i64 } { ptr @1049, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
   %172 = call i64 @cg_reinit_types()
   %173 = load %ForgeString, ptr %31, align 8
   %174 = call %ForgeString @cg_var_enum_type(%ForgeString %173)
   store %ForgeString %174, ptr %19, align 8
   %175 = load %ForgeString, ptr %19, align 8
-  %176 = call i64 @forge_string_compare(%ForgeString %175, { ptr, i64 } { ptr @1048, i64 0 })
+  %176 = call i64 @forge_string_compare(%ForgeString %175, { ptr, i64 } { ptr @1050, i64 0 })
   %177 = icmp ne i64 %176, 0
   br i1 %177, label %bb4196, label %bb4197
 
@@ -35132,12 +35150,12 @@ bb4197:                                           ; preds = %bb4192
 bb4198:                                           ; preds = %bb4197, %bb4201
   %189 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1049, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1051, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %190 = load %ForgeString, ptr %31, align 8
   %191 = call %ForgeString @var_struct_type(%ForgeString %190)
   store %ForgeString %191, ptr %17, align 8
   %192 = load %ForgeString, ptr %17, align 8
-  %193 = call i64 @forge_string_compare(%ForgeString %192, { ptr, i64 } { ptr @1050, i64 0 })
+  %193 = call i64 @forge_string_compare(%ForgeString %192, { ptr, i64 } { ptr @1052, i64 0 })
   %194 = icmp ne i64 %193, 0
   br i1 %194, label %bb4202, label %bb4203
 
@@ -35284,8 +35302,8 @@ bb4219:                                           ; preds = %bb4217
 bb4220:                                           ; preds = %bb4218
   %254 = call i64 @cg_reinit_types()
   %255 = load %ForgeString, ptr %31, align 8
-  %256 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1051, i64 1 }, %ForgeString %255)
-  %257 = call %ForgeString @forge_string_concat(%ForgeString %256, { ptr, i64 } { ptr @1052, i64 1 })
+  %256 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1053, i64 1 }, %ForgeString %255)
+  %257 = call %ForgeString @forge_string_concat(%ForgeString %256, { ptr, i64 } { ptr @1054, i64 1 })
   store %ForgeString %257, ptr %13, align 8
   %258 = load %ForgeString, ptr @CG_STR_GLOBALS_CSV, align 8
   %259 = load %ForgeString, ptr %13, align 8
@@ -35354,7 +35372,7 @@ bb4229:                                           ; preds = %bb4228
   %282 = load ptr, ptr @CG_I64, align 8
   store ptr %282, ptr %9, align 8
   %283 = load %ForgeString, ptr %10, align 8
-  %284 = call i64 @forge_string_compare(%ForgeString %283, { ptr, i64 } { ptr @1053, i64 6 })
+  %284 = call i64 @forge_string_compare(%ForgeString %283, { ptr, i64 } { ptr @1055, i64 6 })
   %285 = icmp eq i64 %284, 0
   br i1 %285, label %bb4232, label %bb4233
 
@@ -35404,12 +35422,12 @@ bb4236:                                           ; preds = %bb4235
 bb4237:                                           ; preds = %bb4235
   %301 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   store i64 0, ptr @CG_LAST_ENUM_TYPE, align 4
-  store { ptr, i64 } { ptr @1054, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
+  store { ptr, i64 } { ptr @1056, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
   %302 = load %ForgeString, ptr %31, align 8
   %303 = call %ForgeString @cg_var_enum_type(%ForgeString %302)
   store %ForgeString %303, ptr %7, align 8
   %304 = load %ForgeString, ptr %7, align 8
-  %305 = call i64 @forge_string_compare(%ForgeString %304, { ptr, i64 } { ptr @1055, i64 0 })
+  %305 = call i64 @forge_string_compare(%ForgeString %304, { ptr, i64 } { ptr @1057, i64 0 })
   %306 = icmp ne i64 %305, 0
   br i1 %306, label %bb4241, label %bb4242
 
@@ -35441,7 +35459,7 @@ bb4243:                                           ; preds = %bb4242, %bb4246
   %314 = call %ForgeString @var_struct_type(%ForgeString %313)
   store %ForgeString %314, ptr %6, align 8
   %315 = load %ForgeString, ptr %6, align 8
-  %316 = call i64 @forge_string_compare(%ForgeString %315, { ptr, i64 } { ptr @1056, i64 0 })
+  %316 = call i64 @forge_string_compare(%ForgeString %315, { ptr, i64 } { ptr @1058, i64 0 })
   %317 = icmp ne i64 %316, 0
   br i1 %317, label %bb4247, label %bb4248
 
@@ -36082,7 +36100,7 @@ bb4346:                                           ; preds = %bb4345
 
 bb4347:                                           ; preds = %bb4345
   %43 = load %ForgeString, ptr %32, align 8
-  %44 = call i64 @forge_string_index_of(%ForgeString %43, { ptr, i64 } { ptr @1057, i64 11 })
+  %44 = call i64 @forge_string_index_of(%ForgeString %43, { ptr, i64 } { ptr @1059, i64 11 })
   %45 = icmp sge i64 %44, 0
   %46 = zext i1 %45 to i64
   store i64 %46, ptr %27, align 4
@@ -36095,7 +36113,7 @@ bb4347:                                           ; preds = %bb4345
   %52 = call ptr @forge_llvm_type_array_new(i64 %51)
   store ptr %52, ptr %25, align 8
   %53 = load %ForgeString, ptr %32, align 8
-  %54 = call i64 @forge_string_index_of(%ForgeString %53, { ptr, i64 } { ptr @1058, i64 2 })
+  %54 = call i64 @forge_string_index_of(%ForgeString %53, { ptr, i64 } { ptr @1060, i64 2 })
   %55 = icmp sge i64 %54, 0
   %56 = zext i1 %55 to i64
   store i64 %56, ptr %24, align 4
@@ -36166,7 +36184,7 @@ bb4355:                                           ; preds = %bb4354
   %87 = ptrtoint ptr %86 to i64
   %88 = icmp ne i64 %87, 0
   %89 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
-  %90 = call i64 @forge_string_compare(ptr %89, { ptr, i64 } { ptr @1059, i64 0 })
+  %90 = call i64 @forge_string_compare(ptr %89, { ptr, i64 } { ptr @1061, i64 0 })
   %91 = icmp ne i64 %90, 0
   br i1 false, label %bb4358, label %bb4359
 
@@ -36209,7 +36227,7 @@ bb4360:                                           ; preds = %bb4359, %bb4358
 bb4361:                                           ; preds = %bb4360
   %106 = load ptr, ptr @CG_B, align 8
   %107 = load i64, ptr %22, align 4
-  %108 = call ptr @forge_llvm_build_extract_value(ptr %106, i64 %107, i64 0, ptr @1060)
+  %108 = call ptr @forge_llvm_build_extract_value(ptr %106, i64 %107, i64 0, ptr @1062)
   store ptr %108, ptr %19, align 8
   %109 = load i64, ptr %19, align 4
   %110 = icmp ne i64 %109, 0
@@ -36253,7 +36271,7 @@ bb4367:                                           ; preds = %bb4363
   %126 = call %ForgeString @forge_param_type_get(i64 %125)
   store %ForgeString %126, ptr %16, align 8
   %127 = load %ForgeString, ptr %16, align 8
-  %128 = call i64 @forge_string_compare(%ForgeString %127, { ptr, i64 } { ptr @1061, i64 6 })
+  %128 = call i64 @forge_string_compare(%ForgeString %127, { ptr, i64 } { ptr @1063, i64 6 })
   %129 = icmp eq i64 %128, 0
   br i1 %129, label %bb4370, label %bb4371
 
@@ -36279,22 +36297,22 @@ bb4370:                                           ; preds = %bb4367
 
 bb4371:                                           ; preds = %bb4367
   %139 = load %ForgeString, ptr %16, align 8
-  %140 = call i64 @forge_string_compare(%ForgeString %139, { ptr, i64 } { ptr @1062, i64 3 })
+  %140 = call i64 @forge_string_compare(%ForgeString %139, { ptr, i64 } { ptr @1064, i64 3 })
   %141 = icmp ne i64 %140, 0
   %142 = load %ForgeString, ptr %16, align 8
-  %143 = call i64 @forge_string_compare(%ForgeString %142, { ptr, i64 } { ptr @1063, i64 5 })
+  %143 = call i64 @forge_string_compare(%ForgeString %142, { ptr, i64 } { ptr @1065, i64 5 })
   %144 = icmp ne i64 %143, 0
   %145 = and i1 %141, %144
   %146 = load %ForgeString, ptr %16, align 8
-  %147 = call i64 @forge_string_compare(%ForgeString %146, { ptr, i64 } { ptr @1064, i64 4 })
+  %147 = call i64 @forge_string_compare(%ForgeString %146, { ptr, i64 } { ptr @1066, i64 4 })
   %148 = icmp ne i64 %147, 0
   %149 = and i1 %145, %148
   %150 = load %ForgeString, ptr %16, align 8
-  %151 = call i64 @forge_string_compare(%ForgeString %150, { ptr, i64 } { ptr @1065, i64 3 })
+  %151 = call i64 @forge_string_compare(%ForgeString %150, { ptr, i64 } { ptr @1067, i64 3 })
   %152 = icmp ne i64 %151, 0
   %153 = and i1 %149, %152
   %154 = load %ForgeString, ptr %16, align 8
-  %155 = call i64 @forge_string_compare(%ForgeString %154, { ptr, i64 } { ptr @1066, i64 0 })
+  %155 = call i64 @forge_string_compare(%ForgeString %154, { ptr, i64 } { ptr @1068, i64 0 })
   %156 = icmp ne i64 %155, 0
   %157 = and i1 %153, %156
   br i1 %157, label %bb4376, label %bb4377
@@ -36390,7 +36408,7 @@ bb4386:                                           ; preds = %bb4384
 
 bb4387:                                           ; preds = %bb4386, %bb4385
   %184 = load %ForgeString, ptr %32, align 8
-  %185 = call i64 @forge_string_compare(%ForgeString %184, { ptr, i64 } { ptr @1067, i64 27 })
+  %185 = call i64 @forge_string_compare(%ForgeString %184, { ptr, i64 } { ptr @1069, i64 27 })
   %186 = icmp eq i64 %185, 0
   br i1 %186, label %bb4388, label %bb4389
 
@@ -36413,7 +36431,7 @@ bb4389:                                           ; preds = %bb4387
 
 bb4390:                                           ; preds = %bb4389, %bb4388
   %192 = load %ForgeString, ptr %32, align 8
-  %193 = call i64 @forge_string_compare(%ForgeString %192, { ptr, i64 } { ptr @1068, i64 22 })
+  %193 = call i64 @forge_string_compare(%ForgeString %192, { ptr, i64 } { ptr @1070, i64 22 })
   %194 = icmp eq i64 %193, 0
   br i1 %194, label %bb4391, label %bb4392
 
@@ -36433,7 +36451,7 @@ bb4392:                                           ; preds = %bb4390
 
 bb4393:                                           ; preds = %bb4392, %bb4391
   %199 = load %ForgeString, ptr %32, align 8
-  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1069, i64 22 })
+  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1071, i64 22 })
   %201 = icmp eq i64 %200, 0
   br i1 %201, label %bb4394, label %bb4395
 
@@ -36453,7 +36471,7 @@ bb4395:                                           ; preds = %bb4393
 
 bb4396:                                           ; preds = %bb4395, %bb4394
   %206 = load %ForgeString, ptr %32, align 8
-  %207 = call i64 @forge_string_compare(%ForgeString %206, { ptr, i64 } { ptr @1070, i64 26 })
+  %207 = call i64 @forge_string_compare(%ForgeString %206, { ptr, i64 } { ptr @1072, i64 26 })
   %208 = icmp eq i64 %207, 0
   br i1 %208, label %bb4397, label %bb4398
 
@@ -36473,7 +36491,7 @@ bb4398:                                           ; preds = %bb4396
 
 bb4399:                                           ; preds = %bb4398, %bb4397
   %213 = load %ForgeString, ptr %32, align 8
-  %214 = call i64 @forge_string_compare(%ForgeString %213, { ptr, i64 } { ptr @1071, i64 19 })
+  %214 = call i64 @forge_string_compare(%ForgeString %213, { ptr, i64 } { ptr @1073, i64 19 })
   %215 = icmp eq i64 %214, 0
   br i1 %215, label %bb4400, label %bb4401
 
@@ -36493,7 +36511,7 @@ bb4401:                                           ; preds = %bb4399
 
 bb4402:                                           ; preds = %bb4401, %bb4400
   %220 = load %ForgeString, ptr %32, align 8
-  %221 = call i64 @forge_string_compare(%ForgeString %220, { ptr, i64 } { ptr @1072, i64 16 })
+  %221 = call i64 @forge_string_compare(%ForgeString %220, { ptr, i64 } { ptr @1074, i64 16 })
   %222 = icmp eq i64 %221, 0
   br i1 %222, label %bb4403, label %bb4404
 
@@ -36513,7 +36531,7 @@ bb4404:                                           ; preds = %bb4402
 
 bb4405:                                           ; preds = %bb4404, %bb4403
   %227 = load %ForgeString, ptr %32, align 8
-  %228 = call i64 @forge_string_compare(%ForgeString %227, { ptr, i64 } { ptr @1073, i64 20 })
+  %228 = call i64 @forge_string_compare(%ForgeString %227, { ptr, i64 } { ptr @1075, i64 20 })
   %229 = icmp eq i64 %228, 0
   br i1 %229, label %bb4406, label %bb4407
 
@@ -36533,7 +36551,7 @@ bb4407:                                           ; preds = %bb4405
 
 bb4408:                                           ; preds = %bb4407, %bb4406
   %234 = load %ForgeString, ptr %32, align 8
-  %235 = call i64 @forge_string_compare(%ForgeString %234, { ptr, i64 } { ptr @1074, i64 22 })
+  %235 = call i64 @forge_string_compare(%ForgeString %234, { ptr, i64 } { ptr @1076, i64 22 })
   %236 = icmp eq i64 %235, 0
   br i1 %236, label %bb4409, label %bb4410
 
@@ -36553,7 +36571,7 @@ bb4410:                                           ; preds = %bb4408
 
 bb4411:                                           ; preds = %bb4410, %bb4409
   %241 = load %ForgeString, ptr %32, align 8
-  %242 = call i64 @forge_string_compare(%ForgeString %241, { ptr, i64 } { ptr @1075, i64 19 })
+  %242 = call i64 @forge_string_compare(%ForgeString %241, { ptr, i64 } { ptr @1077, i64 19 })
   %243 = icmp eq i64 %242, 0
   br i1 %243, label %bb4412, label %bb4413
 
@@ -36573,7 +36591,7 @@ bb4413:                                           ; preds = %bb4411
 
 bb4414:                                           ; preds = %bb4413, %bb4412
   %248 = load %ForgeString, ptr %32, align 8
-  %249 = call i64 @forge_string_compare(%ForgeString %248, { ptr, i64 } { ptr @1076, i64 21 })
+  %249 = call i64 @forge_string_compare(%ForgeString %248, { ptr, i64 } { ptr @1078, i64 21 })
   %250 = icmp eq i64 %249, 0
   br i1 %250, label %bb4415, label %bb4416
 
@@ -36590,7 +36608,7 @@ bb4416:                                           ; preds = %bb4414
 
 bb4417:                                           ; preds = %bb4416, %bb4415
   %254 = load %ForgeString, ptr %32, align 8
-  %255 = call i64 @forge_string_compare(%ForgeString %254, { ptr, i64 } { ptr @1077, i64 19 })
+  %255 = call i64 @forge_string_compare(%ForgeString %254, { ptr, i64 } { ptr @1079, i64 19 })
   %256 = icmp eq i64 %255, 0
   br i1 %256, label %bb4418, label %bb4419
 
@@ -36607,7 +36625,7 @@ bb4419:                                           ; preds = %bb4417
 
 bb4420:                                           ; preds = %bb4419, %bb4418
   %260 = load %ForgeString, ptr %32, align 8
-  %261 = call i64 @forge_string_compare(%ForgeString %260, { ptr, i64 } { ptr @1078, i64 20 })
+  %261 = call i64 @forge_string_compare(%ForgeString %260, { ptr, i64 } { ptr @1080, i64 20 })
   %262 = icmp eq i64 %261, 0
   br i1 %262, label %bb4421, label %bb4422
 
@@ -36624,7 +36642,7 @@ bb4422:                                           ; preds = %bb4420
 
 bb4423:                                           ; preds = %bb4422, %bb4421
   %266 = load %ForgeString, ptr %32, align 8
-  %267 = call i64 @forge_string_compare(%ForgeString %266, { ptr, i64 } { ptr @1079, i64 15 })
+  %267 = call i64 @forge_string_compare(%ForgeString %266, { ptr, i64 } { ptr @1081, i64 15 })
   %268 = icmp eq i64 %267, 0
   br i1 %268, label %bb4424, label %bb4425
 
@@ -36641,7 +36659,7 @@ bb4425:                                           ; preds = %bb4423
 
 bb4426:                                           ; preds = %bb4425, %bb4424
   %272 = load %ForgeString, ptr %32, align 8
-  %273 = call i64 @forge_string_compare(%ForgeString %272, { ptr, i64 } { ptr @1080, i64 20 })
+  %273 = call i64 @forge_string_compare(%ForgeString %272, { ptr, i64 } { ptr @1082, i64 20 })
   %274 = icmp eq i64 %273, 0
   br i1 %274, label %bb4427, label %bb4428
 
@@ -36694,7 +36712,7 @@ bb4434:                                           ; preds = %bb4430
 
 bb4435:                                           ; preds = %bb4434, %bb4438
   %293 = load %ForgeString, ptr %10, align 8
-  %294 = call i64 @forge_string_compare(%ForgeString %293, { ptr, i64 } { ptr @1081, i64 6 })
+  %294 = call i64 @forge_string_compare(%ForgeString %293, { ptr, i64 } { ptr @1083, i64 6 })
   %295 = icmp eq i64 %294, 0
   br i1 %295, label %bb4439, label %bb4440
 
@@ -36744,7 +36762,7 @@ bb4442:                                           ; preds = %bb4440
 
 bb4443:                                           ; preds = %bb4440
   %310 = load %ForgeString, ptr %10, align 8
-  %311 = call i64 @forge_string_compare(%ForgeString %310, { ptr, i64 } { ptr @1082, i64 0 })
+  %311 = call i64 @forge_string_compare(%ForgeString %310, { ptr, i64 } { ptr @1084, i64 0 })
   %312 = icmp ne i64 %311, 0
   br i1 %312, label %bb4463, label %bb4464
 
@@ -36902,7 +36920,7 @@ bb4471:                                           ; preds = %bb4470, %bb4469
   %357 = load i64, ptr %26, align 4
   %358 = load %ForgeString, ptr %33, align 8
   %359 = call i64 @forge_string_length(%ForgeString %358)
-  %360 = call ptr @forge_llvm_build_call(ptr %354, i64 %355, i64 %356, i64 %357, i64 %359, ptr @1083)
+  %360 = call ptr @forge_llvm_build_call(ptr %354, i64 %355, i64 %356, i64 %357, i64 %359, ptr @1085)
   store ptr %360, ptr %4, align 8
   %361 = load i64, ptr %26, align 4
   %362 = call ptr @forge_llvm_value_array_free(i64 %361)
@@ -36911,10 +36929,10 @@ bb4471:                                           ; preds = %bb4470, %bb4469
   store i64 0, ptr @CG_LAST_IS_STR, align 4
   %364 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1084, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1086, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %365 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   store i64 0, ptr @CG_LAST_ENUM_TYPE, align 4
-  store { ptr, i64 } { ptr @1085, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
+  store { ptr, i64 } { ptr @1087, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
   %366 = load ptr, ptr @CG_LAST_IS_LIST, align 8
   store i64 0, ptr @CG_LAST_IS_LIST, align 4
   store i64 0, ptr @CG_LAST_IS_LIST, align 4
@@ -37080,7 +37098,7 @@ bb4495:
   %14 = load i64, ptr %3, align 4
   %15 = load ptr, ptr @CG_RT_I2S, align 8
   %16 = load i64, ptr %4, align 4
-  %17 = call ptr @forge_llvm_build_call(ptr %13, i64 %14, ptr %15, i64 %16, i64 1, ptr @1086)
+  %17 = call ptr @forge_llvm_build_call(ptr %13, i64 %14, ptr %15, i64 %16, i64 1, ptr @1088)
   store ptr %17, ptr %2, align 8
   %18 = load i64, ptr %4, align 4
   %19 = call ptr @forge_llvm_value_array_free(i64 %18)
@@ -37109,7 +37127,7 @@ bb4496:
   %13 = load i64, ptr %2, align 4
   %14 = load ptr, ptr @CG_RT_PRINTLN, align 8
   %15 = load i64, ptr %3, align 4
-  %16 = call ptr @forge_llvm_build_call(ptr %12, i64 %13, ptr %14, i64 %15, i64 1, ptr @1087)
+  %16 = call ptr @forge_llvm_build_call(ptr %12, i64 %13, ptr %14, i64 %15, i64 1, ptr @1089)
   %17 = load i64, ptr %3, align 4
   %18 = call ptr @forge_llvm_value_array_free(i64 %17)
   %19 = ptrtoint ptr %18 to i64
@@ -37134,10 +37152,10 @@ bb4497:
   store i64 0, ptr @CG_IS_MAP_INDEX, align 4
   %7 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   store i64 0, ptr @CG_LAST_ENUM_TYPE, align 4
-  store { ptr, i64 } { ptr @1088, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
+  store { ptr, i64 } { ptr @1090, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
   %8 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1089, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1091, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %9 = load %ForgeString, ptr %2, align 8
   %10 = extractvalue %ForgeString %9, 0
   %11 = ptrtoint ptr %10 to i64
@@ -37448,10 +37466,10 @@ bb4531:                                           ; preds = %bb4530
   store ptr %41, ptr %15, align 8
   %43 = load %ForgeString, ptr @CG_STR_LOCALS_CSV, align 8
   %44 = load %ForgeString, ptr @CG_STR_LOCALS_CSV, align 8
-  %45 = call %ForgeString @forge_string_concat(%ForgeString %44, { ptr, i64 } { ptr @1090, i64 1 })
+  %45 = call %ForgeString @forge_string_concat(%ForgeString %44, { ptr, i64 } { ptr @1092, i64 1 })
   %46 = load %ForgeString, ptr %19, align 8
   %47 = call %ForgeString @forge_string_concat(%ForgeString %45, %ForgeString %46)
-  %48 = call %ForgeString @forge_string_concat(%ForgeString %47, { ptr, i64 } { ptr @1091, i64 1 })
+  %48 = call %ForgeString @forge_string_concat(%ForgeString %47, { ptr, i64 } { ptr @1093, i64 1 })
   %49 = extractvalue %ForgeString %48, 0
   store %ForgeString %48, ptr @CG_STR_LOCALS_CSV, align 8
   store %ForgeString %48, ptr @CG_STR_LOCALS_CSV, align 8
@@ -37478,7 +37496,7 @@ bb4535:                                           ; preds = %bb4533
 
 bb4536:                                           ; preds = %bb4535, %bb4539
   %56 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
-  %57 = call i64 @forge_string_compare(ptr %56, { ptr, i64 } { ptr @1092, i64 0 })
+  %57 = call i64 @forge_string_compare(ptr %56, { ptr, i64 } { ptr @1094, i64 0 })
   %58 = icmp ne i64 %57, 0
   br i1 %58, label %bb4540, label %bb4541
 
@@ -37515,7 +37533,7 @@ bb4541:                                           ; preds = %bb4536
 
 bb4542:                                           ; preds = %bb4541, %bb4545
   %70 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
-  %71 = call i64 @forge_string_compare(ptr %70, { ptr, i64 } { ptr @1093, i64 0 })
+  %71 = call i64 @forge_string_compare(ptr %70, { ptr, i64 } { ptr @1095, i64 0 })
   %72 = icmp ne i64 %71, 0
   br i1 %72, label %bb4546, label %bb4547
 
@@ -37841,7 +37859,7 @@ bb4586:
   store %Expr %1, ptr %33, align 8
   %34 = alloca %ForgeString, align 8
   store %ForgeString %2, ptr %34, align 8
-  store { ptr, i64 } { ptr @1094, i64 0 }, ptr %32, align 8
+  store { ptr, i64 } { ptr @1096, i64 0 }, ptr %32, align 8
   %35 = load %ForgeString, ptr %33, align 8
   %36 = extractvalue %ForgeString %35, 0
   %37 = ptrtoint ptr %36 to i64
@@ -37854,7 +37872,7 @@ bb4586:
 bb4587:                                           ; preds = %bb4588
   %42 = load i64, ptr %38, align 4
   %43 = load %ForgeString, ptr %32, align 8
-  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1097, i64 0 })
+  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1099, i64 0 })
   %45 = icmp eq i64 %44, 0
   br i1 %45, label %bb4596, label %bb4597
 
@@ -37872,7 +37890,7 @@ bb4589:                                           ; preds = %bb4586
   %51 = call ptr @Codegen__emit_expr(ptr %0, %ForgeString %50)
   store ptr %51, ptr %31, align 8
   %52 = load %ForgeString, ptr %34, align 8
-  %53 = call i64 @forge_string_compare(%ForgeString %52, { ptr, i64 } { ptr @1095, i64 6 })
+  %53 = call i64 @forge_string_compare(%ForgeString %52, { ptr, i64 } { ptr @1097, i64 6 })
   %54 = icmp eq i64 %53, 0
   br i1 %54, label %bb4590, label %bb4591
 
@@ -37903,7 +37921,7 @@ bb4593:                                           ; preds = %bb4590
   %67 = load i64, ptr %29, align 4
   %68 = load ptr, ptr @CG_RT_SLEN, align 8
   %69 = load i64, ptr %30, align 4
-  %70 = call ptr @forge_llvm_build_call(ptr %66, i64 %67, ptr %68, i64 %69, i64 1, ptr @1096)
+  %70 = call ptr @forge_llvm_build_call(ptr %66, i64 %67, ptr %68, i64 %69, i64 1, ptr @1098)
   store ptr %70, ptr %28, align 8
   %71 = load i64, ptr %30, align 4
   %72 = call ptr @forge_llvm_value_array_free(i64 %71)
@@ -37930,7 +37948,7 @@ bb4597:                                           ; preds = %bb4587
 
 bb4598:                                           ; preds = %bb4597
   %78 = load %ForgeString, ptr %32, align 8
-  %79 = call %ForgeString @forge_string_concat(%ForgeString %78, { ptr, i64 } { ptr @1098, i64 1 })
+  %79 = call %ForgeString @forge_string_concat(%ForgeString %78, { ptr, i64 } { ptr @1100, i64 1 })
   %80 = load %ForgeString, ptr %34, align 8
   %81 = call %ForgeString @forge_string_concat(%ForgeString %79, %ForgeString %80)
   %82 = call i64 @match_enum_tag(%ForgeString %81)
@@ -37958,7 +37976,7 @@ bb4600:                                           ; preds = %bb4598
 
 bb4601:                                           ; preds = %bb4600
   %93 = load %ForgeString, ptr %34, align 8
-  %94 = call i64 @forge_string_compare(%ForgeString %93, { ptr, i64 } { ptr @1100, i64 6 })
+  %94 = call i64 @forge_string_compare(%ForgeString %93, { ptr, i64 } { ptr @1102, i64 6 })
   %95 = icmp eq i64 %94, 0
   br i1 %95, label %bb4608, label %bb4609
 
@@ -38012,7 +38030,7 @@ bb4607:                                           ; preds = %bb4606, %bb4605
   %121 = load ptr, ptr @CG_I64, align 8
   %122 = load i64, ptr %27, align 4
   %123 = call ptr @forge_llvm_const_int(ptr %121, i64 %122, i64 0)
-  %124 = call ptr @forge_llvm_build_insert_value(ptr %119, i64 %120, ptr %123, i64 0, ptr @1099)
+  %124 = call ptr @forge_llvm_build_insert_value(ptr %119, i64 %120, ptr %123, i64 0, ptr @1101)
   %125 = ptrtoint ptr %124 to i64
   store i64 %125, ptr %24, align 4
   store ptr %124, ptr %24, align 8
@@ -38037,7 +38055,7 @@ bb4608:                                           ; preds = %bb4601
   %138 = load i64, ptr %21, align 4
   %139 = load ptr, ptr @CG_RT_SLEN, align 8
   %140 = load i64, ptr %22, align 4
-  %141 = call ptr @forge_llvm_build_call(ptr %137, i64 %138, ptr %139, i64 %140, i64 1, ptr @1101)
+  %141 = call ptr @forge_llvm_build_call(ptr %137, i64 %138, ptr %139, i64 %140, i64 1, ptr @1103)
   store ptr %141, ptr %20, align 8
   %142 = load i64, ptr %22, align 4
   %143 = call ptr @forge_llvm_value_array_free(i64 %142)
@@ -38055,7 +38073,7 @@ bb4610:                                           ; preds = %bb4609
   %147 = call %ForgeString @var_struct_type(%ForgeString %146)
   store %ForgeString %147, ptr %19, align 8
   %148 = load %ForgeString, ptr %19, align 8
-  %149 = call i64 @forge_string_compare(%ForgeString %148, { ptr, i64 } { ptr @1102, i64 0 })
+  %149 = call i64 @forge_string_compare(%ForgeString %148, { ptr, i64 } { ptr @1104, i64 0 })
   %150 = icmp eq i64 %149, 0
   br i1 %150, label %bb4611, label %bb4612
 
@@ -38101,10 +38119,10 @@ bb4616:                                           ; preds = %bb4615
   store ptr %171, ptr %16, align 8
   %172 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1103, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1105, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %173 = load ptr, ptr @CG_LAST_LIST_ELEM_TYPE, align 8
   store i64 0, ptr @CG_LAST_LIST_ELEM_TYPE, align 4
-  store { ptr, i64 } { ptr @1104, i64 0 }, ptr @CG_LAST_LIST_ELEM_TYPE, align 8
+  store { ptr, i64 } { ptr @1106, i64 0 }, ptr @CG_LAST_LIST_ELEM_TYPE, align 8
   store i64 0, ptr %15, align 4
   br label %bb4617
 
@@ -38129,32 +38147,32 @@ bb4619:                                           ; preds = %bb4617
 
 bb4620:                                           ; preds = %bb4618
   %184 = load %ForgeString, ptr %34, align 8
-  %185 = call i64 @forge_string_index_of(%ForgeString %184, { ptr, i64 } { ptr @1105, i64 10 })
+  %185 = call i64 @forge_string_index_of(%ForgeString %184, { ptr, i64 } { ptr @1107, i64 10 })
   %186 = icmp sge i64 %185, 0
   %187 = zext i1 %186 to i64
   store i64 %187, ptr %14, align 4
   %188 = load %ForgeString, ptr %34, align 8
-  %189 = call i64 @forge_string_index_of(%ForgeString %188, { ptr, i64 } { ptr @1106, i64 6 })
+  %189 = call i64 @forge_string_index_of(%ForgeString %188, { ptr, i64 } { ptr @1108, i64 6 })
   %190 = icmp sge i64 %189, 0
   %191 = zext i1 %190 to i64
   store i64 %191, ptr %13, align 4
   %192 = load %ForgeString, ptr %34, align 8
-  %193 = call i64 @forge_string_index_of(%ForgeString %192, { ptr, i64 } { ptr @1107, i64 6 })
+  %193 = call i64 @forge_string_index_of(%ForgeString %192, { ptr, i64 } { ptr @1109, i64 6 })
   %194 = icmp sge i64 %193, 0
   %195 = zext i1 %194 to i64
   store i64 %195, ptr %12, align 4
   %196 = load %ForgeString, ptr %34, align 8
-  %197 = call i64 @forge_string_index_of(%ForgeString %196, { ptr, i64 } { ptr @1108, i64 11 })
+  %197 = call i64 @forge_string_index_of(%ForgeString %196, { ptr, i64 } { ptr @1110, i64 11 })
   %198 = icmp sge i64 %197, 0
   %199 = zext i1 %198 to i64
   store i64 %199, ptr %11, align 4
   %200 = load %ForgeString, ptr %34, align 8
-  %201 = call i64 @forge_string_index_of(%ForgeString %200, { ptr, i64 } { ptr @1109, i64 6 })
+  %201 = call i64 @forge_string_index_of(%ForgeString %200, { ptr, i64 } { ptr @1111, i64 6 })
   %202 = icmp sge i64 %201, 0
   %203 = zext i1 %202 to i64
   store i64 %203, ptr %10, align 4
   %204 = load %ForgeString, ptr %34, align 8
-  %205 = call i64 @forge_string_index_of(%ForgeString %204, { ptr, i64 } { ptr @1110, i64 4 })
+  %205 = call i64 @forge_string_index_of(%ForgeString %204, { ptr, i64 } { ptr @1112, i64 4 })
   %206 = icmp sge i64 %205, 0
   %207 = zext i1 %206 to i64
   store i64 %207, ptr %9, align 4
@@ -38216,7 +38234,7 @@ bb4626:                                           ; preds = %bb4625
   %236 = load i64, ptr %15, align 4
   store i64 0, ptr %7, align 4
   store i64 0, ptr %6, align 4
-  store { ptr, i64 } { ptr @1111, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1113, i64 0 }, ptr %5, align 8
   store i64 0, ptr %4, align 4
   br label %bb4629
 
@@ -38239,7 +38257,7 @@ bb4630:                                           ; preds = %bb4629
   %243 = call %ForgeString @forge_string_char_at(i64 %241, i64 %242)
   store %ForgeString %243, ptr %3, align 8
   %244 = load %ForgeString, ptr %3, align 8
-  %245 = call i64 @forge_string_compare(%ForgeString %244, { ptr, i64 } { ptr @1112, i64 1 })
+  %245 = call i64 @forge_string_compare(%ForgeString %244, { ptr, i64 } { ptr @1114, i64 1 })
   %246 = icmp eq i64 %245, 0
   br i1 %246, label %bb4632, label %bb4633
 
@@ -38289,14 +38307,14 @@ bb4637:                                           ; preds = %bb4636, %bb4640
   store i64 %266, ptr %6, align 4
   store i64 %266, ptr %6, align 4
   %267 = load %ForgeString, ptr %5, align 8
-  store { ptr, i64 } { ptr @1118, i64 0 }, ptr %5, align 8
-  store { ptr, i64 } { ptr @1118, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1120, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1120, i64 0 }, ptr %5, align 8
   br label %bb4634
 
 bb4638:                                           ; preds = %bb4635
   %268 = load %ForgeString, ptr %5, align 8
   %269 = call %ForgeString @forge_string_char_at(%ForgeString %268, i64 0)
-  %270 = call i64 @forge_string_compare(%ForgeString %269, { ptr, i64 } { ptr @1113, i64 1 })
+  %270 = call i64 @forge_string_compare(%ForgeString %269, { ptr, i64 } { ptr @1115, i64 1 })
   %271 = icmp eq i64 %270, 0
   br i1 %271, label %bb4641, label %bb4642
 
@@ -38309,7 +38327,7 @@ bb4640:                                           ; preds = %bb4639, %bb4643
 bb4641:                                           ; preds = %bb4638
   %272 = load %ForgeString, ptr %5, align 8
   %273 = call %ForgeString @forge_string_char_at(%ForgeString %272, i64 1)
-  %274 = call i64 @forge_string_compare(%ForgeString %273, { ptr, i64 } { ptr @1114, i64 1 })
+  %274 = call i64 @forge_string_compare(%ForgeString %273, { ptr, i64 } { ptr @1116, i64 1 })
   %275 = icmp eq i64 %274, 0
   br i1 %275, label %bb4644, label %bb4645
 
@@ -38322,7 +38340,7 @@ bb4643:                                           ; preds = %bb4642, %bb4646
 bb4644:                                           ; preds = %bb4641
   %276 = load %ForgeString, ptr %5, align 8
   %277 = call %ForgeString @forge_string_char_at(%ForgeString %276, i64 2)
-  %278 = call i64 @forge_string_compare(%ForgeString %277, { ptr, i64 } { ptr @1115, i64 1 })
+  %278 = call i64 @forge_string_compare(%ForgeString %277, { ptr, i64 } { ptr @1117, i64 1 })
   %279 = icmp eq i64 %278, 0
   br i1 %279, label %bb4647, label %bb4648
 
@@ -38335,7 +38353,7 @@ bb4646:                                           ; preds = %bb4645, %bb4649
 bb4647:                                           ; preds = %bb4644
   %280 = load %ForgeString, ptr %5, align 8
   %281 = call %ForgeString @forge_string_char_at(%ForgeString %280, i64 3)
-  %282 = call i64 @forge_string_compare(%ForgeString %281, { ptr, i64 } { ptr @1116, i64 1 })
+  %282 = call i64 @forge_string_compare(%ForgeString %281, { ptr, i64 } { ptr @1118, i64 1 })
   %283 = icmp eq i64 %282, 0
   br i1 %283, label %bb4650, label %bb4651
 
@@ -38348,7 +38366,7 @@ bb4649:                                           ; preds = %bb4648, %bb4652
 bb4650:                                           ; preds = %bb4647
   %284 = load %ForgeString, ptr %5, align 8
   %285 = call %ForgeString @forge_string_char_at(%ForgeString %284, i64 4)
-  %286 = call i64 @forge_string_compare(%ForgeString %285, { ptr, i64 } { ptr @1117, i64 1 })
+  %286 = call i64 @forge_string_compare(%ForgeString %285, { ptr, i64 } { ptr @1119, i64 1 })
   %287 = icmp eq i64 %286, 0
   br i1 %287, label %bb4653, label %bb4654
 
@@ -38389,7 +38407,7 @@ bb4658:                                           ; preds = %bb4657, %bb4661
 bb4659:                                           ; preds = %bb4656
   %296 = load %ForgeString, ptr %5, align 8
   %297 = call %ForgeString @forge_string_char_at(%ForgeString %296, i64 0)
-  %298 = call i64 @forge_string_compare(%ForgeString %297, { ptr, i64 } { ptr @1119, i64 1 })
+  %298 = call i64 @forge_string_compare(%ForgeString %297, { ptr, i64 } { ptr @1121, i64 1 })
   %299 = icmp eq i64 %298, 0
   br i1 %299, label %bb4662, label %bb4663
 
@@ -38402,7 +38420,7 @@ bb4661:                                           ; preds = %bb4660, %bb4664
 bb4662:                                           ; preds = %bb4659
   %300 = load %ForgeString, ptr %5, align 8
   %301 = call %ForgeString @forge_string_char_at(%ForgeString %300, i64 1)
-  %302 = call i64 @forge_string_compare(%ForgeString %301, { ptr, i64 } { ptr @1120, i64 1 })
+  %302 = call i64 @forge_string_compare(%ForgeString %301, { ptr, i64 } { ptr @1122, i64 1 })
   %303 = icmp eq i64 %302, 0
   br i1 %303, label %bb4665, label %bb4666
 
@@ -38415,7 +38433,7 @@ bb4664:                                           ; preds = %bb4663, %bb4667
 bb4665:                                           ; preds = %bb4662
   %304 = load %ForgeString, ptr %5, align 8
   %305 = call %ForgeString @forge_string_char_at(%ForgeString %304, i64 2)
-  %306 = call i64 @forge_string_compare(%ForgeString %305, { ptr, i64 } { ptr @1121, i64 1 })
+  %306 = call i64 @forge_string_compare(%ForgeString %305, { ptr, i64 } { ptr @1123, i64 1 })
   %307 = icmp eq i64 %306, 0
   br i1 %307, label %bb4668, label %bb4669
 
@@ -38428,7 +38446,7 @@ bb4667:                                           ; preds = %bb4666, %bb4670
 bb4668:                                           ; preds = %bb4665
   %308 = load %ForgeString, ptr %5, align 8
   %309 = call %ForgeString @forge_string_char_at(%ForgeString %308, i64 3)
-  %310 = call i64 @forge_string_compare(%ForgeString %309, { ptr, i64 } { ptr @1122, i64 1 })
+  %310 = call i64 @forge_string_compare(%ForgeString %309, { ptr, i64 } { ptr @1124, i64 1 })
   %311 = icmp eq i64 %310, 0
   br i1 %311, label %bb4671, label %bb4672
 
@@ -38441,7 +38459,7 @@ bb4670:                                           ; preds = %bb4669, %bb4673
 bb4671:                                           ; preds = %bb4668
   %312 = load %ForgeString, ptr %5, align 8
   %313 = call %ForgeString @forge_string_char_at(%ForgeString %312, i64 4)
-  %314 = call i64 @forge_string_compare(%ForgeString %313, { ptr, i64 } { ptr @1123, i64 1 })
+  %314 = call i64 @forge_string_compare(%ForgeString %313, { ptr, i64 } { ptr @1125, i64 1 })
   %315 = icmp eq i64 %314, 0
   br i1 %315, label %bb4674, label %bb4675
 
@@ -38484,7 +38502,7 @@ bb4677:
   %13 = alloca %ForgeString, align 8
   store %ForgeString %1, ptr %13, align 8
   %14 = load %ForgeString, ptr %13, align 8
-  %15 = call i64 @forge_string_index_of(%ForgeString %14, { ptr, i64 } { ptr @1124, i64 1 })
+  %15 = call i64 @forge_string_index_of(%ForgeString %14, { ptr, i64 } { ptr @1126, i64 1 })
   store i64 %15, ptr %12, align 4
   %16 = load i64, ptr %12, align 4
   %17 = icmp slt i64 %16, 0
@@ -38492,7 +38510,7 @@ bb4677:
 
 bb4678:                                           ; preds = %bb4677
   %18 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1125, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1127, i64 0 }, ptr %18, align 8
   %19 = load %ForgeString, ptr %18, align 8
   ret %ForgeString %19
 
@@ -38528,10 +38546,10 @@ bb4682:                                           ; preds = %bb4680
   br label %bb4683
 
 bb4683:                                           ; preds = %bb4682
-  store { ptr, i64 } { ptr @1126, i64 220 }, ptr %8, align 8
+  store { ptr, i64 } { ptr @1128, i64 220 }, ptr %8, align 8
   %36 = load %ForgeString, ptr %10, align 8
-  %37 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1127, i64 1 }, %ForgeString %36)
-  %38 = call %ForgeString @forge_string_concat(%ForgeString %37, { ptr, i64 } { ptr @1128, i64 1 })
+  %37 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1129, i64 1 }, %ForgeString %36)
+  %38 = call %ForgeString @forge_string_concat(%ForgeString %37, { ptr, i64 } { ptr @1130, i64 1 })
   store %ForgeString %38, ptr %7, align 8
   %39 = load %ForgeString, ptr %8, align 8
   %40 = load %ForgeString, ptr %7, align 8
@@ -38543,7 +38561,7 @@ bb4683:                                           ; preds = %bb4682
 
 bb4684:                                           ; preds = %bb4683
   %44 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1129, i64 0 }, ptr %44, align 8
+  store { ptr, i64 } { ptr @1131, i64 0 }, ptr %44, align 8
   %45 = load %ForgeString, ptr %44, align 8
   ret %ForgeString %45
 
@@ -38563,7 +38581,7 @@ bb4686:                                           ; preds = %bb4685
   %54 = call %ForgeString @forge_string_substring(%ForgeString %50, i64 %51, i64 %53)
   store %ForgeString %54, ptr %4, align 8
   %55 = load %ForgeString, ptr %4, align 8
-  %56 = call i64 @forge_string_index_of(%ForgeString %55, { ptr, i64 } { ptr @1130, i64 1 })
+  %56 = call i64 @forge_string_index_of(%ForgeString %55, { ptr, i64 } { ptr @1132, i64 1 })
   store i64 %56, ptr %3, align 4
   %57 = load i64, ptr %3, align 4
   %58 = icmp slt i64 %57, 0
@@ -38600,10 +38618,10 @@ bb4690:
   %8 = alloca %ForgeString, align 8
   %9 = alloca %ForgeString, align 8
   store %ForgeString %1, ptr %9, align 8
-  store { ptr, i64 } { ptr @1131, i64 131 }, ptr %8, align 8
+  store { ptr, i64 } { ptr @1133, i64 131 }, ptr %8, align 8
   %10 = load %ForgeString, ptr %9, align 8
-  %11 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1132, i64 1 }, %ForgeString %10)
-  %12 = call %ForgeString @forge_string_concat(%ForgeString %11, { ptr, i64 } { ptr @1133, i64 1 })
+  %11 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1134, i64 1 }, %ForgeString %10)
+  %12 = call %ForgeString @forge_string_concat(%ForgeString %11, { ptr, i64 } { ptr @1135, i64 1 })
   store %ForgeString %12, ptr %7, align 8
   %13 = load %ForgeString, ptr %8, align 8
   %14 = load %ForgeString, ptr %7, align 8
@@ -38615,7 +38633,7 @@ bb4690:
 
 bb4691:                                           ; preds = %bb4690
   %18 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1134, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1136, i64 0 }, ptr %18, align 8
   %19 = load %ForgeString, ptr %18, align 8
   ret %ForgeString %19
 
@@ -38635,7 +38653,7 @@ bb4693:                                           ; preds = %bb4692
   %28 = call %ForgeString @forge_string_substring(%ForgeString %24, i64 %25, i64 %27)
   store %ForgeString %28, ptr %4, align 8
   %29 = load %ForgeString, ptr %4, align 8
-  %30 = call i64 @forge_string_index_of(%ForgeString %29, { ptr, i64 } { ptr @1135, i64 1 })
+  %30 = call i64 @forge_string_index_of(%ForgeString %29, { ptr, i64 } { ptr @1137, i64 1 })
   store i64 %30, ptr %3, align 4
   %31 = load i64, ptr %3, align 4
   %32 = icmp slt i64 %31, 0
@@ -38675,7 +38693,7 @@ bb4697:
   %10 = call %ForgeString @forge_string_substring(%ForgeString %6, i64 %7, i64 %9)
   store %ForgeString %10, ptr %3, align 8
   %11 = load %ForgeString, ptr %3, align 8
-  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1136, i64 1 })
+  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1138, i64 1 })
   %13 = icmp eq i64 %12, 0
   br i1 %13, label %bb4698, label %bb4699
 
@@ -38703,7 +38721,7 @@ bb4701:
   %10 = call %ForgeString @forge_string_substring(%ForgeString %6, i64 %7, i64 %9)
   store %ForgeString %10, ptr %3, align 8
   %11 = load %ForgeString, ptr %3, align 8
-  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1137, i64 1 })
+  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1139, i64 1 })
   %13 = icmp eq i64 %12, 0
   br i1 %13, label %bb4702, label %bb4703
 
@@ -38715,7 +38733,7 @@ bb4703:                                           ; preds = %bb4701
 
 bb4704:                                           ; preds = %bb4703
   %14 = load %ForgeString, ptr %3, align 8
-  %15 = call i64 @forge_string_compare(%ForgeString %14, { ptr, i64 } { ptr @1138, i64 1 })
+  %15 = call i64 @forge_string_compare(%ForgeString %14, { ptr, i64 } { ptr @1140, i64 1 })
   %16 = icmp eq i64 %15, 0
   br i1 %16, label %bb4705, label %bb4706
 
@@ -38727,7 +38745,7 @@ bb4706:                                           ; preds = %bb4704
 
 bb4707:                                           ; preds = %bb4706
   %17 = load %ForgeString, ptr %3, align 8
-  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1139, i64 1 })
+  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1141, i64 1 })
   %19 = icmp eq i64 %18, 0
   br i1 %19, label %bb4708, label %bb4709
 
@@ -38806,7 +38824,7 @@ bb4715:
   %31 = call %ForgeString @Parser__expect_ident(ptr %25)
   store %ForgeString %31, ptr %23, align 8
   %32 = load %ForgeString, ptr %23, align 8
-  %33 = call i64 @forge_string_compare(%ForgeString %32, { ptr, i64 } { ptr @1140, i64 0 })
+  %33 = call i64 @forge_string_compare(%ForgeString %32, { ptr, i64 } { ptr @1142, i64 0 })
   %34 = icmp eq i64 %33, 0
   br i1 %34, label %bb4716, label %bb4717
 
@@ -38822,7 +38840,7 @@ bb4718:                                           ; preds = %bb4717
   %37 = load %ForgeString, ptr %23, align 8
   %38 = call i64 @forge_set_last_let_name(%ForgeString %37)
   store i64 0, ptr %22, align 4
-  store { ptr, i64 } { ptr @1141, i64 0 }, ptr %21, align 8
+  store { ptr, i64 } { ptr @1143, i64 0 }, ptr %21, align 8
   store ptr null, ptr %20, align 8
   %39 = load %Parser, ptr %25, align 8
   %40 = call i64 @Parser__check_id(ptr %25, i64 112)
@@ -38840,7 +38858,7 @@ bb4719:                                           ; preds = %bb4718
   %48 = icmp eq i64 %47, 1
   %49 = load %Token, ptr %19, align 8
   %50 = extractvalue %Token %49, 2
-  %51 = call i64 @forge_string_compare(%ForgeString %50, { ptr, i64 } { ptr @1142, i64 4 })
+  %51 = call i64 @forge_string_compare(%ForgeString %50, { ptr, i64 } { ptr @1144, i64 4 })
   %52 = icmp eq i64 %51, 0
   %53 = and i1 %48, %52
   br i1 %53, label %bb4722, label %bb4723
@@ -38936,10 +38954,10 @@ bb4733:                                           ; preds = %bb4732
 
 bb4734:                                           ; preds = %bb4733
   %91 = load %ForgeString, ptr %16, align 8
-  %92 = call i64 @forge_string_compare(%ForgeString %91, { ptr, i64 } { ptr @1143, i64 8 })
+  %92 = call i64 @forge_string_compare(%ForgeString %91, { ptr, i64 } { ptr @1145, i64 8 })
   %93 = icmp eq i64 %92, 0
   %94 = load %ForgeString, ptr %16, align 8
-  %95 = call i64 @forge_string_compare(%ForgeString %94, { ptr, i64 } { ptr @1144, i64 6 })
+  %95 = call i64 @forge_string_compare(%ForgeString %94, { ptr, i64 } { ptr @1146, i64 6 })
   %96 = icmp eq i64 %95, 0
   %97 = or i1 %93, %96
   %98 = load %Token, ptr %17, align 8
@@ -39017,7 +39035,7 @@ bb4742:                                           ; preds = %bb4740
 
 bb4743:                                           ; preds = %bb4736
   %132 = load %ForgeString, ptr %16, align 8
-  %133 = call i64 @forge_string_compare(%ForgeString %132, { ptr, i64 } { ptr @1145, i64 8 })
+  %133 = call i64 @forge_string_compare(%ForgeString %132, { ptr, i64 } { ptr @1147, i64 8 })
   %134 = icmp eq i64 %133, 0
   %135 = load i64, ptr %22, align 4
   %136 = icmp eq i64 %135, 1
@@ -39034,24 +39052,24 @@ bb4745:                                           ; preds = %bb4744
 bb4746:                                           ; preds = %bb4743
   %139 = load %ForgeString, ptr @VAR_LIST_INIT_CSV, align 8
   %140 = load %ForgeString, ptr @VAR_LIST_INIT_CSV, align 8
-  %141 = call %ForgeString @forge_string_concat(%ForgeString %140, { ptr, i64 } { ptr @1146, i64 1 })
+  %141 = call %ForgeString @forge_string_concat(%ForgeString %140, { ptr, i64 } { ptr @1148, i64 1 })
   %142 = load %ForgeString, ptr %23, align 8
   %143 = call %ForgeString @forge_string_concat(%ForgeString %141, %ForgeString %142)
-  %144 = call %ForgeString @forge_string_concat(%ForgeString %143, { ptr, i64 } { ptr @1147, i64 1 })
+  %144 = call %ForgeString @forge_string_concat(%ForgeString %143, { ptr, i64 } { ptr @1149, i64 1 })
   %145 = extractvalue %ForgeString %144, 0
   store %ForgeString %144, ptr @VAR_LIST_INIT_CSV, align 8
   store %ForgeString %144, ptr @VAR_LIST_INIT_CSV, align 8
   %146 = load %ForgeString, ptr @CG_LIST_VAR_CSV, align 8
   %147 = load %ForgeString, ptr @CG_LIST_VAR_CSV, align 8
-  %148 = call %ForgeString @forge_string_concat(%ForgeString %147, { ptr, i64 } { ptr @1148, i64 1 })
+  %148 = call %ForgeString @forge_string_concat(%ForgeString %147, { ptr, i64 } { ptr @1150, i64 1 })
   %149 = load %ForgeString, ptr %23, align 8
   %150 = call %ForgeString @forge_string_concat(%ForgeString %148, %ForgeString %149)
-  %151 = call %ForgeString @forge_string_concat(%ForgeString %150, { ptr, i64 } { ptr @1149, i64 1 })
+  %151 = call %ForgeString @forge_string_concat(%ForgeString %150, { ptr, i64 } { ptr @1151, i64 1 })
   %152 = extractvalue %ForgeString %151, 0
   store %ForgeString %151, ptr @CG_LIST_VAR_CSV, align 8
   store %ForgeString %151, ptr @CG_LIST_VAR_CSV, align 8
   %153 = load %ForgeString, ptr %21, align 8
-  %154 = call i64 @forge_string_compare(%ForgeString %153, { ptr, i64 } { ptr @1150, i64 0 })
+  %154 = call i64 @forge_string_compare(%ForgeString %153, { ptr, i64 } { ptr @1152, i64 0 })
   %155 = icmp ne i64 %154, 0
   br i1 %155, label %bb4749, label %bb4750
 
@@ -39072,13 +39090,13 @@ bb4748:                                           ; preds = %bb4747, %bb4754
 bb4749:                                           ; preds = %bb4746
   %161 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %162 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
-  %163 = call %ForgeString @forge_string_concat(%ForgeString %162, { ptr, i64 } { ptr @1151, i64 1 })
+  %163 = call %ForgeString @forge_string_concat(%ForgeString %162, { ptr, i64 } { ptr @1153, i64 1 })
   %164 = load %ForgeString, ptr %23, align 8
   %165 = call %ForgeString @forge_string_concat(%ForgeString %163, %ForgeString %164)
-  %166 = call %ForgeString @forge_string_concat(%ForgeString %165, { ptr, i64 } { ptr @1152, i64 1 })
+  %166 = call %ForgeString @forge_string_concat(%ForgeString %165, { ptr, i64 } { ptr @1154, i64 1 })
   %167 = load %ForgeString, ptr %21, align 8
   %168 = call %ForgeString @forge_string_concat(%ForgeString %166, %ForgeString %167)
-  %169 = call %ForgeString @forge_string_concat(%ForgeString %168, { ptr, i64 } { ptr @1153, i64 1 })
+  %169 = call %ForgeString @forge_string_concat(%ForgeString %168, { ptr, i64 } { ptr @1155, i64 1 })
   %170 = extractvalue %ForgeString %169, 0
   store %ForgeString %169, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   store %ForgeString %169, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
@@ -39089,10 +39107,10 @@ bb4750:                                           ; preds = %bb4746
 
 bb4751:                                           ; preds = %bb4750, %bb4749
   %171 = load %ForgeString, ptr %21, align 8
-  %172 = call i64 @forge_string_compare(%ForgeString %171, { ptr, i64 } { ptr @1154, i64 6 })
+  %172 = call i64 @forge_string_compare(%ForgeString %171, { ptr, i64 } { ptr @1156, i64 6 })
   %173 = icmp eq i64 %172, 0
   %174 = load %ForgeString, ptr %21, align 8
-  %175 = call i64 @forge_string_compare(%ForgeString %174, { ptr, i64 } { ptr @1155, i64 6 })
+  %175 = call i64 @forge_string_compare(%ForgeString %174, { ptr, i64 } { ptr @1157, i64 6 })
   %176 = icmp eq i64 %175, 0
   %177 = or i1 %173, %176
   br i1 %177, label %bb4752, label %bb4753
@@ -39100,10 +39118,10 @@ bb4751:                                           ; preds = %bb4750, %bb4749
 bb4752:                                           ; preds = %bb4751
   %178 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
   %179 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
-  %180 = call %ForgeString @forge_string_concat(%ForgeString %179, { ptr, i64 } { ptr @1156, i64 1 })
+  %180 = call %ForgeString @forge_string_concat(%ForgeString %179, { ptr, i64 } { ptr @1158, i64 1 })
   %181 = load %ForgeString, ptr %23, align 8
   %182 = call %ForgeString @forge_string_concat(%ForgeString %180, %ForgeString %181)
-  %183 = call %ForgeString @forge_string_concat(%ForgeString %182, { ptr, i64 } { ptr @1157, i64 1 })
+  %183 = call %ForgeString @forge_string_concat(%ForgeString %182, { ptr, i64 } { ptr @1159, i64 1 })
   %184 = extractvalue %ForgeString %183, 0
   store %ForgeString %183, ptr @CG_STR_LIST_VAR_CSV, align 8
   store %ForgeString %183, ptr @CG_STR_LIST_VAR_CSV, align 8
@@ -39134,7 +39152,7 @@ bb4757:                                           ; preds = %bb4756, %bb4793
   store i64 %190, ptr %3, align 4
   %191 = load i64, ptr %3, align 4
   %192 = load %Token, ptr %24, align 8
-  %193 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1183, i64 9 }, { ptr, i64 } { ptr @1184, i64 8 }, i64 %191, %Token %192)
+  %193 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1185, i64 9 }, { ptr, i64 } { ptr @1186, i64 8 }, i64 %191, %Token %192)
   ret %Statement %193
 
 bb4758:                                           ; preds = %bb4755
@@ -39252,7 +39270,7 @@ bb4771:                                           ; preds = %bb4767
 
 bb4772:                                           ; preds = %bb4771, %bb4770
   %244 = load %ForgeString, ptr %16, align 8
-  %245 = call i64 @forge_string_compare(%ForgeString %244, { ptr, i64 } { ptr @1158, i64 8 })
+  %245 = call i64 @forge_string_compare(%ForgeString %244, { ptr, i64 } { ptr @1160, i64 8 })
   %246 = icmp eq i64 %245, 0
   %247 = load i64, ptr %22, align 4
   %248 = icmp eq i64 %247, 1
@@ -39268,17 +39286,17 @@ bb4773:                                           ; preds = %bb4772
   %255 = load %ForgeString, ptr @CG_LIST_VAR_CSV, align 8
   %256 = load %ForgeString, ptr %23, align 8
   %257 = call %ForgeString @forge_int_to_string(%ForgeString %256)
-  %258 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1159, i64 1 }, %ForgeString %257)
-  %259 = call %ForgeString @forge_string_concat(%ForgeString %258, { ptr, i64 } { ptr @1160, i64 1 })
+  %258 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1161, i64 1 }, %ForgeString %257)
+  %259 = call %ForgeString @forge_string_concat(%ForgeString %258, { ptr, i64 } { ptr @1162, i64 1 })
   %260 = call %ForgeString @forge_string_concat(%ForgeString %255, %ForgeString %259)
   %261 = extractvalue %ForgeString %260, 0
   store %ForgeString %260, ptr @CG_LIST_VAR_CSV, align 8
   store %ForgeString %260, ptr @CG_LIST_VAR_CSV, align 8
   %262 = load %ForgeString, ptr %21, align 8
-  %263 = call i64 @forge_string_compare(%ForgeString %262, { ptr, i64 } { ptr @1161, i64 6 })
+  %263 = call i64 @forge_string_compare(%ForgeString %262, { ptr, i64 } { ptr @1163, i64 6 })
   %264 = icmp eq i64 %263, 0
   %265 = load %ForgeString, ptr %21, align 8
-  %266 = call i64 @forge_string_compare(%ForgeString %265, { ptr, i64 } { ptr @1162, i64 6 })
+  %266 = call i64 @forge_string_compare(%ForgeString %265, { ptr, i64 } { ptr @1164, i64 6 })
   %267 = icmp eq i64 %266, 0
   %268 = or i1 %264, %267
   %269 = load ptr, ptr @CG_LAST_LIST_ELEM_IS_STR, align 8
@@ -39296,7 +39314,7 @@ bb4774:                                           ; preds = %bb4772
 
 bb4775:                                           ; preds = %bb4774, %bb4778
   %276 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
-  %277 = call i64 @forge_string_compare(ptr %276, { ptr, i64 } { ptr @1173, i64 0 })
+  %277 = call i64 @forge_string_compare(ptr %276, { ptr, i64 } { ptr @1175, i64 0 })
   %278 = icmp ne i64 %277, 0
   br i1 %278, label %bb4782, label %bb4783
 
@@ -39305,8 +39323,8 @@ bb4776:                                           ; preds = %bb4773
   %280 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
   %281 = load %ForgeString, ptr %23, align 8
   %282 = call %ForgeString @forge_int_to_string(%ForgeString %281)
-  %283 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1163, i64 1 }, %ForgeString %282)
-  %284 = call %ForgeString @forge_string_concat(%ForgeString %283, { ptr, i64 } { ptr @1164, i64 1 })
+  %283 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1165, i64 1 }, %ForgeString %282)
+  %284 = call %ForgeString @forge_string_concat(%ForgeString %283, { ptr, i64 } { ptr @1166, i64 1 })
   %285 = call %ForgeString @forge_string_concat(%ForgeString %280, %ForgeString %284)
   %286 = extractvalue %ForgeString %285, 0
   store %ForgeString %285, ptr @CG_STR_LIST_VAR_CSV, align 8
@@ -39315,8 +39333,8 @@ bb4776:                                           ; preds = %bb4773
   %288 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %289 = load %ForgeString, ptr %23, align 8
   %290 = call %ForgeString @forge_int_to_string(%ForgeString %289)
-  %291 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1165, i64 1 }, %ForgeString %290)
-  %292 = call %ForgeString @forge_string_concat(%ForgeString %291, { ptr, i64 } { ptr @1166, i64 8 })
+  %291 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1167, i64 1 }, %ForgeString %290)
+  %292 = call %ForgeString @forge_string_concat(%ForgeString %291, { ptr, i64 } { ptr @1168, i64 8 })
   %293 = call %ForgeString @forge_string_concat(%ForgeString %288, %ForgeString %292)
   %294 = extractvalue %ForgeString %293, 0
   store %ForgeString %293, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
@@ -39325,7 +39343,7 @@ bb4776:                                           ; preds = %bb4773
 
 bb4777:                                           ; preds = %bb4773
   %295 = load %ForgeString, ptr %21, align 8
-  %296 = call i64 @forge_string_compare(%ForgeString %295, { ptr, i64 } { ptr @1167, i64 0 })
+  %296 = call i64 @forge_string_compare(%ForgeString %295, { ptr, i64 } { ptr @1169, i64 0 })
   %297 = icmp ne i64 %296, 0
   br i1 %297, label %bb4779, label %bb4780
 
@@ -39343,12 +39361,12 @@ bb4779:                                           ; preds = %bb4777
   %301 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %302 = load %ForgeString, ptr %23, align 8
   %303 = call %ForgeString @forge_int_to_string(%ForgeString %302)
-  %304 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1168, i64 1 }, %ForgeString %303)
-  %305 = call %ForgeString @forge_string_concat(%ForgeString %304, { ptr, i64 } { ptr @1169, i64 1 })
+  %304 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1170, i64 1 }, %ForgeString %303)
+  %305 = call %ForgeString @forge_string_concat(%ForgeString %304, { ptr, i64 } { ptr @1171, i64 1 })
   %306 = load %ForgeString, ptr %21, align 8
   %307 = call %ForgeString @forge_int_to_string(%ForgeString %306)
   %308 = call %ForgeString @forge_string_concat(%ForgeString %305, %ForgeString %307)
-  %309 = call %ForgeString @forge_string_concat(%ForgeString %308, { ptr, i64 } { ptr @1170, i64 1 })
+  %309 = call %ForgeString @forge_string_concat(%ForgeString %308, { ptr, i64 } { ptr @1172, i64 1 })
   %310 = call %ForgeString @forge_string_concat(%ForgeString %301, %ForgeString %309)
   %311 = extractvalue %ForgeString %310, 0
   store %ForgeString %310, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
@@ -39360,8 +39378,8 @@ bb4780:                                           ; preds = %bb4777
   %313 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %314 = load %ForgeString, ptr %23, align 8
   %315 = call %ForgeString @forge_int_to_string(%ForgeString %314)
-  %316 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1171, i64 1 }, %ForgeString %315)
-  %317 = call %ForgeString @forge_string_concat(%ForgeString %316, { ptr, i64 } { ptr @1172, i64 5 })
+  %316 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1173, i64 1 }, %ForgeString %315)
+  %317 = call %ForgeString @forge_string_concat(%ForgeString %316, { ptr, i64 } { ptr @1174, i64 5 })
   %318 = call %ForgeString @forge_string_concat(%ForgeString %313, %ForgeString %317)
   %319 = extractvalue %ForgeString %318, 0
   store %ForgeString %318, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
@@ -39374,16 +39392,16 @@ bb4781:                                           ; preds = %bb4780, %bb4779
 bb4782:                                           ; preds = %bb4775
   %320 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
   %321 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
-  %322 = call %ForgeString @forge_string_concat(%ForgeString %321, { ptr, i64 } { ptr @1174, i64 1 })
+  %322 = call %ForgeString @forge_string_concat(%ForgeString %321, { ptr, i64 } { ptr @1176, i64 1 })
   %323 = load %ForgeString, ptr %23, align 8
   %324 = call %ForgeString @forge_string_concat(%ForgeString %322, %ForgeString %323)
-  %325 = call %ForgeString @forge_string_concat(%ForgeString %324, { ptr, i64 } { ptr @1175, i64 1 })
+  %325 = call %ForgeString @forge_string_concat(%ForgeString %324, { ptr, i64 } { ptr @1177, i64 1 })
   %326 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   %327 = extractvalue %ForgeString %325, 0
   %328 = ptrtoint ptr %327 to i64
   %329 = ptrtoint ptr %326 to i64
   %330 = add i64 %328, %329
-  %331 = add i64 %330, ptrtoint (ptr @1176 to i64)
+  %331 = add i64 %330, ptrtoint (ptr @1178 to i64)
   %332 = inttoptr i64 %331 to ptr
   %333 = insertvalue %ForgeString undef, ptr %332, 0
   %334 = insertvalue %ForgeString %333, i64 0, 1
@@ -39391,7 +39409,7 @@ bb4782:                                           ; preds = %bb4775
   store i64 %331, ptr @CG_ENUM_VAR_CSV, align 4
   %335 = load ptr, ptr @CG_LAST_ENUM_TYPE, align 8
   store i64 0, ptr @CG_LAST_ENUM_TYPE, align 4
-  store { ptr, i64 } { ptr @1177, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
+  store { ptr, i64 } { ptr @1179, i64 0 }, ptr @CG_LAST_ENUM_TYPE, align 8
   br label %bb4784
 
 bb4783:                                           ; preds = %bb4775
@@ -39412,7 +39430,7 @@ bb4785:                                           ; preds = %bb4784
   %343 = call %ForgeString @forge_list_push(ptr %341, ptr %342, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @CG_NULLABLE_VAR_NAMES, align 4
   store %ForgeString %343, ptr @CG_NULLABLE_VAR_NAMES, align 8
-  store { ptr, i64 } { ptr @1178, i64 3 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1180, i64 3 }, ptr %5, align 8
   %344 = load i64, ptr %10, align 4
   %345 = trunc i64 %344 to i1
   br i1 %345, label %bb4788, label %bb4789
@@ -39422,14 +39440,14 @@ bb4786:                                           ; preds = %bb4784
 
 bb4787:                                           ; preds = %bb4786, %bb4790
   %346 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
-  %347 = call i64 @forge_string_compare(ptr %346, { ptr, i64 } { ptr @1180, i64 0 })
+  %347 = call i64 @forge_string_compare(ptr %346, { ptr, i64 } { ptr @1182, i64 0 })
   %348 = icmp ne i64 %347, 0
   br i1 %348, label %bb4791, label %bb4792
 
 bb4788:                                           ; preds = %bb4785
   %349 = load %ForgeString, ptr %5, align 8
-  store { ptr, i64 } { ptr @1179, i64 6 }, ptr %5, align 8
-  store { ptr, i64 } { ptr @1179, i64 6 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1181, i64 6 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1181, i64 6 }, ptr %5, align 8
   br label %bb4790
 
 bb4789:                                           ; preds = %bb4785
@@ -39486,7 +39504,7 @@ bb4793:                                           ; preds = %bb4792, %bb4796
   store i64 0, ptr @CG_LAST_IS_NULLABLE, align 4
   %373 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1182, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1184, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %374 = load ptr, ptr @CG_HAS_LAST_VAL, align 8
   store i64 0, ptr @CG_HAS_LAST_VAL, align 4
   store i64 0, ptr @CG_HAS_LAST_VAL, align 4
@@ -39508,7 +39526,7 @@ bb4795:                                           ; preds = %bb4791
   %381 = load ptr, ptr @CG_STRUCT_VAR_FIELDS, align 8
   %382 = load ptr, ptr @CG_STRUCT_VAR_FIELDS, align 8
   %383 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1181, i64 0 }, ptr %383, align 8
+  store { ptr, i64 } { ptr @1183, i64 0 }, ptr %383, align 8
   %384 = call %ForgeString @forge_list_push(ptr %382, ptr %383, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @CG_STRUCT_VAR_FIELDS, align 4
   store %ForgeString %384, ptr @CG_STRUCT_VAR_FIELDS, align 8
@@ -39667,20 +39685,20 @@ bb4810:
   store i64 %1, ptr %18, align 4
   %19 = call i64 @forge_parser_get_pos()
   %20 = call %ForgeString @forge_int_to_string(i64 %19)
-  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1185, i64 29 }, %ForgeString %20)
+  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1187, i64 29 }, %ForgeString %20)
   call void @forge_println_string(%ForgeString %21)
   %22 = load %Parser, ptr %17, align 8
   %23 = call %Token @Parser__advance(ptr %17)
   store %Token %23, ptr %16, align 8
   %24 = call i64 @forge_parser_get_pos()
   %25 = call %ForgeString @forge_int_to_string(i64 %24)
-  %26 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1186, i64 37 }, %ForgeString %25)
+  %26 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1188, i64 37 }, %ForgeString %25)
   call void @forge_println_string(%ForgeString %26)
   %27 = call i64 @forge_parser_get_pos()
   %28 = call i64 @forge_peek_kind_id(i64 %27)
   %29 = call %ForgeString @forge_int_to_string(i64 %28)
-  %30 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1187, i64 35 }, %ForgeString %29)
-  %31 = call %ForgeString @forge_string_concat(%ForgeString %30, { ptr, i64 } { ptr @1188, i64 6 })
+  %30 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1189, i64 35 }, %ForgeString %29)
+  %31 = call %ForgeString @forge_string_concat(%ForgeString %30, { ptr, i64 } { ptr @1190, i64 6 })
   %32 = call i64 @forge_parser_get_pos()
   %33 = call %ForgeString @forge_peek_text(i64 %32)
   %34 = call %ForgeString @forge_string_concat(%ForgeString %31, %ForgeString %33)
@@ -39689,14 +39707,14 @@ bb4810:
   %36 = call %ForgeString @Parser__expect_ident(ptr %17)
   store %ForgeString %36, ptr %15, align 8
   %37 = load %ForgeString, ptr %15, align 8
-  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1189, i64 23 }, %ForgeString %37)
-  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1190, i64 6 })
+  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1191, i64 23 }, %ForgeString %37)
+  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1192, i64 6 })
   %40 = call i64 @forge_parser_get_pos()
   %41 = call %ForgeString @forge_int_to_string(i64 %40)
   %42 = call %ForgeString @forge_string_concat(%ForgeString %39, %ForgeString %41)
   call void @forge_println_string(%ForgeString %42)
   %43 = load %ForgeString, ptr %15, align 8
-  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1191, i64 0 })
+  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1193, i64 0 })
   %45 = icmp eq i64 %44, 0
   br i1 %45, label %bb4811, label %bb4812
 
@@ -39707,228 +39725,232 @@ bb4812:                                           ; preds = %bb4810
   br label %bb4813
 
 bb4813:                                           ; preds = %bb4812
-  %46 = load %Parser, ptr %17, align 8
-  %47 = call %ForgeString @Parser__parse_type_params(ptr %17)
-  store %ForgeString %47, ptr %14, align 8
+  %46 = call i64 @forge_debug_parser_state({ ptr, i64 } { ptr @1194, i64 11 })
+  %47 = load %Parser, ptr %17, align 8
+  %48 = call %ForgeString @Parser__parse_type_params(ptr %17)
+  store %ForgeString %48, ptr %14, align 8
+  %49 = call i64 @forge_debug_parser_state({ ptr, i64 } { ptr @1195, i64 12 })
+  %50 = call i64 @forge_enable_peek_trace()
   store %ForgeString zeroinitializer, ptr %13, align 8
-  store { ptr, i64 } { ptr @1192, i64 0 }, ptr %12, align 8
+  %51 = call i64 @forge_debug_parser_state({ ptr, i64 } { ptr @1196, i64 11 })
+  store { ptr, i64 } { ptr @1197, i64 0 }, ptr %12, align 8
   store ptr null, ptr %11, align 8
-  %48 = load %Parser, ptr %17, align 8
-  %49 = call i64 @Parser__check_id(ptr %17, i64 86)
-  %50 = trunc i64 %49 to i1
-  br i1 %50, label %bb4814, label %bb4815
+  %52 = load %Parser, ptr %17, align 8
+  %53 = call i64 @Parser__check_id(ptr %17, i64 86)
+  %54 = trunc i64 %53 to i1
+  br i1 %54, label %bb4814, label %bb4815
 
 bb4814:                                           ; preds = %bb4813
-  %51 = load %Parser, ptr %17, align 8
-  %52 = call %Token @Parser__advance(ptr %17)
-  %53 = load %Parser, ptr %17, align 8
-  %54 = call %Token @Parser__peek(ptr %17)
-  store %Token %54, ptr %10, align 8
-  %55 = load %Token, ptr %10, align 8
-  %56 = extractvalue %Token %55, 3
-  %57 = icmp eq i64 %56, 1
-  br i1 %57, label %bb4817, label %bb4818
+  %55 = load %Parser, ptr %17, align 8
+  %56 = call %Token @Parser__advance(ptr %17)
+  %57 = load %Parser, ptr %17, align 8
+  %58 = call %Token @Parser__peek(ptr %17)
+  store %Token %58, ptr %10, align 8
+  %59 = load %Token, ptr %10, align 8
+  %60 = extractvalue %Token %59, 3
+  %61 = icmp eq i64 %60, 1
+  br i1 %61, label %bb4817, label %bb4818
 
 bb4815:                                           ; preds = %bb4813
   br label %bb4816
 
 bb4816:                                           ; preds = %bb4815, %bb4822
-  %58 = load %Parser, ptr %17, align 8
-  %59 = call %Token @Parser__peek(ptr %17)
-  store %Token %59, ptr %8, align 8
-  %60 = load ptr, ptr @IN_FUNCTION_BODY, align 8
+  %62 = load %Parser, ptr %17, align 8
+  %63 = call %Token @Parser__peek(ptr %17)
+  store %Token %63, ptr %8, align 8
+  %64 = load ptr, ptr @IN_FUNCTION_BODY, align 8
   store i64 1, ptr @IN_FUNCTION_BODY, align 4
   store i64 1, ptr @IN_FUNCTION_BODY, align 4
-  %61 = load %Parser, ptr %17, align 8
-  %62 = call %Block @Parser__parse_block(ptr %17)
-  store %Block %62, ptr %7, align 8
-  %63 = load ptr, ptr @IN_FUNCTION_BODY, align 8
+  %65 = load %Parser, ptr %17, align 8
+  %66 = call %Block @Parser__parse_block(ptr %17)
+  store %Block %66, ptr %7, align 8
+  %67 = load ptr, ptr @IN_FUNCTION_BODY, align 8
   store i64 0, ptr @IN_FUNCTION_BODY, align 4
   store i64 0, ptr @IN_FUNCTION_BODY, align 4
-  %64 = load %Parser, ptr %17, align 8
-  %65 = extractvalue %Parser %64, 1
-  %66 = sub i64 %65, 1
-  store i64 %66, ptr %6, align 4
-  %67 = load %Parser, ptr %17, align 8
-  %68 = extractvalue %Parser %67, 0
-  %69 = load i64, ptr %6, align 4
-  %70 = extractvalue %ForgeString %68, 0
-  %71 = getelementptr %Token, ptr %70, i64 %69
-  %72 = load %Token, ptr %71, align 8
-  store %Token %72, ptr %5, align 8
-  store { ptr, i64 } { ptr @1193, i64 0 }, ptr %4, align 8
-  %73 = load %Parser, ptr %17, align 8
-  %74 = extractvalue %Parser %73, 3
-  %75 = call i64 @forge_string_length(%ForgeString %74)
-  %76 = icmp sgt i64 %75, 0
-  br i1 %76, label %bb4826, label %bb4827
+  %68 = load %Parser, ptr %17, align 8
+  %69 = extractvalue %Parser %68, 1
+  %70 = sub i64 %69, 1
+  store i64 %70, ptr %6, align 4
+  %71 = load %Parser, ptr %17, align 8
+  %72 = extractvalue %Parser %71, 0
+  %73 = load i64, ptr %6, align 4
+  %74 = extractvalue %ForgeString %72, 0
+  %75 = getelementptr %Token, ptr %74, i64 %73
+  %76 = load %Token, ptr %75, align 8
+  store %Token %76, ptr %5, align 8
+  store { ptr, i64 } { ptr @1198, i64 0 }, ptr %4, align 8
+  %77 = load %Parser, ptr %17, align 8
+  %78 = extractvalue %Parser %77, 3
+  %79 = call i64 @forge_string_length(%ForgeString %78)
+  %80 = icmp sgt i64 %79, 0
+  br i1 %80, label %bb4826, label %bb4827
 
 bb4817:                                           ; preds = %bb4814
-  %77 = load %ForgeString, ptr %12, align 8
-  %78 = load %Token, ptr %10, align 8
-  %79 = extractvalue %Token %78, 2
-  %80 = extractvalue %ForgeString %79, 0
-  store %ForgeString %79, ptr %12, align 8
-  store %ForgeString %79, ptr %12, align 8
+  %81 = load %ForgeString, ptr %12, align 8
+  %82 = load %Token, ptr %10, align 8
+  %83 = extractvalue %Token %82, 2
+  %84 = extractvalue %ForgeString %83, 0
+  store %ForgeString %83, ptr %12, align 8
+  store %ForgeString %83, ptr %12, align 8
   br label %bb4819
 
 bb4818:                                           ; preds = %bb4814
   br label %bb4819
 
 bb4819:                                           ; preds = %bb4818, %bb4817
-  %81 = load %Parser, ptr %17, align 8
-  %82 = call %TypeExpr @Parser__parse_type_expr(ptr %17)
-  store %TypeExpr %82, ptr %9, align 8
-  %83 = load %ForgeString, ptr %9, align 8
-  %84 = call i64 @forge_string_compare(%ForgeString %83, ptr null)
-  %85 = icmp ne i64 %84, 0
-  br i1 %85, label %bb4820, label %bb4821
+  %85 = load %Parser, ptr %17, align 8
+  %86 = call %TypeExpr @Parser__parse_type_expr(ptr %17)
+  store %TypeExpr %86, ptr %9, align 8
+  %87 = load %ForgeString, ptr %9, align 8
+  %88 = call i64 @forge_string_compare(%ForgeString %87, ptr null)
+  %89 = icmp ne i64 %88, 0
+  br i1 %89, label %bb4820, label %bb4821
 
 bb4820:                                           ; preds = %bb4819
-  %86 = load %ForgeString, ptr %9, align 8
-  %87 = extractvalue %ForgeString %86, 0
-  %88 = ptrtoint ptr %87 to i64
-  %89 = alloca i64, align 8
-  %90 = alloca %ForgeString, align 8
-  %91 = alloca %ForgeString, align 8
-  %92 = icmp eq i64 %88, 2
-  br i1 %92, label %bb4824, label %bb4825
+  %90 = load %ForgeString, ptr %9, align 8
+  %91 = extractvalue %ForgeString %90, 0
+  %92 = ptrtoint ptr %91 to i64
+  %93 = alloca i64, align 8
+  %94 = alloca %ForgeString, align 8
+  %95 = alloca %ForgeString, align 8
+  %96 = icmp eq i64 %92, 2
+  br i1 %96, label %bb4824, label %bb4825
 
 bb4821:                                           ; preds = %bb4819
   br label %bb4822
 
 bb4822:                                           ; preds = %bb4821, %bb4823
-  %93 = load i64, ptr %11, align 4
-  %94 = load %ForgeString, ptr %9, align 8
+  %97 = load i64, ptr %11, align 4
+  %98 = load %ForgeString, ptr %9, align 8
   store i64 0, ptr %11, align 4
-  %95 = extractvalue %ForgeString %94, 0
-  %96 = ptrtoint ptr %95 to i64
-  store i64 %96, ptr %11, align 4
+  %99 = extractvalue %ForgeString %98, 0
+  %100 = ptrtoint ptr %99 to i64
+  store i64 %100, ptr %11, align 4
   br label %bb4816
 
 bb4823:                                           ; preds = %bb4825, %bb4824
-  %97 = load i64, ptr %89, align 4
+  %101 = load i64, ptr %93, align 4
   br label %bb4822
 
 bb4824:                                           ; preds = %bb4820
-  %98 = extractvalue %ForgeString %86, 1
-  store i64 %98, ptr %90, align 4
-  store i64 0, ptr %89, align 4
+  %102 = extractvalue %ForgeString %90, 1
+  store i64 %102, ptr %94, align 4
+  store i64 0, ptr %93, align 4
   br label %bb4823
 
 bb4825:                                           ; preds = %bb4820
   br label %bb4823
 
 bb4826:                                           ; preds = %bb4816
-  %99 = load %ForgeString, ptr %4, align 8
-  %100 = load %Parser, ptr %17, align 8
-  %101 = extractvalue %Parser %100, 3
-  %102 = load %Token, ptr %5, align 8
-  %103 = extractvalue %Token %102, 0
-  %104 = call %ForgeString @forge_int_to_string(i64 1)
-  %105 = call %ForgeString @forge_string_concat(%Token %102, %ForgeString %104)
-  %106 = call %ForgeString @forge_string_substring(%ForgeString %101, i64 0, %ForgeString %105)
-  %107 = extractvalue %ForgeString %106, 0
-  store %ForgeString %106, ptr %4, align 8
-  store %ForgeString %106, ptr %4, align 8
+  %103 = load %ForgeString, ptr %4, align 8
+  %104 = load %Parser, ptr %17, align 8
+  %105 = extractvalue %Parser %104, 3
+  %106 = load %Token, ptr %5, align 8
+  %107 = extractvalue %Token %106, 0
+  %108 = call %ForgeString @forge_int_to_string(i64 1)
+  %109 = call %ForgeString @forge_string_concat(%Token %106, %ForgeString %108)
+  %110 = call %ForgeString @forge_string_substring(%ForgeString %105, i64 0, %ForgeString %109)
+  %111 = extractvalue %ForgeString %110, 0
+  store %ForgeString %110, ptr %4, align 8
+  store %ForgeString %110, ptr %4, align 8
   br label %bb4828
 
 bb4827:                                           ; preds = %bb4816
   br label %bb4828
 
 bb4828:                                           ; preds = %bb4827, %bb4826
-  %108 = load %ForgeString, ptr %15, align 8
-  %109 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1194, i64 7 }, %ForgeString %108)
-  %110 = call %ForgeString @forge_string_concat(%ForgeString %109, { ptr, i64 } { ptr @1195, i64 6 })
-  %111 = call %ForgeString @forge_int_to_string(i64 0)
-  %112 = call %ForgeString @forge_string_concat(%ForgeString %110, %ForgeString %111)
-  %113 = call %ForgeString @forge_string_concat(%ForgeString %112, { ptr, i64 } { ptr @1196, i64 7 })
-  %114 = load %Token, ptr %5, align 8
-  %115 = call %ForgeString @forge_int_to_string(%Token %114)
-  %116 = call %ForgeString @forge_string_concat(%ForgeString %113, %ForgeString %115)
-  %117 = call %ForgeString @forge_string_concat(%ForgeString %116, { ptr, i64 } { ptr @1197, i64 5 })
-  %118 = load %ForgeString, ptr %4, align 8
-  %119 = call i64 @forge_string_length(%ForgeString %118)
-  %120 = call %ForgeString @forge_int_to_string(i64 %119)
-  %121 = call %ForgeString @forge_string_concat(%ForgeString %117, %ForgeString %120)
-  %122 = call %ForgeString @forge_string_concat(%ForgeString %121, { ptr, i64 } { ptr @1198, i64 9 })
-  %123 = load %Parser, ptr %17, align 8
-  %124 = extractvalue %Parser %123, 3
-  %125 = call i64 @forge_string_length(%ForgeString %124)
-  %126 = call %ForgeString @forge_int_to_string(i64 %125)
-  %127 = call %ForgeString @forge_string_concat(%ForgeString %122, %ForgeString %126)
-  call void @forge_println_string(%ForgeString %127)
-  %128 = load %ForgeString, ptr %15, align 8
-  %129 = load %ForgeString, ptr %4, align 8
-  %130 = call i64 @store_fn_source(%ForgeString %128, %ForgeString %129)
-  %131 = load %ForgeString, ptr %13, align 8
-  %132 = call i64 @forge_string_length(%ForgeString %131)
-  %133 = call i64 @store_fn_param_count(i64 %132)
-  %134 = load %ForgeString, ptr %12, align 8
-  %135 = call i64 @store_fn_return_type(%ForgeString %134)
+  %112 = load %ForgeString, ptr %15, align 8
+  %113 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1199, i64 7 }, %ForgeString %112)
+  %114 = call %ForgeString @forge_string_concat(%ForgeString %113, { ptr, i64 } { ptr @1200, i64 6 })
+  %115 = call %ForgeString @forge_int_to_string(i64 0)
+  %116 = call %ForgeString @forge_string_concat(%ForgeString %114, %ForgeString %115)
+  %117 = call %ForgeString @forge_string_concat(%ForgeString %116, { ptr, i64 } { ptr @1201, i64 7 })
+  %118 = load %Token, ptr %5, align 8
+  %119 = call %ForgeString @forge_int_to_string(%Token %118)
+  %120 = call %ForgeString @forge_string_concat(%ForgeString %117, %ForgeString %119)
+  %121 = call %ForgeString @forge_string_concat(%ForgeString %120, { ptr, i64 } { ptr @1202, i64 5 })
+  %122 = load %ForgeString, ptr %4, align 8
+  %123 = call i64 @forge_string_length(%ForgeString %122)
+  %124 = call %ForgeString @forge_int_to_string(i64 %123)
+  %125 = call %ForgeString @forge_string_concat(%ForgeString %121, %ForgeString %124)
+  %126 = call %ForgeString @forge_string_concat(%ForgeString %125, { ptr, i64 } { ptr @1203, i64 9 })
+  %127 = load %Parser, ptr %17, align 8
+  %128 = extractvalue %Parser %127, 3
+  %129 = call i64 @forge_string_length(%ForgeString %128)
+  %130 = call %ForgeString @forge_int_to_string(i64 %129)
+  %131 = call %ForgeString @forge_string_concat(%ForgeString %126, %ForgeString %130)
+  call void @forge_println_string(%ForgeString %131)
+  %132 = load %ForgeString, ptr %15, align 8
+  %133 = load %ForgeString, ptr %4, align 8
+  %134 = call i64 @store_fn_source(%ForgeString %132, %ForgeString %133)
+  %135 = load %ForgeString, ptr %13, align 8
+  %136 = call i64 @forge_string_length(%ForgeString %135)
+  %137 = call i64 @store_fn_param_count(i64 %136)
+  %138 = load %ForgeString, ptr %12, align 8
+  %139 = call i64 @store_fn_return_type(%ForgeString %138)
   store i64 0, ptr %3, align 4
-  %136 = load %ForgeString, ptr %13, align 8
-  %137 = alloca i64, align 8
-  store i64 0, ptr %137, align 4
-  %138 = call i64 @forge_string_length(%ForgeString %136)
+  %140 = load %ForgeString, ptr %13, align 8
+  %141 = alloca i64, align 8
+  store i64 0, ptr %141, align 4
+  %142 = call i64 @forge_string_length(%ForgeString %140)
   br label %bb4829
 
 bb4829:                                           ; preds = %bb4831, %bb4828
-  %139 = load i64, ptr %137, align 4
-  %140 = icmp slt i64 %139, %138
-  br i1 %140, label %bb4830, label %bb4832
+  %143 = load i64, ptr %141, align 4
+  %144 = icmp slt i64 %143, %142
+  br i1 %144, label %bb4830, label %bb4832
 
 bb4830:                                           ; preds = %bb4829
-  %141 = extractvalue %ForgeString %136, 0
-  %142 = load i64, ptr %137, align 4
-  %143 = getelementptr %ForgeString, ptr %141, i64 %142
-  %144 = load %ForgeString, ptr %143, align 8
-  %145 = alloca %ForgeString, align 8
-  store %ForgeString %144, ptr %145, align 8
-  %146 = call i64 @store_fn_param_name(i64 0)
-  %147 = load i64, ptr %3, align 4
-  %148 = load %ForgeString, ptr @PARSED_PARAM_TYPES, align 8
-  %149 = call i64 @forge_string_length(%ForgeString %148)
-  %150 = icmp slt i64 %147, %149
-  br i1 %150, label %bb4833, label %bb4834
+  %145 = extractvalue %ForgeString %140, 0
+  %146 = load i64, ptr %141, align 4
+  %147 = getelementptr %ForgeString, ptr %145, i64 %146
+  %148 = load %ForgeString, ptr %147, align 8
+  %149 = alloca %ForgeString, align 8
+  store %ForgeString %148, ptr %149, align 8
+  %150 = call i64 @store_fn_param_name(i64 0)
+  %151 = load i64, ptr %3, align 4
+  %152 = load %ForgeString, ptr @PARSED_PARAM_TYPES, align 8
+  %153 = call i64 @forge_string_length(%ForgeString %152)
+  %154 = icmp slt i64 %151, %153
+  br i1 %154, label %bb4833, label %bb4834
 
 bb4831:                                           ; preds = %bb4835
-  %151 = load i64, ptr %137, align 4
-  %152 = add i64 %151, 1
-  store i64 %152, ptr %137, align 4
+  %155 = load i64, ptr %141, align 4
+  %156 = add i64 %155, 1
+  store i64 %156, ptr %141, align 4
   br label %bb4829
 
 bb4832:                                           ; preds = %bb4829
-  %153 = load ptr, ptr @PARSE_END_POS, align 8
-  %154 = call i64 @forge_parser_get_pos()
-  store i64 %154, ptr @PARSE_END_POS, align 4
-  store i64 %154, ptr @PARSE_END_POS, align 4
-  %155 = call i64 @next_node_id()
-  store i64 %155, ptr %2, align 4
-  %156 = load i64, ptr %2, align 4
-  %157 = load %Token, ptr %16, align 8
-  %158 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1200, i64 9 }, { ptr, i64 } { ptr @1201, i64 7 }, i64 %156, %Token %157)
-  ret %Statement %158
+  %157 = load ptr, ptr @PARSE_END_POS, align 8
+  %158 = call i64 @forge_parser_get_pos()
+  store i64 %158, ptr @PARSE_END_POS, align 4
+  store i64 %158, ptr @PARSE_END_POS, align 4
+  %159 = call i64 @next_node_id()
+  store i64 %159, ptr %2, align 4
+  %160 = load i64, ptr %2, align 4
+  %161 = load %Token, ptr %16, align 8
+  %162 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1205, i64 9 }, { ptr, i64 } { ptr @1206, i64 7 }, i64 %160, %Token %161)
+  ret %Statement %162
 
 bb4833:                                           ; preds = %bb4830
-  %159 = load %ForgeString, ptr @PARSED_PARAM_TYPES, align 8
-  %160 = load i64, ptr %3, align 4
-  %161 = extractvalue %ForgeString %159, 0
-  %162 = getelementptr %ForgeString, ptr %161, i64 %160
-  %163 = load %ForgeString, ptr %162, align 8
-  %164 = call i64 @store_fn_param_type(%ForgeString %163)
+  %163 = load %ForgeString, ptr @PARSED_PARAM_TYPES, align 8
+  %164 = load i64, ptr %3, align 4
+  %165 = extractvalue %ForgeString %163, 0
+  %166 = getelementptr %ForgeString, ptr %165, i64 %164
+  %167 = load %ForgeString, ptr %166, align 8
+  %168 = call i64 @store_fn_param_type(%ForgeString %167)
   br label %bb4835
 
 bb4834:                                           ; preds = %bb4830
-  %165 = call i64 @store_fn_param_type({ ptr, i64 } { ptr @1199, i64 3 })
+  %169 = call i64 @store_fn_param_type({ ptr, i64 } { ptr @1204, i64 3 })
   br label %bb4835
 
 bb4835:                                           ; preds = %bb4834, %bb4833
-  %166 = load i64, ptr %3, align 4
-  %167 = load i64, ptr %3, align 4
-  %168 = add i64 %167, 1
-  store i64 %168, ptr %3, align 4
-  store i64 %168, ptr %3, align 4
+  %170 = load i64, ptr %3, align 4
+  %171 = load i64, ptr %3, align 4
+  %172 = add i64 %171, 1
+  store i64 %172, ptr %3, align 4
+  store i64 %172, ptr %3, align 4
   br label %bb4831
 }
 
@@ -40010,7 +40032,7 @@ bb4851:                                           ; preds = %bb4850
 
 bb4852:                                           ; preds = %bb4850
   %10 = load %Parser, ptr %2, align 8
-  %11 = call i64 @Parser__error(ptr %2, { ptr, i64 } { ptr @1202, i64 54 })
+  %11 = call i64 @Parser__error(ptr %2, { ptr, i64 } { ptr @1207, i64 54 })
   br label %bb4838
 }
 
@@ -40239,7 +40261,7 @@ bb4876:                                           ; preds = %bb4875
   store %FnDeclData %21, ptr %10, align 8
   %22 = load %FnDeclData, ptr %10, align 8
   %23 = extractvalue %FnDeclData %22, 0
-  %24 = call i64 @forge_string_compare(%ForgeString %23, { ptr, i64 } { ptr @1203, i64 4 })
+  %24 = call i64 @forge_string_compare(%ForgeString %23, { ptr, i64 } { ptr @1208, i64 4 })
   %25 = icmp eq i64 %24, 0
   %26 = zext i1 %25 to i64
   store i64 %26, ptr %9, align 4
@@ -40329,7 +40351,7 @@ bb4883:                                           ; preds = %bb4882, %bb4881
   store i64 %74, ptr %75, align 4
   %76 = load ptr, ptr @CG_CTX, align 8
   %77 = load i64, ptr %4, align 4
-  %78 = call ptr @forge_llvm_append_basic_block(ptr %76, i64 %77, ptr @1204)
+  %78 = call ptr @forge_llvm_append_basic_block(ptr %76, i64 %77, ptr @1209)
   store ptr %78, ptr %3, align 8
   %79 = load ptr, ptr @CG_B, align 8
   %80 = load i64, ptr %3, align 4
@@ -40554,7 +40576,7 @@ bb4901:                                           ; preds = %bb4900
   %17 = call %ForgeString @forge_fn_store_get_name(i64 %16)
   store %ForgeString %17, ptr %8, align 8
   %18 = load %ForgeString, ptr %8, align 8
-  %19 = call i64 @forge_string_compare(%ForgeString %18, { ptr, i64 } { ptr @1205, i64 4 })
+  %19 = call i64 @forge_string_compare(%ForgeString %18, { ptr, i64 } { ptr @1210, i64 4 })
   %20 = icmp eq i64 %19, 0
   %21 = zext i1 %20 to i64
   store i64 %21, ptr %7, align 4
@@ -40774,7 +40796,7 @@ bb4922:                                           ; preds = %bb4927, %bb4920
 bb4923:                                           ; preds = %bb4922
   %71 = load i64, ptr %35, align 4
   %72 = load i64, ptr %33, align 4
-  %73 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1206, i64 1 })
+  %73 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1211, i64 1 })
   %74 = icmp eq i64 %73, 0
   br i1 %74, label %bb4925, label %bb4926
 
@@ -40813,7 +40835,7 @@ bb4929:                                           ; preds = %bb4924
   br label %bb4930
 
 bb4930:                                           ; preds = %bb4929, %bb4928
-  store { ptr, i64 } { ptr @1207, i64 0 }, ptr %32, align 8
+  store { ptr, i64 } { ptr @1212, i64 0 }, ptr %32, align 8
   %85 = load i64, ptr %36, align 4
   %86 = load ptr, ptr @CG_STRUCT_FIELD_TYPE_NAMES, align 8
   %87 = call i64 @forge_string_length(ptr %86)
@@ -40847,7 +40869,7 @@ bb4933:                                           ; preds = %bb4932, %bb4931
 bb4934:                                           ; preds = %bb4933
   store i64 0, ptr %28, align 4
   store i64 0, ptr %27, align 4
-  store { ptr, i64 } { ptr @1208, i64 0 }, ptr %26, align 8
+  store { ptr, i64 } { ptr @1213, i64 0 }, ptr %26, align 8
   br label %bb4937
 
 bb4935:                                           ; preds = %bb4933
@@ -40879,13 +40901,13 @@ bb4938:                                           ; preds = %bb4937
   %112 = call %ForgeString @forge_string_char_at(%ForgeString %110, i64 %111)
   store %ForgeString %112, ptr %25, align 8
   %113 = load %ForgeString, ptr %25, align 8
-  %114 = call i64 @forge_string_compare(%ForgeString %113, { ptr, i64 } { ptr @1209, i64 1 })
+  %114 = call i64 @forge_string_compare(%ForgeString %113, { ptr, i64 } { ptr @1214, i64 1 })
   %115 = icmp eq i64 %114, 0
   br i1 %115, label %bb4940, label %bb4941
 
 bb4939:                                           ; preds = %bb4937
   %116 = load %ForgeString, ptr %26, align 8
-  %117 = call i64 @forge_string_compare(%ForgeString %116, { ptr, i64 } { ptr @1211, i64 0 })
+  %117 = call i64 @forge_string_compare(%ForgeString %116, { ptr, i64 } { ptr @1216, i64 0 })
   %118 = icmp ne i64 %117, 0
   br i1 %118, label %bb4943, label %bb4944
 
@@ -40903,8 +40925,8 @@ bb4940:                                           ; preds = %bb4938
   store i64 %127, ptr %28, align 4
   store i64 %127, ptr %28, align 4
   %128 = load %ForgeString, ptr %26, align 8
-  store { ptr, i64 } { ptr @1210, i64 0 }, ptr %26, align 8
-  store { ptr, i64 } { ptr @1210, i64 0 }, ptr %26, align 8
+  store { ptr, i64 } { ptr @1215, i64 0 }, ptr %26, align 8
+  store { ptr, i64 } { ptr @1215, i64 0 }, ptr %26, align 8
   br label %bb4942
 
 bb4941:                                           ; preds = %bb4938
@@ -40929,7 +40951,7 @@ bb4943:                                           ; preds = %bb4939
   %137 = load i64, ptr %30, align 4
   store i64 %137, ptr %23, align 4
   %138 = load %ForgeString, ptr %26, align 8
-  %139 = call i64 @forge_string_compare(%ForgeString %138, { ptr, i64 } { ptr @1212, i64 6 })
+  %139 = call i64 @forge_string_compare(%ForgeString %138, { ptr, i64 } { ptr @1217, i64 6 })
   %140 = icmp eq i64 %139, 0
   br i1 %140, label %bb4946, label %bb4947
 
@@ -40962,7 +40984,7 @@ bb4948:                                           ; preds = %bb4951, %bb4946
 bb4949:                                           ; preds = %bb4947
   %150 = load %ForgeString, ptr %26, align 8
   %151 = call %ForgeString @forge_string_char_at(%ForgeString %150, i64 0)
-  %152 = call i64 @forge_string_compare(%ForgeString %151, { ptr, i64 } { ptr @1213, i64 1 })
+  %152 = call i64 @forge_string_compare(%ForgeString %151, { ptr, i64 } { ptr @1218, i64 1 })
   %153 = icmp eq i64 %152, 0
   br i1 %153, label %bb4952, label %bb4953
 
@@ -41086,7 +41108,7 @@ bb4962:                                           ; preds = %bb4961
   %211 = call %ForgeString @forge_fn_store_get_name(i64 %210)
   store %ForgeString %211, ptr %16, align 8
   %212 = load %ForgeString, ptr %16, align 8
-  %213 = call i64 @forge_string_compare(%ForgeString %212, { ptr, i64 } { ptr @1214, i64 4 })
+  %213 = call i64 @forge_string_compare(%ForgeString %212, { ptr, i64 } { ptr @1219, i64 4 })
   %214 = icmp eq i64 %213, 0
   %215 = zext i1 %214 to i64
   store i64 %215, ptr %15, align 4
@@ -41152,7 +41174,7 @@ bb4970:                                           ; preds = %bb4968
   %243 = load i64, ptr %11, align 4
   %244 = call %ForgeString @forge_param_type_get(i64 %243)
   store %ForgeString %244, ptr %9, align 8
-  store { ptr, i64 } { ptr @1215, i64 0 }, ptr %8, align 8
+  store { ptr, i64 } { ptr @1220, i64 0 }, ptr %8, align 8
   %245 = load i64, ptr %11, align 4
   %246 = load ptr, ptr @FN_ALL_PARAM_NAMES, align 8
   %247 = call i64 @forge_string_length(ptr %246)
@@ -41195,7 +41217,7 @@ bb4974:                                           ; preds = %bb4970
 
 bb4975:                                           ; preds = %bb4974, %bb4973
   %267 = load %ForgeString, ptr %8, align 8
-  %268 = call i64 @forge_string_compare(%ForgeString %267, { ptr, i64 } { ptr @1216, i64 4 })
+  %268 = call i64 @forge_string_compare(%ForgeString %267, { ptr, i64 } { ptr @1221, i64 4 })
   %269 = icmp eq i64 %268, 0
   br i1 %269, label %bb4976, label %bb4977
 
@@ -41276,7 +41298,7 @@ bb4988:                                           ; preds = %bb4985
   %298 = call i64 @forge_string_length(i64 %297)
   %299 = sub i64 %298, 1
   %300 = call %ForgeString @forge_string_char_at(i64 %296, i64 %299)
-  %301 = call i64 @forge_string_compare(%ForgeString %300, { ptr, i64 } { ptr @1217, i64 1 })
+  %301 = call i64 @forge_string_compare(%ForgeString %300, { ptr, i64 } { ptr @1222, i64 1 })
   %302 = icmp eq i64 %301, 0
   br i1 %302, label %bb4991, label %bb4992
 
@@ -41285,7 +41307,7 @@ bb4989:                                           ; preds = %bb4985
 
 bb4990:                                           ; preds = %bb4989, %bb4993
   %303 = load i64, ptr %5, align 4
-  %304 = call i64 @forge_string_compare(i64 %303, { ptr, i64 } { ptr @1218, i64 6 })
+  %304 = call i64 @forge_string_compare(i64 %303, { ptr, i64 } { ptr @1223, i64 6 })
   %305 = icmp eq i64 %304, 0
   br i1 %305, label %bb4994, label %bb4995
 
@@ -41318,7 +41340,7 @@ bb4994:                                           ; preds = %bb4990
 
 bb4995:                                           ; preds = %bb4990
   %317 = load i64, ptr %5, align 4
-  %318 = call i64 @forge_string_compare(i64 %317, { ptr, i64 } { ptr @1219, i64 0 })
+  %318 = call i64 @forge_string_compare(i64 %317, { ptr, i64 } { ptr @1224, i64 0 })
   %319 = icmp ne i64 %318, 0
   br i1 %319, label %bb4997, label %bb4998
 
@@ -41371,7 +41393,7 @@ bb5003:                                           ; preds = %bb4987
   %339 = load i64, ptr %3, align 4
   %340 = load ptr, ptr @CG_MOD, align 8
   %341 = load i64, ptr %1, align 4
-  %342 = call ptr @forge_llvm_add_function(ptr %340, ptr @1220, i64 %341)
+  %342 = call ptr @forge_llvm_add_function(ptr %340, ptr @1225, i64 %341)
   %343 = ptrtoint ptr %342 to i64
   store i64 %343, ptr %3, align 4
   store ptr %342, ptr %3, align 8
@@ -41481,13 +41503,13 @@ bb5006:
   %61 = call %ForgeString @forge_fn_store_get_name(i64 %60)
   store %ForgeString %61, ptr %56, align 8
   %62 = load %ForgeString, ptr %56, align 8
-  %63 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1221, i64 8 }, %ForgeString %62)
+  %63 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1226, i64 8 }, %ForgeString %62)
   call void @forge_println_string(%ForgeString %63)
   %64 = load i64, ptr %58, align 4
   %65 = call %ForgeString @forge_fn_store_get_body(i64 %64)
   store %ForgeString %65, ptr %55, align 8
   %66 = load %ForgeString, ptr %56, align 8
-  %67 = call i64 @forge_string_compare(%ForgeString %66, { ptr, i64 } { ptr @1222, i64 4 })
+  %67 = call i64 @forge_string_compare(%ForgeString %66, { ptr, i64 } { ptr @1227, i64 4 })
   %68 = icmp eq i64 %67, 0
   %69 = zext i1 %68 to i64
   store i64 %69, ptr %54, align 4
@@ -41532,7 +41554,7 @@ bb5012:                                           ; preds = %bb5011
   %85 = call i64 @cg_reinit_types()
   %86 = load ptr, ptr @CG_CTX, align 8
   %87 = load i64, ptr %52, align 4
-  %88 = call ptr @forge_llvm_append_basic_block(ptr %86, i64 %87, ptr @1223)
+  %88 = call ptr @forge_llvm_append_basic_block(ptr %86, i64 %87, ptr @1228)
   store ptr %88, ptr %51, align 8
   %89 = load ptr, ptr @CG_B, align 8
   %90 = load i64, ptr %51, align 4
@@ -41571,7 +41593,7 @@ bb5013:                                           ; preds = %bb5012
   %115 = load i64, ptr %47, align 4
   %116 = call ptr @forge_llvm_type_array_free(i64 %115)
   %117 = load ptr, ptr @CG_MOD, align 8
-  %118 = call ptr @forge_llvm_get_named_function(ptr %117, ptr @1224)
+  %118 = call ptr @forge_llvm_get_named_function(ptr %117, ptr @1229)
   store ptr %118, ptr %45, align 8
   %119 = load i64, ptr %45, align 4
   %120 = icmp ne i64 %119, 0
@@ -41600,14 +41622,14 @@ bb5015:                                           ; preds = %bb5014, %bb5018
   store i64 0, ptr @CG_STR_VAR_NAMES, align 4
   store %ForgeString zeroinitializer, ptr @CG_STR_VAR_NAMES, align 8
   %135 = load %ForgeString, ptr @CG_STR_LOCALS_CSV, align 8
-  store { ptr, i64 } { ptr @1226, i64 0 }, ptr @CG_STR_LOCALS_CSV, align 8
-  store { ptr, i64 } { ptr @1226, i64 0 }, ptr @CG_STR_LOCALS_CSV, align 8
+  store { ptr, i64 } { ptr @1231, i64 0 }, ptr @CG_STR_LOCALS_CSV, align 8
+  store { ptr, i64 } { ptr @1231, i64 0 }, ptr @CG_STR_LOCALS_CSV, align 8
   %136 = load %ForgeString, ptr @CG_STRUCT_VAR_CSV, align 8
-  store { ptr, i64 } { ptr @1227, i64 0 }, ptr @CG_STRUCT_VAR_CSV, align 8
-  store { ptr, i64 } { ptr @1227, i64 0 }, ptr @CG_STRUCT_VAR_CSV, align 8
+  store { ptr, i64 } { ptr @1232, i64 0 }, ptr @CG_STRUCT_VAR_CSV, align 8
+  store { ptr, i64 } { ptr @1232, i64 0 }, ptr @CG_STRUCT_VAR_CSV, align 8
   %137 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
-  store { ptr, i64 } { ptr @1228, i64 0 }, ptr @CG_ENUM_VAR_CSV, align 8
-  store { ptr, i64 } { ptr @1228, i64 0 }, ptr @CG_ENUM_VAR_CSV, align 8
+  store { ptr, i64 } { ptr @1233, i64 0 }, ptr @CG_ENUM_VAR_CSV, align 8
+  store { ptr, i64 } { ptr @1233, i64 0 }, ptr @CG_ENUM_VAR_CSV, align 8
   %138 = load ptr, ptr @CG_STRUCT_VAR_NAMES, align 8
   store i64 0, ptr @CG_STRUCT_VAR_NAMES, align 4
   store %ForgeString zeroinitializer, ptr @CG_STRUCT_VAR_NAMES, align 8
@@ -41631,7 +41653,7 @@ bb5015:                                           ; preds = %bb5014, %bb5018
   store i64 0, ptr @CG_IS_MAP_INDEX, align 4
   %145 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1229, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1234, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr %44, align 4
   br label %bb5019
 
@@ -41640,7 +41662,7 @@ bb5016:                                           ; preds = %bb5013
   %147 = load i64, ptr %46, align 4
   %148 = load i64, ptr %45, align 4
   %149 = load i64, ptr %48, align 4
-  %150 = call ptr @forge_llvm_build_call(ptr %146, i64 %147, i64 %148, i64 %149, i64 2, ptr @1225)
+  %150 = call ptr @forge_llvm_build_call(ptr %146, i64 %147, i64 %148, i64 %149, i64 2, ptr @1230)
   br label %bb5018
 
 bb5017:                                           ; preds = %bb5013
@@ -41673,22 +41695,22 @@ bb5020:                                           ; preds = %bb5019
   %165 = call %ForgeString @forge_param_type_get(i64 %164)
   store %ForgeString %165, ptr %40, align 8
   %166 = load %ForgeString, ptr %40, align 8
-  %167 = call i64 @forge_string_compare(%ForgeString %166, { ptr, i64 } { ptr @1230, i64 3 })
+  %167 = call i64 @forge_string_compare(%ForgeString %166, { ptr, i64 } { ptr @1235, i64 3 })
   %168 = icmp ne i64 %167, 0
   %169 = load %ForgeString, ptr %40, align 8
-  %170 = call i64 @forge_string_compare(%ForgeString %169, { ptr, i64 } { ptr @1231, i64 6 })
+  %170 = call i64 @forge_string_compare(%ForgeString %169, { ptr, i64 } { ptr @1236, i64 6 })
   %171 = icmp ne i64 %170, 0
   %172 = and i1 %168, %171
   %173 = load %ForgeString, ptr %40, align 8
-  %174 = call i64 @forge_string_compare(%ForgeString %173, { ptr, i64 } { ptr @1232, i64 5 })
+  %174 = call i64 @forge_string_compare(%ForgeString %173, { ptr, i64 } { ptr @1237, i64 5 })
   %175 = icmp ne i64 %174, 0
   %176 = and i1 %172, %175
   %177 = load %ForgeString, ptr %40, align 8
-  %178 = call i64 @forge_string_compare(%ForgeString %177, { ptr, i64 } { ptr @1233, i64 4 })
+  %178 = call i64 @forge_string_compare(%ForgeString %177, { ptr, i64 } { ptr @1238, i64 4 })
   %179 = icmp ne i64 %178, 0
   %180 = and i1 %176, %179
   %181 = load %ForgeString, ptr %40, align 8
-  %182 = call i64 @forge_string_compare(%ForgeString %181, { ptr, i64 } { ptr @1234, i64 3 })
+  %182 = call i64 @forge_string_compare(%ForgeString %181, { ptr, i64 } { ptr @1239, i64 3 })
   %183 = icmp ne i64 %182, 0
   %184 = and i1 %180, %183
   %185 = zext i1 %184 to i64
@@ -41696,7 +41718,7 @@ bb5020:                                           ; preds = %bb5019
   %186 = load ptr, ptr @CG_I64, align 8
   store ptr %186, ptr %38, align 8
   %187 = load %ForgeString, ptr %40, align 8
-  %188 = call i64 @forge_string_compare(%ForgeString %187, { ptr, i64 } { ptr @1235, i64 6 })
+  %188 = call i64 @forge_string_compare(%ForgeString %187, { ptr, i64 } { ptr @1240, i64 6 })
   %189 = icmp eq i64 %188, 0
   br i1 %189, label %bb5022, label %bb5023
 
@@ -41715,7 +41737,7 @@ bb5021:                                           ; preds = %bb5019
   store i64 0, ptr @CG_IS_MAP_INDEX, align 4
   %194 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1274, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1279, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %195 = load ptr, ptr @CG_LAST_IS_NULLABLE, align 8
   store i64 0, ptr @CG_LAST_IS_NULLABLE, align 4
   store i64 0, ptr @CG_LAST_IS_NULLABLE, align 4
@@ -41726,8 +41748,8 @@ bb5021:                                           ; preds = %bb5019
   store i64 0, ptr @PENDING_MATCH, align 4
   store i64 0, ptr @PENDING_MATCH, align 4
   %198 = load %ForgeString, ptr @CG_PA_NAMES, align 8
-  store { ptr, i64 } { ptr @1275, i64 0 }, ptr @CG_PA_NAMES, align 8
-  store { ptr, i64 } { ptr @1275, i64 0 }, ptr @CG_PA_NAMES, align 8
+  store { ptr, i64 } { ptr @1280, i64 0 }, ptr @CG_PA_NAMES, align 8
+  store { ptr, i64 } { ptr @1280, i64 0 }, ptr @CG_PA_NAMES, align 8
   %199 = load ptr, ptr @CG_PA_0, align 8
   store i64 0, ptr @CG_PA_0, align 4
   store ptr null, ptr @CG_PA_0, align 8
@@ -41770,7 +41792,7 @@ bb5023:                                           ; preds = %bb5020
 
 bb5024:                                           ; preds = %bb5023, %bb5022
   %213 = load %ForgeString, ptr %40, align 8
-  %214 = call i64 @forge_string_compare(%ForgeString %213, { ptr, i64 } { ptr @1236, i64 3 })
+  %214 = call i64 @forge_string_compare(%ForgeString %213, { ptr, i64 } { ptr @1241, i64 3 })
   %215 = icmp eq i64 %214, 0
   br i1 %215, label %bb5025, label %bb5026
 
@@ -41812,7 +41834,7 @@ bb5030:                                           ; preds = %bb5029, %bb5033
   %232 = load i64, ptr %41, align 4
   store i64 %232, ptr %36, align 4
   %233 = load %ForgeString, ptr %42, align 8
-  %234 = call i64 @forge_string_compare(%ForgeString %233, { ptr, i64 } { ptr @1237, i64 4 })
+  %234 = call i64 @forge_string_compare(%ForgeString %233, { ptr, i64 } { ptr @1242, i64 4 })
   %235 = icmp ne i64 %234, 0
   br i1 %235, label %bb5034, label %bb5035
 
@@ -41872,7 +41894,7 @@ bb5036:                                           ; preds = %bb5035, %bb5034
   %265 = call i64 @forge_var_name_push(%ForgeString %264)
   store i64 0, ptr %34, align 4
   %266 = load %ForgeString, ptr %40, align 8
-  %267 = call i64 @forge_string_compare(%ForgeString %266, { ptr, i64 } { ptr @1238, i64 6 })
+  %267 = call i64 @forge_string_compare(%ForgeString %266, { ptr, i64 } { ptr @1243, i64 6 })
   %268 = icmp eq i64 %267, 0
   br i1 %268, label %bb5037, label %bb5038
 
@@ -41911,7 +41933,7 @@ bb5039:                                           ; preds = %bb5038, %bb5037
   store %ForgeString %283, ptr @CG_VAR_PTRS, align 8
   store %ForgeString %283, ptr @CG_VAR_PTRS, align 8
   %285 = load %ForgeString, ptr %40, align 8
-  %286 = call i64 @forge_string_compare(%ForgeString %285, { ptr, i64 } { ptr @1239, i64 6 })
+  %286 = call i64 @forge_string_compare(%ForgeString %285, { ptr, i64 } { ptr @1244, i64 6 })
   %287 = icmp eq i64 %286, 0
   br i1 %287, label %bb5040, label %bb5041
 
@@ -41930,50 +41952,50 @@ bb5040:                                           ; preds = %bb5039
 
 bb5041:                                           ; preds = %bb5039
   %295 = load %ForgeString, ptr %42, align 8
-  %296 = call i64 @forge_string_compare(%ForgeString %295, { ptr, i64 } { ptr @1240, i64 4 })
+  %296 = call i64 @forge_string_compare(%ForgeString %295, { ptr, i64 } { ptr @1245, i64 4 })
   %297 = icmp eq i64 %296, 0
   %298 = load %ForgeString, ptr %42, align 8
-  %299 = call i64 @forge_string_compare(%ForgeString %298, { ptr, i64 } { ptr @1241, i64 6 })
+  %299 = call i64 @forge_string_compare(%ForgeString %298, { ptr, i64 } { ptr @1246, i64 6 })
   %300 = icmp eq i64 %299, 0
   %301 = or i1 %297, %300
   %302 = load %ForgeString, ptr %42, align 8
-  %303 = call i64 @forge_string_compare(%ForgeString %302, { ptr, i64 } { ptr @1242, i64 4 })
+  %303 = call i64 @forge_string_compare(%ForgeString %302, { ptr, i64 } { ptr @1247, i64 4 })
   %304 = icmp eq i64 %303, 0
   %305 = or i1 %301, %304
   %306 = load %ForgeString, ptr %42, align 8
-  %307 = call i64 @forge_string_compare(%ForgeString %306, { ptr, i64 } { ptr @1243, i64 5 })
+  %307 = call i64 @forge_string_compare(%ForgeString %306, { ptr, i64 } { ptr @1248, i64 5 })
   %308 = icmp eq i64 %307, 0
   %309 = or i1 %305, %308
   %310 = load %ForgeString, ptr %42, align 8
-  %311 = call i64 @forge_string_compare(%ForgeString %310, { ptr, i64 } { ptr @1244, i64 7 })
+  %311 = call i64 @forge_string_compare(%ForgeString %310, { ptr, i64 } { ptr @1249, i64 7 })
   %312 = icmp eq i64 %311, 0
   %313 = or i1 %309, %312
   %314 = load %ForgeString, ptr %42, align 8
-  %315 = call i64 @forge_string_compare(%ForgeString %314, { ptr, i64 } { ptr @1245, i64 3 })
+  %315 = call i64 @forge_string_compare(%ForgeString %314, { ptr, i64 } { ptr @1250, i64 3 })
   %316 = icmp eq i64 %315, 0
   %317 = or i1 %313, %316
   %318 = load %ForgeString, ptr %42, align 8
-  %319 = call i64 @forge_string_compare(%ForgeString %318, { ptr, i64 } { ptr @1246, i64 4 })
+  %319 = call i64 @forge_string_compare(%ForgeString %318, { ptr, i64 } { ptr @1251, i64 4 })
   %320 = icmp eq i64 %319, 0
   %321 = or i1 %317, %320
   %322 = load %ForgeString, ptr %42, align 8
-  %323 = call i64 @forge_string_compare(%ForgeString %322, { ptr, i64 } { ptr @1247, i64 4 })
+  %323 = call i64 @forge_string_compare(%ForgeString %322, { ptr, i64 } { ptr @1252, i64 4 })
   %324 = icmp eq i64 %323, 0
   %325 = or i1 %321, %324
   %326 = load %ForgeString, ptr %42, align 8
-  %327 = call i64 @forge_string_compare(%ForgeString %326, { ptr, i64 } { ptr @1248, i64 4 })
+  %327 = call i64 @forge_string_compare(%ForgeString %326, { ptr, i64 } { ptr @1253, i64 4 })
   %328 = icmp eq i64 %327, 0
   %329 = or i1 %325, %328
   %330 = load %ForgeString, ptr %42, align 8
-  %331 = call i64 @forge_string_compare(%ForgeString %330, { ptr, i64 } { ptr @1249, i64 8 })
+  %331 = call i64 @forge_string_compare(%ForgeString %330, { ptr, i64 } { ptr @1254, i64 8 })
   %332 = icmp eq i64 %331, 0
   %333 = or i1 %329, %332
   %334 = load %ForgeString, ptr %42, align 8
-  %335 = call i64 @forge_string_compare(%ForgeString %334, { ptr, i64 } { ptr @1250, i64 7 })
+  %335 = call i64 @forge_string_compare(%ForgeString %334, { ptr, i64 } { ptr @1255, i64 7 })
   %336 = icmp eq i64 %335, 0
   %337 = or i1 %333, %336
   %338 = load %ForgeString, ptr %42, align 8
-  %339 = call i64 @forge_string_compare(%ForgeString %338, { ptr, i64 } { ptr @1251, i64 6 })
+  %339 = call i64 @forge_string_compare(%ForgeString %338, { ptr, i64 } { ptr @1256, i64 6 })
   %340 = icmp eq i64 %339, 0
   %341 = or i1 %337, %340
   br i1 %341, label %bb5043, label %bb5044
@@ -42000,7 +42022,7 @@ bb5045:                                           ; preds = %bb5048, %bb5043
 bb5046:                                           ; preds = %bb5044
   %349 = load %ForgeString, ptr %40, align 8
   %350 = call %ForgeString @forge_string_char_at(%ForgeString %349, i64 0)
-  %351 = call i64 @forge_string_compare(%ForgeString %350, { ptr, i64 } { ptr @1252, i64 1 })
+  %351 = call i64 @forge_string_compare(%ForgeString %350, { ptr, i64 } { ptr @1257, i64 1 })
   %352 = icmp eq i64 %351, 0
   br i1 %352, label %bb5049, label %bb5050
 
@@ -42023,15 +42045,15 @@ bb5049:                                           ; preds = %bb5046
   %359 = call i64 @forge_list_var_add(%ForgeString %358)
   %360 = load %ForgeString, ptr @CG_LIST_VAR_CSV, align 8
   %361 = load %ForgeString, ptr @CG_LIST_VAR_CSV, align 8
-  %362 = call %ForgeString @forge_string_concat(%ForgeString %361, { ptr, i64 } { ptr @1253, i64 1 })
+  %362 = call %ForgeString @forge_string_concat(%ForgeString %361, { ptr, i64 } { ptr @1258, i64 1 })
   %363 = load %ForgeString, ptr %42, align 8
   %364 = call %ForgeString @forge_string_concat(%ForgeString %362, %ForgeString %363)
-  %365 = call %ForgeString @forge_string_concat(%ForgeString %364, { ptr, i64 } { ptr @1254, i64 1 })
+  %365 = call %ForgeString @forge_string_concat(%ForgeString %364, { ptr, i64 } { ptr @1259, i64 1 })
   %366 = extractvalue %ForgeString %365, 0
   store %ForgeString %365, ptr @CG_LIST_VAR_CSV, align 8
   store %ForgeString %365, ptr @CG_LIST_VAR_CSV, align 8
   %367 = load %ForgeString, ptr %40, align 8
-  %368 = call i64 @forge_string_index_of(%ForgeString %367, { ptr, i64 } { ptr @1255, i64 1 })
+  %368 = call i64 @forge_string_index_of(%ForgeString %367, { ptr, i64 } { ptr @1260, i64 1 })
   store i64 %368, ptr %33, align 4
   %369 = load i64, ptr %33, align 4
   %370 = icmp sgt i64 %369, 0
@@ -42045,7 +42067,7 @@ bb5051:                                           ; preds = %bb5050, %bb5054
 
 bb5052:                                           ; preds = %bb5049
   %371 = load %ForgeString, ptr %40, align 8
-  %372 = call i64 @forge_string_index_of(%ForgeString %371, { ptr, i64 } { ptr @1256, i64 1 })
+  %372 = call i64 @forge_string_index_of(%ForgeString %371, { ptr, i64 } { ptr @1261, i64 1 })
   store i64 %372, ptr %32, align 4
   %373 = load i64, ptr %32, align 4
   %374 = load i64, ptr %33, align 4
@@ -42055,10 +42077,10 @@ bb5052:                                           ; preds = %bb5049
 bb5053:                                           ; preds = %bb5049
   %376 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
   %377 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
-  %378 = call %ForgeString @forge_string_concat(%ForgeString %377, { ptr, i64 } { ptr @1263, i64 1 })
+  %378 = call %ForgeString @forge_string_concat(%ForgeString %377, { ptr, i64 } { ptr @1268, i64 1 })
   %379 = load %ForgeString, ptr %42, align 8
   %380 = call %ForgeString @forge_string_concat(%ForgeString %378, %ForgeString %379)
-  %381 = call %ForgeString @forge_string_concat(%ForgeString %380, { ptr, i64 } { ptr @1264, i64 1 })
+  %381 = call %ForgeString @forge_string_concat(%ForgeString %380, { ptr, i64 } { ptr @1269, i64 1 })
   %382 = extractvalue %ForgeString %381, 0
   store %ForgeString %381, ptr @CG_STR_LIST_VAR_CSV, align 8
   store %ForgeString %381, ptr @CG_STR_LIST_VAR_CSV, align 8
@@ -42076,18 +42098,18 @@ bb5055:                                           ; preds = %bb5052
   store %ForgeString %387, ptr %31, align 8
   %388 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %389 = load %ForgeString, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
-  %390 = call %ForgeString @forge_string_concat(%ForgeString %389, { ptr, i64 } { ptr @1257, i64 1 })
+  %390 = call %ForgeString @forge_string_concat(%ForgeString %389, { ptr, i64 } { ptr @1262, i64 1 })
   %391 = load %ForgeString, ptr %42, align 8
   %392 = call %ForgeString @forge_string_concat(%ForgeString %390, %ForgeString %391)
-  %393 = call %ForgeString @forge_string_concat(%ForgeString %392, { ptr, i64 } { ptr @1258, i64 1 })
+  %393 = call %ForgeString @forge_string_concat(%ForgeString %392, { ptr, i64 } { ptr @1263, i64 1 })
   %394 = load %ForgeString, ptr %31, align 8
   %395 = call %ForgeString @forge_string_concat(%ForgeString %393, %ForgeString %394)
-  %396 = call %ForgeString @forge_string_concat(%ForgeString %395, { ptr, i64 } { ptr @1259, i64 1 })
+  %396 = call %ForgeString @forge_string_concat(%ForgeString %395, { ptr, i64 } { ptr @1264, i64 1 })
   %397 = extractvalue %ForgeString %396, 0
   store %ForgeString %396, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   store %ForgeString %396, ptr @CG_LIST_ELEM_TYPE_CSV, align 8
   %398 = load %ForgeString, ptr %31, align 8
-  %399 = call i64 @forge_string_compare(%ForgeString %398, { ptr, i64 } { ptr @1260, i64 6 })
+  %399 = call i64 @forge_string_compare(%ForgeString %398, { ptr, i64 } { ptr @1265, i64 6 })
   %400 = icmp eq i64 %399, 0
   br i1 %400, label %bb5058, label %bb5059
 
@@ -42100,10 +42122,10 @@ bb5057:                                           ; preds = %bb5056, %bb5060
 bb5058:                                           ; preds = %bb5055
   %401 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
   %402 = load %ForgeString, ptr @CG_STR_LIST_VAR_CSV, align 8
-  %403 = call %ForgeString @forge_string_concat(%ForgeString %402, { ptr, i64 } { ptr @1261, i64 1 })
+  %403 = call %ForgeString @forge_string_concat(%ForgeString %402, { ptr, i64 } { ptr @1266, i64 1 })
   %404 = load %ForgeString, ptr %42, align 8
   %405 = call %ForgeString @forge_string_concat(%ForgeString %403, %ForgeString %404)
-  %406 = call %ForgeString @forge_string_concat(%ForgeString %405, { ptr, i64 } { ptr @1262, i64 1 })
+  %406 = call %ForgeString @forge_string_concat(%ForgeString %405, { ptr, i64 } { ptr @1267, i64 1 })
   %407 = extractvalue %ForgeString %406, 0
   store %ForgeString %406, ptr @CG_STR_LIST_VAR_CSV, align 8
   store %ForgeString %406, ptr @CG_STR_LIST_VAR_CSV, align 8
@@ -42120,8 +42142,8 @@ bb5061:                                           ; preds = %bb5042
   %409 = call i64 @cg_enum_max_fields(%ForgeString %408)
   store i64 %409, ptr %30, align 4
   %410 = load %ForgeString, ptr %40, align 8
-  %411 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1265, i64 1 }, %ForgeString %410)
-  %412 = call %ForgeString @forge_string_concat(%ForgeString %411, { ptr, i64 } { ptr @1266, i64 1 })
+  %411 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1270, i64 1 }, %ForgeString %410)
+  %412 = call %ForgeString @forge_string_concat(%ForgeString %411, { ptr, i64 } { ptr @1271, i64 1 })
   store %ForgeString %412, ptr %29, align 8
   %413 = load %ForgeString, ptr @CG_ENUM_TYPE_CSV, align 8
   %414 = load %ForgeString, ptr %29, align 8
@@ -42152,13 +42174,13 @@ bb5063:                                           ; preds = %bb5062, %bb5066
 bb5064:                                           ; preds = %bb5061
   %428 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
   %429 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
-  %430 = call %ForgeString @forge_string_concat(%ForgeString %429, { ptr, i64 } { ptr @1267, i64 1 })
+  %430 = call %ForgeString @forge_string_concat(%ForgeString %429, { ptr, i64 } { ptr @1272, i64 1 })
   %431 = load %ForgeString, ptr %42, align 8
   %432 = call %ForgeString @forge_string_concat(%ForgeString %430, %ForgeString %431)
-  %433 = call %ForgeString @forge_string_concat(%ForgeString %432, { ptr, i64 } { ptr @1268, i64 1 })
+  %433 = call %ForgeString @forge_string_concat(%ForgeString %432, { ptr, i64 } { ptr @1273, i64 1 })
   %434 = load %ForgeString, ptr %40, align 8
   %435 = call %ForgeString @forge_string_concat(%ForgeString %433, %ForgeString %434)
-  %436 = call %ForgeString @forge_string_concat(%ForgeString %435, { ptr, i64 } { ptr @1269, i64 1 })
+  %436 = call %ForgeString @forge_string_concat(%ForgeString %435, { ptr, i64 } { ptr @1274, i64 1 })
   %437 = extractvalue %ForgeString %436, 0
   store %ForgeString %436, ptr @CG_ENUM_VAR_CSV, align 8
   store %ForgeString %436, ptr @CG_ENUM_VAR_CSV, align 8
@@ -42183,20 +42205,20 @@ bb5065:                                           ; preds = %bb5061
   store %ForgeString %447, ptr @CG_STRUCT_VAR_TYPES, align 8
   %448 = load %ForgeString, ptr @CG_STRUCT_VAR_CSV, align 8
   %449 = load %ForgeString, ptr @CG_STRUCT_VAR_CSV, align 8
-  %450 = call %ForgeString @forge_string_concat(%ForgeString %449, { ptr, i64 } { ptr @1270, i64 1 })
+  %450 = call %ForgeString @forge_string_concat(%ForgeString %449, { ptr, i64 } { ptr @1275, i64 1 })
   %451 = load %ForgeString, ptr %42, align 8
   %452 = call %ForgeString @forge_string_concat(%ForgeString %450, %ForgeString %451)
-  %453 = call %ForgeString @forge_string_concat(%ForgeString %452, { ptr, i64 } { ptr @1271, i64 1 })
+  %453 = call %ForgeString @forge_string_concat(%ForgeString %452, { ptr, i64 } { ptr @1276, i64 1 })
   %454 = load %ForgeString, ptr %40, align 8
   %455 = call %ForgeString @forge_string_concat(%ForgeString %453, %ForgeString %454)
-  %456 = call %ForgeString @forge_string_concat(%ForgeString %455, { ptr, i64 } { ptr @1272, i64 1 })
+  %456 = call %ForgeString @forge_string_concat(%ForgeString %455, { ptr, i64 } { ptr @1277, i64 1 })
   %457 = extractvalue %ForgeString %456, 0
   store %ForgeString %456, ptr @CG_STRUCT_VAR_CSV, align 8
   store %ForgeString %456, ptr @CG_STRUCT_VAR_CSV, align 8
   %458 = load %ForgeString, ptr %42, align 8
   %459 = load %ForgeString, ptr %40, align 8
   %460 = call i64 @forge_struct_var_add(%ForgeString %458, %ForgeString %459)
-  store { ptr, i64 } { ptr @1273, i64 0 }, ptr %27, align 8
+  store { ptr, i64 } { ptr @1278, i64 0 }, ptr %27, align 8
   %461 = load ptr, ptr @CG_STRUCT_FIELDS, align 8
   %462 = call i64 @forge_string_length(ptr %461)
   %463 = sub i64 %462, 1
@@ -42257,20 +42279,20 @@ bb5073:                                           ; preds = %bb5021
   %485 = call %ForgeString @forge_param_type_get(i64 %484)
   store %ForgeString %485, ptr %24, align 8
   %486 = load %ForgeString, ptr %25, align 8
-  %487 = call i64 @forge_string_compare(%ForgeString %486, { ptr, i64 } { ptr @1276, i64 4 })
+  %487 = call i64 @forge_string_compare(%ForgeString %486, { ptr, i64 } { ptr @1281, i64 4 })
   %488 = icmp eq i64 %487, 0
   br i1 %488, label %bb5076, label %bb5077
 
 bb5074:                                           ; preds = %bb5021
-  %489 = call i64 @forge_set_self_type({ ptr, i64 } { ptr @1278, i64 0 })
+  %489 = call i64 @forge_set_self_type({ ptr, i64 } { ptr @1283, i64 0 })
   br label %bb5075
 
 bb5075:                                           ; preds = %bb5074, %bb5078
   %490 = load %ForgeString, ptr @VAR_LIST_INIT_CSV, align 8
-  store { ptr, i64 } { ptr @1279, i64 0 }, ptr @VAR_LIST_INIT_CSV, align 8
-  store { ptr, i64 } { ptr @1279, i64 0 }, ptr @VAR_LIST_INIT_CSV, align 8
+  store { ptr, i64 } { ptr @1284, i64 0 }, ptr @VAR_LIST_INIT_CSV, align 8
+  store { ptr, i64 } { ptr @1284, i64 0 }, ptr @VAR_LIST_INIT_CSV, align 8
   %491 = load %ForgeString, ptr %55, align 8
-  %492 = call i64 @forge_string_compare(%ForgeString %491, { ptr, i64 } { ptr @1280, i64 0 })
+  %492 = call i64 @forge_string_compare(%ForgeString %491, { ptr, i64 } { ptr @1285, i64 0 })
   %493 = icmp ne i64 %492, 0
   br i1 %493, label %bb5079, label %bb5080
 
@@ -42280,7 +42302,7 @@ bb5076:                                           ; preds = %bb5073
   br label %bb5078
 
 bb5077:                                           ; preds = %bb5073
-  %496 = call i64 @forge_set_self_type({ ptr, i64 } { ptr @1277, i64 0 })
+  %496 = call i64 @forge_set_self_type({ ptr, i64 } { ptr @1282, i64 0 })
   br label %bb5078
 
 bb5078:                                           ; preds = %bb5077, %bb5076
@@ -42506,7 +42528,7 @@ bb5105:                                           ; preds = %bb5104, %bb5103
   %607 = call i64 @forge_arm_pending_alloca()
   %608 = load ptr, ptr @CG_B, align 8
   %609 = load ptr, ptr @CG_STR, align 8
-  %610 = call ptr @forge_llvm_build_alloca(ptr %608, ptr %609, ptr @1281)
+  %610 = call ptr @forge_llvm_build_alloca(ptr %608, ptr %609, ptr @1286)
   store ptr %610, ptr %11, align 8
   %611 = load ptr, ptr @CG_B, align 8
   %612 = load i64, ptr %15, align 4
@@ -42743,7 +42765,7 @@ bb5139:                                           ; preds = %bb5136
 
 bb5140:                                           ; preds = %bb5136
   %716 = call i64 @cg_reinit_types()
-  store { ptr, i64 } { ptr @1282, i64 0 }, ptr %4, align 8
+  store { ptr, i64 } { ptr @1287, i64 0 }, ptr %4, align 8
   %717 = load i64, ptr %58, align 4
   %718 = load ptr, ptr @FN_RETURN_TYPES, align 8
   %719 = call i64 @forge_string_length(ptr %718)
@@ -42776,7 +42798,7 @@ bb5145:                                           ; preds = %bb5144
   %729 = call i64 @forge_string_length(%ForgeString %728)
   %730 = sub i64 %729, 1
   %731 = call %ForgeString @forge_string_char_at(%ForgeString %727, i64 %730)
-  %732 = call i64 @forge_string_compare(%ForgeString %731, { ptr, i64 } { ptr @1283, i64 1 })
+  %732 = call i64 @forge_string_compare(%ForgeString %731, { ptr, i64 } { ptr @1288, i64 1 })
   %733 = icmp eq i64 %732, 0
   br i1 %733, label %bb5148, label %bb5149
 
@@ -42916,7 +42938,7 @@ bb5161:                                           ; preds = %bb5166, %bb5159
 bb5162:                                           ; preds = %bb5161
   %31 = load i64, ptr %16, align 4
   %32 = load i64, ptr %14, align 4
-  %33 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1284, i64 1 })
+  %33 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1289, i64 1 })
   %34 = icmp eq i64 %33, 0
   br i1 %34, label %bb5164, label %bb5165
 
@@ -42955,7 +42977,7 @@ bb5168:                                           ; preds = %bb5163
   br label %bb5169
 
 bb5169:                                           ; preds = %bb5168, %bb5167
-  store { ptr, i64 } { ptr @1285, i64 0 }, ptr %13, align 8
+  store { ptr, i64 } { ptr @1290, i64 0 }, ptr %13, align 8
   %45 = load i64, ptr %17, align 4
   %46 = load ptr, ptr @CG_STRUCT_FIELD_TYPE_NAMES, align 8
   %47 = call i64 @forge_string_length(ptr %46)
@@ -42985,7 +43007,7 @@ bb5172:                                           ; preds = %bb5171, %bb5170
 bb5173:                                           ; preds = %bb5172
   store i64 0, ptr %11, align 4
   store i64 0, ptr %10, align 4
-  store { ptr, i64 } { ptr @1286, i64 0 }, ptr %9, align 8
+  store { ptr, i64 } { ptr @1291, i64 0 }, ptr %9, align 8
   br label %bb5176
 
 bb5174:                                           ; preds = %bb5172
@@ -43021,13 +43043,13 @@ bb5177:                                           ; preds = %bb5176
   %72 = call %ForgeString @forge_string_char_at(%ForgeString %70, i64 %71)
   store %ForgeString %72, ptr %8, align 8
   %73 = load %ForgeString, ptr %8, align 8
-  %74 = call i64 @forge_string_compare(%ForgeString %73, { ptr, i64 } { ptr @1287, i64 1 })
+  %74 = call i64 @forge_string_compare(%ForgeString %73, { ptr, i64 } { ptr @1292, i64 1 })
   %75 = icmp eq i64 %74, 0
   br i1 %75, label %bb5179, label %bb5180
 
 bb5178:                                           ; preds = %bb5176
   %76 = load %ForgeString, ptr %9, align 8
-  %77 = call i64 @forge_string_compare(%ForgeString %76, { ptr, i64 } { ptr @1289, i64 0 })
+  %77 = call i64 @forge_string_compare(%ForgeString %76, { ptr, i64 } { ptr @1294, i64 0 })
   %78 = icmp ne i64 %77, 0
   br i1 %78, label %bb5182, label %bb5183
 
@@ -43043,8 +43065,8 @@ bb5179:                                           ; preds = %bb5177
   store i64 %86, ptr %11, align 4
   store i64 %86, ptr %11, align 4
   %87 = load %ForgeString, ptr %9, align 8
-  store { ptr, i64 } { ptr @1288, i64 0 }, ptr %9, align 8
-  store { ptr, i64 } { ptr @1288, i64 0 }, ptr %9, align 8
+  store { ptr, i64 } { ptr @1293, i64 0 }, ptr %9, align 8
+  store { ptr, i64 } { ptr @1293, i64 0 }, ptr %9, align 8
   br label %bb5181
 
 bb5180:                                           ; preds = %bb5177
@@ -43087,7 +43109,7 @@ bb5185:                                           ; preds = %bb5199, %bb5174
 
 bb5186:                                           ; preds = %bb5185
   store i64 0, ptr %4, align 4
-  store { ptr, i64 } { ptr @1290, i64 0 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1295, i64 0 }, ptr %3, align 8
   br label %bb5188
 
 bb5187:                                           ; preds = %bb5185
@@ -43111,13 +43133,13 @@ bb5189:                                           ; preds = %bb5188
   store i64 %113, ptr %5, align 4
   store i64 %113, ptr %5, align 4
   %114 = load %ForgeString, ptr %2, align 8
-  %115 = call i64 @forge_string_compare(%ForgeString %114, { ptr, i64 } { ptr @1291, i64 1 })
+  %115 = call i64 @forge_string_compare(%ForgeString %114, { ptr, i64 } { ptr @1296, i64 1 })
   %116 = icmp eq i64 %115, 0
   br i1 %116, label %bb5191, label %bb5192
 
 bb5190:                                           ; preds = %bb5188
   %117 = load %ForgeString, ptr %3, align 8
-  %118 = call i64 @forge_string_compare(%ForgeString %117, { ptr, i64 } { ptr @1292, i64 1 })
+  %118 = call i64 @forge_string_compare(%ForgeString %117, { ptr, i64 } { ptr @1297, i64 1 })
   %119 = icmp eq i64 %118, 0
   br i1 %119, label %bb5194, label %bb5195
 
@@ -43372,7 +43394,7 @@ bb5210:                                           ; preds = %bb5215, %bb5207
 bb5211:                                           ; preds = %bb5210
   %86 = load i64, ptr %55, align 4
   %87 = load i64, ptr %53, align 4
-  %88 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1293, i64 1 })
+  %88 = call i64 @forge_string_compare(i64 0, { ptr, i64 } { ptr @1298, i64 1 })
   %89 = icmp eq i64 %88, 0
   br i1 %89, label %bb5213, label %bb5214
 
@@ -43411,7 +43433,7 @@ bb5217:                                           ; preds = %bb5212
   br label %bb5218
 
 bb5218:                                           ; preds = %bb5217, %bb5216
-  store { ptr, i64 } { ptr @1294, i64 0 }, ptr %52, align 8
+  store { ptr, i64 } { ptr @1299, i64 0 }, ptr %52, align 8
   %100 = load i64, ptr %56, align 4
   %101 = load ptr, ptr @CG_STRUCT_FIELD_TYPE_NAMES, align 8
   %102 = call i64 @forge_string_length(ptr %101)
@@ -43441,7 +43463,7 @@ bb5221:                                           ; preds = %bb5220, %bb5219
 bb5222:                                           ; preds = %bb5221
   store i64 0, ptr %50, align 4
   store i64 0, ptr %49, align 4
-  store { ptr, i64 } { ptr @1295, i64 0 }, ptr %48, align 8
+  store { ptr, i64 } { ptr @1300, i64 0 }, ptr %48, align 8
   br label %bb5225
 
 bb5223:                                           ; preds = %bb5221
@@ -43521,13 +43543,13 @@ bb5226:                                           ; preds = %bb5225
   %157 = call %ForgeString @forge_string_char_at(%ForgeString %155, i64 %156)
   store %ForgeString %157, ptr %47, align 8
   %158 = load %ForgeString, ptr %47, align 8
-  %159 = call i64 @forge_string_compare(%ForgeString %158, { ptr, i64 } { ptr @1296, i64 1 })
+  %159 = call i64 @forge_string_compare(%ForgeString %158, { ptr, i64 } { ptr @1301, i64 1 })
   %160 = icmp eq i64 %159, 0
   br i1 %160, label %bb5228, label %bb5229
 
 bb5227:                                           ; preds = %bb5225
   %161 = load %ForgeString, ptr %48, align 8
-  %162 = call i64 @forge_string_compare(%ForgeString %161, { ptr, i64 } { ptr @1298, i64 0 })
+  %162 = call i64 @forge_string_compare(%ForgeString %161, { ptr, i64 } { ptr @1303, i64 0 })
   %163 = icmp ne i64 %162, 0
   br i1 %163, label %bb5231, label %bb5232
 
@@ -43543,8 +43565,8 @@ bb5228:                                           ; preds = %bb5226
   store i64 %171, ptr %50, align 4
   store i64 %171, ptr %50, align 4
   %172 = load %ForgeString, ptr %48, align 8
-  store { ptr, i64 } { ptr @1297, i64 0 }, ptr %48, align 8
-  store { ptr, i64 } { ptr @1297, i64 0 }, ptr %48, align 8
+  store { ptr, i64 } { ptr @1302, i64 0 }, ptr %48, align 8
+  store { ptr, i64 } { ptr @1302, i64 0 }, ptr %48, align 8
   br label %bb5230
 
 bb5229:                                           ; preds = %bb5226
@@ -43587,7 +43609,7 @@ bb5234:                                           ; preds = %bb5248, %bb5223
 
 bb5235:                                           ; preds = %bb5234
   store i64 0, ptr %43, align 4
-  store { ptr, i64 } { ptr @1299, i64 0 }, ptr %42, align 8
+  store { ptr, i64 } { ptr @1304, i64 0 }, ptr %42, align 8
   br label %bb5237
 
 bb5236:                                           ; preds = %bb5234
@@ -43611,13 +43633,13 @@ bb5238:                                           ; preds = %bb5237
   store i64 %198, ptr %44, align 4
   store i64 %198, ptr %44, align 4
   %199 = load %ForgeString, ptr %41, align 8
-  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1300, i64 1 })
+  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1305, i64 1 })
   %201 = icmp eq i64 %200, 0
   br i1 %201, label %bb5240, label %bb5241
 
 bb5239:                                           ; preds = %bb5237
   %202 = load %ForgeString, ptr %42, align 8
-  %203 = call i64 @forge_string_compare(%ForgeString %202, { ptr, i64 } { ptr @1301, i64 1 })
+  %203 = call i64 @forge_string_compare(%ForgeString %202, { ptr, i64 } { ptr @1306, i64 1 })
   %204 = icmp eq i64 %203, 0
   br i1 %204, label %bb5243, label %bb5244
 
@@ -43687,7 +43709,7 @@ bb5250:                                           ; preds = %bb5249
   %230 = call %ForgeString @forge_fn_store_get_body(i64 %229)
   store %ForgeString %230, ptr %35, align 8
   %231 = load %ForgeString, ptr %36, align 8
-  %232 = call i64 @forge_string_compare(%ForgeString %231, { ptr, i64 } { ptr @1302, i64 4 })
+  %232 = call i64 @forge_string_compare(%ForgeString %231, { ptr, i64 } { ptr @1307, i64 4 })
   %233 = icmp eq i64 %232, 0
   %234 = zext i1 %233 to i64
   store i64 %234, ptr %34, align 4
@@ -43850,7 +43872,7 @@ bb5267:                                           ; preds = %bb5264
   %318 = load i64, ptr %23, align 4
   %319 = sub i64 %318, 1
   %320 = call %ForgeString @forge_string_char_at(i64 %317, i64 %319)
-  %321 = call i64 @forge_string_compare(%ForgeString %320, { ptr, i64 } { ptr @1303, i64 1 })
+  %321 = call i64 @forge_string_compare(%ForgeString %320, { ptr, i64 } { ptr @1308, i64 1 })
   %322 = icmp eq i64 %321, 0
   br i1 %322, label %bb5270, label %bb5271
 
@@ -43859,7 +43881,7 @@ bb5268:                                           ; preds = %bb5264
 
 bb5269:                                           ; preds = %bb5268, %bb5272
   %323 = load i64, ptr %24, align 4
-  %324 = call i64 @forge_string_compare(i64 %323, { ptr, i64 } { ptr @1304, i64 6 })
+  %324 = call i64 @forge_string_compare(i64 %323, { ptr, i64 } { ptr @1309, i64 6 })
   %325 = icmp eq i64 %324, 0
   br i1 %325, label %bb5273, label %bb5274
 
@@ -43899,7 +43921,7 @@ bb5273:                                           ; preds = %bb5269
 
 bb5274:                                           ; preds = %bb5269
   %340 = load i64, ptr %24, align 4
-  %341 = call i64 @forge_string_compare(i64 %340, { ptr, i64 } { ptr @1305, i64 0 })
+  %341 = call i64 @forge_string_compare(i64 %340, { ptr, i64 } { ptr @1310, i64 0 })
   %342 = icmp ne i64 %341, 0
   br i1 %342, label %bb5276, label %bb5277
 
@@ -43958,7 +43980,7 @@ bb5284:                                           ; preds = %bb5283, %bb5287
   store i64 %359, ptr %360, align 4
   %361 = load ptr, ptr @CG_CTX, align 8
   %362 = load i64, ptr %21, align 4
-  %363 = call ptr @forge_llvm_append_basic_block(ptr %361, i64 %362, ptr @1306)
+  %363 = call ptr @forge_llvm_append_basic_block(ptr %361, i64 %362, ptr @1311)
   store ptr %363, ptr %20, align 8
   %364 = load ptr, ptr @CG_B, align 8
   %365 = load i64, ptr %20, align 4
@@ -43994,7 +44016,7 @@ bb5284:                                           ; preds = %bb5283, %bb5287
   store i64 0, ptr @CG_IS_MAP_INDEX, align 4
   %378 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1307, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1312, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %379 = load %ForgeString, ptr %31, align 8
   store i64 0, ptr %31, align 4
   store i64 0, ptr %31, align 4
@@ -44061,7 +44083,7 @@ bb5292:                                           ; preds = %bb5291
   %410 = ptrtoint ptr %409 to i64
   %411 = add i64 %407, %410
   store i64 %411, ptr %17, align 4
-  store { ptr, i64 } { ptr @1308, i64 3 }, ptr %16, align 8
+  store { ptr, i64 } { ptr @1313, i64 3 }, ptr %16, align 8
   %412 = load i64, ptr %17, align 4
   %413 = load ptr, ptr @FN_ALL_PARAM_TYPES, align 8
   %414 = call i64 @forge_string_length(ptr %413)
@@ -44089,7 +44111,7 @@ bb5293:                                           ; preds = %bb5291
   store i64 0, ptr @CG_IS_MAP_INDEX, align 4
   %424 = load ptr, ptr @CG_LAST_STRUCT_TYPE, align 8
   store i64 0, ptr @CG_LAST_STRUCT_TYPE, align 4
-  store { ptr, i64 } { ptr @1320, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
+  store { ptr, i64 } { ptr @1325, i64 0 }, ptr @CG_LAST_STRUCT_TYPE, align 8
   %425 = load ptr, ptr @CG_LAST_IS_NULLABLE, align 8
   store i64 0, ptr @CG_LAST_IS_NULLABLE, align 4
   store i64 0, ptr @CG_LAST_IS_NULLABLE, align 4
@@ -44117,7 +44139,7 @@ bb5296:                                           ; preds = %bb5295, %bb5294
   store ptr %433, ptr %15, align 8
   store i64 0, ptr %14, align 4
   %434 = load %ForgeString, ptr %16, align 8
-  %435 = call i64 @forge_string_compare(%ForgeString %434, { ptr, i64 } { ptr @1309, i64 6 })
+  %435 = call i64 @forge_string_compare(%ForgeString %434, { ptr, i64 } { ptr @1314, i64 6 })
   %436 = icmp eq i64 %435, 0
   br i1 %436, label %bb5297, label %bb5298
 
@@ -44131,18 +44153,18 @@ bb5297:                                           ; preds = %bb5296
 
 bb5298:                                           ; preds = %bb5296
   %440 = load %ForgeString, ptr %16, align 8
-  %441 = call i64 @forge_string_compare(%ForgeString %440, { ptr, i64 } { ptr @1310, i64 3 })
+  %441 = call i64 @forge_string_compare(%ForgeString %440, { ptr, i64 } { ptr @1315, i64 3 })
   %442 = icmp ne i64 %441, 0
   %443 = load %ForgeString, ptr %16, align 8
-  %444 = call i64 @forge_string_compare(%ForgeString %443, { ptr, i64 } { ptr @1311, i64 5 })
+  %444 = call i64 @forge_string_compare(%ForgeString %443, { ptr, i64 } { ptr @1316, i64 5 })
   %445 = icmp ne i64 %444, 0
   %446 = and i1 %442, %445
   %447 = load %ForgeString, ptr %16, align 8
-  %448 = call i64 @forge_string_compare(%ForgeString %447, { ptr, i64 } { ptr @1312, i64 4 })
+  %448 = call i64 @forge_string_compare(%ForgeString %447, { ptr, i64 } { ptr @1317, i64 4 })
   %449 = icmp ne i64 %448, 0
   %450 = and i1 %446, %449
   %451 = load %ForgeString, ptr %16, align 8
-  %452 = call i64 @forge_string_compare(%ForgeString %451, { ptr, i64 } { ptr @1313, i64 3 })
+  %452 = call i64 @forge_string_compare(%ForgeString %451, { ptr, i64 } { ptr @1318, i64 3 })
   %453 = icmp ne i64 %452, 0
   %454 = and i1 %450, %453
   br i1 %454, label %bb5300, label %bb5301
@@ -44168,7 +44190,7 @@ bb5299:                                           ; preds = %bb5302, %bb5297
   store %ForgeString %467, ptr @CG_VAR_NAMES, align 8
   store i64 0, ptr %11, align 4
   %469 = load %ForgeString, ptr %16, align 8
-  %470 = call i64 @forge_string_compare(%ForgeString %469, { ptr, i64 } { ptr @1314, i64 6 })
+  %470 = call i64 @forge_string_compare(%ForgeString %469, { ptr, i64 } { ptr @1319, i64 6 })
   %471 = icmp eq i64 %470, 0
   br i1 %471, label %bb5306, label %bb5307
 
@@ -44237,7 +44259,7 @@ bb5308:                                           ; preds = %bb5307, %bb5306
   store %ForgeString %493, ptr @CG_VAR_PTRS, align 8
   store %ForgeString %493, ptr @CG_VAR_PTRS, align 8
   %495 = load %ForgeString, ptr %16, align 8
-  %496 = call i64 @forge_string_compare(%ForgeString %495, { ptr, i64 } { ptr @1315, i64 6 })
+  %496 = call i64 @forge_string_compare(%ForgeString %495, { ptr, i64 } { ptr @1320, i64 6 })
   %497 = icmp eq i64 %496, 0
   br i1 %497, label %bb5309, label %bb5310
 
@@ -44287,17 +44309,17 @@ bb5314:                                           ; preds = %bb5313, %bb5317
 bb5315:                                           ; preds = %bb5312
   %517 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
   %518 = load %ForgeString, ptr @CG_ENUM_VAR_CSV, align 8
-  %519 = call %ForgeString @forge_string_concat(%ForgeString %518, { ptr, i64 } { ptr @1316, i64 1 })
+  %519 = call %ForgeString @forge_string_concat(%ForgeString %518, { ptr, i64 } { ptr @1321, i64 1 })
   %520 = load i64, ptr %19, align 4
   %521 = extractvalue %ForgeString %519, 0
   %522 = ptrtoint ptr %521 to i64
   %523 = add i64 %522, %520
-  %524 = add i64 %523, ptrtoint (ptr @1317 to i64)
+  %524 = add i64 %523, ptrtoint (ptr @1322 to i64)
   %525 = load %ForgeString, ptr %16, align 8
   %526 = extractvalue %ForgeString %525, 0
   %527 = ptrtoint ptr %526 to i64
   %528 = add i64 %524, %527
-  %529 = add i64 %528, ptrtoint (ptr @1318 to i64)
+  %529 = add i64 %528, ptrtoint (ptr @1323 to i64)
   %530 = inttoptr i64 %529 to ptr
   %531 = insertvalue %ForgeString undef, ptr %530, 0
   %532 = insertvalue %ForgeString %531, i64 0, 1
@@ -44322,7 +44344,7 @@ bb5316:                                           ; preds = %bb5312
   %542 = call %ForgeString @forge_list_push(ptr %540, ptr %541, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @CG_STRUCT_VAR_TYPES, align 4
   store %ForgeString %542, ptr @CG_STRUCT_VAR_TYPES, align 8
-  store { ptr, i64 } { ptr @1319, i64 0 }, ptr %9, align 8
+  store { ptr, i64 } { ptr @1324, i64 0 }, ptr %9, align 8
   %543 = load ptr, ptr @CG_STRUCT_FIELDS, align 8
   %544 = call i64 @forge_string_length(ptr %543)
   %545 = sub i64 %544, 1
@@ -44408,7 +44430,7 @@ bb5328:                                           ; preds = %bb5326
 
 bb5329:                                           ; preds = %bb5328, %bb5327
   %572 = load %ForgeString, ptr %35, align 8
-  %573 = call i64 @forge_string_compare(%ForgeString %572, { ptr, i64 } { ptr @1321, i64 0 })
+  %573 = call i64 @forge_string_compare(%ForgeString %572, { ptr, i64 } { ptr @1326, i64 0 })
   %574 = icmp ne i64 %573, 0
   br i1 %574, label %bb5330, label %bb5331
 
@@ -44625,7 +44647,7 @@ bb5357:                                           ; preds = %bb5356
   %26 = extractvalue %FnDeclData %25, 0
   store %ForgeString %26, ptr %12, align 8
   %27 = load %ForgeString, ptr %12, align 8
-  %28 = call i64 @forge_string_compare(%ForgeString %27, { ptr, i64 } { ptr @1322, i64 4 })
+  %28 = call i64 @forge_string_compare(%ForgeString %27, { ptr, i64 } { ptr @1327, i64 4 })
   %29 = icmp eq i64 %28, 0
   %30 = zext i1 %29 to i64
   store i64 %30, ptr %11, align 4
@@ -44655,7 +44677,7 @@ bb5360:                                           ; preds = %bb5359
   %43 = load ptr, ptr @CG_CTX, align 8
   %44 = load %ForgeString, ptr %10, align 8
   %45 = extractvalue %ForgeString %44, 0
-  %46 = call ptr @forge_llvm_append_basic_block(ptr %43, ptr %45, ptr @1323)
+  %46 = call ptr @forge_llvm_append_basic_block(ptr %43, ptr %45, ptr @1328)
   store ptr %46, ptr %9, align 8
   %47 = load ptr, ptr @CG_B, align 8
   %48 = load i64, ptr %9, align 4
@@ -44807,7 +44829,7 @@ bb5379:
   store %FnDeclData %1, ptr %11, align 8
   %12 = load %FnDeclData, ptr %11, align 8
   %13 = extractvalue %FnDeclData %12, 0
-  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1324, i64 4 })
+  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1329, i64 4 })
   %15 = icmp eq i64 %14, 0
   %16 = zext i1 %15 to i64
   store i64 %16, ptr %9, align 4
@@ -44898,7 +44920,7 @@ bb5386:                                           ; preds = %bb5385, %bb5384
   store i64 %65, ptr %66, align 4
   %67 = load ptr, ptr @CG_CTX, align 8
   %68 = load i64, ptr %4, align 4
-  %69 = call ptr @forge_llvm_append_basic_block(ptr %67, i64 %68, ptr @1325)
+  %69 = call ptr @forge_llvm_append_basic_block(ptr %67, i64 %68, ptr @1330)
   store ptr %69, ptr %3, align 8
   %70 = load ptr, ptr @CG_B, align 8
   %71 = load i64, ptr %3, align 4
@@ -45042,7 +45064,7 @@ bb5398:
   call void @forge_map_set(ptr %15, %ForgeString %16, %IfExprData %28)
   %29 = load i64, ptr %6, align 4
   %30 = load %Span, ptr %11, align 4
-  %31 = call %Expr @feature_expr({ ptr, i64 } { ptr @1326, i64 7 }, { ptr, i64 } { ptr @1327, i64 7 }, i64 %29, %Span %30)
+  %31 = call %Expr @feature_expr({ ptr, i64 } { ptr @1331, i64 7 }, { ptr, i64 } { ptr @1332, i64 7 }, i64 %29, %Span %30)
   ret %Expr %31
 }
 
@@ -45164,7 +45186,7 @@ bb5409:                                           ; preds = %bb5408
   %40 = load i64, ptr %19, align 4
   %41 = load ptr, ptr @CG_CTX, align 8
   %42 = call ptr @forge_llvm_int1_type(ptr %41)
-  %43 = call ptr @forge_llvm_build_trunc(ptr %39, i64 %40, ptr %42, ptr @1328)
+  %43 = call ptr @forge_llvm_build_trunc(ptr %39, i64 %40, ptr %42, ptr @1333)
   store ptr %43, ptr %18, align 8
   %44 = load ptr, ptr @CG_B, align 8
   %45 = call ptr @forge_llvm_get_insert_block(ptr %44)
@@ -45174,15 +45196,15 @@ bb5409:                                           ; preds = %bb5408
   store ptr %47, ptr %16, align 8
   %48 = load ptr, ptr @CG_CTX, align 8
   %49 = load i64, ptr %16, align 4
-  %50 = call ptr @forge_llvm_append_basic_block(ptr %48, i64 %49, ptr @1329)
+  %50 = call ptr @forge_llvm_append_basic_block(ptr %48, i64 %49, ptr @1334)
   store ptr %50, ptr %15, align 8
   %51 = load ptr, ptr @CG_CTX, align 8
   %52 = load i64, ptr %16, align 4
-  %53 = call ptr @forge_llvm_append_basic_block(ptr %51, i64 %52, ptr @1330)
+  %53 = call ptr @forge_llvm_append_basic_block(ptr %51, i64 %52, ptr @1335)
   store ptr %53, ptr %14, align 8
   %54 = load ptr, ptr @CG_CTX, align 8
   %55 = load i64, ptr %16, align 4
-  %56 = call ptr @forge_llvm_append_basic_block(ptr %54, i64 %55, ptr @1331)
+  %56 = call ptr @forge_llvm_append_basic_block(ptr %54, i64 %55, ptr @1336)
   store ptr %56, ptr %13, align 8
   %57 = load ptr, ptr @CG_B, align 8
   %58 = load i64, ptr %18, align 4
@@ -45371,7 +45393,7 @@ bb5428:                                           ; preds = %bb5425
   store ptr %165, ptr %4, align 8
   %166 = load ptr, ptr @CG_B, align 8
   %167 = load i64, ptr %4, align 4
-  %168 = call ptr @forge_llvm_build_phi(ptr %166, i64 %167, ptr @1332)
+  %168 = call ptr @forge_llvm_build_phi(ptr %166, i64 %167, ptr @1337)
   store ptr %168, ptr %3, align 8
   %169 = load i64, ptr %3, align 4
   %170 = load i64, ptr %12, align 4
@@ -45393,7 +45415,7 @@ bb5429:                                           ; preds = %bb5425
 bb5430:                                           ; preds = %bb5429
   %179 = load ptr, ptr @CG_B, align 8
   %180 = load ptr, ptr @CG_I64, align 8
-  %181 = call ptr @forge_llvm_build_phi(ptr %179, ptr %180, ptr @1333)
+  %181 = call ptr @forge_llvm_build_phi(ptr %179, ptr %180, ptr @1338)
   store ptr %181, ptr %2, align 8
   %182 = load i64, ptr %2, align 4
   %183 = load i64, ptr %12, align 4
@@ -45412,18 +45434,18 @@ bb5431:
   %1 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %1, align 8
   %2 = load %ForgeString, ptr %1, align 8
-  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1334, i64 5 })
+  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1339, i64 5 })
   %4 = icmp eq i64 %3, 0
   %5 = load %ForgeString, ptr %1, align 8
-  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1335, i64 7 })
+  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1340, i64 7 })
   %7 = icmp eq i64 %6, 0
   %8 = or i1 %4, %7
   %9 = load %ForgeString, ptr %1, align 8
-  %10 = call i64 @forge_string_compare(%ForgeString %9, { ptr, i64 } { ptr @1336, i64 6 })
+  %10 = call i64 @forge_string_compare(%ForgeString %9, { ptr, i64 } { ptr @1341, i64 6 })
   %11 = icmp eq i64 %10, 0
   %12 = or i1 %8, %11
   %13 = load %ForgeString, ptr %1, align 8
-  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1337, i64 8 })
+  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1342, i64 8 })
   %15 = icmp eq i64 %14, 0
   %16 = or i1 %12, %15
   %17 = zext i1 %16 to i64
@@ -45435,26 +45457,26 @@ bb5432:
   %1 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %1, align 8
   %2 = load %ForgeString, ptr %1, align 8
-  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1338, i64 3 })
+  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1343, i64 3 })
   %4 = icmp eq i64 %3, 0
   %5 = load %ForgeString, ptr %1, align 8
-  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1339, i64 5 })
+  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1344, i64 5 })
   %7 = icmp eq i64 %6, 0
   %8 = or i1 %4, %7
   %9 = load %ForgeString, ptr %1, align 8
-  %10 = call i64 @forge_string_compare(%ForgeString %9, { ptr, i64 } { ptr @1340, i64 4 })
+  %10 = call i64 @forge_string_compare(%ForgeString %9, { ptr, i64 } { ptr @1345, i64 4 })
   %11 = icmp eq i64 %10, 0
   %12 = or i1 %8, %11
   %13 = load %ForgeString, ptr %1, align 8
-  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1341, i64 6 })
+  %14 = call i64 @forge_string_compare(%ForgeString %13, { ptr, i64 } { ptr @1346, i64 6 })
   %15 = icmp eq i64 %14, 0
   %16 = or i1 %12, %15
   %17 = load %ForgeString, ptr %1, align 8
-  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1342, i64 4 })
+  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1347, i64 4 })
   %19 = icmp eq i64 %18, 0
   %20 = or i1 %16, %19
   %21 = load %ForgeString, ptr %1, align 8
-  %22 = call i64 @forge_string_compare(%ForgeString %21, { ptr, i64 } { ptr @1343, i64 3 })
+  %22 = call i64 @forge_string_compare(%ForgeString %21, { ptr, i64 } { ptr @1348, i64 3 })
   %23 = icmp eq i64 %22, 0
   %24 = or i1 %20, %23
   %25 = zext i1 %24 to i64
@@ -45466,7 +45488,7 @@ bb5433:
   %1 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %1, align 8
   %2 = load %ForgeString, ptr %1, align 8
-  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1344, i64 3 })
+  %3 = call i64 @forge_string_compare(%ForgeString %2, { ptr, i64 } { ptr @1349, i64 3 })
   %4 = icmp eq i64 %3, 0
   br i1 %4, label %bb5434, label %bb5435
 
@@ -45475,7 +45497,7 @@ bb5434:                                           ; preds = %bb5433
 
 bb5435:                                           ; preds = %bb5433
   %5 = load %ForgeString, ptr %1, align 8
-  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1345, i64 5 })
+  %6 = call i64 @forge_string_compare(%ForgeString %5, { ptr, i64 } { ptr @1350, i64 5 })
   %7 = icmp eq i64 %6, 0
   br i1 %7, label %bb5437, label %bb5438
 
@@ -45487,7 +45509,7 @@ bb5437:                                           ; preds = %bb5435
 
 bb5438:                                           ; preds = %bb5435
   %8 = load %ForgeString, ptr %1, align 8
-  %9 = call i64 @forge_string_compare(%ForgeString %8, { ptr, i64 } { ptr @1346, i64 4 })
+  %9 = call i64 @forge_string_compare(%ForgeString %8, { ptr, i64 } { ptr @1351, i64 4 })
   %10 = icmp eq i64 %9, 0
   br i1 %10, label %bb5440, label %bb5441
 
@@ -45499,7 +45521,7 @@ bb5440:                                           ; preds = %bb5438
 
 bb5441:                                           ; preds = %bb5438
   %11 = load %ForgeString, ptr %1, align 8
-  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1347, i64 6 })
+  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1352, i64 6 })
   %13 = icmp eq i64 %12, 0
   br i1 %13, label %bb5443, label %bb5444
 
@@ -45511,7 +45533,7 @@ bb5443:                                           ; preds = %bb5441
 
 bb5444:                                           ; preds = %bb5441
   %14 = load %ForgeString, ptr %1, align 8
-  %15 = call i64 @forge_string_compare(%ForgeString %14, { ptr, i64 } { ptr @1348, i64 4 })
+  %15 = call i64 @forge_string_compare(%ForgeString %14, { ptr, i64 } { ptr @1353, i64 4 })
   %16 = icmp eq i64 %15, 0
   br i1 %16, label %bb5446, label %bb5447
 
@@ -45523,7 +45545,7 @@ bb5446:                                           ; preds = %bb5444
 
 bb5447:                                           ; preds = %bb5444
   %17 = load %ForgeString, ptr %1, align 8
-  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1349, i64 3 })
+  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1354, i64 3 })
   %19 = icmp eq i64 %18, 0
   br i1 %19, label %bb5449, label %bb5450
 
@@ -45560,10 +45582,10 @@ bb5454:                                           ; preds = %bb5452
 
 bb5455:                                           ; preds = %bb5454
   %8 = load %ForgeString, ptr %2, align 8
-  %9 = call i64 @forge_string_compare(%ForgeString %8, { ptr, i64 } { ptr @1350, i64 3 })
+  %9 = call i64 @forge_string_compare(%ForgeString %8, { ptr, i64 } { ptr @1355, i64 3 })
   %10 = icmp eq i64 %9, 0
   %11 = load %ForgeString, ptr %3, align 8
-  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1351, i64 5 })
+  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1356, i64 5 })
   %13 = icmp eq i64 %12, 0
   %14 = and i1 %10, %13
   br i1 %14, label %bb5456, label %bb5457
@@ -45656,7 +45678,7 @@ bb5467:
   %16 = call %ForgeString @Parser__expect_ident(ptr %12)
   store %ForgeString %16, ptr %10, align 8
   %17 = load %ForgeString, ptr %10, align 8
-  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1352, i64 0 })
+  %18 = call i64 @forge_string_compare(%ForgeString %17, { ptr, i64 } { ptr @1357, i64 0 })
   %19 = icmp eq i64 %18, 0
   br i1 %19, label %bb5468, label %bb5469
 
@@ -45709,7 +45731,7 @@ bb5475:                                           ; preds = %bb5474
   %42 = call %ForgeString @Parser__expect_ident(ptr %12)
   store %ForgeString %42, ptr %7, align 8
   %43 = load %ForgeString, ptr %7, align 8
-  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1353, i64 0 })
+  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1358, i64 0 })
   %45 = icmp eq i64 %44, 0
   br i1 %45, label %bb5477, label %bb5478
 
@@ -45720,12 +45742,12 @@ bb5476:                                           ; preds = %bb5474
   %49 = load %ForgeString, ptr @CG_ENUM_TYPE_CSV, align 8
   %50 = load %ForgeString, ptr %10, align 8
   %51 = call %ForgeString @forge_int_to_string(%ForgeString %50)
-  %52 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1368, i64 1 }, %ForgeString %51)
-  %53 = call %ForgeString @forge_string_concat(%ForgeString %52, { ptr, i64 } { ptr @1369, i64 1 })
+  %52 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1373, i64 1 }, %ForgeString %51)
+  %53 = call %ForgeString @forge_string_concat(%ForgeString %52, { ptr, i64 } { ptr @1374, i64 1 })
   %54 = load i64, ptr %8, align 4
   %55 = call %ForgeString @forge_int_to_string(i64 %54)
   %56 = call %ForgeString @forge_string_concat(%ForgeString %53, %ForgeString %55)
-  %57 = call %ForgeString @forge_string_concat(%ForgeString %56, { ptr, i64 } { ptr @1370, i64 1 })
+  %57 = call %ForgeString @forge_string_concat(%ForgeString %56, { ptr, i64 } { ptr @1375, i64 1 })
   %58 = call %ForgeString @forge_string_concat(%ForgeString %49, %ForgeString %57)
   %59 = extractvalue %ForgeString %58, 0
   store %ForgeString %58, ptr @CG_ENUM_TYPE_CSV, align 8
@@ -45739,7 +45761,7 @@ bb5476:                                           ; preds = %bb5474
   store i64 %63, ptr %1, align 4
   %64 = load i64, ptr %1, align 4
   %65 = load %Token, ptr %11, align 8
-  %66 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1371, i64 5 }, { ptr, i64 } { ptr @1372, i64 9 }, i64 %64, %Token %65)
+  %66 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1376, i64 5 }, { ptr, i64 } { ptr @1377, i64 9 }, i64 %64, %Token %65)
   ret %Statement %66
 
 bb5477:                                           ; preds = %bb5475
@@ -45754,7 +45776,7 @@ bb5479:                                           ; preds = %bb5478, %bb5477
   %69 = load i64, ptr %9, align 4
   %70 = call i64 @register_enum_variant(%ForgeString %67, %ForgeString %68, i64 %69)
   store i64 0, ptr %6, align 4
-  store { ptr, i64 } { ptr @1354, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1359, i64 0 }, ptr %5, align 8
   %71 = load %Parser, ptr %12, align 8
   %72 = call i64 @Parser__check_id(ptr %12, i64 100)
   %73 = trunc i64 %72 to i1
@@ -45791,7 +45813,7 @@ bb5484:                                           ; preds = %bb5483
   %89 = load %Parser, ptr %12, align 8
   %90 = call %ForgeString @Parser__expect_ident(ptr %12)
   store i64 1, ptr %4, align 4
-  store { ptr, i64 } { ptr @1355, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1360, i64 1 }, ptr %3, align 8
   %91 = load %Parser, ptr %12, align 8
   %92 = call i64 @Parser__check_id(ptr %12, i64 112)
   %93 = trunc i64 %92 to i1
@@ -45809,7 +45831,7 @@ bb5486:                                           ; preds = %bb5484
   %99 = call %Token @Parser__peek(ptr %12)
   store %Token %99, ptr %2, align 8
   %100 = load %Token, ptr %2, align 8
-  %101 = call i64 @forge_string_compare(%Token %100, { ptr, i64 } { ptr @1356, i64 6 })
+  %101 = call i64 @forge_string_compare(%Token %100, { ptr, i64 } { ptr @1361, i64 6 })
   %102 = icmp eq i64 %101, 0
   br i1 %102, label %bb5489, label %bb5490
 
@@ -45840,8 +45862,8 @@ bb5489:                                           ; preds = %bb5486
   store i64 2, ptr %4, align 4
   store i64 2, ptr %4, align 4
   %116 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1357, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1357, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1362, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1362, i64 1 }, ptr %3, align 8
   br label %bb5491
 
 bb5490:                                           ; preds = %bb5486
@@ -45849,7 +45871,7 @@ bb5490:                                           ; preds = %bb5486
 
 bb5491:                                           ; preds = %bb5490, %bb5489
   %117 = load %Token, ptr %2, align 8
-  %118 = call i64 @forge_string_compare(%Token %117, { ptr, i64 } { ptr @1358, i64 4 })
+  %118 = call i64 @forge_string_compare(%Token %117, { ptr, i64 } { ptr @1363, i64 4 })
   %119 = icmp eq i64 %118, 0
   br i1 %119, label %bb5492, label %bb5493
 
@@ -45858,8 +45880,8 @@ bb5492:                                           ; preds = %bb5491
   store i64 2, ptr %4, align 4
   store i64 2, ptr %4, align 4
   %121 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1359, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1359, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1364, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1364, i64 1 }, ptr %3, align 8
   br label %bb5494
 
 bb5493:                                           ; preds = %bb5491
@@ -45867,7 +45889,7 @@ bb5493:                                           ; preds = %bb5491
 
 bb5494:                                           ; preds = %bb5493, %bb5492
   %122 = load %Token, ptr %2, align 8
-  %123 = call i64 @forge_string_compare(%Token %122, { ptr, i64 } { ptr @1360, i64 4 })
+  %123 = call i64 @forge_string_compare(%Token %122, { ptr, i64 } { ptr @1365, i64 4 })
   %124 = icmp eq i64 %123, 0
   br i1 %124, label %bb5495, label %bb5496
 
@@ -45876,8 +45898,8 @@ bb5495:                                           ; preds = %bb5494
   store i64 4, ptr %4, align 4
   store i64 4, ptr %4, align 4
   %126 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1361, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1361, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1366, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1366, i64 1 }, ptr %3, align 8
   br label %bb5497
 
 bb5496:                                           ; preds = %bb5494
@@ -45885,7 +45907,7 @@ bb5496:                                           ; preds = %bb5494
 
 bb5497:                                           ; preds = %bb5496, %bb5495
   %127 = load %Token, ptr %2, align 8
-  %128 = call i64 @forge_string_compare(%Token %127, { ptr, i64 } { ptr @1362, i64 4 })
+  %128 = call i64 @forge_string_compare(%Token %127, { ptr, i64 } { ptr @1367, i64 4 })
   %129 = icmp eq i64 %128, 0
   br i1 %129, label %bb5498, label %bb5499
 
@@ -45894,8 +45916,8 @@ bb5498:                                           ; preds = %bb5497
   store i64 1, ptr %4, align 4
   store i64 1, ptr %4, align 4
   %131 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1363, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1363, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1368, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1368, i64 1 }, ptr %3, align 8
   br label %bb5500
 
 bb5499:                                           ; preds = %bb5497
@@ -45903,7 +45925,7 @@ bb5499:                                           ; preds = %bb5497
 
 bb5500:                                           ; preds = %bb5499, %bb5498
   %132 = load %Token, ptr %2, align 8
-  %133 = call i64 @forge_string_compare(%Token %132, { ptr, i64 } { ptr @1364, i64 9 })
+  %133 = call i64 @forge_string_compare(%Token %132, { ptr, i64 } { ptr @1369, i64 9 })
   %134 = icmp eq i64 %133, 0
   br i1 %134, label %bb5501, label %bb5502
 
@@ -45912,8 +45934,8 @@ bb5501:                                           ; preds = %bb5500
   store i64 1, ptr %4, align 4
   store i64 1, ptr %4, align 4
   %136 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1365, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1365, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1370, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1370, i64 1 }, ptr %3, align 8
   br label %bb5503
 
 bb5502:                                           ; preds = %bb5500
@@ -45921,7 +45943,7 @@ bb5502:                                           ; preds = %bb5500
 
 bb5503:                                           ; preds = %bb5502, %bb5501
   %137 = load %Token, ptr %2, align 8
-  %138 = call i64 @forge_string_compare(%Token %137, { ptr, i64 } { ptr @1366, i64 5 })
+  %138 = call i64 @forge_string_compare(%Token %137, { ptr, i64 } { ptr @1371, i64 5 })
   %139 = icmp eq i64 %138, 0
   br i1 %139, label %bb5504, label %bb5505
 
@@ -45930,8 +45952,8 @@ bb5504:                                           ; preds = %bb5503
   store i64 1, ptr %4, align 4
   store i64 1, ptr %4, align 4
   %141 = load %ForgeString, ptr %3, align 8
-  store { ptr, i64 } { ptr @1367, i64 1 }, ptr %3, align 8
-  store { ptr, i64 } { ptr @1367, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1372, i64 1 }, ptr %3, align 8
+  store { ptr, i64 } { ptr @1372, i64 1 }, ptr %3, align 8
   br label %bb5506
 
 bb5505:                                           ; preds = %bb5503
@@ -46128,7 +46150,7 @@ bb5533:                                           ; preds = %bb5532
   %57 = call %TypeExpr @Parser__parse_type_expr(ptr %8)
   store %TypeExpr %57, ptr %2, align 8
   %58 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1373, i64 7 }, ptr %58, align 8
+  store { ptr, i64 } { ptr @1378, i64 7 }, ptr %58, align 8
   %59 = insertvalue %TypeExpr zeroinitializer, ptr %58, 1
   store %TypeExpr %59, ptr %1, align 8
   %60 = load %ForgeString, ptr %2, align 8
@@ -46259,7 +46281,7 @@ bb5545:
   call void @forge_map_set(ptr %10, %ForgeString %12, %EnumConstructData %22)
   %23 = load i64, ptr %4, align 4
   %24 = load %Span, ptr %8, align 4
-  %25 = call %Expr @feature_expr({ ptr, i64 } { ptr @1374, i64 5 }, { ptr, i64 } { ptr @1375, i64 14 }, i64 %23, %Span %24)
+  %25 = call %Expr @feature_expr({ ptr, i64 } { ptr @1379, i64 5 }, { ptr, i64 } { ptr @1380, i64 14 }, i64 %23, %Span %24)
   ret %Expr %25
 }
 
@@ -46447,7 +46469,7 @@ bb5564:
   call void @forge_map_set(ptr %8, %ForgeString %10, %MatchData %18)
   %19 = load i64, ptr %3, align 4
   %20 = load %Span, ptr %6, align 4
-  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1376, i64 16 }, { ptr, i64 } { ptr @1377, i64 10 }, i64 %19, %Span %20)
+  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1381, i64 16 }, { ptr, i64 } { ptr @1382, i64 10 }, i64 %19, %Span %20)
   ret %Expr %21
 }
 
@@ -46841,7 +46863,7 @@ bb5619:
   store %Parser %0, ptr %2, align 8
   %3 = load ptr, ptr @LAST_PATTERN_VARIANT, align 8
   store i64 0, ptr @LAST_PATTERN_VARIANT, align 4
-  store { ptr, i64 } { ptr @1378, i64 0 }, ptr @LAST_PATTERN_VARIANT, align 8
+  store { ptr, i64 } { ptr @1383, i64 0 }, ptr @LAST_PATTERN_VARIANT, align 8
   %4 = load %Parser, ptr %2, align 8
   %5 = call %Token @Parser__peek(ptr %2)
   store %Token %5, ptr %1, align 8
@@ -46942,7 +46964,7 @@ bb5637:                                           ; preds = %bb5636
 
 bb5638:                                           ; preds = %bb5636
   %31 = load %Parser, ptr %2, align 8
-  %32 = call i64 @Parser__error(ptr %2, { ptr, i64 } { ptr @1379, i64 16 })
+  %32 = call i64 @Parser__error(ptr %2, { ptr, i64 } { ptr @1384, i64 16 })
   br label %bb5620
 }
 
@@ -47202,7 +47224,7 @@ bb5670:                                           ; preds = %bb5669
   store ptr %34, ptr %15, align 8
   %35 = load ptr, ptr @CG_B, align 8
   %36 = load i64, ptr %15, align 4
-  %37 = call ptr @forge_llvm_build_extract_value(ptr %35, i64 %36, i64 0, ptr @1380)
+  %37 = call ptr @forge_llvm_build_extract_value(ptr %35, i64 %36, i64 0, ptr @1385)
   store ptr %37, ptr %14, align 8
   %38 = load i64, ptr %15, align 4
   store i64 %38, ptr %13, align 4
@@ -47215,7 +47237,7 @@ bb5671:                                           ; preds = %bb5670
   %42 = load ptr, ptr @CG_B, align 8
   %43 = load i64, ptr %14, align 4
   %44 = load ptr, ptr @CG_I64, align 8
-  %45 = call ptr @forge_llvm_build_zext(ptr %42, i64 %43, ptr %44, ptr @1381)
+  %45 = call ptr @forge_llvm_build_zext(ptr %42, i64 %43, ptr %44, ptr @1386)
   %46 = ptrtoint ptr %45 to i64
   store i64 %46, ptr %13, align 4
   store ptr %45, ptr %13, align 8
@@ -47231,11 +47253,11 @@ bb5673:                                           ; preds = %bb5672, %bb5671
   store ptr %49, ptr %12, align 8
   %50 = load ptr, ptr @CG_CTX, align 8
   %51 = load i64, ptr %12, align 4
-  %52 = call ptr @forge_llvm_append_basic_block(ptr %50, i64 %51, ptr @1382)
+  %52 = call ptr @forge_llvm_append_basic_block(ptr %50, i64 %51, ptr @1387)
   store ptr %52, ptr %11, align 8
   %53 = load ptr, ptr @CG_B, align 8
   %54 = load ptr, ptr @CG_I64, align 8
-  %55 = call ptr @forge_llvm_build_alloca(ptr %53, ptr %54, ptr @1383)
+  %55 = call ptr @forge_llvm_build_alloca(ptr %53, ptr %54, ptr @1388)
   store ptr %55, ptr %10, align 8
   store i64 0, ptr %9, align 4
   br label %bb5674
@@ -47259,11 +47281,11 @@ bb5675:                                           ; preds = %bb5674
   store %MatchArm %67, ptr %8, align 8
   %68 = load ptr, ptr @CG_CTX, align 8
   %69 = load i64, ptr %12, align 4
-  %70 = call ptr @forge_llvm_append_basic_block(ptr %68, i64 %69, ptr @1384)
+  %70 = call ptr @forge_llvm_append_basic_block(ptr %68, i64 %69, ptr @1389)
   store ptr %70, ptr %7, align 8
   %71 = load ptr, ptr @CG_CTX, align 8
   %72 = load i64, ptr %12, align 4
-  %73 = call ptr @forge_llvm_append_basic_block(ptr %71, i64 %72, ptr @1385)
+  %73 = call ptr @forge_llvm_append_basic_block(ptr %71, i64 %72, ptr @1390)
   store ptr %73, ptr %6, align 8
   %74 = load %MatchArm, ptr %8, align 8
   %75 = extractvalue %MatchArm %74, 4
@@ -47288,7 +47310,7 @@ bb5677:                                           ; preds = %bb5675
   %87 = load ptr, ptr @CG_B, align 8
   %88 = load i64, ptr %13, align 4
   %89 = load i64, ptr %5, align 4
-  %90 = call ptr @forge_llvm_build_icmp(ptr %87, i64 32, i64 %88, i64 %89, ptr @1386)
+  %90 = call ptr @forge_llvm_build_icmp(ptr %87, i64 32, i64 %88, i64 %89, ptr @1391)
   store ptr %90, ptr %4, align 8
   %91 = load ptr, ptr @CG_B, align 8
   %92 = load i64, ptr %4, align 4
@@ -47376,7 +47398,7 @@ bb5688:                                           ; preds = %bb5687, %bb5686
   %138 = load ptr, ptr @CG_B, align 8
   %139 = load ptr, ptr @CG_I64, align 8
   %140 = load i64, ptr %10, align 4
-  %141 = call ptr @forge_llvm_build_load(ptr %138, ptr %139, i64 %140, ptr @1387)
+  %141 = call ptr @forge_llvm_build_load(ptr %138, ptr %139, i64 %140, ptr @1392)
   store ptr %141, ptr %2, align 8
   %142 = load i64, ptr %2, align 4
   ret i64 %142
@@ -47533,7 +47555,7 @@ bb5711:
   %24 = call %ForgeString @Parser__expect_ident(ptr %20)
   store %ForgeString %24, ptr %18, align 8
   %25 = load %ForgeString, ptr %18, align 8
-  %26 = call i64 @forge_string_compare(%ForgeString %25, { ptr, i64 } { ptr @1388, i64 0 })
+  %26 = call i64 @forge_string_compare(%ForgeString %25, { ptr, i64 } { ptr @1393, i64 0 })
   %27 = icmp eq i64 %26, 0
   br i1 %27, label %bb5712, label %bb5713
 
@@ -47575,9 +47597,9 @@ bb5718:                                           ; preds = %bb5717
   %43 = call %Token @Parser__advance(ptr %20)
   %44 = load %Parser, ptr %20, align 8
   %45 = call i64 @Parser__skip_newlines(ptr %20)
-  store { ptr, i64 } { ptr @1389, i64 0 }, ptr %16, align 8
-  store { ptr, i64 } { ptr @1390, i64 0 }, ptr %15, align 8
-  store { ptr, i64 } { ptr @1391, i64 0 }, ptr %14, align 8
+  store { ptr, i64 } { ptr @1394, i64 0 }, ptr %16, align 8
+  store { ptr, i64 } { ptr @1395, i64 0 }, ptr %15, align 8
+  store { ptr, i64 } { ptr @1396, i64 0 }, ptr %14, align 8
   store i64 0, ptr %13, align 4
   br label %bb5721
 
@@ -47597,7 +47619,7 @@ bb5720:                                           ; preds = %bb5719, %bb5762
   store i64 %51, ptr %1, align 4
   %52 = load i64, ptr %1, align 4
   %53 = load %Token, ptr %19, align 8
-  %54 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1406, i64 7 }, { ptr, i64 } { ptr @1407, i64 9 }, i64 %52, %Token %53)
+  %54 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1411, i64 7 }, { ptr, i64 } { ptr @1412, i64 9 }, i64 %52, %Token %53)
   ret %Statement %54
 
 bb5721:                                           ; preds = %bb5759, %bb5718
@@ -47627,19 +47649,19 @@ bb5723:                                           ; preds = %bb5721
 bb5724:                                           ; preds = %bb5722
   %70 = load %ForgeString, ptr %16, align 8
   %71 = load %ForgeString, ptr %16, align 8
-  %72 = call %ForgeString @forge_string_concat(%ForgeString %71, { ptr, i64 } { ptr @1392, i64 1 })
+  %72 = call %ForgeString @forge_string_concat(%ForgeString %71, { ptr, i64 } { ptr @1397, i64 1 })
   %73 = extractvalue %ForgeString %72, 0
   store %ForgeString %72, ptr %16, align 8
   store %ForgeString %72, ptr %16, align 8
   %74 = load %ForgeString, ptr %15, align 8
   %75 = load %ForgeString, ptr %15, align 8
-  %76 = call %ForgeString @forge_string_concat(%ForgeString %75, { ptr, i64 } { ptr @1393, i64 1 })
+  %76 = call %ForgeString @forge_string_concat(%ForgeString %75, { ptr, i64 } { ptr @1398, i64 1 })
   %77 = extractvalue %ForgeString %76, 0
   store %ForgeString %76, ptr %15, align 8
   store %ForgeString %76, ptr %15, align 8
   %78 = load %ForgeString, ptr %14, align 8
   %79 = load %ForgeString, ptr %14, align 8
-  %80 = call %ForgeString @forge_string_concat(%ForgeString %79, { ptr, i64 } { ptr @1394, i64 1 })
+  %80 = call %ForgeString @forge_string_concat(%ForgeString %79, { ptr, i64 } { ptr @1399, i64 1 })
   %81 = extractvalue %ForgeString %80, 0
   store %ForgeString %80, ptr %14, align 8
   store %ForgeString %80, ptr %14, align 8
@@ -47683,10 +47705,10 @@ bb5730:                                           ; preds = %bb5729
   %99 = call %ForgeString @Parser__expect_ident(ptr %20)
   store %ForgeString %99, ptr %10, align 8
   %100 = load %ForgeString, ptr %11, align 8
-  %101 = call i64 @forge_string_compare(%ForgeString %100, { ptr, i64 } { ptr @1395, i64 4 })
+  %101 = call i64 @forge_string_compare(%ForgeString %100, { ptr, i64 } { ptr @1400, i64 4 })
   %102 = icmp eq i64 %101, 0
   %103 = load %ForgeString, ptr %11, align 8
-  %104 = call i64 @forge_string_compare(%ForgeString %103, { ptr, i64 } { ptr @1396, i64 3 })
+  %104 = call i64 @forge_string_compare(%ForgeString %103, { ptr, i64 } { ptr @1401, i64 3 })
   %105 = icmp eq i64 %104, 0
   %106 = or i1 %102, %105
   br i1 %106, label %bb5733, label %bb5734
@@ -47703,7 +47725,7 @@ bb5732:                                           ; preds = %bb5731, %bb5750
 bb5733:                                           ; preds = %bb5730
   %110 = load %ForgeString, ptr %11, align 8
   %111 = load %ForgeString, ptr %11, align 8
-  %112 = call %ForgeString @forge_string_concat(%ForgeString %111, { ptr, i64 } { ptr @1397, i64 1 })
+  %112 = call %ForgeString @forge_string_concat(%ForgeString %111, { ptr, i64 } { ptr @1402, i64 1 })
   %113 = load %ForgeString, ptr %10, align 8
   %114 = call %ForgeString @forge_string_concat(%ForgeString %112, %ForgeString %113)
   %115 = extractvalue %ForgeString %114, 0
@@ -47799,7 +47821,7 @@ bb5751:                                           ; preds = %bb5732
   %144 = call %Token @Parser__advance(ptr %20)
   %145 = load %ForgeString, ptr %11, align 8
   %146 = load %ForgeString, ptr %11, align 8
-  %147 = call %ForgeString @forge_string_concat(%ForgeString %146, { ptr, i64 } { ptr @1398, i64 1 })
+  %147 = call %ForgeString @forge_string_concat(%ForgeString %146, { ptr, i64 } { ptr @1403, i64 1 })
   %148 = extractvalue %ForgeString %147, 0
   store %ForgeString %147, ptr %11, align 8
   store %ForgeString %147, ptr %11, align 8
@@ -47810,14 +47832,14 @@ bb5752:                                           ; preds = %bb5732
 
 bb5753:                                           ; preds = %bb5752, %bb5751
   %149 = load %ForgeString, ptr %11, align 8
-  %150 = call i64 @forge_string_compare(%ForgeString %149, { ptr, i64 } { ptr @1399, i64 6 })
+  %150 = call i64 @forge_string_compare(%ForgeString %149, { ptr, i64 } { ptr @1404, i64 6 })
   %151 = icmp eq i64 %150, 0
   br i1 %151, label %bb5754, label %bb5755
 
 bb5754:                                           ; preds = %bb5753
   %152 = load %ForgeString, ptr %15, align 8
   %153 = load %ForgeString, ptr %15, align 8
-  %154 = call %ForgeString @forge_string_concat(%ForgeString %153, { ptr, i64 } { ptr @1400, i64 1 })
+  %154 = call %ForgeString @forge_string_concat(%ForgeString %153, { ptr, i64 } { ptr @1405, i64 1 })
   %155 = extractvalue %ForgeString %154, 0
   store %ForgeString %154, ptr %15, align 8
   store %ForgeString %154, ptr %15, align 8
@@ -47826,7 +47848,7 @@ bb5754:                                           ; preds = %bb5753
 bb5755:                                           ; preds = %bb5753
   %156 = load %ForgeString, ptr %15, align 8
   %157 = load %ForgeString, ptr %15, align 8
-  %158 = call %ForgeString @forge_string_concat(%ForgeString %157, { ptr, i64 } { ptr @1401, i64 1 })
+  %158 = call %ForgeString @forge_string_concat(%ForgeString %157, { ptr, i64 } { ptr @1406, i64 1 })
   %159 = extractvalue %ForgeString %158, 0
   store %ForgeString %158, ptr %15, align 8
   store %ForgeString %158, ptr %15, align 8
@@ -47878,7 +47900,7 @@ bb5760:                                           ; preds = %bb5723
   store ptr %183, ptr %8, align 8
   store i64 0, ptr %7, align 4
   store i64 0, ptr %6, align 4
-  store { ptr, i64 } { ptr @1402, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1407, i64 0 }, ptr %5, align 8
   br label %bb5763
 
 bb5761:                                           ; preds = %bb5723
@@ -47905,13 +47927,13 @@ bb5764:                                           ; preds = %bb5763
   %195 = call %ForgeString @forge_string_char_at(%ForgeString %193, i64 %194)
   store %ForgeString %195, ptr %4, align 8
   %196 = load %ForgeString, ptr %4, align 8
-  %197 = call i64 @forge_string_compare(%ForgeString %196, { ptr, i64 } { ptr @1403, i64 1 })
+  %197 = call i64 @forge_string_compare(%ForgeString %196, { ptr, i64 } { ptr @1408, i64 1 })
   %198 = icmp eq i64 %197, 0
   br i1 %198, label %bb5766, label %bb5767
 
 bb5765:                                           ; preds = %bb5763
   %199 = load %ForgeString, ptr %5, align 8
-  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1405, i64 0 })
+  %200 = call i64 @forge_string_compare(%ForgeString %199, { ptr, i64 } { ptr @1410, i64 0 })
   %201 = icmp ne i64 %200, 0
   br i1 %201, label %bb5769, label %bb5770
 
@@ -47927,8 +47949,8 @@ bb5766:                                           ; preds = %bb5764
   store i64 %209, ptr %7, align 4
   store i64 %209, ptr %7, align 4
   %210 = load %ForgeString, ptr %5, align 8
-  store { ptr, i64 } { ptr @1404, i64 0 }, ptr %5, align 8
-  store { ptr, i64 } { ptr @1404, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1409, i64 0 }, ptr %5, align 8
+  store { ptr, i64 } { ptr @1409, i64 0 }, ptr %5, align 8
   br label %bb5768
 
 bb5767:                                           ; preds = %bb5764
@@ -48016,7 +48038,7 @@ bb5773:
   call void @forge_map_set(ptr %8, %ForgeString %10, %StructLitData %18)
   %19 = load i64, ptr %3, align 4
   %20 = load %Span, ptr %6, align 4
-  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1408, i64 7 }, { ptr, i64 } { ptr @1409, i64 10 }, i64 %19, %Span %20)
+  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1413, i64 7 }, { ptr, i64 } { ptr @1414, i64 10 }, i64 %19, %Span %20)
   ret %Expr %21
 }
 
@@ -48388,7 +48410,7 @@ bb5812:
   %10 = call %ForgeString @Parser__expect_ident(ptr %6)
   store %ForgeString %10, ptr %4, align 8
   %11 = load %ForgeString, ptr %4, align 8
-  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1410, i64 0 })
+  %12 = call i64 @forge_string_compare(%ForgeString %11, { ptr, i64 } { ptr @1415, i64 0 })
   %13 = icmp eq i64 %12, 0
   br i1 %13, label %bb5813, label %bb5814
 
@@ -48415,7 +48437,7 @@ bb5816:                                           ; preds = %bb5815
   %23 = call %ForgeString @Parser__expect_ident(ptr %6)
   store %ForgeString %23, ptr %2, align 8
   %24 = load %ForgeString, ptr %2, align 8
-  %25 = call i64 @forge_string_compare(%ForgeString %24, { ptr, i64 } { ptr @1411, i64 0 })
+  %25 = call i64 @forge_string_compare(%ForgeString %24, { ptr, i64 } { ptr @1416, i64 0 })
   %26 = icmp eq i64 %25, 0
   br i1 %26, label %bb5819, label %bb5820
 
@@ -48430,7 +48452,7 @@ bb5818:                                           ; preds = %bb5817, %bb5821
 
 bb5819:                                           ; preds = %bb5816
   %30 = load %Parser, ptr %6, align 8
-  %31 = call i64 @Parser__error(ptr %6, { ptr, i64 } { ptr @1412, i64 30 })
+  %31 = call i64 @Parser__error(ptr %6, { ptr, i64 } { ptr @1417, i64 30 })
   ret %Statement undef
 
 bb5820:                                           ; preds = %bb5816
@@ -48504,7 +48526,7 @@ bb5830:                                           ; preds = %bb5828
   store i64 %64, ptr %1, align 4
   %65 = load i64, ptr %1, align 4
   %66 = load %Token, ptr %5, align 8
-  %67 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1413, i64 12 }, { ptr, i64 } { ptr @1414, i64 10 }, i64 %65, %Token %66)
+  %67 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1418, i64 12 }, { ptr, i64 } { ptr @1419, i64 10 }, i64 %65, %Token %66)
   ret %Statement %67
 
 bb5831:                                           ; preds = %bb5829
@@ -48582,7 +48604,7 @@ bb5840:
   %20 = call %ForgeString @Parser__expect_ident(ptr %15)
   store %ForgeString %20, ptr %13, align 8
   %21 = load %ForgeString, ptr %13, align 8
-  %22 = call i64 @forge_string_compare(%ForgeString %21, { ptr, i64 } { ptr @1415, i64 0 })
+  %22 = call i64 @forge_string_compare(%ForgeString %21, { ptr, i64 } { ptr @1420, i64 0 })
   %23 = icmp eq i64 %22, 0
   br i1 %23, label %bb5841, label %bb5842
 
@@ -48595,7 +48617,7 @@ bb5842:                                           ; preds = %bb5840
 bb5843:                                           ; preds = %bb5842
   %24 = load %ForgeString, ptr %16, align 8
   %25 = call %ForgeString @forge_int_to_string(%ForgeString %24)
-  %26 = call %ForgeString @forge_string_concat(%ForgeString %25, { ptr, i64 } { ptr @1416, i64 2 })
+  %26 = call %ForgeString @forge_string_concat(%ForgeString %25, { ptr, i64 } { ptr @1421, i64 2 })
   %27 = load %ForgeString, ptr %13, align 8
   %28 = call %ForgeString @forge_int_to_string(%ForgeString %27)
   %29 = call %ForgeString @forge_string_concat(%ForgeString %26, %ForgeString %28)
@@ -48604,7 +48626,7 @@ bb5843:                                           ; preds = %bb5842
   store %ForgeString zeroinitializer, ptr @PARSED_PARAM_TYPES, align 8
   store %ForgeString zeroinitializer, ptr @PARSED_PARAM_TYPES, align 8
   store %ForgeString zeroinitializer, ptr %11, align 8
-  store { ptr, i64 } { ptr @1417, i64 0 }, ptr %10, align 8
+  store { ptr, i64 } { ptr @1422, i64 0 }, ptr %10, align 8
   %31 = load %Parser, ptr %15, align 8
   %32 = call i64 @Parser__check_id(ptr %15, i64 86)
   %33 = trunc i64 %32 to i1
@@ -48648,7 +48670,7 @@ bb5846:                                           ; preds = %bb5845, %bb5849
   %54 = getelementptr %Token, ptr %53, i64 %52
   %55 = load %Token, ptr %54, align 8
   store %Token %55, ptr %5, align 8
-  store { ptr, i64 } { ptr @1418, i64 0 }, ptr %4, align 8
+  store { ptr, i64 } { ptr @1423, i64 0 }, ptr %4, align 8
   %56 = load %Parser, ptr %15, align 8
   %57 = extractvalue %Parser %56, 3
   %58 = call i64 @forge_string_length(%ForgeString %57)
@@ -48701,13 +48723,13 @@ bb5852:                                           ; preds = %bb5851, %bb5850
   br i1 %80, label %bb5853, label %bb5854
 
 bb5853:                                           ; preds = %bb5852
-  %81 = call i64 @forge_param_name_add({ ptr, i64 } { ptr @1419, i64 4 })
+  %81 = call i64 @forge_param_name_add({ ptr, i64 } { ptr @1424, i64 4 })
   %82 = load %ForgeString, ptr %16, align 8
   %83 = call i64 @forge_param_type_add(%ForgeString %82)
   %84 = load ptr, ptr @FN_ALL_PARAM_NAMES, align 8
   %85 = load ptr, ptr @FN_ALL_PARAM_NAMES, align 8
   %86 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1420, i64 4 }, ptr %86, align 8
+  store { ptr, i64 } { ptr @1425, i64 4 }, ptr %86, align 8
   %87 = call %ForgeString @forge_list_push(ptr %85, ptr %86, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @FN_ALL_PARAM_NAMES, align 4
   store %ForgeString %87, ptr @FN_ALL_PARAM_NAMES, align 8
@@ -48775,7 +48797,7 @@ bb5859:                                           ; preds = %bb5857
   br label %bb5861
 
 bb5860:                                           ; preds = %bb5857
-  %122 = call i64 @forge_param_name_add({ ptr, i64 } { ptr @1421, i64 1 })
+  %122 = call i64 @forge_param_name_add({ ptr, i64 } { ptr @1426, i64 1 })
   br label %bb5861
 
 bb5861:                                           ; preds = %bb5860, %bb5859
@@ -48813,11 +48835,11 @@ bb5862:                                           ; preds = %bb5861
   br label %bb5864
 
 bb5863:                                           ; preds = %bb5861
-  %148 = call i64 @forge_param_type_add({ ptr, i64 } { ptr @1422, i64 3 })
+  %148 = call i64 @forge_param_type_add({ ptr, i64 } { ptr @1427, i64 3 })
   %149 = load ptr, ptr @FN_ALL_PARAM_TYPES, align 8
   %150 = load ptr, ptr @FN_ALL_PARAM_TYPES, align 8
   %151 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1423, i64 3 }, ptr %151, align 8
+  store { ptr, i64 } { ptr @1428, i64 3 }, ptr %151, align 8
   %152 = call %ForgeString @forge_list_push(ptr %150, ptr %151, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @FN_ALL_PARAM_TYPES, align 4
   store %ForgeString %152, ptr @FN_ALL_PARAM_TYPES, align 8
@@ -48853,7 +48875,7 @@ bb5866:                                           ; preds = %bb5864
   %170 = load ptr, ptr @FN_ALL_PARAM_NAMES, align 8
   %171 = load ptr, ptr @FN_ALL_PARAM_NAMES, align 8
   %172 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1424, i64 1 }, ptr %172, align 8
+  store { ptr, i64 } { ptr @1429, i64 1 }, ptr %172, align 8
   %173 = call %ForgeString @forge_list_push(ptr %171, ptr %172, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   store i64 0, ptr @FN_ALL_PARAM_NAMES, align 4
   store %ForgeString %173, ptr @FN_ALL_PARAM_NAMES, align 8
@@ -49086,15 +49108,15 @@ bb5889:
   store ptr %16, ptr %10, align 8
   %17 = load ptr, ptr @CG_CTX, align 8
   %18 = load i64, ptr %10, align 4
-  %19 = call ptr @forge_llvm_append_basic_block(ptr %17, i64 %18, ptr @1425)
+  %19 = call ptr @forge_llvm_append_basic_block(ptr %17, i64 %18, ptr @1430)
   store ptr %19, ptr %9, align 8
   %20 = load ptr, ptr @CG_CTX, align 8
   %21 = load i64, ptr %10, align 4
-  %22 = call ptr @forge_llvm_append_basic_block(ptr %20, i64 %21, ptr @1426)
+  %22 = call ptr @forge_llvm_append_basic_block(ptr %20, i64 %21, ptr @1431)
   store ptr %22, ptr %8, align 8
   %23 = load ptr, ptr @CG_CTX, align 8
   %24 = load i64, ptr %10, align 4
-  %25 = call ptr @forge_llvm_append_basic_block(ptr %23, i64 %24, ptr @1427)
+  %25 = call ptr @forge_llvm_append_basic_block(ptr %23, i64 %24, ptr @1432)
   store ptr %25, ptr %7, align 8
   %26 = load ptr, ptr @WHILE_COND_BB, align 8
   store ptr %26, ptr %6, align 8
@@ -49122,7 +49144,7 @@ bb5889:
   %42 = load i64, ptr %4, align 4
   %43 = load ptr, ptr @CG_CTX, align 8
   %44 = call ptr @forge_llvm_int1_type(ptr %43)
-  %45 = call ptr @forge_llvm_build_trunc(ptr %41, i64 %42, ptr %44, ptr @1428)
+  %45 = call ptr @forge_llvm_build_trunc(ptr %41, i64 %42, ptr %44, ptr @1433)
   store ptr %45, ptr %3, align 8
   %46 = load ptr, ptr @CG_B, align 8
   %47 = load i64, ptr %3, align 4
@@ -49202,7 +49224,7 @@ bb5895:
   %11 = call %ForgeString @Parser__expect_ident(ptr %5)
   store %ForgeString %11, ptr %3, align 8
   %12 = load %ForgeString, ptr %3, align 8
-  %13 = call i64 @forge_string_compare(%ForgeString %12, { ptr, i64 } { ptr @1429, i64 0 })
+  %13 = call i64 @forge_string_compare(%ForgeString %12, { ptr, i64 } { ptr @1434, i64 0 })
   %14 = icmp eq i64 %13, 0
   br i1 %14, label %bb5896, label %bb5897
 
@@ -49302,7 +49324,7 @@ bb5905:
   br i1 %35, label %bb5906, label %bb5907
 
 bb5906:                                           ; preds = %bb5905
-  call void @forge_println_string({ ptr, i64 } { ptr @1430, i64 41 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1435, i64 41 })
   ret i64 undef
 
 bb5907:                                           ; preds = %bb5905
@@ -49311,7 +49333,7 @@ bb5907:                                           ; preds = %bb5905
 bb5908:                                           ; preds = %bb5907
   %36 = load ptr, ptr @CG_B, align 8
   %37 = load ptr, ptr @CG_I64, align 8
-  %38 = call ptr @forge_llvm_build_alloca(ptr %36, ptr %37, ptr @1431)
+  %38 = call ptr @forge_llvm_build_alloca(ptr %36, ptr %37, ptr @1436)
   store ptr %38, ptr %25, align 8
   %39 = load ptr, ptr @CG_B, align 8
   %40 = load ptr, ptr @CG_I64, align 8
@@ -49338,7 +49360,7 @@ bb5908:                                           ; preds = %bb5907
   %58 = load i64, ptr %22, align 4
   %59 = load ptr, ptr @CG_RT_SLEN, align 8
   %60 = load i64, ptr %24, align 4
-  %61 = call ptr @forge_llvm_build_call(ptr %57, i64 %58, ptr %59, i64 %60, i64 1, ptr @1432)
+  %61 = call ptr @forge_llvm_build_call(ptr %57, i64 %58, ptr %59, i64 %60, i64 1, ptr @1437)
   store ptr %61, ptr %21, align 8
   %62 = load i64, ptr %24, align 4
   %63 = call ptr @forge_llvm_value_array_free(i64 %62)
@@ -49348,19 +49370,19 @@ bb5908:                                           ; preds = %bb5907
   store ptr %66, ptr %20, align 8
   %67 = load ptr, ptr @CG_CTX, align 8
   %68 = load i64, ptr %20, align 4
-  %69 = call ptr @forge_llvm_append_basic_block(ptr %67, i64 %68, ptr @1433)
+  %69 = call ptr @forge_llvm_append_basic_block(ptr %67, i64 %68, ptr @1438)
   store ptr %69, ptr %19, align 8
   %70 = load ptr, ptr @CG_CTX, align 8
   %71 = load i64, ptr %20, align 4
-  %72 = call ptr @forge_llvm_append_basic_block(ptr %70, i64 %71, ptr @1434)
+  %72 = call ptr @forge_llvm_append_basic_block(ptr %70, i64 %71, ptr @1439)
   store ptr %72, ptr %18, align 8
   %73 = load ptr, ptr @CG_CTX, align 8
   %74 = load i64, ptr %20, align 4
-  %75 = call ptr @forge_llvm_append_basic_block(ptr %73, i64 %74, ptr @1435)
+  %75 = call ptr @forge_llvm_append_basic_block(ptr %73, i64 %74, ptr @1440)
   store ptr %75, ptr %17, align 8
   %76 = load ptr, ptr @CG_CTX, align 8
   %77 = load i64, ptr %20, align 4
-  %78 = call ptr @forge_llvm_append_basic_block(ptr %76, i64 %77, ptr @1436)
+  %78 = call ptr @forge_llvm_append_basic_block(ptr %76, i64 %77, ptr @1441)
   store ptr %78, ptr %16, align 8
   %79 = load ptr, ptr @WHILE_COND_BB, align 8
   store ptr %79, ptr %15, align 8
@@ -49383,12 +49405,12 @@ bb5908:                                           ; preds = %bb5907
   %91 = load ptr, ptr @CG_B, align 8
   %92 = load ptr, ptr @CG_I64, align 8
   %93 = load i64, ptr %25, align 4
-  %94 = call ptr @forge_llvm_build_load(ptr %91, ptr %92, i64 %93, ptr @1437)
+  %94 = call ptr @forge_llvm_build_load(ptr %91, ptr %92, i64 %93, ptr @1442)
   store ptr %94, ptr %13, align 8
   %95 = load ptr, ptr @CG_B, align 8
   %96 = load i64, ptr %13, align 4
   %97 = load i64, ptr %21, align 4
-  %98 = call ptr @forge_llvm_build_icmp(ptr %95, i64 40, i64 %96, i64 %97, ptr @1438)
+  %98 = call ptr @forge_llvm_build_icmp(ptr %95, i64 40, i64 %96, i64 %97, ptr @1443)
   store ptr %98, ptr %12, align 8
   %99 = load ptr, ptr @CG_B, align 8
   %100 = load i64, ptr %12, align 4
@@ -49401,11 +49423,11 @@ bb5908:                                           ; preds = %bb5907
   %107 = load ptr, ptr @CG_B, align 8
   %108 = load ptr, ptr @CG_I64, align 8
   %109 = load i64, ptr %25, align 4
-  %110 = call ptr @forge_llvm_build_load(ptr %107, ptr %108, i64 %109, ptr @1439)
+  %110 = call ptr @forge_llvm_build_load(ptr %107, ptr %108, i64 %109, ptr @1444)
   store ptr %110, ptr %11, align 8
   %111 = load ptr, ptr @CG_B, align 8
   %112 = load i64, ptr %26, align 4
-  %113 = call ptr @forge_llvm_build_extract_value(ptr %111, i64 %112, i64 0, ptr @1440)
+  %113 = call ptr @forge_llvm_build_extract_value(ptr %111, i64 %112, i64 0, ptr @1445)
   store ptr %113, ptr %10, align 8
   %114 = call ptr @forge_llvm_value_array_new(i64 1)
   store ptr %114, ptr %9, align 8
@@ -49416,18 +49438,18 @@ bb5908:                                           ; preds = %bb5907
   %119 = load ptr, ptr @CG_I64, align 8
   %120 = load i64, ptr %10, align 4
   %121 = load i64, ptr %9, align 4
-  %122 = call ptr @forge_llvm_build_gep2(ptr %118, ptr %119, i64 %120, i64 %121, i64 1, ptr @1441)
+  %122 = call ptr @forge_llvm_build_gep2(ptr %118, ptr %119, i64 %120, i64 %121, i64 1, ptr @1446)
   store ptr %122, ptr %8, align 8
   %123 = load i64, ptr %9, align 4
   %124 = call ptr @forge_llvm_value_array_free(i64 %123)
   %125 = load ptr, ptr @CG_B, align 8
   %126 = load ptr, ptr @CG_I64, align 8
   %127 = load i64, ptr %8, align 4
-  %128 = call ptr @forge_llvm_build_load(ptr %125, ptr %126, i64 %127, ptr @1442)
+  %128 = call ptr @forge_llvm_build_load(ptr %125, ptr %126, i64 %127, ptr @1447)
   store ptr %128, ptr %7, align 8
   %129 = load ptr, ptr @CG_B, align 8
   %130 = load ptr, ptr @CG_I64, align 8
-  %131 = call ptr @forge_llvm_build_alloca(ptr %129, ptr %130, ptr @1443)
+  %131 = call ptr @forge_llvm_build_alloca(ptr %129, ptr %130, ptr @1448)
   store ptr %131, ptr %6, align 8
   %132 = load ptr, ptr @CG_B, align 8
   %133 = load i64, ptr %7, align 4
@@ -49477,13 +49499,13 @@ bb5911:                                           ; preds = %bb5910, %bb5909
   %162 = load ptr, ptr @CG_B, align 8
   %163 = load ptr, ptr @CG_I64, align 8
   %164 = load i64, ptr %25, align 4
-  %165 = call ptr @forge_llvm_build_load(ptr %162, ptr %163, i64 %164, ptr @1444)
+  %165 = call ptr @forge_llvm_build_load(ptr %162, ptr %163, i64 %164, ptr @1449)
   store ptr %165, ptr %5, align 8
   %166 = load ptr, ptr @CG_B, align 8
   %167 = load i64, ptr %5, align 4
   %168 = load ptr, ptr @CG_I64, align 8
   %169 = call ptr @forge_llvm_const_int(ptr %168, i64 1, i64 0)
-  %170 = call ptr @forge_llvm_build_add(ptr %166, i64 %167, ptr %169, ptr @1445)
+  %170 = call ptr @forge_llvm_build_add(ptr %166, i64 %167, ptr %169, ptr @1450)
   store ptr %170, ptr %4, align 8
   %171 = load ptr, ptr @CG_B, align 8
   %172 = load i64, ptr %4, align 4
@@ -49587,7 +49609,7 @@ bb5918:
   call void @forge_map_set(i64 %10, %ForgeString %12, %RangeData %22)
   %23 = load i64, ptr %4, align 4
   %24 = load %Span, ptr %8, align 4
-  %25 = call %Expr @feature_expr({ ptr, i64 } { ptr @1446, i64 6 }, { ptr, i64 } { ptr @1447, i64 5 }, i64 %23, %Span %24)
+  %25 = call %Expr @feature_expr({ ptr, i64 } { ptr @1451, i64 6 }, { ptr, i64 } { ptr @1452, i64 5 }, i64 %23, %Span %24)
   ret %Expr %25
 }
 
@@ -49726,7 +49748,7 @@ bb5932:
   call void @forge_map_set(i64 %6, %ForgeString %8, %ListLitData %14)
   %15 = load i64, ptr %2, align 4
   %16 = load %Span, ptr %4, align 4
-  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1448, i64 11 }, { ptr, i64 } { ptr @1449, i64 8 }, i64 %15, %Span %16)
+  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1453, i64 11 }, { ptr, i64 } { ptr @1454, i64 8 }, i64 %15, %Span %16)
   ret %Expr %17
 }
 
@@ -49754,7 +49776,7 @@ bb5933:
   call void @forge_map_set(i64 %6, %ForgeString %8, %MapLitData %14)
   %15 = load i64, ptr %2, align 4
   %16 = load %Span, ptr %4, align 4
-  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1450, i64 11 }, { ptr, i64 } { ptr @1451, i64 7 }, i64 %15, %Span %16)
+  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1455, i64 11 }, { ptr, i64 } { ptr @1456, i64 7 }, i64 %15, %Span %16)
   ret %Expr %17
 }
 
@@ -49773,7 +49795,7 @@ bb5934:
   store %NodeRef %1, ptr %10, align 8
   %11 = load %NodeRef, ptr %10, align 8
   %12 = extractvalue %NodeRef %11, 2
-  %13 = call i64 @forge_string_compare(%ForgeString %12, { ptr, i64 } { ptr @1452, i64 8 })
+  %13 = call i64 @forge_string_compare(%ForgeString %12, { ptr, i64 } { ptr @1457, i64 8 })
   %14 = icmp eq i64 %13, 0
   br i1 %14, label %bb5935, label %bb5936
 
@@ -49793,7 +49815,7 @@ bb5936:                                           ; preds = %bb5934
 bb5937:                                           ; preds = %bb5936
   %21 = load %NodeRef, ptr %10, align 8
   %22 = extractvalue %NodeRef %21, 2
-  %23 = call i64 @forge_string_compare(%ForgeString %22, { ptr, i64 } { ptr @1453, i64 7 })
+  %23 = call i64 @forge_string_compare(%ForgeString %22, { ptr, i64 } { ptr @1458, i64 7 })
   %24 = icmp eq i64 %23, 0
   br i1 %24, label %bb5945, label %bb5946
 
@@ -49951,7 +49973,7 @@ bb5960:
   call void @forge_map_set(i64 %6, %ForgeString %8, %TemplateData %14)
   %15 = load i64, ptr %2, align 4
   %16 = load %Span, ptr %4, align 4
-  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1454, i64 16 }, { ptr, i64 } { ptr @1455, i64 8 }, i64 %15, %Span %16)
+  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1459, i64 16 }, { ptr, i64 } { ptr @1460, i64 8 }, i64 %15, %Span %16)
   ret %Expr %17
 }
 
@@ -50033,7 +50055,7 @@ bb5967:
   call void @forge_map_set(i64 %8, %ForgeString %10, %ClosureData %18)
   %19 = load i64, ptr %3, align 4
   %20 = load %Span, ptr %6, align 4
-  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1456, i64 8 }, { ptr, i64 } { ptr @1457, i64 7 }, i64 %19, %Span %20)
+  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1461, i64 8 }, { ptr, i64 } { ptr @1462, i64 7 }, i64 %19, %Span %20)
   ret %Expr %21
 }
 
@@ -50250,7 +50272,7 @@ bb5992:
   call void @forge_map_set(i64 %6, %ForgeString %8, %UnwrapData %14)
   %15 = load i64, ptr %2, align 4
   %16 = load %Span, ptr %4, align 4
-  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1458, i64 11 }, { ptr, i64 } { ptr @1459, i64 12 }, i64 %15, %Span %16)
+  %17 = call %Expr @feature_expr({ ptr, i64 } { ptr @1463, i64 11 }, { ptr, i64 } { ptr @1464, i64 12 }, i64 %15, %Span %16)
   ret %Expr %17
 }
 
@@ -50283,7 +50305,7 @@ bb5993:
   call void @forge_map_set(i64 %8, %ForgeString %10, %CoalesceData %18)
   %19 = load i64, ptr %3, align 4
   %20 = load %Span, ptr %6, align 4
-  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1460, i64 11 }, { ptr, i64 } { ptr @1461, i64 8 }, i64 %19, %Span %20)
+  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1465, i64 11 }, { ptr, i64 } { ptr @1466, i64 8 }, i64 %19, %Span %20)
   ret %Expr %21
 }
 
@@ -50316,7 +50338,7 @@ bb5994:
   call void @forge_map_set(i64 %8, %ForgeString %10, %OptionalChainData %18)
   %19 = load i64, ptr %3, align 4
   %20 = load %Span, ptr %6, align 4
-  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1462, i64 11 }, { ptr, i64 } { ptr @1463, i64 14 }, i64 %19, %Span %20)
+  %21 = call %Expr @feature_expr({ ptr, i64 } { ptr @1467, i64 11 }, { ptr, i64 } { ptr @1468, i64 14 }, i64 %19, %Span %20)
   ret %Expr %21
 }
 
@@ -50338,7 +50360,7 @@ bb5995:
   store %NodeRef %1, ptr %13, align 8
   %14 = load %NodeRef, ptr %13, align 8
   %15 = extractvalue %NodeRef %14, 2
-  %16 = call i64 @forge_string_compare(%ForgeString %15, { ptr, i64 } { ptr @1464, i64 12 })
+  %16 = call i64 @forge_string_compare(%ForgeString %15, { ptr, i64 } { ptr @1469, i64 12 })
   %17 = icmp eq i64 %16, 0
   br i1 %17, label %bb5996, label %bb5997
 
@@ -50358,7 +50380,7 @@ bb5997:                                           ; preds = %bb5995
 bb5998:                                           ; preds = %bb5997
   %24 = load %NodeRef, ptr %13, align 8
   %25 = extractvalue %NodeRef %24, 2
-  %26 = call i64 @forge_string_compare(%ForgeString %25, { ptr, i64 } { ptr @1465, i64 8 })
+  %26 = call i64 @forge_string_compare(%ForgeString %25, { ptr, i64 } { ptr @1470, i64 8 })
   %27 = icmp eq i64 %26, 0
   br i1 %27, label %bb6002, label %bb6003
 
@@ -50394,7 +50416,7 @@ bb6003:                                           ; preds = %bb5998
 bb6004:                                           ; preds = %bb6003
   %39 = load %NodeRef, ptr %13, align 8
   %40 = extractvalue %NodeRef %39, 2
-  %41 = call i64 @forge_string_compare(%ForgeString %40, { ptr, i64 } { ptr @1466, i64 14 })
+  %41 = call i64 @forge_string_compare(%ForgeString %40, { ptr, i64 } { ptr @1471, i64 14 })
   %42 = icmp eq i64 %41, 0
   br i1 %42, label %bb6008, label %bb6009
 
@@ -50652,7 +50674,7 @@ bb6040:                                           ; preds = %bb6039
   call void @forge_map_set(i64 %60, %ForgeString %62, %TraitDeclData %71)
   %72 = load i64, ptr %1, align 4
   %73 = load %Token, ptr %5, align 8
-  %74 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1467, i64 6 }, { ptr, i64 } { ptr @1468, i64 10 }, i64 %72, %Token %73)
+  %74 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1472, i64 6 }, { ptr, i64 } { ptr @1473, i64 10 }, i64 %72, %Token %73)
   ret %Statement %74
 }
 
@@ -50742,7 +50764,7 @@ bb6052:                                           ; preds = %bb6049
 
 bb6053:                                           ; preds = %bb6052, %bb6051
   %43 = load %ForgeString, ptr %4, align 8
-  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1469, i64 4 })
+  %44 = call i64 @forge_string_compare(%ForgeString %43, { ptr, i64 } { ptr @1474, i64 4 })
   %45 = icmp eq i64 %44, 0
   %46 = zext i1 %45 to i64
   store i64 %46, ptr %3, align 4
@@ -51047,7 +51069,7 @@ bb6090:                                           ; preds = %bb6089, %bb6102
   call void @forge_map_set(i64 %51, %ForgeString %53, %UseData %61)
   %62 = load i64, ptr %1, align 4
   %63 = load %Token, ptr %7, align 8
-  %64 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1470, i64 7 }, { ptr, i64 } { ptr @1471, i64 8 }, i64 %62, %Token %63)
+  %64 = call %Statement @feature_stmt({ ptr, i64 } { ptr @1475, i64 7 }, { ptr, i64 } { ptr @1476, i64 8 }, i64 %62, %Token %63)
   ret %Statement %64
 
 bb6091:                                           ; preds = %bb6099, %bb6088
@@ -51214,7 +51236,7 @@ bb6113:
   %8 = ptrtoint ptr %7 to i64
   store i64 %8, ptr %2, align 4
   %9 = load i64, ptr %2, align 4
-  %10 = call i64 @forge_string_compare(i64 %9, { ptr, i64 } { ptr @1472, i64 9 })
+  %10 = call i64 @forge_string_compare(i64 %9, { ptr, i64 } { ptr @1477, i64 9 })
   %11 = icmp eq i64 %10, 0
   br i1 %11, label %bb6114, label %bb6115
 
@@ -51226,7 +51248,7 @@ bb6114:                                           ; preds = %bb6113
 
 bb6115:                                           ; preds = %bb6113
   %15 = load i64, ptr %2, align 4
-  %16 = call i64 @forge_string_compare(i64 %15, { ptr, i64 } { ptr @1473, i64 9 })
+  %16 = call i64 @forge_string_compare(i64 %15, { ptr, i64 } { ptr @1478, i64 9 })
   %17 = icmp eq i64 %16, 0
   br i1 %17, label %bb6117, label %bb6118
 
@@ -51241,7 +51263,7 @@ bb6117:                                           ; preds = %bb6115
 
 bb6118:                                           ; preds = %bb6115
   %21 = load i64, ptr %2, align 4
-  %22 = call i64 @forge_string_compare(i64 %21, { ptr, i64 } { ptr @1474, i64 5 })
+  %22 = call i64 @forge_string_compare(i64 %21, { ptr, i64 } { ptr @1479, i64 5 })
   %23 = icmp eq i64 %22, 0
   br i1 %23, label %bb6120, label %bb6121
 
@@ -51256,7 +51278,7 @@ bb6120:                                           ; preds = %bb6118
 
 bb6121:                                           ; preds = %bb6118
   %27 = load i64, ptr %2, align 4
-  %28 = call i64 @forge_string_compare(i64 %27, { ptr, i64 } { ptr @1475, i64 7 })
+  %28 = call i64 @forge_string_compare(i64 %27, { ptr, i64 } { ptr @1480, i64 7 })
   %29 = icmp eq i64 %28, 0
   br i1 %29, label %bb6123, label %bb6124
 
@@ -51271,7 +51293,7 @@ bb6123:                                           ; preds = %bb6121
 
 bb6124:                                           ; preds = %bb6121
   %33 = load i64, ptr %2, align 4
-  %34 = call i64 @forge_string_compare(i64 %33, { ptr, i64 } { ptr @1476, i64 12 })
+  %34 = call i64 @forge_string_compare(i64 %33, { ptr, i64 } { ptr @1481, i64 12 })
   %35 = icmp eq i64 %34, 0
   br i1 %35, label %bb6126, label %bb6127
 
@@ -51286,7 +51308,7 @@ bb6126:                                           ; preds = %bb6124
 
 bb6127:                                           ; preds = %bb6124
   %39 = load i64, ptr %2, align 4
-  %40 = call i64 @forge_string_compare(i64 %39, { ptr, i64 } { ptr @1477, i64 11 })
+  %40 = call i64 @forge_string_compare(i64 %39, { ptr, i64 } { ptr @1482, i64 11 })
   %41 = icmp eq i64 %40, 0
   br i1 %41, label %bb6129, label %bb6130
 
@@ -51301,7 +51323,7 @@ bb6129:                                           ; preds = %bb6127
 
 bb6130:                                           ; preds = %bb6127
   %45 = load i64, ptr %2, align 4
-  %46 = call i64 @forge_string_compare(i64 %45, { ptr, i64 } { ptr @1478, i64 9 })
+  %46 = call i64 @forge_string_compare(i64 %45, { ptr, i64 } { ptr @1483, i64 9 })
   %47 = icmp eq i64 %46, 0
   br i1 %47, label %bb6132, label %bb6133
 
@@ -51317,7 +51339,7 @@ bb6132:                                           ; preds = %bb6130
 bb6133:                                           ; preds = %bb6130
   %51 = load i64, ptr %2, align 4
   %52 = call %ForgeString @forge_int_to_string(i64 %51)
-  %53 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1479, i64 38 }, %ForgeString %52)
+  %53 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1484, i64 38 }, %ForgeString %52)
   call void @forge_println_string(%ForgeString %53)
   br label %bb6134
 
@@ -51338,7 +51360,7 @@ bb6135:
   %8 = ptrtoint ptr %7 to i64
   store i64 %8, ptr %2, align 4
   %9 = load i64, ptr %2, align 4
-  %10 = call i64 @forge_string_compare(i64 %9, { ptr, i64 } { ptr @1480, i64 7 })
+  %10 = call i64 @forge_string_compare(i64 %9, { ptr, i64 } { ptr @1485, i64 7 })
   %11 = icmp eq i64 %10, 0
   br i1 %11, label %bb6136, label %bb6137
 
@@ -51351,7 +51373,7 @@ bb6136:                                           ; preds = %bb6135
 
 bb6137:                                           ; preds = %bb6135
   %16 = load i64, ptr %2, align 4
-  %17 = call i64 @forge_string_compare(i64 %16, { ptr, i64 } { ptr @1481, i64 16 })
+  %17 = call i64 @forge_string_compare(i64 %16, { ptr, i64 } { ptr @1486, i64 16 })
   %18 = icmp eq i64 %17, 0
   br i1 %18, label %bb6139, label %bb6140
 
@@ -51367,7 +51389,7 @@ bb6139:                                           ; preds = %bb6137
 
 bb6140:                                           ; preds = %bb6137
   %23 = load i64, ptr %2, align 4
-  %24 = call i64 @forge_string_compare(i64 %23, { ptr, i64 } { ptr @1482, i64 11 })
+  %24 = call i64 @forge_string_compare(i64 %23, { ptr, i64 } { ptr @1487, i64 11 })
   %25 = icmp eq i64 %24, 0
   br i1 %25, label %bb6142, label %bb6143
 
@@ -51383,7 +51405,7 @@ bb6142:                                           ; preds = %bb6140
 
 bb6143:                                           ; preds = %bb6140
   %30 = load i64, ptr %2, align 4
-  %31 = call i64 @forge_string_compare(i64 %30, { ptr, i64 } { ptr @1483, i64 6 })
+  %31 = call i64 @forge_string_compare(i64 %30, { ptr, i64 } { ptr @1488, i64 6 })
   %32 = icmp eq i64 %31, 0
   br i1 %32, label %bb6145, label %bb6146
 
@@ -51399,7 +51421,7 @@ bb6145:                                           ; preds = %bb6143
 
 bb6146:                                           ; preds = %bb6143
   %37 = load i64, ptr %2, align 4
-  %38 = call i64 @forge_string_compare(i64 %37, { ptr, i64 } { ptr @1484, i64 16 })
+  %38 = call i64 @forge_string_compare(i64 %37, { ptr, i64 } { ptr @1489, i64 16 })
   %39 = icmp eq i64 %38, 0
   br i1 %39, label %bb6148, label %bb6149
 
@@ -51415,7 +51437,7 @@ bb6148:                                           ; preds = %bb6146
 
 bb6149:                                           ; preds = %bb6146
   %44 = load i64, ptr %2, align 4
-  %45 = call i64 @forge_string_compare(i64 %44, { ptr, i64 } { ptr @1485, i64 8 })
+  %45 = call i64 @forge_string_compare(i64 %44, { ptr, i64 } { ptr @1490, i64 8 })
   %46 = icmp eq i64 %45, 0
   br i1 %46, label %bb6151, label %bb6152
 
@@ -51431,7 +51453,7 @@ bb6151:                                           ; preds = %bb6149
 
 bb6152:                                           ; preds = %bb6149
   %51 = load i64, ptr %2, align 4
-  %52 = call i64 @forge_string_compare(i64 %51, { ptr, i64 } { ptr @1486, i64 11 })
+  %52 = call i64 @forge_string_compare(i64 %51, { ptr, i64 } { ptr @1491, i64 11 })
   %53 = icmp eq i64 %52, 0
   br i1 %53, label %bb6154, label %bb6155
 
@@ -51447,7 +51469,7 @@ bb6154:                                           ; preds = %bb6152
 
 bb6155:                                           ; preds = %bb6152
   %58 = load i64, ptr %2, align 4
-  %59 = call i64 @forge_string_compare(i64 %58, { ptr, i64 } { ptr @1487, i64 7 })
+  %59 = call i64 @forge_string_compare(i64 %58, { ptr, i64 } { ptr @1492, i64 7 })
   %60 = icmp eq i64 %59, 0
   br i1 %60, label %bb6157, label %bb6158
 
@@ -51464,7 +51486,7 @@ bb6157:                                           ; preds = %bb6155
 bb6158:                                           ; preds = %bb6155
   %65 = load i64, ptr %2, align 4
   %66 = call %ForgeString @forge_int_to_string(i64 %65)
-  %67 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1488, i64 38 }, %ForgeString %66)
+  %67 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1493, i64 38 }, %ForgeString %66)
   call void @forge_println_string(%ForgeString %67)
   br label %bb6159
 
@@ -51615,43 +51637,43 @@ bb6189:
   %7 = alloca %ForgeString, align 8
   store %ForgeString %1, ptr %7, align 8
   %8 = load %ForgeString, ptr %7, align 8
-  %9 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1489, i64 7 }, %ForgeString %8)
-  %10 = call %ForgeString @forge_string_concat(%ForgeString %9, { ptr, i64 } { ptr @1490, i64 5 })
+  %9 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1494, i64 7 }, %ForgeString %8)
+  %10 = call %ForgeString @forge_string_concat(%ForgeString %9, { ptr, i64 } { ptr @1495, i64 5 })
   %11 = load %ForgeString, ptr %6, align 8
   %12 = call i64 @forge_string_length(%ForgeString %11)
   %13 = call %ForgeString @forge_int_to_string(i64 %12)
   %14 = call %ForgeString @forge_string_concat(%ForgeString %10, %ForgeString %13)
   call void @forge_println_string(%ForgeString %14)
-  call void @forge_println_string({ ptr, i64 } { ptr @1491, i64 19 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1496, i64 19 })
   %15 = load %ForgeString, ptr %6, align 8
   %16 = call %Lexer @lexer_new(%ForgeString %15)
   store %Lexer %16, ptr %5, align 8
   %17 = load %ForgeString, ptr %6, align 8
   %18 = call i64 @forge_string_length(%ForgeString %17)
   %19 = call %ForgeString @forge_int_to_string(i64 %18)
-  %20 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1492, i64 21 }, %ForgeString %19)
+  %20 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1497, i64 21 }, %ForgeString %19)
   call void @forge_println_string(%ForgeString %20)
-  call void @forge_println_string({ ptr, i64 } { ptr @1493, i64 15 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1498, i64 15 })
   %21 = load %Lexer, ptr %5, align 8
   %22 = call %ForgeString @Lexer__tokenize(ptr %5)
   store %ForgeString %22, ptr %4, align 8
   %23 = load %ForgeString, ptr %4, align 8
   %24 = call i64 @forge_string_length(%ForgeString %23)
   %25 = call %ForgeString @forge_int_to_string(i64 %24)
-  %26 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1494, i64 2 }, %ForgeString %25)
-  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1495, i64 7 })
+  %26 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1499, i64 2 }, %ForgeString %25)
+  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1500, i64 7 })
   call void @forge_println_string(%ForgeString %27)
-  call void @forge_println_string({ ptr, i64 } { ptr @1496, i64 12 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1501, i64 12 })
   %28 = load %ForgeString, ptr %4, align 8
   %29 = load %ForgeString, ptr %6, align 8
   %30 = call %Parser @parser_new_with_source(%ForgeString %28, %ForgeString %29)
   store %Parser %30, ptr %3, align 8
-  call void @forge_println_string({ ptr, i64 } { ptr @1497, i64 36 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1502, i64 36 })
   %31 = load %Parser, ptr %3, align 8
   %32 = call %Program @Parser__parse_program(ptr %3)
   store %Program %32, ptr %2, align 8
-  call void @forge_println_string({ ptr, i64 } { ptr @1498, i64 9 })
-  call void @forge_println_string({ ptr, i64 } { ptr @1499, i64 2 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1503, i64 9 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1504, i64 2 })
   ret i64 1
 }
 
@@ -51678,7 +51700,7 @@ bb6190:
   %19 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %19, align 8
   %20 = load %ForgeString, ptr %19, align 8
-  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1500, i64 17 }, %ForgeString %20)
+  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1505, i64 17 }, %ForgeString %20)
   call void @forge_println_string(%ForgeString %21)
   %22 = load %ForgeString, ptr %19, align 8
   %23 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %22)
@@ -51686,9 +51708,9 @@ bb6190:
   %24 = load %ForgeString, ptr %18, align 8
   %25 = call i64 @forge_string_length(%ForgeString %24)
   %26 = call %ForgeString @forge_int_to_string(i64 %25)
-  %27 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1501, i64 17 }, %ForgeString %26)
+  %27 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1506, i64 17 }, %ForgeString %26)
   call void @forge_println_string(%ForgeString %27)
-  store { ptr, i64 } { ptr @1502, i64 0 }, ptr %17, align 8
+  store { ptr, i64 } { ptr @1507, i64 0 }, ptr %17, align 8
   store i64 -1, ptr %16, align 4
   store i64 0, ptr %15, align 4
   br label %bb6191
@@ -51704,7 +51726,7 @@ bb6192:                                           ; preds = %bb6191
   %32 = load %ForgeString, ptr %19, align 8
   %33 = load i64, ptr %15, align 4
   %34 = call %ForgeString @forge_string_char_at(%ForgeString %32, i64 %33)
-  %35 = call i64 @forge_string_compare(%ForgeString %34, { ptr, i64 } { ptr @1503, i64 1 })
+  %35 = call i64 @forge_string_compare(%ForgeString %34, { ptr, i64 } { ptr @1508, i64 1 })
   %36 = icmp eq i64 %35, 0
   br i1 %36, label %bb6194, label %bb6195
 
@@ -51746,7 +51768,7 @@ bb6198:                                           ; preds = %bb6193
   br label %bb6199
 
 bb6199:                                           ; preds = %bb6198, %bb6197
-  store { ptr, i64 } { ptr @1504, i64 0 }, ptr %14, align 8
+  store { ptr, i64 } { ptr @1509, i64 0 }, ptr %14, align 8
   store i64 0, ptr %13, align 4
   br label %bb6200
 
@@ -51773,7 +51795,7 @@ bb6202:                                           ; preds = %bb6200
   %62 = load %ForgeString, ptr %14, align 8
   %63 = load %ForgeString, ptr %18, align 8
   %64 = call %ForgeString @forge_string_concat(%ForgeString %62, %ForgeString %63)
-  %65 = call %ForgeString @forge_string_concat(%ForgeString %64, { ptr, i64 } { ptr @1512, i64 1 })
+  %65 = call %ForgeString @forge_string_concat(%ForgeString %64, { ptr, i64 } { ptr @1517, i64 1 })
   %66 = extractvalue %ForgeString %65, 0
   store %ForgeString %65, ptr %14, align 8
   store %ForgeString %65, ptr %14, align 8
@@ -51781,7 +51803,7 @@ bb6202:                                           ; preds = %bb6200
   %68 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %69 = load %ForgeString, ptr %19, align 8
   %70 = call %ForgeString @forge_string_concat(%ForgeString %68, %ForgeString %69)
-  %71 = call %ForgeString @forge_string_concat(%ForgeString %70, { ptr, i64 } { ptr @1513, i64 1 })
+  %71 = call %ForgeString @forge_string_concat(%ForgeString %70, { ptr, i64 } { ptr @1518, i64 1 })
   %72 = extractvalue %ForgeString %71, 0
   store %ForgeString %71, ptr @MODULE_PATHS_CSV, align 8
   store %ForgeString %71, ptr @MODULE_PATHS_CSV, align 8
@@ -51793,7 +51815,7 @@ bb6203:                                           ; preds = %bb6201
   %75 = load i64, ptr %13, align 4
   %76 = sub i64 %75, 1
   %77 = call %ForgeString @forge_string_char_at(%ForgeString %74, i64 %76)
-  %78 = call i64 @forge_string_compare(%ForgeString %77, { ptr, i64 } { ptr @1505, i64 1 })
+  %78 = call i64 @forge_string_compare(%ForgeString %77, { ptr, i64 } { ptr @1510, i64 1 })
   %79 = icmp eq i64 %78, 0
   br i1 %79, label %bb6206, label %bb6207
 
@@ -51857,7 +51879,7 @@ bb6212:                                           ; preds = %bb6209
   %105 = call %ForgeString @forge_string_char_at(%ForgeString %102, i64 %104)
   store %ForgeString %105, ptr %8, align 8
   %106 = load %ForgeString, ptr %11, align 8
-  %107 = call i64 @forge_string_compare(%ForgeString %106, { ptr, i64 } { ptr @1506, i64 1 })
+  %107 = call i64 @forge_string_compare(%ForgeString %106, { ptr, i64 } { ptr @1511, i64 1 })
   %108 = icmp eq i64 %107, 0
   br i1 %108, label %bb6215, label %bb6216
 
@@ -51869,7 +51891,7 @@ bb6214:                                           ; preds = %bb6213, %bb6217
 
 bb6215:                                           ; preds = %bb6212
   %109 = load %ForgeString, ptr %10, align 8
-  %110 = call i64 @forge_string_compare(%ForgeString %109, { ptr, i64 } { ptr @1507, i64 1 })
+  %110 = call i64 @forge_string_compare(%ForgeString %109, { ptr, i64 } { ptr @1512, i64 1 })
   %111 = icmp eq i64 %110, 0
   br i1 %111, label %bb6218, label %bb6219
 
@@ -51881,7 +51903,7 @@ bb6217:                                           ; preds = %bb6216, %bb6220
 
 bb6218:                                           ; preds = %bb6215
   %112 = load %ForgeString, ptr %9, align 8
-  %113 = call i64 @forge_string_compare(%ForgeString %112, { ptr, i64 } { ptr @1508, i64 1 })
+  %113 = call i64 @forge_string_compare(%ForgeString %112, { ptr, i64 } { ptr @1513, i64 1 })
   %114 = icmp eq i64 %113, 0
   br i1 %114, label %bb6221, label %bb6222
 
@@ -51893,7 +51915,7 @@ bb6220:                                           ; preds = %bb6219, %bb6223
 
 bb6221:                                           ; preds = %bb6218
   %115 = load %ForgeString, ptr %8, align 8
-  %116 = call i64 @forge_string_compare(%ForgeString %115, { ptr, i64 } { ptr @1509, i64 1 })
+  %116 = call i64 @forge_string_compare(%ForgeString %115, { ptr, i64 } { ptr @1514, i64 1 })
   %117 = icmp eq i64 %116, 0
   br i1 %117, label %bb6224, label %bb6225
 
@@ -51943,12 +51965,12 @@ bb6229:                                           ; preds = %bb6228, %bb6227
   %134 = load %ForgeString, ptr %17, align 8
   %135 = load %ForgeString, ptr %5, align 8
   %136 = call %ForgeString @forge_string_concat(%ForgeString %134, %ForgeString %135)
-  %137 = call %ForgeString @forge_string_concat(%ForgeString %136, { ptr, i64 } { ptr @1510, i64 7 })
+  %137 = call %ForgeString @forge_string_concat(%ForgeString %136, { ptr, i64 } { ptr @1515, i64 7 })
   store %ForgeString %137, ptr %4, align 8
   %138 = load %ForgeString, ptr %17, align 8
   %139 = load %ForgeString, ptr %5, align 8
   %140 = call %ForgeString @forge_string_concat(%ForgeString %138, %ForgeString %139)
-  %141 = call %ForgeString @forge_string_concat(%ForgeString %140, { ptr, i64 } { ptr @1511, i64 3 })
+  %141 = call %ForgeString @forge_string_concat(%ForgeString %140, { ptr, i64 } { ptr @1516, i64 3 })
   store %ForgeString %141, ptr %3, align 8
   %142 = load %ForgeString, ptr %4, align 8
   %143 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %142)
@@ -52024,7 +52046,7 @@ bb6236:
 
 bb6237:                                           ; preds = %bb6236
   %18 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1514, i64 0 }, ptr %18, align 8
+  store { ptr, i64 } { ptr @1519, i64 0 }, ptr %18, align 8
   %19 = load %ForgeString, ptr %18, align 8
   ret %ForgeString %19
 
@@ -52250,12 +52272,12 @@ bb6259:
   %8 = load %ForgeString, ptr %6, align 8
   %9 = load %ForgeString, ptr %7, align 8
   %10 = call %ForgeString @forge_string_concat(%ForgeString %8, %ForgeString %9)
-  %11 = call %ForgeString @forge_string_concat(%ForgeString %10, { ptr, i64 } { ptr @1515, i64 7 })
+  %11 = call %ForgeString @forge_string_concat(%ForgeString %10, { ptr, i64 } { ptr @1520, i64 7 })
   store %ForgeString %11, ptr %5, align 8
   %12 = load %ForgeString, ptr %6, align 8
   %13 = load %ForgeString, ptr %7, align 8
   %14 = call %ForgeString @forge_string_concat(%ForgeString %12, %ForgeString %13)
-  %15 = call %ForgeString @forge_string_concat(%ForgeString %14, { ptr, i64 } { ptr @1516, i64 3 })
+  %15 = call %ForgeString @forge_string_concat(%ForgeString %14, { ptr, i64 } { ptr @1521, i64 3 })
   store %ForgeString %15, ptr %4, align 8
   %16 = load %ForgeString, ptr %5, align 8
   %17 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %16)
@@ -52354,7 +52376,7 @@ bb6270:
   %4 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %4, align 8
   %5 = load %ForgeString, ptr %4, align 8
-  %6 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1517, i64 22 }, %ForgeString %5)
+  %6 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1522, i64 22 }, %ForgeString %5)
   call void @forge_println_string(%ForgeString %6)
   %7 = load %ForgeString, ptr %4, align 8
   %8 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %7)
@@ -52362,14 +52384,14 @@ bb6270:
   %9 = load %ForgeString, ptr %3, align 8
   %10 = call i64 @forge_string_length(%ForgeString %9)
   %11 = call %ForgeString @forge_int_to_string(i64 %10)
-  %12 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1518, i64 7 }, %ForgeString %11)
-  %13 = call %ForgeString @forge_string_concat(%ForgeString %12, { ptr, i64 } { ptr @1519, i64 6 })
+  %12 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1523, i64 7 }, %ForgeString %11)
+  %13 = call %ForgeString @forge_string_concat(%ForgeString %12, { ptr, i64 } { ptr @1524, i64 6 })
   call void @forge_println_string(%ForgeString %13)
   %14 = load %ForgeString, ptr %4, align 8
   %15 = call %ForgeString @filepath_dir(%ForgeString %14)
   store %ForgeString %15, ptr %2, align 8
   %16 = load %ForgeString, ptr %3, align 8
-  %17 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1520, i64 1 }, %ForgeString %16)
+  %17 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1525, i64 1 }, %ForgeString %16)
   store %ForgeString %17, ptr %1, align 8
   %18 = load %ForgeString, ptr %1, align 8
   %19 = load %ForgeString, ptr %2, align 8
@@ -52380,7 +52402,7 @@ bb6270:
   %24 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %25 = load %ForgeString, ptr %4, align 8
   %26 = call %ForgeString @forge_string_concat(%ForgeString %24, %ForgeString %25)
-  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1521, i64 1 })
+  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1526, i64 1 })
   %28 = extractvalue %ForgeString %27, 0
   store %ForgeString %27, ptr @MODULE_PATHS_CSV, align 8
   store %ForgeString %27, ptr @MODULE_PATHS_CSV, align 8
@@ -52395,14 +52417,14 @@ bb6271:
   %4 = alloca %ForgeString, align 8
   store %ForgeString %0, ptr %4, align 8
   %5 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
-  store { ptr, i64 } { ptr @1522, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
-  store { ptr, i64 } { ptr @1522, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
+  store { ptr, i64 } { ptr @1527, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
+  store { ptr, i64 } { ptr @1527, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
   %6 = load %ForgeString, ptr %4, align 8
   %7 = call i64 @collect_module_paths(%ForgeString %6)
   %8 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %9 = call i64 @forge_string_length(%ForgeString %8)
   %10 = call %ForgeString @forge_int_to_string(i64 %9)
-  %11 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1523, i64 10 }, %ForgeString %10)
+  %11 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1528, i64 10 }, %ForgeString %10)
   call void @forge_println_string(%ForgeString %11)
   store %ForgeString zeroinitializer, ptr %3, align 8
   store i64 0, ptr %2, align 4
@@ -52420,7 +52442,7 @@ bb6273:                                           ; preds = %bb6272
   %16 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %17 = load i64, ptr %1, align 4
   %18 = call %ForgeString @forge_string_char_at(%ForgeString %16, i64 %17)
-  %19 = call i64 @forge_string_compare(%ForgeString %18, { ptr, i64 } { ptr @1524, i64 1 })
+  %19 = call i64 @forge_string_compare(%ForgeString %18, { ptr, i64 } { ptr @1529, i64 1 })
   %20 = icmp eq i64 %19, 0
   br i1 %20, label %bb6275, label %bb6276
 
@@ -52491,8 +52513,8 @@ bb6281:
   store i64 0, ptr @CG_ACTIVE, align 4
   %11 = load i64, ptr %7, align 4
   %12 = call %ForgeString @forge_int_to_string(i64 %11)
-  %13 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1525, i64 9 }, %ForgeString %12)
-  %14 = call %ForgeString @forge_string_concat(%ForgeString %13, { ptr, i64 } { ptr @1526, i64 9 })
+  %13 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1530, i64 9 }, %ForgeString %12)
+  %14 = call %ForgeString @forge_string_concat(%ForgeString %13, { ptr, i64 } { ptr @1531, i64 9 })
   %15 = load %ForgeString, ptr %6, align 8
   %16 = call %ForgeString @forge_string_concat(%ForgeString %14, %ForgeString %15)
   call void @forge_println_string(%ForgeString %16)
@@ -52501,34 +52523,34 @@ bb6281:
   store %ForgeString %18, ptr %5, align 8
   %19 = load i64, ptr %7, align 4
   %20 = call %ForgeString @forge_int_to_string(i64 %19)
-  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1527, i64 9 }, %ForgeString %20)
-  %22 = call %ForgeString @forge_string_concat(%ForgeString %21, { ptr, i64 } { ptr @1528, i64 6 })
+  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1532, i64 9 }, %ForgeString %20)
+  %22 = call %ForgeString @forge_string_concat(%ForgeString %21, { ptr, i64 } { ptr @1533, i64 6 })
   %23 = load %ForgeString, ptr %5, align 8
   %24 = call i64 @forge_string_length(%ForgeString %23)
   %25 = call %ForgeString @forge_int_to_string(i64 %24)
   %26 = call %ForgeString @forge_string_concat(%ForgeString %22, %ForgeString %25)
-  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1529, i64 6 })
+  %27 = call %ForgeString @forge_string_concat(%ForgeString %26, { ptr, i64 } { ptr @1534, i64 6 })
   call void @forge_println_string(%ForgeString %27)
   %28 = load %ForgeString, ptr %5, align 8
   %29 = call %Lexer @lexer_new(%ForgeString %28)
   store %Lexer %29, ptr %4, align 8
   %30 = load i64, ptr %7, align 4
   %31 = call %ForgeString @forge_int_to_string(i64 %30)
-  %32 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1530, i64 9 }, %ForgeString %31)
-  %33 = call %ForgeString @forge_string_concat(%ForgeString %32, { ptr, i64 } { ptr @1531, i64 14 })
+  %32 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1535, i64 9 }, %ForgeString %31)
+  %33 = call %ForgeString @forge_string_concat(%ForgeString %32, { ptr, i64 } { ptr @1536, i64 14 })
   call void @forge_println_string(%ForgeString %33)
   %34 = load %Lexer, ptr %4, align 8
   %35 = call %ForgeString @Lexer__tokenize(ptr %4)
   store %ForgeString %35, ptr %3, align 8
   %36 = load i64, ptr %7, align 4
   %37 = call %ForgeString @forge_int_to_string(i64 %36)
-  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1532, i64 9 }, %ForgeString %37)
-  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1533, i64 1 })
+  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1537, i64 9 }, %ForgeString %37)
+  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1538, i64 1 })
   %40 = load %ForgeString, ptr %3, align 8
   %41 = call i64 @forge_string_length(%ForgeString %40)
   %42 = call %ForgeString @forge_int_to_string(i64 %41)
   %43 = call %ForgeString @forge_string_concat(%ForgeString %39, %ForgeString %42)
-  %44 = call %ForgeString @forge_string_concat(%ForgeString %43, { ptr, i64 } { ptr @1534, i64 4 })
+  %44 = call %ForgeString @forge_string_concat(%ForgeString %43, { ptr, i64 } { ptr @1539, i64 4 })
   call void @forge_println_string(%ForgeString %44)
   %45 = load %ForgeString, ptr %3, align 8
   %46 = call i64 @forge_dump_token_list(%ForgeString %45)
@@ -52540,15 +52562,15 @@ bb6281:
   store %Parser %51, ptr %2, align 8
   %52 = load i64, ptr %7, align 4
   %53 = call %ForgeString @forge_int_to_string(i64 %52)
-  %54 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1535, i64 9 }, %ForgeString %53)
-  %55 = call %ForgeString @forge_string_concat(%ForgeString %54, { ptr, i64 } { ptr @1536, i64 15 })
+  %54 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1540, i64 9 }, %ForgeString %53)
+  %55 = call %ForgeString @forge_string_concat(%ForgeString %54, { ptr, i64 } { ptr @1541, i64 15 })
   call void @forge_println_string(%ForgeString %55)
   %56 = load %Parser, ptr %2, align 8
   %57 = call %Program @Parser__parse_program(ptr %2)
   %58 = load i64, ptr %7, align 4
   %59 = call %ForgeString @forge_int_to_string(i64 %58)
-  %60 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1537, i64 9 }, %ForgeString %59)
-  %61 = call %ForgeString @forge_string_concat(%ForgeString %60, { ptr, i64 } { ptr @1538, i64 10 })
+  %60 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1542, i64 9 }, %ForgeString %59)
+  %61 = call %ForgeString @forge_string_concat(%ForgeString %60, { ptr, i64 } { ptr @1543, i64 10 })
   call void @forge_println_string(%ForgeString %61)
   ret i64 0
 }
@@ -52558,31 +52580,31 @@ bb6282:
   %0 = load ptr, ptr @CG_MOD, align 8
   %1 = load ptr, ptr @CG_PTR, align 8
   %2 = call ptr @make_fn_type(ptr %1, %ForgeString zeroinitializer)
-  %3 = call ptr @forge_llvm_add_function(ptr %0, ptr @1539, ptr %2)
+  %3 = call ptr @forge_llvm_add_function(ptr %0, ptr @1544, ptr %2)
   %4 = load ptr, ptr @CG_MOD, align 8
   %5 = load ptr, ptr @CG_I64, align 8
   %6 = load ptr, ptr @CG_STR, align 8
   %7 = load ptr, ptr @CG_STR, align 8
   %8 = call ptr @make_fn_type_2(ptr %5, ptr %6, ptr %7)
-  %9 = call ptr @forge_llvm_add_function(ptr %4, ptr @1540, ptr %8)
+  %9 = call ptr @forge_llvm_add_function(ptr %4, ptr @1545, ptr %8)
   %10 = load ptr, ptr @CG_MOD, align 8
   %11 = load ptr, ptr @CG_STR, align 8
   %12 = load ptr, ptr @CG_STR, align 8
   %13 = load ptr, ptr @CG_I64, align 8
   %14 = load ptr, ptr @CG_I64, align 8
   %15 = call ptr @make_fn_type_3(ptr %11, ptr %12, ptr %13, ptr %14)
-  %16 = call ptr @forge_llvm_add_function(ptr %10, ptr @1541, ptr %15)
+  %16 = call ptr @forge_llvm_add_function(ptr %10, ptr @1546, ptr %15)
   %17 = load ptr, ptr @CG_MOD, align 8
   %18 = load ptr, ptr @CG_I64, align 8
   %19 = load ptr, ptr @CG_STR, align 8
   %20 = load ptr, ptr @CG_I64, align 8
   %21 = call ptr @make_fn_type_2(ptr %18, ptr %19, ptr %20)
-  %22 = call ptr @forge_llvm_add_function(ptr %17, ptr @1542, ptr %21)
+  %22 = call ptr @forge_llvm_add_function(ptr %17, ptr @1547, ptr %21)
   %23 = load ptr, ptr @CG_MOD, align 8
   %24 = load ptr, ptr @CG_I64, align 8
   %25 = load ptr, ptr @CG_STR, align 8
   %26 = call ptr @make_fn_type_1(ptr %24, ptr %25)
-  %27 = call ptr @forge_llvm_add_function(ptr %23, ptr @1543, ptr %26)
+  %27 = call ptr @forge_llvm_add_function(ptr %23, ptr @1548, ptr %26)
   %28 = ptrtoint ptr %27 to i64
   ret i64 %28
 }
@@ -52629,7 +52651,7 @@ bb6284:
   br i1 %23, label %bb6285, label %bb6286
 
 bb6285:                                           ; preds = %bb6284
-  %24 = call i64 @codegen_init({ ptr, i64 } { ptr @1544, i64 13 })
+  %24 = call i64 @codegen_init({ ptr, i64 } { ptr @1549, i64 13 })
   %25 = call i64 @declare_llvm_api()
   %26 = load %ForgeString, ptr %17, align 8
   %27 = call %ForgeString @forge_mod_csv_get()
@@ -52639,8 +52661,8 @@ bb6285:                                           ; preds = %bb6284
   %29 = load %ForgeString, ptr %17, align 8
   %30 = call i64 @forge_string_length(%ForgeString %29)
   %31 = call %ForgeString @forge_int_to_string(i64 %30)
-  %32 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1545, i64 20 }, %ForgeString %31)
-  %33 = call %ForgeString @forge_string_concat(%ForgeString %32, { ptr, i64 } { ptr @1546, i64 6 })
+  %32 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1550, i64 20 }, %ForgeString %31)
+  %33 = call %ForgeString @forge_string_concat(%ForgeString %32, { ptr, i64 } { ptr @1551, i64 6 })
   call void @forge_println_string(%ForgeString %33)
   br label %bb6287
 
@@ -52655,12 +52677,12 @@ bb6287:                                           ; preds = %bb6286, %bb6285
   store i64 %36, ptr %15, align 4
   %37 = load i64, ptr %16, align 4
   %38 = call %ForgeString @forge_int_to_string(i64 %37)
-  %39 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1547, i64 8 }, %ForgeString %38)
-  %40 = call %ForgeString @forge_string_concat(%ForgeString %39, { ptr, i64 } { ptr @1548, i64 8 })
+  %39 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1552, i64 8 }, %ForgeString %38)
+  %40 = call %ForgeString @forge_string_concat(%ForgeString %39, { ptr, i64 } { ptr @1553, i64 8 })
   %41 = load i64, ptr %15, align 4
   %42 = call %ForgeString @forge_int_to_string(i64 %41)
   %43 = call %ForgeString @forge_string_concat(%ForgeString %40, %ForgeString %42)
-  %44 = call %ForgeString @forge_string_concat(%ForgeString %43, { ptr, i64 } { ptr @1549, i64 4 })
+  %44 = call %ForgeString @forge_string_concat(%ForgeString %43, { ptr, i64 } { ptr @1554, i64 4 })
   call void @forge_println_string(%ForgeString %44)
   %45 = load %ForgeString, ptr %17, align 8
   %46 = call i64 @forge_string_length(%ForgeString %45)
@@ -52673,7 +52695,7 @@ bb6288:                                           ; preds = %bb6287
   br label %bb6290
 
 bb6289:                                           ; preds = %bb6287
-  %50 = call i64 @codegen_init({ ptr, i64 } { ptr @1550, i64 13 })
+  %50 = call i64 @codegen_init({ ptr, i64 } { ptr @1555, i64 13 })
   %51 = call i64 @declare_llvm_api()
   br label %bb6290
 
@@ -52692,8 +52714,8 @@ bb6290:                                           ; preds = %bb6289, %bb6288
   store i64 %59, ptr %13, align 4
   %60 = load i64, ptr %13, align 4
   %61 = call %ForgeString @forge_int_to_string(i64 %60)
-  %62 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1551, i64 11 }, %ForgeString %61)
-  %63 = call %ForgeString @forge_string_concat(%ForgeString %62, { ptr, i64 } { ptr @1552, i64 4 })
+  %62 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1556, i64 11 }, %ForgeString %61)
+  %63 = call %ForgeString @forge_string_concat(%ForgeString %62, { ptr, i64 } { ptr @1557, i64 4 })
   call void @forge_println_string(%ForgeString %63)
   %64 = call i64 @materialize_struct_types()
   store i64 0, ptr %12, align 4
@@ -52717,22 +52739,22 @@ bb6292:                                           ; preds = %bb6291
   br i1 %72, label %bb6294, label %bb6295
 
 bb6293:                                           ; preds = %bb6291
-  %73 = call i64 @codegen_write_ir({ ptr, i64 } { ptr @1553, i64 9 })
-  call void @forge_println_string({ ptr, i64 } { ptr @1554, i64 11 })
-  store { ptr, i64 } { ptr @1555, i64 9 }, ptr %7, align 8
+  %73 = call i64 @codegen_write_ir({ ptr, i64 } { ptr @1558, i64 9 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1559, i64 11 })
+  store { ptr, i64 } { ptr @1560, i64 9 }, ptr %7, align 8
   %74 = load %ForgeString, ptr %19, align 8
-  %75 = call %ForgeString @forge_string_concat(%ForgeString %74, { ptr, i64 } { ptr @1556, i64 2 })
+  %75 = call %ForgeString @forge_string_concat(%ForgeString %74, { ptr, i64 } { ptr @1561, i64 2 })
   store %ForgeString %75, ptr %6, align 8
   %76 = call i64 @codegen_cleanup()
-  %77 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1557, i64 33 }, %ForgeString zeroinitializer)
+  %77 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1562, i64 33 }, %ForgeString zeroinitializer)
   store %ForgeString %77, ptr %5, align 8
-  store { ptr, i64 } { ptr @1558, i64 21 }, ptr %4, align 8
-  %78 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1559, i64 2 }, %ForgeString zeroinitializer)
+  store { ptr, i64 } { ptr @1563, i64 21 }, ptr %4, align 8
+  %78 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1564, i64 2 }, %ForgeString zeroinitializer)
   store %ForgeString %78, ptr %3, align 8
-  %79 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1560, i64 2 }, %ForgeString zeroinitializer)
+  %79 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1565, i64 2 }, %ForgeString zeroinitializer)
   store %ForgeString %79, ptr %2, align 8
   %80 = load %ForgeString, ptr %19, align 8
-  %81 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1561, i64 10 }, %ForgeString %80)
+  %81 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1566, i64 10 }, %ForgeString %80)
   call void @forge_println_string(%ForgeString %81)
   ret i64 0
 
@@ -52806,7 +52828,7 @@ bb6300:
   %21 = alloca %ForgeString, align 8
   store %ForgeString %1, ptr %21, align 8
   %22 = load %ForgeString, ptr %20, align 8
-  %23 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1562, i64 12 }, %ForgeString %22)
+  %23 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1567, i64 12 }, %ForgeString %22)
   call void @forge_println_string(%ForgeString %23)
   %24 = load %ForgeString, ptr %20, align 8
   %25 = call %ForgeString @forge_selfhost_fs_read(%ForgeString %24)
@@ -52814,8 +52836,8 @@ bb6300:
   %26 = load %ForgeString, ptr %19, align 8
   %27 = call i64 @forge_string_length(%ForgeString %26)
   %28 = call %ForgeString @forge_int_to_string(i64 %27)
-  %29 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1563, i64 9 }, %ForgeString %28)
-  %30 = call %ForgeString @forge_string_concat(%ForgeString %29, { ptr, i64 } { ptr @1564, i64 6 })
+  %29 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1568, i64 9 }, %ForgeString %28)
+  %30 = call %ForgeString @forge_string_concat(%ForgeString %29, { ptr, i64 } { ptr @1569, i64 6 })
   call void @forge_println_string(%ForgeString %30)
   %31 = load %ForgeString, ptr %19, align 8
   %32 = call %Lexer @lexer_new(%ForgeString %31)
@@ -52826,8 +52848,8 @@ bb6300:
   %35 = load %ForgeString, ptr %17, align 8
   %36 = call i64 @forge_string_length(%ForgeString %35)
   %37 = call %ForgeString @forge_int_to_string(i64 %36)
-  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1565, i64 4 }, %ForgeString %37)
-  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1566, i64 7 })
+  %38 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1570, i64 4 }, %ForgeString %37)
+  %39 = call %ForgeString @forge_string_concat(%ForgeString %38, { ptr, i64 } { ptr @1571, i64 7 })
   call void @forge_println_string(%ForgeString %39)
   %40 = load %ForgeString, ptr %17, align 8
   %41 = load %ForgeString, ptr %19, align 8
@@ -52837,10 +52859,10 @@ bb6300:
   %44 = call %Program @Parser__parse_program(ptr %16)
   %45 = call i64 @forge_fn_store_count()
   %46 = call %ForgeString @forge_int_to_string(i64 %45)
-  %47 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1567, i64 12 }, %ForgeString %46)
-  %48 = call %ForgeString @forge_string_concat(%ForgeString %47, { ptr, i64 } { ptr @1568, i64 4 })
+  %47 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1572, i64 12 }, %ForgeString %46)
+  %48 = call %ForgeString @forge_string_concat(%ForgeString %47, { ptr, i64 } { ptr @1573, i64 4 })
   call void @forge_println_string(%ForgeString %48)
-  %49 = call i64 @codegen_init({ ptr, i64 } { ptr @1569, i64 13 })
+  %49 = call i64 @codegen_init({ ptr, i64 } { ptr @1574, i64 13 })
   %50 = load ptr, ptr @VAR_GLOBAL_NAMES, align 8
   %51 = load ptr, ptr @VAR_GLOBAL_STR_MASK, align 8
   %52 = call i64 @create_globals_typed(ptr %50, ptr %51)
@@ -52855,8 +52877,8 @@ bb6300:
   store i64 %57, ptr %14, align 4
   %58 = load i64, ptr %14, align 4
   %59 = call %ForgeString @forge_int_to_string(i64 %58)
-  %60 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1570, i64 11 }, %ForgeString %59)
-  %61 = call %ForgeString @forge_string_concat(%ForgeString %60, { ptr, i64 } { ptr @1571, i64 4 })
+  %60 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1575, i64 11 }, %ForgeString %59)
+  %61 = call %ForgeString @forge_string_concat(%ForgeString %60, { ptr, i64 } { ptr @1576, i64 4 })
   call void @forge_println_string(%ForgeString %61)
   store i64 0, ptr %13, align 4
   store i64 0, ptr %12, align 4
@@ -52877,20 +52899,20 @@ bb6302:                                           ; preds = %bb6301
   br i1 %68, label %bb6304, label %bb6305
 
 bb6303:                                           ; preds = %bb6301
-  %69 = call i64 @codegen_write_ir({ ptr, i64 } { ptr @1575, i64 9 })
-  call void @forge_println_string({ ptr, i64 } { ptr @1576, i64 11 })
-  store { ptr, i64 } { ptr @1577, i64 18 }, ptr %9, align 8
+  %69 = call i64 @codegen_write_ir({ ptr, i64 } { ptr @1580, i64 9 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1581, i64 11 })
+  store { ptr, i64 } { ptr @1582, i64 18 }, ptr %9, align 8
   %70 = load %ForgeString, ptr %21, align 8
-  %71 = call %ForgeString @forge_string_concat(%ForgeString %70, { ptr, i64 } { ptr @1578, i64 2 })
+  %71 = call %ForgeString @forge_string_concat(%ForgeString %70, { ptr, i64 } { ptr @1583, i64 2 })
   store %ForgeString %71, ptr %8, align 8
   %72 = load %ForgeString, ptr %9, align 8
   %73 = call i64 @codegen_write_ir(%ForgeString %72)
   %74 = call i64 @codegen_cleanup()
-  %75 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1579, i64 33 }, %ForgeString zeroinitializer)
+  %75 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1584, i64 33 }, %ForgeString zeroinitializer)
   store %ForgeString %75, ptr %7, align 8
   store %ForgeString zeroinitializer, ptr %6, align 8
-  store { ptr, i64 } { ptr @1580, i64 21 }, ptr %5, align 8
-  %76 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1581, i64 2 }, %ForgeString zeroinitializer)
+  store { ptr, i64 } { ptr @1585, i64 21 }, ptr %5, align 8
+  %76 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1586, i64 2 }, %ForgeString zeroinitializer)
   store %ForgeString %76, ptr %4, align 8
   store %ForgeString zeroinitializer, ptr %3, align 8
   %77 = load %ForgeString, ptr %6, align 8
@@ -52922,7 +52944,7 @@ bb6306:                                           ; preds = %bb6305, %bb6304
 bb6307:                                           ; preds = %bb6306
   %88 = load i64, ptr %12, align 4
   %89 = call %ForgeString @forge_int_to_string(i64 %88)
-  %90 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1572, i64 5 }, %ForgeString %89)
+  %90 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1577, i64 5 }, %ForgeString %89)
   call void @forge_println_string(%ForgeString %90)
   %91 = load %Codegen, ptr %15, align 8
   %92 = load i64, ptr %12, align 4
@@ -52930,8 +52952,8 @@ bb6307:                                           ; preds = %bb6306
   %94 = call i64 @emit_fn_body_from_source(%Codegen %91, i64 %92, i64 %93)
   %95 = load i64, ptr %12, align 4
   %96 = call %ForgeString @forge_int_to_string(i64 %95)
-  %97 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1573, i64 5 }, %ForgeString %96)
-  %98 = call %ForgeString @forge_string_concat(%ForgeString %97, { ptr, i64 } { ptr @1574, i64 2 })
+  %97 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1578, i64 5 }, %ForgeString %96)
+  %98 = call %ForgeString @forge_string_concat(%ForgeString %97, { ptr, i64 } { ptr @1579, i64 2 })
   %99 = load i64, ptr %12, align 4
   %100 = call %ForgeString @forge_fn_store_get_name(i64 %99)
   %101 = call %ForgeString @forge_string_concat(%ForgeString %98, %ForgeString %100)
@@ -52996,17 +53018,17 @@ bb6313:                                           ; preds = %bb6310
   %129 = load %ForgeString, ptr %3, align 8
   %130 = load %ForgeString, ptr %3, align 8
   %131 = alloca %ForgeString, align 8
-  store { ptr, i64 } { ptr @1582, i64 3 }, ptr %131, align 8
+  store { ptr, i64 } { ptr @1587, i64 3 }, ptr %131, align 8
   %132 = call %ForgeString @forge_list_push(%ForgeString %130, ptr %131, i64 ptrtoint (ptr getelementptr (%ForgeString, ptr null, i32 1) to i64))
   %133 = extractvalue %ForgeString %132, 0
   store %ForgeString %132, ptr %3, align 8
   store %ForgeString %132, ptr %3, align 8
   %134 = load %ForgeString, ptr %3, align 8
-  %135 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1583, i64 2 }, %ForgeString %134)
+  %135 = call %ForgeString @forge_selfhost_process_run({ ptr, i64 } { ptr @1588, i64 2 }, %ForgeString %134)
   store %ForgeString %135, ptr %2, align 8
   %136 = load %ForgeString, ptr %21, align 8
   %137 = call %ForgeString @forge_int_to_string(%ForgeString %136)
-  %138 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1584, i64 10 }, %ForgeString %137)
+  %138 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1589, i64 10 }, %ForgeString %137)
   call void @forge_println_string(%ForgeString %138)
   ret i64 0
 }
@@ -53028,8 +53050,8 @@ bb6314:
   br i1 %11, label %bb6315, label %bb6316
 
 bb6315:                                           ; preds = %bb6314
-  call void @forge_println_string({ ptr, i64 } { ptr @1585, i64 42 })
-  call void @forge_println_string({ ptr, i64 } { ptr @1586, i64 37 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1590, i64 42 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1591, i64 37 })
   %12 = call i64 @forge_selfhost_process_exit(i64 1)
   br label %bb6317
 
@@ -53042,19 +53064,19 @@ bb6317:                                           ; preds = %bb6316, %bb6315
   %14 = call %ForgeString @forge_selfhost_get_arg(i64 2)
   store %ForgeString %14, ptr %4, align 8
   %15 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
-  store { ptr, i64 } { ptr @1587, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
-  store { ptr, i64 } { ptr @1587, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
+  store { ptr, i64 } { ptr @1592, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
+  store { ptr, i64 } { ptr @1592, i64 0 }, ptr @MODULE_PATHS_CSV, align 8
   %16 = load %ForgeString, ptr %6, align 8
   %17 = call i64 @forge_string_length(%ForgeString %16)
   %18 = call %ForgeString @forge_int_to_string(i64 %17)
-  %19 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1588, i64 7 }, %ForgeString %18)
+  %19 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1593, i64 7 }, %ForgeString %18)
   call void @forge_println_string(%ForgeString %19)
   %20 = load %ForgeString, ptr %5, align 8
-  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1589, i64 7 }, %ForgeString %20)
-  %22 = call %ForgeString @forge_string_concat(%ForgeString %21, { ptr, i64 } { ptr @1590, i64 1 })
+  %21 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1594, i64 7 }, %ForgeString %20)
+  %22 = call %ForgeString @forge_string_concat(%ForgeString %21, { ptr, i64 } { ptr @1595, i64 1 })
   call void @forge_println_string(%ForgeString %22)
   %23 = load %ForgeString, ptr %5, align 8
-  %24 = call i64 @forge_string_compare(%ForgeString %23, { ptr, i64 } { ptr @1591, i64 5 })
+  %24 = call i64 @forge_string_compare(%ForgeString %23, { ptr, i64 } { ptr @1596, i64 5 })
   %25 = icmp eq i64 %24, 0
   br i1 %25, label %bb6318, label %bb6319
 
@@ -53072,7 +53094,7 @@ bb6318:                                           ; preds = %bb6317
 
 bb6319:                                           ; preds = %bb6317
   %34 = load %ForgeString, ptr %5, align 8
-  %35 = call i64 @forge_string_compare(%ForgeString %34, { ptr, i64 } { ptr @1593, i64 5 })
+  %35 = call i64 @forge_string_compare(%ForgeString %34, { ptr, i64 } { ptr @1598, i64 5 })
   %36 = icmp eq i64 %35, 0
   br i1 %36, label %bb6324, label %bb6325
 
@@ -53087,18 +53109,18 @@ bb6322:                                           ; preds = %bb6318
   br label %bb6323
 
 bb6323:                                           ; preds = %bb6322, %bb6321
-  call void @forge_println_string({ ptr, i64 } { ptr @1592, i64 2 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1597, i64 2 })
   br label %bb6320
 
 bb6324:                                           ; preds = %bb6319
-  store { ptr, i64 } { ptr @1594, i64 5 }, ptr %2, align 8
+  store { ptr, i64 } { ptr @1599, i64 5 }, ptr %2, align 8
   %38 = load %ForgeString, ptr %6, align 8
   %39 = call i64 @forge_string_length(%ForgeString %38)
   %40 = icmp sgt i64 %39, 3
   br i1 %40, label %bb6327, label %bb6328
 
 bb6325:                                           ; preds = %bb6319
-  call void @forge_println_string({ ptr, i64 } { ptr @1596, i64 15 })
+  call void @forge_println_string({ ptr, i64 } { ptr @1601, i64 15 })
   %41 = call i64 @forge_selfhost_process_exit(i64 1)
   br label %bb6326
 
@@ -53123,7 +53145,7 @@ bb6329:                                           ; preds = %bb6328, %bb6327
   %48 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %49 = call i64 @forge_string_length(%ForgeString %48)
   %50 = call %ForgeString @forge_int_to_string(i64 %49)
-  %51 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1595, i64 10 }, %ForgeString %50)
+  %51 = call %ForgeString @forge_string_concat({ ptr, i64 } { ptr @1600, i64 10 }, %ForgeString %50)
   call void @forge_println_string(%ForgeString %51)
   %52 = load %ForgeString, ptr @MODULE_PATHS_CSV, align 8
   %53 = load %ForgeString, ptr %2, align 8

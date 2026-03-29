@@ -679,7 +679,13 @@ void forge_parser_set_pos(int64_t pos) { _c_parser_pos = pos; }
 int64_t forge_parser_get_pos(void) {
     return _c_parser_pos;
 }
-void forge_parser_advance_pos(void) { _c_parser_pos++; }
+static int _adv_trace = 1;
+void forge_parser_advance_pos(void) {
+    _c_parser_pos++;
+    if (_adv_trace && _c_parser_pos <= 20) {
+        fprintf(stderr, "  [adv] cpos=%lld\n", (long long)_c_parser_pos);
+    }
+}
 void forge_parser_set_ptr(void* ptr) {
     _c_parser_ptr = ptr;
     if (ptr) {
@@ -715,9 +721,15 @@ int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
     return *(int64_t*)(base + 24);
 }
 // Quick kind_id lookup from C-side stored token list (no struct return needed)
+static int _peek_trace = 0;
 int64_t forge_peek_kind_id(int64_t pos) {
-    return forge_token_kind_id(_c_token_list, pos);
+    int64_t kid = forge_token_kind_id(_c_token_list, pos);
+    if (_peek_trace && pos < 20) {
+        fprintf(stderr, "  [peek_kid] pos=%lld kid=%lld\n", (long long)pos, (long long)kid);
+    }
+    return kid;
 }
+void forge_enable_peek_trace(void) { _peek_trace = 1; }
 // C-side expect_ident: advances parser, returns ident text
 // Completely bypasses Forge let/return/if statement corruption
 ForgeString forge_expect_ident(void) {
@@ -738,6 +750,12 @@ ForgeString forge_peek_text(int64_t pos) {
 }
 int64_t forge_token_list_len(void) {
     return _c_token_list.len;
+}
+void forge_debug_parser_state(ForgeString label) {
+    fprintf(stderr, "  [%.*s] cpos=%lld kid=%lld\n",
+        (int)label.len, label.ptr,
+        (long long)_c_parser_pos,
+        (long long)forge_token_kind_id(_c_token_list, _c_parser_pos));
 }
 
 static int char_at_count = 0;
@@ -3116,7 +3134,8 @@ void* forge_alloca_cache_get(ForgeString name) {
         }
     }
     _ac_miss_count++;
-    if (_ac_miss_count <= 5 && name.ptr && name.len > 0 && name.len < 30) {
+    if (_ac_miss_count <= 10 && name.ptr && name.len > 0 && name.len < 60) {
+        fprintf(stderr, "  [ac_miss #%d] name=\"%.*s\"\n", _ac_miss_count, (int)name.len, name.ptr);
     }
     return NULL;
 }

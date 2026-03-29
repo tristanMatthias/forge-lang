@@ -3241,6 +3241,17 @@ fn compile(source: string) -> string {
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
     // C-side keyword detection (bypasses Statement.If/Return tag corruption)
     ir_raw("declare i64 @forge_kind_id_for_keyword(%ForgeString)")
+    // C-side parser debug
+    ir_raw("declare void @forge_debug_parser_state(%ForgeString)")
+    ir_raw("declare void @forge_enable_peek_trace()")
+    FN_NAMES = FN_NAMES.push("forge_enable_peek_trace")
+    FN_RETTYPES = FN_RETTYPES.push("void")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+    FN_NAMES = FN_NAMES.push("forge_debug_parser_state")
+    FN_RETTYPES = FN_RETTYPES.push("void")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
     // C-side parser position tracking
     ir_raw("declare void @forge_parser_set_ptr(ptr)")
     FN_NAMES = FN_NAMES.push("forge_parser_set_ptr")
