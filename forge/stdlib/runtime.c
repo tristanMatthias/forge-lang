@@ -744,6 +744,56 @@ int64_t forge_parser_check_id(int64_t kid) {
     return forge_token_kind_id(_c_token_list, _c_parser_pos) == kid;
 }
 
+// C-side consume_empty_params: consume () with no params, returns 1 if successful
+int64_t forge_parser_consume_empty_params(void) {
+    if (forge_token_kind_id(_c_token_list, _c_parser_pos) == 100) { // (
+        _c_parser_pos++;
+        if (forge_token_kind_id(_c_token_list, _c_parser_pos) == 101) { // )
+            _c_parser_pos++;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// C-side consume_block: consume { ... } block, returns body text
+ForgeString forge_parser_consume_block(ForgeString source) {
+    int64_t start_pos = _c_parser_pos;
+    int64_t kid = forge_token_kind_id(_c_token_list, _c_parser_pos);
+    fprintf(stderr, "  [consume_block] pos=%lld kid=%lld src_len=%lld\n", (long long)_c_parser_pos, (long long)kid, (long long)source.len);
+    if (kid != 102) { // {
+        return (ForgeString){NULL, 0};
+    }
+    int64_t open_span = forge_token_span_start(_c_token_list, _c_parser_pos);
+    _c_parser_pos++; // consume {
+    int depth = 1;
+    while (depth > 0 && _c_parser_pos < _c_token_list.len) {
+        int64_t kid = forge_token_kind_id(_c_token_list, _c_parser_pos);
+        if (kid == 102) depth++; // {
+        else if (kid == 103) depth--; // }
+        if (depth > 0) _c_parser_pos++;
+    }
+    int64_t close_span = forge_token_span_end(_c_token_list, _c_parser_pos);
+    if (_c_parser_pos < _c_token_list.len) _c_parser_pos++; // consume }
+    // Extract body text from source
+    if (source.ptr && open_span >= 0 && close_span > open_span && close_span <= source.len) {
+        return forge_string_new(source.ptr + open_span, close_span - open_span + 1);
+    }
+    return (ForgeString){NULL, 0};
+}
+
+// C-side is_at_rparen: returns 1 if current token is ) (kind_id 101)
+int64_t forge_parser_is_at_rparen(void) {
+    return forge_token_kind_id(_c_token_list, _c_parser_pos) == 101 ||
+           _c_parser_pos >= _c_token_list.len;
+}
+
+// C-side is_at_end check
+int64_t forge_parser_is_at_end(void) {
+    return _c_parser_pos >= _c_token_list.len ||
+           forge_token_kind_id(_c_token_list, _c_parser_pos) == 99;
+}
+
 // C-side skip_newlines: skip all tokens with kind_id 120
 void forge_parser_skip_newlines(void) {
     while (_c_parser_pos < _c_token_list.len &&
@@ -2662,6 +2712,7 @@ int64_t forge_fn_is_str_return(ForgeString fn_name) {
     // C-side functions that return ForgeString (must be registered for correct call type)
     #define STR_RET(s) if (fn_name.len == sizeof(s)-1 && memcmp(fn_name.ptr, s, sizeof(s)-1) == 0) return 1;
     STR_RET("forge_peek_text")
+    STR_RET("forge_parser_consume_block")
     STR_RET("forge_expect_ident")
     STR_RET("forge_fn_store_get_name")
     STR_RET("forge_fn_store_get_body")
