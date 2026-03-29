@@ -115,6 +115,7 @@ export mut CG_LAST_IS_MAP: int = 0
 export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
 export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
 export mut CG_LAST_LIST_ELEM_TYPE: string = ""  // element type name for last list expression (e.g., "Statement", "Token")
+export mut CG_LAST_IS_PTR: int = 0  // set to 1 when last expr returns ptr
 export mut CG_LAST_IS_NULLABLE: int = 0  // set to 1 when last expr was nullable
 // Set when the last expression was a map index access (for map[key] = value)
 export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
@@ -2543,8 +2544,9 @@ impl Codegen {
             CG_LAST_IS_LIST = 1
         }
         if str_ret_check == 3 {
-            // Returns ptr
+            // Returns ptr — mark so define_var uses CG_PTR alloca type
             call_ret_ty = CG_PTR
+            CG_LAST_IS_PTR = 1
         }
         // Explicit overrides for extern C functions not in the registry
         if fn_name == "forge_selfhost_process_args" { call_ret_ty = CG_STR
@@ -2700,6 +2702,7 @@ impl Codegen {
         CG_LAST_IS_STR = 0
         CG_LAST_IS_MAP = 0
         CG_LAST_IS_LIST = 0
+        CG_LAST_IS_PTR = 0
         CG_IS_MAP_INDEX = 0
         CG_LAST_ENUM_TYPE = ""
         CG_LAST_STRUCT_TYPE = ""
@@ -3160,8 +3163,10 @@ impl Codegen {
         let is_str = CG_LAST_IS_STR == 1
         let is_list = CG_LAST_IS_LIST == 1
         let is_map = CG_LAST_IS_MAP == 1
+        let is_ptr = CG_LAST_IS_PTR == 1
         cg_reinit_types()
         mut alloca_ty = CG_I64
+        if is_ptr { alloca_ty = CG_PTR }
         if is_str || is_list {
             alloca_ty = CG_STR
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
