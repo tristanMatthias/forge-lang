@@ -730,6 +730,10 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
                             forge_str_var_add_raw(cache_name, cache_len);
                         }
                     }
+                    if kind == 12 { // LLVMPointerTypeKind
+                        extern "C" { fn forge_ptr_var_add_raw(name_ptr: *const c_char, name_len: i64); }
+                        forge_ptr_var_add_raw(cache_name, cache_len);
+                    }
                 }
                 // Pending names persist — cleared by next set_last_let_name or param_name_get
             }

@@ -260,9 +260,13 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
             CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
             forge_str_var_add(name)
+        } else {
+            // Non-string globals are ptr-typed (LLVM Value* pointers)
+            forge_ptr_var_add(name)
         }
         i = i + 1
     }
+    forge_ptr_var_set_global()
 }
 
 // Create LLVM globals for all registered global variables.
@@ -1048,6 +1052,10 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_selfhost_process_args", make_fn_type_0(CG_STR))
     llvm.add_function(CG_MOD, "forge_fn_is_str_return", make_fn_type_1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_list_var_add", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ptr_var_add", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ptr_var_check", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ptr_var_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_ptr_var_set_global", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_list_var_check", make_fn_type_1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_list_var_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_selfhost_get_arg", make_fn_type_1(CG_STR, CG_I64))
@@ -1853,6 +1861,7 @@ impl Codegen {
             if forge_list_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1
                 CG_LAST_IS_LIST = 1 }
+            if forge_ptr_var_check(name) == 1 { load_ty = CG_PTR }
             // Check struct type (for method desugaring and field access)
             let st = forge_struct_var_get(name)
             if st != "" {
@@ -2474,6 +2483,10 @@ impl Codegen {
             is_extern_str_return = true
             CG_LAST_IS_LIST = 1
         }
+        if str_ret_check == 3 {
+            // Returns ptr
+            call_ret_ty = CG_PTR
+        }
         // Explicit overrides for extern C functions not in the registry
         if fn_name == "forge_selfhost_process_args" { call_ret_ty = CG_STR
             is_extern_str_return = true
@@ -2502,8 +2515,9 @@ impl Codegen {
         if fn_name == "forge_string_eq" { call_ret_ty = CG_I8 }
         if fn_name == "forge_string_byte_at" { call_ret_ty = CG_I64 }
         // Use C-side registry (immune to Forge list corruption)
+        // Skip if C-side already determined the type
         let rtn_raw = forge_fn_reg_get_ret(fn_name)
-        if rtn_raw.length > 0 {
+        if str_ret_check == 0 && rtn_raw.length > 0 {
             mut rtn = rtn_raw
             let rtn_len = rtn.length
             if rtn_len > 1 {

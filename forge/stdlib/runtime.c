@@ -2401,6 +2401,39 @@ ForgeString forge_fn_reg_get_ret(ForgeString name) {
 
 int64_t forge_fn_reg_count(void) { return _fn_reg_count; }
 
+// C-side ptr variable tracking (for LLVM Value* globals like CG_MOD, CG_B, etc.)
+#define PTR_VAR_CACHE_SIZE 128
+static char _ptr_var_names[PTR_VAR_CACHE_SIZE][64];
+static int _ptr_var_count = 0;
+static int _ptr_var_global_count = 0;
+void forge_ptr_var_add(ForgeString name) {
+    if (_ptr_var_count >= PTR_VAR_CACHE_SIZE) return;
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_ptr_var_names[_ptr_var_count], name.ptr, name.len);
+        _ptr_var_names[_ptr_var_count][name.len] = '\0';
+        _ptr_var_count++;
+    }
+}
+int64_t forge_ptr_var_check(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return 0;
+    for (int i = _ptr_var_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ptr_var_names[i]) == name.len &&
+            memcmp(_ptr_var_names[i], name.ptr, name.len) == 0)
+            return 1;
+    }
+    return 0;
+}
+void forge_ptr_var_add_raw(const char* name_ptr, int64_t name_len) {
+    if (_ptr_var_count >= PTR_VAR_CACHE_SIZE) return;
+    if (name_ptr && name_len > 0 && name_len < 64) {
+        memcpy(_ptr_var_names[_ptr_var_count], name_ptr, name_len);
+        _ptr_var_names[_ptr_var_count][name_len] = '\0';
+        _ptr_var_count++;
+    }
+}
+void forge_ptr_var_clear(void) { _ptr_var_count = _ptr_var_global_count; }
+void forge_ptr_var_set_global(void) { _ptr_var_global_count = _ptr_var_count; }
+
 // C-side list variable tracking
 #define LIST_VAR_CACHE_SIZE 256
 static char _list_var_names[LIST_VAR_CACHE_SIZE][64];
@@ -2426,16 +2459,22 @@ int64_t forge_list_var_check(ForgeString name) {
 void forge_list_var_clear(void) { _list_var_count = _list_var_global_count; }
 void forge_list_var_set_global(void) { _list_var_global_count = _list_var_count; }
 
-// Check if a function's return type is "string" or starts with "List"
-// Done entirely in C — immune to Forge ForgeString corruption
+// Check function return type from registry
+// Returns: 0=int/unknown, 1=string, 2=list, 3=ptr
 int64_t forge_fn_is_str_return(ForgeString fn_name) {
     if (!fn_name.ptr || fn_name.len <= 0) return 0;
+    // All forge_llvm_* functions return ptr
+    if (fn_name.len > 10 && memcmp(fn_name.ptr, "forge_llvm", 10) == 0) return 3;
+    // All llvm_* wrapper functions return ptr
+    if (fn_name.len > 4 && memcmp(fn_name.ptr, "llvm_", 5) == 0) return 3;
+    // Check registry
     for (int i = 0; i < _fn_reg_count; i++) {
         if ((int64_t)strlen(_fn_reg[i].name) == fn_name.len &&
             memcmp(_fn_reg[i].name, fn_name.ptr, fn_name.len) == 0) {
             const char* ret = _fn_reg[i].ret_type;
             if (strcmp(ret, "string") == 0) return 1;
-            if (strncmp(ret, "List", 4) == 0) return 2; // 2 = list
+            if (strncmp(ret, "List", 4) == 0) return 2;
+            if (strcmp(ret, "ptr") == 0) return 3;
             return 0;
         }
     }
