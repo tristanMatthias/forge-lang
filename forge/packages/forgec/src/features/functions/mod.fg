@@ -724,7 +724,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                     llvm.build_ret_void(CG_B)
                 }
             }
-            // if (25), while (30), for (28): parse + emit normally
+            // if (25), while (30), for (28): parse with CG_ACTIVE=false
+            // `is` expressions now stored as Expr.IsCheck in AST, handled by emit_expr
             else if peek_kid == 25 || peek_kid == 30 || peek_kid == 28 {
                 CG_ACTIVE = false
                 let stmt = body_parser.parse_statement()

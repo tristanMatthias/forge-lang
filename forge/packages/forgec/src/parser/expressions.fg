@@ -891,7 +891,6 @@ impl Parser {
                         if result_is_llvm { obj_val = result_llvm }
                         let tag = match_enum_tag(variant_name)
                         let tag_val = llvm.const_int(CG_I64, tag, 0)
-                        // For named enum types, extract tag byte first
                         mut cmp_lhs = obj_val
                         if CG_LAST_ENUM_TYPE != "" {
                             let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
@@ -904,11 +903,13 @@ impl Parser {
                         result_is_llvm = true
                         result_llvm = ext
                         result_is_str = false
-                        // Result is boolean, not enum
                         CG_LAST_ENUM_TYPE = ""
                         CG_LAST_STRUCT_TYPE = ""
                     }
-                    result = Expr.IntLit(0, self.current_span())
+                    // Store as IsCheck AST node for deferred emit_expr
+                    mut neg_val = 0
+                    if negated { neg_val = 1 }
+                    result = Expr.IsCheck(result, variant_name, neg_val, self.current_span())
                     continue
                 }
                 // Not a .Variant — fall through
