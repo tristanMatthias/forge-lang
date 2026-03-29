@@ -3166,7 +3166,10 @@ impl Codegen {
         let is_ptr = CG_LAST_IS_PTR == 1
         cg_reinit_types()
         mut alloca_ty = CG_I64
-        if is_ptr { alloca_ty = CG_PTR }
+        if is_ptr {
+            alloca_ty = CG_PTR
+            forge_ptr_var_add(name)
+        }
         if is_str || is_list {
             alloca_ty = CG_STR
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","

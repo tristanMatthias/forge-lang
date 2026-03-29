@@ -2765,10 +2765,15 @@ void forge_param_type_add(ForgeString type_name) {
     }
     _param_type_count++;
 }
+static int _ptr_param_count = 0;
 ForgeString forge_param_type_get(int64_t idx) {
     if (idx < 0 || idx >= _param_type_count) return forge_string_new("int", 3);
     int64_t len = strlen(_param_types[idx]);
+    if (len == 3 && memcmp(_param_types[idx], "ptr", 3) == 0) _ptr_param_count++;
     return forge_string_new(_param_types[idx], len);
+}
+void forge_param_type_stats(void) {
+    fprintf(stderr, "  [param_type_stats] total=%d ptr_lookups=%d\n", _param_type_count, _ptr_param_count);
 }
 
 // ---- C-side current self type (for method desugaring) ----
@@ -3184,7 +3189,7 @@ void forge_ac_debug_off(void) { _ac_dbg_fn = 0; }
 static int _ac_miss_count = 0;
 static int _ac_hit_count = 0;
 void forge_alloca_cache_stats(void) {
-    fprintf(stderr, "  [ac_stats] hits=%d misses=%d\n", _ac_hit_count, _ac_miss_count);
+    fprintf(stderr, "  [ac_stats] hits=%d misses=%d ptr_params=%d total_params=%d\n", _ac_hit_count, _ac_miss_count, _ptr_param_count, _param_type_count);
 }
 
 // Check if the last-set let name exists in the alloca cache
