@@ -40,38 +40,63 @@ fn get_fn_decl(node_id: int) -> FnDeclData? {
 // ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
-    eprintln("  [parse_fn_decl] start cpos=" + string(forge_parser_get_pos()))
     let start = p.advance().span // consume 'fn'
-    eprintln("  [parse_fn_decl] after advance cpos=" + string(forge_parser_get_pos()))
 
-    eprintln("  [parse_fn_decl] before_ident kid=" + string(forge_peek_kind_id(forge_parser_get_pos())) + " text=" + forge_peek_text(forge_parser_get_pos()))
     let name = p.expect_ident()
-    eprintln("  [parse_fn_decl] name=" + name + " cpos=" + string(forge_parser_get_pos()))
     if name == "" { return null }
 
-    // Type params: skip < ... > if present (C-side check)
     let type_params = p.parse_type_params()
-    // Params: use C-side for empty params case (while loops broken in Stage 2)
-    // Put in if-condition so the call survives (expression statements dropped)
-    if forge_parser_consume_empty_params() >= 0 { p.pos = forge_parser_get_pos() }
-    // Return type: check for -> arrow (kind_id 86)
-    mut return_type_name = ""
-    if forge_peek_kind_id(forge_parser_get_pos()) == 86 {
-        // Skip -> and capture return type name
-        if forge_parser_expect_id(86) >= 0 { p.pos = forge_parser_get_pos() }
-        return_type_name = forge_peek_text(forge_parser_get_pos())
-        if forge_parser_expect_id(1) >= 0 { p.pos = forge_parser_get_pos() }
-    }
-    // Body: use C-side block consumer (reads { ... } from token list + source)
-    let body_src = forge_parser_consume_block(p.source)
-    p.pos = forge_parser_get_pos()
-    eprintln("  BODY " + name + " len=" + string(body_src.length))
-    // Store for codegen
-    store_fn_source(name, body_src)
-    store_fn_param_count(0)
-    store_fn_return_type(return_type_name)
+    let params: List<Param> = p.parse_params()
 
-    PARSE_END_POS = forge_parser_get_pos()
+    mut return_type_name = ""
+    mut return_type: TypeExpr? = null
+    if p.check_id(86) {  // Arrow
+        p.advance()
+        // Capture return type name
+        let ret_tok = p.peek()
+        if ret_tok.kind_id == 1 {
+            return_type_name = ret_tok.text
+        }
+        let parsed_ret = p.parse_type_expr()
+        if parsed_ret != null {
+            match parsed_ret! {
+                .Nullable(inner, span) -> {
+                    return_type_name = return_type_name + "?"
+                }
+                _ -> {}
+            }
+        }
+        return_type = parsed_ret
+    }
+
+    // Capture body source
+    let block_open_span = p.peek().span
+    IN_FUNCTION_BODY = 1
+    let body = p.parse_block()
+    IN_FUNCTION_BODY = 0
+    let close_tok_idx = p.pos - 1
+    let block_close_end = p.tokens[close_tok_idx].span.end
+    mut body_src = ""
+    if p.source.length > 0 {
+        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    }
+    eprintln("  BODY " + name + " open=" + string(block_open_span.start) + " close=" + string(block_close_end) + " len=" + string(body_src.length) + " src_len=" + string(p.source.length))
+
+    store_fn_source(name, body_src)
+    store_fn_param_count(params.length)
+    store_fn_return_type(return_type_name)
+    mut pi = 0
+    for param in params {
+        store_fn_param_name(param.name)
+        if pi < PARSED_PARAM_TYPES.length {
+            store_fn_param_type(PARSED_PARAM_TYPES[pi])
+        } else {
+            store_fn_param_type("int")
+        }
+        pi = pi + 1
+    }
+
+    PARSE_END_POS = p.pos
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }

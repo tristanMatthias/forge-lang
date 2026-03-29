@@ -98,3 +98,9 @@ Rust bootstrap (68 type errors, fragile) → Stage 1 binary → Stage 2 binary �
 6. **ASK before deviating from the plan in `SELF_HOST_PROGRESS.md`.** Do not silently change approach. Stop, explain what's happening, and ask.
 
 7. **If a change breaks the pipeline, REVERT immediately.** Do not try to fix the fix. Revert, understand why it broke, then try a different approach.
+
+8. **NEVER add C-side workaround functions to runtime.c to bypass codegen bugs.** If the compiled output has wrong behavior, fix the CODEGEN that produces it (in mini/codegen.fg or codegen/mod.fg). Adding forge_xxx C functions to workaround broken if/while/let/expr is a hack that doesn't scale. The only C-side functions should be actual runtime utilities.
+
+9. **Fix bugs at their source, not their symptoms.** If while-loop conditions compile to `br i1 false`, fix the while-loop codegen in mini/codegen.fg — don't rewrite all while loops to avoid the pattern. If expression statements are dropped, fix the expression-statement codegen — don't wrap calls in fake if-conditions.
+
+10. **The mini compiler (mini/codegen.fg) is the ROOT of the bootstrap chain.** Bugs in mini propagate through ALL stages. Fixing mini fixes everything downstream. Workarounds in later stages accumulate technical debt.
