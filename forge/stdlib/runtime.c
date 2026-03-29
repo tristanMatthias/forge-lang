@@ -2117,7 +2117,14 @@ extern int64_t forge_pending_alloca_name_len;
 // Last parsed let-variable name — set during parsing, used during emission
 static char _last_let_name[64] = "";
 static int64_t _last_let_name_len = 0;
+static int _lln_dbg = 0;
 void forge_set_last_let_name(ForgeString name) {
+    if (0) {
+        fprintf(stderr, "  [lln] ptr=%p len=%lld text='%.*s'\n", name.ptr, (long long)name.len,
+            (name.ptr && name.len > 0 && name.len < 30) ? (int)name.len : 0,
+            (name.ptr && name.len > 0 && name.len < 30) ? (char*)name.ptr : "");
+        _lln_dbg++;
+    }
     if (name.ptr && name.len > 0 && name.len < 64) {
         memcpy(_last_let_name, name.ptr, name.len);
         _last_let_name[name.len] = '\0';

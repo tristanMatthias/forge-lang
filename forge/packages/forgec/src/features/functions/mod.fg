@@ -670,12 +670,25 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             // Stop emitting after a return/break (block has terminator)
             if llvm.block_has_terminator(CG_B) { break }
+            // Pre-capture let/mut variable name from tokens BEFORE parsing
+            // (tokens are correct; Statement.Let payload may be corrupted)
+            let peek_kid = body_parser.peek().kind_id
+            if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
+                // let/mut/const: next token is the variable name
+                let name_tok = body_parser.peek_at(1)
+                if name_tok.kind_id == 1 {
+                    forge_set_last_let_name(name_tok.text)
+                }
+            }
             CG_ACTIVE = false
             let before = body_parser.pos
             let stmt = body_parser.parse_statement()
             CG_ACTIVE = true
             cg_reinit_types()
-            forge_let_to_alloca_name()
+            // Only set pending alloca name for let/mut/const statements
+            if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
+                forge_let_to_alloca_name()
+            }
             if stmt != null {
                 cg.emit_statement(stmt!)
             }
