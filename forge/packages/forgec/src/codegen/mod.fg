@@ -512,9 +512,13 @@ fn coerce_for_store(val: ptr, alloca_ty: ptr) -> ptr {
 
 // Look up a function's return type name from the registry
 fn lookup_fn_return_type(name: string) -> string {
+    // Use C-side registry first (immune to Forge list corruption)
+    let c_ret = forge_fn_reg_get_ret(name)
+    if c_ret.length > 0 { return c_ret }
     mut i = 0
-    while i < FN_NAMES.length {
-        if FN_NAMES[i] == name {
+    let lrt_total = forge_fn_store_count()
+    while i < lrt_total {
+        if forge_fn_store_get_name(i) == name {
             if i < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[i] }
             return ""
         }
@@ -1029,9 +1033,24 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_sh_substr", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_sh_byteat", make_fn_type_2(CG_I64, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_sh_length", make_fn_type_1(CG_I64, CG_STR))
+    // C-side character classification (bypasses Statement.Expr tag corruption)
+    llvm.add_function(CG_MOD, "forge_is_alpha", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_digit", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_alnum", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_ident_start", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_ident_continue", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_hex_digit", make_fn_type_1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_whitespace_not_newline", make_fn_type_1(CG_I64, CG_STR))
     // Efficient list push (amortized O(1) via capacity doubling in C)
     llvm.add_function(CG_MOD, "forge_list_push", make_fn_type_3(CG_STR, CG_STR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_list_push_str", make_fn_type_2(CG_STR, CG_STR, CG_STR))
+    // C-side function store (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_fn_store_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_fn_store_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_store_get_body", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_get_name", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_count", make_fn_type_0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_dump_token_list", make_fn_type_1(CG_VOID, CG_STR))
     // Memory
     CG_RT_ALLOC = llvm.add_function(CG_MOD, "forge_alloc", make_fn_type_1(CG_PTR, CG_I64))
     CG_RT_MEMCPY = llvm.add_function(CG_MOD, "forge_memcpy", make_fn_type_3(CG_VOID, CG_PTR, CG_PTR, CG_I64))
@@ -2420,8 +2439,9 @@ impl Codegen {
         // Find param offset for this function
         mut fn_param_offset = 0
         mut fn_idx = 0
-        while fn_idx < FN_NAMES.length {
-            if FN_NAMES[fn_idx] == fn_name { break }
+        let efcd_total = forge_fn_store_count()
+        while fn_idx < efcd_total {
+            if forge_fn_store_get_name(fn_idx) == fn_name { break }
             if fn_idx < FN_PARAM_COUNTS.length {
                 fn_param_offset = fn_param_offset + FN_PARAM_COUNTS[fn_idx]
             }

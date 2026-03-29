@@ -283,6 +283,7 @@ fn scan_one_file(filepath: string, idx: int) {
     eprintln("  [scan] " + string(idx) + " lexer created")
     let tokens = lex.tokenize()
     eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
+    forge_dump_token_list(tokens)
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
     p.parse_program()
@@ -319,7 +320,8 @@ fn build_compile_separate(paths_csv: string, output: string) {
     }
     // Use recursive scan (works with Rust-compiled bootstrap)
     let file_count = scan_csv(csv, 0)
-    eprintln("scanned " + string(file_count) + " files, " + string(FN_NAMES.length) + " fns")
+    let fn_count = forge_fn_store_count()
+    eprintln("scanned " + string(file_count) + " files, " + string(fn_count) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     if csv.length != paths_csv.length {
@@ -333,13 +335,15 @@ fn build_compile_separate(paths_csv: string, output: string) {
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
-    eprintln("  declared " + string(FN_NAMES.length) + " fns")
+    let declared_count = forge_fn_store_count()
+    eprintln("  declared " + string(declared_count) + " fns")
     // Materialize struct types before emitting function bodies
     materialize_struct_types()
-    // Emit each function body
+    // Emit each function body — use C-side fn store count (Forge FN_NAMES.length is corrupt in Stage 2)
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
+    let total_fns = forge_fn_store_count()
+    while fi < total_fns {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         // Use C-side body store (immune to Forge list index misalignment)
@@ -381,7 +385,7 @@ fn build_compile_single(input_file: string, output: string) {
     eprintln("BC: " + string(tokens.length) + " tokens")
     mut p = parser_new_with_source(tokens, source)
     p.parse_program()
-    eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
+    eprintln("BC: parsed, " + string(forge_fn_store_count()) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
@@ -390,18 +394,19 @@ fn build_compile_single(input_file: string, output: string) {
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
-    eprintln("  declared " + string(FN_NAMES.length) + " fns")
+    let bc_fn_count = forge_fn_store_count()
+    eprintln("  declared " + string(bc_fn_count) + " fns")
     // Emit each function body (parse once, emit once — no re-declaration)
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
+    while fi < bc_fn_count {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
-        let bsrc = FN_BODY_SOURCES[fi]
+        let bsrc = forge_fn_store_get_body(fi)
         if bsrc.length > 0 {
             eprintln("  >> " + string(fi))
             emit_fn_body_from_source(cg, fi, param_offset)
-            eprintln("    [" + string(fi) + "] " + FN_NAMES[fi])
+            eprintln("    [" + string(fi) + "] " + forge_fn_store_get_name(fi))
         }
         param_offset = param_offset + pc
         fi = fi + 1

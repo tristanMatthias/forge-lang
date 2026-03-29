@@ -702,13 +702,15 @@ impl Parser {
                         mut method_name = method_name_2
                         mut found_method = false
                         mut fni = 0
-                        while fni < FN_NAMES.length {
-                            if FN_NAMES[fni] == method_name_2 {
+                        let expr_fn_total = forge_fn_store_count()
+                        while fni < expr_fn_total {
+                            let fni_name = forge_fn_store_get_name(fni)
+                            if fni_name == method_name_2 {
                                 found_method = true
                                 method_name = method_name_2
                                 break
                             }
-                            if FN_NAMES[fni] == method_name_1 {
+                            if fni_name == method_name_1 {
                                 found_method = true
                                 method_name = method_name_1
                                 break
@@ -2199,8 +2201,9 @@ impl Parser {
                 mut fn_idx = -1
                 mut fn_param_offset = 0
                 mut fi = 0
-                while fi < FN_NAMES.length {
-                    if FN_NAMES[fi] == mangled {
+                let mc_fn_total = forge_fn_store_count()
+                while fi < mc_fn_total {
+                    if forge_fn_store_get_name(fi) == mangled {
                         fn_idx = fi
                         break
                     }

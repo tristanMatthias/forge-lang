@@ -620,8 +620,46 @@ int64_t forge_string_byte_at(ForgeString s, int64_t index) {
     return (int64_t)(unsigned char)s.ptr[index];
 }
 
+// C-side character classification (bypasses all Forge codegen issues)
+int64_t forge_is_alpha(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    unsigned char c = (unsigned char)ch.ptr[0];
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+int64_t forge_is_digit(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    unsigned char c = (unsigned char)ch.ptr[0];
+    return c >= '0' && c <= '9';
+}
+int64_t forge_is_alnum(ForgeString ch) {
+    return forge_is_alpha(ch) || forge_is_digit(ch);
+}
+int64_t forge_is_ident_start(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    return forge_is_alpha(ch) || ch.ptr[0] == '$';
+}
+int64_t forge_is_ident_continue(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    return forge_is_alnum(ch) || ch.ptr[0] == '$';
+}
+int64_t forge_is_hex_digit(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    unsigned char c = (unsigned char)ch.ptr[0];
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+int64_t forge_is_whitespace_not_newline(ForgeString ch) {
+    if (!ch.ptr || ch.len <= 0) return 0;
+    unsigned char c = (unsigned char)ch.ptr[0];
+    return c == ' ' || c == '\t';
+}
+
 static int char_at_count = 0;
+static int _char_at_diag = 0;
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {
+    if (_char_at_diag < 5 || (!s.ptr || index < 0 || index >= s.len)) {
+        fprintf(stderr, "[char_at #%d] ptr=%p len=%lld idx=%lld\n", _char_at_diag, s.ptr, (long long)s.len, (long long)index);
+        _char_at_diag++;
+    }
     forge_string_bounds_check(s, index, "char_at");
     unsigned char c = (unsigned char)s.ptr[index];
     char_at_count++;
@@ -1992,8 +2030,24 @@ void forge_mini_write_file(ForgeString path, ForgeString content) {
 // Capacity is stored in 8 bytes BEFORE the data pointer.
 // Layout: [cap:i64][elem0][elem1]...  data_ptr points to elem0.
 
+static int _list_push_count = 0;
+static int _list_push_diag = 0;  // set to 1 to enable diagnostics
+
 ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
+    _list_push_count++;
+    // Guard: reject null elements or unreasonable sizes
+    if (!elem || elem_size <= 0 || elem_size > 1000000) {
+        if (_list_push_diag) fprintf(stderr, "[list_push #%d] BAD: elem=%p size=%lld\n", _list_push_count, elem, (long long)elem_size);
+        return list;  // return unchanged list
+    }
     int64_t len = list.len;
+    if (_list_push_diag && (_list_push_count <= 50 || _list_push_count % 100 == 0)) {
+        fprintf(stderr, "[list_push #%d] ptr=%p len=%lld elem_size=%lld\n", _list_push_count, list.ptr, (long long)len, (long long)elem_size);
+    }
+    if (len < 0 || len > 10000000) {
+        if (_list_push_diag) fprintf(stderr, "[list_push #%d] BAD len=%lld, resetting to 0\n", _list_push_count, (long long)len);
+        len = 0;
+    }
     int64_t cap = 0;
     char* raw = NULL;
 
@@ -2003,8 +2057,6 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
         cap = *(int64_t*)raw;
         // Validate: cap must be >= len and reasonable
         if (cap < len || cap > len * 4 + 16 || cap > 1000000) {
-            // No valid capacity header — this list was created by inline push
-            // Copy to a new capacity-aware buffer
             cap = 0;
             raw = NULL;
         }
@@ -2014,12 +2066,15 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
         // Grow: double capacity (min 8)
         int64_t new_cap = cap < 8 ? 8 : cap * 2;
         char* new_raw = (char*)malloc(sizeof(int64_t) + new_cap * elem_size);
+        if (!new_raw) {
+            fprintf(stderr, "[list_push #%d] FATAL: malloc(%lld) failed\n", _list_push_count, (long long)(sizeof(int64_t) + new_cap * elem_size));
+            return list;
+        }
         *(int64_t*)new_raw = new_cap;
         char* new_data = new_raw + sizeof(int64_t);
         if (list.ptr && len > 0) {
             memcpy(new_data, list.ptr, len * elem_size);
         }
-        // Don't free old — GC will handle it (or leak, acceptable for compiler)
         list.ptr = new_data;
         raw = new_raw;
     }
@@ -2029,6 +2084,8 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
     list.len = len + 1;
     return list;
 }
+
+void forge_list_push_diag(int64_t enable) { _list_push_diag = (int)enable; }
 
 // ---- Self-hosted compiler support ----
 // These provide process.args(), fs.read(), process.exit(), process.run()
@@ -2563,6 +2620,7 @@ void forge_fn_store_clear(void) { _fn_store_count = 0; }
 void forge_fn_store_add(ForgeString name, ForgeString body) {
     if (_fn_store_count >= FN_STORE_MAX) return;
     if (!name.ptr || name.len <= 0 || name.len > 127) return;
+    fprintf(stderr, "  [fn_store #%d] name=\"%.*s\" body_len=%lld\n", _fn_store_count, (int)name.len, name.ptr, (long long)body.len);
     memcpy(_fn_store[_fn_store_count].name, name.ptr, name.len);
     _fn_store[_fn_store_count].name[name.len] = '\0';
     // Copy body
@@ -2579,7 +2637,47 @@ ForgeString forge_fn_store_get_body(int64_t idx) {
     return (ForgeString){_fn_store[idx].body, _fn_store[idx].body_len};
 }
 
+ForgeString forge_fn_store_get_name(int64_t idx) {
+    if (idx < 0 || idx >= _fn_store_count) return (ForgeString){NULL, 0};
+    int64_t nlen = strlen(_fn_store[idx].name);
+    return forge_string_new(_fn_store[idx].name, nlen);
+}
+
 int64_t forge_fn_store_count(void) { return _fn_store_count; }
+
+// Dump token list for debugging — Token = {TokenKind{i8,ptr}, Span{i64,i64,i64,i64}, ForgeString{ptr,i64}, i64}
+// Token size = 72 bytes on aarch64
+void forge_dump_token_list(ForgeString list) {
+    int token_size = 72;
+    fprintf(stderr, "[dump_tokens] count=%lld ptr=%p token_size=%d\n", (long long)list.len, list.ptr, token_size);
+    if (!list.ptr || list.len <= 0) return;
+    int max = list.len > 30 ? 30 : (int)list.len;
+    for (int i = 0; i < max; i++) {
+        char* base = list.ptr + i * token_size;
+        int8_t kind_tag = *(int8_t*)base;
+        void* kind_ptr = *(void**)(base + 8);
+        int64_t kind_id = *(int64_t*)(base + 64);
+        char* text_ptr = *(char**)(base + 48);
+        int64_t text_len = *(int64_t*)(base + 56);
+        int64_t span_start = *(int64_t*)(base + 16);
+        int64_t span_end = *(int64_t*)(base + 24);
+        fprintf(stderr, "  tok[%d] tag=%d kptr=%p kid=%lld span=%lld-%lld txt_ptr=%p txt_len=%lld",
+            i, (int)kind_tag, kind_ptr, (long long)kind_id,
+            (long long)span_start, (long long)span_end, text_ptr, (long long)text_len);
+        if (text_ptr && text_len > 0 && text_len < 200) {
+            fprintf(stderr, " text=\"%.*s\"", (int)text_len, text_ptr);
+        }
+        // Also dump raw hex for first few bytes
+        if (i < 5) {
+            fprintf(stderr, " raw=[");
+            for (int j = 0; j < token_size && j < 72; j += 8) {
+                fprintf(stderr, "%016llx ", *(unsigned long long*)(base + j));
+            }
+            fprintf(stderr, "]");
+        }
+        fprintf(stderr, "\n");
+    }
+}
 
 // List push for ForgeString elements: returns new list with item appended
 ForgeString forge_list_push_str(ForgeString list, ForgeString item) {

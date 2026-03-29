@@ -9,12 +9,12 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VOID, CG_PTR, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_LAST_IS_LIST, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY, VAR_LIST_INIT_CSV}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
 use features.while_loops.PARSE_END_POS
-use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
+use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES, LAST_IDENT_NAME}
 
 // ─── Side Table ──────────────────────────────────
 
@@ -281,11 +281,9 @@ export fn store_fn_param_type(type_name: string) {
 export fn store_fn_return_type(type_name: string) {
     FN_RETURN_TYPES = FN_RETURN_TYPES.push(type_name)
     // Register name+return_type pair in C-side registry (immune to list corruption)
-    // Use the most recently added FN_NAMES entry as the function name
-    let fn_count = forge_fn_reg_count()
-    let names_len = FN_NAMES.length
-    if names_len > fn_count {
-        let fn_name = FN_NAMES[names_len - 1]
+    let store_count = forge_fn_store_count()
+    if store_count > 0 {
+        let fn_name = forge_fn_store_get_name(store_count - 1)
         forge_fn_reg_add(fn_name, type_name)
     }
 }
@@ -296,8 +294,9 @@ mut DECLARED_FNS: Map<string, ptr> = {}
 // Declare all functions (signatures only, no bodies) so forward calls work
 export fn declare_all_functions(cg: Codegen) {
     mut i = 0
-    while i < FN_NAMES.length {
-        let name = FN_NAMES[i]
+    let daf_total = forge_fn_store_count()
+    while i < daf_total {
+        let name = forge_fn_store_get_name(i)
         let is_main = name == "main"
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
@@ -399,13 +398,13 @@ export fn declare_all_fns() {
         CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
         si = si + 1
     }
-    // Declare all function signatures — use i64 for all params/returns
-    // (bootstrap: resolve_type_to_llvm may return null for complex types)
+    // Declare all function signatures — use C-side fn store count (Forge FN_NAMES.length is corrupt in Stage 2)
     mut param_offset = 0
     mut i = 0
-    while i < FN_NAMES.length {
+    let fn_total = forge_fn_store_count()
+    while i < fn_total {
         cg_reinit_types()
-        let name = FN_NAMES[i]
+        let name = forge_fn_store_get_name(i)
         let is_main = name == "main"
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
@@ -466,7 +465,7 @@ export fn declare_all_fns() {
 
 // Emit a single function body from source — called per-function (no re-declaration)
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
-    let name = FN_NAMES[idx]
+    let name = forge_fn_store_get_name(idx)
     eprintln("  emit: " + name)
     // Use C-side body store (immune to Forge list corruption that misaligns indices)
     let body_src = forge_fn_store_get_body(idx)
@@ -673,50 +672,87 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         CG_LAST_VAL = llvm.const_int(CG_I64, 0, 0)
         CG_HAS_LAST_VAL = 0
         // Parse and emit each statement individually
+        // CRITICAL: Statement enum tags are corrupted in Stage 2, so for
+        // expression-only lines, we parse + emit the expression directly.
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             // Stop emitting after a return/break (block has terminator)
             if llvm.block_has_terminator(CG_B) { break }
-            // Pre-capture let/mut variable name from tokens BEFORE parsing
-            // (tokens are correct; Statement.Let payload may be corrupted)
             let peek_kid = body_parser.peek().kind_id
+            let before = body_parser.pos
+
+            // let/mut/const (20/21/22): pre-capture name, parse, fallback alloca
             if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
-                // let/mut/const: next token is the variable name
                 let name_tok = body_parser.peek_at(1)
                 if name_tok.kind_id == 1 {
                     forge_set_last_let_name(name_tok.text)
                 }
-            }
-            CG_ACTIVE = false
-            let before = body_parser.pos
-            let stmt = body_parser.parse_statement()
-            CG_ACTIVE = true
-            cg_reinit_types()
-            if stmt != null {
-                let last = cg.emit_statement(stmt!)
-                if last != null {
-                    CG_LAST_VAL = last
-                    CG_HAS_LAST_VAL = 1
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
+                }
+                if forge_let_needs_alloca() == 1 {
+                    let cur2 = llvm.get_insert_block(CG_B)
+                    let fn2 = llvm.get_basic_block_parent(cur2)
+                    let eb2 = llvm.get_entry_basic_block(fn2)
+                    let fi2 = llvm.get_first_instruction(eb2)
+                    if fi2 != null { llvm.position_before(CG_B, fi2) }
+                    else { llvm.position_at_end(CG_B, eb2) }
+                    forge_let_to_alloca_name()
+                    forge_arm_pending_alloca()
+                    let va = llvm.build_alloca(CG_B, CG_STR, "")
+                    llvm.position_at_end(CG_B, cur2)
+                    if CG_LAST_VAL != null && va != null {
+                        llvm.build_store(CG_B, CG_LAST_VAL, va)
+                    }
                 }
             }
-            // For let/mut/const: if define_var didn't fire (Statement.Let tag corrupted),
-            // create the alloca manually with the C-side name and CG_LAST_VAL
-            if (peek_kid == 20 || peek_kid == 21 || peek_kid == 22) && forge_let_needs_alloca() == 1 {
-                // Position at entry block
-                let cur2 = llvm.get_insert_block(CG_B)
-                let fn2 = llvm.get_basic_block_parent(cur2)
-                let eb2 = llvm.get_entry_basic_block(fn2)
-                let fi2 = llvm.get_first_instruction(eb2)
-                if fi2 != null { llvm.position_before(CG_B, fi2) }
-                else { llvm.position_at_end(CG_B, eb2) }
-                // Create alloca — default to CG_STR since most compiler variables are strings/lists
-                // (ForgeString and List<T> both use { ptr, i64 }, i64 fits in the first 8 bytes)
-                forge_let_to_alloca_name()
-                forge_arm_pending_alloca()
-                let va = llvm.build_alloca(CG_B, CG_STR, "")
-                llvm.position_at_end(CG_B, cur2)
-                // Store last value
-                if CG_LAST_VAL != null && va != null {
-                    llvm.build_store(CG_B, CG_LAST_VAL, va)
+            // return (24): emit return directly
+            else if peek_kid == 24 {
+                body_parser.advance()
+                body_parser.skip_newlines()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if !body_parser.check_id(103) && !body_parser.is_at_end() && !body_parser.check_id(120) {
+                    let rexpr = body_parser.parse_expr()
+                    if rexpr != null {
+                        let rv = cg.emit_expr(rexpr!)
+                        llvm.build_ret(CG_B, rv)
+                    } else {
+                        llvm.build_ret_void(CG_B)
+                    }
+                } else {
+                    llvm.build_ret_void(CG_B)
+                }
+            }
+            // if (25), while (30), for (28): parse + emit normally
+            else if peek_kid == 25 || peek_kid == 30 || peek_kid == 28 {
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
+                }
+            }
+            // All other: expression or assignment
+            // Parse and emit via parse_statement → emit_statement
+            // Statement.Expr tag may be corrupted but:
+            // - assignments work via parse_expr_or_assign inline emit
+            // - pure expressions in function bodies work if they have explicit return
+            // - character classification uses C-side functions (no codegen needed)
+            else {
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
                 }
             }
             if body_parser.pos == before {
@@ -916,9 +952,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
 
     mut param_offset = 0
     mut i = 0
-    while i < FN_NAMES.length {
-        let name = FN_NAMES[i]
-        let body_src = FN_BODY_SOURCES[i]
+    let eafb_total = forge_fn_store_count()
+    while i < eafb_total {
+        let name = forge_fn_store_get_name(i)
+        let body_src = forge_fn_store_get_body(i)
         let is_main = name == "main"
         mut pc = 0
         if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
@@ -1144,8 +1181,9 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
     // Find param offset: sum of param counts for functions before this one
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
-        if FN_NAMES[fi] == name { break }
+    let fpn_total = forge_fn_store_count()
+    while fi < fpn_total {
+        if forge_fn_store_get_name(fi) == name { break }
         if fi < FN_PARAM_COUNTS.length {
             param_offset = param_offset + FN_PARAM_COUNTS[fi]
         }

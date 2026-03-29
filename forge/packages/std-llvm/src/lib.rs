@@ -302,6 +302,7 @@ pub extern "C" fn forge_llvm_context_dispose(ctx: LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_module_create(name: *const c_char, ctx: LLVMPtr) -> LLVMPtr {
+    if name.is_null() || ctx.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMModuleCreateWithNameInContext(name, ctx) }
 }
 
@@ -413,11 +414,13 @@ pub extern "C" fn forge_llvm_add_function(m: LLVMPtr, name: *const c_char, fn_ty
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMGetNamedFunction(m, name) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
+    if f.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMGetParam(f, index as c_uint) }
 }
 
@@ -425,6 +428,7 @@ pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name: *const c_char) -> LLVMPtr {
+    if ctx.is_null() || f.is_null() { return std::ptr::null_mut(); }
     // Auto-track current function for alloca cache scoping
     extern "C" { fn forge_alloca_cache_set_fn(f: *mut c_void); }
     unsafe {
@@ -450,6 +454,7 @@ pub extern "C" fn forge_llvm_dispose_builder(builder: LLVMPtr) {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVMPtr {
+    if builder.is_null() { return std::ptr::null_mut(); }
     unsafe {
         if value.is_null() {
             return LLVMBuildRetVoid(builder);
@@ -583,7 +588,7 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
     // Try to coerce both operands to i64 first
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
@@ -629,7 +634,7 @@ pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
         return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
@@ -749,17 +754,20 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LLVMPtr) -> LLVMPtr {
-    if val.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
+    if builder.is_null() || val.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
     unsafe {
         // store requires a pointer destination
-        let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
+        let ptr_ty = LLVMTypeOf(ptr);
+        if ptr_ty.is_null() { return std::ptr::null_mut(); }
+        let ptr_kind = LLVMGetTypeKind(ptr_ty);
         if ptr_kind != 12 { return std::ptr::null_mut(); }
         // If storing i1 (boolean), zero-extend to i64 first
         // (prevents garbage upper bits when loaded back as i64)
         let val_ty = LLVMTypeOf(val);
         let val_kind = LLVMGetTypeKind(val_ty);
-        // Try to get the alloca's type for compatibility check
-        let alloca_ty = LLVMGetAllocatedType(ptr);
+        // Try to get the alloca's type for compatibility check (only for alloca instructions)
+        let opcode_pre = LLVMGetInstructionOpcode(ptr);
+        let alloca_ty = if opcode_pre == 26 { LLVMGetAllocatedType(ptr) } else { std::ptr::null_mut() };
         let alloca_kind = if !alloca_ty.is_null() { LLVMGetTypeKind(alloca_ty) } else { 0 };
         let mut real_val = val;
         // Widen narrow ints to match alloca type (only if alloca is wider)
@@ -811,17 +819,19 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_br(builder: LLVMPtr, bb: LLVMPtr) -> LLVMPtr {
+    if builder.is_null() || bb.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildBr(builder, bb) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then_bb: LLVMPtr, else_bb: LLVMPtr) -> LLVMPtr {
+    if builder.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildCondBr(builder, cond, then_bb, else_bb) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() {
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
         return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i1, 0, 0) });
     }
     unsafe {
@@ -869,7 +879,7 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
-    if fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
+    if builder.is_null() || fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name)) }
 }
 
@@ -907,6 +917,7 @@ pub extern "C" fn forge_llvm_build_global_string_ptr(builder: LLVMPtr, s: *const
 /// This is position-independent — safe to use anywhere in the function.
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, len: i64) -> LLVMPtr {
+    if module.is_null() { return std::ptr::null_mut(); }
     TYPE_CACHE.with(|c| {
         let cache = c.borrow();
         unsafe {
@@ -937,7 +948,9 @@ pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, 
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if builder.is_null() { return std::ptr::null_mut(); }
     let ty = ensure_type(ty);
+    if ty.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMBuildPhi(builder, ty, safe_name(name)) }
 }
 
@@ -980,6 +993,7 @@ pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, bloc
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_struct_type(ctx: LLVMPtr, element_types: *mut LLVMPtr, count: c_int, packed: c_int) -> LLVMPtr {
+    if element_types.is_null() && count > 0 { return std::ptr::null_mut(); }
     unsafe { LLVMStructTypeInContext(ctx, element_types, count as c_uint, packed) }
 }
 
@@ -1023,6 +1037,7 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_int, name: *const c_char) -> LLVMPtr {
+    if builder.is_null() { return std::ptr::null_mut(); }
     let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() || indices.is_null() || num_indices <= 0 {
         return std::ptr::null_mut();
@@ -1048,7 +1063,7 @@ pub extern "C" fn forge_llvm_build_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    if ty.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
+    if builder.is_null() || ty.is_null() || ptr.is_null() { return std::ptr::null_mut(); }
     unsafe {
         let n = LLVMCountStructElementTypes(ty);
         if (index as c_uint) >= n { return std::ptr::null_mut(); }
@@ -1058,7 +1073,7 @@ pub extern "C" fn forge_llvm_build_struct_gep2(builder: LLVMPtr, ty: LLVMPtr, pt
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, element: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    if agg.is_null() || element.is_null() { return agg; }
+    if builder.is_null() || agg.is_null() || element.is_null() { return agg; }
     unsafe {
         // Verify type compatibility before insert
         let agg_ty = LLVMTypeOf(agg);
@@ -1095,7 +1110,7 @@ pub extern "C" fn forge_llvm_build_insert_value(builder: LLVMPtr, agg: LLVMPtr, 
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr, index: c_int, name: *const c_char) -> LLVMPtr {
-    if agg.is_null() {
+    if builder.is_null() || agg.is_null() {
         eprintln!("WARNING: build_extract_value called with null aggregate");
         return std::ptr::null_mut();
     }
@@ -1347,6 +1362,7 @@ pub extern "C" fn forge_llvm_const_struct(ctx: LLVMPtr, values: *mut LLVMPtr, co
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_global(m: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if m.is_null() || ty.is_null() || name.is_null() { return std::ptr::null_mut(); }
     let result = unsafe { LLVMAddGlobal(m, ty, name) };
     // Auto-cache global Value* so emit_ident can find globals via alloca cache
     if !name.is_null() && !result.is_null() {

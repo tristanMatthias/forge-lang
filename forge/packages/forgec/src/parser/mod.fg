@@ -277,6 +277,7 @@ impl Parser {
 
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
+        eprintln("  [parse_program] tokens.length=" + string(self.tokens.length) + " pos=" + string(self.pos))
         self.skip_newlines()
 
         while !self.is_at_end() {
@@ -312,6 +313,7 @@ impl Parser {
 
         // kind_id fast dispatch (bootstrap: match tok.kind dispatch unreliable)
         let stmt_kid = tok.kind_id
+        eprintln("  [parse_stmt] kind_id=" + string(stmt_kid) + " text=" + tok.text)
         if stmt_kid == 20 { let r = parse_let(self)
             self.sync_pos()
             return r }
