@@ -2139,6 +2139,8 @@ void forge_let_to_alloca_name(void) {
     }
 }
 
+// forge_let_needs_alloca defined below (needs _ac declarations)
+
 // "Use pending" flag — armed by define_var RIGHT BEFORE its build_alloca call.
 // This ensures ONLY define_var's build_alloca uses the pending name,
 // not temp allocas created during expression evaluation.
@@ -2794,6 +2796,18 @@ static int _ac_miss_count = 0;
 static int _ac_hit_count = 0;
 void forge_alloca_cache_stats(void) {
     fprintf(stderr, "  [ac_stats] hits=%d misses=%d\n", _ac_hit_count, _ac_miss_count);
+}
+
+// Check if the last-set let name exists in the alloca cache
+int64_t forge_let_needs_alloca(void) {
+    if (_last_let_name_len <= 0) return 0;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ac[i].name) == _last_let_name_len &&
+            memcmp(_ac[i].name, _last_let_name, _last_let_name_len) == 0) {
+            return 0;  // Already in cache
+        }
+    }
+    return 1;  // Not in cache — needs alloca
 }
 void* forge_alloca_cache_get(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) {

@@ -693,6 +693,28 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                     CG_HAS_LAST_VAL = 1
                 }
             }
+            // For let/mut/const: if define_var didn't fire (Statement.Let tag corrupted),
+            // create the alloca manually with the C-side name and CG_LAST_VAL
+            if (peek_kid == 20 || peek_kid == 21 || peek_kid == 22) && forge_let_needs_alloca() == 1 {
+                // Position at entry block
+                let cur2 = llvm.get_insert_block(CG_B)
+                let fn2 = llvm.get_basic_block_parent(cur2)
+                let eb2 = llvm.get_entry_basic_block(fn2)
+                let fi2 = llvm.get_first_instruction(eb2)
+                if fi2 != null { llvm.position_before(CG_B, fi2) }
+                else { llvm.position_at_end(CG_B, eb2) }
+                // Create alloca with pending name — use CG_STR if last value is string/list
+                forge_let_to_alloca_name()
+                forge_arm_pending_alloca()
+                mut alloca_ty2 = CG_I64
+                if CG_LAST_IS_STR == 1 || CG_LAST_IS_LIST == 1 { alloca_ty2 = CG_STR }
+                let va = llvm.build_alloca(CG_B, alloca_ty2, "")
+                llvm.position_at_end(CG_B, cur2)
+                // Store last value
+                if CG_LAST_VAL != null && va != null {
+                    llvm.build_store(CG_B, CG_LAST_VAL, va)
+                }
+            }
             if body_parser.pos == before {
                 body_parser.advance()
             }

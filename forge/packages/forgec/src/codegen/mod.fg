@@ -986,6 +986,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_set_alloca_name_c", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_arm_pending_alloca", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_clear_last_let_name", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_let_needs_alloca", make_fn_type_0(CG_I64))
     llvm.add_function(CG_MOD, "forge_set_last_let_name", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_let_to_alloca_name", make_fn_type_0(CG_VOID))
     // C-side struct var type tracking
@@ -2458,6 +2459,14 @@ impl Codegen {
             CG_LAST_IS_LIST = 1 }
         if fn_name == "forge_selfhost_get_arg" { call_ret_ty = CG_STR
             is_extern_str_return = true }
+        // Impl methods that return List<T> (need CG_STR for { ptr, i64 } type)
+        if fn_name == "Lexer__tokenize" { call_ret_ty = CG_STR
+            CG_LAST_IS_LIST = 1
+            CG_LAST_IS_STR = 1 }
+        // Impl methods that return string
+        if fn_name == "Lexer__advance" || fn_name == "Lexer__peek" || fn_name == "Lexer__peek_ch" || fn_name == "Lexer__peek_at" || fn_name == "Lexer__peek_ch_at" {
+            call_ret_ty = CG_STR
+            CG_LAST_IS_STR = 1 }
         if fn_name == "forge_selfhost_fs_read" { call_ret_ty = CG_STR
             is_extern_str_return = true }
         if fn_name == "forge_selfhost_process_run" { call_ret_ty = CG_STR
