@@ -84,7 +84,8 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        self.pos >= self.tokens.length || self.peek().kind_id == 99
+        // Use C-side position + token list length (self.pos struct offset may be wrong)
+        forge_parser_get_pos() >= forge_token_list_len()
     }
 
     fn peek(self) -> Token {
@@ -272,13 +273,15 @@ impl Parser {
 
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
-        // Reset C-side position for this parser
+        // Reset C-side position + set parser pointer for diagnostics
+        forge_parser_set_ptr(self)
         forge_parser_set_pos(0)
         eprintln("  [parse_program] c_len=" + string(forge_token_list_len()) + " kid0=" + string(forge_peek_kind_id(0)) + " cpos=" + string(forge_parser_get_pos()))
         self.skip_newlines()
         eprintln("  [parse_program] after skip_nl cpos=" + string(forge_parser_get_pos()) + " kid=" + string(forge_peek_kind_id(forge_parser_get_pos())))
 
         while !self.is_at_end() {
+            eprintln("  [pp_loop] pos=" + string(forge_parser_get_pos()) + " kid=" + string(forge_peek_kind_id(forge_parser_get_pos())))
             CG_ACTIVE = false
             // Use C-side position for safety check (self.pos corrupted in Stage 2)
             mut before_pos = forge_parser_get_pos()

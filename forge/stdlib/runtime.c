@@ -680,7 +680,14 @@ int64_t forge_parser_get_pos(void) {
     return _c_parser_pos;
 }
 void forge_parser_advance_pos(void) { _c_parser_pos++; }
-void forge_parser_set_ptr(void* ptr) { _c_parser_ptr = ptr; }
+void forge_parser_set_ptr(void* ptr) {
+    _c_parser_ptr = ptr;
+    if (ptr) {
+        // Parser layout: {List<Token>{ptr,i64}=16, pos:i64, List<Diagnostic>{ptr,i64}, string{ptr,i64}}
+        int64_t* pos_ptr = (int64_t*)((char*)ptr + 16);
+        fprintf(stderr, "[parser_ptr] ptr=%p pos_at_16=%lld\n", ptr, (long long)*pos_ptr);
+    }
+}
 
 // C-side token list storage (immune to Token struct return value corruption)
 static ForgeString _c_token_list = {NULL, 0};
