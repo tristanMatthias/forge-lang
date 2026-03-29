@@ -3107,9 +3107,7 @@ impl Codegen {
         } else {
             llvm.position_at_end(CG_B, entry_bb)
         }
-        // Copy last-parsed let name to pending + arm the flag
-        forge_let_to_alloca_name()
-        forge_arm_pending_alloca()
+        // Copy last-parsed let name to pending (no arm — define_var fires directly)
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         // build_alloca auto-caches in C-side — don't overwrite with potentially clobbered Forge var
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
