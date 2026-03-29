@@ -672,10 +672,41 @@ int64_t forge_kind_id_for_keyword(ForgeString text) {
     return 0;
 }
 
-// C-side function to check if text is a keyword and return its kind_id
-// Returns 0 if not a keyword (use as boolean check too)
-// This allows: if forge_kind_id_for_keyword(text) > 0 { ... }
-// without needing a let statement to store the result
+// C-side token list storage (immune to Token struct return value corruption)
+static ForgeString _c_token_list = {NULL, 0};
+void forge_set_token_list(ForgeString list) { _c_token_list = list; }
+// Access token fields by index from C-side stored list
+// Token layout: {TokenKind{i8,ptr}=16, Span{i64,i64,i64,i64}=32, ForgeString{ptr,i64}=16, i64=8} = 72
+int64_t forge_token_kind_id(ForgeString token_list, int64_t index) {
+    if (!token_list.ptr || index < 0 || index >= token_list.len) return 99; // EOF
+    char* base = token_list.ptr + index * 72;
+    return *(int64_t*)(base + 64);
+}
+ForgeString forge_token_text(ForgeString token_list, int64_t index) {
+    if (!token_list.ptr || index < 0 || index >= token_list.len) return (ForgeString){NULL, 0};
+    char* base = token_list.ptr + index * 72;
+    return *(ForgeString*)(base + 48);
+}
+int64_t forge_token_span_start(ForgeString token_list, int64_t index) {
+    if (!token_list.ptr || index < 0 || index >= token_list.len) return 0;
+    char* base = token_list.ptr + index * 72;
+    return *(int64_t*)(base + 16);
+}
+int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
+    if (!token_list.ptr || index < 0 || index >= token_list.len) return 0;
+    char* base = token_list.ptr + index * 72;
+    return *(int64_t*)(base + 24);
+}
+// Quick kind_id lookup from C-side stored token list (no struct return needed)
+int64_t forge_peek_kind_id(int64_t pos) {
+    return forge_token_kind_id(_c_token_list, pos);
+}
+ForgeString forge_peek_text(int64_t pos) {
+    return forge_token_text(_c_token_list, pos);
+}
+int64_t forge_token_list_len(void) {
+    return _c_token_list.len;
+}
 
 static int char_at_count = 0;
 static int _char_at_diag = 0;

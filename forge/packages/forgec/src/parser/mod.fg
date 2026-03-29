@@ -84,7 +84,8 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        self.pos >= self.tokens.length || self.peek().kind_id == 99
+        // Use C-side token list length + kind_id accessor (Token struct return value corrupts kind_id)
+        self.pos >= forge_token_list_len() || forge_peek_kind_id(self.pos) == 99
     }
 
     fn peek(self) -> Token {
@@ -117,13 +118,9 @@ impl Parser {
     // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
         forge_watchdog(self.pos, "check_id")
-        if self.pos >= self.tokens.length { return kid == 99 }
-        let actual = self.tokens[self.pos].kind_id
-        // Debug: print when stuck
-        if self.pos == 247 {
-            eprintln("  [DBG] pos=247 kid=" + string(kid) + " actual=" + string(actual) + " text=" + self.tokens[self.pos].text)
-        }
-        actual == kid
+        if self.pos >= forge_token_list_len() { return kid == 99 }
+        // Use C-side kind_id accessor (Token struct return value corrupts kind_id)
+        forge_peek_kind_id(self.pos) == kid
     }
 
     fn check(self, kind: TokenKind) -> bool {
@@ -278,7 +275,9 @@ impl Parser {
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
         eprintln("  [parse_program] tokens.length=" + string(self.tokens.length) + " pos=" + string(self.pos))
+        eprintln("  [parse_program] c_len=" + string(forge_token_list_len()) + " kid0=" + string(forge_peek_kind_id(0)))
         self.skip_newlines()
+        eprintln("  [parse_program] after skip_nl pos=" + string(self.pos) + " is_end=" + string(forge_peek_kind_id(self.pos)))
 
         while !self.is_at_end() {
             CG_ACTIVE = false
@@ -311,70 +310,70 @@ impl Parser {
         CG_LAST_IS_MAP = 0
         CG_IS_MAP_INDEX = 0
 
-        // kind_id fast dispatch (bootstrap: match tok.kind dispatch unreliable)
-        let stmt_kid = tok.kind_id
-        eprintln("  [parse_stmt] kind_id=" + string(stmt_kid) + " text=" + tok.text)
-        if stmt_kid == 20 { let r = parse_let(self)
+        // kind_id fast dispatch — use C-side accessor directly in each condition
+        // Can't use `let stmt_kid = ...` because Statement.Let tag is corrupted in Stage 2
+        // forge_peek_kind_id reads directly from token list memory at correct offset
+        if forge_peek_kind_id(self.pos) == 20 { let r = parse_let(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 21 { let r = parse_mut(self)
+        if forge_peek_kind_id(self.pos) == 21 { let r = parse_mut(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 22 { let r = parse_const(self)
+        if forge_peek_kind_id(self.pos) == 22 { let r = parse_const(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 23 { let r = parse_fn(self)
+        if forge_peek_kind_id(self.pos) == 23 { let r = parse_fn(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 39 { let r = parse_export(self)
+        if forge_peek_kind_id(self.pos) == 39 { let r = parse_export(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 30 { let r = parse_while(self)
+        if forge_peek_kind_id(self.pos) == 30 { let r = parse_while(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 28 { let r = parse_for(self)
+        if forge_peek_kind_id(self.pos) == 28 { let r = parse_for(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 43 { let r = parse_impl_block(self)  // Impl
+        if forge_peek_kind_id(self.pos) == 43 { let r = parse_impl_block(self)  // Impl
             self.sync_pos()
             return r }
-        if stmt_kid == 34 { let r = parse_enum_decl(self)  // Enum
+        if forge_peek_kind_id(self.pos) == 34 { let r = parse_enum_decl(self)  // Enum
             self.sync_pos()
             return r }
-        if stmt_kid == 35 {  // TypeKw
+        if forge_peek_kind_id(self.pos) == 35 {  // TypeKw
             let r = parse_type_decl(self)
             self.sync_pos()
             return r }
-        if stmt_kid == 42 {  // Trait - skip
+        if forge_peek_kind_id(self.pos) == 42 {  // Trait - skip
             self.advance()
             self.expect_ident()
             while !self.check_id(103) && !self.is_at_end() { self.advance() }
             if self.check_id(103) { self.advance() }
             return Statement.Expr(Expr.IntLit(0, tok.span)) }
-        if stmt_kid == 36 {  // Use - skip
+        if forge_peek_kind_id(self.pos) == 36 {  // Use - skip
             self.advance()
             while !self.is_at_end() && !self.check_id(120) { self.advance() }
             return Statement.Expr(Expr.IntLit(0, tok.span)) }
-        if stmt_kid == 37 {  // Mod - skip
+        if forge_peek_kind_id(self.pos) == 37 {  // Mod - skip
             self.advance()
             self.expect_ident()
             return Statement.Expr(Expr.IntLit(0, tok.span)) }
         // Return (24), Break (32), Continue (33) — fast dispatch
-        if stmt_kid == 24 { return self.parse_return() }
-        if stmt_kid == 32 {  // Break
+        if forge_peek_kind_id(self.pos) == 24 { return self.parse_return() }
+        if forge_peek_kind_id(self.pos) == 32 {  // Break
             self.advance()
             if CG_ACTIVE && WHILE_END_BB != null {
                 llvm.build_br(CG_B, WHILE_END_BB)
             }
             return Statement.Expr(Expr.IntLit(0, tok.span)) }
-        if stmt_kid == 33 {  // Continue
+        if forge_peek_kind_id(self.pos) == 33 {  // Continue
             self.advance()
             if CG_ACTIVE && WHILE_COND_BB != null {
                 llvm.build_br(CG_B, WHILE_COND_BB)
             }
             return Statement.Expr(Expr.IntLit(0, tok.span)) }
         // If (25) — inline handler
-        if stmt_kid == 25 {
+        if forge_peek_kind_id(self.pos) == 25 {
             if !CG_ACTIVE {
                 let start = self.advance().span
                 self.skip_newlines()
@@ -405,7 +404,7 @@ impl Parser {
             return self.parse_expr_or_assign()
         }
         // Match (27) — inline handler
-        if stmt_kid == 27 {
+        if forge_peek_kind_id(self.pos) == 27 {
             if !CG_ACTIVE {
                 let start = self.advance().span
                 self.skip_newlines()
@@ -506,7 +505,7 @@ impl Parser {
         }
         // Catch-all: any token not handled above is an expression or assignment
         // This replaces the broken `_ ->` match arm in mini-built binaries
-        if stmt_kid == 1 || stmt_kid == 2 || stmt_kid == 3 || stmt_kid == 4 || stmt_kid == 5 || stmt_kid == 6 || stmt_kid == 7 || stmt_kid == 8 || stmt_kid == 100 || stmt_kid == 84 || stmt_kid == 71 {
+        if forge_peek_kind_id(self.pos) == 1 || forge_peek_kind_id(self.pos) == 2 || forge_peek_kind_id(self.pos) == 3 || forge_peek_kind_id(self.pos) == 4 || forge_peek_kind_id(self.pos) == 5 || forge_peek_kind_id(self.pos) == 6 || forge_peek_kind_id(self.pos) == 7 || forge_peek_kind_id(self.pos) == 8 || forge_peek_kind_id(self.pos) == 100 || forge_peek_kind_id(self.pos) == 84 || forge_peek_kind_id(self.pos) == 71 {
             // Ident(1), IntLit(2), FloatLit(3), StringLit(4), BoolLit(5), TemplateLit(6), DollarStr(7), NullLit(8), LParen(100), Not(84), Minus(71)
             return self.parse_expr_or_assign()
         }

@@ -284,6 +284,7 @@ fn scan_one_file(filepath: string, idx: int) {
     let tokens = lex.tokenize()
     eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
     forge_dump_token_list(tokens)
+    forge_set_token_list(tokens)
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
     p.parse_program()
