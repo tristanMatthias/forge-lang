@@ -761,7 +761,7 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "int" { return CG_I64 }
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
-    if type_name == "ptr" { return CG_I64 }
+    if type_name == "ptr" { return CG_PTR }
     // Check if starts with "List" — list is {ptr, i64}
     if type_name.length >= 4 {
         if type_name[0] == "L" {
