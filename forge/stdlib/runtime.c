@@ -730,6 +730,28 @@ int64_t forge_peek_kind_id(int64_t pos) {
     return kid;
 }
 void forge_enable_peek_trace(void) { _peek_trace = 1; }
+// C-side expect_id: check kind_id at current pos, advance if match
+int64_t forge_parser_expect_id(int64_t kid) {
+    if (forge_token_kind_id(_c_token_list, _c_parser_pos) == kid) {
+        _c_parser_pos++;
+        return 1;
+    }
+    return 0;
+}
+
+// C-side check_id: check kind_id at current pos (no advance)
+int64_t forge_parser_check_id(int64_t kid) {
+    return forge_token_kind_id(_c_token_list, _c_parser_pos) == kid;
+}
+
+// C-side skip_newlines: skip all tokens with kind_id 120
+void forge_parser_skip_newlines(void) {
+    while (_c_parser_pos < _c_token_list.len &&
+           forge_token_kind_id(_c_token_list, _c_parser_pos) == 120) {
+        _c_parser_pos++;
+    }
+}
+
 // C-side expect_ident: advances parser, returns ident text
 // Completely bypasses Forge let/return/if statement corruption
 ForgeString forge_expect_ident(void) {
@@ -751,6 +773,14 @@ ForgeString forge_peek_text(int64_t pos) {
 int64_t forge_token_list_len(void) {
     return _c_token_list.len;
 }
+// Extract payload ptr from any enum {i64, ptr} regardless of tag
+// Used to get Expr from Statement.Expr when tag is corrupted
+void* forge_enum_get_payload(void* enum_ptr) {
+    if (!enum_ptr) return NULL;
+    // Enum layout: {i64 tag, ptr payload} — payload is at offset 8
+    return *(void**)((char*)enum_ptr + 8);
+}
+
 void forge_debug_parser_state(ForgeString label) {
     fprintf(stderr, "  [%.*s] cpos=%lld kid=%lld\n",
         (int)label.len, label.ptr,

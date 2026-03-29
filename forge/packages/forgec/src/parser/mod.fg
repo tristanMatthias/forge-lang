@@ -1124,10 +1124,12 @@ impl Parser {
     fn parse_params(self) -> List<Param> {
         PARSED_PARAM_TYPES = []
         PARSED_PARAM_NAMES = []
-        self.expect_id(100)
+        // Consume ( — use C-side (if/expression statements are dropped in Stage 2)
+        forge_parser_expect_id(100)
+        self.pos = forge_parser_get_pos()
         mut params: List<Param> = []
 
-        while !self.check_id(101) && !self.is_at_end() {
+        while forge_parser_check_id(101) == 0 && !self.is_at_end() {
             self.skip_newlines()
             let before_pos = self.pos
             let param = self.parse_param()
@@ -1144,7 +1146,9 @@ impl Parser {
             }
         }
 
-        self.expect_id(101)
+        // Consume ) — use C-side
+        forge_parser_expect_id(101)
+        self.pos = forge_parser_get_pos()
         params
     }
 

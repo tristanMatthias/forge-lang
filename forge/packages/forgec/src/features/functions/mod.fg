@@ -751,11 +751,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 }
             }
             // All other: expression or assignment
-            // Parse and emit via parse_statement → emit_statement
-            // Statement.Expr tag may be corrupted but:
-            // - assignments work via parse_expr_or_assign inline emit
-            // - pure expressions in function bodies work if they have explicit return
-            // - character classification uses C-side functions (no codegen needed)
+            // Parse with CG_ACTIVE=false, then emit
             else {
                 CG_ACTIVE = false
                 let stmt = body_parser.parse_statement()
