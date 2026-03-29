@@ -177,47 +177,9 @@ export fn token_kw(kind: TokenKind, text: string, span: Span) -> Token {
 
 // Map keyword text to unique kind_id (20-60)
 export fn kind_id_for_keyword(text: string) -> int {
-    if text == "let" { return 20 }
-    if text == "mut" { return 21 }
-    if text == "const" { return 22 }
-    if text == "fn" { return 23 }
-    if text == "return" { return 24 }
-    if text == "if" { return 25 }
-    if text == "else" { return 26 }
-    if text == "match" { return 27 }
-    if text == "for" { return 28 }
-    if text == "in" { return 29 }
-    if text == "while" { return 30 }
-    if text == "loop" { return 31 }
-    if text == "break" { return 32 }
-    if text == "continue" { return 33 }
-    if text == "enum" { return 34 }
-    if text == "type" { return 35 }
-    if text == "use" { return 36 }
-    if text == "mod" { return 37 }
-    if text == "as" { return 38 }
-    if text == "export" { return 39 }
-    if text == "emit" { return 40 }
-    if text == "on" { return 41 }
-    if text == "trait" { return 42 }
-    if text == "impl" { return 43 }
-    if text == "defer" { return 44 }
-    if text == "errdefer" { return 45 }
-    if text == "spawn" { return 46 }
-    if text == "parallel" { return 47 }
-    if text == "with" { return 48 }
-    if text == "catch" { return 49 }
-    if text == "select" { return 50 }
-    if text == "component" { return 51 }
-    if text == "without" { return 52 }
-    if text == "only" { return 53 }
-    if text == "partial" { return 54 }
-    if text == "is" { return 55 }
-    if text == "table" { return 56 }
-    if text == "Ok" { return 58 }
-    if text == "Err" { return 59 }
-    if text == "_" { return 60 }
-    return 0
+    // Delegate to C-side (immune to Statement.If/Return tag corruption)
+    // C function handles all keywords including "_" → 60
+    forge_kind_id_for_keyword(text)
 }
 
 export fn token_ident(name: string, span: Span) -> Token {

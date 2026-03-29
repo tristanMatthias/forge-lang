@@ -653,6 +653,30 @@ int64_t forge_is_whitespace_not_newline(ForgeString ch) {
     return c == ' ' || c == '\t';
 }
 
+// C-side keyword ID lookup (bypasses Statement.If tag corruption)
+int64_t forge_kind_id_for_keyword(ForgeString text) {
+    if (!text.ptr || text.len <= 0) return 0;
+    #define KW(s, id) if (text.len == sizeof(s)-1 && memcmp(text.ptr, s, sizeof(s)-1) == 0) return id;
+    KW("let", 20) KW("mut", 21) KW("const", 22) KW("fn", 23)
+    KW("return", 24) KW("if", 25) KW("else", 26) KW("match", 27)
+    KW("for", 28) KW("in", 29) KW("while", 30) KW("loop", 31)
+    KW("break", 32) KW("continue", 33) KW("enum", 34) KW("type", 35)
+    KW("use", 36) KW("mod", 37) KW("as", 38) KW("export", 39)
+    KW("emit", 40) KW("on", 41) KW("trait", 42) KW("impl", 43)
+    KW("defer", 44) KW("errdefer", 45) KW("spawn", 46) KW("parallel", 47)
+    KW("with", 48) KW("catch", 49) KW("select", 50) KW("component", 51)
+    KW("without", 52) KW("only", 53) KW("partial", 54) KW("is", 55)
+    KW("table", 56) KW("Ok", 58) KW("Err", 59) KW("_", 60)
+    KW("true", 5) KW("false", 5) KW("null", 8)
+    #undef KW
+    return 0;
+}
+
+// C-side function to check if text is a keyword and return its kind_id
+// Returns 0 if not a keyword (use as boolean check too)
+// This allows: if forge_kind_id_for_keyword(text) > 0 { ... }
+// without needing a let statement to store the result
+
 static int char_at_count = 0;
 static int _char_at_diag = 0;
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {

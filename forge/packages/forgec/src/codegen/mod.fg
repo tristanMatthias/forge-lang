@@ -1033,6 +1033,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_sh_substr", make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_sh_byteat", make_fn_type_2(CG_I64, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_sh_length", make_fn_type_1(CG_I64, CG_STR))
+    // C-side keyword detection (bypasses Statement.If/Return tag corruption)
+    llvm.add_function(CG_MOD, "forge_kind_id_for_keyword", make_fn_type_1(CG_I64, CG_STR))
     // C-side character classification (bypasses Statement.Expr tag corruption)
     llvm.add_function(CG_MOD, "forge_is_alpha", make_fn_type_1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_is_digit", make_fn_type_1(CG_I64, CG_STR))

@@ -655,18 +655,20 @@ impl Lexer {
         }
 
         // Return keyword or identifier
-        // Bootstrap workaround: nullable return from keyword_kind is unreliable.
-        // Use is_keyword check (returns bool, not nullable) instead.
-        // Bool/null keywords with specific kind_ids
+        // Bootstrap workaround: avoid let statements (Statement.Let tag corrupted in Stage 2).
+        // Use forge_kind_id_for_keyword result directly in conditions.
         if text == "true" { return token_bool(true, span) }
         if text == "false" { return token_bool(false, span) }
         if text == "null" { return Token { kind: TokenKind.NullLiteral, span: span, text: "null", kind_id: 8 } }
-        // All other keywords get unique kind_id (20-60) for Stage 2 dispatch
-        let kid = kind_id_for_keyword(text)
-        if kid > 0 {
-            let kw = keyword_kind_from_id(kid)
-            if kw != null {
-                return token_kw(kw!, text, span)
+        // Check if keyword using C-side function (avoids let + if corruption)
+        if forge_kind_id_for_keyword(text) > 0 {
+            // Create keyword token with correct kind_id
+            // Can't use let (tag corrupted), so pass kind_id directly
+            return Token {
+                kind: TokenKind.Ident(text),
+                span: span,
+                text: text,
+                kind_id: forge_kind_id_for_keyword(text),
             }
         }
 
