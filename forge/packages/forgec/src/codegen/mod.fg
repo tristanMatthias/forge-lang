@@ -2413,11 +2413,17 @@ impl Codegen {
         let is_extern = fn_name.index_of("forge_llvm_") >= 0
         let arg_arr = llvm.value_array_new(args.length)
         let param_arr = llvm.type_array_new(args.length)
+        // Detect impl method: first param is "self" (passed by pointer)
+        let is_impl_method = fn_name.index_of("__") >= 0
         mut i = 0
         for arg in args {
             let arg_val = self.emit_expr(arg)
             let arg_is_str = CG_LAST_IS_STR
             mut coerced_val = arg_val
+            // For impl methods: first arg (self) is a pointer, not a struct value
+            if i == 0 && is_impl_method && CG_LAST_VAR_PTR != null && CG_LAST_STRUCT_TYPE != "" {
+                coerced_val = CG_LAST_VAR_PTR
+            }
             if is_extern && arg_is_str == 1 {
                 // Extract .ptr field from ForgeString
                 let raw_ptr = llvm.build_extract_value(CG_B, arg_val, 0, "ep")
