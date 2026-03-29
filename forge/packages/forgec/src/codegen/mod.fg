@@ -2417,8 +2417,6 @@ impl Codegen {
         for arg in args {
             let arg_val = self.emit_expr(arg)
             let arg_is_str = CG_LAST_IS_STR
-            // For extern functions: coerce ForgeString args to raw ptr
-            // (extern ABI expects ptr, not {ptr, i64})
             mut coerced_val = arg_val
             if is_extern && arg_is_str == 1 {
                 // Extract .ptr field from ForgeString
