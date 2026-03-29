@@ -2328,18 +2328,22 @@ impl Codegen {
                     if maybe_tag >= 0 {
                         // Heap-allocated enum: { i8 tag, ptr payload }
                         // Matches extraction in Statement.Match and mini's codegen
-                        let ety = llvm.get_type_by_name(CG_CTX, ns)
+                        mut ety = llvm.get_type_by_name(CG_CTX, ns)
                         if ety == null {
                             // Fallback: use cg_get_enum_ty_for
                             let ety2 = cg_get_enum_ty_for(ns)
                             if ety2 != null {
-                                // Simple tag-only variant (no fields)
-                                mut ev = llvm.const_null(ety2)
-                                let tag_val = llvm.const_int(CG_I8, maybe_tag, 0)
-                                ev = llvm.build_insert_value(CG_B, ev, tag_val, 0, "et")
-                                CG_LAST_ENUM_TYPE = ns
-                                return ev
+                                ety = ety2
                             }
+                        }
+                        if ety == null {
+                            // No named type found — use generic {i8, ptr} as fallback
+                            // This prevents passing bare i8 tag where {i8, ptr} is expected
+                            let ft = llvm.type_array_new(2)
+                            llvm.type_array_set(ft, 0, CG_I8)
+                            llvm.type_array_set(ft, 1, CG_PTR)
+                            ety = llvm.struct_type(CG_CTX, ft, 2, 0)
+                            llvm.type_array_free(ft)
                         }
                         if ety != null {
                             // Build { i8 tag, ptr payload }
@@ -3223,11 +3227,25 @@ impl Codegen {
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
-        // Enum constructor: Color.Green → tag value
+        // Enum constructor: Color.Green → { i8 tag, ptr null }
         let tag = match_enum_tag(var_name + "." + field)
         if tag >= 0 {
             CG_LAST_ENUM_TYPE = var_name
-            return llvm.const_int(CG_I8, tag, 0)
+            // Must return full {i8, ptr} struct, not bare i8 tag
+            // (passing bare i8 shifts function call arguments)
+            mut ety = llvm.get_type_by_name(CG_CTX, var_name)
+            if ety == null { ety = cg_get_enum_ty_for(var_name) }
+            if ety == null {
+                // Generic {i8, ptr} fallback
+                let ft = llvm.type_array_new(2)
+                llvm.type_array_set(ft, 0, CG_I8)
+                llvm.type_array_set(ft, 1, CG_PTR)
+                ety = llvm.struct_type(CG_CTX, ft, 2, 0)
+                llvm.type_array_free(ft)
+            }
+            mut ev = llvm.const_null(ety)
+            ev = llvm.build_insert_value(CG_B, ev, llvm.const_int(CG_I8, tag, 0), 0, "et")
+            return ev
         }
 
         // Special case: .length property
