@@ -984,6 +984,8 @@ fn cg_init_runtime() {
     // Pending alloca name (set before build_alloca for cache fallback)
     llvm.add_function(CG_MOD, "forge_set_alloca_name", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_set_alloca_name_c", make_fn_type_1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_arm_pending_alloca", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_clear_last_let_name", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_set_last_let_name", make_fn_type_1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_let_to_alloca_name", make_fn_type_0(CG_VOID))
     // C-side struct var type tracking
@@ -3105,9 +3107,9 @@ impl Codegen {
         } else {
             llvm.position_at_end(CG_B, entry_bb)
         }
-        // Copy last-parsed let name to pending alloca name
-        // (the name was stored in C during parsing, immune to Forge clobbering)
+        // Copy last-parsed let name to pending + arm the flag
         forge_let_to_alloca_name()
+        forge_arm_pending_alloca()
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         // build_alloca auto-caches in C-side — don't overwrite with potentially clobbered Forge var
         forge_idx_cache_set(forge_var_counter_inc(), alloca)

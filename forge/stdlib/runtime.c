@@ -2131,17 +2131,37 @@ void forge_set_last_let_name(ForgeString name) {
         _last_let_name_len = name.len;
     }
 }
-// Copy last let name to pending alloca name (called before build_alloca in define_var)
-static int _pending_is_define_var = 0;
+// Copy last let name to pending alloca name
 void forge_let_to_alloca_name(void) {
     if (_last_let_name_len > 0) {
         memcpy(forge_pending_alloca_name, _last_let_name, _last_let_name_len + 1);
         forge_pending_alloca_name_len = _last_let_name_len;
-        _pending_is_define_var = 1;  // flag: next build_alloca should use this name
     }
 }
-int forge_is_define_var_pending(void) { return _pending_is_define_var; }
-void forge_clear_define_var_pending(void) { _pending_is_define_var = 0; }
+
+// "Use pending" flag — armed by define_var RIGHT BEFORE its build_alloca call.
+// This ensures ONLY define_var's build_alloca uses the pending name,
+// not temp allocas created during expression evaluation.
+static int _use_pending_for_next_alloca = 0;
+void forge_clear_last_let_name(void) {
+    _last_let_name[0] = '\0';
+    _last_let_name_len = 0;
+    forge_pending_alloca_name[0] = '\0';
+    forge_pending_alloca_name_len = 0;
+    _use_pending_for_next_alloca = 0;
+}
+
+void forge_arm_pending_alloca(void) {
+    if (_last_let_name_len > 0) {
+        _use_pending_for_next_alloca = 1;
+    }
+}
+
+int forge_check_pending_alloca(void) {
+    int v = _use_pending_for_next_alloca;
+    _use_pending_for_next_alloca = 0;
+    return v;
+}
 
 // C-side pending alloca name setter (called from Forge define_var)
 void forge_set_alloca_name_c(ForgeString name) {

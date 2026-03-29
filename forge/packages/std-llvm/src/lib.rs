@@ -679,12 +679,27 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
             fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
             fn forge_str_var_add_raw(name_ptr: *const c_char, name_len: i64) -> i64;
         }
-        // Try direct name first, then pending name as fallback
         let mut cache_name: *const c_char = std::ptr::null();
         let mut cache_len: i64 = 0;
 
-        // Try direct name first (from Forge wrapper)
-        if !name.is_null() {
+        // Check if define_var armed the pending flag
+        extern "C" {
+            fn forge_check_pending_alloca() -> c_int;
+            static mut forge_pending_alloca_name: [c_char; 64];
+            static mut forge_pending_alloca_name_len: i64;
+        }
+        let armed = unsafe { forge_check_pending_alloca() };
+        if armed != 0 {
+            // define_var: ALWAYS use pending name (direct name from Forge is corrupted)
+            unsafe {
+                if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
+                    cache_name = forge_pending_alloca_name.as_ptr();
+                    cache_len = forge_pending_alloca_name_len;
+                }
+            }
+        }
+        // For non-define_var allocas: try direct name
+        if cache_len == 0 && !name.is_null() {
             let name_bytes = unsafe { std::ffi::CStr::from_ptr(name).to_bytes() };
             let valid = !name_bytes.is_empty() && name_bytes.len() < 64 &&
                 name_bytes.iter().all(|&b| b >= b'!' && b <= b'~');
@@ -693,12 +708,8 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
                 cache_len = name_bytes.len() as i64;
             }
         }
-        // Fallback: pending name (from forge_param_name_get or forge_set_last_let_name)
+        // Last fallback: pending name for params (from forge_param_name_get)
         if cache_len == 0 {
-            extern "C" {
-                static mut forge_pending_alloca_name: [c_char; 64];
-                static mut forge_pending_alloca_name_len: i64;
-            }
             unsafe {
                 if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
                     cache_name = forge_pending_alloca_name.as_ptr();
@@ -720,9 +731,7 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
                         }
                     }
                 }
-                // Don't clear pending names — they persist until the next
-                // forge_set_last_let_name or forge_param_name_get call
-                PENDING_ALLOCA_NAME = [0u8; 64];
+                // Pending names persist — cleared by next set_last_let_name or param_name_get
             }
         }
     }
@@ -1533,3 +1542,4 @@ pub extern "C" fn forge_llvm_copy_string_rep_of_target_data(td: LLVMPtr) -> *mut
 pub extern "C" fn forge_llvm_dispose_target_data(td: LLVMPtr) {
     unsafe { LLVMDisposeTargetData(td) }
 }
+// rebuild Sat Mar 28 23:33:49 PDT 2026

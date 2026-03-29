@@ -510,6 +510,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     forge_var_counter_reset(CG_VAR_SCOPE_START)
     forge_var_name_clear()
     forge_struct_var_clear()
+    forge_clear_last_let_name()
     CG_STR_VAR_NAMES = []
     CG_STR_LOCALS_CSV = ""
     CG_STRUCT_VAR_CSV = ""
@@ -685,10 +686,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             let stmt = body_parser.parse_statement()
             CG_ACTIVE = true
             cg_reinit_types()
-            // Only set pending alloca name for let/mut/const statements
-            if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
-                forge_let_to_alloca_name()
-            }
             if stmt != null {
                 let last = cg.emit_statement(stmt!)
                 if last != null {
