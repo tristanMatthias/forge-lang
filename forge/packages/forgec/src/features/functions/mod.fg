@@ -678,9 +678,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
             // let/mut/const (20/21/22): pre-capture name, parse, fallback alloca
             if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
-                let name_tok = body_parser.peek_at(1)
-                if name_tok.kind_id == 1 {
-                    forge_set_last_let_name(name_tok.text)
+                // Pre-capture let variable name — use C-side token accessor
+                // (avoids let intermediate which can lose Token value via alloca miss)
+                if forge_peek_kind_id(forge_parser_get_pos() + 1) == 1 {
+                    forge_set_last_let_name(forge_peek_text(forge_parser_get_pos() + 1))
                 }
                 CG_ACTIVE = false
                 let stmt = body_parser.parse_statement()

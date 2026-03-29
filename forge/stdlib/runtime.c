@@ -2712,6 +2712,13 @@ int64_t forge_fn_is_str_return(ForgeString fn_name) {
     // C-side functions that return ForgeString (must be registered for correct call type)
     #define STR_RET(s) if (fn_name.len == sizeof(s)-1 && memcmp(fn_name.ptr, s, sizeof(s)-1) == 0) return 1;
     STR_RET("forge_peek_text")
+    // Ptr-returning C-side functions
+    #define PTR_RET(s) if (fn_name.len == sizeof(s)-1 && memcmp(fn_name.ptr, s, sizeof(s)-1) == 0) return 3;
+    PTR_RET("forge_alloca_cache_get")
+    PTR_RET("resolve_type_to_llvm")
+    PTR_RET("cg_get_enum_ty_for")
+    PTR_RET("cg_make_enum_type")
+    #undef PTR_RET
     STR_RET("forge_parser_consume_block")
     STR_RET("forge_expect_ident")
     STR_RET("forge_fn_store_get_name")
