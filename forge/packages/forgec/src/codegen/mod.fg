@@ -1930,12 +1930,12 @@ impl Codegen {
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
             // Use alloca type when flags defaulted to i64
-            // Call get_allocated_type BEFORE the if (let inside if gets dropped by codegen)
-            mut alloca_override = llvm.get_allocated_type(cached_ptr)
+            // LLVMGetTypeKind: 0=null, 8=int, 12=ptr, 13=struct
+            // Only works for actual alloca instructions (not self params)
             if load_ty == CG_I64 {
-                if alloca_override != null {
-                    if alloca_override != CG_I64 { load_ty = alloca_override }
-                }
+                mut alloca_kind = llvm.get_type_kind(llvm.get_allocated_type(cached_ptr))
+                if alloca_kind == 12 { load_ty = CG_PTR }
+                if alloca_kind == 13 { load_ty = llvm.get_allocated_type(cached_ptr) }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty

@@ -1005,6 +1005,7 @@ pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_type_kind(ty: LLVMPtr) -> c_int {
+    if ty.is_null() { return 0; }
     unsafe { LLVMGetTypeKind(ty) as c_int }
 }
 

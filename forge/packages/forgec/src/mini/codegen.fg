@@ -1769,12 +1769,12 @@ fn codegen_let(s: Stmt) -> int {
         ty = "ptr"
         LAST_IS_PTR = 1
     }
-    // Coerce value type to match alloca type
+    // Match alloca type to value type (not the other way around)
+    // If value is ptr but type defaulted to i64, use ptr alloca
     let store_rt = reg_get_type(final_val)
     if store_rt == "ptr" && ty == "i64" {
-        let conv = new_reg()
-        ir_line(conv + " = ptrtoint ptr " + final_val + " to i64")
-        final_val = conv
+        ty = "ptr"
+        LAST_IS_PTR = 1
     }
     if store_rt == "i64" && ty == "ptr" {
         let conv = new_reg()
