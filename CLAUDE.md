@@ -107,6 +107,9 @@ Blockers: anything that's stuck
 ```
 Update the "Current" column in SELF_HOST_PLAN.md's progress table.
 
+### Autonomous Mode
+When told to continue until done: DO NOT STOP to ask questions. Work through milestones in order. Commit after each improvement. If stuck on one approach for more than 3 attempts, try a different approach. Log every experiment. Update the progress table. Keep going until all milestones are complete or context runs out.
+
 ### Turn Reports — AFTER EVERY MAJOR CHANGE
 After each significant change (commit, experiment, or discovery), give a brief inline report so progress is visible turn-by-turn, not just at session end:
 ```
