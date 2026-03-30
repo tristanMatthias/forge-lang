@@ -700,7 +700,18 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                     else { llvm.position_at_end(CG_B, eb2) }
                     forge_let_to_alloca_name()
                     forge_arm_pending_alloca()
-                    let va = llvm.build_alloca(CG_B, CG_STR, "")
+                    // Determine alloca type from the actual value (not always CG_STR)
+                    // This fixes ptr/struct values getting ForgeString allocas
+                    mut fallback_ty = CG_STR
+                    if CG_LAST_VAL != null {
+                        let val_ty = llvm.type_of(CG_LAST_VAL)
+                        if val_ty != null {
+                            let kind = llvm.get_type_kind(val_ty)
+                            if kind == 12 { fallback_ty = CG_PTR }
+                            if kind == 13 { fallback_ty = val_ty }
+                        }
+                    }
+                    let va = llvm.build_alloca(CG_B, fallback_ty, "")
                     llvm.position_at_end(CG_B, cur2)
                     if CG_LAST_VAL != null && va != null {
                         llvm.build_store(CG_B, CG_LAST_VAL, va)

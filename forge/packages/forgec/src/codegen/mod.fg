@@ -1929,11 +1929,13 @@ impl Codegen {
                 let resolved = resolve_type_to_llvm(st)
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
-            // ONLY use alloca type when flags defaulted to i64
-            // (flags are correct for string/list/ptr — alloca type may be wrong for those)
+            // Use alloca type when flags defaulted to i64
+            // Call get_allocated_type BEFORE the if (let inside if gets dropped by codegen)
+            mut alloca_override = llvm.get_allocated_type(cached_ptr)
             if load_ty == CG_I64 {
-                let alloca_ty = llvm.get_allocated_type(cached_ptr)
-                if alloca_ty != null && alloca_ty != CG_I64 { load_ty = alloca_ty }
+                if alloca_override != null {
+                    if alloca_override != CG_I64 { load_ty = alloca_override }
+                }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty

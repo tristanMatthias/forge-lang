@@ -3438,9 +3438,12 @@ fn compile(source: string) -> string {
     mut adi = 0
     while adi < AUTO_DECLARED.length {
         let ad_name = AUTO_DECLARED[adi]
-        // Emit variadic declare — use i64 return, varargs
-        // These are LLVM API wrappers that take ptr/i64 args
-        ir_raw("declare i64 @" + ad_name + "(...)")
+        // Use ptr return for forge_llvm_* (LLVM API wrappers return ptrs)
+        if ad_name.length >= 10 && ad_name.substring(0, 10) == "forge_llvm" {
+            ir_raw("declare ptr @" + ad_name + "(...)")
+        } else {
+            ir_raw("declare i64 @" + ad_name + "(...)")
+        }
         adi = adi + 1
     }
 
