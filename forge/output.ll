@@ -21387,11 +21387,20 @@ bb2369:
 
 define i64 @Parser__is_at_end(ptr %0) {
 bb2370:
-  %1 = call i64 @forge_parser_get_pos()
-  %2 = call i64 @forge_token_list_len()
-  %3 = icmp sge i64 %1, %2
-  %4 = zext i1 %3 to i64
-  ret i64 %4
+  %1 = load %Parser, ptr %0, align 8
+  %2 = extractvalue %Parser %1, 1
+  %3 = load %Parser, ptr %0, align 8
+  %4 = extractvalue %Parser %3, 0
+  %5 = call i64 @forge_string_length(%ForgeString %4)
+  %6 = icmp sge i64 %2, %5
+  %7 = load %Parser, ptr %0, align 8
+  %8 = call %Token @Parser__peek(ptr %0)
+  %9 = extractvalue %Token %8, 0
+  %10 = call i64 @forge_string_compare(%Token %8, i64 99)
+  %11 = icmp eq i64 %10, 0
+  %12 = or i1 %6, %11
+  %13 = zext i1 %12 to i64
+  ret i64 %13
 }
 
 define %Token @Parser__peek(ptr %0) {
@@ -21513,27 +21522,37 @@ define i64 @Parser__check_id(ptr %0, i64 %1) {
 bb2380:
   %2 = alloca i64, align 8
   store i64 %1, ptr %2, align 4
-  %3 = call i64 @forge_parser_get_pos()
-  %4 = call i64 @forge_token_list_len()
-  %5 = icmp sge i64 %3, %4
-  br i1 %5, label %bb2381, label %bb2382
+  %3 = load %Parser, ptr %0, align 8
+  %4 = extractvalue %Parser %3, 1
+  %5 = load %Parser, ptr %0, align 8
+  %6 = extractvalue %Parser %5, 0
+  %7 = call i64 @forge_string_length(%ForgeString %6)
+  %8 = icmp sge i64 %4, %7
+  br i1 %8, label %bb2381, label %bb2382
 
 bb2381:                                           ; preds = %bb2380
-  %6 = load i64, ptr %2, align 4
-  %7 = icmp eq i64 %6, 99
-  %8 = zext i1 %7 to i64
-  ret i64 %8
+  %9 = load i64, ptr %2, align 4
+  %10 = icmp eq i64 %9, 99
+  %11 = zext i1 %10 to i64
+  ret i64 %11
 
 bb2382:                                           ; preds = %bb2380
   br label %bb2383
 
 bb2383:                                           ; preds = %bb2382
-  %9 = call i64 @forge_parser_get_pos()
-  %10 = call i64 @forge_peek_kind_id(i64 %9)
-  %11 = load i64, ptr %2, align 4
-  %12 = icmp eq i64 %10, %11
-  %13 = zext i1 %12 to i64
-  ret i64 %13
+  %12 = load %Parser, ptr %0, align 8
+  %13 = extractvalue %Parser %12, 0
+  %14 = load %Parser, ptr %0, align 8
+  %15 = extractvalue %Parser %14, 1
+  %16 = extractvalue %ForgeString %13, 0
+  %17 = getelementptr %Token, ptr %16, i64 %15
+  %18 = load %Token, ptr %17, align 8
+  %19 = load i64, ptr %2, align 4
+  %20 = extractvalue %Token %18, 0
+  %21 = call i64 @forge_string_compare(%Token %18, i64 %19)
+  %22 = icmp eq i64 %21, 0
+  %23 = zext i1 %22 to i64
+  ret i64 %23
 }
 
 define i64 @Parser__check(ptr %0, %TokenKind %1) {
