@@ -121,3 +121,7 @@ This produces a SCORE (lower is better). Current baseline: **7076**. If score go
 8. **The mini compiler (mini/codegen.fg) is the ROOT of the bootstrap chain.** Bugs in mini propagate through ALL stages. Check mini first when debugging.
 
 9. **Always do the right thing.** Centralize logic, don't duplicate. If the same type-detection pattern appears in 3 places, extract it into one function. If a fix requires touching 5 call sites, fix the one function they all call. Hacks create more hacks — every shortcut taken costs 10x to undo later. When in doubt, do the clean thing even if it takes longer.
+
+10. **Check the forge-lang repo FIRST.** Before attempting any fix, search `../forge-lang` for prior solutions. The i64 enum representation, heap-allocated payloads, and many codegen patterns were already solved there. We wasted days rediscovering things that were already done.
+
+11. **Be honest about scope.** Never say "one more fix" or "this conversation turn." If you don't know how deep a problem goes, say so. Run the audit, look at the numbers, and give a real estimate based on data — not optimism.
