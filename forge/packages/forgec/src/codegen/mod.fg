@@ -236,6 +236,8 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         let gv = llvm.add_global(CG_MOD, gty, name)
         let zero = llvm.const_null(gty)
         llvm.set_initializer(gv, zero)
+        // Store type in alloca cache (emit_ident uses this for load type)
+        forge_alloca_cache_set_type(name, gty)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         // Check bitmask for string type
@@ -262,7 +264,6 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
             forge_str_var_add(name)
         } else {
-            // Non-string globals are ptr-typed (LLVM Value* pointers)
             forge_ptr_var_add(name)
         }
         i = i + 1
