@@ -73,34 +73,49 @@ F0001 (syntax), F0002 (unterminated string), F0003 (unterminated template), F000
 
 ## Self-Hosting — MANDATORY RULES
 
-**Read `forge/SELF_HOST_PROGRESS.md` before touching ANY self-hosting code.**
+**Read `forge/SELF_HOST_PLAN.md` for the milestone plan and `forge/scripts/audit_stage2.sh` for progress tracking.**
 
-The self-hosted compiler (`packages/forgec/`) is compiled through a fragile bootstrap chain. These rules exist because violating them caused days of wasted work and regressions.
+### The Problem
+The self-hosted codegen (`codegen/mod.fg`) defaults ALL types to i64 and uses global flags (CG_LAST_IS_STR, CG_LAST_IS_PTR, etc.) to track non-i64 types. This flag system misses most cases, producing ~7000 type errors in Stage 2 IR. The fix is to use LLVM's own type system (`LLVMGetAllocatedType`, `LLVMGlobalGetValueType`) instead of flag-guessing.
 
 ### The Bootstrap Chain
 ```
-Rust bootstrap (68 type errors, fragile) → Stage 1 binary → Stage 2 binary → Stage 3
+Rust → mini (mini/codegen.fg) → Stage 1 binary (419 fns)
+Stage 1 → Stage 2 IR → patch → llc → Stage 2 binary
+Stage 2 → Stage 3 IR (goal: identical to Stage 2 IR)
 ```
-`forge/stage1_bootstrap` is a saved working Stage 1 binary. It is the ONLY reliable way to produce Stage 2. If lost, recreate from commit 64299d9 source + pre-span runtime.
+
+### Progress Tracking — ALWAYS DO THIS
+After EVERY change, run the audit:
+```bash
+scripts/audit_stage2.sh output.ll
+```
+This produces a SCORE (lower is better). Current baseline: **7076**. If score goes DOWN, you're making progress. If it goes UP, revert.
+
+### Key Learnings (from weeks of debugging)
+- **The `{i64, ptr}` enum representation** matches the mini compiler. Was `{i8, ptr}` — fixed.
+- **`Expr.IsCheck`** AST node handles `is` expressions in the codegen phase (was inline-only during parsing with CG_ACTIVE=true).
+- **`resolve_type_to_llvm("ptr")`** must return `CG_PTR` not `CG_I64`.
+- **`LLVMGetAllocatedType`** is the right way to determine load types — don't guess from flags.
+- **Expression statements get dropped** when Statement.Expr tag doesn't match in `emit_statement`. This is a SYMPTOM of the type system — fix the types, not the expressions.
+- **The 100 alloca cache misses are harmless** — they fall through to CG_VAR_NAMES lookup.
+- **C-side workaround functions DO NOT SCALE** — we added 15+ and they didn't fix the root cause.
+- **The forge-lang repo** (`../forge-lang`) already solved enum representation. Check it for reference.
 
 ### HARD RULES — NEVER VIOLATE
 
-1. **ONE change at a time.** Make a change. Test FULL pipeline (bootstrap → llc → link → Stage 1 runs → builds Stage 2 → Stage 2 runs). Commit. Then next change. NEVER batch changes.
+1. **ONE change at a time.** Make change → rebuild full pipeline → run audit → commit if score improves → revert if score worsens. NEVER batch changes.
 
-2. **NEVER modify `emit_fn_call_direct` or `emit_call` in codegen/mod.fg.** The Rust bootstrap generates fragile code. Adding even ONE line to these functions breaks the tokenizer (385 → 18 fns). Fix behavior OUTSIDE these functions (in callers, in the Let handler, in the parser).
+2. **NEVER add C-side workaround functions to runtime.c to bypass codegen bugs.** Fix the CODEGEN that produces wrong output. The only C-side functions should be actual runtime utilities.
 
-3. **NEVER rewrite working code to work around codegen bugs.** If `collect_module_paths` works with `stage1_bootstrap`, leave it alone. Fix the codegen, not the source it compiles.
+3. **Fix bugs at their source, not their symptoms.** If loads use wrong types, fix `emit_ident` to use `LLVMGetAllocatedType` — don't add type-tracking flags for each variable individually.
 
-4. **NEVER add new runtime function declarations to codegen.** The bootstrap drops new `llvm.add_function` calls. Only 8 string functions work: `forge_string_new`, `forge_string_concat`, `forge_string_char_at`, `forge_string_length`, `forge_string_eq`, `forge_string_compare`, `forge_string_substring`, `forge_string_index_of`.
+4. **NEVER rewrite working Forge source to work around codegen bugs.** Fix the codegen, not the source it compiles.
 
-5. **ALWAYS preserve working binaries.** After any successful Stage 1 build, copy to `forge/stage1_bootstrap`. /tmp files vanish on restart.
+5. **ALWAYS run `scripts/audit_stage2.sh output.ll` after changes.** This is how we track progress. No exceptions.
 
-6. **ASK before deviating from the plan in `SELF_HOST_PROGRESS.md`.** Do not silently change approach. Stop, explain what's happening, and ask.
+6. **Follow `SELF_HOST_PLAN.md` milestones in order.** M1 (load types) → M2 (call types) → M3 (branch conditions) → M4 (ret undef) → M5 (hello world) → M6 (self-compile) → M7 (fixed point).
 
-7. **If a change breaks the pipeline, REVERT immediately.** Do not try to fix the fix. Revert, understand why it broke, then try a different approach.
+7. **If a change breaks the pipeline, REVERT immediately.** Do not try to fix the fix.
 
-8. **NEVER add C-side workaround functions to runtime.c to bypass codegen bugs.** If the compiled output has wrong behavior, fix the CODEGEN that produces it (in mini/codegen.fg or codegen/mod.fg). Adding forge_xxx C functions to workaround broken if/while/let/expr is a hack that doesn't scale. The only C-side functions should be actual runtime utilities.
-
-9. **Fix bugs at their source, not their symptoms.** If while-loop conditions compile to `br i1 false`, fix the while-loop codegen in mini/codegen.fg — don't rewrite all while loops to avoid the pattern. If expression statements are dropped, fix the expression-statement codegen — don't wrap calls in fake if-conditions.
-
-10. **The mini compiler (mini/codegen.fg) is the ROOT of the bootstrap chain.** Bugs in mini propagate through ALL stages. Fixing mini fixes everything downstream. Workarounds in later stages accumulate technical debt.
+8. **The mini compiler (mini/codegen.fg) is the ROOT of the bootstrap chain.** Bugs in mini propagate through ALL stages. Check mini first when debugging.
