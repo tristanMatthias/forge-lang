@@ -92,6 +92,19 @@ scripts/audit_stage2.sh output.ll
 ```
 This produces a SCORE (lower is better). Current baseline: **7076**. If score goes DOWN, you're making progress. If it goes UP, revert.
 
+### Session Reporting — END OF EVERY SESSION
+At the end of every session, provide a status report:
+```
+=== SESSION REPORT ===
+Milestone: M1 (or whichever is current)
+Score: before → after (direction)
+Changes: bullet list of what was done
+Reverted: anything that was tried and reverted
+Next: what to do next session
+Blockers: anything that's stuck
+```
+Update the "Current" column in SELF_HOST_PLAN.md's progress table.
+
 ### Key Learnings (from weeks of debugging)
 - **The `{i64, ptr}` enum representation** matches the mini compiler. Was `{i8, ptr}` — fixed.
 - **`Expr.IsCheck`** AST node handles `is` expressions in the codegen phase (was inline-only during parsing with CG_ACTIVE=true).
