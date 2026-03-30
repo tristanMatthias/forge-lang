@@ -926,7 +926,12 @@ fn gen_call(e: Expr) -> string {
             mut mangled = find_ns_fn(first.str_val, name)
             // Fallback: if namespace is known but method not found, try ns_method
             if mangled.length == 0 && is_namespace(first.str_val) {
-                mangled = first.str_val + "_" + name
+                // Use forge_llvm_ prefix for llvm namespace (matches Rust wrapper naming)
+                if first.str_val == "llvm" {
+                    mangled = "forge_llvm_" + name
+                } else {
+                    mangled = first.str_val + "_" + name
+                }
                 // Auto-declare if not yet seen
                 mut already = false
                 mut ai = 0

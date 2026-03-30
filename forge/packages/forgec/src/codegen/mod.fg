@@ -1201,6 +1201,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_value_array_get", p2)
     llvm.add_function(CG_MOD, "forge_llvm_value_array_free", v1)
     llvm.add_function(CG_MOD, "forge_llvm_global_get_value_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_get_allocated_type", p1)
     llvm.add_function(CG_MOD, "forge_llvm_type_of", p1)
     llvm.add_function(CG_MOD, "forge_llvm_get_type_kind", p1)
     llvm.add_function(CG_MOD, "forge_llvm_emit_object_file", p2)
@@ -1913,19 +1914,27 @@ impl Codegen {
         let cached_ptr = forge_alloca_cache_get(name)
         if cached_ptr != null {
             cg_reinit_types()
-            mut load_ty = CG_I64
-            if forge_str_var_check(name) == 1 { load_ty = CG_STR
-                CG_LAST_IS_STR = 1 }
-            if forge_list_var_check(name) == 1 { load_ty = CG_STR
+            // Use LLVM's own type system: get the alloca's declared type
+            // This replaces the fragile flag-guessing (CG_LAST_IS_STR, etc.)
+            // and fixes 1,148+ type-mismatch loads in one shot
+            mut load_ty = llvm.get_allocated_type(cached_ptr)
+            if load_ty == null { load_ty = CG_I64 }
+            // Still set tracking flags for downstream code that needs them
+            if forge_str_var_check(name) == 1 {
                 CG_LAST_IS_STR = 1
-                CG_LAST_IS_LIST = 1 }
-            if forge_ptr_var_check(name) == 1 { load_ty = CG_PTR }
-            // Check struct type (for method desugaring and field access)
+                if load_ty == CG_I64 { load_ty = CG_STR }
+            }
+            if forge_list_var_check(name) == 1 {
+                CG_LAST_IS_STR = 1
+                CG_LAST_IS_LIST = 1
+                if load_ty == CG_I64 { load_ty = CG_STR }
+            }
+            if forge_ptr_var_check(name) == 1 {
+                CG_LAST_IS_PTR = 1
+            }
             let st = forge_struct_var_get(name)
             if st != "" {
                 CG_LAST_STRUCT_TYPE = st
-                let resolved = resolve_type_to_llvm(st)
-                if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -1991,9 +2000,12 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                // Use ONLY the fn-scoped name cache — idx cache and CG_VAR_PTRS have stale cross-function entries
+                // Use ONLY the fn-scoped name cache
                 let var_ptr = forge_alloca_cache_get(name)
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
+                // Override load_ty with alloca's actual type (authoritative)
+                let alloca_ty = llvm.get_allocated_type(var_ptr)
+                if alloca_ty != null { load_ty = alloca_ty }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
@@ -2621,10 +2633,10 @@ impl Codegen {
         } else {
             CG_LAST_IS_NULLABLE = 0
         }
-        // Prefer the declared function's type — ensures struct/enum params
-        // are passed as {i64, ptr} not plain i64 (resolve_type_to_llvm may fail for enums)
-        mut ft = llvm.global_get_value_type(fn_val)
-        if ft == null { ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0) }
+        // Always use the declared function type — ensures struct/enum params
+        // are passed as {i64, ptr} not plain i64
+        // (mut assignment in if-body gets dropped by codegen, so avoid if/else pattern)
+        let ft = llvm.global_get_value_type(fn_val)
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)

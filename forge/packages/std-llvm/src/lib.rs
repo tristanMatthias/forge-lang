@@ -1352,6 +1352,17 @@ pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
 }
 
 #[no_mangle]
+pub extern "C" fn forge_llvm_get_allocated_type(alloca: LLVMPtr) -> LLVMPtr {
+    if alloca.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        // Only valid for alloca instructions (opcode 26)
+        let opcode = LLVMGetInstructionOpcode(alloca);
+        if opcode != 26 { return std::ptr::null_mut(); }
+        LLVMGetAllocatedType(alloca)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_const_real(ty: LLVMPtr, value: f64) -> LLVMPtr {
     unsafe { LLVMConstReal(ty, value) }
 }
