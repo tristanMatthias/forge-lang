@@ -254,6 +254,8 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
+    # Step 7: (reserved for future call type fixes if needed)
+
     with open(sys.argv[2], 'w') as f:
         f.write('\n'.join(output))
 

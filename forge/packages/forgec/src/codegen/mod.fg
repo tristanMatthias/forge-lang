@@ -2023,13 +2023,12 @@ impl Codegen {
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // Check if this global is a string/list via CSV (immune to list corruption)
+                // ALL globals are typed as %ForgeString (from create_globals_typed)
+                // Use CG_STR as default load type for globals
                 let str_needle = "," + name + ","
                 let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
-                mut load_ty = CG_I64
-                if is_str_global { load_ty = CG_STR }
-                CG_LAST_IS_STR = 0
-                if is_str_global { CG_LAST_IS_STR = 1 }
+                mut load_ty = CG_STR
+                CG_LAST_IS_STR = 1
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
@@ -2069,11 +2068,13 @@ impl Codegen {
                 if var_ptr == null { var_ptr = forge_alloca_cache_get(name) }
                 if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Override only for ptr allocas (struct overrides break PHI nodes)
-                if load_ty == CG_I64 {
-                    if llvm.get_type_kind(llvm.get_allocated_type(var_ptr)) == 12 {
-                        load_ty = CG_PTR
-                    }
+                // For globals: use CG_VAR_PTRS[vi] (the global Value*) with GlobalGetValueType
+                // CG_VAR_PTRS stores the result of llvm.add_global, not an alloca
+                if load_ty == CG_I64 && vi < CG_VAR_PTRS.length {
+                    mut global_val = CG_VAR_PTRS[vi]
+                    mut gvt_kind = llvm.get_type_kind(llvm.global_get_value_type(global_val))
+                    if gvt_kind == 12 { load_ty = CG_PTR }
+                    if gvt_kind == 13 { load_ty = llvm.global_get_value_type(global_val) }
                 }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
