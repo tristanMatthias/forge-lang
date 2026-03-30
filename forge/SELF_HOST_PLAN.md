@@ -191,20 +191,40 @@ diff /tmp/stage2.ll /tmp/stage3.ll
 
 ---
 
-## Summary
+## Progress Tracker
 
-| Milestone | Target metric | Difficulty | Est. effort |
-|-----------|--------------|------------|-------------|
-| M1: emit_ident types | load_type_mismatch -> 0 | Medium | 1-2 days |
-| M2: call arg types | call_type_mismatch < 100 | Hard | 2-4 days |
-| M3: br i1 false | br_i1_false < 20 | Medium-Hard | 1-3 days |
-| M4: ret undef | ret_undef -> 0 | Easy-Medium | 0.5-1 day |
-| M5: Hello world | Stage 2 builds test.fg | Hard | 2-5 days |
-| M6: Self-compile | Stage 2 -> Stage 3 | Very Hard | 5-15 days |
-| M7: Fixed point | Stage 2 = Stage 3 | Medium-Very Hard | 2-10 days |
+Run `scripts/audit_stage2.sh output.ll` after every change. Update this table.
+
+| Metric | Baseline | Current | M1 Target | M2 Target | M3 Target | M4 Target | Done Target |
+|--------|----------|---------|-----------|-----------|-----------|-----------|-------------|
+| br_i1_false | 99 | 99 | - | - | < 20 | - | 0 |
+| null_operands | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ret_undef | 171 | 171 | - | - | - | 0 | 0 |
+| struct_as_i64 | 279 | 279 | - | 0 | - | - | 0 |
+| call_type_mismatch | 3443 | 3443 | - | < 100 | - | - | 0 |
+| load_type_mismatch | 1941 | 1941 | 0 | - | - | - | 0 |
+| **SCORE** | **7076** | **7076** | - | - | - | - | **0** |
+
+## Checklist
+
+- [ ] **M1: emit_ident types** — Use LLVMGetAllocatedType for load types. Target: load_type_mismatch → 0
+- [ ] **M2: call arg types** — Use LLVMGlobalGetValueType for declared param types. Target: struct_as_i64 → 0, call_type_mismatch < 100
+- [ ] **M3: br i1 false** — Fix && operator and while condition wiring. Target: br_i1_false < 20
+- [ ] **M4: ret undef** — Return zeroinitializer instead of undef. Target: ret_undef → 0
+- [ ] **M5: Hello world** — `/tmp/stage2 build test_hello.fg` produces working binary
+- [ ] **M6: Self-compile** — Stage 2 compiles itself into Stage 3 IR
+- [ ] **M7: Fixed point** — Stage 2 IR = Stage 3 IR (diff produces no output)
+
+## Key Rules
+
+1. Work milestones IN ORDER. M1 before M2, etc.
+2. Run audit after EVERY change. Update the "Current" column above.
+3. If score goes UP, revert immediately.
+4. One change at a time. Commit after each improvement.
+5. NO C-side workaround functions. Fix the codegen.
 
 **Total estimated: 2-6 weeks of focused work.**
 
-The key insight: M1 and M2 are the foundation. They fix the type system that causes the cascade of errors. Everything after that is cleanup and integration. Do not skip ahead — each milestone's fixes depend on the previous ones producing cleaner IR.
+M1 and M2 are the foundation — they fix the type system that causes the cascade. Everything after is cleanup and integration.
 
-**Reference:** The forge-lang repo (`/Users/tristanmatthias/projects/tristanMatthias/forge-lang`) has a working mini compiler that solved the `{i64, ptr}` enum representation and i64 tag dispatch. Study its `emit_ident`, `emit_fn_call`, and `emit_match` functions for patterns that work.
+**Reference:** The forge-lang repo (`../forge-lang`) already solved enum representation. Check `mini/codegen.fg` for `{i64, ptr}` patterns.
