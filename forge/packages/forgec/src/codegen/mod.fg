@@ -1914,7 +1914,7 @@ impl Codegen {
         let cached_ptr = forge_alloca_cache_get(name)
         if cached_ptr != null {
             cg_reinit_types()
-            // Start with flag-based type detection (for downstream tracking)
+            // Flag-based type detection first (handles string, list, ptr, struct)
             mut load_ty = CG_I64
             if forge_str_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1 }
@@ -1929,8 +1929,8 @@ impl Codegen {
                 let resolved = resolve_type_to_llvm(st)
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
-            // If still defaulting to i64, use LLVM's alloca type as authoritative fallback
-            // This catches ptr, enum, and struct types that aren't in the flag caches
+            // ONLY use alloca type when flags defaulted to i64
+            // (flags are correct for string/list/ptr — alloca type may be wrong for those)
             if load_ty == CG_I64 {
                 let alloca_ty = llvm.get_allocated_type(cached_ptr)
                 if alloca_ty != null && alloca_ty != CG_I64 { load_ty = alloca_ty }
@@ -2062,6 +2062,9 @@ impl Codegen {
                 if var_ptr == null { var_ptr = forge_alloca_cache_get(name) }
                 if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
+                // Use alloca's actual type as authoritative (same as fast path)
+                let g_alloca_ty = llvm.get_allocated_type(var_ptr)
+                if g_alloca_ty != null { load_ty = g_alloca_ty }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
@@ -3214,6 +3217,17 @@ impl Codegen {
         }
         if CG_B == 0 { return }
         if alloca_ty == 0 { return }
+        // If alloca_ty is still i64, check the actual LLVM type of the value
+        // This catches ptr, enum, struct types that the flag system missed
+        if alloca_ty == CG_I64 && value != null {
+            let val_ty = llvm.type_of(value)
+            if val_ty != null {
+                let kind = llvm.get_type_kind(val_ty)
+                // 12=PointerTypeKind, 13=StructTypeKind — use the actual type
+                if kind == 12 { alloca_ty = CG_PTR }
+                if kind == 13 { alloca_ty = val_ty }
+            }
+        }
         // Create alloca in ENTRY block (ensures dominance across all basic blocks)
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
@@ -3224,7 +3238,6 @@ impl Codegen {
         } else {
             llvm.position_at_end(CG_B, entry_bb)
         }
-        // Copy last-parsed let name to pending (no arm — define_var fires directly)
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         // build_alloca auto-caches in C-side — don't overwrite with potentially clobbered Forge var
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
