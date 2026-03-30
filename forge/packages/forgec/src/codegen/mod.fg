@@ -1929,13 +1929,12 @@ impl Codegen {
                 let resolved = resolve_type_to_llvm(st)
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
-            // Use alloca type when flags defaulted to i64
-            // LLVMGetTypeKind: 0=null, 8=int, 12=ptr, 13=struct
-            // Only works for actual alloca instructions (not self params)
+            // Alloca type fallback: when flags say i64 but alloca is ptr, use ptr
+            // Only for PointerTypeKind (12) — struct overrides break PHI nodes
             if load_ty == CG_I64 {
-                mut alloca_kind = llvm.get_type_kind(llvm.get_allocated_type(cached_ptr))
-                if alloca_kind == 12 { load_ty = CG_PTR }
-                if alloca_kind == 13 { load_ty = llvm.get_allocated_type(cached_ptr) }
+                if llvm.get_type_kind(llvm.get_allocated_type(cached_ptr)) == 12 {
+                    load_ty = CG_PTR
+                }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -2004,9 +2003,12 @@ impl Codegen {
                 // Use ONLY the fn-scoped name cache
                 let var_ptr = forge_alloca_cache_get(name)
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Override load_ty with alloca's actual type (authoritative)
-                let alloca_ty = llvm.get_allocated_type(var_ptr)
-                if alloca_ty != null { load_ty = alloca_ty }
+                // Override only for ptr allocas (struct overrides break PHI nodes)
+                if load_ty == CG_I64 {
+                    if llvm.get_type_kind(llvm.get_allocated_type(var_ptr)) == 12 {
+                        load_ty = CG_PTR
+                    }
+                }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
@@ -2064,9 +2066,12 @@ impl Codegen {
                 if var_ptr == null { var_ptr = forge_alloca_cache_get(name) }
                 if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Use alloca's actual type as authoritative (same as fast path)
-                let g_alloca_ty = llvm.get_allocated_type(var_ptr)
-                if g_alloca_ty != null { load_ty = g_alloca_ty }
+                // Override only for ptr allocas (struct overrides break PHI nodes)
+                if load_ty == CG_I64 {
+                    if llvm.get_type_kind(llvm.get_allocated_type(var_ptr)) == 12 {
+                        load_ty = CG_PTR
+                    }
+                }
                 CG_LAST_VAR_PTR = var_ptr
                 CG_LAST_VAR_ALLOCA_TYPE = load_ty
                 return llvm.build_load(CG_B, load_ty, var_ptr, name)
