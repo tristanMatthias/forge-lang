@@ -199,11 +199,11 @@ Run `scripts/audit_stage2.sh output.ll` after every change. Update this table.
 |--------|----------|---------|-----------|-----------|-----------|-----------|-------------|
 | br_i1_false | 99 | 99 | - | - | < 20 | - | 0 |
 | null_operands | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| ret_undef | 171 | 171 | - | - | - | 0 | 0 |
-| struct_as_i64 | 279 | 279 | - | 0 | - | - | 0 |
-| call_type_mismatch | 3443 | 3443 | - | < 100 | - | - | 0 |
-| load_type_mismatch | 1941 | 1941 | 0 | - | - | - | 0 |
-| **SCORE** | **7076** | **7076** | - | - | - | - | **0** |
+| ret_undef | 171 | 170 | - | - | - | 0 | 0 |
+| struct_as_i64 | 279 | 274 | - | 0 | - | - | 0 |
+| call_type_mismatch | 3443 | 3444 | - | < 100 | - | - | 0 |
+| load_type_mismatch | 1941 | 1802 | 0 | - | - | - | 0 |
+| **SCORE** | **7076** | **6913** | - | - | - | - | **0** |
 
 ## Checklist
 
