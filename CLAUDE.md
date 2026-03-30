@@ -107,6 +107,13 @@ Blockers: anything that's stuck
 ```
 Update the "Current" column in SELF_HOST_PLAN.md's progress table.
 
+### Turn Reports — AFTER EVERY MAJOR CHANGE
+After each significant change (commit, experiment, or discovery), give a brief inline report so progress is visible turn-by-turn, not just at session end:
+```
+TURN: [what changed] | Score: X → Y | [key finding or next step]
+```
+This prevents the user from losing track of what's happening between session reports.
+
 ### Key Learnings (from weeks of debugging)
 - **The `{i64, ptr}` enum representation** matches the mini compiler. Was `{i8, ptr}` — fixed.
 - **`Expr.IsCheck`** AST node handles `is` expressions in the codegen phase (was inline-only during parsing with CG_ACTIVE=true).
