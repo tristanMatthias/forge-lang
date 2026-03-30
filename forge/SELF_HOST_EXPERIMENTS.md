@@ -101,8 +101,8 @@
 **Date:** 2026-03-30
 **Milestone:** M1
 **Hypothesis:** Same as EXP-008 but only override when flags default to i64, using integer type kind check
-**Change:** emit_ident: stored_kind = get_type_kind(get_type(name)); if kind==12 use PTR, kind==13 use stored type
-**Score:** Testing...
-**Result:** TBD
-**Kept/Reverted:** TBD
-**Lesson:** TBD
+**Change:** emit_ident: stored_kind = get_type_kind(get_type(name)); if kind==12 use PTR, kind==13 use stored type. Also store type in param setup and let-fallback.
+**Score:** 6913 → 6910
+**Result:** ✅ IMPROVEMENT (-3, load_type_mismatch -17, null_operands 0)
+**Kept/Reverted:** Kept
+**Lesson:** The stored type cache works as a FALLBACK when flags default to i64. Using get_type_kind for null-safe checking avoids circular ptr dependency. Only corrects 17 loads because most allocas were created as i64 (the stored type IS i64). The remaining 1785 need the alloca to be created with the correct type in the first place.

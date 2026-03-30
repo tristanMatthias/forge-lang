@@ -540,12 +540,13 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if pname != "self" {
             forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            // build_alloca auto-caches in C-side (forge_alloca_cache_set_raw)
-            // Don't call forge_alloca_cache_set here — the Forge variable 'alloca'
-            // may be clobbered, overwriting the correct auto-cached value
+            // Store alloca type in cache for emit_ident
+            forge_alloca_cache_set_type(pname, p_ty)
             llvm.build_store(CG_B, param_val, alloca)
         } else {
             forge_alloca_cache_set(pname, alloca)
+            // Self param type = ptr (the struct pointer)
+            forge_alloca_cache_set_type(pname, CG_PTR)
         }
         // Save alloca by C counter (immune to Forge list length corruption)
         let var_idx = forge_var_counter_inc()
@@ -712,6 +713,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                         }
                     }
                     let va = llvm.build_alloca(CG_B, fallback_ty, "")
+                    // Store the alloca type for emit_ident (last cached entry)
+                    forge_alloca_cache_set_last_type(fallback_ty)
                     llvm.position_at_end(CG_B, cur2)
                     if CG_LAST_VAL != null && va != null {
                         llvm.build_store(CG_B, CG_LAST_VAL, va)

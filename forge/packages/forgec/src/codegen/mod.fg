@@ -1209,6 +1209,9 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", make_fn_type_0(CG_I64))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", make_fn_type_2(CG_I64, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_get", make_fn_type_1(CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set_type", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set_last_type", make_fn_type_1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_get_type", make_fn_type_1(CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_str_var_add", make_fn_type_1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_str_var_check", make_fn_type_1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_str_var_clear", make_fn_type_0(CG_I64))
@@ -1929,12 +1932,12 @@ impl Codegen {
                 let resolved = resolve_type_to_llvm(st)
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
-            // Alloca type fallback: when flags say i64 but alloca is ptr, use ptr
-            // Only for PointerTypeKind (12) — struct overrides break PHI nodes
+            // Fallback: use stored alloca type (set by define_var/param setup)
+            // Only when flags defaulted to i64. Uses get_type_kind for null-safe check.
             if load_ty == CG_I64 {
-                if llvm.get_type_kind(llvm.get_allocated_type(cached_ptr)) == 12 {
-                    load_ty = CG_PTR
-                }
+                mut stored_kind = llvm.get_type_kind(forge_alloca_cache_get_type(name))
+                if stored_kind == 12 { load_ty = CG_PTR; CG_LAST_IS_PTR = 1 }
+                if stored_kind == 13 { load_ty = forge_alloca_cache_get_type(name) }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -2642,9 +2645,9 @@ impl Codegen {
         } else {
             CG_LAST_IS_NULLABLE = 0
         }
-        // Always use the declared function type — ensures struct/enum params
-        // are passed as {i64, ptr} not plain i64
-        // (mut assignment in if-body gets dropped by codegen, so avoid if/else pattern)
+        // Use declared function type (ensures struct/enum params use correct types)
+        // global_get_value_type returns the fn's declared type from LLVM module
+        // No fallback needed: if fn_val is null, build_call's null guard handles it
         let ft = llvm.global_get_value_type(fn_val)
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
@@ -3247,6 +3250,8 @@ impl Codegen {
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         // build_alloca auto-caches in C-side — don't overwrite with potentially clobbered Forge var
+        // Store the alloca type in the cache for emit_ident to use
+        forge_alloca_cache_set_type(name, alloca_ty)
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
         // Restore builder position and store value
         llvm.position_at_end(CG_B, cur_bb)

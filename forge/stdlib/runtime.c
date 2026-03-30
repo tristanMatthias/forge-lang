@@ -2715,6 +2715,7 @@ int64_t forge_fn_is_str_return(ForgeString fn_name) {
     // Ptr-returning C-side functions
     #define PTR_RET(s) if (fn_name.len == sizeof(s)-1 && memcmp(fn_name.ptr, s, sizeof(s)-1) == 0) return 3;
     PTR_RET("forge_alloca_cache_get")
+    PTR_RET("forge_alloca_cache_get_type")
     PTR_RET("resolve_type_to_llvm")
     PTR_RET("cg_get_enum_ty_for")
     PTR_RET("cg_make_enum_type")
@@ -3026,7 +3027,7 @@ void forge_debug_lexer(void* ptr) {
 // ---- Alloca cache (immune to Forge-level ptr corruption) ----
 #define ALLOCA_CACHE_SIZE 512
 static void* _ac_fn_ptr = NULL; // current LLVM function pointer — entries from other functions are stale
-static struct { char name[64]; void* ptr; void* fn; } _ac[ALLOCA_CACHE_SIZE];
+static struct { char name[64]; void* ptr; void* fn; void* alloca_type; } _ac[ALLOCA_CACHE_SIZE];
 static int _ac_count = 0;
 
 // Clear cache AND record current function pointer for staleness detection
@@ -3060,6 +3061,7 @@ int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void*
         _ac[_ac_count].name[name_len] = '\0';
         _ac[_ac_count].ptr = ptr;
         _ac[_ac_count].fn = _ac_fn_ptr;
+        _ac[_ac_count].alloca_type = NULL;
         _ac_count++;
     }
     return 0;
@@ -3088,6 +3090,48 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
         _ac_count++;
     }
     return 0;
+}
+
+// Store alloca type alongside the cached ptr
+// Called from define_var after creating the alloca with the correct type
+void forge_alloca_cache_set_type(ForgeString name, void* type_ptr) {
+    if (!name.ptr || name.len <= 0) return;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            _ac[i].alloca_type = type_ptr;
+            return;
+        }
+    }
+}
+
+// Set type for the most recently cached entry
+void forge_alloca_cache_set_last_type(void* type_ptr) {
+    if (_ac_count > 0) {
+        _ac[_ac_count - 1].alloca_type = type_ptr;
+    }
+}
+
+// Get the stored alloca type for a variable
+// Returns the LLVM type pointer, or NULL if not set
+void* forge_alloca_cache_get_type(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return NULL;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == _ac_fn_ptr &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            return _ac[i].alloca_type;
+        }
+    }
+    // Global scope fallback
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == NULL &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            return _ac[i].alloca_type;
+        }
+    }
+    return NULL;
 }
 
 // Debug: print Expr tag (for tracing enum dispatch)
