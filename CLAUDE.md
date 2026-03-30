@@ -138,3 +138,5 @@ Update the "Current" column in SELF_HOST_PLAN.md's progress table.
 10. **Check the forge-lang repo FIRST.** Before attempting any fix, search `../forge-lang` for prior solutions. The i64 enum representation, heap-allocated payloads, and many codegen patterns were already solved there. We wasted days rediscovering things that were already done.
 
 11. **Be honest about scope.** Never say "one more fix" or "this conversation turn." If you don't know how deep a problem goes, say so. Run the audit, look at the numbers, and give a real estimate based on data — not optimism.
+
+12. **Do large refactors when necessary.** If the optimal solution requires restructuring significant code, DO IT. Don't avoid the right fix because it's "a large refactor." Avoiding refactors is how the codebase got into this state. The self-hosted codegen needs a proper type tracking system (like the mini's VAR_TYPES), not incremental patches on a broken flag system.
