@@ -75,6 +75,8 @@ F0001 (syntax), F0002 (unterminated string), F0003 (unterminated template), F000
 
 **Read `forge/SELF_HOST_PLAN.md` for the milestone plan and `forge/scripts/audit_stage2.sh` for progress tracking.**
 
+**BEFORE trying any experiment, check `forge/SELF_HOST_EXPERIMENTS.md` to see if it was already tried. AFTER every experiment, log it there with the score result.**
+
 ### The Problem
 The self-hosted codegen (`codegen/mod.fg`) defaults ALL types to i64 and uses global flags (CG_LAST_IS_STR, CG_LAST_IS_PTR, etc.) to track non-i64 types. This flag system misses most cases, producing ~7000 type errors in Stage 2 IR. The fix is to use LLVM's own type system (`LLVMGetAllocatedType`, `LLVMGlobalGetValueType`) instead of flag-guessing.
 
