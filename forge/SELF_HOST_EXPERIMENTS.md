@@ -12,7 +12,23 @@
 **Score:** before → after
 **Result:** ✅ IMPROVEMENT / ❌ REGRESSION / ⚪ NO CHANGE
 **Kept/Reverted:** kept/reverted
+**Verify:** How to reproduce (rebuild commands + what to check)
 **Lesson:** What we learned
+```
+
+## How to verify any experiment
+```bash
+# 1. Apply the change to the source files
+# 2. Rebuild full pipeline:
+cd forge/
+cc -c -O0 stdlib/runtime.c -o /tmp/mini_runtime.o
+LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 ./target/release/forgec run packages/forgec/src/mini/main.fg -- build packages/forgec/src/main.fg
+/opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj /tmp/mini_output.ll -o /tmp/stage1.o
+cc -o /tmp/stage1 /tmp/stage1.o /tmp/mini_runtime.o -lm -Wl,-stack_size,0x10000000 packages/std-llvm/target/release/libforge_llvm.a /opt/homebrew/opt/llvm@18/lib/libLLVM-18.dylib -lstdc++ -lz -lcurses
+/tmp/stage1 build packages/forgec/src/main.fg
+# 3. Run audit:
+bash scripts/audit_stage2.sh output.ll
+# 4. Compare SCORE with baseline
 ```
 
 ---
