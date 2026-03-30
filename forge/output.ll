@@ -21387,11 +21387,10 @@ bb2369:
 
 define i64 @Parser__is_at_end(ptr %0) {
 bb2370:
-  %1 = call i64 @forge_parser_get_pos()
-  %2 = call i64 @forge_token_list_len()
-  %3 = icmp sge i64 %1, %2
-  %4 = zext i1 %3 to i64
-  ret i64 %4
+  %1 = call i64 @forge_parser_is_at_end()
+  %2 = icmp eq i64 %1, 1
+  %3 = zext i1 %2 to i64
+  ret i64 %3
 }
 
 define %Token @Parser__peek(ptr %0) {

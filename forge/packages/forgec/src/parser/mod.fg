@@ -84,9 +84,8 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        // Use C-side for Stage 2 (Forge-side struct access broken)
-        // C-side position is synced via advance() calling forge_parser_advance_pos()
-        forge_parser_get_pos() >= forge_token_list_len()
+        // Entirely C-side (Forge || and struct access broken in Stage 2)
+        forge_parser_is_at_end() == 1
     }
 
     fn peek(self) -> Token {
