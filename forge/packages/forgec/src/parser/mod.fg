@@ -378,13 +378,13 @@ impl Parser {
             if CG_ACTIVE && WHILE_END_BB != null {
                 llvm.build_br(CG_B, WHILE_END_BB)
             }
-            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+            return Statement.Break(tok.span) }
         if tok.kind_id == 33 || forge_peek_kind_id(forge_parser_get_pos()) == 33 {  // Continue
             self.advance()
             if CG_ACTIVE && WHILE_COND_BB != null {
                 llvm.build_br(CG_B, WHILE_COND_BB)
             }
-            return Statement.Expr(Expr.IntLit(0, tok.span)) }
+            return Statement.Continue(tok.span) }
         // If (25) — inline handler
         if tok.kind_id == 25 || forge_peek_kind_id(forge_parser_get_pos()) == 25 {
             if !CG_ACTIVE {

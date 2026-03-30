@@ -3056,6 +3056,11 @@ impl Codegen {
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
                     let w2 = llvm.append_basic_block(CG_CTX, wfn, "wb")
                     let w3 = llvm.append_basic_block(CG_CTX, wfn, "we")
+                    // Set break/continue targets for nested break/continue statements
+                    let saved_cond = WHILE_COND_BB
+                    let saved_end = WHILE_END_BB
+                    WHILE_COND_BB = w1
+                    WHILE_END_BB = w3
                     llvm.build_br(CG_B, w1)
                     llvm.position_at_end(CG_B, w1)
                     CG_LAST_STRUCT_TYPE = ""
@@ -3068,6 +3073,9 @@ impl Codegen {
                     self.emit_block(body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, w1) }
                     llvm.position_at_end(CG_B, w3)
+                    // Restore previous loop targets (for nested loops)
+                    WHILE_COND_BB = saved_cond
+                    WHILE_END_BB = saved_end
                 }
                 .For(vn, iter, body, s) -> {
                     // Check if iterable is a known string list BEFORE emitting
@@ -3159,8 +3167,12 @@ impl Codegen {
                     }
                     llvm.position_at_end(CG_B, f4)
                 }
-                .Break(s) -> {}
-                .Continue(s) -> {}
+                .Break(s) -> {
+                    if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+                }
+                .Continue(s) -> {
+                    if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+                }
                 .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
             llvm.const_int(CG_I64, 0, 0)

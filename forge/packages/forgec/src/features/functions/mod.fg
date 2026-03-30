@@ -13,7 +13,7 @@ use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MA
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY, VAR_LIST_INIT_CSV}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
-use features.while_loops.PARSE_END_POS
+use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES, LAST_IDENT_NAME}
 
 // ─── Side Table ──────────────────────────────────
@@ -738,6 +738,15 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 } else {
                     llvm.build_ret_void(CG_B)
                 }
+            }
+            // break (32), continue (33): emit branch directly
+            else if peek_kid == 32 {
+                body_parser.advance()
+                if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+            }
+            else if peek_kid == 33 {
+                body_parser.advance()
+                if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
             }
             // if (25), while (30), for (28): parse with CG_ACTIVE=false
             // `is` expressions now stored as Expr.IsCheck in AST, handled by emit_expr
