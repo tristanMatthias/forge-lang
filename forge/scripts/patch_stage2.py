@@ -245,6 +245,15 @@ def main():
     output, n = fix_phi_nodes(output)
     total_fixes += n
 
+    # Step 6: Replace <null operand!> with zeroinitializer
+    fixed_output = []
+    for line in output:
+        if '<null operand!>' in line:
+            line = line.replace('<null operand!>', '%ForgeString zeroinitializer')
+            total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
+
     with open(sys.argv[2], 'w') as f:
         f.write('\n'.join(output))
 

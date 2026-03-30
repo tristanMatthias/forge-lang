@@ -1914,27 +1914,26 @@ impl Codegen {
         let cached_ptr = forge_alloca_cache_get(name)
         if cached_ptr != null {
             cg_reinit_types()
-            // Use LLVM's own type system: get the alloca's declared type
-            // This replaces the fragile flag-guessing (CG_LAST_IS_STR, etc.)
-            // and fixes 1,148+ type-mismatch loads in one shot
-            mut load_ty = llvm.get_allocated_type(cached_ptr)
-            if load_ty == null { load_ty = CG_I64 }
-            // Still set tracking flags for downstream code that needs them
-            if forge_str_var_check(name) == 1 {
+            // Start with flag-based type detection (for downstream tracking)
+            mut load_ty = CG_I64
+            if forge_str_var_check(name) == 1 { load_ty = CG_STR
+                CG_LAST_IS_STR = 1 }
+            if forge_list_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1
-                if load_ty == CG_I64 { load_ty = CG_STR }
-            }
-            if forge_list_var_check(name) == 1 {
-                CG_LAST_IS_STR = 1
-                CG_LAST_IS_LIST = 1
-                if load_ty == CG_I64 { load_ty = CG_STR }
-            }
-            if forge_ptr_var_check(name) == 1 {
-                CG_LAST_IS_PTR = 1
-            }
+                CG_LAST_IS_LIST = 1 }
+            if forge_ptr_var_check(name) == 1 { load_ty = CG_PTR
+                CG_LAST_IS_PTR = 1 }
             let st = forge_struct_var_get(name)
             if st != "" {
                 CG_LAST_STRUCT_TYPE = st
+                let resolved = resolve_type_to_llvm(st)
+                if resolved != null && resolved != CG_I64 { load_ty = resolved }
+            }
+            // If still defaulting to i64, use LLVM's alloca type as authoritative fallback
+            // This catches ptr, enum, and struct types that aren't in the flag caches
+            if load_ty == CG_I64 {
+                let alloca_ty = llvm.get_allocated_type(cached_ptr)
+                if alloca_ty != null && alloca_ty != CG_I64 { load_ty = alloca_ty }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
