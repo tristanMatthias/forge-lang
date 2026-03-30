@@ -144,3 +144,5 @@ Update the "Current" column in SELF_HOST_PLAN.md's progress table.
 12. **Do large refactors when necessary.** If the optimal solution requires restructuring significant code, DO IT. Don't avoid the right fix because it's "a large refactor." Avoiding refactors is how the codebase got into this state. The self-hosted codegen needs a proper type tracking system (like the mini's VAR_TYPES), not incremental patches on a broken flag system.
 
 13. **Don't ignore bugs. Fix them immediately or record them.** If you find a bug while working on something else, either fix it right now (if small) or add it to SELF_HOST_EXPERIMENTS.md with a clear description so it gets fixed soon. Never silently skip over a bug hoping it doesn't matter — it always does.
+
+14. **Search for empty/stub handlers.** Empty match arms like `.Break(s) -> {}` silently swallow behavior. Periodically grep for `-> {}` and `-> { }` in codegen/mod.fg to find stubs that should have real implementations. Every empty handler is a potential silent bug.

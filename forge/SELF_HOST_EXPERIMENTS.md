@@ -122,3 +122,22 @@ bash scripts/audit_stage2.sh output.ll
 **Result:** ✅ IMPROVEMENT (-3, load_type_mismatch -17, null_operands 0)
 **Kept/Reverted:** Kept
 **Lesson:** The stored type cache works as a FALLBACK when flags default to i64. Using get_type_kind for null-safe checking avoids circular ptr dependency. Only corrects 17 loads because most allocas were created as i64 (the stored type IS i64). The remaining 1785 need the alloca to be created with the correct type in the first place.
+
+### EXP-010: Fix break/continue in while loops (3 bugs)
+**Date:** 2026-03-30
+**Milestone:** M3 (br_i1_false) / bootstrap
+**Hypothesis:** break statements inside while loops are no-ops, causing infinite loops in tokenizer
+**Change:** 3 fixes in codegen/mod.fg + parser/mod.fg:
+  1. Parser returns Statement.Break/Continue (was Statement.Expr(IntLit(0)))
+  2. emit_statement .Break/.Continue emit build_br to loop targets
+  3. .While handler sets WHILE_END_BB/WHILE_COND_BB globals
+  Also: emit_fn_body_from_source dispatches break(32)/continue(33)
+**Score:** 6914 → 6914 (break doesn't affect type audit metrics)
+**Result:** ✅ CRITICAL FIX — tokenizer infinite loops eliminated
+**Kept/Reverted:** Kept
+**Verify:** `printf 'fn main() { 1 }' > /tmp/t.fg && /tmp/stage2 build /tmp/t.fg` should produce tokens (not hang)
+**Lesson:** Three separate bugs combined to make break a no-op:
+  - Parser produced wrong AST node type
+  - Codegen handler was empty stub (FOUND BY SEARCHING FOR EMPTY HANDLERS)  
+  - While loop didn't set break target globals
+  ALL THREE had to be fixed together. This is why empty/stub handlers are dangerous — they silently swallow behavior.
