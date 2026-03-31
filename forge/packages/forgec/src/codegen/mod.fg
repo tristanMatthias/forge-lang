@@ -223,37 +223,39 @@ export fn store_toplevel_source(src: string) {
     CG_TOPLEVEL_SOURCES = CG_TOPLEVEL_SOURCES.push(src)
 }
 
-// Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
-// which covers int (wastes 8 bytes), string, and list values.
+// Create LLVM globals from a list of names.
+// String/list globals use CG_STR ({ptr, i64}), integer globals use CG_I64.
+// str_mask bitmask: bit i = 1 if global i is string/list type.
 export fn create_globals_typed(names: List<string>, str_mask: int) {
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Use ForgeString type for ALL globals (safe: ForgeString is 16 bytes, i64 fits in first 8)
-        // This ensures string globals work correctly with ForgeString operations
         cg_reinit_types()
-        let gty = CG_STR
-        let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = llvm.const_null(gty)
-        llvm.set_initializer(gv, zero)
-        // Store type in alloca cache (emit_ident uses this for load type)
-        forge_alloca_cache_set_type(name, gty)
-        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        // Check bitmask for string type
+        // Determine type from bitmask
         mut bit = 1
         mut shift = 0
         while shift < i {
             bit = bit * 2
             shift = shift + 1
         }
-        let is_str = (str_mask / bit) % 2 == 1
-        // Also check name patterns for string/list globals
-        mut is_str_global = is_str
+        let is_str_bit = (str_mask / bit) % 2 == 1
+        // Also check name patterns
+        mut is_str_global = is_str_bit
         if name.index_of("CSV") >= 0 { is_str_global = true }
         if name.index_of("PATHS") >= 0 { is_str_global = true }
         if name.index_of("REG_") >= 0 { is_str_global = false }
         if name.index_of("REGISTRY") >= 0 { is_str_global = false }
+        // Use proper type: ForgeString for strings/lists, i64 for integers
+        mut gty = CG_I64
+        if is_str_global { gty = CG_STR }
+        let gv = llvm.add_global(CG_MOD, gty, name)
+        mut zero = llvm.const_int(CG_I64, 0, 0)
+        if is_str_global { zero = llvm.const_null(CG_STR) }
+        llvm.set_initializer(gv, zero)
+        // Store type in alloca cache (emit_ident uses this for load type)
+        forge_alloca_cache_set_type(name, gty)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
         mut is_str_flag2 = 0
         if is_str_global { is_str_flag2 = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
@@ -2073,13 +2075,15 @@ impl Codegen {
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // ALL globals are %ForgeString typed, but only STRING globals
-                // should set CG_LAST_IS_STR (for downstream string ops)
+                // Globals have proper types: string globals use CG_STR, others use CG_I64
                 let str_needle = "," + name + ","
                 let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
-                mut load_ty = CG_STR
+                mut load_ty = CG_I64
                 CG_LAST_IS_STR = 0
-                if is_str_global { CG_LAST_IS_STR = 1 }
+                if is_str_global {
+                    load_ty = CG_STR
+                    CG_LAST_IS_STR = 1
+                }
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
@@ -3382,7 +3386,7 @@ impl Codegen {
         match obj {
             .Ident(name, span) -> { var_name = name }
             _ -> {
-                // Chained access (e.g. self.source.length): evaluate obj, handle .length
+                // Chained access (e.g. self.peek().kind_id): evaluate obj, extract field
                 let obj_val = self.emit_expr(obj)
                 if field == "length" {
                     if CG_LAST_IS_STR == 1 {
@@ -3393,6 +3397,16 @@ impl Codegen {
                         llvm.value_array_free(ca)
                         CG_LAST_IS_STR = 0
                         return r
+                    }
+                }
+                // Try to extract field from struct value using struct type info
+                if CG_LAST_STRUCT_TYPE != "" {
+                    let chain_fidx = struct_field_index(CG_LAST_STRUCT_TYPE, field)
+                    if chain_fidx >= 0 {
+                        let fv = llvm.build_extract_value(CG_B, obj_val, chain_fidx, field)
+                        CG_LAST_STRUCT_TYPE = ""
+                        CG_LAST_IS_STR = 0
+                        return fv
                     }
                 }
                 return obj_val

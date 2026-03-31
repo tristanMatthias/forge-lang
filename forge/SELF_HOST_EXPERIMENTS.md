@@ -251,6 +251,18 @@ bash scripts/audit_stage2.sh output.ll
 **Verify:** Full rebuild pipeline + audit
 **Lesson:** Most br_i1_false came from type conversion failures: i64→i1 trunc loses info, ptr→i1 trunc is invalid, struct→i1 trunc is invalid. Using icmp/ptrtoint correctly converts all types. Remaining 25 are dead code paths.
 
+### EXP-021: Proper global typing — i64 for integer globals, ForgeString for string globals
+**Date:** 2026-03-31
+**Milestone:** M2 (call arg types) — root cause fix
+**Hypothesis:** create_globals_typed uses CG_STR for ALL globals. Loading an integer global returns ForgeString, causing CG_LAST_IS_STR to be spuriously set. By using i64 for non-string globals (based on str_mask), loads will return i64 and comparisons won't be misrouted through forge_string_compare. This should fix the 122 forge_string_compare mismatches.
+**Change:**
+  - create_globals_typed: use CG_I64 for non-string globals, CG_STR for string globals
+  - emit_ident globals path: load non-string globals as i64 instead of ForgeString
+  - forge_alloca_cache_set_type: store correct type per global
+**Score:** 565 → ???
+**Result:** ???
+**Kept/Reverted:** ???
+
 ### EXP-015: Stored alloca type as PRIMARY (before flags)
 **Date:** 2026-03-30
 **Milestone:** M1
