@@ -950,6 +950,38 @@ export fn cg_reinit_types() {
     CG_LIST = CG_STR
 }
 
+// Convert any LLVM value to i1 boolean for branch conditions.
+// Handles i64 (icmp ne 0), ptr (ptrtoint + icmp ne 0), i1 (pass-through),
+// and struct/ForgeString (extractvalue field 0 as ptr, ptrtoint + icmp ne 0).
+fn cg_to_i1(val: ptr) -> ptr {
+    if val == null { return llvm.const_int(llvm.int1_type(CG_CTX), 0, 0) }
+    let ty = llvm.type_of(val)
+    let kind = llvm.get_type_kind(ty)
+    // kind 8 = IntegerTypeKind: i1 pass-through, others icmp ne 0
+    if kind == 8 {
+        // If already i1 (e.g., from icmp), return as-is
+        // Check by comparing type pointer with int1_type
+        if ty == llvm.int1_type(CG_CTX) { return val }
+        // i8, i32, i64: compare != 0
+        return llvm.build_icmp(CG_B, 33, val, llvm.const_int(ty, 0, 0), "tb")
+    }
+    // kind 12 = PointerTypeKind: ptrtoint + icmp ne 0
+    if kind == 12 {
+        let as_int = llvm.build_ptr_to_int(CG_B, val, CG_I64, "pi")
+        return llvm.build_icmp(CG_B, 33, as_int, llvm.const_int(CG_I64, 0, 0), "tb")
+    }
+    // kind 13 = StructTypeKind (ForgeString, etc.): extract ptr field, check non-null
+    if kind == 13 {
+        let fld = llvm.build_extract_value(CG_B, val, 0, "sf")
+        if fld != null {
+            let fld_int = llvm.build_ptr_to_int(CG_B, fld, CG_I64, "si")
+            return llvm.build_icmp(CG_B, 33, fld_int, llvm.const_int(CG_I64, 0, 0), "tb")
+        }
+    }
+    // Fallback: trunc to i1 (may produce wrong results but won't crash)
+    llvm.build_trunc(CG_B, val, llvm.int1_type(CG_CTX), "tb")
+}
+
 fn cg_init_other_types() {
     CG_VOID = llvm.void_type(CG_CTX)
     CG_PTR = llvm.pointer_type(CG_CTX)
@@ -1499,7 +1531,7 @@ impl Codegen {
     fn emit_if_from_globals(self) -> ptr {
         cg_reinit_types()
         let cv = self.emit_expr(CURRENT_IF_COND)
-        let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
+        let ci = cg_to_i1(cv)
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let tb = llvm.append_basic_block(CG_CTX, fn_val, "th")
         let eb = llvm.append_basic_block(CG_CTX, fn_val, "el")
@@ -1824,7 +1856,7 @@ impl Codegen {
             .Expr(e) -> { cond_val = self.emit_expr(e) }
             _ -> {}
         }
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
+        let cond_i1 = cg_to_i1(cond_val)
 
         let current_fn = self.current_fn
         if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
@@ -1850,7 +1882,7 @@ impl Codegen {
     fn emit_if_inline(self) -> ptr {
         let cond_val = self.emit_expr(CURRENT_IF_COND)
         // Truncate to i1
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
+        let cond_i1 = cg_to_i1(cond_val)
 
         let current_fn = self.current_fn
         if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
@@ -2860,7 +2892,7 @@ impl Codegen {
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
                     let cv = self.emit_expr(cond)
-                    let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
+                    let ci = cg_to_i1(cv)
                     let ifn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let tb = llvm.append_basic_block(CG_CTX, ifn, "th")
                     let eb = llvm.append_basic_block(CG_CTX, ifn, "el")
@@ -3114,7 +3146,7 @@ impl Codegen {
                     CG_LAST_IS_STR = 0
                     CG_LAST_IS_MAP = 0
                     let wv = self.emit_expr(cond)
-                    let wi = llvm.build_trunc(CG_B, wv, llvm.int1_type(CG_CTX), "wt")
+                    let wi = cg_to_i1(wv)
                     llvm.build_cond_br(CG_B, wi, w2, w3)
                     llvm.position_at_end(CG_B, w2)
                     self.emit_block(body)
