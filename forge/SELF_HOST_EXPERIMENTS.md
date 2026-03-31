@@ -289,3 +289,41 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** Reverted
 **Verify:** Run audit
 **Lesson:** Stored type overrides CORRECT flag detection in some cases. Must keep as fallback only.
+
+### EXP-023: Chained member access on non-Ident expressions
+**Date:** 2026-03-31
+**Milestone:** M2/M3
+**Hypothesis:** emit_member_access returns full struct for non-Ident objects (e.g., self.peek().kind_id returns Token, not the kind_id field). Using CG_LAST_STRUCT_TYPE + struct_field_index should extract the correct field.
+**Change:** codegen/mod.fg emit_member_access: in `_ ->` branch, check CG_LAST_STRUCT_TYPE and extract field via struct_field_index before returning obj_val.
+**Score:** 565 → 513 (-52)
+**Result:** ✅ IMPROVEMENT (call_type_mismatch -34, br_i1_false -6)
+**Kept/Reverted:** Kept
+
+### EXP-024: Null check optimization via forge_is_null_val
+**Date:** 2026-03-31
+**Milestone:** M2
+**Hypothesis:** When comparing with null (== null, != null), extract ptr field from ForgeString and compare with null directly instead of calling forge_string_compare. Uses LLVMIsNull C wrapper.
+**Change:** Added forge_is_null_val to std-llvm. Eq/NotEq handlers check is_null_check flag; if true, extract field 0 and icmp with null.
+**Score:** 513 → 494 (-19)
+**Result:** ✅ IMPROVEMENT (call_type_mismatch -25)
+**Kept/Reverted:** Kept
+
+### EXP-025: Global typing — i64 for non-string, remove ptr_var_add
+**Date:** 2026-03-31
+**Milestone:** M2/M5
+**Hypothesis:** Using proper types for globals (i64 for integers, ForgeString for strings/lists) would fix type erasure. Removing forge_ptr_var_add for non-string globals prevents emit_ident from loading lists as ptr.
+**Change:** create_globals_typed: i64 for non-string globals. Removed forge_ptr_var_add for non-string globals. Reverted to all-ForgeString globals. emit_ident globals path: load as i64 for non-string.
+**Score:** 494 → 820 (REGRESSION) then reverted various combinations
+**Result:** ❌ REGRESSION — non-string globals loaded as ForgeString breaks integer comparisons (+226 call_type_mismatch). Loading as i64 breaks list.length. The binary bitmask can't distinguish ptr from list from int.
+**Kept/Reverted:** ALL REVERTED — back to original all-ForgeString globals + ptr_var_add
+**Lesson:** The fundamental problem: globals need 3-way typing (int/ptr/list) but only have a binary bitmask (string-or-not). The flag system (forge_str_var_check, forge_ptr_var_check) was tuned to balance these incorrectly-typed globals. Changing one part without the other causes cascading regressions. CANNOT be fixed incrementally — needs a proper type system.
+
+### EXP-026: C-side auto-extract for function bodies
+**Date:** 2026-03-31
+**Milestone:** M5
+**Hypothesis:** forge_fn_store_add can auto-extract the body from source using C-side token spans when the Forge-level body extraction produces garbage (due to struct field extraction bugs).
+**Change:** Added forge_extract_body_source, forge_set_scan_source, _current_scan_source. Modified forge_fn_store_add to re-extract when body is empty/corrupt. Modified forge_selfhost_fs_read to auto-store source.
+**Score:** N/A (M5 functional test, not score)
+**Result:** ✅ WORKS (body_len goes from garbage to correct 21) but is a HACK
+**Kept/Reverted:** REVERTED — violates rule 2 (no C-side workarounds for codegen bugs)
+**Lesson:** The C-side auto-extract proves the body CAN be extracted correctly with proper token span access. The fix should be in the codegen's struct field extraction, not a C-side bypass.
