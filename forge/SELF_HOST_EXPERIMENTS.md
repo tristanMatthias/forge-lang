@@ -357,3 +357,13 @@ bash scripts/audit_stage2.sh output.ll
 **Result:** ✅ IMPROVEMENT — alloca-ty-derived types are safe as FALLBACK in fast path
 **Kept/Reverted:** Kept
 **Lesson:** Key difference from EXP-028 (which regressed): types derived from alloca_ty (correct, uses LLVMTypeOf) vs flags (wrong for some variables). Using as FALLBACK (only when all C-side checks default to i64) avoids overriding correct detection. This is the right approach — incremental, safe, no regressions.
+
+### EXP-030: Annotation-driven define_var + emit_ident struct resolution
+**Date:** 2026-03-31
+**Milestone:** M2
+**Hypothesis:** Using forge_var_type_get (source-level annotation) in BOTH define_var (to create correctly-typed allocas) and emit_ident (to load with correct types) should fix struct type erasure.
+**Change:** define_var: if annotation available, resolve to LLVM type for alloca. emit_ident: annotation lookup for struct types before C-side checks.
+**Score:** 491 → 1546 (define_var version) / 491 → 499 (emit_ident only, struct)
+**Result:** ❌ REGRESSION — annotation creates struct-typed allocas but the STORED VALUE is still i64 (from flag-based emit_expr). Store i64 into %Token alloca → load %Token reads garbage.
+**Kept/Reverted:** REVERTED
+**Lesson:** The annotation can't be used in define_var until the VALUE also has the correct type. The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.
