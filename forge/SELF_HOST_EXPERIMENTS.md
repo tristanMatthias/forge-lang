@@ -141,3 +141,58 @@ bash scripts/audit_stage2.sh output.ll
   - Codegen handler was empty stub (FOUND BY SEARCHING FOR EMPTY HANDLERS)  
   - While loop didn't set break target globals
   ALL THREE had to be fixed together. This is why empty/stub handlers are dangerous — they silently swallow behavior.
+
+### EXP-011: Global load default CG_STR + GlobalGetValueType fallback
+**Date:** 2026-03-30
+**Milestone:** M1
+**Hypothesis:** All globals are %ForgeString typed. Defaulting globals path to CG_STR should fix global loads.
+**Change:** codegen/mod.fg: globals path load_ty = CG_STR (was CG_I64). Added GlobalGetValueType for globals.
+**Score:** 6917 → 6916
+**Result:** ⚪ NO CHANGE (-1, within variance)
+**Kept/Reverted:** Kept (correct default, harmless)
+**Verify:** Check `load %ForgeString, ptr @VAR_GLOBAL_NAMES` in output.ll
+**Lesson:** Globals path is BYPASSED by fast path (alloca cache finds globals first).
+
+### EXP-012: All globals registered as str vars
+**Date:** 2026-03-30
+**Milestone:** M1
+**Hypothesis:** Register ALL globals in forge_str_var_add (not just bitmask-flagged ones)
+**Change:** create_globals_typed: ALL get forge_str_var_add + CG_STR_GLOBALS_CSV
+**Score:** 6917 → 7136
+**Result:** ❌ REGRESSION (+219) — br_i1_false improved 102→81 but load/call regressed
+**Kept/Reverted:** Reverted
+**Verify:** Run audit, check br_i1_false and load_type_mismatch
+**Lesson:** Non-string globals (CG_I64, CG_ACTIVE etc.) NEED i64 loads. Str-typing them breaks integer comparisons.
+
+### EXP-013: Bitmask detection via forge_peek_kind_id
+**Date:** 2026-03-30
+**Milestone:** M1
+**Hypothesis:** Use C-side token kind_id instead of let-stored value_tok_key for bitmask
+**Change:** parse_var_binding: forge_peek_kind_id for [, {, string detection
+**Score:** 6917 → 6917
+**Result:** ⚪ NO CHANGE (C-side pos stale during scan-phase parse_var_binding)
+**Kept/Reverted:** Kept (harmless)
+**Verify:** Check VAR_GLOBAL_NAMES in str_check trace
+**Lesson:** C-side position desyncs from Forge-side in parse_var_binding (by-value parser copy)
+
+### EXP-014: Name pattern heuristics for list globals
+**Date:** 2026-03-30
+**Milestone:** M1
+**Hypothesis:** Variables with NAMES/TYPES/PTRS/FIELDS suffixes are likely lists
+**Change:** create_globals_typed: add pattern checks for common list suffixes
+**Score:** 6917 → 7081
+**Result:** ❌ REGRESSION (+164) — CG_STRUCT_TYPES (ptr list) wrongly loaded as str
+**Kept/Reverted:** Reverted
+**Verify:** Run audit
+**Lesson:** Lists of pointers (like CG_STRUCT_TYPES) must load as ptr not ForgeString
+
+### EXP-015: Stored alloca type as PRIMARY (before flags)
+**Date:** 2026-03-30
+**Milestone:** M1
+**Hypothesis:** Use forge_alloca_cache_get_type as primary load type, flags only for downstream
+**Change:** emit_ident: stored_kind check before flag checks
+**Score:** 6920 → 7231
+**Result:** ❌ REGRESSION (+311) — null_operands 0→30, br_i1_false 102→119
+**Kept/Reverted:** Reverted
+**Verify:** Run audit
+**Lesson:** Stored type overrides CORRECT flag detection in some cases. Must keep as fallback only.
