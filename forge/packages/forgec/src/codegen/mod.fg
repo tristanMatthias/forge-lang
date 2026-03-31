@@ -258,7 +258,8 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         if is_str_global { is_str_flag2 = 1 }
         CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
         CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        // Register in CSV (immune to list corruption)
+        // Register string globals in str var cache (for emit_ident to load as %ForgeString)
+        // Non-string globals stay as ptr (load first 8 bytes for i64 values)
         if is_str_global {
             CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
@@ -2024,12 +2025,13 @@ impl Codegen {
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // ALL globals are typed as %ForgeString (from create_globals_typed)
-                // Use CG_STR as default load type for globals
+                // ALL globals are %ForgeString typed, but only STRING globals
+                // should set CG_LAST_IS_STR (for downstream string ops)
                 let str_needle = "," + name + ","
                 let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
                 mut load_ty = CG_STR
-                CG_LAST_IS_STR = 1
+                CG_LAST_IS_STR = 0
+                if is_str_global { CG_LAST_IS_STR = 1 }
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)

@@ -3281,7 +3281,8 @@ void* forge_alloca_cache_get(ForgeString name) {
 #define STR_CACHE_SIZE 256
 static char _str_names[STR_CACHE_SIZE][64];
 static int _str_count = 0;
-
+static int _str_global_count = 0;
+static int _str_check_trace = 0;
 
 int64_t forge_str_var_add_raw(const char* name_ptr, int64_t name_len) {
     if (!name_ptr || name_len <= 0 || name_len > 63) return 0;
@@ -3298,6 +3299,9 @@ int64_t forge_str_var_add(ForgeString name) {
     if (_str_count < STR_CACHE_SIZE) {
         memcpy(_str_names[_str_count], name.ptr, name.len);
         _str_names[_str_count][name.len] = '\0';
+        if (_str_check_trace && name.len > 10) {
+            fprintf(stderr, "  [str_add] %.*s (#%d)\n", (int)name.len, name.ptr, _str_count);
+        }
         _str_count++;
     }
     return 0;
@@ -3306,14 +3310,21 @@ int64_t forge_str_var_add(ForgeString name) {
 int64_t forge_str_var_check(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return 0;
     for (int i = _str_count - 1; i >= 0; i--) {
-        if ((int64_t)strlen(_str_names[i]) == name.len && memcmp(_str_names[i], name.ptr, name.len) == 0)
+        if ((int64_t)strlen(_str_names[i]) == name.len && memcmp(_str_names[i], name.ptr, name.len) == 0) {
+            if (_str_check_trace && name.len > 10) {
+                fprintf(stderr, "  [str_check HIT] %.*s\n", (int)name.len, name.ptr);
+            }
             return 1;
+        }
+    }
+    if (_str_check_trace && name.len > 10 && name.len < 30) {
+        fprintf(stderr, "  [str_check MISS] %.*s (count=%d global=%d)\n", (int)name.len, name.ptr, _str_count, _str_global_count);
     }
     return 0;
 }
+void forge_str_var_check_trace(int64_t enable) { _str_check_trace = (int)enable; }
 
 // Track how many string vars are globals (preserved across clear)
-static int _str_global_count = 0;
 void forge_str_var_set_global_count(void) { _str_global_count = _str_count; }
 int64_t forge_str_var_clear(void) { _str_count = _str_global_count; return 0; }
 

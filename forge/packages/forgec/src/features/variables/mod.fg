@@ -88,10 +88,11 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     }
 
     // Peek at value token to detect type for globals (before parse_expr consumes it)
-    let value_tok_kind = p.peek().kind_id
-    // kind_id 4 = StringLit, 2 = IntLit, 3 = FloatLit
-    // LBracket = list literal, LBrace = map literal
-    let value_tok_key = p.kind_to_key(p.peek().kind)
+    // Use kind_id directly (no let for value_tok_key — alloca cache misses drop the value)
+    mut is_str_or_list_init = false
+    if forge_peek_kind_id(forge_parser_get_pos()) == 104 { is_str_or_list_init = true }  // LBracket [
+    if forge_peek_kind_id(forge_parser_get_pos()) == 102 { is_str_or_list_init = true }  // LBrace {
+    if forge_peek_kind_id(forge_parser_get_pos()) == 4 { is_str_or_list_init = true }    // StringLit
 
     let value = p.parse_expr()
     if value == null {
@@ -102,7 +103,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Register top-level globals with type detection from value token
     if IN_FUNCTION_BODY != 1 {
         // Set bit in bitmask if this is a string/list/map global
-        if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
+        if is_str_or_list_init {
             mut bit = 1
             mut shift = 0
             while shift < VAR_GLOBAL_COUNT {
