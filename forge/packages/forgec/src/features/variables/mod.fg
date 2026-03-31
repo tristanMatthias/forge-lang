@@ -100,10 +100,11 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Register top-level globals with type detection from value token
+    // Register top-level globals with type detection from value token + annotation
     if IN_FUNCTION_BODY != 1 {
         // Set bit in bitmask if this is a string/list/map global
-        if is_str_or_list_init {
+        // Also include List-annotated variables (ann_is_list from : List<T> annotation)
+        if is_str_or_list_init || ann_is_list == 1 {
             mut bit = 1
             mut shift = 0
             while shift < VAR_GLOBAL_COUNT {
