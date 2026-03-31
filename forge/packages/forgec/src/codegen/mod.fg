@@ -1919,7 +1919,7 @@ impl Codegen {
         let cached_ptr = forge_alloca_cache_get(name)
         if cached_ptr != null {
             cg_reinit_types()
-            // Flag-based type detection first (handles string, list, ptr, struct)
+            // Flag-based type detection (handles string, list, ptr, struct)
             mut load_ty = CG_I64
             if forge_str_var_check(name) == 1 { load_ty = CG_STR
                 CG_LAST_IS_STR = 1 }
@@ -1934,8 +1934,7 @@ impl Codegen {
                 let resolved = resolve_type_to_llvm(st)
                 if resolved != null && resolved != CG_I64 { load_ty = resolved }
             }
-            // Fallback: use stored alloca type (set by define_var/param setup)
-            // Only when flags defaulted to i64. Uses get_type_kind for null-safe check.
+            // Fallback: stored alloca type when flags default to i64
             if load_ty == CG_I64 {
                 mut stored_kind = llvm.get_type_kind(forge_alloca_cache_get_type(name))
                 if stored_kind == 12 { load_ty = CG_PTR; CG_LAST_IS_PTR = 1 }
