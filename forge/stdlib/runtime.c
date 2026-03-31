@@ -697,6 +697,8 @@ void forge_parser_set_ptr(void* ptr) {
 
 // C-side token list storage (immune to Token struct return value corruption)
 static ForgeString _c_token_list = {NULL, 0};
+static ForgeString _current_scan_source = {NULL, 0};
+void forge_set_scan_source(ForgeString src) { _current_scan_source = src; }
 void forge_set_token_list(ForgeString list) { _c_token_list = list; }
 // Access token fields by index from C-side stored list
 // Token layout: {TokenKind{i8,ptr}=16, Span{i64,i64,i64,i64}=32, ForgeString{ptr,i64}=16, i64=8} = 72
@@ -2005,6 +2007,8 @@ ForgeString forge_read_file(ForgeString path) {
 
     ForgeString result = forge_string_new(buf, (int64_t)read);
     free(buf);
+    // Auto-store as scan source for body extraction fallback
+    _current_scan_source = result;
     return result;
 }
 
@@ -2345,7 +2349,10 @@ ForgeString forge_selfhost_fs_read(ForgeString path) {
     fread(buf, 1, size, f);
     fclose(f);
     buf[size] = '\0';
-    return (ForgeString){ .ptr = buf, .len = size };
+    ForgeString result = { .ptr = buf, .len = size };
+    // Auto-store as scan source for body extraction fallback
+    _current_scan_source = result;
+    return result;
 }
 
 // process.exit(code)
@@ -2852,18 +2859,52 @@ static int _fn_store_count = 0;
 
 void forge_fn_store_clear(void) { _fn_store_count = 0; }
 
+// Current file source — declared near top, defined here for body extraction fallback
+// (forward declared because forge_read_file also sets it)
+void forge_set_scan_source(ForgeString src);
+
 void forge_fn_store_add(ForgeString name, ForgeString body) {
     if (_fn_store_count >= FN_STORE_MAX) return;
     if (!name.ptr || name.len <= 0 || name.len > 127) return;
-    fprintf(stderr, "  [fn_store #%d] name=\"%.*s\" body_len=%lld\n", _fn_store_count, (int)name.len, name.ptr, (long long)body.len);
+    // If body is empty/corrupt, try to re-extract from source using C-side token spans
+    ForgeString actual_body = body;
+    fprintf(stderr, "  [fn_store_add] body.ptr=%p body.len=%lld scan_src.ptr=%p scan_src.len=%lld\n",
+        body.ptr, (long long)body.len, _current_scan_source.ptr, (long long)_current_scan_source.len);
+    if ((!body.ptr || body.len <= 0 || body.len > 100000) && _current_scan_source.ptr) {
+        // Walk backwards from current parser position to find the { } block
+        // The last consumed block should be the function body
+        // Use _c_parser_pos (set by forge_parser_advance_pos) to find the closing }
+        int64_t close_pos = _c_parser_pos - 1;  // last consumed token
+        if (close_pos >= 0 && close_pos < _c_token_list.len) {
+            // Walk backwards to find matching {
+            int depth = 0;
+            int64_t open_pos = close_pos;
+            for (int64_t i = close_pos; i >= 0; i--) {
+                int64_t kid = forge_token_kind_id(_c_token_list, i);
+                if (kid == 103) depth++;  // }
+                else if (kid == 102) {    // {
+                    depth--;
+                    if (depth == 0) { open_pos = i; break; }
+                }
+            }
+            int64_t open_span = forge_token_span_start(_c_token_list, open_pos);
+            int64_t close_span = forge_token_span_end(_c_token_list, close_pos);
+            if (open_span >= 0 && close_span > open_span && close_span <= _current_scan_source.len) {
+                actual_body = forge_string_new(_current_scan_source.ptr + open_span, close_span - open_span + 1);
+                fprintf(stderr, "  [fn_store #%d] AUTO-EXTRACT name=\"%.*s\" body_len=%lld (was %lld)\n",
+                    _fn_store_count, (int)name.len, name.ptr, (long long)actual_body.len, (long long)body.len);
+            }
+        }
+    }
+    fprintf(stderr, "  [fn_store #%d] name=\"%.*s\" body_len=%lld\n", _fn_store_count, (int)name.len, name.ptr, (long long)actual_body.len);
     memcpy(_fn_store[_fn_store_count].name, name.ptr, name.len);
     _fn_store[_fn_store_count].name[name.len] = '\0';
     // Copy body
-    char* b = (char*)malloc(body.len + 1);
-    if (body.ptr && body.len > 0) memcpy(b, body.ptr, body.len);
-    b[body.len] = '\0';
+    char* b = (char*)malloc(actual_body.len + 1);
+    if (actual_body.ptr && actual_body.len > 0) memcpy(b, actual_body.ptr, actual_body.len);
+    b[actual_body.len] = '\0';
     _fn_store[_fn_store_count].body = b;
-    _fn_store[_fn_store_count].body_len = body.len;
+    _fn_store[_fn_store_count].body_len = actual_body.len;
     _fn_store_count++;
 }
 

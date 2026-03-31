@@ -279,6 +279,7 @@ fn scan_one_file(filepath: string, idx: int) {
     eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
     eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
+    forge_set_scan_source(source)
     mut lex = lexer_new(source)
     eprintln("  [scan] " + string(idx) + " lexer created")
     let tokens = lex.tokenize()

@@ -3259,6 +3259,7 @@ fn compile(source: string) -> string {
     // Module CSV accumulator
     ir_raw("declare i64 @forge_scan_csv(%ForgeString)")
     ir_raw("declare %ForgeString @forge_extract_body_source(%ForgeString, i64, i64)")
+    ir_raw("declare void @forge_set_scan_source(%ForgeString)")
     FN_NAMES = FN_NAMES.push("forge_extract_body_source")
     FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
