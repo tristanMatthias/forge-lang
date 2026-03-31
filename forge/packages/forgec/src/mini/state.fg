@@ -850,6 +850,93 @@ fn find_fn_index(name: string) -> int {
     -1
 }
 
+// Get the idx-th comma-separated value from a CSV string
+// e.g. csv_get("i64,%ForgeString,ptr", 1) -> "%ForgeString"
+fn csv_get(csv: string, idx: int) -> string {
+    if csv == "" { return "" }
+    mut pos = 0
+    mut field = 0
+    mut start = 0
+    while pos <= csv.length {
+        if pos == csv.length || csv.byte_at(pos) == 44 {
+            if field == idx {
+                return csv.substring(start, pos)
+            }
+            field = field + 1
+            start = pos + 1
+        }
+        pos = pos + 1
+    }
+    ""
+}
+
+// Look up the declared LLVM type for parameter idx of function named fn_name
+fn find_fn_param_type(fn_name: string, idx: int) -> string {
+    let fi = find_fn_index(fn_name)
+    if fi < 0 { return "" }
+    if fi >= FN_PARAM_TYPES.length { return "" }
+    let raw = csv_get(FN_PARAM_TYPES[fi], idx)
+    if raw == "" { return "" }
+    // Already an LLVM type? Return as-is
+    if raw == "i64" { return "i64" }
+    if raw == "ptr" { return "ptr" }
+    if raw == "double" { return "double" }
+    if raw == "void" { return "void" }
+    if raw.length > 0 {
+        if raw.byte_at(0) == 37 { return raw }
+    }
+    if raw.length > 0 {
+        if raw.byte_at(0) == 123 { return raw }
+    }
+    // Resolve Forge type names to LLVM types
+    type_to_llvm(raw)
+}
+
+
+// Parse function parameters and build CSV of LLVM types
+// Results stored in SCAN_PARAM_CSV and SCAN_PARAM_COUNT
+export mut SCAN_PARAM_CSV: string = ""
+export mut SCAN_PARAM_COUNT: int = 0
+
+fn scan_params() {
+    SCAN_PARAM_CSV = ""
+    SCAN_PARAM_COUNT = 0
+    if check("(") {
+        advance()
+        skip_nl()
+        while !check(")") && POS < TOKENS.length {
+            skip_nl()
+            if check(",") { advance() }
+            skip_nl()
+            if check(")") { break }
+            let pname = advance().text
+            skip_nl()
+            if check(":") {
+                advance()
+                skip_nl()
+                let ty_name = advance().text
+                if check("<") {
+                    while !check(">") && POS < TOKENS.length { advance() }
+                    if check(">") { advance() }
+                }
+                if check("?") { advance() }
+                mut pty = "i64"
+                if pname == "self" {
+                    pty = "ptr"
+                } else {
+                    pty = type_to_llvm(ty_name)
+                }
+                if SCAN_PARAM_COUNT > 0 { SCAN_PARAM_CSV = SCAN_PARAM_CSV + "," }
+                SCAN_PARAM_CSV = SCAN_PARAM_CSV + pty
+                SCAN_PARAM_COUNT = SCAN_PARAM_COUNT + 1
+            }
+            skip_nl()
+        }
+        if check(")") { advance() }
+    } else {
+        while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+    }
+}
 
 fn skip_block() {
     // Skip a { ... } block including nested blocks
@@ -866,9 +953,8 @@ fn skip_block() {
 fn scan_fn_sig() {
     advance() // consume 'fn'
     let name = advance().text
-    // scan fn sig
-    // Skip params
-    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+    // Parse parameter types
+    scan_params()
     mut ret_ty = "void"
     if check("->") {
         advance()
@@ -894,11 +980,11 @@ fn scan_fn_sig() {
     while !check("{") && POS < TOKENS.length { advance() }
     skip_block()
     // Register
-    
+
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(SCAN_PARAM_COUNT)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push(SCAN_PARAM_CSV)
 }
 
 // Global variable tracking for pass 1

@@ -3097,7 +3097,8 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
 void forge_alloca_cache_set_type(ForgeString name, void* type_ptr) {
     if (!name.ptr || name.len <= 0) return;
     for (int i = _ac_count - 1; i >= 0; i--) {
-        if ((int64_t)strlen(_ac[i].name) == name.len &&
+        if (_ac[i].fn == _ac_fn_ptr &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             _ac[i].alloca_type = type_ptr;
             return;

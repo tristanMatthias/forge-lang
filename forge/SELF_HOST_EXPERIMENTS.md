@@ -186,6 +186,46 @@ bash scripts/audit_stage2.sh output.ll
 **Verify:** Run audit
 **Lesson:** Lists of pointers (like CG_STRUCT_TYPES) must load as ptr not ForgeString
 
+### EXP-016: Mini scan_fn_sig param parsing + declared param type infrastructure
+**Date:** 2026-03-31
+**Milestone:** M2 (call arg types) — infrastructure
+**Hypothesis:** Parsing param types in pass 1 (scan_fn_sig) and storing in FN_PARAM_TYPES enables future declared-type lookups at call sites.
+**Change:**
+  - state.fg: scan_fn_sig now parses params via scan_params() helper, builds CSV of LLVM types
+  - state.fg: Added csv_get(), find_fn_param_type(), scan_params() helpers
+  - codegen.fg: impl method scanning also uses scan_params()
+  - Call-site fallback attempted but REVERTED — values have wrong types (i64 not %ForgeString), so relabeling causes LLVM verification errors
+**Score:** 6920 → 6920 (no change — infrastructure only)
+**Result:** ⚪ NO CHANGE (infrastructure for future use)
+**Kept/Reverted:** Kept (scan_params and FN_PARAM_TYPES population). Call-site fallbacks reverted.
+**Verify:** Full rebuild pipeline + audit
+**Lesson:** Can't fix call types by relabeling at call sites — values must have the correct LLVM type from loads. Declared param types are useful AFTER loads are fixed. CG_VAR_TYPES approach (+21 regression) fails because extra List.push operations add new type mismatches.
+
+### EXP-017: ForgeString-only alloca type override in emit_ident
+**Date:** 2026-03-31
+**Milestone:** M1 (load types)
+**Hypothesis:** In fallback path, use LLVMGetAllocatedType to detect ForgeString allocas (kind==13) and load as CG_STR instead of CG_I64. Also restrict fast path kind==13 to ForgeString-only (safer than generic struct override).
+**Change:** codegen/mod.fg emit_ident: fallback path adds ForgeString-specific kind==13 check. Fast path kind==13 restricted to CG_STR comparison.
+**Score:** 6920 → 6919
+**Result:** ✅ IMPROVEMENT (-1, load_type_mismatch 1792→1791)
+**Kept/Reverted:** Kept
+**Verify:** Full rebuild pipeline + audit
+**Lesson:** ForgeString override is safe but only catches 1 case in fallback path. The 763 ForgeString mismatches are in the fast path (alloca cache), meaning forge_alloca_cache_get_type already returns ForgeString for most of them. The remaining mismatches have a different root cause — likely the type was never stored in the cache.
+
+### EXP-018: Fix audit script — per-function register tracking + accurate call mismatch
+**Date:** 2026-03-31
+**Milestone:** All milestones — measurement fix
+**Hypothesis:** The audit script's load_type_mismatch is inflated because it tracks register names globally across functions (e.g., %1 in fn A is ForgeString, %1 in fn B is i64 — counted as mismatch). Similarly, call_type_mismatch counts ALL calls to struct-param functions, not just those with actual type mismatches.
+**Change:**
+  - audit_stage2.sh: Added `delete vars` when entering a new `define` (per-function tracking)
+  - audit_stage2.sh: Replaced call_type_mismatch with Python script that checks actual arg types vs declared param types
+  - runtime.c: forge_alloca_cache_set_type now checks fn scope (matching get_type behavior)
+**Score:** 6919 → 1924 (not a real improvement — measurement correction)
+**Result:** ✅ CRITICAL — reveals true baseline. load_type_mismatch was 1792 false positives → real: 0. call_type_mismatch was 3449 → real: 245.
+**Kept/Reverted:** Kept
+**Verify:** `bash scripts/audit_stage2.sh output.ll`
+**Lesson:** M1 (load types) was ALREADY COMPLETE — zero actual load mismatches within any function. The 1792 count was entirely cross-function register name collisions. Always validate metrics before optimizing them. Real remaining work: 245 call mismatches, 103 br_i1_false, 170 ret_undef.
+
 ### EXP-015: Stored alloca type as PRIMARY (before flags)
 **Date:** 2026-03-30
 **Milestone:** M1

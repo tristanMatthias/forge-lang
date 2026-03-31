@@ -1938,7 +1938,13 @@ impl Codegen {
             if load_ty == CG_I64 {
                 mut stored_kind = llvm.get_type_kind(forge_alloca_cache_get_type(name))
                 if stored_kind == 12 { load_ty = CG_PTR; CG_LAST_IS_PTR = 1 }
-                if stored_kind == 13 { load_ty = forge_alloca_cache_get_type(name) }
+                // ForgeString only — generic struct override breaks PHI nodes (EXP-003)
+                if stored_kind == 13 {
+                    if forge_alloca_cache_get_type(name) == CG_STR {
+                        load_ty = CG_STR
+                        CG_LAST_IS_STR = 1
+                    }
+                }
             }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
@@ -2007,10 +2013,21 @@ impl Codegen {
                 // Use ONLY the fn-scoped name cache
                 let var_ptr = forge_alloca_cache_get(name)
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Override only for ptr allocas (struct overrides break PHI nodes)
+                // Override for ptr and ForgeString allocas when flags default to i64
                 if load_ty == CG_I64 {
-                    if llvm.get_type_kind(llvm.get_allocated_type(var_ptr)) == 12 {
+                    let alloca_kind = llvm.get_type_kind(llvm.get_allocated_type(var_ptr))
+                    if alloca_kind == 12 {
                         load_ty = CG_PTR
+                        CG_LAST_IS_PTR = 1
+                    }
+                    // ForgeString (kind==13, struct) — safe to override since ForgeString
+                    // is the only struct type used for string/list variables
+                    if alloca_kind == 13 {
+                        let alloca_ty = llvm.get_allocated_type(var_ptr)
+                        if alloca_ty == CG_STR {
+                            load_ty = CG_STR
+                            CG_LAST_IS_STR = 1
+                        }
                     }
                 }
                 CG_LAST_VAR_PTR = var_ptr

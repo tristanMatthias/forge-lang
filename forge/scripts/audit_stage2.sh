@@ -42,31 +42,45 @@ if [ -s "$struct_fn_file" ]; then
 fi
 rm -f "$struct_fn_file"
 
-# 5. call_type_mismatch: calls to any function declared/defined with struct params.
-#    Broader than struct_as_i64 — includes all struct types not just the big five.
-struct_fn_all=$(mktemp)
-grep -E '^(define|declare) ' "$IR" | grep -E '%[A-Z]' | \
-    sed 's/.*@\([a-zA-Z0-9_.]*\)(.*/\1/' > "$struct_fn_all" || true
-
-call_type_mismatch=0
-if [ -s "$struct_fn_all" ]; then
-    # Build a grep pattern from all function names
-    pattern_file=$(mktemp)
-    while IFS= read -r fn; do
-        echo "@${fn}(" >> "$pattern_file"
-    done < "$struct_fn_all"
-    # Count call lines matching any of those functions
-    call_type_mismatch=$(grep 'call ' "$IR" | grep -c -F -f "$pattern_file" || true)
-    call_type_mismatch=${call_type_mismatch:-0}
-    rm -f "$pattern_file"
-fi
-rm -f "$struct_fn_all"
+# 5. call_type_mismatch: calls to struct-param functions that pass i64 where struct expected.
+#    Only counts calls with actual type mismatches, not all calls to struct-param functions.
+call_type_mismatch=$(python3 -c "
+import re, sys
+# Collect functions with struct params and their param types
+fn_params = {}
+with open(sys.argv[1]) as f:
+    for line in f:
+        m = re.match(r'(?:define|declare) \S+ @(\w+)\(([^)]*)\)', line)
+        if m:
+            name = m.group(1)
+            params = m.group(2)
+            types = re.findall(r'(%[A-Z]\w*|\{ [^}]+ \}|ptr|i64|i32|i8|i1|double|void)', params)
+            if any(t.startswith('%') or t.startswith('{') for t in types):
+                fn_params[name] = types
+# Count calls where i64 is passed to a struct-param position
+count = 0
+with open(sys.argv[1]) as f:
+    for line in f:
+        if 'call ' not in line: continue
+        m = re.search(r'@(\w+)\(([^)]*)\)', line)
+        if m and m.group(1) in fn_params:
+            declared = fn_params[m.group(1)]
+            args = re.findall(r'(i64|%\w+|\{ [^}]+ \}|ptr|double|i32|i8|i1)\s+', m.group(2))
+            for i, (arg_ty, decl_ty) in enumerate(zip(args, declared)):
+                if arg_ty == 'i64' and (decl_ty.startswith('%') or decl_ty.startswith('{')):
+                    count += 1
+                    break
+print(count)
+" "$IR" 2>/dev/null || echo 0)
 
 # 6. load_type_mismatch: load i64 from alloca ptr or alloca %StructType
 #    Use awk to track alloca types and find mismatched loads.
 load_type_mismatch=$(awk '
+/^define / {
+    # Reset per-function tracking
+    delete vars
+}
 /= alloca ptr/ {
-    # Extract variable name
     sub(/^[[:space:]]+/, "")
     split($0, a, " ")
     gsub(/%/, "", a[1])
@@ -79,10 +93,8 @@ load_type_mismatch=$(awk '
     vars[a[1]] = 1
 }
 /load i64, ptr %/ {
-    # Extract the variable being loaded from
     idx = index($0, "load i64, ptr %")
     rest = substr($0, idx + 15)
-    # Get variable name (alphanumeric + _ + .)
     gsub(/[^a-zA-Z0-9_.].*/, "", rest)
     if (rest in vars) count++
 }

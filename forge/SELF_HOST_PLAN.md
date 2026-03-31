@@ -197,17 +197,17 @@ Run `scripts/audit_stage2.sh output.ll` after every change. Update this table.
 
 | Metric | Baseline | Current | M1 Target | M2 Target | M3 Target | M4 Target | Done Target |
 |--------|----------|---------|-----------|-----------|-----------|-----------|-------------|
-| br_i1_false | 99 | 102 | - | - | < 20 | - | 0 |
+| br_i1_false | 99 | 103 | - | - | < 20 | - | 0 |
 | null_operands | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | ret_undef | 171 | 170 | - | - | - | 0 | 0 |
 | struct_as_i64 | 279 | 274 | - | 0 | - | - | 0 |
-| call_type_mismatch | 3443 | 3455 | - | < 100 | - | - | 0 |
-| load_type_mismatch | 1941 | 1786 | 0 | - | - | - | 0 |
-| **SCORE** | **7076** | **6917** | - | - | - | - | **0** |
+| call_type_mismatch | ~~3443~~ | 245 | - | < 100 | - | - | 0 |
+| load_type_mismatch | ~~1941~~ | **0** ✅ | 0 | - | - | - | 0 |
+| **SCORE** | ~~7076~~ | **1924** | - | - | - | - | **0** |
 
 ## Checklist
 
-- [ ] **M1: emit_ident types** — Use LLVMGetAllocatedType for load types. Target: load_type_mismatch → 0
+- [x] **M1: emit_ident types** — load_type_mismatch → 0 ✅ (was false positives from cross-function register collisions)
 - [ ] **M2: call arg types** — Use LLVMGlobalGetValueType for declared param types. Target: struct_as_i64 → 0, call_type_mismatch < 100
 - [ ] **M3: br i1 false** — Fix && operator and while condition wiring. Target: br_i1_false < 20
 - [ ] **M4: ret undef** — Return zeroinitializer instead of undef. Target: ret_undef → 0

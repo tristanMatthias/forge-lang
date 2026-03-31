@@ -975,6 +975,16 @@ fn gen_call(e: Expr) -> string {
                         let ns_art = reg_get_type(a)
                         if ns_art.length > 0 && ns_art != "i64" && ns_art != "i1" && ns_art != "i8" { aty = ns_art }
                     }
+                    // Declared param type fallback for namespace calls
+                    if aty == "i64" {
+                        let declared_npty = find_fn_param_type(mangled, nsi - 1)
+                        if declared_npty.length > 0 {
+                            let ns_vrt = reg_get_type(a)
+                            if ns_vrt == declared_npty {
+                                aty = declared_npty
+                            }
+                        }
+                    }
                     if a.length > 1 {
                         if a.substring(0, 1) == "@" { aty = "ptr" }
                     }
@@ -1039,6 +1049,16 @@ fn gen_call(e: Expr) -> string {
                         if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
                         let arg_rt2 = reg_get_type(a)
                         if aty == "i64" && arg_rt2.length > 0 && arg_rt2 != "i64" && arg_rt2 != "i1" { aty = arg_rt2 }
+                        // Declared param type fallback for method calls
+                        if aty == "i64" {
+                            let declared_mpty = find_fn_param_type(method_name, mi)
+                            if declared_mpty.length > 0 {
+                                let m_vrt = reg_get_type(a)
+                                if m_vrt == declared_mpty {
+                                    aty = declared_mpty
+                                }
+                            }
+                        }
                         arg_str = arg_str + aty + " " + a
                         mi = mi + 1
                     }
@@ -1095,6 +1115,16 @@ fn gen_call(e: Expr) -> string {
                                 let arg_rt = reg_get_type(a)
                                 if arg_rt.length > 0 && arg_rt != "i64" && arg_rt != "i1" && arg_rt != "i8" {
                                     aty = arg_rt
+                                }
+                            }
+                            // Declared param type fallback for var method calls
+                            if aty == "i64" {
+                                let declared_vmpty = find_fn_param_type(method_name, mi)
+                                if declared_vmpty.length > 0 {
+                                    let vm_vrt = reg_get_type(a)
+                                    if vm_vrt == declared_vmpty {
+                                        aty = declared_vmpty
+                                    }
                                 }
                             }
                             if a.length > 1 {
@@ -1601,6 +1631,17 @@ fn gen_call(e: Expr) -> string {
             let arg_rt = reg_get_type(a)
             if arg_rt.length > 0 && arg_rt != "i64" && arg_rt != "i1" && arg_rt != "i8" {
                 aty = arg_rt
+            }
+        }
+        // Declared param type fallback: only apply when the value's register type
+        // matches the declared type (meaning the value IS correct, flags just missed it).
+        if aty == "i64" {
+            let declared_pty = find_fn_param_type(name, i)
+            if declared_pty.length > 0 {
+                let val_rt = reg_get_type(a)
+                if val_rt == declared_pty {
+                    aty = declared_pty
+                }
             }
         }
         // Extern FFI: coerce ForgeString → ptr for string params
@@ -2981,7 +3022,8 @@ fn compile(source: string) -> string {
                     advance() // fn
                     let method_name = advance().text
                     let mangled = impl_name + "_" + method_name
-                    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
+                    // Parse parameter types (reuse scan_params helper)
+                    scan_params()
                     mut ret_ty = "void"
                     if check("->") {
                         advance()
@@ -3005,8 +3047,8 @@ fn compile(source: string) -> string {
                     skip_block()
                     FN_NAMES = FN_NAMES.push(mangled)
                     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
-                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
+                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(SCAN_PARAM_COUNT)
+                    FN_PARAM_TYPES = FN_PARAM_TYPES.push(SCAN_PARAM_CSV)
                 } else {
                     advance()
                 }
