@@ -1980,9 +1980,13 @@ fn codegen_if(s: Stmt) -> int {
 
     // When one branch terminated (ret/break), the merge only receives the other branch.
     if (is_expr == 1 || use_retval) && (then_ended == 0 || else_ended == 0) {
-        // Use LAST_STORE_TY (set by if_store_val) — matches what was actually stored
-        mut load_ty = LAST_STORE_TY
-        if load_ty.length == 0 { load_ty = "i64" }
+        // Use function return type for the result load (CUR_RET_TY) — LAST_STORE_TY
+        // reflects the last arm's store which might be i64 from a null/default arm
+        mut load_ty = CUR_RET_TY
+        if load_ty == "void" || load_ty == "i32" || load_ty.length == 0 {
+            load_ty = LAST_STORE_TY
+            if load_ty.length == 0 { load_ty = "i64" }
+        }
         mut result_struct = ""
         mut result_enum = ""
         if load_ty.length > 1 && load_ty.substring(0, 1) == "%" {
