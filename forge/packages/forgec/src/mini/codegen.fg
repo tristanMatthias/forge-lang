@@ -1688,6 +1688,19 @@ fn gen_call(e: Expr) -> string {
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     set_type_from_llvm(call_ret)
+    // Set list element type from function return type annotation
+    if LAST_IS_LIST == 1 {
+        let elem_needle = "," + name + ":"
+        let elem_idx = FN_RET_ELEM_CSV.index_of(elem_needle)
+        if elem_idx >= 0 {
+            let elem_start = elem_idx + elem_needle.length
+            let elem_rest = FN_RET_ELEM_CSV.substring(elem_start, FN_RET_ELEM_CSV.length)
+            let elem_end = elem_rest.index_of(",")
+            if elem_end > 0 {
+                LAST_LIST_ELEM_TYPE = elem_rest.substring(0, elem_end)
+            }
+        }
+    }
     r
 }
 
@@ -1789,6 +1802,7 @@ fn codegen_let(s: Stmt) -> int {
     }
     if ann_base == "Map" { ty = "ptr" }
     if ann_base == "fn" { ty = "ptr" }
+    if ann_base == "ptr" { ty = "ptr" }
     if find_struct(ann_base) >= 0 {
         ty = "%" + ann_base
         stype = ann_base
@@ -3038,6 +3052,15 @@ fn compile(source: string) -> string {
                         if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
                         if rt == "List" { ret_ty = "{ ptr, i64 }" }
                         if check("<") {
+                            if rt == "List" {
+                                advance()
+                                skip_nl()
+                                let melem = peek().text
+                                let melem_ty = type_to_llvm(melem)
+                                if melem_ty != "i64" {
+                                    FN_RET_ELEM_CSV = FN_RET_ELEM_CSV + "," + mangled + ":" + melem_ty + ","
+                                }
+                            }
                             while !check(">") && POS < TOKENS.length { advance() }
                             if check(">") { advance() }
                         }

@@ -96,6 +96,8 @@ mut FN_NAMES: List<string> = []
 mut FN_RETTYPES: List<string> = []
 mut FN_PARAMCOUNTS: List<int> = []
 mut FN_PARAM_TYPES: List<string> = []  // CSV per function: "i64,%ForgeString,i64"
+// List return element type tracking as CSV: ",fn_name:elem_type,"
+mut FN_RET_ELEM_CSV: string = ""
 
 // Loop labels for break/continue
 mut LOOP_COND: List<string> = []
@@ -968,9 +970,16 @@ fn scan_fn_sig() {
         if find_enum(rt) >= 0 { ret_ty = "%" + rt }
         // Fallback: check known type names from pass 0
         if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
+        mut ret_elem = ""
         if rt == "List" { ret_ty = "{ ptr, i64 }" }
-        // Skip generic params
+        // Capture generic element type for List-returning functions
         if check("<") {
+            advance()
+            skip_nl()
+            if rt == "List" {
+                let elem_tok = peek().text
+                ret_elem = type_to_llvm(elem_tok)
+            }
             while !check(">") && POS < TOKENS.length { advance() }
             if check(">") { advance() }
         }
@@ -983,6 +992,9 @@ fn scan_fn_sig() {
 
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
+    if ret_elem != "" {
+        FN_RET_ELEM_CSV = FN_RET_ELEM_CSV + "," + name + ":" + ret_elem + ","
+    }
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(SCAN_PARAM_COUNT)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push(SCAN_PARAM_CSV)
 }
