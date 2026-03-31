@@ -288,14 +288,11 @@ fn scan_one_file(filepath: string, idx: int) {
     forge_set_token_list(tokens)
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
-    let program = p.parse_program()
-    // Run type checker to resolve variable types (stored via forge_var_type_set)
-    // Note: check_program may stack overflow on large files — this is acceptable
-    // for now since the resolved types are additive (codegen has flag fallback)
-    mut tc = type_checker_new()
-    tc.check_program(program)
-    forge_var_type_set_global_count()
-    eprintln("  [scan] " + string(idx) + " checked OK")
+    p.parse_program()
+    // Type checker not yet run during build — Program.statements list data
+    // is corrupted in Stage 1's runtime (calling convention truncates struct returns).
+    // Type annotations from parsing are stored via forge_var_type_set during parse_var_binding.
+    // Full checker integration needs the struct return fix first.
     forge_alloc_stats()
     eprintln("  [scan] " + string(idx) + " parsed OK")
 }

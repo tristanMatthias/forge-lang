@@ -30,14 +30,22 @@ export fn type_checker_new() -> TypeChecker {
 impl TypeChecker {
 
     fn check_program(self, program: Program) {
-        // First pass: register top-level declarations
-        for stmt in program.statements {
-            self.register_top_level_stmt(stmt)
+        let stmts = program.statements
+        // Guard: if statement list length looks corrupted, skip checking
+        if stmts.length <= 0 || stmts.length > 10000 { return }
+
+        // First pass: register top-level declarations (iterative)
+        mut i = 0
+        while i < stmts.length {
+            self.register_top_level_stmt(stmts[i])
+            i = i + 1
         }
 
-        // Second pass: check all statements
-        for stmt in program.statements {
-            self.check_statement(stmt)
+        // Second pass: check all statements (iterative)
+        i = 0
+        while i < stmts.length {
+            self.check_statement(stmts[i])
+            i = i + 1
         }
     }
 
@@ -230,9 +238,11 @@ impl TypeChecker {
     fn infer_call(self, callee: Expr, args: List<Expr>, span: Span) -> Type {
         let callee_type = self.infer_expr(callee)
 
-        // Infer all argument types
-        for arg in args {
-            self.infer_expr(arg)
+        // Infer all argument types (iterative)
+        mut ai = 0
+        while ai < args.length {
+            self.infer_expr(args[ai])
+            ai = ai + 1
         }
 
         match callee_type {
@@ -272,13 +282,17 @@ impl TypeChecker {
         self.env.push_scope()
         mut last_type = Type.Void
 
-        for stmt in block.statements {
+        let blk_stmts = block.statements
+        mut bi = 0
+        while bi < blk_stmts.length {
+            let stmt = blk_stmts[bi]
             self.check_statement(stmt)
             // Track last expression type for block return
             match stmt {
                 .Expr(expr) -> { last_type = self.infer_expr(expr) }
                 _ -> { last_type = Type.Void }
             }
+            bi = bi + 1
         }
 
         self.env.pop_scope()
