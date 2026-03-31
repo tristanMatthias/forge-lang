@@ -3214,6 +3214,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_str_var_add(%ForgeString)")
     ir_raw("declare i64 @forge_str_var_check(%ForgeString)")
     ir_raw("declare i64 @forge_str_var_clear()")
+    ir_raw("declare i64 @forge_is_null_val(ptr)")
     ir_raw("declare i64 @forge_idx_cache_clear()")
     ir_raw("declare i64 @forge_idx_cache_set(i64, ptr)")
     ir_raw("declare ptr @forge_idx_cache_get(i64)")

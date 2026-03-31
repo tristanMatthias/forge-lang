@@ -179,6 +179,7 @@ extern "C" {
 
     // Constants
     fn LLVMIsConstant(val: LLVMPtr) -> c_int;
+    fn LLVMIsNull(val: LLVMPtr) -> c_int;
     fn LLVMConstInt(ty: LLVMPtr, n: c_ulonglong, sign_extend: c_int) -> LLVMPtr;
     fn LLVMConstReal(ty: LLVMPtr, n: f64) -> LLVMPtr;
     fn LLVMConstNull(ty: LLVMPtr) -> LLVMPtr;
@@ -1334,6 +1335,15 @@ pub extern "C" fn forge_llvm_add_case(switch: LLVMPtr, on_val: LLVMPtr, dest: LL
 #[no_mangle]
 pub extern "C" fn forge_llvm_const_null(ty: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMConstNull(ty) }
+}
+
+#[no_mangle]
+// Named forge_is_null_val (not forge_llvm_*) to avoid mini auto-declare
+// treating it as ptr-returning (all forge_llvm_* default to ptr return)
+#[no_mangle]
+pub extern "C" fn forge_is_null_val(val: LLVMPtr) -> i64 {
+    if val.is_null() { return 1; }
+    unsafe { LLVMIsNull(val) as i64 }
 }
 
 #[no_mangle]

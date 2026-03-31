@@ -2172,6 +2172,10 @@ impl Codegen {
         let rhs = self.emit_expr(right)
         let rhs_is_str = CG_LAST_IS_STR
         CG_LAST_IS_STR = 0
+        // Detect null checks after emitting both sides (uses LLVM-level null detection)
+        mut is_null_check = 0
+        if forge_is_null_val(lhs) == 1 { is_null_check = 1 }
+        if forge_is_null_val(rhs) == 1 { is_null_check = 1 }
         match op {
             .Add -> {
                 // Only use string concat when BOTH sides are strings
@@ -2199,6 +2203,18 @@ impl Codegen {
                         use_str_cmp = true
                     }
                 }
+                // Null check: compare ptr field directly instead of forge_string_compare
+                if is_null_check == 1 && use_str_cmp {
+                    use_str_cmp = false
+                    mut nv = lhs
+                    if lhs_is_str != 1 { nv = rhs }
+                    let nvk = llvm.get_type_kind(llvm.type_of(nv))
+                    if nvk == 13 {
+                        let fp = llvm.build_extract_value(CG_B, nv, 0, "np")
+                        return llvm.build_icmp(CG_B, 32, fp, llvm.const_null(CG_PTR), "eq")
+                    }
+                    return llvm.build_icmp(CG_B, 32, nv, llvm.const_int(llvm.type_of(nv), 0, 0), "eq")
+                }
                 if use_str_cmp {
                     // String comparison: forge_string_compare(a, b) == 0
                     cg_reinit_types()
@@ -2224,6 +2240,18 @@ impl Codegen {
                     if lhs_ty2 == CG_STR || rhs_ty2 == CG_STR {
                         use_str_cmp2 = true
                     }
+                }
+                // Null check: compare ptr field directly
+                if is_null_check == 1 && use_str_cmp2 {
+                    use_str_cmp2 = false
+                    mut nv2 = lhs
+                    if lhs_is_str != 1 { nv2 = rhs }
+                    let nvk2 = llvm.get_type_kind(llvm.type_of(nv2))
+                    if nvk2 == 13 {
+                        let fp2 = llvm.build_extract_value(CG_B, nv2, 0, "np")
+                        return llvm.build_icmp(CG_B, 33, fp2, llvm.const_null(CG_PTR), "ne")
+                    }
+                    return llvm.build_icmp(CG_B, 33, nv2, llvm.const_int(llvm.type_of(nv2), 0, 0), "ne")
                 }
                 if use_str_cmp2 {
                     cg_reinit_types()
