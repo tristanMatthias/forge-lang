@@ -346,4 +346,12 @@ bash scripts/audit_stage2.sh output.ll
 **Score:** 501 → 1096 (REGRESSION: null_operands 0→30, load_type_mismatch 0→175)
 **Result:** ❌ REGRESSION — same pattern as EXP-022
 **Kept/Reverted:** REVERTED
-**Lesson:** CG_VAR_TYPES stores the type from variable CREATION time (from flags). But flags are wrong for some variables at creation time. The C-side caches (forge_str_var_check, forge_ptr_var_check) were tuned to compensate for wrong creation-time types. When CG_VAR_TYPES overrides the C-side detection, the wrong creation-time type wins and produces null_operands. The flag system and C-side caches, despite being "hacks", contain CORRECT TYPE INFORMATION that the creation-time flags lack. A proper fix requires correct types at creation time — which means fixing the type checker to annotate the AST, then reading from the AST during codegen.
+**Lesson:** CG_VAR_TYPES stores the type from FLAGS at variable creation time. Flags are wrong for some variables. C-side caches compensate. Overriding C-side with wrong flag-derived types causes regression.
+
+### EXP-029: CG_VAR_TYPES from alloca_ty (not flags) in define_var
+**Date:** 2026-03-31
+**Milestone:** M2
+**Hypothesis:** EXP-028 failed because types came from flags (wrong). But define_var's alloca_ty is CORRECT (uses LLVMTypeOf fallback). Deriving the type string from alloca_ty (by comparing with CG_STR, CG_PTR, CG_I64) should give correct types. This is closer to what the mini does (VAR_TYPES = resolved alloca type, not flags).
+**Change:** TBD
+**Score:** 501 → ???
+**Result:** ???
