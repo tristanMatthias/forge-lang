@@ -337,3 +337,13 @@ bash scripts/audit_stage2.sh output.ll
 **Result:** ✅ IMPROVEMENT — Stage 1 IR nearly perfect
 **Kept/Reverted:** Kept
 **Lesson:** Stage 1 IR quality doesn't automatically improve Stage 2 because Stage 2 quality depends on the self-hosted codegen's LOGIC (flag system), not on Stage 1's internal type correctness. The self-hosted codegen needs its own per-variable type table (like mini's VAR_TYPES).
+
+### EXP-028: Per-variable type table (CG_VAR_TYPES) — proper implementation
+**Date:** 2026-03-31
+**Milestone:** M2 (call arg types) — foundational fix
+**Hypothesis:** With Stage 1 IR at score 9 (0 load mismatches), List<string> operations should work correctly in Stage 1's runtime. Adding CG_VAR_TYPES: List<string> as the PRIMARY type source in emit_ident (replacing flag system) should fix the 143 call mismatches caused by type erasure. Previous attempt regressed because (a) old audit was broken, (b) Stage 1 had 52 load mismatches corrupting List operations.
+**Change:** TBD — add CG_VAR_TYPES, populate in all CG_VAR_NAMES push sites, use as primary in emit_ident with detect_var_type pattern from mini.
+**Score:** 501 → 1096 (REGRESSION: null_operands 0→30, load_type_mismatch 0→175)
+**Result:** ❌ REGRESSION — same pattern as EXP-022
+**Kept/Reverted:** REVERTED
+**Lesson:** CG_VAR_TYPES stores the type from variable CREATION time (from flags). But flags are wrong for some variables at creation time. The C-side caches (forge_str_var_check, forge_ptr_var_check) were tuned to compensate for wrong creation-time types. When CG_VAR_TYPES overrides the C-side detection, the wrong creation-time type wins and produces null_operands. The flag system and C-side caches, despite being "hacks", contain CORRECT TYPE INFORMATION that the creation-time flags lack. A proper fix requires correct types at creation time — which means fixing the type checker to annotate the AST, then reading from the AST during codegen.
