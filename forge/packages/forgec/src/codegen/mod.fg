@@ -1989,6 +1989,27 @@ impl Codegen {
                     }
                 }
             }
+            // CG_VAR_TYPES fallback: when C-side checks + alloca type all default to i64,
+            // check the per-variable type table (derived from alloca_ty at creation time)
+            if load_ty == CG_I64 {
+                mut fvi = CG_VAR_TYPES.length - 1
+                while fvi >= 0 {
+                    if CG_VAR_NAMES[fvi] == name {
+                        let fvty = CG_VAR_TYPES[fvi]
+                        if fvty == "%ForgeString" { load_ty = CG_STR; CG_LAST_IS_STR = 1 }
+                        else if fvty == "ptr" { load_ty = CG_PTR; CG_LAST_IS_PTR = 1 }
+                        else if fvty.length > 1 {
+                            let fvr = resolve_type_to_llvm(fvty.substring(1, fvty.length))
+                            if fvr != null && fvr != CG_I64 {
+                                load_ty = fvr
+                                CG_LAST_STRUCT_TYPE = fvty.substring(1, fvty.length)
+                            }
+                        }
+                        break
+                    }
+                    fvi = fvi - 1
+                }
+            }
             CG_LAST_VAR_PTR = cached_ptr
             CG_LAST_VAR_ALLOCA_TYPE = load_ty
             return llvm.build_load(CG_B, load_ty, cached_ptr, name)
