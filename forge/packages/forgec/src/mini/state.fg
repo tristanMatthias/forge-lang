@@ -270,6 +270,20 @@ fn is_list_type(ty: string) -> bool {
 }
 
 
+// After a function call that returns a list, look up the element type from FN_RET_ELEM_CSV
+fn set_list_elem_from_fn(fn_name: string) {
+    if LAST_IS_LIST != 1 { return }
+    let needle = "," + fn_name + ":"
+    let idx = FN_RET_ELEM_CSV.index_of(needle)
+    if idx < 0 { return }
+    let start = idx + needle.length
+    let rest = FN_RET_ELEM_CSV.substring(start, FN_RET_ELEM_CSV.length)
+    let end = rest.index_of(",")
+    if end > 0 {
+        LAST_LIST_ELEM_TYPE = rest.substring(0, end)
+    }
+}
+
 fn set_type_from_llvm(ty: string) {
     // Given an LLVM return type, set LAST_IS_STR/LAST_IS_LIST/LAST_STRUCT_TYPE/LAST_ENUM_TYPE
     if ty == "%ForgeString" {

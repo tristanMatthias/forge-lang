@@ -1009,6 +1009,7 @@ fn gen_call(e: Expr) -> string {
                 LAST_STRUCT_TYPE = ""
                 LAST_ENUM_TYPE = ""
                 set_type_from_llvm(call_ret)
+                set_list_elem_from_fn(mangled)
                 return r
             }
         }
@@ -1070,6 +1071,7 @@ fn gen_call(e: Expr) -> string {
                     ir_line(r + " = call " + call_ret + " @" + method_name + "(" + arg_str + ")")
                     reg_set_type(r, call_ret)
                     set_type_from_llvm(call_ret)
+                    set_list_elem_from_fn(method_name)
                     return r
                 }
             }
@@ -1151,6 +1153,7 @@ fn gen_call(e: Expr) -> string {
                         LAST_STRUCT_TYPE = ""
                         LAST_ENUM_TYPE = ""
                         set_type_from_llvm(call_ret)
+                        set_list_elem_from_fn(method_name)
                         return r
                     }
                 }
@@ -1688,19 +1691,7 @@ fn gen_call(e: Expr) -> string {
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     set_type_from_llvm(call_ret)
-    // Set list element type from function return type annotation
-    if LAST_IS_LIST == 1 {
-        let elem_needle = "," + name + ":"
-        let elem_idx = FN_RET_ELEM_CSV.index_of(elem_needle)
-        if elem_idx >= 0 {
-            let elem_start = elem_idx + elem_needle.length
-            let elem_rest = FN_RET_ELEM_CSV.substring(elem_start, FN_RET_ELEM_CSV.length)
-            let elem_end = elem_rest.index_of(",")
-            if elem_end > 0 {
-                LAST_LIST_ELEM_TYPE = elem_rest.substring(0, elem_end)
-            }
-        }
-    }
+    set_list_elem_from_fn(name)
     r
 }
 
