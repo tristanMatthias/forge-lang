@@ -1989,8 +1989,10 @@ impl Codegen {
                     }
                 }
             }
-            // CG_VAR_TYPES fallback: when C-side checks + alloca type all default to i64,
-            // check the per-variable type table (derived from alloca_ty at creation time)
+            // Source-level type annotation available via forge_var_type_get(name)
+            // Currently used as infrastructure — emit_ident lookup to be enabled
+            // incrementally once edge cases are resolved.
+            // CG_VAR_TYPES fallback: alloca-ty-derived types
             if load_ty == CG_I64 {
                 mut fvi = CG_VAR_TYPES.length - 1
                 while fvi >= 0 {

@@ -499,6 +499,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     forge_var_counter_reset(CG_VAR_SCOPE_START)
     forge_var_name_clear()
     forge_struct_var_clear()
+    forge_var_type_clear()
     forge_clear_last_let_name()
     forge_list_var_clear()
     forge_ptr_var_clear()
@@ -553,6 +554,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if p_ty == CG_STR { param_vty = "%ForgeString" }
         else if p_ty == CG_PTR || pname == "self" { param_vty = "ptr" }
         else if is_struct_param { param_vty = "%" + param_type_name }
+        // Register type name from param declaration (source-level, not flag-derived)
+        forge_var_type_set(pname, param_type_name)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
         CG_VAR_TYPES = CG_VAR_TYPES.push(param_vty)
         forge_var_name_push(pname)
@@ -1085,6 +1088,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             if p_ty == CG_STR { param_vty2 = "%ForgeString" }
             else if p_ty == CG_PTR { param_vty2 = "ptr" }
             else if is_struct_param { param_vty2 = "%" + param_type_name }
+            forge_var_type_set(pname, param_type_name)
             CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
             CG_VAR_TYPES = CG_VAR_TYPES.push(param_vty2)
             mut _vis2 = 0

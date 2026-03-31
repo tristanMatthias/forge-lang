@@ -62,15 +62,19 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     forge_set_last_let_name(var_name)
 
     // Optional type annotation: : Type
-    // Capture type annotation info for global type detection
+    // Capture type annotation info for global type detection AND codegen type tracking
     mut ann_is_list = 0
     mut ann_elem_name = ""
+    mut ann_type_name = ""  // raw type name from annotation (e.g., "string", "Token", "List")
     mut type_ann: TypeExpr? = null
     if p.check_id(112) {  // Colon
         p.advance()
-        // Peek: if next is "List", capture element type name
+        // Peek: capture the type name BEFORE parse_type_expr consumes it
         let type_tok = p.peek()
-        if type_tok.kind_id == 1 && type_tok.text == "List" {
+        if type_tok.kind_id == 1 {
+            ann_type_name = type_tok.text
+        }
+        if ann_type_name == "List" {
             ann_is_list = 1
             // Element type is 2 tokens ahead: List < ElementType >
             let elem_tok = p.peek_at(2)
@@ -79,6 +83,15 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             }
         }
         type_ann = p.parse_type_expr()
+    }
+
+    // Register type annotation in per-variable type cache (for codegen)
+    if ann_type_name != "" {
+        if ann_is_list == 1 && ann_elem_name != "" {
+            forge_var_type_set(var_name, "List<" + ann_elem_name + ">")
+        } else {
+            forge_var_type_set(var_name, ann_type_name)
+        }
     }
 
     // Expect = value

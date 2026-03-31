@@ -3337,6 +3337,52 @@ void* forge_alloca_cache_get(ForgeString name) {
     return NULL;
 }
 
+// ---- Per-variable type name cache ----
+// Stores Forge-level type names (e.g., "string", "int", "Token", "List<Expr>")
+// Populated from type annotations during parsing. Used by codegen for correct alloca types.
+// Parallels forge_param_type_add/get for function parameters.
+#define VAR_TYPE_CACHE_SIZE 512
+static struct { char name[64]; char type_name[64]; } _var_types[VAR_TYPE_CACHE_SIZE];
+static int _var_type_count = 0;
+static int _var_type_global_count = 0;
+
+void forge_var_type_set(ForgeString name, ForgeString type_name) {
+    if (!name.ptr || name.len <= 0 || name.len > 63) return;
+    if (!type_name.ptr || type_name.len <= 0 || type_name.len > 63) return;
+    // Update existing entry (search backwards for most recent)
+    for (int i = _var_type_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_var_types[i].name) == name.len &&
+            memcmp(_var_types[i].name, name.ptr, name.len) == 0) {
+            memcpy(_var_types[i].type_name, type_name.ptr, type_name.len);
+            _var_types[i].type_name[type_name.len] = '\0';
+            return;
+        }
+    }
+    // Add new entry
+    if (_var_type_count < VAR_TYPE_CACHE_SIZE) {
+        memcpy(_var_types[_var_type_count].name, name.ptr, name.len);
+        _var_types[_var_type_count].name[name.len] = '\0';
+        memcpy(_var_types[_var_type_count].type_name, type_name.ptr, type_name.len);
+        _var_types[_var_type_count].type_name[type_name.len] = '\0';
+        _var_type_count++;
+    }
+}
+
+ForgeString forge_var_type_get(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return (ForgeString){NULL, 0};
+    for (int i = _var_type_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_var_types[i].name) == name.len &&
+            memcmp(_var_types[i].name, name.ptr, name.len) == 0) {
+            int64_t tlen = strlen(_var_types[i].type_name);
+            return (ForgeString){_var_types[i].type_name, tlen};
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
+void forge_var_type_clear(void) { _var_type_count = _var_type_global_count; }
+void forge_var_type_set_global_count(void) { _var_type_global_count = _var_type_count; }
+
 // ---- String var name cache (immune to Forge list corruption) ----
 #define STR_CACHE_SIZE 256
 static char _str_names[STR_CACHE_SIZE][64];

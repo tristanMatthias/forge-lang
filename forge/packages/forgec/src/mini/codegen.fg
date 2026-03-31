@@ -3281,6 +3281,15 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_mod_csv_clear()")
     ir_raw("declare void @forge_mod_csv_add(%ForgeString)")
     ir_raw("declare %ForgeString @forge_mod_csv_get()")
+    // Per-variable type name registry
+    ir_raw("declare void @forge_var_type_set(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_var_type_get(%ForgeString)")
+    ir_raw("declare void @forge_var_type_clear()")
+    ir_raw("declare void @forge_var_type_set_global_count()")
+    FN_NAMES = FN_NAMES.push("forge_var_type_get")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("%ForgeString")
     // Param type registry
     ir_raw("declare void @forge_param_type_clear()")
     ir_raw("declare void @forge_param_type_add(%ForgeString)")
