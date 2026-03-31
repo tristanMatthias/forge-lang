@@ -2113,12 +2113,19 @@ impl Codegen {
             .And -> {
                 let lv = self.emit_expr(left)
                 let rv = self.emit_expr(right)
-                return llvm.build_and(CG_B, lv, rv, "aa")
+                // Convert both to i1 (icmp ne 0) before AND to produce proper boolean
+                // build_and on i64 values produces i64, which br truncates to i1 (always false)
+                let lv1 = llvm.build_icmp(CG_B, 33, lv, llvm.const_int(CG_I64, 0, 0), "ab")
+                let rv1 = llvm.build_icmp(CG_B, 33, rv, llvm.const_int(CG_I64, 0, 0), "ac")
+                return llvm.build_and(CG_B, lv1, rv1, "aa")
             }
             .Or -> {
                 let lv = self.emit_expr(left)
                 let rv = self.emit_expr(right)
-                return llvm.build_or(CG_B, lv, rv, "oo")
+                // Convert both to i1 before OR
+                let lv2 = llvm.build_icmp(CG_B, 33, lv, llvm.const_int(CG_I64, 0, 0), "ob")
+                let rv2 = llvm.build_icmp(CG_B, 33, rv, llvm.const_int(CG_I64, 0, 0), "oc")
+                return llvm.build_or(CG_B, lv2, rv2, "oo")
             }
             _ -> {}
         }
