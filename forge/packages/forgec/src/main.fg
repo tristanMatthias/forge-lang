@@ -288,7 +288,11 @@ fn scan_one_file(filepath: string, idx: int) {
     forge_set_token_list(tokens)
     mut p = parser_new_with_source(tokens, source)
     eprintln("  [scan] " + string(idx) + " parser created")
-    p.parse_program()
+    let program = p.parse_program()
+    // Run type checker to resolve variable types (stored via forge_var_type_set)
+    mut tc = type_checker_new()
+    tc.check_program(program)
+    forge_var_type_set_global_count()
     forge_alloc_stats()
     eprintln("  [scan] " + string(idx) + " parsed OK")
 }

@@ -4,7 +4,7 @@
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
-use core.types.Type
+use core.types.{Type, type_to_codegen_name}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
@@ -253,6 +253,12 @@ fn check_var(tc: TypeChecker, node: NodeRef) {
 
     let mutable = data.var_kind is .Mut
     tc.env.define(data.name, ty, mutable)
+
+    // Persist resolved type for codegen (replaces flag-based type guessing)
+    let codegen_name = type_to_codegen_name(ty)
+    if codegen_name != "?" && codegen_name != "unknown" && codegen_name != "error" {
+        forge_var_type_set(data.name, codegen_name)
+    }
 }
 
 fn top_level_var(tc: TypeChecker, node: NodeRef) {

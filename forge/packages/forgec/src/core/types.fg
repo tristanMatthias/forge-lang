@@ -117,5 +117,29 @@ export fn type_to_string(t: Type) -> string {
     if t is .Ptr { return "ptr" }
     if t is .Unknown { return "unknown" }
     if t is .Error { return "error" }
+    // Struct/Enum: extract name field (field 0 in both variants)
+    if t is .Struct { return "struct" }
+    if t is .Enum { return "enum" }
+    if t is .ListType { return "List" }
+    if t is .MapType { return "Map" }
+    if t is .Function { return "fn" }
+    if t is .Nullable { return "nullable" }
     return "?"
+}
+
+// Convert a Type to a codegen-friendly name string
+// Returns the name that resolve_type_to_llvm can process
+export fn type_to_codegen_name(t: Type) -> string {
+    if t is .Int { return "int" }
+    if t is .Float { return "float" }
+    if t is .Bool { return "bool" }
+    if t is .String { return "string" }
+    if t is .Void { return "void" }
+    if t is .Ptr { return "ptr" }
+    if t is .ListType { return "List" }
+    if t is .MapType { return "Map" }
+    if t is .Function { return "fn" }
+    // For Struct/Enum, we need the name — but can't extract it with `is` checks
+    // Use type_to_string as fallback for now
+    return type_to_string(t)
 }
