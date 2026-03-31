@@ -327,3 +327,13 @@ bash scripts/audit_stage2.sh output.ll
 **Result:** ✅ WORKS (body_len goes from garbage to correct 21) but is a HACK
 **Kept/Reverted:** REVERTED — violates rule 2 (no C-side workarounds for codegen bugs)
 **Lesson:** The C-side auto-extract proves the body CAN be extracted correctly with proper token span access. The fix should be in the codegen's struct field extraction, not a C-side bypass.
+
+### EXP-027: Mini if-else result load type — use CUR_RET_TY
+**Date:** 2026-03-31
+**Milestone:** Stage 1 quality
+**Hypothesis:** Same issue as codegen_match (EXP-020): if-else result load uses LAST_STORE_TY (from last arm, often i64 from null/default). Using CUR_RET_TY should fix the remaining 4 ptr + 25 nullable load mismatches.
+**Change:** mini/codegen.fg: if-else merge result load uses CUR_RET_TY when available, LAST_STORE_TY as fallback.
+**Score:** Stage 1: 38 → 9 (load_type_mismatch 29→0). Stage 2: unchanged (501)
+**Result:** ✅ IMPROVEMENT — Stage 1 IR nearly perfect
+**Kept/Reverted:** Kept
+**Lesson:** Stage 1 IR quality doesn't automatically improve Stage 2 because Stage 2 quality depends on the self-hosted codegen's LOGIC (flag system), not on Stage 1's internal type correctness. The self-hosted codegen needs its own per-variable type table (like mini's VAR_TYPES).
