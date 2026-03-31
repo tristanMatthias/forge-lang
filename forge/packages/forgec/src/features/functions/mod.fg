@@ -69,18 +69,15 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         return_type = parsed_ret
     }
 
-    // Capture body source
-    let block_open_span = p.peek().span
+    // Capture body source using C-side token span access
+    // (Forge-level span access produces garbage in Stage 2 due to struct field extraction bugs)
+    let block_open_pos = p.pos
     IN_FUNCTION_BODY = 1
     let body = p.parse_block()
     IN_FUNCTION_BODY = 0
-    let close_tok_idx = p.pos - 1
-    let block_close_end = p.tokens[close_tok_idx].span.end
-    mut body_src = ""
-    if p.source.length > 0 {
-        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
-    }
-    eprintln("  BODY " + name + " open=" + string(block_open_span.start) + " close=" + string(block_close_end) + " len=" + string(body_src.length) + " src_len=" + string(p.source.length))
+    let block_close_pos = p.pos - 1
+    let body_src = forge_extract_body_source(p.source, block_open_pos, block_close_pos)
+    eprintln("  BODY " + name + " open_pos=" + string(block_open_pos) + " close_pos=" + string(block_close_pos) + " len=" + string(body_src.length) + " src_len=" + string(p.source.length))
 
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)

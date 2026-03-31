@@ -831,6 +831,24 @@ void* forge_enum_get_payload(void* enum_ptr) {
     return *(void**)((char*)enum_ptr + 8);
 }
 
+// Extract function body source between open_pos and close_pos token indices
+// Uses C-side token span access (immune to Forge struct field extraction bugs)
+ForgeString forge_extract_body_source(ForgeString source, int64_t open_pos, int64_t close_pos) {
+    if (!source.ptr || source.len <= 0) return (ForgeString){NULL, 0};
+    int64_t open_span = forge_token_span_start(_c_token_list, open_pos);
+    int64_t close_span = forge_token_span_end(_c_token_list, close_pos);
+    fprintf(stderr, "  [extract_body] open_pos=%lld close_pos=%lld open_span=%lld close_span=%lld src_len=%lld tl_len=%lld\n",
+        (long long)open_pos, (long long)close_pos, (long long)open_span, (long long)close_span,
+        (long long)source.len, (long long)_c_token_list.len);
+    if (open_span < 0 || close_span <= open_span || close_span > source.len) {
+        fprintf(stderr, "  [extract_body] FAIL — returning empty\n");
+        return (ForgeString){NULL, 0};
+    }
+    ForgeString result = forge_string_new(source.ptr + open_span, close_span - open_span + 1);
+    fprintf(stderr, "  [extract_body] result_len=%lld first_char='%c'\n", (long long)result.len, result.ptr[0]);
+    return result;
+}
+
 void forge_debug_parser_state(ForgeString label) {
     fprintf(stderr, "  [%.*s] cpos=%lld kid=%lld\n",
         (int)label.len, label.ptr,

@@ -3258,6 +3258,11 @@ fn compile(source: string) -> string {
     // C-side function body store (immune to Forge list corruption)
     // Module CSV accumulator
     ir_raw("declare i64 @forge_scan_csv(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_extract_body_source(%ForgeString, i64, i64)")
+    FN_NAMES = FN_NAMES.push("forge_extract_body_source")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("%ForgeString,i64,i64")
     ir_raw("declare void @forge_scan_csv_set_cb(ptr)")
     ir_raw("declare %ForgeString @forge_scan_csv_path(i64)")
     ir_raw("declare void @forge_save_csv(%ForgeString)")
