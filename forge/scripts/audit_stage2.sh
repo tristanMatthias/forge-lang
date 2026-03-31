@@ -46,7 +46,41 @@ rm -f "$struct_fn_file"
 #    Only counts calls with actual type mismatches, not all calls to struct-param functions.
 call_type_mismatch=$(python3 -c "
 import re, sys
-# Collect functions with struct params and their param types
+
+def parse_arg_types(args_text):
+    '''Extract top-level argument types, ignoring types inside struct literal values.'''
+    types = []
+    depth = 0
+    i = 0
+    while i < len(args_text):
+        c = args_text[i]
+        if c == '{': depth += 1
+        elif c == '}': depth -= 1
+        elif depth == 0 and c == ',':
+            # At a top-level comma — skip to next arg
+            i += 1
+            continue
+        # At depth 0, try to match a type token at current position
+        if depth == 0:
+            rest = args_text[i:]
+            m = re.match(r'(%[A-Z]\w*|\{ [^}]+ \}|ptr|i64|i32|i8|i1|double)\s', rest)
+            if m:
+                types.append(m.group(1))
+                # Skip past this arg entirely (to next comma)
+                while i < len(args_text) and args_text[i] != ',' and not (args_text[i] == ')'):
+                    if args_text[i] == '{':
+                        depth2 = 1
+                        i += 1
+                        while i < len(args_text) and depth2 > 0:
+                            if args_text[i] == '{': depth2 += 1
+                            elif args_text[i] == '}': depth2 -= 1
+                            i += 1
+                        continue
+                    i += 1
+                continue
+        i += 1
+    return types
+
 fn_params = {}
 with open(sys.argv[1]) as f:
     for line in f:
@@ -57,7 +91,7 @@ with open(sys.argv[1]) as f:
             types = re.findall(r'(%[A-Z]\w*|\{ [^}]+ \}|ptr|i64|i32|i8|i1|double|void)', params)
             if any(t.startswith('%') or t.startswith('{') for t in types):
                 fn_params[name] = types
-# Count calls where i64 is passed to a struct-param position
+
 count = 0
 with open(sys.argv[1]) as f:
     for line in f:
@@ -65,7 +99,7 @@ with open(sys.argv[1]) as f:
         m = re.search(r'@(\w+)\(([^)]*)\)', line)
         if m and m.group(1) in fn_params:
             declared = fn_params[m.group(1)]
-            args = re.findall(r'(i64|%\w+|\{ [^}]+ \}|ptr|double|i32|i8|i1)\s+', m.group(2))
+            args = parse_arg_types(m.group(2))
             for i, (arg_ty, decl_ty) in enumerate(zip(args, declared)):
                 if arg_ty == 'i64' and (decl_ty.startswith('%') or decl_ty.startswith('{')):
                     count += 1
