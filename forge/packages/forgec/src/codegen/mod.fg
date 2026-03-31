@@ -2144,7 +2144,19 @@ impl Codegen {
             .Div -> { return llvm.build_sdiv(CG_B, lhs, rhs, "div") }
             .Mod -> { return llvm.build_srem(CG_B, lhs, rhs, "mod") }
             .Eq -> {
+                // Only use string compare when at least one value IS actually ForgeString.
+                // CG_LAST_IS_STR can be spuriously set (e.g., after loading a struct
+                // containing a string field). Check actual LLVM types to avoid routing
+                // Token/integer comparisons through forge_string_compare.
+                mut use_str_cmp = false
                 if lhs_is_str == 1 || rhs_is_str == 1 {
+                    let lhs_ty = llvm.type_of(lhs)
+                    let rhs_ty = llvm.type_of(rhs)
+                    if lhs_ty == CG_STR || rhs_ty == CG_STR {
+                        use_str_cmp = true
+                    }
+                }
+                if use_str_cmp {
                     // String comparison: forge_string_compare(a, b) == 0
                     cg_reinit_types()
                     let ca = llvm.value_array_new(2)
@@ -2162,7 +2174,15 @@ impl Codegen {
                 return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq")
             }
             .NotEq -> {
+                mut use_str_cmp2 = false
                 if lhs_is_str == 1 || rhs_is_str == 1 {
+                    let lhs_ty2 = llvm.type_of(lhs)
+                    let rhs_ty2 = llvm.type_of(rhs)
+                    if lhs_ty2 == CG_STR || rhs_ty2 == CG_STR {
+                        use_str_cmp2 = true
+                    }
+                }
+                if use_str_cmp2 {
                     cg_reinit_types()
                     let ca = llvm.value_array_new(2)
                     llvm.value_array_set(ca, 0, lhs)

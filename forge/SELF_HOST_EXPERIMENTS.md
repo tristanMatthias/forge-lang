@@ -226,6 +226,17 @@ bash scripts/audit_stage2.sh output.ll
 **Verify:** `bash scripts/audit_stage2.sh output.ll`
 **Lesson:** M1 (load types) was ALREADY COMPLETE — zero actual load mismatches within any function. The 1792 count was entirely cross-function register name collisions. Always validate metrics before optimizing them. Real remaining work: 245 call mismatches, 103 br_i1_false, 170 ret_undef.
 
+### EXP-019: Verify LLVM type before routing Eq/NotEq through forge_string_compare
+**Date:** 2026-03-31
+**Milestone:** M2 (call arg types)
+**Hypothesis:** CG_LAST_IS_STR is spuriously set for non-string values (e.g., Token structs containing string fields). Checking `llvm.type_of(lhs) == CG_STR` before routing through string_compare would prevent 143 Token/integer comparisons from being misrouted.
+**Change:** codegen/mod.fg: .Eq and .NotEq handlers check actual LLVM type of lhs/rhs against CG_STR before using forge_string_compare. Falls through to icmp if neither value is ForgeString.
+**Score:** 1924 → 1903 (-21)
+**Result:** ✅ IMPROVEMENT
+**Kept/Reverted:** Kept
+**Verify:** Full rebuild pipeline + audit
+**Lesson:** Only caught 21 of expected 143 — the remaining misrouted comparisons may have values that ARE ForgeString type (loaded from string-typed allocas) but shouldn't be compared as strings. The type check only helps when the LLVM type is visibly wrong (Token, i64). When a variable is typed as ForgeString but contains an integer semantically, the type check can't distinguish.
+
 ### EXP-015: Stored alloca type as PRIMARY (before flags)
 **Date:** 2026-03-30
 **Milestone:** M1
