@@ -251,6 +251,22 @@ bash scripts/audit_stage2.sh output.ll
 **Verify:** Full rebuild pipeline + audit
 **Lesson:** Most br_i1_false came from type conversion failures: i64→i1 trunc loses info, ptr→i1 trunc is invalid, struct→i1 trunc is invalid. Using icmp/ptrtoint correctly converts all types. Remaining 25 are dead code paths.
 
+### EXP-022: CSV-based per-variable type tracking (CG_VAR_TYPE_CSV)
+**Date:** 2026-03-31
+**Milestone:** M2 (call arg types)
+**Hypothesis:** Using CSV strings for per-variable type tracking avoids List.push calling convention issues. As PRIMARY type source in emit_ident, it should fix the 56 forge_string_compare mismatches where variables are semantically integers but typed as ForgeString.
+**Change:**
+  - Added CG_VAR_TYPE_CSV: ",name:type," format CSV string
+  - Populated in define_var and param setup, cleared per-function
+  - var_type_from_csv() lookup function
+  - Tried as fallback (no effect — flags fire first)
+  - Tried as PRIMARY (overriding flags) → null_operands 0→30, massive regression
+**Score:** 494 → 823 as primary (REVERTED), 494 → 494 as fallback (no change)
+**Result:** ❌ REGRESSION (as primary) / ⚪ NO CHANGE (as fallback)
+**Kept/Reverted:** REVERTED
+**Verify:** Full rebuild + audit
+**Lesson:** The CSV type overrides CORRECT flag detection in some edge cases (producing null operands). The flag system, despite being imperfect, is tuned to avoid null operands. Replacing it with CSV breaks that tuning. The remaining call mismatches require fixing the type system at the mini level (calling convention for struct params) rather than workaround tracking at the self-hosted level.
+
 ### EXP-021: Proper global typing — i64 for integer globals, ForgeString for string globals
 **Date:** 2026-03-31
 **Milestone:** M2 (call arg types) — root cause fix
