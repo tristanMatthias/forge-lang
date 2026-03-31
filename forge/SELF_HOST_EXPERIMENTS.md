@@ -353,5 +353,7 @@ bash scripts/audit_stage2.sh output.ll
 **Milestone:** M2
 **Hypothesis:** EXP-028 failed because types came from flags (wrong). But define_var's alloca_ty is CORRECT (uses LLVMTypeOf fallback). Deriving the type string from alloca_ty (by comparing with CG_STR, CG_PTR, CG_I64) should give correct types. This is closer to what the mini does (VAR_TYPES = resolved alloca type, not flags).
 **Change:** TBD
-**Score:** 501 → ???
-**Result:** ???
+**Score:** 501 → 491 (-10, call_type_mismatch 143→133, no regressions)
+**Result:** ✅ IMPROVEMENT — alloca-ty-derived types are safe as FALLBACK in fast path
+**Kept/Reverted:** Kept
+**Lesson:** Key difference from EXP-028 (which regressed): types derived from alloca_ty (correct, uses LLVMTypeOf) vs flags (wrong for some variables). Using as FALLBACK (only when all C-side checks default to i64) avoids overriding correct detection. This is the right approach — incremental, safe, no regressions.
