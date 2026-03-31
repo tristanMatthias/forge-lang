@@ -237,6 +237,20 @@ bash scripts/audit_stage2.sh output.ll
 **Verify:** Full rebuild pipeline + audit
 **Lesson:** Only caught 21 of expected 143 — the remaining misrouted comparisons may have values that ARE ForgeString type (loaded from string-typed allocas) but shouldn't be compared as strings. The type check only helps when the LLVM type is visibly wrong (Token, i64). When a variable is typed as ForgeString but contains an integer semantically, the type check can't distinguish.
 
+### EXP-020: And/Or i1 conversion + cg_to_i1 helper for all branch conditions
+**Date:** 2026-03-31
+**Milestone:** M3 (br_i1_false)
+**Hypothesis:** `br i1 false` comes from two sources: (1) && operator uses build_and on i64 values → produces i64, truncated to i1 = false. (2) if/while conditions with ptr/struct values → trunc to i1 = false.
+**Change:**
+  - And/Or handlers: convert operands to i1 via icmp ne 0 before build_and/build_or
+  - New cg_to_i1() helper: converts any value (i64, ptr, struct) to i1 properly
+  - Replaced all build_trunc(val, i1) calls in emit_if/emit_while with cg_to_i1()
+**Score:** 799 → 565 (two commits: 799→676→565)
+**Result:** ✅ IMPROVEMENT (-234 total, br_i1_false 103→25)
+**Kept/Reverted:** Kept
+**Verify:** Full rebuild pipeline + audit
+**Lesson:** Most br_i1_false came from type conversion failures: i64→i1 trunc loses info, ptr→i1 trunc is invalid, struct→i1 trunc is invalid. Using icmp/ptrtoint correctly converts all types. Remaining 25 are dead code paths.
+
 ### EXP-015: Stored alloca type as PRIMARY (before flags)
 **Date:** 2026-03-30
 **Milestone:** M1

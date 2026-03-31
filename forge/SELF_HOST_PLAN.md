@@ -197,13 +197,13 @@ Run `scripts/audit_stage2.sh output.ll` after every change. Update this table.
 
 | Metric | Baseline | Current | M1 Target | M2 Target | M3 Target | M4 Target | Done Target |
 |--------|----------|---------|-----------|-----------|-----------|-----------|-------------|
-| br_i1_false | 103 | 103 | - | - | < 20 | - | 0 |
+| br_i1_false | 103 | 25 | - | - | < 20 | - | 0 |
 | null_operands | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | ret_undef | 170 | 170 | - | - | - | 0 | 0 |
 | struct_as_i64 | 58 | 58 | - | 0 | - | - | 0 |
 | call_type_mismatch | 200 | 200 | - | < 100 | - | - | 0 |
 | load_type_mismatch | **0** ✅ | **0** ✅ | 0 | - | - | - | 0 |
-| **SCORE** | **799** | **799** | - | - | - | - | **0** |
+| **SCORE** | **799** | **565** | - | - | - | - | **0** |
 
 ## Checklist
 
