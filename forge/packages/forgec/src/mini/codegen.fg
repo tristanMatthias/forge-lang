@@ -2419,8 +2419,13 @@ fn codegen_match(s: Stmt) -> int {
     }
     ir_line("br label %" + merge_l)
     ir_raw(merge_l + ":")
-    mut load_ty = LAST_STORE_TY
-    if load_ty.length == 0 { load_ty = "i64" }
+    // Use the function's return type for the match result load (not LAST_STORE_TY
+    // which reflects the last arm's store type — might be i64 from a default/null arm)
+    mut load_ty = CUR_RET_TY
+    if load_ty == "void" || load_ty == "i32" || load_ty.length == 0 {
+        load_ty = LAST_STORE_TY
+        if load_ty.length == 0 { load_ty = "i64" }
+    }
     let mr = new_reg()
     ir_line(mr + " = load " + load_ty + ", ptr " + match_result)
     LAST_EXPR_VAL = mr
