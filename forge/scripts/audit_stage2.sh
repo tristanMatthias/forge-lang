@@ -25,22 +25,59 @@ null_operands=${null_operands:-0}
 ret_undef=$(grep -c -E 'ret .* undef' "$IR" || true)
 ret_undef=${ret_undef:-0}
 
-# 4. struct_as_i64: calls where struct types are passed as i64.
-#    Find functions defined with struct params (%Statement, %Expr, %Token, %Type, %ForgeString),
-#    then count calls to those functions that pass i64.
-struct_fn_file=$(mktemp)
-grep -E '^define ' "$IR" | grep -E '%Statement|%Expr|%Token|%Type|%ForgeString' | \
-    sed 's/.*@\([a-zA-Z0-9_]*\)(.*/\1/' > "$struct_fn_file" || true
-
-struct_as_i64=0
-if [ -s "$struct_fn_file" ]; then
-    while IFS= read -r fn; do
-        c=$(grep -c "call .* @${fn}(.*i64 " "$IR" || true)
-        c=${c:-0}
-        struct_as_i64=$((struct_as_i64 + c))
-    done < "$struct_fn_file"
-fi
-rm -f "$struct_fn_file"
+# 4. struct_as_i64: subset of call_type_mismatch for the 5 main struct types.
+#    Uses same accurate Python parser as call_type_mismatch.
+struct_as_i64=$(python3 -c "
+import re, sys
+BIG5 = {'%Statement', '%Expr', '%Token', '%Type', '%ForgeString'}
+fn_params = {}
+with open(sys.argv[1]) as f:
+    for line in f:
+        m = re.match(r'define \S+ @(\w+)\(([^)]*)\)', line)
+        if m:
+            name = m.group(1)
+            params = m.group(2)
+            types = re.findall(r'(%[A-Z]\w*|\{ [^}]+ \}|ptr|i64|i32|i8|i1|double|void)', params)
+            if any(t in BIG5 for t in types):
+                fn_params[name] = types
+# Reuse parse_arg_types from call_type_mismatch
+def parse_arg_types(args_text):
+    types = []; depth = 0; i = 0
+    while i < len(args_text):
+        c = args_text[i]
+        if c == '{': depth += 1
+        elif c == '}': depth -= 1
+        elif depth == 0 and c == ',': i += 1; continue
+        if depth == 0:
+            rest = args_text[i:]
+            m = re.match(r'(%[A-Z]\w*|\{ [^}]+ \}|ptr|i64|i32|i8|i1|double)\s', rest)
+            if m:
+                types.append(m.group(1))
+                while i < len(args_text) and args_text[i] != ',':
+                    if args_text[i] == '{':
+                        d = 1; i += 1
+                        while i < len(args_text) and d > 0:
+                            if args_text[i] == '{': d += 1
+                            elif args_text[i] == '}': d -= 1
+                            i += 1
+                        continue
+                    i += 1
+                continue
+        i += 1
+    return types
+count = 0
+with open(sys.argv[1]) as f:
+    for line in f:
+        if 'call ' not in line: continue
+        m = re.search(r'@(\w+)\(([^)]*)\)', line)
+        if m and m.group(1) in fn_params:
+            declared = fn_params[m.group(1)]
+            args = parse_arg_types(m.group(2))
+            for i2, (arg_ty, decl_ty) in enumerate(zip(args, declared)):
+                if arg_ty == 'i64' and decl_ty in BIG5:
+                    count += 1; break
+print(count)
+" "$IR" 2>/dev/null || echo 0)
 
 # 5. call_type_mismatch: calls to struct-param functions that pass i64 where struct expected.
 #    Only counts calls with actual type mismatches, not all calls to struct-param functions.
