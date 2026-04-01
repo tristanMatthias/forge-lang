@@ -623,8 +623,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_set_self_type("")
     }
 
-    // Parse each statement with CG_ACTIVE=false (builds AST), emit via emit_statement
+    // Parse and emit function body
     VAR_LIST_INIT_CSV = ""
+    mut last_val = llvm.const_int(CG_I64, 0, 0)
     if body_src != "" {
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
@@ -646,9 +647,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             // Parse statement (always builds AST)
             let stmt = body_parser.parse_statement()
             cg_reinit_types()
-            // Emit via AST walk
+            // Emit via AST walk — track last value for implicit return
             if stmt != null {
-                cg.emit_statement(stmt!)
+                last_val = cg.emit_statement(stmt!)
             }
             // define_var handles alloca creation via TypedValue — no fallback needed
             if body_parser.pos == before { body_parser.advance() }
@@ -656,27 +657,12 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         }
     }
 
-    // Implicit return — must match declared return type
+    // Implicit return using last emitted value
     if !llvm.block_has_terminator(CG_B) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
         } else {
-            // Compute return type late (after body emit, before implicit ret)
-            cg_reinit_types()
-            mut ret_type_name = ""
-            if idx < FN_RETURN_TYPES.length { ret_type_name = FN_RETURN_TYPES[idx] }
-            if ret_type_name.length > 1 { if ret_type_name[ret_type_name.length - 1] == "?" {
-                ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
-            } }
-            cg_reinit_types()
-            let ret_ty = resolve_type_to_llvm(ret_type_name)
-            // Use emit_block result (last value) for implicit return
-            let last_val = cg.emit_block(Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } })
-            if ret_ty != null && ret_ty != CG_I64 {
-                llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
-            } else {
-                llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-            }
+            llvm.build_ret(CG_B, last_val)
         }
     }
 }
