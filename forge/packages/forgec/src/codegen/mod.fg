@@ -3028,6 +3028,9 @@ impl Codegen {
                     llvm.position_at_end(CG_B, mb)
                 }
                 .Match(scrutinee, arm_tags_csv, arm_bindings_csv, arm_bodies, default_body, has_default, s) -> {
+                    // Register known list element types for match arm data
+                    CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",arm_bodies:Block,"
+                    CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",arm_tags:int,"
                     cg_reinit_types()
                     let subj_raw = self.emit_expr(scrutinee)
                     // Try extracting tag from enum struct
