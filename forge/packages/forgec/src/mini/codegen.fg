@@ -170,6 +170,58 @@ fn gen_expr(e: Expr) -> string {
                 LAST_ENUM_TYPE = ""
                 return r
             }
+            // Short-circuit && and || : don't evaluate RHS if LHS determines result
+            if e.str_val == "&&" {
+                let lhs_sc = gen_expr_child(e, 0)
+                let lhs_i1 = new_reg()
+                ir_line(lhs_i1 + " = icmp ne i64 " + lhs_sc + ", 0")
+                let sc_rhs_l = new_label("sc_rhs")
+                let sc_merge_l = new_label("sc_merge")
+                let sc_false_l = new_label("sc_false")
+                ir_line("br i1 " + lhs_i1 + ", label %" + sc_rhs_l + ", label %" + sc_false_l)
+                ir_raw(sc_rhs_l + ":")
+                let rhs_sc = gen_expr_child(e, 1)
+                let rhs_i1 = new_reg()
+                ir_line(rhs_i1 + " = icmp ne i64 " + rhs_sc + ", 0")
+                let sc_rhs_end = new_reg()
+                ir_line(sc_rhs_end + " = zext i1 " + rhs_i1 + " to i64")
+                // Use a landing label to capture current block (RHS may have created new blocks)
+                let sc_rhs_land = new_label("sc_rhs_end")
+                ir_line("br label %" + sc_rhs_land)
+                ir_raw(sc_rhs_land + ":")
+                ir_line("br label %" + sc_merge_l)
+                ir_raw(sc_false_l + ":")
+                ir_line("br label %" + sc_merge_l)
+                ir_raw(sc_merge_l + ":")
+                let phi = new_reg()
+                ir_line(phi + " = phi i64 [ " + sc_rhs_end + ", %" + sc_rhs_land + " ], [ 0, %" + sc_false_l + " ]")
+                return phi
+            }
+            if e.str_val == "||" {
+                let lhs_sc = gen_expr_child(e, 0)
+                let lhs_i1 = new_reg()
+                ir_line(lhs_i1 + " = icmp ne i64 " + lhs_sc + ", 0")
+                let sc_rhs_l = new_label("sc_rhs")
+                let sc_merge_l = new_label("sc_merge")
+                let sc_true_l = new_label("sc_true")
+                ir_line("br i1 " + lhs_i1 + ", label %" + sc_true_l + ", label %" + sc_rhs_l)
+                ir_raw(sc_rhs_l + ":")
+                let rhs_sc = gen_expr_child(e, 1)
+                let rhs_i1 = new_reg()
+                ir_line(rhs_i1 + " = icmp ne i64 " + rhs_sc + ", 0")
+                let sc_rhs_end = new_reg()
+                ir_line(sc_rhs_end + " = zext i1 " + rhs_i1 + " to i64")
+                let sc_rhs_land = new_label("sc_rhs_end")
+                ir_line("br label %" + sc_rhs_land)
+                ir_raw(sc_rhs_land + ":")
+                ir_line("br label %" + sc_merge_l)
+                ir_raw(sc_true_l + ":")
+                ir_line("br label %" + sc_merge_l)
+                ir_raw(sc_merge_l + ":")
+                let phi = new_reg()
+                ir_line(phi + " = phi i64 [ 1, %" + sc_true_l + " ], [ " + sc_rhs_end + ", %" + sc_rhs_land + " ]")
+                return phi
+            }
             let lhs = gen_expr_child(e, 0)
             let lhs_str = LAST_IS_STR
             mut lhs_enum = LAST_ENUM_TYPE

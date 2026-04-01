@@ -2660,7 +2660,8 @@ ForgeString forge_fn_reg_get_ret(ForgeString name) {
             memcmp(_fn_reg[i].name, name.ptr, name.len) == 0) {
             int64_t rlen = strlen(_fn_reg[i].ret_type);
             if (rlen == 0) return (ForgeString){NULL, 0};
-            return forge_string_new(_fn_reg[i].ret_type, rlen);
+            // Return pointer to static string (no allocation — avoids heap pressure)
+            return (ForgeString){_fn_reg[i].ret_type, rlen};
         }
     }
     return (ForgeString){NULL, 0};
