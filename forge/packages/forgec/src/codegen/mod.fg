@@ -2111,9 +2111,12 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                // Use ONLY the fn-scoped name cache
+                // Use fn-scoped name cache — if miss and it's a global, fall through
                 let var_ptr = forge_alloca_cache_get(name)
-                if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
+                if var_ptr == null {
+                    if vi < CG_VAR_SCOPE_START { break }
+                    return llvm.const_int(CG_I64, 0, 0)
+                }
                 // Override for ptr and ForgeString allocas when flags default to i64
                 if load_ty == CG_I64 {
                     let alloca_kind = llvm.get_type_kind(llvm.get_allocated_type(var_ptr))
