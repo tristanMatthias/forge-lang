@@ -141,6 +141,7 @@ extern "C" {
     fn LLVMStructSetBody(struct_type: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int);
     fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
+    fn LLVMGetStructName(struct_type: LLVMPtr) -> *const c_char;
 
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
@@ -1085,6 +1086,22 @@ pub extern "C" fn forge_llvm_struct_get_type_at_index(struct_type: LLVMPtr, inde
 #[no_mangle]
 pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) -> c_int {
     unsafe { LLVMCountStructElementTypes(struct_type) as c_int }
+}
+
+/// Get the name of a named struct type as a ForgeString.
+/// Returns empty string for anonymous structs.
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_struct_name(struct_type: LLVMPtr) -> i64 {
+    if struct_type.is_null() { return 0; }
+    unsafe {
+        let name = LLVMGetStructName(struct_type);
+        if name.is_null() { return 0; }
+        let cstr = std::ffi::CStr::from_ptr(name);
+        let bytes = cstr.to_bytes();
+        // Return as i64 pointer to the static LLVM string (no allocation needed)
+        // The caller should use this pointer with forge_string_new
+        name as i64
+    }
 }
 
 // ── Function Type Introspection ──

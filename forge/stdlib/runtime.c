@@ -2751,6 +2751,40 @@ void* forge_struct_reg_get_llvm_type(int64_t idx) {
     return _struct_reg[idx].llvm_type;
 }
 
+// Reverse lookup: given an LLVM type pointer, find the struct name
+// Returns a ForgeString (for Forge callers) with pointer to static storage
+ForgeString forge_struct_reg_name_for_type(void* ty) {
+    if (!ty) return (ForgeString){NULL, 0};
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if (_struct_reg[i].llvm_type == ty) {
+            int64_t len = strlen(_struct_reg[i].name);
+            return (ForgeString){_struct_reg[i].name, len};
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
+// Same but returns i64 length and writes name to a static buffer accessible via forge_struct_reg_last_name
+static char _struct_name_buf[64];
+static int64_t _struct_name_len = 0;
+int64_t forge_struct_reg_name_for_type_i64(void* ty) {
+    _struct_name_buf[0] = '\0';
+    _struct_name_len = 0;
+    if (!ty) return 0;
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if (_struct_reg[i].llvm_type == ty) {
+            _struct_name_len = strlen(_struct_reg[i].name);
+            memcpy(_struct_name_buf, _struct_reg[i].name, _struct_name_len);
+            _struct_name_buf[_struct_name_len] = '\0';
+            return _struct_name_len;
+        }
+    }
+    return 0;
+}
+ForgeString forge_struct_reg_last_name(void) {
+    return (ForgeString){_struct_name_buf, _struct_name_len};
+}
+
 // C-side ptr variable tracking (for LLVM Value* globals like CG_MOD, CG_B, etc.)
 #define PTR_VAR_CACHE_SIZE 128
 static char _ptr_var_names[PTR_VAR_CACHE_SIZE][64];
@@ -2838,6 +2872,7 @@ int64_t forge_fn_is_str_return(ForgeString fn_name) {
     STR_RET("forge_selfhost_get_arg")
     STR_RET("forge_get_self_type")
     STR_RET("forge_struct_var_get")
+    STR_RET("forge_struct_reg_last_name")
     STR_RET("forge_csv_next")
     STR_RET("forge_csv_substr")
     STR_RET("forge_scan_csv_path")
@@ -3626,12 +3661,3 @@ static void* _last_emit_result = NULL;
 void forge_set_last_emit_result(void* val) { _last_emit_result = val; }
 void* forge_get_last_emit_result(void) { return _last_emit_result; }
 
-// Debug version
-void forge_set_last_emit_result_debug(void* val) {
-    fprintf(stderr, "[set_ler] %p\n", val);
-    _last_emit_result = val;
-}
-void* forge_get_last_emit_result_debug(void) {
-    fprintf(stderr, "[get_ler] %p\n", _last_emit_result);
-    return _last_emit_result;
-}
