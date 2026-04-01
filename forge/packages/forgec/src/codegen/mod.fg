@@ -2365,30 +2365,12 @@ impl Codegen {
         mut alloca_ty = tv.ty
         if alloca_ty == null { alloca_ty = CG_I64 }
         if CG_B == 0 { return }
-        // Use tv.val — it's non-null even when ty is corrupted
         let real_val = tv.val
-        // ALWAYS check LLVMTypeOf — catches ForgeString, structs, enums
-        if real_val != null {
-            let actual_ty = llvm.type_of(real_val)
-            if actual_ty != null {
-                let actual_kind = llvm.get_type_kind(actual_ty)
-                if actual_kind != 8 { eprintln("  [dv2] " + name + " k=" + string(actual_kind)) }
-                if actual_kind == 12 { alloca_ty = CG_PTR }
-                if actual_kind == 10 { alloca_ty = actual_ty }
-            }
-        }
-        // Additional fallback for when LLVMTypeOf returns i64
-        if alloca_ty == CG_I64 || alloca_ty == 0 {
-            if alloca_ty == 0 { alloca_ty = CG_I64 }
-            if real_val != null {
-                let val_ty = llvm.type_of(real_val)
-                if val_ty != null {
-                    let kind = llvm.get_type_kind(val_ty)
-                    if kind == 12 { alloca_ty = CG_PTR }
-                    if kind == 10 { alloca_ty = val_ty }
-                }
-            }
-        }
+        // Trust the type provided by the caller. No LLVMTypeOf override.
+        // The caller (emit_expr, emit_fn_call_direct, param setup) is responsible
+        // for setting the correct type. Overriding with LLVMTypeOf causes i64 params
+        // to become ptr allocas (LLVM opaque pointers returns ptr for all params).
+        if alloca_ty == null || alloca_ty == 0 { alloca_ty = CG_I64 }
         // Create alloca in entry block
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
