@@ -1365,12 +1365,15 @@ impl Codegen {
                 if ck == 12 { load_ty = CG_PTR
                     type_name = "ptr" }
                 if ck == 13 {
-                    if cached_type == CG_STR {
+                    // Use cached type for load (handles ForgeString, structs, enums)
+                    load_ty = cached_type
+                    // Check via LLVM type name lookup (immune to CG_STR pointer invalidation)
+                    cg_reinit_types()
+                    let str_ty = llvm.get_type_by_name(CG_CTX, "ForgeString")
+                    if cached_type == str_ty || cached_type == CG_STR {
                         load_ty = CG_STR
                         type_name = "string"
                     } else {
-                        load_ty = cached_type
-                        // Look up struct/enum name
                         let sname = forge_struct_var_get(name)
                         if sname != "" { type_name = sname }
                     }
