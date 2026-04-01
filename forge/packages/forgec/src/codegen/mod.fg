@@ -1244,6 +1244,34 @@ fn cg_cleanup() {
     llvm.context_dispose(CG_CTX)
 }
 
+// ─── Helper: coerce argument to match parameter type ────────────
+// Mature compilers do this at every call site. Handles:
+//   struct (ForgeString) → ptr: extractvalue field 0
+//   i64 → struct: zeroinitializer (lossy but prevents crashes)
+fn coerce_call_arg(val: ptr, fn_ty: ptr, arg_idx: int) -> ptr {
+    if val == null || fn_ty == null { return val }
+    let param_ty = llvm.fn_get_param_type(fn_ty, arg_idx)
+    if param_ty == null { return val }
+    let val_ty = llvm.type_of(val)
+    if val_ty == null { return val }
+    let val_kind = llvm.get_type_kind(val_ty)
+    let param_kind = llvm.get_type_kind(param_ty)
+    // Struct value (kind 10) → ptr param (kind 12): extract field 0 (the pointer)
+    if val_kind == 10 && param_kind == 12 {
+        return llvm.build_extract_value(CG_B, val, 0, "sp")
+    }
+    // i64 (kind 8) → struct param (kind 10): use zeroinitializer
+    if val_kind == 8 && param_kind == 10 {
+        return llvm.const_null(param_ty)
+    }
+    // Struct value → i64 param: extract first field and cast if needed
+    if val_kind == 10 && param_kind == 8 {
+        let f0 = llvm.build_extract_value(CG_B, val, 0, "s0")
+        if f0 != null { return f0 }
+    }
+    val
+}
+
 // ─── Helper: call runtime with 1 arg ────────────
 fn call_rt_1(fn_val: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
     let ca = llvm.value_array_new(1)
@@ -1671,15 +1699,19 @@ impl Codegen {
             let self_ptr = forge_alloca_cache_get(ns)
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
+            let fn_ty = llvm.global_get_value_type(fn_ref3)
             let arg_arr = llvm.value_array_new(total_args)
-            llvm.value_array_set(arg_arr, 0, self_ptr)
+            // Self pointer — coerce to match param type (may be ptr or struct)
+            llvm.value_array_set(arg_arr, 0, coerce_call_arg(self_ptr, fn_ty, 0))
             mut argi = 0
             for arg in args {
                 let atv = self.emit_expr(arg)
-                llvm.value_array_set(arg_arr, argi + 1, atv.val)
+                mut aval = atv.val
+                if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
+                aval = coerce_call_arg(aval, fn_ty, argi + 1)
+                llvm.value_array_set(arg_arr, argi + 1, aval)
                 argi = argi + 1
             }
-            let fn_ty = llvm.global_get_value_type(fn_ref3)
             let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
             llvm.value_array_free(arg_arr)
             // Determine return type from registry (try both naming conventions)
@@ -1783,21 +1815,7 @@ impl Codegen {
             mut aval = atv.val
             // Guard against null values — use const 0 instead
             if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
-            // Type coercion: if arg is a struct (ForgeString) but param expects ptr,
-            // extract the ptr field. This handles the string→C-string conversion
-            // for extern functions.
-            if aval != null && ft != null {
-                let param_ty = llvm.fn_get_param_type(ft, i)
-                if param_ty != null {
-                    let val_ty = llvm.type_of(aval)
-                    let val_kind = llvm.get_type_kind(val_ty)
-                    let param_kind = llvm.get_type_kind(param_ty)
-                    // Struct value (kind 10) → ptr param (kind 12): extract field 0
-                    if val_kind == 10 && param_kind == 12 {
-                        aval = llvm.build_extract_value(CG_B, aval, 0, "sp")
-                    }
-                }
-            }
+            aval = coerce_call_arg(aval, ft, i)
             llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
         }
