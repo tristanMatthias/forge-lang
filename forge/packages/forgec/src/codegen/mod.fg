@@ -1360,24 +1360,34 @@ impl Codegen {
             let cached_type = forge_alloca_cache_get_type(name)
             mut load_ty = CG_I64
             mut type_name = "int"
-            if cached_type != null {
-                let ck = llvm.get_type_kind(cached_type)
+            // Try cache type first, then alloca type as fallback
+            mut check_type = cached_type
+            if check_type == null {
+                check_type = llvm.get_allocated_type(cached_ptr)
+            }
+            if check_type != null {
+                let ck = llvm.get_type_kind(check_type)
                 if ck == 12 { load_ty = CG_PTR
                     type_name = "ptr" }
                 if ck == 13 {
-                    // Use cached type for load
-                    load_ty = cached_type
-                    // Determine type name
+                    load_ty = check_type
                     let sname = forge_struct_var_get(name)
                     if sname != "" {
                         type_name = sname
                     } else {
-                        // If no struct name registered, try ForgeString detection
                         cg_reinit_types()
-                        if cached_type == CG_STR {
+                        if check_type == CG_STR {
                             type_name = "string"
                         }
                     }
+                }
+            }
+            // Final fallback: check str_var cache
+            if load_ty == CG_I64 {
+                if forge_str_var_check(name) == 1 {
+                    cg_reinit_types()
+                    load_ty = CG_STR
+                    type_name = "string"
                 }
             }
             let loaded = llvm.build_load(CG_B, load_ty, cached_ptr, name)
