@@ -1764,10 +1764,27 @@ impl Codegen {
             // List push via runtime
             let push_fn = llvm.get_named_function(CG_MOD, "forge_list_push")
             if push_fn != null {
+                // forge_list_push takes a POINTER to the element, not the value.
+                // Alloca temp, store the item, pass the alloca pointer.
+                mut item_ptr = item_tv.val
+                mut elem_size = 8
+                if item_tv.val != null {
+                    let item_ty = llvm.type_of(item_tv.val)
+                    let item_kind = llvm.get_type_kind(item_ty)
+                    if item_kind == 10 {
+                        // Struct value → store in temp alloca, pass pointer
+                        let tmp = llvm.build_alloca(CG_B, item_ty, "lpt")
+                        llvm.build_store(CG_B, item_tv.val, tmp)
+                        item_ptr = tmp
+                        // Compute struct size from LLVM data layout
+                        let sz = llvm.store_size_of_type(CG_MOD, item_ty)
+                        if sz > 0 { elem_size = sz }
+                    }
+                }
                 let pa = llvm.value_array_new(3)
                 llvm.value_array_set(pa, 0, obj_tv.val)
-                llvm.value_array_set(pa, 1, item_tv.val)
-                llvm.value_array_set(pa, 2, llvm.const_int(CG_I64, 8, 0))
+                llvm.value_array_set(pa, 1, item_ptr)
+                llvm.value_array_set(pa, 2, llvm.const_int(CG_I64, elem_size, 0))
                 let pft = make_fn_type_3(CG_STR, CG_STR, CG_PTR, CG_I64)
                 let r = llvm.build_call(CG_B, pft, push_fn, pa, 3, "lp")
                 llvm.value_array_free(pa)

@@ -145,6 +145,7 @@ extern fn forge_llvm_get_undef(ty: ptr) -> ptr
 extern fn forge_llvm_const_real(ty: ptr, value: float) -> ptr
 extern fn forge_llvm_const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr
 extern fn forge_llvm_size_of(ty: ptr) -> ptr
+extern fn forge_llvm_store_size_of_type(m: ptr, ty: ptr) -> int
 extern fn forge_llvm_type_of(val: ptr) -> ptr
 extern fn forge_llvm_add_global(m: ptr, ty: ptr, name: string) -> ptr
 extern fn forge_llvm_set_initializer(global: ptr, val: ptr)
@@ -649,6 +650,11 @@ export fn const_struct(ctx: ptr, values: ptr, count: int, packed: int) -> ptr {
 /// Get the size of a type as a ConstantExpr (i64).
 export fn size_of(ty: ptr) -> ptr {
     forge_llvm_size_of(ty)
+}
+
+/// Get the store size of a type in bytes (using module's data layout)
+export fn store_size_of_type(m: ptr, ty: ptr) -> int {
+    forge_llvm_store_size_of_type(m, ty)
 }
 
 /// Get the LLVM type of a value.
