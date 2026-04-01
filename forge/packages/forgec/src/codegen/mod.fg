@@ -1940,18 +1940,23 @@ impl Codegen {
             llvm.position_at_end(CG_B, entry_bb)
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
-        forge_alloca_cache_set_last_type(alloca_ty)
+        forge_alloca_cache_set_type(name, alloca_ty)
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
         // Restore position and store
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, tv.val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-        // Register in C-side caches
-        if tv_is_str(tv) || tv_is_list(tv) { forge_str_var_add(name) }
-        if tv_is_ptr(tv) { forge_ptr_var_add(name) }
+        // Register in C-side caches based on ACTUAL alloca type (not TypedValue type_name)
+        cg_reinit_types()
+        if alloca_ty == CG_STR { forge_str_var_add(name) }
+        if alloca_ty == CG_PTR { forge_ptr_var_add(name) }
         if tv_is_list(tv) { forge_list_var_add(name) }
-        if tv_is_struct(tv) { forge_struct_var_add(name, tv.type_name) }
+        // Register struct type if alloca is a struct (not ForgeString, not list)
+        let ak2 = llvm.get_type_kind(alloca_ty)
+        if ak2 == 13 && alloca_ty != CG_STR {
+            forge_struct_var_add(name, tv.type_name)
+        }
     }
 
     // ─── Statements ─────────────────────────────
