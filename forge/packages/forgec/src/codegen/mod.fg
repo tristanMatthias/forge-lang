@@ -1976,24 +1976,27 @@ impl Codegen {
                 }
                 ftn_pos = ftn_pos + 1
             }
-            // Nullable wrapping: if field type ends with "?" wrap in { i8, T }
-            // Skip if value already has the correct nullable struct type
-            if field_type.length > 1 && field_type[field_type.length - 1] == "?" {
-                let nullable_ty = make_nullable_type(CG_I64)
-                mut need_wrap = true
-                // Check if value is already the nullable struct type
-                if val != null {
-                    let val_ty = llvm.type_of(val)
-                    if val_ty != null {
-                        if val_ty == nullable_ty { need_wrap = false }
+            // Type coercion: if value is i64/ptr 0 and field expects a struct, use zeroinitializer
+            if field_type != "" && field_type != "int" && field_type != "bool" && field_type != "float" && field_type != "string" && field_type != "ptr" {
+                if tv_is_int(ftv) || tv_is_ptr(ftv) {
+                    let expected_ty = resolve_type_name_to_llvm(field_type)
+                    if expected_ty != null {
+                        val = llvm.const_null(expected_ty)
                     }
                 }
-                if need_wrap {
-                    if ftv.type_name == "ptr" || ftv.val == null {
-                        val = make_null_value(CG_I64)
-                    } else {
-                        val = wrap_nullable(CG_I64, ftv.val)
-                    }
+            }
+            // Nullable wrapping: if field type ends with "?" wrap in { i8, i64 }
+            if field_type.length > 1 && field_type[field_type.length - 1] == "?" {
+                if ftv.type_name == "ptr" || ftv.val == null {
+                    val = make_null_value(CG_I64)
+                } else if tv_is_struct(ftv) {
+                    // Struct value → heap allocate and store pointer in nullable
+                    let heap = llvm.build_alloca(CG_B, llvm.type_of(ftv.val), "np")
+                    llvm.build_store(CG_B, ftv.val, heap)
+                    let as_int = llvm.build_ptr_to_int(CG_B, heap, CG_I64, "ni")
+                    val = wrap_nullable(CG_I64, as_int)
+                } else {
+                    val = wrap_nullable(CG_I64, ftv.val)
                 }
             }
             result = llvm.build_insert_value(CG_B, result, val, fi, "sf")
