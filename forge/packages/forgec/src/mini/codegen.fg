@@ -3433,6 +3433,8 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_fn_reg_count()")
     ir_raw("declare void @forge_fn_store_clear()")
     ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
+    ir_raw("declare void @forge_fn_store_set_param_count(i64, i64)")
+    ir_raw("declare i64 @forge_fn_store_get_param_count(i64)")
     ir_raw("declare %ForgeString @forge_fn_store_get_body(i64)")
     ir_raw("declare %ForgeString @forge_fn_store_get_name(i64)")
     ir_raw("declare i64 @forge_fn_store_count()")

@@ -1090,6 +1090,8 @@ fn cg_init_runtime() {
     // C-side function store (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_fn_store_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_fn_store_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_store_set_param_count", make_fn_type_2(CG_VOID, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_get_param_count", make_fn_type_1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_fn_store_get_body", make_fn_type_1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_fn_store_get_name", make_fn_type_1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_fn_store_count", make_fn_type_0(CG_I64))

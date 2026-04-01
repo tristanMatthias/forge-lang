@@ -3050,7 +3050,7 @@ ForgeString forge_param_name_get(int64_t idx) {
 
 // ---- C-side function body storage (immune to Forge list push corruption) ----
 #define FN_STORE_MAX 1024
-static struct { char name[128]; char* body; int64_t body_len; } _fn_store[FN_STORE_MAX];
+static struct { char name[128]; char* body; int64_t body_len; int64_t param_count; } _fn_store[FN_STORE_MAX];
 static int _fn_store_count = 0;
 
 void forge_fn_store_clear(void) { _fn_store_count = 0; }
@@ -3116,6 +3116,15 @@ ForgeString forge_fn_store_get_name(int64_t idx) {
 }
 
 int64_t forge_fn_store_count(void) { return _fn_store_count; }
+
+void forge_fn_store_set_param_count(int64_t idx, int64_t count) {
+    if (idx >= 0 && idx < _fn_store_count) _fn_store[idx].param_count = count;
+}
+
+int64_t forge_fn_store_get_param_count(int64_t idx) {
+    if (idx < 0 || idx >= _fn_store_count) return 0;
+    return _fn_store[idx].param_count;
+}
 
 // Dump token list for debugging — Token = {TokenKind{i8,ptr}, Span{i64,i64,i64,i64}, ForgeString{ptr,i64}, i64}
 // Token size = 72 bytes on aarch64
