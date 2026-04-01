@@ -242,10 +242,16 @@ fn collect_module_paths(filepath: string) {
     eprintln("collect_module_paths: " + filepath)
     let source = fs.read(filepath)
     eprintln("  read " + string(source.length) + " bytes")
+    eprintln("  finding dir...")
+    let flen = filepath.length
+    eprintln("  filepath.length=" + string(flen))
     let dir = filepath_dir(filepath)
+    eprintln("  dir=" + dir)
     // Prepend \n so "mod " at line 1 also matches "\nmod "
     let src = "\n" + source
+    eprintln("  src_len=" + string(src.length))
     scan_mods(src, dir)
+    eprintln("  scan_mods done")
     // Use C-side CSV accumulator (Forge global assignment is corrupted in Stage 2)
     forge_mod_csv_add(filepath)
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"

@@ -2221,10 +2221,11 @@ impl Codegen {
             .Assign(target, value, s) -> { self.emit_assign(target, value) }
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
-                // Emit expr — use C-side last emit result for the LLVM value
-                // (TypedValue fields get corrupted by mini's i64 alloca storage)
-                self.emit_expr(val)
-                let real = forge_get_last_emit_result()
+                // Emit expr — the TypedValue .val field carries the LLVM value.
+                // Also set last_emit_result as fallback for cases where .val is corrupted.
+                let tv_result = self.emit_expr(val)
+                forge_set_last_emit_result(tv_result.val)
+                let real = tv_result.val
                 // Use type annotation (set by parser via forge_var_type_set) for correct alloca type.
                 // This is the mature compiler approach: declared type drives codegen, not inferred type.
                 let ann = forge_var_type_get(name)
