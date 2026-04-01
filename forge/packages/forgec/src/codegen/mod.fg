@@ -1671,6 +1671,27 @@ impl Codegen {
         tv_typed(val, CG_PTR, rtn)
     }
 
+    // Determine TypedValue from a function's return type name
+    fn tv_from_return_type(self, val: ptr, rtn: string) -> TypedValue {
+        if rtn == "" || rtn == "int" || rtn == "bool" { return tv_int(val) }
+        if rtn == "string" { return tv_str(val) }
+        if rtn == "ptr" { return tv_ptr(val) }
+        if rtn == "void" { return tv_void() }
+        if rtn == "float" { return tv_typed(val, CG_F64, "float") }
+        // Nullable (ends with ?)
+        if rtn.length > 1 && rtn[rtn.length - 1] == "?" {
+            return tv_typed(val, CG_PTR, rtn)
+        }
+        // List
+        if rtn.length >= 4 && rtn.substring(0, 4) == "List" {
+            return tv_typed(val, CG_LIST, rtn)
+        }
+        // Struct or enum
+        let resolved = resolve_type_to_llvm(rtn)
+        if resolved != null { return tv_typed(val, resolved, rtn) }
+        tv_typed(val, CG_PTR, rtn)
+    }
+
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> TypedValue {
         let arg_arr = llvm.value_array_new(args.length)
         mut i = 0
