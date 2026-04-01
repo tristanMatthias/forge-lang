@@ -1455,8 +1455,10 @@ impl Codegen {
                 return tv_str(sv)
             }
             .BoolLit(value, span) -> {
-                if value { return tv_bool(llvm.const_int(CG_I64, 1, 0)) }
-                return tv_bool(llvm.const_int(CG_I64, 0, 0))
+                mut bv = llvm.const_int(CG_I64, 0, 0)
+                if value { bv = llvm.const_int(CG_I64, 1, 0) }
+                forge_set_last_emit_result(bv)
+                return tv_bool(bv)
             }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
@@ -1814,25 +1816,26 @@ impl Codegen {
             method_name = method_name_1
         }
         if fn_ref3 != null {
-            // Get self pointer directly from alloca cache — don't call emit_ident
-            // (emit_ident has side effects that can clobber the value array in Stage 1)
+            // Build call manually: self from alloca cache, args from emit_expr.
+            // Use forge_get_last_emit_result for values (immune to stack corruption).
+            // Don't build intermediate List<Expr> (Forge list push corruption).
             let self_ptr = forge_alloca_cache_get(ns)
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
-            let fn_ty = llvm.global_get_value_type(fn_ref3)
             let arg_arr = llvm.value_array_new(total_args)
-            // Self pointer: always pass the alloca pointer directly.
-            // Don't coerce — self is ALWAYS a ptr to the struct, not the struct value.
             llvm.value_array_set(arg_arr, 0, self_ptr)
+            // Process args using INDEX access (not for loop — avoids list iteration issues)
             mut argi = 0
-            for arg in args {
-                let atv = self.emit_expr(arg)
-                mut aval = atv.val
-                if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
-                llvm.value_array_set(arg_arr, argi + 1, aval)
+            while argi < args.length {
+                self.emit_expr(args[argi])
+                let aval = forge_get_last_emit_result()
+                if aval != null {
+                    llvm.value_array_set(arg_arr, argi + 1, aval)
+                } else {
+                    llvm.value_array_set(arg_arr, argi + 1, llvm.const_int(CG_I64, 0, 0))
+                }
                 argi = argi + 1
             }
-            // Centralized type checking + coercion
             let result = checked_build_call(fn_ref3, arg_arr, total_args, "mc")
             llvm.value_array_free(arg_arr)
             // Determine return type from registry (try both naming conventions)
@@ -1982,8 +1985,11 @@ impl Codegen {
                     _ -> {}
                 }
             }
-            let atv = self.emit_expr(arg)
-            mut aval = atv.val
+            self.emit_expr(arg)
+            // Use C-side last_emit_result instead of TypedValue.val —
+            // the TypedValue return gets stack-clobbered by deep emit_expr recursion
+            // in Stage 1's compiled code (mini alloca corruption).
+            mut aval = forge_get_last_emit_result()
             if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
             llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
