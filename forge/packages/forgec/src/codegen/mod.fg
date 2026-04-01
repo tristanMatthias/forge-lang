@@ -1279,12 +1279,36 @@ fn coerce_call_arg(val: ptr, fn_ty: ptr, arg_idx: int) -> ptr {
     val
 }
 
+// ─── Checked build_call: validates and coerces ALL arguments ────────────
+// This is the single entry point for emitting function calls.
+// Replaces scattered coerce_call_arg usage with centralized type validation.
+// Handles: struct→ptr (extractvalue 0), i64→struct (zeroinitializer),
+//          struct→i64 (extractvalue 0), ptr load for self-by-ptr, null guards.
+fn checked_build_call(fn_val: ptr, arg_values: ptr, arg_count: int, name: string) -> ptr {
+    if fn_val == null { return llvm.const_int(CG_I64, 0, 0) }
+    let ft = llvm.global_get_value_type(fn_val)
+    // Coerce each argument to match the expected parameter type
+    mut i = 0
+    while i < arg_count {
+        let val = llvm.value_array_get(arg_values, i)
+        if val != null && ft != null {
+            let coerced = coerce_call_arg(val, ft, i)
+            if coerced != val {
+                llvm.value_array_set(arg_values, i, coerced)
+            }
+        } else if val == null {
+            llvm.value_array_set(arg_values, i, llvm.const_int(CG_I64, 0, 0))
+        }
+        i = i + 1
+    }
+    llvm.build_call(CG_B, ft, fn_val, arg_values, arg_count, name)
+}
+
 // ─── Helper: call runtime with 1 arg ────────────
 fn call_rt_1(fn_val: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
     let ca = llvm.value_array_new(1)
     llvm.value_array_set(ca, 0, arg)
-    let ft = make_fn_type_1(ret_ty, arg_ty)
-    let r = llvm.build_call(CG_B, ft, fn_val, ca, 1, name)
+    let r = checked_build_call(fn_val, ca, 1, name)
     llvm.value_array_free(ca)
     r
 }
@@ -1294,8 +1318,7 @@ fn call_rt_2_ss(fn_val: ptr, a: ptr, b: ptr, ret_ty: ptr, name: string) -> ptr {
     let ca = llvm.value_array_new(2)
     llvm.value_array_set(ca, 0, a)
     llvm.value_array_set(ca, 1, b)
-    let ft = make_fn_type_2(ret_ty, CG_STR, CG_STR)
-    let r = llvm.build_call(CG_B, ft, fn_val, ca, 2, name)
+    let r = checked_build_call(fn_val, ca, 2, name)
     llvm.value_array_free(ca)
     r
 }
@@ -1602,8 +1625,7 @@ impl Codegen {
         let ca = llvm.value_array_new(2)
         llvm.value_array_set(ca, 0, lhs)
         llvm.value_array_set(ca, 1, rhs)
-        let ft = make_fn_type_2(CG_STR, CG_STR, CG_STR)
-        let r = llvm.build_call(CG_B, ft, CG_RT_SCONCAT, ca, 2, "cc")
+        let r = checked_build_call(CG_RT_SCONCAT, ca, 2, "cc")
         llvm.value_array_free(ca)
         r
     }
@@ -1716,11 +1738,11 @@ impl Codegen {
                 let atv = self.emit_expr(arg)
                 mut aval = atv.val
                 if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
-                aval = coerce_call_arg(aval, fn_ty, argi + 1)
                 llvm.value_array_set(arg_arr, argi + 1, aval)
                 argi = argi + 1
             }
-            let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
+            // Centralized type checking + coercion
+            let result = checked_build_call(fn_ref3, arg_arr, total_args, "mc")
             llvm.value_array_free(arg_arr)
             // Determine return type from registry (try both naming conventions)
             mut rtn = forge_fn_reg_get_ret(method_name)
@@ -1744,8 +1766,7 @@ impl Codegen {
             llvm.value_array_set(sa, 0, obj_tv.val)
             llvm.value_array_set(sa, 1, start_tv.val)
             llvm.value_array_set(sa, 2, end_tv.val)
-            let sft = make_fn_type_3(CG_STR, CG_STR, CG_I64, CG_I64)
-            let r = llvm.build_call(CG_B, sft, CG_RT_SSUBSTR, sa, 3, "ss")
+            let r = checked_build_call(CG_RT_SSUBSTR, sa, 3, "ss")
             llvm.value_array_free(sa)
             return tv_str(r)
         }
@@ -1785,8 +1806,7 @@ impl Codegen {
                 llvm.value_array_set(pa, 0, obj_tv.val)
                 llvm.value_array_set(pa, 1, item_ptr)
                 llvm.value_array_set(pa, 2, llvm.const_int(CG_I64, elem_size, 0))
-                let pft = make_fn_type_3(CG_STR, CG_STR, CG_PTR, CG_I64)
-                let r = llvm.build_call(CG_B, pft, push_fn, pa, 3, "lp")
+                let r = checked_build_call(push_fn, pa, 3, "lp")
                 llvm.value_array_free(pa)
                 return tv_typed(r, CG_LIST, obj_tv.type_name)
             }
@@ -1841,40 +1861,27 @@ impl Codegen {
         let ft = llvm.global_get_value_type(fn_val)
         let arg_arr = llvm.value_array_new(args.length)
         // Detect desugared method calls: Type__method(self, args...)
-        // The parser desugars obj.method(args) → Type__method(obj, args)
-        // For self (arg 0), we need the ALLOCA POINTER, not the loaded value.
-        // Only apply when param 0 expects ptr (self by reference).
+        // For self (arg 0), pass the ALLOCA POINTER, not the loaded value.
         mut self_by_ptr = false
         if fn_name.index_of("__") > 0 && ft != null {
             let p0_ty = llvm.fn_get_param_type(ft, 0)
             if p0_ty != null {
-                let p0_kind = llvm.get_type_kind(p0_ty)
-                if p0_kind == 12 { self_by_ptr = true }
+                if llvm.get_type_kind(p0_ty) == 12 { self_by_ptr = true }
             }
         }
         mut i = 0
         for arg in args {
-            // For self arg of method calls: pass the struct's alloca pointer.
-            // If self is already a ptr variable (e.g. from a ptr parameter),
-            // load the pointer value (don't add extra indirection).
             if self_by_ptr && i == 0 {
                 match arg {
                     .Ident(var_name, _) -> {
                         let alloca_ptr = forge_alloca_cache_get(var_name)
                         if alloca_ptr != null {
-                            // Check: is the alloca a ptr type? (parameter stored in ptr alloca)
                             let alloca_ty = llvm.get_allocated_type(alloca_ptr)
-                            if alloca_ty != null {
-                                let ak = llvm.get_type_kind(alloca_ty)
-                                if ak == 12 {
-                                    // ptr alloca → load the pointer value, don't add indirection
-                                    let loaded = llvm.build_load(CG_B, CG_PTR, alloca_ptr, "sp")
-                                    llvm.value_array_set(arg_arr, 0, loaded)
-                                } else {
-                                    // struct alloca → pass the alloca address directly
-                                    llvm.value_array_set(arg_arr, 0, alloca_ptr)
-                                }
+                            if alloca_ty != null && llvm.get_type_kind(alloca_ty) == 12 {
+                                // ptr alloca (parameter) → load the ptr value
+                                llvm.value_array_set(arg_arr, 0, llvm.build_load(CG_B, CG_PTR, alloca_ptr, "sp"))
                             } else {
+                                // struct alloca → pass address directly
                                 llvm.value_array_set(arg_arr, 0, alloca_ptr)
                             }
                             i = i + 1
@@ -1886,17 +1893,14 @@ impl Codegen {
             }
             let atv = self.emit_expr(arg)
             mut aval = atv.val
-            // Guard against null values — use const 0 instead
             if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
-            aval = coerce_call_arg(aval, ft, i)
             llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
         }
-        let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
+        // Centralized type checking + coercion for ALL arguments
+        let r = checked_build_call(fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        // Store result in C-side (TypedValue.val gets lost during struct return ABI)
         forge_set_last_emit_result(r)
-        // Determine return type from C-side registry
         let rtn = forge_fn_reg_get_ret(fn_name)
         self.tv_from_return_type(r, rtn)
     }
@@ -2050,9 +2054,8 @@ impl Codegen {
             let gt = llvm.type_array_new(2)
             llvm.type_array_set(gt, 0, CG_PTR)
             llvm.type_array_set(gt, 1, CG_STR)
-            let gf = llvm.function_type(CG_I64, gt, 2, 0)
             llvm.type_array_free(gt)
-            let result = llvm.build_call(CG_B, gf, CG_RT_MAP_GET, ga, 2, "mg")
+            let result = checked_build_call(CG_RT_MAP_GET, ga, 2, "mg")
             llvm.value_array_free(ga)
             return tv_int(result)
         }
@@ -2061,8 +2064,7 @@ impl Codegen {
             let ca = llvm.value_array_new(2)
             llvm.value_array_set(ca, 0, obj_tv.val)
             llvm.value_array_set(ca, 1, idx_tv.val)
-            let cf = make_fn_type_2(CG_STR, CG_STR, CG_I64)
-            let result = llvm.build_call(CG_B, cf, CG_RT_SCHARAT, ca, 2, "ch")
+            let result = checked_build_call(CG_RT_SCHARAT, ca, 2, "ch")
             llvm.value_array_free(ca)
             return tv_str(result)
         }
@@ -2526,16 +2528,14 @@ impl Codegen {
         if tv_is_str(tv) {
             let pa = llvm.value_array_new(1)
             llvm.value_array_set(pa, 0, tv.val)
-            let pft = make_fn_type_1(CG_VOID, CG_STR)
-            llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 1, "")
+            checked_build_call(CG_RT_PRINTLN, pa, 1, "")
             llvm.value_array_free(pa)
         } else {
             // Convert to string first
             let sv = call_rt_1(CG_RT_I2S, CG_I64, CG_STR, tv.val, "ts")
             let pa = llvm.value_array_new(1)
             llvm.value_array_set(pa, 0, sv)
-            let pft = make_fn_type_1(CG_VOID, CG_STR)
-            llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 1, "")
+            checked_build_call(CG_RT_PRINTLN, pa, 1, "")
             llvm.value_array_free(pa)
         }
     }

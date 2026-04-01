@@ -497,7 +497,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         llvm.type_array_free(sa_params)
         let set_args_fn = llvm.get_named_function(CG_MOD, "forge_set_args")
         if set_args_fn != null {
-            llvm.build_call(CG_B, sa_ft, set_args_fn, sa, 2, "")
+            checked_build_call(set_args_fn, sa, 2, "")
         }
         llvm.value_array_free(sa)
     }
