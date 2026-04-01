@@ -373,38 +373,35 @@ impl Parser {
             return Statement.Continue(tok.span) }
         // If (25) — inline handler
         if tok.kind_id == 25 || forge_peek_kind_id(forge_parser_get_pos()) == 25 {
-            {
-                let start = self.advance().span
+            let start = self.advance().span
+            self.skip_newlines()
+            let cond = self.parse_expr()
+            if cond == null { return null }
+            self.skip_newlines()
+            let then_block = self.parse_block()
+            self.skip_newlines()
+            mut has_else = 0
+            mut else_block = Block { statements: [], span: start }
+            if self.check_id(26) {  // Else
+                has_else = 1
+                self.advance()
                 self.skip_newlines()
-                let cond = self.parse_expr()
-                if cond == null { return null }
-                self.skip_newlines()
-                let then_block = self.parse_block()
-                self.skip_newlines()
-                mut has_else = 0
-                mut else_block = Block { statements: [], span: start }
-                if self.check_id(26) {  // Else
-                    has_else = 1
-                    self.advance()
-                    self.skip_newlines()
-                    if self.check_id(25) {  // else if
-                        let nested = self.parse_statement()
-                        if nested != null {
-                            mut stmts: List<Statement> = []
-                            stmts = stmts.push(nested!)
-                            else_block = Block { statements: stmts, span: start }
-                        }
-                    } else {
-                        else_block = self.parse_block()
+                if self.check_id(25) {  // else if
+                    let nested = self.parse_statement()
+                    if nested != null {
+                        mut stmts: List<Statement> = []
+                        stmts = stmts.push(nested!)
+                        else_block = Block { statements: stmts, span: start }
                     }
+                } else {
+                    else_block = self.parse_block()
                 }
-                return Statement.If(cond!, then_block, else_block, has_else, start)
             }
+            return Statement.If(cond!, then_block, else_block, has_else, start)
         }
         // Match (27) — inline handler
         if tok.kind_id == 27 || forge_peek_kind_id(forge_parser_get_pos()) == 27 {
-            {
-                let start = self.advance().span
+            let start = self.advance().span
                 self.skip_newlines()
                 let scrutinee = self.parse_expr()
                 if scrutinee == null { return null }
@@ -497,9 +494,7 @@ impl Parser {
                     bindings_csv = bindings_csv + arm_bindings_list[bi]
                     bi = bi + 1
                 }
-                return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
-            }
-            return self.parse_expr_or_assign()
+            return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
         }
         // Catch-all: any token not handled above is an expression or assignment
         // This replaces the broken `_ ->` match arm in mini-built binaries
@@ -546,36 +541,32 @@ impl Parser {
                 return r
             }
             .If -> {
-                {
-                    let start = self.advance().span // consume 'if'
+                let start = self.advance().span
+                self.skip_newlines()
+                let cond = self.parse_expr()
+                if cond == null { return null }
+                self.skip_newlines()
+                let then_block = self.parse_block()
+                self.skip_newlines()
+                mut has_else = 0
+                mut else_block = Block { statements: [], span: start }
+                if self.check_id(26) {
+                    has_else = 1
+                    self.advance()
                     self.skip_newlines()
-                    let cond = self.parse_expr()
-                    if cond == null { return null }
-                    self.skip_newlines()
-                    let then_block = self.parse_block()
-                    self.skip_newlines()
-                    mut has_else = 0
-                    mut else_block = Block { statements: [], span: start }
-                    if self.check_id(26) {
-                        has_else = 1
-                        self.advance()
-                        self.skip_newlines()
-                        if self.check_id(25) {
-                            // else-if chain: parse recursively as statement
-                            let nested = self.parse_statement()
-                            if nested != null {
-                                else_block = Block { statements: [nested!], span: start }
-                            }
-                        } else {
-                            else_block = self.parse_block()
+                    if self.check_id(25) {
+                        let nested = self.parse_statement()
+                        if nested != null {
+                            else_block = Block { statements: [nested!], span: start }
                         }
+                    } else {
+                        else_block = self.parse_block()
                     }
-                    return Statement.If(cond!, then_block, else_block, has_else, start)
                 }
+                return Statement.If(cond!, then_block, else_block, has_else, start)
             }
             .Match -> {
-                {
-                    let start = self.advance().span // consume 'match'
+                let start = self.advance().span
                     self.skip_newlines()
                     let scrutinee = self.parse_expr()
                     if scrutinee == null { return null }
@@ -679,8 +670,7 @@ impl Parser {
                         bi = bi + 1
                     }
 
-                    return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
-                }
+                return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
             }
             .TypeKw -> {
                 let r = parse_type_decl(self)
