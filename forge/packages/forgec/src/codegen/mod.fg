@@ -1837,13 +1837,29 @@ impl Codegen {
         }
         mut i = 0
         for arg in args {
-            // For self arg of method calls: pass alloca pointer, not loaded value
+            // For self arg of method calls: pass the struct's alloca pointer.
+            // If self is already a ptr variable (e.g. from a ptr parameter),
+            // load the pointer value (don't add extra indirection).
             if self_by_ptr && i == 0 {
                 match arg {
                     .Ident(var_name, _) -> {
                         let alloca_ptr = forge_alloca_cache_get(var_name)
                         if alloca_ptr != null {
-                            llvm.value_array_set(arg_arr, 0, alloca_ptr)
+                            // Check: is the alloca a ptr type? (parameter stored in ptr alloca)
+                            let alloca_ty = llvm.get_allocated_type(alloca_ptr)
+                            if alloca_ty != null {
+                                let ak = llvm.get_type_kind(alloca_ty)
+                                if ak == 12 {
+                                    // ptr alloca → load the pointer value, don't add indirection
+                                    let loaded = llvm.build_load(CG_B, CG_PTR, alloca_ptr, "sp")
+                                    llvm.value_array_set(arg_arr, 0, loaded)
+                                } else {
+                                    // struct alloca → pass the alloca address directly
+                                    llvm.value_array_set(arg_arr, 0, alloca_ptr)
+                                }
+                            } else {
+                                llvm.value_array_set(arg_arr, 0, alloca_ptr)
+                            }
                             i = i + 1
                             continue
                         }
