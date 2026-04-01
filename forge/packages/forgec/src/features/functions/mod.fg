@@ -655,20 +655,133 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_set_self_type("")
     }
 
-    // Parse body into AST block, then walk it with emit_block
-    // (replaces 130-line statement-at-a-time loop with workarounds)
+    // Parse-then-emit each statement individually (avoids List<Statement> corruption)
+    // Statement enum payloads are corrupted when stored in lists, so we parse
+    // and emit ONE statement at a time, never building a Statement list
     VAR_LIST_INIT_CSV = ""
     if body_src != "" {
+        CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
+        mut body_parser = parser_new(body_tokens)
+        // Set C-side token list + position for forge_peek_kind_id (body parser has different tokens)
         forge_set_token_list(body_tokens)
         forge_parser_set_pos(0)
-        mut body_parser = parser_new(body_tokens)
-        let body = body_parser.parse_block()
-        let last = cg.emit_block(body)
-        if CG_HAS_LAST_VAL != 1 {
-            CG_LAST_VAL = last
-            CG_HAS_LAST_VAL = 1
+        // Consume opening {
+        body_parser.expect_id(102)
+        body_parser.skip_newlines()
+        CG_ACTIVE = true
+        cg_reinit_types()
+        CG_LAST_VAL = llvm.const_int(CG_I64, 0, 0)
+        CG_HAS_LAST_VAL = 0
+        // Parse and emit each statement individually
+        // CRITICAL: Statement enum tags are corrupted in Stage 2, so for
+        // expression-only lines, we parse + emit the expression directly.
+        while !body_parser.check_id(103) && !body_parser.is_at_end() {
+            // Stop emitting after a return/break (block has terminator)
+            if llvm.block_has_terminator(CG_B) { break }
+            let peek_kid = body_parser.peek().kind_id
+            let before = body_parser.pos
+
+            // let/mut/const (20/21/22): pre-capture name, parse, fallback alloca
+            if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
+                // Pre-capture let variable name — use C-side token accessor
+                // (avoids let intermediate which can lose Token value via alloca miss)
+                if forge_peek_kind_id(forge_parser_get_pos() + 1) == 1 {
+                    forge_set_last_let_name(forge_peek_text(forge_parser_get_pos() + 1))
+                }
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
+                }
+                if forge_let_needs_alloca() == 1 {
+                    let cur2 = llvm.get_insert_block(CG_B)
+                    let fn2 = llvm.get_basic_block_parent(cur2)
+                    let eb2 = llvm.get_entry_basic_block(fn2)
+                    let fi2 = llvm.get_first_instruction(eb2)
+                    if fi2 != null { llvm.position_before(CG_B, fi2) }
+                    else { llvm.position_at_end(CG_B, eb2) }
+                    forge_let_to_alloca_name()
+                    forge_arm_pending_alloca()
+                    // Determine alloca type from the actual value (not always CG_STR)
+                    // This fixes ptr/struct values getting ForgeString allocas
+                    mut fallback_ty = CG_STR
+                    if CG_LAST_VAL != null {
+                        let val_ty = llvm.type_of(CG_LAST_VAL)
+                        if val_ty != null {
+                            let kind = llvm.get_type_kind(val_ty)
+                            if kind == 12 { fallback_ty = CG_PTR }
+                            if kind == 13 { fallback_ty = val_ty }
+                        }
+                    }
+                    let va = llvm.build_alloca(CG_B, fallback_ty, "")
+                    // Store the alloca type for emit_ident (last cached entry)
+                    forge_alloca_cache_set_last_type(fallback_ty)
+                    llvm.position_at_end(CG_B, cur2)
+                    if CG_LAST_VAL != null && va != null {
+                        llvm.build_store(CG_B, CG_LAST_VAL, va)
+                    }
+                }
+            }
+            // return (24): emit return directly
+            else if peek_kid == 24 {
+                body_parser.advance()
+                body_parser.skip_newlines()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if !body_parser.check_id(103) && !body_parser.is_at_end() && !body_parser.check_id(120) {
+                    let rexpr = body_parser.parse_expr()
+                    if rexpr != null {
+                        let rv = cg.emit_expr(rexpr!)
+                        llvm.build_ret(CG_B, rv)
+                    } else {
+                        llvm.build_ret_void(CG_B)
+                    }
+                } else {
+                    llvm.build_ret_void(CG_B)
+                }
+            }
+            // break (32), continue (33): emit branch directly
+            else if peek_kid == 32 {
+                body_parser.advance()
+                if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+            }
+            else if peek_kid == 33 {
+                body_parser.advance()
+                if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+            }
+            // if (25), while (30), for (28): parse with CG_ACTIVE=false
+            // `is` expressions now stored as Expr.IsCheck in AST, handled by emit_expr
+            else if peek_kid == 25 || peek_kid == 30 || peek_kid == 28 {
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
+                }
+            }
+            // All other: expression or assignment
+            // Parse with CG_ACTIVE=false, then emit
+            else {
+                CG_ACTIVE = false
+                let stmt = body_parser.parse_statement()
+                CG_ACTIVE = true
+                cg_reinit_types()
+                if stmt != null {
+                    let last = cg.emit_statement(stmt!)
+                    if last != null { CG_LAST_VAL = last; CG_HAS_LAST_VAL = 1 }
+                }
+            }
+            if body_parser.pos == before {
+                body_parser.advance()
+            }
+            body_parser.skip_newlines()
         }
     }
 
