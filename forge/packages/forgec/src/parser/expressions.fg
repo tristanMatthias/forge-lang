@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, make_nullable_type, wrap_nullable, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
+use codegen.{CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -147,159 +147,10 @@ impl Parser {
             self.advance()
             self.skip_newlines()
 
-            // Null comparison fast-path: x == null or x != null
-            let rhs_kid = self.peek().kind_id
-            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && (rhs_kid == 8 || self.peek().text == "null") {
-                self.advance() // consume 'null'
-                mut cg = codegen_new()
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                let tag = llvm.build_extract_value(CG_B, lhs, 0, "nt")
-                let zero_tag = llvm.const_int(CG_I8, 0, 0)
-                mut pred = 33
-                if op_key == "Eq" { pred = 32 }
-                let cmp = llvm.build_icmp(CG_B, pred, tag, zero_tag, "nc")
-                let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ne")
-                result_is_llvm = true
-                result_llvm = ext
-                result_is_str = false
-                CG_LAST_IS_NULLABLE = 0  // result is a boolean i64, not nullable
-                result = Expr.IntLit(0, self.current_span())
-                continue
-            }
-
-            // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
-            if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
-                mut cg = codegen_new()
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                // Truncate LHS to i1
-                let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sl")
-                let current_bb = llvm.get_insert_block(CG_B)
-                let current_fn = llvm.get_basic_block_parent(current_bb)
-                let rhs_bb = llvm.append_basic_block(CG_CTX, current_fn, "sr")
-                let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "sm")
-                // For &&: if LHS false → skip to merge (result=0), else eval RHS
-                // For ||: if LHS true → skip to merge (result=1), else eval RHS
-                if op_key == "And" {
-                    llvm.build_cond_br(CG_B, lhs_i1, rhs_bb, merge_bb)
-                } else {
-                    llvm.build_cond_br(CG_B, lhs_i1, merge_bb, rhs_bb)
-                }
-                // Parse+emit RHS inside rhs_bb
-                llvm.position_at_end(CG_B, rhs_bb)
-                let right = self.parse_next_level(level)
-                if right == null { return null }
-                let rhs = cg.emit_expr(right!)
-                // Truncate RHS result to i1
-                let rhs_i1 = llvm.build_trunc(CG_B, rhs, llvm.int1_type(CG_CTX), "sri")
-                let rhs_end_bb = llvm.get_insert_block(CG_B) // might have changed
-                llvm.build_br(CG_B, merge_bb)
-                // Merge: phi node selects result
-                llvm.position_at_end(CG_B, merge_bb)
-                // For &&: from lhs_bb → 0, from rhs_bb → rhs result
-                // For ||: from lhs_bb → 1, from rhs_bb → rhs result
-                mut short_val = llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
-                if op_key == "And" { short_val = llvm.const_int(llvm.int1_type(CG_CTX), 0, 0) }
-                let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sp")
-                llvm.add_incoming(phi, short_val, current_bb)
-                llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
-                let sc_result = llvm.build_zext(CG_B, phi, llvm.int64_type(CG_CTX), "se")
-                result_is_llvm = true
-                result_llvm = sc_result
-                result_is_str = false
-                result = Expr.IntLit(0, self.current_span())
-                continue
-            }
-
             let right = self.parse_next_level(level)
             if right == null { return null }
-            // Capture rhs_is_str from parse (for string literals)
-            mut rhs_is_str = CG_LAST_IS_STR == 1
-
-            if CG_ACTIVE {
-                mut cg = codegen_new()
-                // Get LHS: either from tracked LLVM value or emit AST
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                let rhs = cg.emit_expr(right!)
-                // Re-check rhs_is_str after emit (string() sets it during emit)
-                if CG_LAST_IS_STR == 1 { rhs_is_str = true }
-                // String operations: concat and comparison
-                // Detect if either operand is a string
-                let either_is_str = result_is_str || rhs_is_str
-                mut val: ptr = null
-                mut did_str_op = false
-                // String concat
-                if op_key == "Add" {
-                    if either_is_str {
-                        val = call_rt_2_ss(CG_RT_SCONCAT, lhs, rhs, CG_STR, "cc")
-                        did_str_op = true
-                    }
-                }
-                // String equality
-                if op_key == "Eq" || op_key == "NotEq" {
-                    if either_is_str {
-                        let eq_val = call_rt_2_ss(CG_RT_SEQ, lhs, rhs, CG_I8, "se")
-                        val = llvm.build_zext(CG_B, eq_val, llvm.int64_type(CG_CTX), "ex")
-                        if op_key == "NotEq" {
-                            val = llvm.build_icmp(CG_B, 32, val, llvm.const_int(CG_I64, 0, 0), "neq")
-                            val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "nx")
-                        }
-                        did_str_op = true
-                    }
-                }
-                // String ordering
-                if op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
-                    if either_is_str {
-                        let cmp_val = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
-                        let zero = llvm.const_int(CG_I64, 0, 0)
-                        if op_key == "Lt" { val = llvm.build_icmp(CG_B, 40, cmp_val, zero, "sl") }
-                        if op_key == "LtEq" { val = llvm.build_icmp(CG_B, 41, cmp_val, zero, "sle") }
-                        if op_key == "Gt" { val = llvm.build_icmp(CG_B, 38, cmp_val, zero, "sg") }
-                        if op_key == "GtEq" { val = llvm.build_icmp(CG_B, 39, cmp_val, zero, "sge") }
-                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "sx")
-                        did_str_op = true
-                    }
-                }
-                // Default: integer/bool operation
-                if !did_str_op {
-                    val = emit_binop(lhs, op_key, rhs)
-                }
-                // Comparison ops return i1 — zero-extend to i64
-                if !did_str_op {
-                    if op_key == "Eq" || op_key == "NotEq" || op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
-                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cx")
-                    }
-                }
-                // Track the LLVM value directly (no AST round-trip)
-                result_is_llvm = true
-                result_llvm = val
-                // String concat produces a string; other ops produce ints
-                result_is_str = op_key == "Add" && result_is_str && rhs_is_str
-                // Still update result for the non-codegen return path
-                result = Expr.IntLit(0, self.current_span())
-            } else {
-                let span = self.merge_spans(self.current_span(), self.current_span())
-                result = Expr.Binary(result, op, right!, span)
-            }
-        }
-
-        // In codegen mode: store the final LLVM value in a temp variable
-        if result_is_llvm {
-            mut cg = codegen_new()
-            BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "_b${BINOP_COUNTER}"
-            mut tmp_ty = Type.Int
-            if result_is_str { tmp_ty = Type.String }
-            cg.define_var(tmp, tmp_ty, result_llvm)
-            mut cg_str_flag = 0
-            if result_is_str { cg_str_flag = 1 }
-            CG_LAST_IS_STR = cg_str_flag
-            // Track for implicit function returns
-            CG_LAST_VAL = result_llvm
-            CG_HAS_LAST_VAL = 1
-            return Expr.Ident(tmp, self.current_span())
+            let span = self.merge_spans(self.current_span(), self.current_span())
+            result = Expr.Binary(result, op, right!, span)
         }
         result
     }
@@ -381,8 +232,8 @@ impl Parser {
                 if field == "" { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
-                // In codegen mode: handle known properties and methods inline
-                if CG_ACTIVE {
+                // CG_ACTIVE removed — codegen handles member access via emit_member_access
+                if false {
                     mut cg = codegen_new()
                     mut obj_val = cg.emit_expr(result)
                     if result_is_llvm { obj_val = result_llvm }
@@ -758,7 +609,7 @@ impl Parser {
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
                 // In codegen mode: emit indexing inline
-                if CG_ACTIVE {
+                if false {
                     mut cg = codegen_new()
                     mut obj_val = cg.emit_expr(result)
                     if result_is_llvm { obj_val = result_llvm }
@@ -827,7 +678,7 @@ impl Parser {
             // Force unwrap: expr! — extract inner value from nullable {i8, T}
             if self.check_id(84) {
                 self.advance()
-                if CG_ACTIVE {
+                if false {
                     mut cg = codegen_new()
                     mut nullable_val = cg.emit_expr(result)
                     if result_is_llvm { nullable_val = result_llvm }
@@ -858,7 +709,7 @@ impl Parser {
             // Struct literal: Ident { field: value, ... }
             if self.check_id(102) && self.is_struct_literal() {
                 let slit = self.parse_struct_literal()
-                if !CG_ACTIVE {
+                if true {
                     // Pure AST: return the Call-encoded struct literal
                     if slit != null { result = slit! }
                 } else {
@@ -885,7 +736,7 @@ impl Parser {
                     self.advance()
                     let variant_name = self.expect_ident()
 
-                    if CG_ACTIVE {
+                    if false {
                         mut cg = codegen_new()
                         mut obj_val = cg.emit_expr(result)
                         if result_is_llvm { obj_val = result_llvm }
@@ -1008,7 +859,7 @@ impl Parser {
         if tok.kind_id == 6 {
             // TemplateLiteral / DollarString
             let span = self.advance().span
-            if CG_ACTIVE {
+            if false {
                 // Parse raw template text and emit LLVM IR for string interpolation
                 let result = emit_template_expr(tok.text)
                 BINOP_COUNTER = BINOP_COUNTER + 1
@@ -1028,7 +879,7 @@ impl Parser {
             LAST_IDENT_NAME = name
 
             // Track string/map/struct/nullable/enum type for this ident
-            if CG_ACTIVE {
+            if false {
                 mut cg = codegen_new()
                 // Check struct type
                 let st = var_struct_type(name)
@@ -1127,7 +978,7 @@ impl Parser {
         }
 
         // Check for empty {} → map literal (when used as value expression)
-        if CG_ACTIVE {
+        if false {
             // Peek: if next meaningful token after { is }, it's an empty map
             let next = self.peek_at(1)
             if next.kind_id == 103 || next.kind_id == 120 {
@@ -1191,7 +1042,7 @@ impl Parser {
         let start = self.advance().span // consume {
 
         // In codegen mode: build LLVM struct value inline
-        if CG_ACTIVE {
+        if false {
             let struct_name = LAST_IDENT_NAME
             // Collect field values, names, and types
             let vals = llvm.value_array_new(32)
@@ -1402,7 +1253,7 @@ impl Parser {
     fn parse_list_literal(self) -> Expr? {
         let start = self.advance().span // consume [
 
-        if CG_ACTIVE {
+        if false {
             // Count elements first by parsing and emitting each immediately
             // Use a two-pass approach: first count, then emit
             // Actually, use a growing approach: start with alloc(8*16), fill, realloc if needed
@@ -1526,7 +1377,7 @@ impl Parser {
 
         self.skip_newlines()
 
-        if CG_ACTIVE {
+        if false {
             // Inline emit: control flow needs immediate basic blocks
             mut cg = codegen_new()
             let cond_val = cg.emit_expr(condition!)
@@ -1662,7 +1513,7 @@ impl Parser {
         self.skip_newlines()
         if self.expect_id(102) == null { return null }
 
-        if CG_ACTIVE {
+        if false {
             // Emit scrutinee value once
             mut cg = codegen_new()
             let subj_val = cg.emit_expr(scrutinee!)
@@ -2045,7 +1896,7 @@ impl Parser {
 
 // ─── Struct Field Helpers ────────────────────────
 
-use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
+use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
 use features.functions.{FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS}
 use features.if_else.{store_if_expr}
 
@@ -2323,9 +2174,8 @@ impl Parser {
 
 // ─── Runtime Call Helpers ────────────────────────
 
-use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
-use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
-use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT, cg_var_enum_type}
+use codegen.{CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
+use codegen.{cg_var_enum_type}
 use parser.templates.{decompose_template}
 
 fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
@@ -2723,7 +2573,7 @@ fn csv_enum_max_fields(name: string) -> int {
 fn make_enum_llvm_type(name: string) -> ptr {
     let mf = csv_enum_max_fields(name)
     if mf == 0 { return null }
-    if !CG_ACTIVE { return null }
+    if true { return null }
     let fc = mf + 1
     let fields = llvm.type_array_new(fc)
     llvm.type_array_set(fields, 0, CG_I8)

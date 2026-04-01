@@ -17,7 +17,7 @@ use core.error.{render_diagnostic, render_all}
 use lexer.{lexer_new}
 use parser.{parser_new, parser_new_with_source}
 use checker.{type_checker_new}
-use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup, CG_ACTIVE}
+use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, codegen_emit_object, codegen_cleanup}
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source, materialize_struct_types}
 
@@ -275,7 +275,7 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
-    CG_ACTIVE = false
+    // CG_ACTIVE removed
     eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
     eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
