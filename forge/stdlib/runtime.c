@@ -3620,3 +3620,18 @@ void* forge_struct_reg_find_type(ForgeString name) {
     }
     return NULL;
 }
+
+// Last emit result (C-side, immune to Forge global corruption)
+static void* _last_emit_result = NULL;
+void forge_set_last_emit_result(void* val) { _last_emit_result = val; }
+void* forge_get_last_emit_result(void) { return _last_emit_result; }
+
+// Debug version
+void forge_set_last_emit_result_debug(void* val) {
+    fprintf(stderr, "[set_ler] %p\n", val);
+    _last_emit_result = val;
+}
+void* forge_get_last_emit_result_debug(void) {
+    fprintf(stderr, "[get_ler] %p\n", _last_emit_result);
+    return _last_emit_result;
+}

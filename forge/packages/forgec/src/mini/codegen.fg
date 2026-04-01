@@ -3390,6 +3390,12 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_struct_var_add(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_struct_var_get(%ForgeString)")
     // C-side struct type registry
+    ir_raw("declare void @forge_set_last_emit_result(ptr)")
+    ir_raw("declare ptr @forge_get_last_emit_result()")
+    FN_NAMES = FN_NAMES.push("forge_get_last_emit_result")
+    FN_RETTYPES = FN_RETTYPES.push("ptr")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
     ir_raw("declare void @forge_struct_reg_clear()")
     ir_raw("declare void @forge_struct_reg_add(%ForgeString, %ForgeString, %ForgeString)")
     ir_raw("declare void @forge_struct_reg_set_llvm_type(%ForgeString, ptr)")

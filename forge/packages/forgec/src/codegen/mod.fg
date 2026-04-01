@@ -38,6 +38,9 @@ mut CG_RT_MEMCPY: ptr = null
 // List struct type: {ptr data, i64 count}
 mut CG_LIST: ptr = null
 
+// Last emitted LLVM value (workaround: TypedValue.val lost during struct return)
+mut CG_LAST_EMIT_RESULT: ptr = null
+
 // Map runtime helpers (pointer-based API in runtime.c)
 export mut CG_RT_MAP_NEW: ptr = null
 export mut CG_RT_MAP_HAS: ptr = null
@@ -985,6 +988,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_struct_var_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_struct_var_get", make_fn_type_1(CG_STR, CG_STR))
     // C-side struct type registry (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_set_last_emit_result", make_fn_type_1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_get_last_emit_result", make_fn_type_0(CG_PTR))
     llvm.add_function(CG_MOD, "forge_struct_reg_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_struct_reg_add", make_fn_type_3(CG_VOID, CG_STR, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_struct_reg_set_llvm_type", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
@@ -1272,12 +1277,20 @@ impl Codegen {
 
     fn emit_expr(self, expr: Expr) -> TypedValue {
         match expr {
-            .IntLit(value, span) -> { return tv_int(llvm.const_int(CG_I64, value, 0)) }
+            .IntLit(value, span) -> {
+                let iv = llvm.const_int(CG_I64, value, 0)
+                forge_set_last_emit_result(iv)
+                return tv_int(iv)
+            }
             .FloatLit(value, span) -> {
                 let fv = llvm.const_real(CG_F64, value)
                 return tv_typed(fv, CG_F64, "float")
             }
-            .StringLit(value, span) -> { return tv_str(self.emit_string(value)) }
+            .StringLit(value, span) -> {
+                let sv = self.emit_string(value)
+                forge_set_last_emit_result(sv)
+                return tv_str(sv)
+            }
             .BoolLit(value, span) -> {
                 if value { return tv_bool(llvm.const_int(CG_I64, 1, 0)) }
                 return tv_bool(llvm.const_int(CG_I64, 0, 0))
@@ -1425,6 +1438,7 @@ impl Codegen {
                 }
             }
             let loaded = llvm.build_load(CG_B, load_ty, cached_ptr, name)
+            forge_set_last_emit_result(loaded)
             return tv_typed(loaded, load_ty, type_name)
         }
         // FALLBACK: search CG_VAR_NAMES
@@ -1752,8 +1766,9 @@ impl Codegen {
         let ft = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
+        // Store result in C-side (TypedValue.val gets lost during struct return ABI)
+        forge_set_last_emit_result(r)
         // Determine return type from C-side registry
-        // Note: forge_fn_reg_get_ret allocates a new ForgeString; check if result is valid
         let rtn = forge_fn_reg_get_ret(fn_name)
         self.tv_from_return_type(r, rtn)
     }
@@ -2115,12 +2130,15 @@ impl Codegen {
         mut alloca_ty = tv.ty
         if alloca_ty == null { alloca_ty = CG_I64 }
         if CG_B == 0 { return }
+        // Use C-side last emit result as the value source
+        // (TypedValue val/ty fields get corrupted by mini's alloca storage)
+        let real_val = forge_get_last_emit_result()
         // ALWAYS check LLVMTypeOf — catches ForgeString, structs, enums
-        // even when CG_STR is null (global corruption)
-        if tv.val != null {
-            let actual_ty = llvm.type_of(tv.val)
+        if real_val != null {
+            let actual_ty = llvm.type_of(real_val)
             if actual_ty != null {
                 let actual_kind = llvm.get_type_kind(actual_ty)
+                eprintln("  [dv] " + name + " kind=" + string(actual_kind) + " rv=" + string(real_val != null))
                 if actual_kind == 12 { alloca_ty = CG_PTR }
                 if actual_kind == 13 { alloca_ty = actual_ty }
             }
@@ -2128,8 +2146,8 @@ impl Codegen {
         // Additional fallback for when LLVMTypeOf returns i64
         if alloca_ty == CG_I64 || alloca_ty == 0 {
             if alloca_ty == 0 { alloca_ty = CG_I64 }
-            if tv.val != null {
-                let val_ty = llvm.type_of(tv.val)
+            if real_val != null {
+                let val_ty = llvm.type_of(real_val)
                 if val_ty != null {
                     let kind = llvm.get_type_kind(val_ty)
                     if kind == 12 { alloca_ty = CG_PTR }
@@ -2153,7 +2171,7 @@ impl Codegen {
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
         // Restore position and store
         llvm.position_at_end(CG_B, cur_bb)
-        llvm.build_store(CG_B, tv.val, alloca)
+        llvm.build_store(CG_B, real_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         // Register in C-side caches based on ACTUAL alloca type (not TypedValue type_name)
@@ -2175,8 +2193,11 @@ impl Codegen {
             .Assign(target, value, s) -> { self.emit_assign(target, value) }
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
-                let tv = self.emit_expr(val)
-                self.define_var(name, tv)
+                // Emit expr — use C-side last emit result for the LLVM value
+                // (TypedValue fields get corrupted by mini's i64 alloca storage)
+                self.emit_expr(val)
+                let real = forge_get_last_emit_result()
+                self.define_var(name, tv_int(real))
             }
             .If(cond, then_body, else_body, has_else, s) -> {
                 let cv = self.emit_expr(cond)
