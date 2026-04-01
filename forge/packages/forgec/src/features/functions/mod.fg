@@ -733,7 +733,82 @@ export fn materialize_struct_types() {
         CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
         CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
         CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
+        // Update C-side registry with LLVM type
+        forge_struct_reg_set_llvm_type(sname, sty)
         si = si + 1
+    }
+    // Second pass: create LLVM types for structs in C-side registry that were
+    // missed by the Forge list (list corruption drops entries after ~40 items)
+    let c_count = forge_struct_reg_count()
+    mut ci = 0
+    while ci < c_count {
+        let cname = forge_struct_reg_get_name(ci)
+        // Skip if already has an LLVM type
+        if forge_struct_reg_get_llvm_type(ci) != null {
+            ci = ci + 1
+            continue
+        }
+        // Check if already exists as named type
+        cg_reinit_types()
+        let existing = llvm.get_type_by_name(CG_CTX, cname)
+        if existing != null {
+            forge_struct_reg_set_llvm_type(cname, existing)
+            ci = ci + 1
+            continue
+        }
+        // Create from field type names
+        let cftn = forge_struct_reg_get_field_types(ci)
+        let cfields = forge_struct_reg_get_fields(ci)
+        // Count fields
+        mut cfc = 1
+        mut cci = 0
+        while cci < cfields.length {
+            if cfields[cci] == "," { cfc = cfc + 1 }
+            cci = cci + 1
+        }
+        if cfields.length == 0 { cfc = 0 }
+        if cfc > 0 {
+            let cfta = llvm.type_array_new(cfc)
+            if cftn.length > 0 {
+                mut cfi = 0
+                mut cftn_pos = 0
+                mut cftn_cur = ""
+                while cftn_pos < cftn.length {
+                    let cch = cftn[cftn_pos]
+                    if cch == "," {
+                        cg_reinit_types()
+                        llvm.type_array_set(cfta, cfi, resolve_type_to_llvm(cftn_cur))
+                        cfi = cfi + 1
+                        cftn_cur = ""
+                    } else {
+                        cftn_cur = cftn_cur + cch
+                    }
+                    cftn_pos = cftn_pos + 1
+                }
+                if cftn_cur != "" {
+                    cg_reinit_types()
+                    llvm.type_array_set(cfta, cfi, resolve_type_to_llvm(cftn_cur))
+                }
+            } else {
+                // No field type names — use i64 for all fields
+                mut cfi = 0
+                while cfi < cfc {
+                    llvm.type_array_set(cfta, cfi, CG_I64)
+                    cfi = cfi + 1
+                }
+            }
+            let csty = llvm.struct_create_named(CG_CTX, cname)
+            llvm.struct_set_body(csty, cfta, cfc, 0)
+            llvm.type_array_free(cfta)
+            forge_struct_reg_set_llvm_type(cname, csty)
+            // Also add to Forge lists for compatibility
+            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(cname)
+            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(cfields)
+            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push("")
+            CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(cftn)
+            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(csty)
+        }
+        ci = ci + 1
     }
 }
 

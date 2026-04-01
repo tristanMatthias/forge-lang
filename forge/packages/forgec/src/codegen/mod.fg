@@ -147,10 +147,13 @@ fn resolve_type_name_to_llvm(name: string) -> ptr {
     if name == "void" { return CG_VOID }
     if name.length >= 5 && name.substring(0, 5) == "List<" { return CG_LIST }
     if name.length >= 4 && name.substring(0, 4) == "Map<" { return CG_PTR }
-    // Direct LLVM named type lookup (most reliable)
+    // Direct LLVM named type lookup
     let named = llvm.get_type_by_name(CG_CTX, name)
     if named != null { return named }
-    // Struct/enum — look up in struct registry
+    // C-side struct registry (immune to list corruption)
+    let csr = forge_struct_reg_find_type(name)
+    if csr != null { return csr }
+    // Struct list (may be corrupted)
     mut si = 0
     while si < CG_STRUCT_NAMES.length {
         if CG_STRUCT_NAMES[si] == name { return CG_STRUCT_TYPES[si] }
@@ -725,6 +728,8 @@ export fn register_struct_type(name: string, fields: string, field_is_str: strin
     CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(field_is_str)
     CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(llvm_ty)
     CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push("")
+    // Also register in C-side registry (immune to list corruption)
+    forge_struct_reg_add(name, fields, "")
 }
 
 // Register a struct type with field type names
@@ -734,6 +739,8 @@ export fn register_struct_type_full(name: string, fields: string, field_is_str: 
     CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(field_is_str)
     CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(llvm_ty)
     CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(field_type_names)
+    // Also register in C-side registry (immune to list corruption)
+    forge_struct_reg_add(name, fields, field_type_names)
 }
 
 // Resolve a type name to its LLVM type
@@ -784,7 +791,10 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
         let ety = cg_get_enum_ty_for(type_name)
         if ety != null { return ety }
     }
-    // Fallback: check struct list
+    // C-side struct registry lookup (immune to list corruption)
+    let sr_ty = forge_struct_reg_find_type(type_name)
+    if sr_ty != null { return sr_ty }
+    // Fallback: check struct list (may be corrupted)
     mut sti = CG_STRUCT_NAMES.length - 1
     while sti >= 0 {
         if CG_STRUCT_NAMES[sti] == type_name {
@@ -983,6 +993,16 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_struct_var_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_struct_var_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_struct_var_get", make_fn_type_1(CG_STR, CG_STR))
+    // C-side struct type registry (immune to Forge list corruption)
+    llvm.add_function(CG_MOD, "forge_struct_reg_clear", make_fn_type_0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_struct_reg_add", make_fn_type_3(CG_VOID, CG_STR, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_reg_set_llvm_type", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_struct_reg_count", make_fn_type_0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_reg_get_name", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_reg_get_fields", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_reg_get_field_types", make_fn_type_1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_reg_get_llvm_type", make_fn_type_1(CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_reg_find_type", make_fn_type_1(CG_PTR, CG_STR))
     // C-side variable name tracking (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_var_name_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_var_name_push", make_fn_type_1(CG_VOID, CG_STR))

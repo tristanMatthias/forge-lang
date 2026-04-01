@@ -2669,6 +2669,88 @@ ForgeString forge_fn_reg_get_ret(ForgeString name) {
 
 int64_t forge_fn_reg_count(void) { return _fn_reg_count; }
 
+// ─── C-side struct type registry (immune to Forge list corruption) ───
+#define STRUCT_REG_MAX 256
+static struct {
+    char name[64];
+    char fields[256];       // comma-separated field names
+    char field_types[512];  // comma-separated field type names
+    void* llvm_type;        // LLVM struct type pointer (set during materialization)
+} _struct_reg[STRUCT_REG_MAX];
+static int _struct_reg_count = 0;
+
+void forge_struct_reg_clear(void) { _struct_reg_count = 0; }
+
+void forge_struct_reg_add(ForgeString name, ForgeString fields, ForgeString field_types) {
+    if (_struct_reg_count >= STRUCT_REG_MAX) return;
+    if (!name.ptr || name.len <= 0 || name.len > 63) return;
+    // Check if already exists — update instead of adding
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if ((int64_t)strlen(_struct_reg[i].name) == name.len &&
+            memcmp(_struct_reg[i].name, name.ptr, name.len) == 0) {
+            // Update existing entry
+            if (fields.ptr && fields.len > 0 && fields.len < 255) {
+                memcpy(_struct_reg[i].fields, fields.ptr, fields.len);
+                _struct_reg[i].fields[fields.len] = '\0';
+            }
+            if (field_types.ptr && field_types.len > 0 && field_types.len < 511) {
+                memcpy(_struct_reg[i].field_types, field_types.ptr, field_types.len);
+                _struct_reg[i].field_types[field_types.len] = '\0';
+            }
+            return;
+        }
+    }
+    memcpy(_struct_reg[_struct_reg_count].name, name.ptr, name.len);
+    _struct_reg[_struct_reg_count].name[name.len] = '\0';
+    if (fields.ptr && fields.len > 0 && fields.len < 255) {
+        memcpy(_struct_reg[_struct_reg_count].fields, fields.ptr, fields.len);
+        _struct_reg[_struct_reg_count].fields[fields.len] = '\0';
+    } else {
+        _struct_reg[_struct_reg_count].fields[0] = '\0';
+    }
+    if (field_types.ptr && field_types.len > 0 && field_types.len < 511) {
+        memcpy(_struct_reg[_struct_reg_count].field_types, field_types.ptr, field_types.len);
+        _struct_reg[_struct_reg_count].field_types[field_types.len] = '\0';
+    } else {
+        _struct_reg[_struct_reg_count].field_types[0] = '\0';
+    }
+    _struct_reg[_struct_reg_count].llvm_type = NULL;
+    _struct_reg_count++;
+}
+
+void forge_struct_reg_set_llvm_type(ForgeString name, void* ty) {
+    if (!name.ptr || name.len <= 0) return;
+    for (int i = _struct_reg_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_struct_reg[i].name) == name.len &&
+            memcmp(_struct_reg[i].name, name.ptr, name.len) == 0) {
+            _struct_reg[i].llvm_type = ty;
+            return;
+        }
+    }
+}
+
+int64_t forge_struct_reg_count(void) { return _struct_reg_count; }
+
+ForgeString forge_struct_reg_get_name(int64_t idx) {
+    if (idx < 0 || idx >= _struct_reg_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_struct_reg[idx].name, strlen(_struct_reg[idx].name)};
+}
+
+ForgeString forge_struct_reg_get_fields(int64_t idx) {
+    if (idx < 0 || idx >= _struct_reg_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_struct_reg[idx].fields, strlen(_struct_reg[idx].fields)};
+}
+
+ForgeString forge_struct_reg_get_field_types(int64_t idx) {
+    if (idx < 0 || idx >= _struct_reg_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_struct_reg[idx].field_types, strlen(_struct_reg[idx].field_types)};
+}
+
+void* forge_struct_reg_get_llvm_type(int64_t idx) {
+    if (idx < 0 || idx >= _struct_reg_count) return NULL;
+    return _struct_reg[idx].llvm_type;
+}
+
 // C-side ptr variable tracking (for LLVM Value* globals like CG_MOD, CG_B, etc.)
 #define PTR_VAR_CACHE_SIZE 128
 static char _ptr_var_names[PTR_VAR_CACHE_SIZE][64];
@@ -3525,4 +3607,16 @@ ForgeString forge_tok_to_list(void) {
     char* elems = data + sizeof(int64_t);
     memcpy(elems, _tok_buf, _tok_count * elem_size);
     return (ForgeString){elems, _tok_count};
+}
+
+// Look up LLVM type by struct name in C-side registry
+void* forge_struct_reg_find_type(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return NULL;
+    for (int i = _struct_reg_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_struct_reg[i].name) == name.len &&
+            memcmp(_struct_reg[i].name, name.ptr, name.len) == 0) {
+            return _struct_reg[i].llvm_type;
+        }
+    }
+    return NULL;
 }
