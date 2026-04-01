@@ -1277,8 +1277,8 @@ impl Codegen {
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
                 mut cmp_lhs = obj_tv.val
                 // If it's an enum, extract the tag field
-                let obj_kind = llvm.get_type_kind(llvm.type_of(obj_tv.val))
-                if obj_kind == 13 {
+                // Check if subject is an enum by trying extractvalue
+                if tv_is_struct(obj_tv) {
                     let etag = llvm.build_extract_value(CG_B, obj_tv.val, 0, "it")
                     if etag != null {
                         cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
@@ -1452,11 +1452,8 @@ impl Codegen {
             .Div -> { return tv_int(llvm.build_sdiv(CG_B, lhs, rhs, "div")) }
             .Mod -> { return tv_int(llvm.build_srem(CG_B, lhs, rhs, "mod")) }
             .Eq -> {
-                if lhs_is_str || rhs_is_str {
-                    // Verify with actual LLVM types
-                    let lt = llvm.type_of(lhs)
-                    let rt = llvm.type_of(rhs)
-                    if lt == CG_STR || rt == CG_STR {
+                if lhs_is_str {
+                    if rhs_is_str {
                         let cmp_r = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
                         return tv_bool(llvm.build_icmp(CG_B, 32, cmp_r, llvm.const_int(CG_I64, 0, 0), "eq"))
                     }
@@ -1464,10 +1461,8 @@ impl Codegen {
                 return tv_bool(llvm.build_icmp(CG_B, 32, lhs, rhs, "eq"))
             }
             .NotEq -> {
-                if lhs_is_str || rhs_is_str {
-                    let lt = llvm.type_of(lhs)
-                    let rt = llvm.type_of(rhs)
-                    if lt == CG_STR || rt == CG_STR {
+                if lhs_is_str {
+                    if rhs_is_str {
                         let cmp_r = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
                         return tv_bool(llvm.build_icmp(CG_B, 33, cmp_r, llvm.const_int(CG_I64, 0, 0), "ne"))
                     }
@@ -1752,7 +1747,12 @@ impl Codegen {
                             mut fstart = 0
                             mut fpos = 0
                             while fpos <= ftnames.length {
-                                if fpos == ftnames.length || ftnames[fpos] == "," {
+                                mut is_sep = false
+                                if fpos == ftnames.length { is_sep = true }
+                                if !is_sep {
+                                    if ftnames[fpos] == "," { is_sep = true }
+                                }
+                                if is_sep {
                                     if fidx == fi {
                                         ftype_name = ftnames.substring(fstart, fpos)
                                     }
@@ -1876,7 +1876,8 @@ impl Codegen {
                 let tag = int(pat)
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
                 mut cmp_val = subj_tv.val
-                let sk = llvm.get_type_kind(llvm.type_of(subj_tv.val))
+                mut sk = 0
+                if subj_tv.val != null { sk = llvm.get_type_kind(llvm.type_of(subj_tv.val)) }
                 if sk == 13 {
                     let etag = llvm.build_extract_value(CG_B, subj_tv.val, 0, "mt")
                     if etag != null { cmp_val = llvm.build_zext(CG_B, etag, CG_I64, "mz") }
@@ -1917,13 +1918,15 @@ impl Codegen {
         if alloca_ty == null { alloca_ty = CG_I64 }
         if CG_B == 0 { return }
         if alloca_ty == 0 { return }
-        // LLVMTypeOf fallback
-        if alloca_ty == CG_I64 && tv.val != null {
-            let val_ty = llvm.type_of(tv.val)
-            if val_ty != null {
-                let kind = llvm.get_type_kind(val_ty)
-                if kind == 12 { alloca_ty = CG_PTR }
-                if kind == 13 { alloca_ty = val_ty }
+        // LLVMTypeOf fallback (guard against null/dangling values)
+        if alloca_ty == CG_I64 {
+            if tv.val != null {
+                let val_ty = llvm.type_of(tv.val)
+                if val_ty != null {
+                    let kind = llvm.get_type_kind(val_ty)
+                    if kind == 12 { alloca_ty = CG_PTR }
+                    if kind == 13 { alloca_ty = val_ty }
+                }
             }
         }
         // Create alloca in entry block
