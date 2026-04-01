@@ -283,7 +283,9 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
-    # Step 7c: Fix anonymous struct types and malformed struct literals
+    # Step 7c: (reserved)
+
+    # Step 7d: Fix anonymous struct types and malformed struct literals
     fixed_output = []
     for line in output:
         # { ptr, i64 } constants in insertvalue should be %ForgeString
