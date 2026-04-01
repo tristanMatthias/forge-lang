@@ -1238,6 +1238,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_emit_object_file", p2)
     // C-side alloca cache (immune to Forge ptr corruption)
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", make_fn_type_0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_trace", make_fn_type_1(CG_VOID, CG_I64))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", make_fn_type_2(CG_I64, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set_fn", make_fn_type_1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_get", make_fn_type_1(CG_PTR, CG_STR))

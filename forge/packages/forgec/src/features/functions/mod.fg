@@ -468,6 +468,7 @@ export fn declare_all_fns() {
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = forge_fn_store_get_name(idx)
     eprintln("  emit: " + name)
+    if name == "Lexer__lex_string" { forge_alloca_cache_trace(20) }
     // Use C-side body store (immune to Forge list corruption that misaligns indices)
     let body_src = forge_fn_store_get_body(idx)
     let is_main = name == "main"
@@ -535,14 +536,13 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         // self param: store ptr directly in cache (no alloca copy needed)
         mut alloca = param_val
         if pname != "self" {
-            forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
+            forge_alloca_cache_set(pname, alloca)
             forge_alloca_cache_set_type(pname, p_ty)
             llvm.build_store(CG_B, param_val, alloca)
         } else {
-            // Create ptr alloca for self too
-            forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, CG_PTR, pname)
+            forge_alloca_cache_set(pname, alloca)
             forge_alloca_cache_set_type(pname, CG_PTR)
             llvm.build_store(CG_B, param_val, alloca)
         }

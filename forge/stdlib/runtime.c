@@ -3123,6 +3123,14 @@ ForgeString forge_fn_store_get_name(int64_t idx) {
 
 int64_t forge_fn_store_count(void) { return _fn_store_count; }
 
+void forge_fn_store_dump_param_counts(void) {
+    for (int i = 0; i < _fn_store_count; i++) {
+        if (_fn_store[i].param_count == 0 && strlen(_fn_store[i].name) > 5) {
+            fprintf(stderr, "  [pc0] #%d %s pc=%lld\n", i, _fn_store[i].name, (long long)_fn_store[i].param_count);
+        }
+    }
+}
+
 void forge_fn_store_set_param_count(int64_t idx, int64_t count) {
     if (idx >= 0 && idx < _fn_store_count) _fn_store[idx].param_count = count;
 }
@@ -3341,6 +3349,7 @@ int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void*
 // All entries not matching this fn ptr are considered stale
 void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
 
+static int _ac_set_trace = 0;
 int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
     if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
     // Update existing entry if same name AND same function
@@ -3524,6 +3533,8 @@ int64_t forge_let_needs_alloca(void) {
     }
     return 1;  // Not in cache — needs alloca
 }
+static int _ac_trace = 0;
+void forge_alloca_cache_trace(int64_t enable) { _ac_trace = (int)enable; _ac_set_trace = (int)enable; }
 void* forge_alloca_cache_get(ForgeString name) {
     if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) {
         _ac_miss_count++;
