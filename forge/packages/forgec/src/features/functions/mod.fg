@@ -471,8 +471,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     // Use C-side body store (immune to Forge list corruption that misaligns indices)
     let body_src = forge_fn_store_get_body(idx)
     let is_main = name == "main"
-    mut pc = 0
-    if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
+    let pc = forge_fn_store_get_param_count(idx)
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
@@ -505,6 +504,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_VAR_SCOPE_START = CG_VAR_NAMES.length
     // Reset C-side caches for this function
     forge_alloca_cache_clear()
+    forge_alloca_cache_set_fn(fn_val)
     forge_str_var_clear()
     forge_idx_cache_clear()
     forge_var_counter_reset(CG_VAR_SCOPE_START)
@@ -1134,13 +1134,10 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
     let fpn_total = forge_fn_store_count()
     while fi < fpn_total {
         if forge_fn_store_get_name(fi) == name { break }
-        if fi < FN_PARAM_COUNTS.length {
-            param_offset = param_offset + FN_PARAM_COUNTS[fi]
-        }
+        param_offset = param_offset + forge_fn_store_get_param_count(fi)
         fi = fi + 1
     }
-    mut pc = 0
-    if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
+    let pc = forge_fn_store_get_param_count(fi)
     mut pi = 0
     while pi < pc {
         let pt_idx = param_offset + pi
