@@ -185,6 +185,7 @@ extern "C" {
     fn LLVMConstNull(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMGetUndef(ty: LLVMPtr) -> LLVMPtr;
     fn LLVMConstStructInContext(ctx: LLVMPtr, values: *mut LLVMPtr, count: c_uint, packed: c_int) -> LLVMPtr;
+    fn LLVMConstNamedStruct(struct_ty: LLVMPtr, values: *mut LLVMPtr, count: c_uint) -> LLVMPtr;
     fn LLVMConstStringInContext(ctx: LLVMPtr, str: *const c_char, len: c_uint, dont_null_terminate: c_int) -> LLVMPtr;
     fn LLVMConstBitCast(val: LLVMPtr, ty: LLVMPtr) -> LLVMPtr;
     fn LLVMArrayType(element_type: LLVMPtr, count: c_uint) -> LLVMPtr;
@@ -940,7 +941,8 @@ pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, 
                 // Fallback: use anonymous struct
                 return LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0);
             }
-            LLVMConstStructInContext(cache.ctx, fields.as_mut_ptr(), 2, 0)
+            // Use named struct type so LLVM IR prints %ForgeString, not { ptr, i64 }
+            LLVMConstNamedStruct(str_ty, fields.as_mut_ptr(), 2)
         }
     })
 }

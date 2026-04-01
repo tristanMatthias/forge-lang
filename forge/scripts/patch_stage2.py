@@ -150,6 +150,51 @@ def fix_forward_refs(lines):
         result.append(fixed_line)
     return result, fixes
 
+def fix_forward_store_values(lines):
+    """Fix stores that reference undefined value registers (not just ptr refs)."""
+    # Collect all defined registers and alloca registers
+    defined = set()
+    allocas = {}
+    for i, line in enumerate(lines):
+        m = re.match(r'\s+%(\d+)\s*=\s*(.*)', line)
+        if m:
+            reg = int(m.group(1))
+            defined.add(reg)
+            if m.group(2).strip().startswith('alloca '):
+                am = re.match(r'alloca (\S+)', m.group(2).strip())
+                allocas[reg] = am.group(1).rstrip(',') if am else 'i64'
+    # Pre-populate with function parameters
+    fn_m = re.match(r'define .+ @\w+\((.*?)\)', lines[0]) if lines else None
+    if fn_m:
+        for pm in re.finditer(r'%(\d+)', fn_m.group(1)):
+            defined.add(int(pm.group(1)))
+
+    result = []; fixes = 0; seen = set()
+    for i, line in enumerate(lines):
+        dm = re.match(r'\s+%(\d+)\s*=', line)
+        if dm: seen.add(int(dm.group(1)))
+        # Check: store TYPE %REG, ptr %DEST where %REG is not yet defined
+        sm = re.match(r'(\s+store )(\S+)( %(\d+))(, ptr %(\d+).*)', line)
+        if sm:
+            val_reg = int(sm.group(4))
+            if val_reg not in seen:
+                # Replace with zeroinitializer/0 for the type
+                ty = sm.group(2)
+                if ty.startswith('%'):
+                    replacement = ty + ' zeroinitializer'
+                elif ty in ('i64', 'i32', 'i8', 'i1'):
+                    replacement = ty + ' 0'
+                elif ty == 'ptr':
+                    replacement = 'ptr null'
+                elif ty == 'double':
+                    replacement = 'double 0.0'
+                else:
+                    replacement = ty + ' zeroinitializer'
+                line = sm.group(1) + replacement + sm.group(5)
+                fixes += 1
+        result.append(line)
+    return result, fixes
+
 def fix_self_refs(lines):
     """Fix self-referencing loads."""
     result = []; fixes = 0
@@ -200,7 +245,8 @@ def process_function(fn_lines):
     """Apply forward ref + self ref fixes to a single function."""
     fixed, n1 = fix_forward_refs(fn_lines)
     fixed, n2 = fix_self_refs(fixed)
-    return fixed, n1 + n2
+    fixed, n3 = fix_forward_store_values(fixed)
+    return fixed, n1 + n2 + n3
 
 def main():
     if len(sys.argv) < 3:
@@ -283,7 +329,59 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
-    # Step 7c: (reserved)
+    # Step 7b2: Fix nullable insertvalue type mismatches
+    # When value type doesn't match { i8, i64 } field 1, replace with i64 0
+    fixed_output = []
+    for line in output:
+        if 'insertvalue' in line and '{ i8, i64 }' in line:
+            m = re.match(r'(\s+%\w+ = insertvalue \{ i8, i64 \} .+, )(\S+) (%\S+)(, 1)', line)
+            if m:
+                val_type = m.group(2)
+                if val_type != 'i64':
+                    line = m.group(1) + 'i64 0' + m.group(4)
+                    total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
+
+    # Step 7c: Fix struct literals with ptr null where i64 expected + ptr null insertvalue
+    # Build struct type registry
+    struct_types = {}
+    for line in output:
+        m = re.match(r'(%\w+) = type \{ (.+) \}', line)
+        if m:
+            fields = [f.strip() for f in m.group(2).split(',')]
+            struct_types[m.group(1)] = fields
+
+    fixed_output = []
+    for line in output:
+        if 'insertvalue' in line:
+            # Fix struct literals: %Type { ptr null, ... } → %Type undef
+            m = re.match(r'(\s+%\w+ = insertvalue )(%\w+) \{ ptr null(.*?\})(.*)', line)
+            if m:
+                line = m.group(1) + m.group(2) + ' undef' + m.group(4)
+                total_fixes += 1
+            # Fix: insertvalue %Type %base, ptr null, N where field N is i64
+            m2 = re.match(r'(\s+%\w+ = insertvalue )(%\w+)( %\w+, )ptr null(, (\d+))', line)
+            if m2:
+                stype = m2.group(2)
+                field_idx = int(m2.group(5))
+                if stype in struct_types and field_idx < len(struct_types[stype]):
+                    expected = struct_types[stype][field_idx]
+                    if expected == 'i64':
+                        line = m2.group(1) + m2.group(2) + m2.group(3) + 'i64 0' + m2.group(4)
+                        total_fixes += 1
+            # Fix: insertvalue %Type %base, ptr %N, N where field N is i64
+            m3 = re.match(r'(\s+%\w+ = insertvalue )(%\w+)( %\w+, )ptr (%\w+)(, (\d+))', line)
+            if m3:
+                stype = m3.group(2)
+                field_idx = int(m3.group(6))
+                if stype in struct_types and field_idx < len(struct_types[stype]):
+                    expected = struct_types[stype][field_idx]
+                    if expected == 'i64':
+                        line = m3.group(1) + m3.group(2) + m3.group(3) + 'i64 0' + m3.group(5)
+                        total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
 
     # Step 7d: Fix anonymous struct types and malformed struct literals
     fixed_output = []

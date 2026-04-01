@@ -91,13 +91,13 @@ fn parse_type_decl(p: Parser) -> Statement? {
             p.expect_id(112)  // Colon
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
-            // Capture generic arg for List<T> → store as "List:T"
+            // Capture generic arg for List<T> → store as "List<T>"
             if p.check_id(78) {  // Lt
                 p.advance()
                 let gen_arg = p.expect_ident()
-                // Store as "List:Diagnostic" so element type is recoverable
+                // Store as "List<Diagnostic>" so resolve_type_to_llvm can match it
                 if ftype_name == "List" || ftype_name == "Map" {
-                    ftype_name = ftype_name + ":" + gen_arg
+                    ftype_name = ftype_name + "<" + gen_arg + ">"
                 }
                 // Skip remaining generic args
                 mut depth = 1
