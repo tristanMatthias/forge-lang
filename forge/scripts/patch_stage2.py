@@ -254,7 +254,22 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
-    # Step 7: (reserved for future call type fixes if needed)
+    # Step 7: Fix anonymous struct types and malformed struct literals
+    fixed_output = []
+    for line in output:
+        # { ptr, i64 } constants in insertvalue should be %ForgeString
+        if 'insertvalue' in line and '{ ptr, i64 }' in line:
+            line = line.replace('{ ptr, i64 } { ptr @', '%ForgeString { ptr @')
+            line = line.replace('{ ptr, i64 } zeroinitializer', '%ForgeString zeroinitializer')
+            total_fixes += 1
+        # Fix malformed struct literals: %Type { i64 0, ... } → %Type undef (then insertvalue)
+        if 'insertvalue' in line:
+            m = re.match(r'(\s+%\w+ = insertvalue )(%\w+) \{ i64 0,.*\}(, .+)', line)
+            if m:
+                line = m.group(1) + m.group(2) + ' undef' + m.group(3)
+                total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
 
     with open(sys.argv[2], 'w') as f:
         f.write('\n'.join(output))

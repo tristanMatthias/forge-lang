@@ -7,6 +7,7 @@ use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, Feat
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
+use parser.expressions.{match_enum_tag}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -283,6 +284,7 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         let gv = llvm.add_global(CG_MOD, gty, name)
         mut zero = llvm.const_int(CG_I64, 0, 0)
         if is_str_global { zero = llvm.const_null(CG_STR) }
+        if gty == CG_PTR { zero = llvm.const_null(CG_PTR) }
         llvm.set_initializer(gv, zero)
         // Store type in alloca cache (emit_ident uses this for load type)
         forge_alloca_cache_set_type(name, gty)
@@ -335,7 +337,7 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         mut zero = llvm.const_int(CG_I64, 0, 0)
         if type_name == "string" || is_list {
             zero = llvm.const_null(gty)
-        } else if type_name == "map" {
+        } else if type_name == "map" || type_name == "ptr" || type_name == "fn" {
             zero = llvm.const_null(CG_PTR)
         }
         llvm.set_initializer(gv, zero)
@@ -1747,6 +1749,35 @@ impl Codegen {
         match obj {
             .Ident(name, span) -> { var_name = name }
             _ -> {}
+        }
+        // Try enum variant construction: EnumType.Variant
+        if var_name != "" {
+            let tag = match_enum_tag(var_name + "." + field)
+            if tag >= 0 {
+                // This is an enum variant — check if it has data fields
+                let emf = cg_enum_max_fields(var_name)
+                if emf > 0 {
+                    // Data-carrying enum: { i64 tag, ptr payload }
+                    let ety = cg_get_enum_ty_for(var_name)
+                    if ety != null {
+                        let undef = llvm.get_undef(ety)
+                        let s1 = llvm.build_insert_value(CG_B, undef, llvm.const_int(CG_I64, tag, 0), 0, "et")
+                        let s2 = llvm.build_insert_value(CG_B, s1, llvm.const_null(CG_PTR), 1, "ep")
+                        return tv_typed(s2, ety, var_name)
+                    }
+                }
+                // Unit-only enum: just the tag as i64 (no struct wrapping)
+                // But if a struct type exists, use it
+                let ety2 = cg_make_enum_type(var_name)
+                if ety2 != null {
+                    let undef = llvm.get_undef(ety2)
+                    let s1 = llvm.build_insert_value(CG_B, undef, llvm.const_int(CG_I64, tag, 0), 0, "et")
+                    let s2 = llvm.build_insert_value(CG_B, s1, llvm.const_null(CG_PTR), 1, "ep")
+                    return tv_typed(s2, ety2, var_name)
+                }
+                // Fallback for unit-only enums: just the tag
+                return tv_int(llvm.const_int(CG_I64, tag, 0))
+            }
         }
         // Try struct field access
         if var_name != "" {
