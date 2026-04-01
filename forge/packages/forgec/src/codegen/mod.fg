@@ -1483,6 +1483,11 @@ impl Codegen {
             }
             vi = vi - 1
         }
+        // Function-as-value: if no variable found, try getting the function pointer
+        let fn_ptr = llvm.get_named_function(CG_MOD, name)
+        if fn_ptr != null {
+            return tv_ptr(fn_ptr)
+        }
         tv_int(llvm.const_int(CG_I64, 0, 0))
     }
 
