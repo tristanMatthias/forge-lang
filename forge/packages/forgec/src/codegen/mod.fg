@@ -1699,7 +1699,15 @@ impl Codegen {
                 let fi = struct_field_index(stype, field)
                 if fi >= 0 {
                     let obj_tv = self.emit_ident(var_name)
-                    let fv = llvm.build_extract_value(CG_B, obj_tv.val, fi, "sf")
+                    // If obj is a ptr (self param), load the struct through the ptr
+                    mut struct_val = obj_tv.val
+                    if tv_is_ptr(obj_tv) {
+                        let sty = resolve_type_to_llvm(stype)
+                        if sty != null {
+                            struct_val = llvm.build_load(CG_B, sty, obj_tv.val, "sl")
+                        }
+                    }
+                    let fv = llvm.build_extract_value(CG_B, struct_val, fi, "sf")
                     // Determine field type from struct registry
                     mut ftype_name = "int"
                     mut si = 0
@@ -2034,9 +2042,47 @@ impl Codegen {
         let tv = self.emit_expr(value)
         match target {
             .Ident(name, span) -> {
-                let ptr = forge_alloca_cache_get(name)
-                if ptr != null {
-                    llvm.build_store(CG_B, tv.val, ptr)
+                let var_ptr = forge_alloca_cache_get(name)
+                if var_ptr != null {
+                    llvm.build_store(CG_B, tv.val, var_ptr)
+                }
+            }
+            .MemberAccess(obj, field, span) -> {
+                // self.field = value → GEP to field, store
+                mut obj_name = ""
+                match obj {
+                    .Ident(n, s) -> { obj_name = n }
+                    _ -> {}
+                }
+                if obj_name != "" {
+                    let stype = var_struct_type(obj_name)
+                    if stype != "" {
+                        let fi = struct_field_index(stype, field)
+                        if fi >= 0 {
+                            let obj_ptr = forge_alloca_cache_get(obj_name)
+                            if obj_ptr != null {
+                                // obj_ptr might be ptr to ptr (self), or ptr to struct
+                                let alloca_ty = forge_alloca_cache_get_type(obj_name)
+                                let ak = llvm.get_type_kind(alloca_ty)
+                                if ak == 12 {
+                                    // ptr alloca (self) — load ptr, then GEP struct field
+                                    let struct_ptr = llvm.build_load(CG_B, CG_PTR, obj_ptr, "sp")
+                                    let sty = resolve_type_to_llvm(stype)
+                                    if sty != null {
+                                        let field_ptr = llvm.build_struct_gep2(CG_B, sty, struct_ptr, fi, "fp")
+                                        llvm.build_store(CG_B, tv.val, field_ptr)
+                                    }
+                                } else {
+                                    // Direct struct alloca — GEP directly
+                                    let sty = resolve_type_to_llvm(stype)
+                                    if sty != null {
+                                        let field_ptr = llvm.build_struct_gep2(CG_B, sty, obj_ptr, fi, "fp")
+                                        llvm.build_store(CG_B, tv.val, field_ptr)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             _ -> {}
