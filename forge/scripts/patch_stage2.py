@@ -170,6 +170,10 @@ def fix_forward_store_values(lines):
             defined.add(int(pm.group(1)))
 
     result = []; fixes = 0; seen = set()
+    # Function parameters are defined from the start
+    if fn_m:
+        for pm in re.finditer(r'%(\d+)', fn_m.group(1)):
+            seen.add(int(pm.group(1)))
     for i, line in enumerate(lines):
         dm = re.match(r'\s+%(\d+)\s*=', line)
         if dm: seen.add(int(dm.group(1)))
