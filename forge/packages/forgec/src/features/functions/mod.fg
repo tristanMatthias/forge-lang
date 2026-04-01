@@ -987,6 +987,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         }
 
         cg.current_fn = fn_val
+        // Set the alloca cache's current function pointer — prevents cross-function name collisions
+        forge_alloca_cache_set_fn(fn_val)
         // Sync struct registry type pointers (new types may have been created by previous function)
         forge_struct_reg_sync_types(CG_CTX)
 
@@ -1120,6 +1122,7 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
     if !DECLARED_FNS.has(name) { return }
     let fn_val = DECLARED_FNS[name]
     cg.current_fn = fn_val
+    forge_alloca_cache_set_fn(fn_val)
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
     llvm.position_at_end(CG_B, entry)
