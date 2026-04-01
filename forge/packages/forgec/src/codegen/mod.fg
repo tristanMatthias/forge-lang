@@ -82,7 +82,7 @@ export type TypedValue = {
 }
 
 // ─── TypedValue constructors ────────────────────
-fn tv_int(v: ptr) -> TypedValue {
+export fn tv_int(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_I64, type_name: "int" }
 }
 fn tv_bool(v: ptr) -> TypedValue {
@@ -1254,7 +1254,10 @@ impl Codegen {
     fn emit_expr(self, expr: Expr) -> TypedValue {
         match expr {
             .IntLit(value, span) -> { return tv_int(llvm.const_int(CG_I64, value, 0)) }
-            .FloatLit(value, span) -> { return tv_typed(llvm.const_real(CG_F64, value), CG_F64, "float") }
+            .FloatLit(value, span) -> {
+                let fv = llvm.const_real(CG_F64, value)
+                return tv_typed(fv, CG_F64, "float")
+            }
             .StringLit(value, span) -> { return tv_str(self.emit_string(value)) }
             .BoolLit(value, span) -> {
                 if value { return tv_bool(llvm.const_int(CG_I64, 1, 0)) }
@@ -1505,7 +1508,7 @@ impl Codegen {
                 // Struct literal: __s_TypeName(field1, field2, ...)
                 if name.length > 4 && name[0] == "_" && name[1] == "_" && name[2] == "s" && name[3] == "_" {
                     let sn = name.substring(4, name.length)
-                    return self.emit_struct_lit(sn, args)
+                    return self.emit_struct_literal(sn, args)
                 }
                 // Match expression: __m_pat1,pat2,...
                 if name.length > 4 && name[0] == "_" && name[1] == "_" && name[2] == "m" && name[3] == "_" {
@@ -1792,7 +1795,7 @@ impl Codegen {
     }
 
     // ─── Struct literal ─────────────────────────
-    fn emit_struct_lit(self, struct_name: string, field_values: List<Expr>) -> TypedValue {
+    fn emit_struct_literal(self, struct_name: string, field_values: List<Expr>) -> TypedValue {
         let sty = resolve_type_to_llvm(struct_name)
         if sty == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
         mut result = llvm.get_undef(sty)

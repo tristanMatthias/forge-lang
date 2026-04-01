@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VOID, CG_PTR, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, TypedValue, tv_int, CG_ENUM_TYPE_CSV, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VOID, CG_PTR, CG_VAR_SCOPE_START, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY, VAR_LIST_INIT_CSV}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -216,7 +216,7 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
     i = 0
     for param in data.params {
         let param_val = llvm.get_param(fn_val, i)
-        cg.define_var(param.name, Type.Int, param_val)
+        cg.define_var(param.name, tv_int(param_val))
         i = i + 1
     }
 
@@ -503,18 +503,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     forge_clear_last_let_name()
     forge_list_var_clear()
     forge_ptr_var_clear()
-    CG_STR_VAR_NAMES = []
-    CG_STR_LOCALS_CSV = ""
-    CG_STRUCT_VAR_CSV = ""
-    CG_ENUM_VAR_CSV = ""
-    CG_STRUCT_VAR_NAMES = []
-    CG_STRUCT_VAR_TYPES = []
-    CG_STRUCT_VAR_FIELDS = []
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
 
     // Define params
     mut pi = 0
@@ -557,16 +545,12 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         // Register type name from param declaration (source-level, not flag-derived)
         forge_var_type_set(pname, param_type_name)
         CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-        CG_VAR_TYPES = CG_VAR_TYPES.push(param_vty)
         forge_var_name_push(pname)
         mut _vis = 0
         if param_type_name == "string" { _vis = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
         if param_type_name == "string" {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
             forge_str_var_add(pname)
         // Also handle: param_type_name might be corrupted — check text match
         } else if pname == "text" || pname == "source" || pname == "name" || pname == "value" || pname == "message" || pname == "key" || pname == "path" || pname == "code" || pname == "help" || pname == "filename" || pname == "pattern" || pname == "prefix" {
@@ -574,23 +558,18 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             forge_str_var_add(pname)
         } else if param_type_name.length >= 4 {
             if param_type_name[0] == "L" {
-                CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
                 forge_list_var_add(pname)
-                CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + pname + ","
                 // Extract element type from "List<Elem>" and register
                 let lt_pos = param_type_name.index_of("<")
                 if lt_pos > 0 {
                     let gt_pos = param_type_name.index_of(">")
                     if gt_pos > lt_pos {
                         let elem_name = param_type_name.substring(lt_pos + 1, gt_pos)
-                        CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + "," + pname + ":" + elem_name + ","
                         if elem_name == "string" {
-                            CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + pname + ","
                         }
                     }
                 } else {
                     // No generic info — default to string list
-                    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + pname + ","
                 }
             }
         }
@@ -600,11 +579,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             let enum_needle = "," + param_type_name + ":"
             let is_enum = CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0
             if is_enum {
-                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
             } else {
-                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
-                CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + pname + ":" + param_type_name + ","
                 forge_struct_var_add(pname, param_type_name)
                 mut field_info = ""
                 mut sri = CG_STRUCT_FIELDS.length - 1
@@ -615,18 +590,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                     }
                     sri = sri - 1
                 }
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
             }
         }
         pi = pi + 1
     }
 
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
-    CG_LAST_IS_NULLABLE = 0
     PENDING_IF = false
     PENDING_MATCH = false
     // Reset param alloca globals
@@ -665,8 +633,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut body_parser = parser_new(body_tokens)
         body_parser.expect_id(102)
         body_parser.skip_newlines()
-        CG_LAST_VAL = llvm.const_int(CG_I64, 0, 0)
-        CG_HAS_LAST_VAL = 0
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             if llvm.block_has_terminator(CG_B) { break }
             let peek_kid = body_parser.peek().kind_id
@@ -732,11 +698,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             if ret_ty != null && ret_ty != CG_I64 && CG_HAS_LAST_VAL == 1 {
                 // Struct/enum return: use CG_LAST_VAL if available
                 llvm.build_ret(CG_B, CG_LAST_VAL)
-                CG_HAS_LAST_VAL = 0
             } else if ret_ty != null && ret_ty != CG_I64 {
                 // No value available: fallback to undef
                 llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
-                CG_HAS_LAST_VAL = 0
             } else {
                 // Use CG_LAST_VAL (set at line 549 from emit_block result)
                 // Falls back to RetVoid if null
@@ -976,17 +940,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         // Set scope boundary: emit_ident should only find globals + current function's vars
         CG_VAR_SCOPE_START = CG_VAR_NAMES.length
         // Clear per-function type tracking (prevents cross-function contamination)
-        CG_STR_VAR_NAMES = []
-        CG_STRUCT_VAR_NAMES = []
-        CG_STRUCT_VAR_TYPES = []
-        CG_STRUCT_VAR_FIELDS = []
 
         // Reset type tracking flags BEFORE param definition
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
 
         // Define params with correct types
         pi = 0
@@ -1020,24 +975,17 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             else if is_struct_param { param_vty2 = "%" + param_type_name }
             forge_var_type_set(pname, param_type_name)
             CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-            CG_VAR_TYPES = CG_VAR_TYPES.push(param_vty2)
             mut _vis2 = 0
             if param_type_name == "string" { _vis2 = 1 }
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis2)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
             CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
             // Register struct/enum-typed params for member access and type tracking
             if is_struct_param {
                 // Check if this is an enum type (has data-carrying variants)
                 let emf = cg_enum_max_fields(param_type_name)
                 if emf > 0 {
                     // Enum type — register in CG_ENUM_VAR_CSV for load-time type lookup
-                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
                 } else {
                     // Struct type — register for field access
-                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
                     // Get field info from struct registry
                     mut field_info = ""
                     mut sri = CG_STRUCT_FIELDS.length - 1
@@ -1048,7 +996,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                         }
                         sri = sri - 1
                     }
-                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
                 }
             }
             pi = pi + 1
@@ -1056,12 +1003,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         param_offset = param_offset + pc
 
         // Reset type tracking flags before each function body
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
-        CG_LAST_IS_NULLABLE = 0
 
         // Set nullable return tracking for this function
         CG_FN_RETURNS_NULLABLE = 0
@@ -1083,8 +1024,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             let last = cg.emit_block(body)
             // Only update CG_LAST_VAL if not already set by inline emit (e.g., PHI from if-expr)
             if CG_HAS_LAST_VAL != 1 {
-                CG_LAST_VAL = last
-                CG_HAS_LAST_VAL = 1
             }
         }
 
@@ -1094,7 +1033,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
             } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
                 // Nullable function with a last value
-                CG_HAS_LAST_VAL = 0
                 // If the last value is already nullable (e.g., null literal), use directly
                 if CG_LAST_IS_NULLABLE == 1 {
                     llvm.build_ret(CG_B, CG_LAST_VAL)
@@ -1108,7 +1046,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 llvm.build_ret(CG_B, null_ret)
             } else if CG_HAS_LAST_VAL == 1 {
                 // Return the last expression value from emit_block
-                CG_HAS_LAST_VAL = 0
                 llvm.build_ret(CG_B, CG_LAST_VAL)
             } else {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
@@ -1156,7 +1093,7 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
         let param_val = llvm.get_param(fn_val, pi)
-        cg.define_var(pname, Type.Int, param_val)
+        cg.define_var(pname, tv_int(param_val))
         pi = pi + 1
     }
 
@@ -1192,7 +1129,7 @@ fn emit_fn_data(cg: Codegen, data: FnDeclData) {
     i = 0
     for param in data.params {
         let param_val = llvm.get_param(fn_val, i)
-        cg.define_var(param.name, Type.Int, param_val)
+        cg.define_var(param.name, tv_int(param_val))
         i = i + 1
     }
 

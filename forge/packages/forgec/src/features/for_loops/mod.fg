@@ -26,7 +26,7 @@ export fn parse_for(p: Parser) -> Statement? {
 }
 
 export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Block) {
-    let lv = cg.emit_expr(iterable)
+    let lv = cg.emit_expr(iterable).val
     if lv == null {
         eprintln("  WARN: for-in iterable is null, skipping")
         return

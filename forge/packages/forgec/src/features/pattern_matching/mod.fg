@@ -309,7 +309,7 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     let data = d!
 
     // Emit subject
-    let subject_val = cg.emit_expr(data.subject)
+    let subject_val = cg.emit_expr(data.subject).val
 
     // Extract tag from subject (enum { i8 tag, ptr payload })
     let tag_byte = llvm.build_extract_value(CG_B, subject_val, 0, "tg")
@@ -341,7 +341,7 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
         }
 
         llvm.position_at_end(CG_B, arm_bb)
-        let arm_val = cg.emit_expr(arm.body)
+        let arm_val = cg.emit_expr(arm.body).val
         if arm_val != null && !llvm.block_has_terminator(CG_B) {
             llvm.build_store(CG_B, arm_val, result_alloca)
         }
