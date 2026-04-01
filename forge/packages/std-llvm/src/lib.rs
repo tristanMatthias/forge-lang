@@ -677,6 +677,54 @@ pub extern "C" fn forge_llvm_verify_module(m: LLVMPtr) -> c_int {
     }
 }
 
+/// Verify module and print all errors to stderr.
+/// Returns 0 if valid, 1 if errors found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_verify_module_print(m: LLVMPtr) -> i64 {
+    if m.is_null() { return 1; }
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMVerifyModule(m, 0, &mut err); // 0 = LLVMReturnStatusAction
+        if result == 0 {
+            if !err.is_null() { LLVMDisposeMessage(err); }
+            return 0;
+        }
+        if !err.is_null() {
+            let err_str = std::ffi::CStr::from_ptr(err);
+            eprintln!("{}", err_str.to_string_lossy());
+            LLVMDisposeMessage(err);
+        }
+        1
+    }
+}
+
+/// Verify module and write errors to a file.
+/// Returns 0 if valid, number of error lines if errors found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_verify_module_to_file(m: LLVMPtr, path: *const c_char) -> i64 {
+    if m.is_null() || path.is_null() { return -1; }
+    unsafe {
+        let mut err: *mut c_char = std::ptr::null_mut();
+        let result = LLVMVerifyModule(m, 0, &mut err);
+        if result == 0 {
+            if !err.is_null() { LLVMDisposeMessage(err); }
+            return 0;
+        }
+        if !err.is_null() {
+            let path_str = std::ffi::CStr::from_ptr(path).to_string_lossy();
+            let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
+            let line_count = err_str.lines().count() as i64;
+            if let Ok(mut f) = std::fs::File::create(path_str.as_ref()) {
+                use std::io::Write;
+                let _ = f.write_all(err_str.as_bytes());
+            }
+            LLVMDisposeMessage(err);
+            return line_count;
+        }
+        -1
+    }
+}
+
 // ── Memory ──
 
 #[no_mangle]

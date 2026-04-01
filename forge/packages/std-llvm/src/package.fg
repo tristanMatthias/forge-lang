@@ -57,6 +57,8 @@ extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
 
 // ── Verification ──
 extern fn forge_llvm_verify_module(m: ptr) -> int
+extern fn forge_llvm_verify_module_print(m: ptr) -> int
+extern fn forge_llvm_verify_module_to_file(m: ptr, path: string) -> int
 
 // ── Memory ──
 extern fn forge_llvm_build_alloca(builder: ptr, ty: ptr, name: string) -> ptr
@@ -327,6 +329,16 @@ export fn const_int(ty: ptr, value: int, sign_extend: int) -> ptr {
 /// Verify a module. Returns 0 on success, 1 on failure.
 export fn verify_module(m: ptr) -> int {
     forge_llvm_verify_module(m)
+}
+
+/// Verify module and print errors to stderr. Returns 0 if valid.
+export fn verify_module_print(m: ptr) -> int {
+    forge_llvm_verify_module_print(m)
+}
+
+/// Verify module and write errors to file. Returns error line count (0 = valid).
+export fn verify_module_to_file(m: ptr, path: string) -> int {
+    forge_llvm_verify_module_to_file(m, path)
 }
 
 /// Build an alloca instruction.
