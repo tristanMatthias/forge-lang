@@ -6,9 +6,7 @@ use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
-use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
-use features.variables.VAR_LIST_INIT_CSV
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -60,30 +58,8 @@ export mut CG_PA_4: ptr = null
 export mut CG_PA_5: ptr = null
 export mut CG_PA_6: ptr = null
 export mut CG_PA_7: ptr = null
-mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELIABLE after many entries)
-export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
-export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
-export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
-// Track nullable variable names (for null comparison and unwrap)
-export mut CG_NULLABLE_VAR_NAMES: List<string> = []
-export mut CG_NULLABLE_VAR_INNER: List<string> = []  // inner type name ("int", "string")
-// Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
-export mut CG_LIST_VAR_CSV: string = ""        // all list vars
-export mut CG_STR_GLOBALS_CSV: string = ""     // string/list globals (CSV, immune to corruption)
-export mut CG_STR_LOCALS_CSV: string = ""      // string/list locals (CSV, immune to corruption)
-export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
-// Track list element type names: ",varname:typename," format
-export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
-
-// Top-level global variable tracking (CSV strings — List<string> globals unreliable)
-export mut CG_GLOBAL_CSV: string = ""  // ",name:type,name:type," format
-export mut CG_GLOBAL_COUNT: int = 0
-
 // Boundary index: vars before this index are globals, after are function-locals
 export mut CG_VAR_SCOPE_START: int = 0
-
-// Flag indicating codegen is active (CG_B != null check unreliable for ptr)
-export mut CG_ACTIVE: bool = false
 
 // Top-level source fragments to inject into main
 export mut CG_TOPLEVEL_SOURCES: List<string> = []
@@ -97,51 +73,6 @@ export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
 export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
 export mut CG_STRUCT_FIELD_TYPE_NAMES: List<string> = []  // comma-separated type names per field
 
-// Track which variables are struct-typed
-export mut CG_STRUCT_VAR_NAMES: List<string> = []   // variable names
-export mut CG_STRUCT_VAR_CSV: string = ""            // ",varname:TypeName," format (immune to corruption)
-export mut CG_STRUCT_VAR_TYPES: List<string> = []   // struct type names
-export mut CG_STRUCT_VAR_FIELDS: List<string> = []  // comma-separated field names
-// Also the last struct type name for propagation through var binding
-export mut CG_LAST_STRUCT_TYPE: string = ""
-
-// Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
-export mut CG_LAST_IS_STR: int = 0
-
-// The most recently emitted LLVM value (for passing through call chain without AST corruption)
-export mut CG_LAST_VAL: ptr = null
-export mut CG_LAST_VAR_PTR: ptr = null  // alloca pointer from most recent emit_ident
-export mut CG_LAST_VAR_ALLOCA_TYPE: ptr = null  // LLVM type of the alloca (CG_I64 or CG_STR)
-export mut CG_HAS_LAST_VAL: int = 0
-export mut CG_LAST_IS_MAP: int = 0
-export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
-export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
-export mut CG_LAST_LIST_ELEM_TYPE: string = ""  // element type name for last list expression (e.g., "Statement", "Token")
-export mut CG_LAST_IS_PTR: int = 0  // set to 1 when last expr returns ptr
-export mut CG_LAST_IS_NULLABLE: int = 0  // set to 1 when last expr was nullable
-// Set when the last expression was a map index access (for map[key] = value)
-export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
-export mut CG_MAP_INDEX_KEY: ptr = null   // the key ForgeString value
-export mut CG_IS_MAP_INDEX: int = 0       // 1 if last expr was map[key]
-
-// Match expression globals (PENDING pattern)
-export mut PENDING_MATCH: bool = false
-export mut MATCH_SCRUTINEE: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut MATCH_ARM_TAGS: string = ""    // comma-separated tag ints
-export mut MATCH_ARM_BODIES: List<Block> = []
-export mut MATCH_DEFAULT: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-export mut MATCH_HAS_DEFAULT: bool = false
-
-export type Codegen = {
-    mut current_fn: ptr?,
-    mut functions: Map<string, ptr>,
-    mut vars: Map<string, ptr>,
-}
-
-export fn codegen_new() -> Codegen {
-    Codegen { current_fn: null, functions: {}, vars: {} }
-}
-
 // ─── TypedValue: every emit function returns value + type ───
 // Replaces all CG_LAST_IS_* flags. The type flows through the expression tree.
 export type TypedValue = {
@@ -154,23 +85,18 @@ export type TypedValue = {
 fn tv_int(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_I64, type_name: "int" }
 }
-
 fn tv_bool(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_I64, type_name: "bool" }
 }
-
 fn tv_str(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_STR, type_name: "string" }
 }
-
 fn tv_ptr(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_PTR, type_name: "ptr" }
 }
-
 fn tv_void() -> TypedValue {
     TypedValue { val: null, ty: CG_VOID, type_name: "void" }
 }
-
 fn tv_typed(v: ptr, t: ptr, name: string) -> TypedValue {
     TypedValue { val: v, ty: t, type_name: name }
 }
@@ -179,29 +105,23 @@ fn tv_typed(v: ptr, t: ptr, name: string) -> TypedValue {
 fn tv_is_int(tv: TypedValue) -> bool {
     tv.type_name == "int" || tv.type_name == "bool"
 }
-
 fn tv_is_str(tv: TypedValue) -> bool {
     tv.type_name == "string"
 }
-
 fn tv_is_ptr(tv: TypedValue) -> bool {
     tv.type_name == "ptr"
 }
-
 fn tv_is_list(tv: TypedValue) -> bool {
+    // "List<" is 5 chars
     tv.type_name.length >= 5 && tv.type_name.substring(0, 5) == "List<"
 }
-
 fn tv_is_map(tv: TypedValue) -> bool {
     tv.type_name.length >= 4 && tv.type_name.substring(0, 4) == "Map<"
 }
-
 fn tv_is_nullable(tv: TypedValue) -> bool {
     tv.type_name.length > 0 && tv.type_name[tv.type_name.length - 1] == "?"
 }
-
 fn tv_is_struct(tv: TypedValue) -> bool {
-    // Not a primitive, not a collection, not nullable — must be a struct/enum
     if tv_is_int(tv) { return false }
     if tv_is_str(tv) { return false }
     if tv_is_ptr(tv) { return false }
@@ -211,11 +131,9 @@ fn tv_is_struct(tv: TypedValue) -> bool {
     if tv.type_name == "float" { return false }
     true
 }
-
 // Extract list element type from "List<Token>" -> "Token"
 fn tv_list_elem_type(tv: TypedValue) -> string {
     if !tv_is_list(tv) { return "" }
-    // Skip "List<" (5 chars) and drop trailing ">"
     tv.type_name.substring(5, tv.type_name.length - 1)
 }
 
@@ -238,8 +156,17 @@ fn resolve_type_name_to_llvm(name: string) -> ptr {
     if name.length > 0 && name[name.length - 1] == "?" {
         return resolve_type_name_to_llvm(name.substring(0, name.length - 1))
     }
-    // Default fallback
     CG_PTR
+}
+
+export type Codegen = {
+    mut current_fn: ptr?,
+    mut functions: Map<string, ptr>,
+    mut vars: Map<string, ptr>,
+}
+
+export fn codegen_new() -> Codegen {
+    Codegen { current_fn: null, functions: {}, vars: {} }
 }
 
 fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
@@ -357,17 +284,8 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         // Store type in alloca cache (emit_ident uses this for load type)
         forge_alloca_cache_set_type(name, gty)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        CG_VAR_TYPES = CG_VAR_TYPES.push("%ForgeString")
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        mut is_str_flag2 = 0
-        if is_str_global { is_str_flag2 = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-        // Register string globals in str var cache (for emit_ident to load as %ForgeString)
-        // Non-string globals stay as ptr (load first 8 bytes for i64 values)
         if is_str_global {
-            CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
             forge_str_var_add(name)
         } else {
             forge_ptr_var_add(name)
@@ -419,38 +337,16 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         }
         llvm.set_initializer(gv, zero)
 
-        // Register in CG_VAR system
-        mut gvar_ty2 = "i64"
-        if type_name == "string" || is_list { gvar_ty2 = "%ForgeString" }
-        if type_name == "map" { gvar_ty2 = "ptr" }
+        // Register in variable tracking + alloca cache
+        forge_alloca_cache_set_type(name, gty)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        CG_VAR_TYPES = CG_VAR_TYPES.push(gvar_ty2)
         CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
-        mut is_str_flag2 = 0
-        if type_name == "string" || is_list { is_str_flag2 = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
-        mut is_map_flag = 0
-        if type_name == "map" { is_map_flag = 1 }
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag)
         if type_name == "string" || is_list {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+            forge_str_var_add(name)
+        } else if type_name == "map" {
+            forge_ptr_var_add(name)
         }
-        if type_name == "map" {
-            CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
-        }
-        // Track list info
-        if is_list {
-            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
-            if type_name == "list_str" {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
-                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
-            } else if is_list_struct {
-                let elem_type = type_name.substring(12, type_name.length)
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:${elem_type},"
-            } else {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:int,"
-            }
-        }
+        if is_list { forge_list_var_add(name) }
     }
 }
 
@@ -477,47 +373,21 @@ fn csv_contains(csv: string, name: string) -> bool {
     false
 }
 
-// Check if a variable is ANY kind of list
+// Check if a variable is ANY kind of list (uses C-side cache)
 export fn is_list_var(name: string) -> bool {
     if name == "" { return false }
-    csv_contains(CG_LIST_VAR_CSV, name)
+    forge_list_var_check(name) == 1
 }
 
-// Check if a variable is a list with string elements (16-byte stride)
+// Check if a variable is a list with string elements
 export fn is_str_list_var(name: string) -> bool {
-    if name == "" { return false }
-    csv_contains(CG_STR_LIST_VAR_CSV, name)
+    // TODO: use C-side cache for elem type
+    false
 }
 
 // Get the element type name for a list variable. Returns "" if not found.
 export fn list_elem_type(name: string) -> string {
-    // Search CG_LIST_ELEM_TYPE_CSV for ",name:type,"
-    let needle = ",${name}:"
-    let nl = needle.length
-    let cl = CG_LIST_ELEM_TYPE_CSV.length
-    mut i = 0
-    while i <= cl - nl {
-        mut match_ok = true
-        mut j = 0
-        while j < nl {
-            if CG_LIST_ELEM_TYPE_CSV[i + j] != needle[j] {
-                match_ok = false
-                break
-            }
-            j = j + 1
-        }
-        if match_ok {
-            // Found — extract type until next comma
-            mut type_start = i + nl
-            mut type_end = type_start
-            while type_end < cl {
-                if CG_LIST_ELEM_TYPE_CSV[type_end] == "," { break }
-                type_end = type_end + 1
-            }
-            return CG_LIST_ELEM_TYPE_CSV.substring(type_start, type_end)
-        }
-        i = i + 1
-    }
+    // TODO: use C-side cache for list element types
     ""
 }
 
@@ -640,7 +510,6 @@ fn lookup_fn_return_type(name: string) -> string {
 }
 
 // ─── Enum Tagged Union Helpers ───────────────────
-export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
 export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
 export mut CG_UNIVERSAL_ENUM_TY: ptr = null // DEPRECATED — use per-enum types
@@ -830,20 +699,12 @@ export fn make_null_value(inner_ty: ptr) -> ptr {
 }
 
 export fn is_nullable_var(name: string) -> bool {
-    mut i = CG_NULLABLE_VAR_NAMES.length - 1
-    while i >= 0 {
-        if CG_NULLABLE_VAR_NAMES[i] == name { return true }
-        i = i - 1
-    }
+    // TODO: use C-side nullable var cache
     false
 }
 
 export fn nullable_var_inner_type(name: string) -> string {
-    mut i = CG_NULLABLE_VAR_NAMES.length - 1
-    while i >= 0 {
-        if CG_NULLABLE_VAR_NAMES[i] == name { return CG_NULLABLE_VAR_INNER[i] }
-        i = i - 1
-    }
+    // TODO: use C-side nullable var cache
     "int"
 }
 
@@ -961,25 +822,9 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
 
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
-    // Try CSV first (immune to list corruption)
-    let csv_needle = "," + name + ":"
-    let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
-    if csv_pos >= 0 {
-        let after = CG_STRUCT_VAR_CSV.substring(csv_pos + csv_needle.length, CG_STRUCT_VAR_CSV.length)
-        let comma = after.index_of(",")
-        if comma >= 0 { return after.substring(0, comma) }
-    }
     // C-side struct var cache (immune to global string corruption)
     let c_type = forge_struct_var_get(name)
     if c_type != "" { return c_type }
-    // Fallback to list (may be corrupted)
-    mut vi = CG_STRUCT_VAR_NAMES.length - 1
-    while vi >= 0 {
-        if CG_STRUCT_VAR_NAMES[vi] == name {
-            return CG_STRUCT_VAR_TYPES[vi]
-        }
-        vi = vi - 1
-    }
     ""
 }
 
@@ -987,22 +832,7 @@ export fn codegen_init(name: string) {
     // Reset per-module LLVM state (preserves metadata from scan phase)
     CG_VAR_NAMES = []
     CG_VAR_PTRS = []
-    CG_VAR_TYPES = []
-    CG_VAR_IS_STR = []
-    CG_STR_VAR_NAMES = []
-    CG_VAR_IS_MAP = []
-    CG_MAP_VAR_NAMES = []
-    CG_STRUCT_VAR_NAMES = []
-    CG_STRUCT_VAR_TYPES = []
-    CG_STRUCT_VAR_FIELDS = []
     CG_VAR_SCOPE_START = 0
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_LAST_IS_LIST = 0
-    CG_LAST_IS_NULLABLE = 0
-    CG_LAST_ENUM_TYPE = ""
-    CG_LAST_STRUCT_TYPE = ""
-    CG_HAS_LAST_VAL = 0
     CG_UNIVERSAL_ENUM_TY = null
     CG_ENUM_TYPE_CACHE_NAMES = []
     CG_ENUM_TYPE_CACHE_PTRS = []
@@ -1015,7 +845,6 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
-    CG_ACTIVE = true
 }
 
 export fn codegen_write_ir(path: string) {
@@ -1028,7 +857,6 @@ export fn codegen_emit_object(path: string) -> bool {
 }
 
 export fn codegen_cleanup() {
-    CG_ACTIVE = false
     cg_cleanup()
 }
 
@@ -1641,37 +1469,6 @@ impl Codegen {
             }
         }
         llvm.const_int(CG_I64, 0, 0)
-    }
-
-    // ─── TypedValue-returning wrapper for emit_expr ─────────────
-    // Reads current flags to construct TypedValue from emit_expr result.
-    // Migration bridge: callers switch from emit_expr to emit_expr_tv one at a time.
-    // Once all callers migrated, TypedValue construction moves into emit_expr itself.
-    fn emit_expr_tv(self, expr: Expr) -> TypedValue {
-        let val = self.emit_expr(expr)
-        // Read flags to determine type
-        if CG_LAST_IS_MAP == 1 { return tv_typed(val, CG_PTR, "Map<string, int>") }
-        if CG_LAST_IS_LIST == 1 {
-            mut elem = "int"
-            if CG_LAST_LIST_ELEM_IS_STR == 1 { elem = "string" }
-            if CG_LAST_LIST_ELEM_TYPE != "" { elem = CG_LAST_LIST_ELEM_TYPE }
-            return tv_typed(val, CG_LIST, "List<" + elem + ">")
-        }
-        if CG_LAST_STRUCT_TYPE != "" {
-            let sty = resolve_type_to_llvm(CG_LAST_STRUCT_TYPE)
-            if sty != null { return tv_typed(val, sty, CG_LAST_STRUCT_TYPE) }
-            return tv_typed(val, CG_PTR, CG_LAST_STRUCT_TYPE)
-        }
-        if CG_LAST_ENUM_TYPE != "" {
-            let ety = resolve_type_to_llvm(CG_LAST_ENUM_TYPE)
-            if ety != null { return tv_typed(val, ety, CG_LAST_ENUM_TYPE) }
-            return tv_typed(val, CG_PTR, CG_LAST_ENUM_TYPE)
-        }
-        if CG_LAST_IS_NULLABLE == 1 { return tv_typed(val, CG_PTR, "ptr?") }
-        if CG_LAST_IS_STR == 1 { return tv_str(val) }
-        if CG_LAST_IS_PTR == 1 { return tv_ptr(val) }
-        // Default: integer
-        tv_int(val)
     }
 
     fn emit_if_from_globals(self) -> ptr {
@@ -3082,34 +2879,60 @@ impl Codegen {
                 // Check if this variable was initialized with [] or has List type
                 let list_needle = "," + name + ","
                 let is_list_init = VAR_LIST_INIT_CSV.index_of(list_needle) >= 0
-                mut tv = tv_int(null)
                 if is_list_init {
-                    // Force list type: emit empty list value
+                    // Force list type: emit empty list value and register properly
                     cg_reinit_types()
+                    CG_LAST_IS_LIST = 1
+                    // Only set CG_LAST_IS_STR if it's actually a string list
                     let init_elem = list_elem_type(name)
-                    let empty_list = llvm.const_null(CG_STR)
                     if init_elem == "string" {
-                        tv = tv_typed(empty_list, CG_STR, "List<string>")
-                    } else {
-                        tv = tv_typed(empty_list, CG_STR, "List<int>")
+                        CG_LAST_IS_STR = 1
                     }
+                    let empty_list = llvm.const_null(CG_STR)
+                    self.define_var(name, Type.String, empty_list)
                 } else {
-                    tv = self.emit_expr_tv(val)
+                    let ev = self.emit_expr(val)
+                    // Correct CG_LAST_IS_STR for known i64-returning extern functions
+                    match val {
+                        .Call(callee, _, _) -> {
+                            match callee {
+                                .Ident(cn, _) -> {
+                                    if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
+                                    if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
+                                    if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
+                                }
+                                _ -> {}
+                            }
+                        }
+                        _ -> {}
+                    }
+                    let let_is_str = CG_LAST_IS_STR
+                    let let_is_enum = CG_LAST_ENUM_TYPE
+                    mut ty = Type.Int
+                    if let_is_str == 1 { ty = Type.String }
+                    // Reset enum type for non-enum variables (prevents alloca type pollution)
+                    if let_is_str == 0 && let_is_enum == "" {
+                        CG_LAST_ENUM_TYPE = ""
+                    }
+                    self.define_var(name, ty, ev)
                 }
-                self.define_var_tv(name, tv)
-                // Register in CSV trackers (still needed until Phase 6)
-                if is_list_init || tv_is_list(tv) {
+                // Register string/list vars
+                if is_list_init || CG_LAST_IS_STR == 1 {
+                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+                }
+                if is_list_init || CG_LAST_IS_LIST == 1 {
                     CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
                     CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
                 }
-                if tv_is_struct(tv) && !tv_is_nullable(tv) {
+                CG_LAST_IS_LIST = 0
+                if CG_LAST_STRUCT_TYPE != "" {
                     CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(tv.type_name)
-                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + tv.type_name + ","
+                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
+                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + CG_LAST_STRUCT_TYPE + ","
                     mut fn_str = ""
                     mut fsi = CG_STRUCT_FIELDS.length - 1
                     while fsi >= 0 {
-                        if CG_STRUCT_NAMES[fsi] == tv.type_name {
+                        if CG_STRUCT_NAMES[fsi] == CG_LAST_STRUCT_TYPE {
                             fn_str = CG_STRUCT_FIELDS[fsi]
                             break
                         }
@@ -3117,21 +2940,26 @@ impl Codegen {
                     }
                     CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(fn_str)
                 }
-                if tv_is_map(tv) {
+                // Register map variable
+                if CG_LAST_IS_MAP == 1 {
                     CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
                 }
+                // Register enum variable
                 if CG_LAST_ENUM_TYPE != "" {
                     CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + name + ":" + CG_LAST_ENUM_TYPE + ","
                     CG_LAST_ENUM_TYPE = ""
                 }
-                if tv_is_nullable(tv) {
+                // Register nullable variable
+                if CG_LAST_IS_NULLABLE == 1 {
                     CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(name)
                     mut inner_type_name = "int"
-                    if tv_is_str(tv) { inner_type_name = "string" }
+                    if CG_LAST_IS_STR == 1 { inner_type_name = "string" }
                     CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner_type_name)
                 }
                 // Reset flags
-                cg_reinit_types()
+                CG_LAST_IS_STR = 0
+                CG_LAST_IS_MAP = 0
+                CG_LAST_IS_NULLABLE = 0
                 CG_LAST_STRUCT_TYPE = ""
                 CG_HAS_LAST_VAL = 0
             }
@@ -3631,56 +3459,6 @@ impl Codegen {
         if is_str {
             CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
         }
-        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-    }
-
-    // ─── TypedValue-based variable definition ─────────────────
-    // Replaces flag-guessing with explicit type from TypedValue.
-    fn define_var_tv(self, name: string, tv: TypedValue) {
-        // Alloca type comes directly from TypedValue — no flags needed
-        mut alloca_ty = tv.ty
-        if alloca_ty == null { alloca_ty = CG_I64 }
-        if CG_B == 0 { return }
-        if alloca_ty == 0 { return }
-        // Create alloca in ENTRY block (ensures dominance across all basic blocks)
-        let cur_bb = llvm.get_insert_block(CG_B)
-        let fn_val = llvm.get_basic_block_parent(cur_bb)
-        let entry_bb = llvm.get_entry_basic_block(fn_val)
-        let first_instr = llvm.get_first_instruction(entry_bb)
-        if first_instr != null {
-            llvm.position_before(CG_B, first_instr)
-        } else {
-            llvm.position_at_end(CG_B, entry_bb)
-        }
-        let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
-        forge_alloca_cache_set_last_type(alloca_ty)
-        forge_idx_cache_set(forge_var_counter_inc(), alloca)
-        // Restore builder position and store value
-        llvm.position_at_end(CG_B, cur_bb)
-        llvm.build_store(CG_B, tv.val, alloca)
-        // Derive type string from TypedValue
-        mut def_vty = "i64"
-        if alloca_ty == CG_STR { def_vty = "%ForgeString" }
-        else if alloca_ty == CG_PTR { def_vty = "ptr" }
-        else if alloca_ty != CG_I64 && alloca_ty != CG_I32 && alloca_ty != CG_I8 {
-            def_vty = "%struct"
-        }
-        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        CG_VAR_TYPES = CG_VAR_TYPES.push(def_vty)
-        // Register in flag-based caches (backward compat during migration)
-        mut is_str_flag = 0
-        if tv_is_str(tv) || tv_is_list(tv) { is_str_flag = 1 }
-        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag)
-        mut is_map_flag = 0
-        if tv_is_map(tv) { is_map_flag = 1 }
-        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag)
-        if tv_is_str(tv) || tv_is_list(tv) {
-            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-            CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
-        }
-        if tv_is_ptr(tv) { forge_ptr_var_add(name) }
-        if tv_is_list(tv) { forge_list_var_add(name) }
-        if tv_is_struct(tv) { forge_struct_var_add(name, tv.type_name) }
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
     }
 
