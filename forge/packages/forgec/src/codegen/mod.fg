@@ -1601,12 +1601,19 @@ impl Codegen {
         let selfhost = "forge_selfhost_" + ns + "_" + method
         let fn_ref_sh = llvm.get_named_function(CG_MOD, selfhost)
         if fn_ref_sh != null { return self.emit_fn_call_direct(fn_ref_sh, selfhost, args) }
-        // Try impl method: Type__method
+        // Try impl method: Type_method (single underscore) or Type__method (double)
         mut method_ns = ns
         let vst = var_struct_type(ns)
         if vst != "" { method_ns = vst }
-        let method_name = method_ns + "__" + method
-        let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
+        // Try both naming conventions
+        let method_name_1 = method_ns + "_" + method
+        let method_name_2 = method_ns + "__" + method
+        mut method_name = method_name_2
+        mut fn_ref3 = llvm.get_named_function(CG_MOD, method_name_2)
+        if fn_ref3 == null {
+            fn_ref3 = llvm.get_named_function(CG_MOD, method_name_1)
+            method_name = method_name_1
+        }
         if fn_ref3 != null {
             // Get self pointer
             let self_tv = self.emit_ident(ns)
@@ -1835,7 +1842,36 @@ impl Codegen {
             let fi = struct_field_index(obj_tv.type_name, field)
             if fi >= 0 {
                 let fv = llvm.build_extract_value(CG_B, obj_tv.val, fi, "sf")
-                return tv_typed(fv, CG_I64, "int")
+                // Look up field type from struct registry
+                mut ftype_name2 = "int"
+                mut si2 = 0
+                while si2 < CG_STRUCT_NAMES.length {
+                    if CG_STRUCT_NAMES[si2] == obj_tv.type_name {
+                        let ftnames2 = CG_STRUCT_FIELD_TYPE_NAMES[si2]
+                        mut fidx2 = 0
+                        mut fstart2 = 0
+                        mut fpos2 = 0
+                        while fpos2 <= ftnames2.length {
+                            mut is_sep2 = false
+                            if fpos2 == ftnames2.length { is_sep2 = true }
+                            if !is_sep2 {
+                                if ftnames2[fpos2] == "," { is_sep2 = true }
+                            }
+                            if is_sep2 {
+                                if fidx2 == fi {
+                                    ftype_name2 = ftnames2.substring(fstart2, fpos2)
+                                }
+                                fidx2 = fidx2 + 1
+                                fstart2 = fpos2 + 1
+                            }
+                            fpos2 = fpos2 + 1
+                        }
+                        break
+                    }
+                    si2 = si2 + 1
+                }
+                let fty2 = resolve_type_name_to_llvm(ftype_name2)
+                return tv_typed(fv, fty2, ftype_name2)
             }
         }
         // .length on list/string
