@@ -1813,8 +1813,8 @@ impl Codegen {
             method_name = method_name_1
         }
         if fn_ref3 != null {
-            // Get self pointer
-            let self_tv = self.emit_ident(ns)
+            // Get self pointer directly from alloca cache — don't call emit_ident
+            // (emit_ident has side effects that can clobber the value array in Stage 1)
             let self_ptr = forge_alloca_cache_get(ns)
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
