@@ -88,6 +88,9 @@ extern fn forge_llvm_struct_type(ctx: ptr, element_types: ptr, count: int, packe
 extern fn forge_llvm_struct_get_type_at_index(struct_type: ptr, index: int) -> ptr
 extern fn forge_llvm_count_struct_element_types(struct_type: ptr) -> int
 
+// ── Function Type Introspection ──
+extern fn forge_llvm_fn_get_param_type(fn_type: ptr, index: int) -> ptr
+
 // ── Aggregate Operations ──
 extern fn forge_llvm_build_gep2(builder: ptr, ty: ptr, pointer: ptr, indices: ptr, num_indices: int, name: string) -> ptr
 extern fn forge_llvm_build_struct_gep2(builder: ptr, ty: ptr, pointer: ptr, index: int, name: string) -> ptr
@@ -432,6 +435,13 @@ export fn struct_get_type_at_index(struct_type: ptr, index: int) -> ptr {
 /// Get the number of element types in a struct type.
 export fn count_struct_element_types(struct_type: ptr) -> int {
     forge_llvm_count_struct_element_types(struct_type)
+}
+
+// ── Function Type Introspection ──
+
+/// Get the LLVM type of a function parameter at a given index.
+export fn fn_get_param_type(fn_type: ptr, index: int) -> ptr {
+    forge_llvm_fn_get_param_type(fn_type, index)
 }
 
 // ── Aggregate Operations ──

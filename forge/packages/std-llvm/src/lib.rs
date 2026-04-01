@@ -147,6 +147,8 @@ extern "C" {
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
+    fn LLVMCountParamTypes(fn_ty: LLVMPtr) -> c_uint;
+    fn LLVMGetParamTypes(fn_ty: LLVMPtr, dest: *mut LLVMPtr);
 
     // Basic Blocks
     fn LLVMAppendBasicBlockInContext(ctx: LLVMPtr, f: LLVMPtr, name: *const c_char) -> LLVMPtr;
@@ -1035,6 +1037,20 @@ pub extern "C" fn forge_llvm_struct_get_type_at_index(struct_type: LLVMPtr, inde
 #[no_mangle]
 pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) -> c_int {
     unsafe { LLVMCountStructElementTypes(struct_type) as c_int }
+}
+
+// ── Function Type Introspection ──
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_fn_get_param_type(fn_ty: LLVMPtr, index: c_int) -> LLVMPtr {
+    if fn_ty.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let count = LLVMCountParamTypes(fn_ty) as c_int;
+        if index < 0 || index >= count { return std::ptr::null_mut(); }
+        let mut params = vec![std::ptr::null_mut(); count as usize];
+        LLVMGetParamTypes(fn_ty, params.as_mut_ptr());
+        params[index as usize]
+    }
 }
 
 // ── Aggregate Operations ──

@@ -1152,6 +1152,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_struct_set_body", p4)
     llvm.add_function(CG_MOD, "forge_llvm_struct_type", p3)
     llvm.add_function(CG_MOD, "forge_llvm_get_type_by_name", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_fn_get_param_type", p2)
     llvm.add_function(CG_MOD, "forge_llvm_size_of", p1)
     llvm.add_function(CG_MOD, "forge_llvm_type_array_new", p1)
     llvm.add_function(CG_MOD, "forge_llvm_type_array_set", v3)
@@ -1774,6 +1775,7 @@ impl Codegen {
     }
 
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> TypedValue {
+        let ft = llvm.global_get_value_type(fn_val)
         let arg_arr = llvm.value_array_new(args.length)
         mut i = 0
         for arg in args {
@@ -1781,11 +1783,24 @@ impl Codegen {
             mut aval = atv.val
             // Guard against null values — use const 0 instead
             if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
+            // Type coercion: if arg is a struct (ForgeString) but param expects ptr,
+            // extract the ptr field. This handles the string→C-string conversion
+            // for extern functions.
+            if aval != null && ft != null {
+                let param_ty = llvm.fn_get_param_type(ft, i)
+                if param_ty != null {
+                    let val_ty = llvm.type_of(aval)
+                    let val_kind = llvm.get_type_kind(val_ty)
+                    let param_kind = llvm.get_type_kind(param_ty)
+                    // Struct value (kind 10) → ptr param (kind 12): extract field 0
+                    if val_kind == 10 && param_kind == 12 {
+                        aval = llvm.build_extract_value(CG_B, aval, 0, "sp")
+                    }
+                }
+            }
             llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
         }
-        // Use declared function type
-        let ft = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
         // Store result in C-side (TypedValue.val gets lost during struct return ABI)
