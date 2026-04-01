@@ -2142,14 +2142,36 @@ impl Codegen {
         while vi >= 0 {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // Globals have proper types: string globals use CG_STR, others use CG_I64
-                let str_needle = "," + name + ","
-                let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
+                // Use annotation to determine load type (3-way: string/list → ForgeString, ptr → ptr, int/bool → i64)
+                let g_ann = forge_var_type_get(name)
                 mut load_ty = CG_I64
                 CG_LAST_IS_STR = 0
-                if is_str_global {
+                if g_ann == "string" || g_ann == "List" {
                     load_ty = CG_STR
                     CG_LAST_IS_STR = 1
+                } else if g_ann == "ptr" || g_ann == "Map" || g_ann == "fn" {
+                    load_ty = CG_PTR
+                    CG_LAST_IS_PTR = 1
+                } else if g_ann != "" && g_ann != "int" && g_ann != "bool" && g_ann != "float" {
+                    // Check for List<T> annotation
+                    let g_lt = g_ann.index_of("<")
+                    if g_lt >= 0 {
+                        let g_base = g_ann.substring(0, g_lt)
+                        if g_base == "List" {
+                            load_ty = CG_STR
+                            CG_LAST_IS_STR = 1
+                            CG_LAST_IS_LIST = 1
+                        }
+                    }
+                }
+                // Fallback: CSV string check (for globals without annotations)
+                if load_ty == CG_I64 && g_ann == "" {
+                    let str_needle = "," + name + ","
+                    let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
+                    if is_str_global {
+                        load_ty = CG_STR
+                        CG_LAST_IS_STR = 1
+                    }
                 }
                 CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
@@ -2190,9 +2212,9 @@ impl Codegen {
                 if var_ptr == null { var_ptr = forge_alloca_cache_get(name) }
                 if var_ptr == null { var_ptr = CG_VAR_PTRS[vi] }
                 if var_ptr == null { return llvm.const_int(CG_I64, 0, 0) }
-                // For globals: use CG_VAR_PTRS[vi] (the global Value*) with GlobalGetValueType
-                // CG_VAR_PTRS stores the result of llvm.add_global, not an alloca
-                if load_ty == CG_I64 && vi < CG_VAR_PTRS.length {
+                // For globals without annotation: use GlobalGetValueType as fallback
+                // Skip if annotation explicitly says int/bool/float (they should stay i64)
+                if load_ty == CG_I64 && g_ann == "" && vi < CG_VAR_PTRS.length {
                     mut global_val = CG_VAR_PTRS[vi]
                     mut gvt_kind = llvm.get_type_kind(llvm.global_get_value_type(global_val))
                     if gvt_kind == 12 { load_ty = CG_PTR }

@@ -338,6 +338,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
     }
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     forge_str_var_set_global_count()
+    forge_var_type_set_global_count()
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
@@ -397,6 +398,7 @@ fn build_compile_single(input_file: string, output: string) {
     codegen_init("forgec_output")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     forge_str_var_set_global_count()
+    forge_var_type_set_global_count()
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
