@@ -268,7 +268,22 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
-    # Step 7b: Fix anonymous struct types and malformed struct literals
+    # Step 7b: Fix malformed struct literals in function call arguments
+    # Only fix patterns where a struct literal { i64 N, ... } is used as a call arg
+    # with a named type prefix
+    fixed_output = []
+    for line in output:
+        if 'call ' in line and '{ i64 ' in line:
+            # Only replace: %StructField { i64 N, %Type { ... } } patterns
+            # These are malformed struct literals from get_undef expansion
+            m = re.search(r'(%\w+) \{ i64 \d+, %\w+ \{[^}]*\} \}', line)
+            if m:
+                line = line.replace(m.group(0), m.group(1) + ' zeroinitializer')
+                total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
+
+    # Step 7c: Fix anonymous struct types and malformed struct literals
     fixed_output = []
     for line in output:
         # { ptr, i64 } constants in insertvalue should be %ForgeString
