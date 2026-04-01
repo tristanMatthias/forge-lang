@@ -134,6 +134,8 @@ impl Parser {
         if left == null { return null }
 
         mut result = left!
+        // In codegen mode: track the LLVM value directly to avoid Expr destructuring
+        // Track whether the current result is a string (for string concatenation)
 
         while true {
             let op_key = self.token_to_binop_key(level)
@@ -190,7 +192,7 @@ impl Parser {
         if expr == null { return null }
 
         mut result = expr!
-        // Parser always builds AST — codegen handles types via TypedValue
+        // Track LLVM value for inline emit (same pattern as parse_binary_level)
 
         while !self.is_at_end() {
             // Function call: expr(args...)
@@ -371,7 +373,10 @@ impl Parser {
             break
         }
 
-        // Parser always returns AST — codegen handles types
+        // Parser returns AST — codegen handles types via TypedValue
+        // Don't clear CG_LAST_IS_STR — it was already set correctly by
+        // parse_list_literal, postfix LLVM tracking, or parse_primary_expr.
+        // Clearing it here loses the flag for list/method-call results.
 
         result
     }
@@ -674,6 +679,8 @@ impl Parser {
         let scrutinee = self.parse_expr()
         if scrutinee == null { return null }
 
+        // Track scrutinee type
+        let scrutinee_is_str = CG_LAST_IS_STR == 1
         let scrutinee_var = LAST_IDENT_NAME
 
         self.skip_newlines()
@@ -746,7 +753,7 @@ impl Parser {
         }
         if self.check_id(103) { self.advance() }
 
-        // Build __m_tag1,tag2,...(scrutinee, body1, body2, ...) call expression
+        // Store match data in PENDING_MATCH globals
         mut tag_csv = ""
         mut ti = 0
         while ti < arm_tags.length {
@@ -754,20 +761,7 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
-        // Build args: [scrutinee, arm_body_exprs...]
-        mut call_args: List<Expr> = []
-        call_args = call_args.push(scrutinee!)
-        mut ai = 0
-        while ai < arm_bodies.length {
-            call_args = call_args.push(Expr.Block(arm_bodies[ai]))
-            ai = ai + 1
-        }
-        if has_default {
-            call_args = call_args.push(Expr.Block(default_body))
-            tag_csv = tag_csv + ",-1"
-        }
-        let match_fn = Expr.Ident("__m_" + tag_csv, start)
-        Expr.Call(match_fn, call_args, start)
+        Expr.IntLit(-1, start)
     }
 
     // ─── Span Helper ───────────────────────────
@@ -854,6 +848,8 @@ fn is_struct_field_str(struct_name: string, field_idx: int) -> bool {
     false
 }
 
+// ─── Expr.span ──────────────────────────────────
+
 impl Expr {
     fn span(self) -> Span {
         match self {
@@ -870,6 +866,7 @@ impl Expr {
             .Index(_, _, span) -> span
             .Block(block) -> block.span
             .Feature(fe) -> fe.data.node_span
+            .IsCheck(_, _, _, span) -> span
         }
     }
 }
@@ -882,7 +879,6 @@ mut ENUM_VARIANT_TAGS: List<int> = []
 export fn register_enum_variant(enum_name: string, variant_name: string, tag: int) {
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(enum_name + "." + variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
-    // Also register short name for simple lookup
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
 }

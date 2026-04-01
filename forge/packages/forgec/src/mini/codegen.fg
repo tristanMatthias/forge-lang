@@ -919,49 +919,6 @@ fn is_ident_expr(e: Expr) -> bool {
 fn gen_call(e: Expr) -> string {
     let name = e.str_val
 
-    // Resolve self.method() → StructType_method(self) for impl methods
-    if e.children.length >= 1 {
-        let first: Expr = e.children[0]
-        if is_ident_expr(first) && first.str_val == "self" {
-            // Look up self's struct type from variable tracking
-            let self_idx = find_var("self")
-            if self_idx >= 0 {
-                let self_stype = VAR_STRUCT_TYPE[self_idx]
-                if self_stype != "" {
-                    let self_mangled = self_stype + "_" + name
-                    let self_fn_idx = find_fn(self_mangled)
-                    if self_fn_idx >= 0 {
-                        // Redirect to mangled method call
-                        let call_ret = find_fn_ret(self_mangled)
-                        let self_reg = VAR_REGS[self_idx]
-                        mut arg_str = "ptr " + self_reg
-                        mut si = 1
-                        while si < e.children.length {
-                            arg_str = arg_str + ", "
-                            LAST_IS_STR = 0
-                            LAST_IS_LIST = 0
-                            LAST_IS_PTR = 0
-                            LAST_STRUCT_TYPE = ""
-                            LAST_ENUM_TYPE = ""
-                            let a = gen_expr_child(e, si)
-                            mut aty = "i64"
-                            if LAST_IS_STR == 1 { aty = "%ForgeString" }
-                            if LAST_IS_PTR == 1 { aty = "ptr" }
-                            if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
-                            if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
-                            if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
-                            arg_str = arg_str + aty + " " + a
-                            si = si + 1
-                        }
-                        let r = new_reg()
-                        ir_line(r + " = call " + call_ret + " @" + self_mangled + "(" + arg_str + ")")
-                        set_type_from_llvm(call_ret)
-                        return r
-                    }
-                }
-            }
-        }
-    }
     // Generic namespace dispatch via package exports (skip process/fs — handled as builtins)
     if e.children.length >= 1 {
         let first: Expr = e.children[0]
