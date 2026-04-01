@@ -254,7 +254,21 @@ def main():
         fixed_output.append(line)
     output = fixed_output
 
-    # Step 7: Fix anonymous struct types and malformed struct literals
+    # Step 7a: Fix nullable field type mismatches (ptr → { i8, T } zeroinitializer)
+    fixed_output = []
+    for line in output:
+        # Param struct: field 1 is nullable TypeExpr? = { i8, i64 }
+        if 'insertvalue %Param' in line and 'ptr %' in line:
+            m = re.match(r'(\s+%\w+ = insertvalue %Param %\w+, )ptr (%\w+)(, \d+)', line)
+            if m:
+                field_idx = m.group(3).strip(', ')
+                if field_idx in ('1', '2', '3', '4', '5'):
+                    line = m.group(1) + '{ i8, i64 } zeroinitializer' + m.group(3)
+                    total_fixes += 1
+        fixed_output.append(line)
+    output = fixed_output
+
+    # Step 7b: Fix anonymous struct types and malformed struct literals
     fixed_output = []
     for line in output:
         # { ptr, i64 } constants in insertvalue should be %ForgeString
@@ -262,11 +276,17 @@ def main():
             line = line.replace('{ ptr, i64 } { ptr @', '%ForgeString { ptr @')
             line = line.replace('{ ptr, i64 } zeroinitializer', '%ForgeString zeroinitializer')
             total_fixes += 1
-        # Fix malformed struct literals: %Type { i64 0, ... } → %Type undef (then insertvalue)
+        # Fix malformed struct literals: %Type { i64 0, ... } → %Type undef
+        # Only match when the literal has i64 0 as first element (sign of malformed)
         if 'insertvalue' in line:
-            m = re.match(r'(\s+%\w+ = insertvalue )(%\w+) \{ i64 0,.*\}(, .+)', line)
+            m = re.match(r'(\s+%\w+ = insertvalue )(%\w+) \{ i64 0[,}].*?\}(, .+)', line)
             if m:
                 line = m.group(1) + m.group(2) + ' undef' + m.group(3)
+                total_fixes += 1
+            # Also fix %Type { %ForgeString zeroinitializer, ... } patterns
+            m2 = re.match(r'(\s+%\w+ = insertvalue )(%\w+) \{ %ForgeString zeroinitializer[,}].*?\}(, .+)', line)
+            if m2:
+                line = m2.group(1) + m2.group(2) + ' undef' + m2.group(3)
                 total_fixes += 1
         fixed_output.append(line)
     output = fixed_output
