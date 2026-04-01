@@ -142,6 +142,106 @@ export fn codegen_new() -> Codegen {
     Codegen { current_fn: null, functions: {}, vars: {} }
 }
 
+// ─── TypedValue: every emit function returns value + type ───
+// Replaces all CG_LAST_IS_* flags. The type flows through the expression tree.
+export type TypedValue = {
+    val: ptr,           // LLVM value
+    ty: ptr,            // LLVM type (CG_I64, CG_STR, CG_PTR, %Token, etc.)
+    type_name: string,  // Forge type name ("int", "string", "Token", "List<Token>", etc.)
+}
+
+// ─── TypedValue constructors ────────────────────
+fn tv_int(v: ptr) -> TypedValue {
+    TypedValue { val: v, ty: CG_I64, type_name: "int" }
+}
+
+fn tv_bool(v: ptr) -> TypedValue {
+    TypedValue { val: v, ty: CG_I64, type_name: "bool" }
+}
+
+fn tv_str(v: ptr) -> TypedValue {
+    TypedValue { val: v, ty: CG_STR, type_name: "string" }
+}
+
+fn tv_ptr(v: ptr) -> TypedValue {
+    TypedValue { val: v, ty: CG_PTR, type_name: "ptr" }
+}
+
+fn tv_void() -> TypedValue {
+    TypedValue { val: null, ty: CG_VOID, type_name: "void" }
+}
+
+fn tv_typed(v: ptr, t: ptr, name: string) -> TypedValue {
+    TypedValue { val: v, ty: t, type_name: name }
+}
+
+// ─── TypedValue type queries ────────────────────
+fn tv_is_int(tv: TypedValue) -> bool {
+    tv.type_name == "int" || tv.type_name == "bool"
+}
+
+fn tv_is_str(tv: TypedValue) -> bool {
+    tv.type_name == "string"
+}
+
+fn tv_is_ptr(tv: TypedValue) -> bool {
+    tv.type_name == "ptr"
+}
+
+fn tv_is_list(tv: TypedValue) -> bool {
+    tv.type_name.length >= 5 && tv.type_name.substring(0, 5) == "List<"
+}
+
+fn tv_is_map(tv: TypedValue) -> bool {
+    tv.type_name.length >= 4 && tv.type_name.substring(0, 4) == "Map<"
+}
+
+fn tv_is_nullable(tv: TypedValue) -> bool {
+    tv.type_name.length > 0 && tv.type_name[tv.type_name.length - 1] == "?"
+}
+
+fn tv_is_struct(tv: TypedValue) -> bool {
+    // Not a primitive, not a collection, not nullable — must be a struct/enum
+    if tv_is_int(tv) { return false }
+    if tv_is_str(tv) { return false }
+    if tv_is_ptr(tv) { return false }
+    if tv_is_list(tv) { return false }
+    if tv_is_map(tv) { return false }
+    if tv.type_name == "void" { return false }
+    if tv.type_name == "float" { return false }
+    true
+}
+
+// Extract list element type from "List<Token>" -> "Token"
+fn tv_list_elem_type(tv: TypedValue) -> string {
+    if !tv_is_list(tv) { return "" }
+    // Skip "List<" (5 chars) and drop trailing ">"
+    tv.type_name.substring(5, tv.type_name.length - 1)
+}
+
+// Resolve a Forge type name to its LLVM type
+fn resolve_type_name_to_llvm(name: string) -> ptr {
+    if name == "int" || name == "bool" { return CG_I64 }
+    if name == "float" { return CG_F64 }
+    if name == "string" { return CG_STR }
+    if name == "ptr" { return CG_PTR }
+    if name == "void" { return CG_VOID }
+    if name.length >= 5 && name.substring(0, 5) == "List<" { return CG_LIST }
+    if name.length >= 4 && name.substring(0, 4) == "Map<" { return CG_PTR }
+    // Struct/enum — look up in struct registry
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_NAMES[si] == name { return CG_STRUCT_TYPES[si] }
+        si = si + 1
+    }
+    // Nullable — use inner type
+    if name.length > 0 && name[name.length - 1] == "?" {
+        return resolve_type_name_to_llvm(name.substring(0, name.length - 1))
+    }
+    // Default fallback
+    CG_PTR
+}
+
 fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
     let arr = llvm.type_array_new(params.length)
     mut i = 0
