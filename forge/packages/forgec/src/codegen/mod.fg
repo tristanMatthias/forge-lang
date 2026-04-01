@@ -2054,7 +2054,11 @@ impl Codegen {
                     }
                     ftn_pos = ftn_pos + 1
                 }
-                let named = llvm.struct_create_named(CG_CTX, struct_name)
+                // Use existing named type if available, don't create duplicates
+                mut named = llvm.get_type_by_name(CG_CTX, struct_name)
+                if named == null {
+                    named = llvm.struct_create_named(CG_CTX, struct_name)
+                }
                 llvm.struct_set_body(named, fta, fc, 0)
                 llvm.type_array_free(fta)
                 sty = named
