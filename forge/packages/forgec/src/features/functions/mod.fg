@@ -987,6 +987,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         }
 
         cg.current_fn = fn_val
+        // Sync struct registry type pointers (new types may have been created by previous function)
+        forge_struct_reg_sync_types(CG_CTX)
 
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
         llvm.position_at_end(CG_B, entry)

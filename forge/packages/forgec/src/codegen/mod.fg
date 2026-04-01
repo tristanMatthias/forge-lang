@@ -1708,8 +1708,9 @@ impl Codegen {
             let total_args = args.length + 1
             let fn_ty = llvm.global_get_value_type(fn_ref3)
             let arg_arr = llvm.value_array_new(total_args)
-            // Self pointer — coerce to match param type (may be ptr or struct)
-            llvm.value_array_set(arg_arr, 0, coerce_call_arg(self_ptr, fn_ty, 0))
+            // Self pointer: always pass the alloca pointer directly.
+            // Don't coerce — self is ALWAYS a ptr to the struct, not the struct value.
+            llvm.value_array_set(arg_arr, 0, self_ptr)
             mut argi = 0
             for arg in args {
                 let atv = self.emit_expr(arg)
@@ -1822,8 +1823,34 @@ impl Codegen {
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> TypedValue {
         let ft = llvm.global_get_value_type(fn_val)
         let arg_arr = llvm.value_array_new(args.length)
+        // Detect desugared method calls: Type__method(self, args...)
+        // The parser desugars obj.method(args) → Type__method(obj, args)
+        // For self (arg 0), we need the ALLOCA POINTER, not the loaded value.
+        // Only apply when param 0 expects ptr (self by reference).
+        mut self_by_ptr = false
+        if fn_name.index_of("__") > 0 && ft != null {
+            let p0_ty = llvm.fn_get_param_type(ft, 0)
+            if p0_ty != null {
+                let p0_kind = llvm.get_type_kind(p0_ty)
+                if p0_kind == 12 { self_by_ptr = true }
+            }
+        }
         mut i = 0
         for arg in args {
+            // For self arg of method calls: pass alloca pointer, not loaded value
+            if self_by_ptr && i == 0 {
+                match arg {
+                    .Ident(var_name, _) -> {
+                        let alloca_ptr = forge_alloca_cache_get(var_name)
+                        if alloca_ptr != null {
+                            llvm.value_array_set(arg_arr, 0, alloca_ptr)
+                            i = i + 1
+                            continue
+                        }
+                    }
+                    _ -> {}
+                }
+            }
             let atv = self.emit_expr(arg)
             mut aval = atv.val
             // Guard against null values — use const 0 instead
