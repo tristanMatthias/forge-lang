@@ -1382,6 +1382,21 @@ impl Codegen {
                     }
                 }
             }
+            // Handle array-typed allocas (byte arrays for struct params)
+            if load_ty == CG_I64 && check_type != null {
+                let ck2 = llvm.get_type_kind(check_type)
+                if ck2 == 10 {
+                    // Array alloca — use forge_var_type_get for the original type
+                    let vt = forge_var_type_get(name)
+                    if vt != "" {
+                        let resolved = resolve_type_to_llvm(vt)
+                        if resolved != null {
+                            load_ty = resolved
+                            type_name = vt
+                        }
+                    }
+                }
+            }
             // Final fallback: check str_var cache
             if load_ty == CG_I64 {
                 if forge_str_var_check(name) == 1 {
