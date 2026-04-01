@@ -1966,6 +1966,7 @@ impl Codegen {
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         forge_alloca_cache_set_type(name, alloca_ty)
+        forge_var_type_set(name, tv.type_name)
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
         // Restore position and store
         llvm.position_at_end(CG_B, cur_bb)
