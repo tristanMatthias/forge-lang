@@ -95,7 +95,7 @@ fn tv_ptr(v: ptr) -> TypedValue {
     TypedValue { val: v, ty: CG_PTR, type_name: "ptr" }
 }
 fn tv_void() -> TypedValue {
-    TypedValue { val: null, ty: CG_VOID, type_name: "void" }
+    TypedValue { val: llvm.const_int(CG_I64, 0, 0), ty: CG_VOID, type_name: "void" }
 }
 fn tv_typed(v: ptr, t: ptr, name: string) -> TypedValue {
     TypedValue { val: v, ty: t, type_name: name }
@@ -1365,17 +1365,18 @@ impl Codegen {
                 if ck == 12 { load_ty = CG_PTR
                     type_name = "ptr" }
                 if ck == 13 {
-                    // Use cached type for load (handles ForgeString, structs, enums)
+                    // Use cached type for load
                     load_ty = cached_type
-                    // Check via LLVM type name lookup (immune to CG_STR pointer invalidation)
-                    cg_reinit_types()
-                    let str_ty = llvm.get_type_by_name(CG_CTX, "ForgeString")
-                    if cached_type == str_ty || cached_type == CG_STR {
-                        load_ty = CG_STR
-                        type_name = "string"
+                    // Determine type name
+                    let sname = forge_struct_var_get(name)
+                    if sname != "" {
+                        type_name = sname
                     } else {
-                        let sname = forge_struct_var_get(name)
-                        if sname != "" { type_name = sname }
+                        // If no struct name registered, try ForgeString detection
+                        cg_reinit_types()
+                        if cached_type == CG_STR {
+                            type_name = "string"
+                        }
                     }
                 }
             }
@@ -1692,7 +1693,10 @@ impl Codegen {
         mut i = 0
         for arg in args {
             let atv = self.emit_expr(arg)
-            llvm.value_array_set(arg_arr, i, atv.val)
+            mut aval = atv.val
+            // Guard against null values — use const 0 instead
+            if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
+            llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
         }
         // Use declared function type
