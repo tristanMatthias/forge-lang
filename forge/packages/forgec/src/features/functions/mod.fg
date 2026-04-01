@@ -521,18 +521,19 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             let resolved = resolve_type_to_llvm(param_type_name)
             if resolved != null && resolved != CG_I64 { p_ty = resolved }
         }
-        // self param: already a pointer, use directly (no copy)
+        // self param: store ptr directly in cache (no alloca copy needed)
         mut alloca = param_val
         if pname != "self" {
             forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            // Store alloca type in cache for emit_ident
             forge_alloca_cache_set_type(pname, p_ty)
             llvm.build_store(CG_B, param_val, alloca)
         } else {
-            forge_alloca_cache_set(pname, alloca)
-            // Self param type = ptr (the struct pointer)
+            // Create ptr alloca for self too
+            forge_set_alloca_name(pname)
+            alloca = llvm.build_alloca(CG_B, CG_PTR, pname)
             forge_alloca_cache_set_type(pname, CG_PTR)
+            llvm.build_store(CG_B, param_val, alloca)
         }
         // Save alloca by C counter (immune to Forge list length corruption)
         let var_idx = forge_var_counter_inc()
@@ -914,7 +915,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     is_struct_param = true
                 }
             }
+            forge_set_alloca_name(pname)
             let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+            forge_alloca_cache_set_type(pname, p_ty)
             llvm.build_store(CG_B, param_val, alloca)
             mut param_vty2 = "i64"
             if p_ty == CG_STR { param_vty2 = "%ForgeString" }
@@ -927,13 +930,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
             // Register struct/enum-typed params for member access and type tracking
             if is_struct_param {
+                forge_struct_var_add(pname, param_type_name)
                 // Check if this is an enum type (has data-carrying variants)
                 let emf = cg_enum_max_fields(param_type_name)
                 if emf > 0 {
-                    // Enum type — register in CG_ENUM_VAR_CSV for load-time type lookup
+                    // Enum type
                 } else {
-                    // Struct type — register for field access
-                    // Get field info from struct registry
+                    // Struct type — get field info
                     mut field_info = ""
                     mut sri = CG_STRUCT_FIELDS.length - 1
                     while sri >= 0 {

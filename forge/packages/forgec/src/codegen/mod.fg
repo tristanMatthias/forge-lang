@@ -773,7 +773,10 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
         let ety = cg_get_enum_ty_for(type_name)
         if ety != null { return ety }
     }
-    // Check struct type via list (may be corrupted)
+    // Direct LLVM named type lookup (immune to list corruption)
+    let named_ty = llvm.get_type_by_name(CG_CTX, type_name)
+    if named_ty != null { return named_ty }
+    // Fallback: check struct list
     mut sti = CG_STRUCT_NAMES.length - 1
     while sti >= 0 {
         if CG_STRUCT_NAMES[sti] == type_name {
@@ -782,9 +785,6 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
         }
         sti = sti - 1
     }
-    // Fallback: direct LLVM named type lookup (immune to list corruption)
-    let named_ty = llvm.get_type_by_name(CG_CTX, type_name)
-    if named_ty != null { return named_ty }
     CG_I64
 }
 
@@ -1360,10 +1360,10 @@ impl Codegen {
             let cached_type = forge_alloca_cache_get_type(name)
             mut load_ty = CG_I64
             mut type_name = "int"
-            // Try cache type first, then alloca type as fallback
-            mut check_type = cached_type
+            // Use LLVM alloca type (most reliable — reads directly from IR instruction)
+            mut check_type = llvm.get_allocated_type(cached_ptr)
             if check_type == null {
-                check_type = llvm.get_allocated_type(cached_ptr)
+                check_type = cached_type
             }
             if check_type != null {
                 let ck = llvm.get_type_kind(check_type)
