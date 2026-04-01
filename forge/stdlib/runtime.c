@@ -2729,6 +2729,32 @@ void forge_struct_reg_set_llvm_type(ForgeString name, void* ty) {
     }
 }
 
+// Sync all registry entries with canonical LLVM type pointers.
+// Call after materialize_struct_types to fix stale pointers.
+// Use dlsym to avoid linker dependency on LLVM symbols from runtime.c
+#include <dlfcn.h>
+typedef void* (*llvm_get_type_fn)(void*, const char*);
+static void* _current_llvm_ctx = NULL;
+void forge_struct_reg_sync_types(void* ctx) {
+    _current_llvm_ctx = ctx;
+    if (!ctx) return;
+    // Resolve LLVMGetTypeByName2 at runtime (avoids static LLVM dependency)
+    static llvm_get_type_fn get_type = NULL;
+    if (!get_type) {
+        get_type = (llvm_get_type_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+        if (!get_type) return;
+    }
+    int updated = 0;
+    for (int i = 0; i < _struct_reg_count; i++) {
+        void* canonical = get_type(ctx, _struct_reg[i].name);
+        if (canonical && canonical != _struct_reg[i].llvm_type) {
+            _struct_reg[i].llvm_type = canonical;
+            updated++;
+        }
+    }
+    if (updated > 0) fprintf(stderr, "  [sync] updated %d/%d type pointers\n", updated, _struct_reg_count);
+}
+
 int64_t forge_struct_reg_count(void) { return _struct_reg_count; }
 
 ForgeString forge_struct_reg_get_name(int64_t idx) {
@@ -2771,6 +2797,7 @@ int64_t forge_struct_reg_name_for_type_i64(void* ty) {
     _struct_name_buf[0] = '\0';
     _struct_name_len = 0;
     if (!ty) return 0;
+    static int _nft_dbg = 0;
     for (int i = 0; i < _struct_reg_count; i++) {
         if (_struct_reg[i].llvm_type == ty) {
             _struct_name_len = strlen(_struct_reg[i].name);
@@ -2779,10 +2806,61 @@ int64_t forge_struct_reg_name_for_type_i64(void* ty) {
             return _struct_name_len;
         }
     }
+    // Fallback: resync and retry (handles types created after initial sync)
+    if (_current_llvm_ctx) {
+        static llvm_get_type_fn _get_type = NULL;
+        if (!_get_type) _get_type = (llvm_get_type_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+        if (_get_type) {
+            for (int i = 0; i < _struct_reg_count; i++) {
+                void* canonical = _get_type(_current_llvm_ctx, _struct_reg[i].name);
+                if (canonical == ty) {
+                    _struct_reg[i].llvm_type = ty;
+                    _struct_name_len = strlen(_struct_reg[i].name);
+                    memcpy(_struct_name_buf, _struct_reg[i].name, _struct_name_len);
+                    _struct_name_buf[_struct_name_len] = '\0';
+                    return _struct_name_len;
+                }
+            }
+        }
+    }
     return 0;
 }
 ForgeString forge_struct_reg_last_name(void) {
     return (ForgeString){_struct_name_buf, _struct_name_len};
+}
+
+void forge_struct_var_add(ForgeString name, ForgeString type_name); // forward decl
+// Combined: look up struct name by LLVM type pointer AND register the variable.
+// Avoids ForgeString intermediate that gets corrupted by mini's i64 alloca storage.
+void forge_struct_var_add_by_type(ForgeString var_name, void* llvm_ty) {
+    if (!var_name.ptr || var_name.len <= 0 || !llvm_ty) return;
+    static int _abt_dbg = 0;
+    if (_abt_dbg < 5) {
+        fprintf(stderr, "  [abt] %.*s ty=%p\n", (int)var_name.len, var_name.ptr, llvm_ty);
+        _abt_dbg++;
+    }
+    // Direct pointer match
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if (_struct_reg[i].llvm_type == llvm_ty) {
+            forge_struct_var_add(var_name, (ForgeString){_struct_reg[i].name, strlen(_struct_reg[i].name)});
+            return;
+        }
+    }
+    // Canonical pointer fallback
+    if (_current_llvm_ctx) {
+        static llvm_get_type_fn _gtn = NULL;
+        if (!_gtn) _gtn = (llvm_get_type_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+        if (_gtn) {
+            for (int i = 0; i < _struct_reg_count; i++) {
+                void* canonical = _gtn(_current_llvm_ctx, _struct_reg[i].name);
+                if (canonical == llvm_ty) {
+                    _struct_reg[i].llvm_type = llvm_ty;
+                    forge_struct_var_add(var_name, (ForgeString){_struct_reg[i].name, strlen(_struct_reg[i].name)});
+                    return;
+                }
+            }
+        }
+    }
 }
 
 // C-side ptr variable tracking (for LLVM Value* globals like CG_MOD, CG_B, etc.)
@@ -3353,6 +3431,12 @@ static int _struct_var_count = 0;
 void forge_struct_var_clear(void) { _struct_var_count = 0; }
 void forge_struct_var_add(ForgeString name, ForgeString type_name) {
     if (_struct_var_count >= STRUCT_VAR_MAX) return;
+    static int _sva_dbg = 0;
+    if (_sva_dbg < 10 && name.ptr && name.len > 0 && name.len < 20) {
+        fprintf(stderr, "  [sva] %.*s = %.*s\n", (int)name.len, name.ptr,
+                (int)(type_name.ptr ? type_name.len : 0), type_name.ptr ? type_name.ptr : "(null)");
+        _sva_dbg++;
+    }
     if (name.ptr && name.len > 0 && name.len < 64 && type_name.ptr && type_name.len > 0 && type_name.len < 64) {
         memcpy(_struct_vars[_struct_var_count].name, name.ptr, name.len);
         _struct_vars[_struct_var_count].name[name.len] = '\0';

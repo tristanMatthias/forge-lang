@@ -352,6 +352,9 @@ fn build_compile_separate(paths_csv: string, output: string) {
     eprintln("  declared " + string(declared_count) + " fns")
     // Materialize struct types before emitting function bodies
     materialize_struct_types()
+    // Sync struct registry type pointers with canonical LLVM types.
+    // Must happen AFTER declare_all_fns + materialize_struct_types create all types.
+    forge_struct_reg_sync_types(CG_CTX)
     // Emit each function body — use C-side fn store count (Forge FN_NAMES.length is corrupt in Stage 2)
     mut param_offset = 0
     mut fi = 0

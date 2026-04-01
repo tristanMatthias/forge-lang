@@ -571,8 +571,9 @@ export fn cg_get_enum_ty_for(name: string) -> ptr {
     let fields = llvm.type_array_new(2)
     llvm.type_array_set(fields, 0, CG_I64)
     llvm.type_array_set(fields, 1, CG_PTR)
-    // Named enum type
-    let ty = llvm.struct_create_named(CG_CTX, name)
+    // Named enum type — use existing if available
+    mut ty = llvm.get_type_by_name(CG_CTX, name)
+    if ty == null { ty = llvm.struct_create_named(CG_CTX, name) }
     llvm.struct_set_body(ty, fields, 2, 0)
     llvm.type_array_free(fields)
     // Cache it
@@ -1001,6 +1002,7 @@ fn cg_init_runtime() {
     // C-side struct var type tracking
     llvm.add_function(CG_MOD, "forge_struct_var_clear", make_fn_type_0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_struct_var_add", make_fn_type_2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_var_add_by_type", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_struct_var_get", make_fn_type_1(CG_STR, CG_STR))
     // C-side struct type registry (immune to Forge list corruption)
     llvm.add_function(CG_MOD, "forge_set_last_emit_result", make_fn_type_1(CG_VOID, CG_PTR))
@@ -1014,6 +1016,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_struct_reg_get_field_types", make_fn_type_1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_struct_reg_get_llvm_type", make_fn_type_1(CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_struct_reg_find_type", make_fn_type_1(CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_reg_sync_types", make_fn_type_1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_struct_reg_name_for_type_i64", make_fn_type_1(CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_struct_reg_last_name", make_fn_type_0(CG_STR))
     // C-side variable name tracking (immune to Forge list corruption)
@@ -2260,15 +2263,9 @@ impl Codegen {
         // Register struct type if alloca is a struct (not ForgeString, not list)
         let ak2 = llvm.get_type_kind(alloca_ty)
         if ak2 == 10 && alloca_ty != CG_STR {
-            // Get struct name from C-side registry (immune to TypedValue field corruption)
-            // Use i64 version + last_name to avoid ForgeString return type (mini can't handle it)
-            let name_len = forge_struct_reg_name_for_type_i64(alloca_ty)
-            if name_len > 0 {
-                let sname = forge_struct_reg_last_name()
-                forge_struct_var_add(name, sname)
-            } else if tv.type_name != "" {
-                forge_struct_var_add(name, tv.type_name)
-            }
+            // Single C call: looks up struct name by LLVM type AND registers the variable.
+            // Avoids ForgeString intermediate that gets corrupted by mini's i64 alloca storage.
+            forge_struct_var_add_by_type(name, alloca_ty)
         }
     }
 

@@ -809,7 +809,8 @@ export fn materialize_struct_types() {
                 }
             }
             eprintln("  [mat2-create] " + cname + " fc=" + string(cfc))
-            let csty = llvm.struct_create_named(CG_CTX, cname)
+            mut csty = llvm.get_type_by_name(CG_CTX, cname)
+            if csty == null { csty = llvm.struct_create_named(CG_CTX, cname) }
             llvm.struct_set_body(csty, cfta, cfc, 0)
             llvm.type_array_free(cfta)
             forge_struct_reg_set_llvm_type(cname, csty)
@@ -822,6 +823,10 @@ export fn materialize_struct_types() {
         }
         ci = ci + 1
     }
+    // Sync all registry type pointers with canonical LLVM pointers.
+    // materialize_struct_types may create types that get a different pointer
+    // than LLVMTypeOf returns later. This ensures pointer identity.
+    forge_struct_reg_sync_types(CG_CTX)
 }
 
 // Emit ALL function bodies — single pass: declare + re-parse + emit each function
@@ -890,8 +895,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     fi = fi + 1
                 }
             }
-            // Use named struct type (like Rust) for proper LLVM ARM64 ABI handling
-            let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
+            // Use named struct type — reuse existing to preserve pointer identity
+            mut sty = llvm.get_type_by_name(CG_CTX, CG_STRUCT_NAMES[si])
+            if sty == null { sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si]) }
             llvm.struct_set_body(sty, fta, fc, 0)
             llvm.type_array_free(fta)
             // Re-register with LLVM type
