@@ -743,19 +743,30 @@ export fn materialize_struct_types() {
     mut ci = 0
     while ci < c_count {
         let cname = forge_struct_reg_get_name(ci)
-        // Skip if already has an LLVM type
-        if forge_struct_reg_get_llvm_type(ci) != null {
+        // Check if type ALREADY exists with the CORRECT name
+        cg_reinit_types()
+        let existing = llvm.get_type_by_name(CG_CTX, cname)
+        let reg_ty = forge_struct_reg_get_llvm_type(ci)
+        if existing != null && existing == reg_ty {
             ci = ci + 1
             continue
         }
-        // Check if already exists as named type
-        cg_reinit_types()
-        let existing = llvm.get_type_by_name(CG_CTX, cname)
-        if existing != null {
+        if existing != null && existing != reg_ty {
+            eprintln("  [mat2-mismatch] " + cname + " existing!=reg_ty")
+        }
+        if existing == null && reg_ty != null {
+            eprintln("  [mat2-missing] " + cname + " has reg_ty but no named type")
+        }
+        if existing == null && reg_ty == null {
+            eprintln("  [mat2-new] " + cname + " needs creation")
+        }
+        if existing != null && reg_ty == null {
+            // Found by name but not in registry — update registry and skip
             forge_struct_reg_set_llvm_type(cname, existing)
             ci = ci + 1
             continue
         }
+        // Type needs to be created (or recreated with correct name)
         // Create from field type names
         let cftn = forge_struct_reg_get_field_types(ci)
         let cfields = forge_struct_reg_get_fields(ci)
@@ -797,6 +808,7 @@ export fn materialize_struct_types() {
                     cfi = cfi + 1
                 }
             }
+            eprintln("  [mat2-create] " + cname + " fc=" + string(cfc))
             let csty = llvm.struct_create_named(CG_CTX, cname)
             llvm.struct_set_body(csty, cfta, cfc, 0)
             llvm.type_array_free(cfta)

@@ -750,18 +750,14 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_PTR }
-    // Check if starts with "List" — list is {ptr, i64}
-    if type_name.length >= 4 {
-        if type_name[0] == "L" {
-            if type_name[1] == "i" {
-                if type_name[2] == "s" {
-                    if type_name[3] == "t" {
-                        return CG_LIST
-                    }
-                }
-            }
+    // Check if starts with "List<" — list is {ptr, i64}
+    if type_name.length >= 5 && type_name[4] == "<" {
+        if type_name[0] == "L" && type_name[1] == "i" && type_name[2] == "s" && type_name[3] == "t" {
+            return CG_LIST
         }
     }
+    // Also match bare "List" without generic
+    if type_name == "List" { return CG_LIST }
     // Handle nullable types (T?) — use {i8, i64} for simple types, {i8, %ForgeString} for strings
     if type_name.length > 1 {
         let last_ch = type_name[type_name.length - 1]
@@ -771,15 +767,10 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             return make_nullable_type(CG_I64)
         }
     }
-    // Handle Map types — use {ptr, ptr, i64}
-    if type_name.length >= 3 {
-        if type_name[0] == "M" {
-            if type_name[1] == "a" {
-                if type_name[2] == "p" {
-                    return CG_STR
-                }
-            }
-        }
+    // Handle Map types: "Map<K,V>" or bare "Map"
+    if type_name == "Map" { return CG_PTR }
+    if type_name.length >= 4 && type_name[0] == "M" && type_name[1] == "a" && type_name[2] == "p" && type_name[3] == "<" {
+        return CG_PTR
     }
     // Direct LLVM named type lookup (most reliable — immune to list corruption)
     let named_ty = llvm.get_type_by_name(CG_CTX, type_name)
