@@ -403,11 +403,10 @@ export fn declare_all_fns() {
         while pi < pc {
             let pt_idx = param_offset + pi
             mut param_ty = CG_I64
-            if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let tname = forge_param_type_get(pt_idx)
-                // self param: use ptr for mutability (methods modify self.pos etc.)
-                mut pname = ""
-                if pt_idx < FN_ALL_PARAM_NAMES.length { pname = FN_ALL_PARAM_NAMES[pt_idx] }
+            // Use C-side param registry (immune to Forge list corruption)
+            let tname = forge_param_type_get(pt_idx)
+            let pname = forge_param_name_get(pt_idx)
+            if tname != "" {
                 if pname == "self" {
                     param_ty = CG_PTR
                 } else {
@@ -420,14 +419,22 @@ export fn declare_all_fns() {
         }
         mut ret_ty = CG_I64
         if is_main { ret_ty = CG_I32 }
-        if !is_main && i < FN_RETURN_TYPES.length {
-            mut rtn = FN_RETURN_TYPES[i]
+        if !is_main {
+            // Use C-side function registry (immune to Forge list corruption)
+            // FN_RETURN_TYPES list gets corrupted after ~40 entries in Stage 1.
+            mut rtn = forge_fn_reg_get_ret(name)
+            // Fallback to Forge list if C-side registry is empty
+            if rtn == "" && i < FN_RETURN_TYPES.length {
+                rtn = FN_RETURN_TYPES[i]
+            }
             // Strip nullable suffix for type resolution
             if rtn.length > 1 { if rtn[rtn.length - 1] == "?" {
                 rtn = rtn.substring(0, rtn.length - 1)
             } }
             if rtn == "string" { ret_ty = CG_STR }
-            else if rtn != "" {
+            else if rtn == "List" { ret_ty = CG_STR }
+            else if rtn.length >= 4 && rtn.substring(0, 4) == "List" { ret_ty = CG_STR }
+            else if rtn != "" && rtn != "int" && rtn != "bool" && rtn != "void" {
                 cg_reinit_types()
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
