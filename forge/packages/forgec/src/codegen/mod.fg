@@ -2987,6 +2987,28 @@ impl Codegen {
                     }
                     CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(fn_str)
                 }
+                // Register map variable
+                if CG_LAST_IS_MAP == 1 {
+                    CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
+                }
+                // Register enum variable
+                if CG_LAST_ENUM_TYPE != "" {
+                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + name + ":" + CG_LAST_ENUM_TYPE + ","
+                    CG_LAST_ENUM_TYPE = ""
+                }
+                // Register nullable variable
+                if CG_LAST_IS_NULLABLE == 1 {
+                    CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(name)
+                    mut inner_type_name = "int"
+                    if CG_LAST_IS_STR == 1 { inner_type_name = "string" }
+                    CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner_type_name)
+                }
+                // Reset flags
+                CG_LAST_IS_STR = 0
+                CG_LAST_IS_MAP = 0
+                CG_LAST_IS_NULLABLE = 0
+                CG_LAST_STRUCT_TYPE = ""
+                CG_HAS_LAST_VAL = 0
             }
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
