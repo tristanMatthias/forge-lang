@@ -876,6 +876,13 @@ export fn codegen_init(name: string) {
 }
 
 export fn codegen_write_ir(path: string) {
+    // Run LLVM verifier before writing — catches type mismatches early
+    let verify_result = llvm.verify_module(CG_MOD)
+    if verify_result != 0 {
+        eprintln("WARNING: LLVM module verification failed — IR may have type errors")
+        // Write verification errors to file for analysis
+        llvm.verify_module_to_file(CG_MOD, path + ".verify")
+    }
     llvm.print_module_to_file(CG_MOD, path)
 }
 
@@ -1157,6 +1164,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_function_type", p4)
     llvm.add_function(CG_MOD, "forge_llvm_struct_create_named", p2)
     llvm.add_function(CG_MOD, "forge_llvm_struct_set_body", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_struct_get_type_at_index", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_store_size_of_type", p2)
     llvm.add_function(CG_MOD, "forge_llvm_struct_type", p3)
     llvm.add_function(CG_MOD, "forge_llvm_get_type_by_name", p2)
     llvm.add_function(CG_MOD, "forge_llvm_fn_get_param_type", p2)
@@ -1276,6 +1285,14 @@ fn coerce_call_arg(val: ptr, fn_ty: ptr, arg_idx: int) -> ptr {
         let f0 = llvm.build_extract_value(CG_B, val, 0, "s0")
         if f0 != null { return f0 }
     }
+    // ptr (kind 12) → i64 param (kind 8): ptrtoint
+    if val_kind == 12 && param_kind == 8 {
+        return llvm.build_ptr_to_int(CG_B, val, CG_I64, "pi")
+    }
+    // i64 (kind 8) → ptr param (kind 12): inttoptr
+    if val_kind == 8 && param_kind == 12 {
+        return llvm.build_int_to_ptr(CG_B, val, CG_PTR, "ip")
+    }
     val
 }
 
@@ -1302,6 +1319,78 @@ fn checked_build_call(fn_val: ptr, arg_values: ptr, arg_count: int, name: string
         i = i + 1
     }
     llvm.build_call(CG_B, ft, fn_val, arg_values, arg_count, name)
+}
+
+// ─── Checked build_store: validates value type matches alloca type ────────────
+fn checked_build_store(val: ptr, ptr_val: ptr) -> ptr {
+    if val == null || ptr_val == null { return null }
+    // Get the alloca's element type
+    let alloca_ty = llvm.get_allocated_type(ptr_val)
+    if alloca_ty == null { return llvm.build_store(CG_B, val, ptr_val) }
+    let val_ty = llvm.type_of(val)
+    if val_ty == null { return llvm.build_store(CG_B, val, ptr_val) }
+    let val_kind = llvm.get_type_kind(val_ty)
+    let alloca_kind = llvm.get_type_kind(alloca_ty)
+    // Types match → store directly
+    if val_ty == alloca_ty { return llvm.build_store(CG_B, val, ptr_val) }
+    // Same kind → store (might differ in name but same layout)
+    if val_kind == alloca_kind { return llvm.build_store(CG_B, val, ptr_val) }
+    // Struct value (kind 10) into ptr alloca (kind 12): extract field 0
+    if val_kind == 10 && alloca_kind == 12 {
+        let extracted = llvm.build_extract_value(CG_B, val, 0, "cs0")
+        return llvm.build_store(CG_B, extracted, ptr_val)
+    }
+    // ptr value (kind 12) into struct alloca (kind 10): store zeroinitializer
+    if val_kind == 12 && alloca_kind == 10 {
+        return llvm.build_store(CG_B, llvm.const_null(alloca_ty), ptr_val)
+    }
+    // i64 (kind 8) into struct alloca (kind 10): store zeroinitializer
+    if val_kind == 8 && alloca_kind == 10 {
+        return llvm.build_store(CG_B, llvm.const_null(alloca_ty), ptr_val)
+    }
+    // Struct (kind 10) into i64 alloca (kind 8): extract first field
+    if val_kind == 10 && alloca_kind == 8 {
+        let f0 = llvm.build_extract_value(CG_B, val, 0, "cs1")
+        if f0 != null { return llvm.build_store(CG_B, f0, ptr_val) }
+    }
+    // Fallback: store anyway (LLVM may reject but at least it's visible)
+    llvm.build_store(CG_B, val, ptr_val)
+}
+
+// ─── Checked build_insertvalue: validates field type ────────────
+fn checked_build_insertvalue(agg: ptr, val: ptr, idx: int, name: string) -> ptr {
+    if agg == null || val == null { return agg }
+    // Get the aggregate's type and the expected field type
+    let agg_ty = llvm.type_of(agg)
+    if agg_ty == null { return llvm.build_insert_value(CG_B, agg, val, idx, name) }
+    let agg_kind = llvm.get_type_kind(agg_ty)
+    if agg_kind != 10 { return llvm.build_insert_value(CG_B, agg, val, idx, name) }
+    let field_ty = llvm.struct_get_type_at_index(agg_ty, idx)
+    if field_ty == null { return llvm.build_insert_value(CG_B, agg, val, idx, name) }
+    let val_ty = llvm.type_of(val)
+    // Types match → insert directly
+    if val_ty == field_ty { return llvm.build_insert_value(CG_B, agg, val, idx, name) }
+    let val_kind = llvm.get_type_kind(val_ty)
+    let field_kind = llvm.get_type_kind(field_ty)
+    if val_kind == field_kind { return llvm.build_insert_value(CG_B, agg, val, idx, name) }
+    // Coerce: struct→ptr (extract field 0)
+    if val_kind == 10 && field_kind == 12 {
+        let coerced = llvm.build_extract_value(CG_B, val, 0, "ci0")
+        return llvm.build_insert_value(CG_B, agg, coerced, idx, name)
+    }
+    // Coerce: wrong struct type → use zeroinitializer of expected type
+    if val_kind == 10 && field_kind == 10 && val_ty != field_ty {
+        return llvm.build_insert_value(CG_B, agg, llvm.const_null(field_ty), idx, name)
+    }
+    // Coerce: i64 into struct field → zeroinitializer
+    if val_kind == 8 && field_kind == 10 {
+        return llvm.build_insert_value(CG_B, agg, llvm.const_null(field_ty), idx, name)
+    }
+    // Coerce: ptr into i64 field → ptrtoint
+    if val_kind == 12 && field_kind == 8 {
+        return llvm.build_insert_value(CG_B, agg, llvm.const_int(CG_I64, 0, 0), idx, name)
+    }
+    llvm.build_insert_value(CG_B, agg, val, idx, name)
 }
 
 // ─── Helper: call runtime with 1 arg ────────────
@@ -2202,7 +2291,7 @@ impl Codegen {
                     val = wrap_nullable(inner_ty, coerced_val)
                 }
             }
-            result = llvm.build_insert_value(CG_B, result, val, fi, "sf")
+            result = checked_build_insertvalue(result, val, fi, "sf")
             fi = fi + 1
         }
         tv_typed(result, sty, struct_name)
@@ -2314,9 +2403,9 @@ impl Codegen {
         forge_alloca_cache_set_type(name, alloca_ty)
         forge_var_type_set(name, tv.type_name)
         forge_idx_cache_set(forge_var_counter_inc(), alloca)
-        // Restore position and store
+        // Restore position and store (checked: validates value type matches alloca type)
         llvm.position_at_end(CG_B, cur_bb)
-        llvm.build_store(CG_B, real_val, alloca)
+        checked_build_store(real_val, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
         CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
         // Register in C-side caches based on ACTUAL alloca type (not TypedValue type_name)

@@ -2244,8 +2244,14 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
     _list_push_count++;
     // Guard: reject null elements or unreasonable sizes
     if (!elem || elem_size <= 0 || elem_size > 1000000) {
-        if (_list_push_diag) fprintf(stderr, "[list_push #%d] BAD: elem=%p size=%lld\n", _list_push_count, elem, (long long)elem_size);
-        return list;  // return unchanged list
+        fprintf(stderr, "[list_push #%d] BAD: elem=%p size=%lld — skipping\n", _list_push_count, elem, (long long)elem_size);
+        return list;
+    }
+    // Detect struct values passed as pointers (common ABI bug):
+    // If elem looks like it's NOT a valid pointer (e.g., small integer), warn
+    if ((uintptr_t)elem < 4096) {
+        fprintf(stderr, "[list_push #%d] WARN: elem=%p looks like integer, not pointer — size=%lld\n",
+                _list_push_count, elem, (long long)elem_size);
     }
     int64_t len = list.len;
     if (_list_push_diag && (_list_push_count <= 50 || _list_push_count % 100 == 0)) {
