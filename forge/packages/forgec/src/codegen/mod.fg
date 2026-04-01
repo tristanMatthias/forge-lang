@@ -1714,9 +1714,8 @@ impl Codegen {
         let ft = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        // Determine return type from C-side registry
-        let rtn = forge_fn_reg_get_ret(fn_name)
-        self.tv_from_return_type(r, rtn)
+        // Return as int for now (skip registry lookup to avoid corruption)
+        tv_int(r)
     }
 
     // ─── Member access ──────────────────────────

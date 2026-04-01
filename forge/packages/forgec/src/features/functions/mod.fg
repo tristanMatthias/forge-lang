@@ -637,11 +637,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             if llvm.block_has_terminator(CG_B) { break }
             let before = body_parser.pos
-            // Parse expression directly (bypass Statement enum wrapping)
-            let expr = body_parser.parse_expr()
+            let stmt = body_parser.parse_statement()
             cg_reinit_types()
-            if expr != null {
-                last_val = cg.emit_expr(expr!).val
+            if stmt != null {
+                last_val = cg.emit_statement(stmt!)
             }
             if body_parser.pos == before { body_parser.advance() }
             body_parser.skip_newlines()
