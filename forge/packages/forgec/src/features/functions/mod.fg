@@ -617,6 +617,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         let first_ptype = forge_param_type_get(param_offset)
         if first_pname == "self" {
             forge_set_self_type(first_ptype)
+            // Register self's struct type for member access resolution
+            forge_struct_var_add("self", first_ptype)
         } else {
             forge_set_self_type("")
         }

@@ -147,6 +147,9 @@ fn resolve_type_name_to_llvm(name: string) -> ptr {
     if name == "void" { return CG_VOID }
     if name.length >= 5 && name.substring(0, 5) == "List<" { return CG_LIST }
     if name.length >= 4 && name.substring(0, 4) == "Map<" { return CG_PTR }
+    // Direct LLVM named type lookup (most reliable)
+    let named = llvm.get_type_by_name(CG_CTX, name)
+    if named != null { return named }
     // Struct/enum — look up in struct registry
     mut si = 0
     while si < CG_STRUCT_NAMES.length {
@@ -1631,8 +1634,11 @@ impl Codegen {
             let fn_ty = llvm.global_get_value_type(fn_ref3)
             let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
             llvm.value_array_free(arg_arr)
-            // Determine return type from registry
-            let rtn = forge_fn_reg_get_ret(method_name)
+            // Determine return type from registry (try both naming conventions)
+            mut rtn = forge_fn_reg_get_ret(method_name)
+            if rtn.length == 0 {
+                rtn = forge_fn_reg_get_ret(method_name_1)
+            }
             return self.tv_from_return_type(result, rtn)
         }
         // String methods
