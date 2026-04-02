@@ -1018,7 +1018,46 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
     if builder.is_null() || fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name)) }
+    // Auto-coerce arguments: if param expects ptr but arg is i64 (or vice versa), convert
+    unsafe {
+        // Get expected param types
+        let n = num_args as usize;
+        let param_tys_layout = std::alloc::Layout::array::<LLVMPtr>(n.max(1)).unwrap();
+        let param_tys = std::alloc::alloc_zeroed(param_tys_layout) as *mut LLVMPtr;
+        LLVMGetParamTypes(fn_type, param_tys);
+        for i in 0..n {
+            let arg = *args.add(i);
+            if arg.is_null() { continue; }
+            let param_ty = *param_tys.add(i);
+            if param_ty.is_null() { continue; }
+            let arg_ty = LLVMTypeOf(arg);
+            if arg_ty == param_ty { continue; }
+            let param_kind = LLVMGetTypeKind(param_ty);
+            let arg_kind = LLVMGetTypeKind(arg_ty);
+            // i64 → ptr coercion
+            if param_kind == 12 && arg_kind == 8 {
+                *args.add(i) = LLVMBuildIntToPtr(builder, arg, param_ty, b"coerce\0".as_ptr() as *const c_char);
+            }
+            // ptr → i64 coercion
+            if param_kind == 8 && arg_kind == 12 {
+                *args.add(i) = LLVMBuildPtrToInt(builder, arg, param_ty, b"coerce\0".as_ptr() as *const c_char);
+            }
+            // struct → i64 coercion (extract field 0)
+            if param_kind == 8 && arg_kind == 10 {
+                let extracted = LLVMBuildExtractValue(builder, arg, 0, b"coerce\0".as_ptr() as *const c_char);
+                if !extracted.is_null() {
+                    let ext_ty = LLVMTypeOf(extracted);
+                    if LLVMGetTypeKind(ext_ty) == 12 {
+                        *args.add(i) = LLVMBuildPtrToInt(builder, extracted, param_ty, b"coerce2\0".as_ptr() as *const c_char);
+                    } else {
+                        *args.add(i) = extracted;
+                    }
+                }
+            }
+        }
+        std::alloc::dealloc(param_tys as *mut u8, param_tys_layout);
+        LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
+    }
 }
 
 #[no_mangle]
