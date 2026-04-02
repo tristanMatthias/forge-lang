@@ -3995,6 +3995,14 @@ int64_t forge_var_counter_reset(int64_t val) { _var_counter = val; return 0; }
 // These bypass LLVM Value* corruption in the Forge-compiled codegen.
 // Stage 2 calls these directly instead of forge_string_* via MemberAccess.
 int64_t forge_sh_indexof(ForgeString s, ForgeString needle) {
+    static int _shi_trace = 5;
+    if (_shi_trace > 0) {
+        fprintf(stderr, "  [SHI] s.ptr=%p s.len=%lld needle.ptr=%p needle.len=%lld\n",
+            s.ptr, (long long)s.len, needle.ptr, (long long)needle.len);
+        if (needle.ptr && needle.len > 0 && needle.len < 20)
+            fprintf(stderr, "  [SHI] needle='%.*s'\n", (int)needle.len, needle.ptr);
+        _shi_trace--;
+    }
     return forge_string_index_of(s, needle);
 }
 ForgeString forge_sh_substr(ForgeString s, int64_t start, int64_t end) {
@@ -4151,4 +4159,14 @@ int64_t forge_efield_is_boxed(int64_t idx) {
 }
 
 int64_t forge_efield_count(void) { return _efield_c_count; }
+
+// C-side string index_of — immune to ForgeString corruption in Stage 2
+int64_t forge_c_index_of(ForgeString haystack, ForgeString needle) {
+    if (!haystack.ptr || !needle.ptr || haystack.len <= 0 || needle.len <= 0) return -1;
+    if (needle.len > haystack.len) return -1;
+    for (int64_t i = 0; i <= haystack.len - needle.len; i++) {
+        if (memcmp(haystack.ptr + i, needle.ptr, needle.len) == 0) return i;
+    }
+    return -1;
+}
 

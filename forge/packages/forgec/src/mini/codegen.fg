@@ -2683,6 +2683,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_string_char_at(%ForgeString, i64)")
     ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
     ir_raw("declare i64 @forge_string_index_of(%ForgeString, %ForgeString)")
+    ir_raw("declare i64 @forge_c_index_of(%ForgeString, %ForgeString)")
     ir_raw("declare i64 @forge_string_compare(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_eq(%ForgeString, %ForgeString)")
     ir_raw("declare ptr @forge_alloc(i64)")
