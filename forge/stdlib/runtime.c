@@ -4091,3 +4091,53 @@ void* forge_get_last_emit_result(void) {
     return _last_emit_result;
 }
 
+// ---- C-side enum field type storage (immune to Forge list corruption) ----
+// Parallel to EFIELD_TYPES/EFIELD_RAW_TYPES but in C.
+// Stores both the boxed type (used in variant layout) and raw type (for unboxing).
+#define EFIELD_C_MAX 4096
+static struct {
+    char boxed[64];   // The type used in the variant struct ("ptr" for boxed, original otherwise)
+    char raw[64];     // The original type before boxing (e.g., "%Expr", "%Statement")
+} _efield_c[EFIELD_C_MAX];
+static int _efield_c_count = 0;
+
+// Add a field type entry. Called during enum variant registration.
+void forge_efield_add(ForgeString boxed_ty, ForgeString raw_ty) {
+    if (_efield_c_count >= EFIELD_C_MAX) return;
+    if (boxed_ty.ptr && boxed_ty.len > 0 && boxed_ty.len < 63) {
+        memcpy(_efield_c[_efield_c_count].boxed, boxed_ty.ptr, boxed_ty.len);
+        _efield_c[_efield_c_count].boxed[boxed_ty.len] = '\0';
+    } else {
+        strcpy(_efield_c[_efield_c_count].boxed, "i64");
+    }
+    if (raw_ty.ptr && raw_ty.len > 0 && raw_ty.len < 63) {
+        memcpy(_efield_c[_efield_c_count].raw, raw_ty.ptr, raw_ty.len);
+        _efield_c[_efield_c_count].raw[raw_ty.len] = '\0';
+    } else {
+        strcpy(_efield_c[_efield_c_count].raw, "i64");
+    }
+    _efield_c_count++;
+}
+
+// Get the boxed type for a field at a given index
+ForgeString forge_efield_get_boxed(int64_t idx) {
+    if (idx < 0 || idx >= _efield_c_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_efield_c[idx].boxed, strlen(_efield_c[idx].boxed)};
+}
+
+// Get the raw (pre-boxing) type for a field at a given index
+ForgeString forge_efield_get_raw(int64_t idx) {
+    if (idx < 0 || idx >= _efield_c_count) return (ForgeString){NULL, 0};
+    return (ForgeString){_efield_c[idx].raw, strlen(_efield_c[idx].raw)};
+}
+
+// Check if a field at given index is boxed (type is "ptr" but raw type is complex)
+int64_t forge_efield_is_boxed(int64_t idx) {
+    if (idx < 0 || idx >= _efield_c_count) return 0;
+    return (strcmp(_efield_c[idx].boxed, "ptr") == 0 &&
+            _efield_c[idx].raw[0] == '%' &&
+            strcmp(_efield_c[idx].raw, "%ForgeString") != 0) ? 1 : 0;
+}
+
+int64_t forge_efield_count(void) { return _efield_c_count; }
+

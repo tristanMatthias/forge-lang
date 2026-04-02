@@ -436,6 +436,15 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** REVERTED
 **Lesson:** Enum boxing is the RIGHT approach (matches forge-lang's breakthrough) but can't be implemented reliably when the mini's Forge lists are corrupted. The EFIELD_TYPES list push may misalign boxing/raw-type entries. Need either: (1) C-side field type storage (like fn_store), or (2) fix Forge list corruption first.
 
+### EXP-039: C-side enum field type storage + enum boxing
+**Date:** 2026-04-02
+**Milestone:** ROOT CAUSE FIX
+**Hypothesis:** The root cause is the mini's {i64, ptr} struct return corruption on ARM64. This breaks Forge lists (which return {ptr, i64} ForgeStrings), which breaks EFIELD_TYPES tracking, which prevents enum boxing. Moving EFIELD_TYPES to a C-side array (like fn_store, param_names, var_types — all of which work) breaks the circular dependency and enables enum boxing.
+**Change:** (1) Add C-side efield_type_set/get in runtime.c (2) Use C-side storage during enum registration (3) Re-implement enum boxing with C-side types for construction + extraction
+**Score:** 143 → TBD
+**Result:** TBD
+**Lesson:** TBD
+
 ### EXP-037: Trace forge_string_eq for index_of to confirm parser works
 **Date:** 2026-04-01
 **Milestone:** M5 (Stage 2 module resolution)

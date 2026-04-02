@@ -476,7 +476,16 @@ fn parse_enum_decl_top() {
                 }
                 if check("?") { advance() }
                 EFIELD_NAMES = EFIELD_NAMES.push(fname)
-                EFIELD_TYPES = EFIELD_TYPES.push(type_to_llvm(ftname))
+                let raw_fty = type_to_llvm(ftname)
+                // Box complex enum/struct fields to ptr (heap-allocated).
+                // Prevents {i64, ptr} corruption when passing enum values between functions.
+                mut boxed_fty = raw_fty
+                if raw_fty.length > 1 && raw_fty[0] == "%" && raw_fty != "%ForgeString" && raw_fty != "%Span" {
+                    boxed_fty = "ptr"
+                }
+                EFIELD_TYPES = EFIELD_TYPES.push(boxed_fty)
+                // Store in C-side array (immune to list corruption)
+                forge_efield_add(boxed_fty, raw_fty)
                 fcount = fcount + 1
                 skip_nl()
                 if check(",") { advance() }
