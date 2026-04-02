@@ -416,13 +416,14 @@ bash scripts/audit_stage2.sh output.ll
 **Score:** N/A (diagnostic)
 **Result:** C-side returns correct names (no find_nmod). Ghost function comes from mini corrupting ForgeString AFTER return from C. The string pointer in the ForgeString struct gets stale/reused memory that contains "find_nmod" from a previous allocation.
 
-### EXP-036: C-side function name lookup (bypass ForgeString return)
+### EXP-036: C-side function declaration + lookup (bypass ForgeString return)
 **Date:** 2026-04-01
 **Milestone:** M5 (Stage 2 module resolution)
-**Hypothesis:** ForgeString return from C→Forge is corrupted by the mini. A C-side function that looks up the LLVM function by fn_store index (without returning a ForgeString to Forge) should work.
-**Change:** Add forge_get_fn_val_by_idx(module, idx) that returns the LLVM function value directly.
-**Score:** 143 → TBD
-**Result:** TBD
-**Lesson:** TBD
+**Hypothesis:** ForgeString return from C→Forge is corrupted by the mini. C-side functions that declare/lookup LLVM functions by fn_store index (without returning ForgeString to Forge) should produce correct function names.
+**Change:** Added forge_declare_fn_by_idx(module, idx, fn_type) and forge_get_fn_val_by_idx(module, idx). Changed 3 of 5 declaration loops to use C-side. EXP-035 confirmed C-side names are ALL correct.
+**Score:** 143 → 143
+**Result:** ⚪ PARTIAL — ghost find_nmod reduced from full definition to 2 remaining references. The 2 remaining come from per-function emit paths (emit_fn, emit_fn_data) that use data.name from AST. scan_mods body IS correct (confirmed by C trace) but parser re-parse produces wrong AST because ForgeString method desugaring is corrupted.
+**Kept/Reverted:** KEPT
+**Lesson:** C-side name bypass works for declaration loops. But the parser re-parse of function bodies ALSO uses ForgeString operations (string comparison for method name matching). The corruption is pervasive — every ForgeString operation in the mini-compiled code is affected. The fix must be in the mini's struct return handling, not in individual workarounds.
 
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.

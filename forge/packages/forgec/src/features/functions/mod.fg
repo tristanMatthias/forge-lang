@@ -205,7 +205,9 @@ fn emit_fn(cg: Codegen, node: NodeRef) {
     let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
     llvm.type_array_free(param_arr)
 
-    let fn_val = llvm.add_function(CG_MOD, data.name, fn_type)
+    // Use C-side fn_store index for declaration (Forge-side data.name corrupted by mini)
+    let efn_idx = forge_fn_store_count() - 1
+    let fn_val = forge_declare_fn_by_idx(CG_MOD, efn_idx, fn_type)
     cg.functions[data.name] = fn_val
     cg.current_fn = fn_val
 
@@ -1186,7 +1188,9 @@ fn emit_fn_data(cg: Codegen, data: FnDeclData) {
     let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
     llvm.type_array_free(param_arr)
 
-    let fn_val = llvm.add_function(CG_MOD, data.name, fn_type)
+    // Use C-side fn_store index for declaration (Forge-side data.name corrupted by mini)
+    let efd_idx = forge_fn_store_count() - 1
+    let fn_val = forge_declare_fn_by_idx(CG_MOD, efd_idx, fn_type)
     cg.functions[data.name] = fn_val
     cg.current_fn = fn_val
 
