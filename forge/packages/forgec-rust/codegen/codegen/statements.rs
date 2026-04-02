@@ -420,13 +420,15 @@ impl<'ctx> Codegen<'ctx> {
                     continue;
                 }
                 // Non-mutable self: passed by value, store in alloca with resolved type
-                let alloca = self.create_entry_block_alloca(&struct_type, &param.name);
+                let llvm_sty = self.type_to_llvm_basic(&struct_type);
+                let alloca = self.builder.build_alloca(llvm_sty, &param.name).unwrap();
                 self.builder.build_store(alloca, param_val).unwrap();
                 self.define_var(param.name.clone(), alloca, struct_type);
                 continue;
             }
 
-            let alloca = self.create_entry_block_alloca(&ty, &param.name);
+            let llvm_ty = self.type_to_llvm_basic(&ty);
+            let alloca = self.builder.build_alloca(llvm_ty, &param.name).unwrap();
             self.builder.build_store(alloca, param_val).unwrap();
             self.define_var(param.name.clone(), alloca, ty);
         }
