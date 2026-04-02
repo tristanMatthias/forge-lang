@@ -94,6 +94,18 @@ $(STAGE1_LL): $(MINI_BIN) $(shell find packages/forgec/src -name '*.fg' ! -path 
 		exit 1; \
 	fi
 
+# ─── Step 3b: Stage 1 via Rust compiler (bypass mini) ────────────
+# The Rust compiler can build the self-hosted source directly.
+# Produces a Stage 1 binary without going through the mini's IR.
+# Currently: module resolution only finds main file (needs fix).
+
+STAGE1_RUST := $(BUILD)/stage1_rust
+stage1-rust: $(STAGE1_RUST)
+$(STAGE1_RUST): target/release/forgec $(STD_LLVM_LIB) $(RUNTIME_O) $(shell find packages/forgec/src -name '*.fg') | $(BUILD)
+	@echo "=== Rust compiler → Stage 1 binary ==="
+	$(FORGEC) build $(SOURCE) --dev -o $(STAGE1_RUST)
+	@echo "  Built: $(STAGE1_RUST)"
+
 # ─── Step 4: Stage 1 Binary ─────────────────────────────────────
 
 stage1: $(STAGE1_BIN)

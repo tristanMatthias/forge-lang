@@ -198,9 +198,8 @@ fn try_load_mod(dir: string, mod_name: string) {
 
 // Helper: scan for \nmod in remaining text, recurse
 fn scan_mods(src: string, dir: string) {
-    // Use forge_sh_indexof (declared in module, immune to desugaring corruption)
     let needle = "\nmod "
-    let found = forge_sh_indexof(src, needle)
+    let found = src.index_of(needle)
     if found < 0 { return }
     let name_start = found + 5
     let rest = src.substring(name_start, src.length)

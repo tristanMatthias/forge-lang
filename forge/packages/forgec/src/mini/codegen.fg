@@ -1766,8 +1766,13 @@ fn codegen_if(s: Stmt) -> int {
     // When one branch terminated (ret/break), the merge only receives the other branch.
     if (is_expr == 1 || use_retval) && (then_ended == 0 || else_ended == 0) {
         // Use LAST_STORE_TY (set by if_store_val) — matches what was actually stored
+        // Override with CUR_RET_TY only for ptr-typed returns (not structs — structs may be
+        // intermediate values used in arithmetic contexts)
         mut load_ty = LAST_STORE_TY
         if load_ty.length == 0 { load_ty = "i64" }
+        if use_retval && CUR_RET_TY == "ptr" {
+            load_ty = "ptr"
+        }
         mut result_struct = ""
         mut result_enum = ""
         if load_ty.length > 1 && load_ty.substring(0, 1) == "%" {
@@ -2177,6 +2182,7 @@ fn codegen_match(s: Stmt) -> int {
     ir_raw(merge_l + ":")
     mut load_ty = LAST_STORE_TY
     if load_ty.length == 0 { load_ty = "i64" }
+    if CUR_RET_TY == "ptr" { load_ty = "ptr" }
     let mr = new_reg()
     ir_line(mr + " = load " + load_ty + ", ptr " + match_result)
     LAST_EXPR_VAL = mr
