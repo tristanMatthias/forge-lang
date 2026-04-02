@@ -801,6 +801,95 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_selfhost_process_exit", make_fn_type(CG_VOID, [CG_I64]))
     llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type(CG_STR, [CG_STR, CG_STR]))
     llvm.add_function(CG_MOD, "forge_eprintln_string", make_fn_type(CG_VOID, [CG_STR]))
+    // LLVM API functions (needed by self-hosted compiler at Stage 2+ runtime)
+    let p1 = make_fn_type(CG_PTR, [CG_PTR])
+    let p2 = make_fn_type(CG_PTR, [CG_PTR, CG_PTR])
+    let p3 = make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_PTR])
+    let p4 = make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_PTR, CG_PTR])
+    let p5 = make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR])
+    let p6 = make_fn_type(CG_PTR, [CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR])
+    let v1 = make_fn_type(CG_VOID, [CG_PTR])
+    let v2 = make_fn_type(CG_VOID, [CG_PTR, CG_PTR])
+    let v3 = make_fn_type(CG_VOID, [CG_PTR, CG_PTR, CG_PTR])
+    let r0 = make_fn_type(CG_PTR, [])
+    llvm.add_function(CG_MOD, "forge_llvm_context_create", r0)
+    llvm.add_function(CG_MOD, "forge_llvm_context_dispose", v1)
+    llvm.add_function(CG_MOD, "forge_llvm_module_create", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_module_dispose", v1)
+    llvm.add_function(CG_MOD, "forge_llvm_print_module_to_file", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_verify_module", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_int1_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_int8_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_int32_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_int64_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_double_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_void_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_pointer_type", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_function_type", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_struct_create_named", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_struct_set_body", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_struct_type", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_get_type_by_name", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_size_of", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_type_array_new", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_type_array_set", v3)
+    llvm.add_function(CG_MOD, "forge_llvm_type_array_free", v1)
+    llvm.add_function(CG_MOD, "forge_llvm_add_function", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_get_named_function", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_get_param", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_append_basic_block", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_get_insert_block", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_get_basic_block_parent", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_block_has_terminator", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_get_entry_basic_block", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_get_first_instruction", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_create_builder", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_dispose_builder", v1)
+    llvm.add_function(CG_MOD, "forge_llvm_position_at_end", v2)
+    llvm.add_function(CG_MOD, "forge_llvm_position_before", v2)
+    llvm.add_function(CG_MOD, "forge_llvm_build_ret", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_build_ret_void", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_build_br", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_build_cond_br", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_alloca", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_build_store", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_build_load", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_call", p6)
+    llvm.add_function(CG_MOD, "forge_llvm_build_add", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_sub", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_mul", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_sdiv", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_srem", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_and", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_or", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_xor", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_shl", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_ashr", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_icmp", p5)
+    llvm.add_function(CG_MOD, "forge_llvm_build_trunc", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_zext", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_bitcast", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_struct_gep2", p5)
+    llvm.add_function(CG_MOD, "forge_llvm_build_gep2", p6)
+    llvm.add_function(CG_MOD, "forge_llvm_build_extract_value", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_insert_value", p5)
+    llvm.add_function(CG_MOD, "forge_llvm_build_phi", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_add_incoming", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_build_ptr_to_int", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_inttoptr", p4)
+    llvm.add_function(CG_MOD, "forge_llvm_build_global_string_ptr", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_set_initializer", v2)
+    llvm.add_function(CG_MOD, "forge_llvm_add_global", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_const_int", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_const_null", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_const_real", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_const_string", p3)
+    llvm.add_function(CG_MOD, "forge_llvm_get_undef", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_value_array_new", p1)
+    llvm.add_function(CG_MOD, "forge_llvm_value_array_set", v3)
+    llvm.add_function(CG_MOD, "forge_llvm_value_array_get", p2)
+    llvm.add_function(CG_MOD, "forge_llvm_value_array_free", v1)
+    llvm.add_function(CG_MOD, "forge_llvm_global_get_value_type", p1)
 }
 
 fn cg_cleanup() {
@@ -2112,20 +2201,20 @@ impl Codegen {
                                 let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
                                 // Try CSV first
                                 field_types = cg_enum_variant_field_types(ename, vn2)
-                                // Hardcoded fallback for common Expr/Statement variants
+                                // CSV table lookup for field types (from commit a1d18f2 BREAKTHROUGH)
+                                // Avoids assignment-in-if bug, covers ALL Expr/Statement variants
+                                let ft_table = ",IntLit=i4,FloatLit=i4,StringLit=s4,BoolLit=i4,NullLit=4,Ident=s4,Binary=pip4,Unary=ip4,Call=pl4,MemberAccess=ps4,Index=pp4,StructLit=sl4,EnumLit=sl4,ListLit=l4,Closure=lp4,Expr=p,Assign=pp4,Return=p4,Let=sp4,If=ppp4i4,Match=pssli4,While=pp4,For=spp4,Block=l,Feature=p,Break=4,Continue=4,"
                                 if field_types == "" {
-                                    // Expr variants: most have (value/name: s, span: 4)
-                                    if vn2 == "IntLit" { field_types = "i4" }
-                                    if vn2 == "FloatLit" { field_types = "i4" }
-                                    if vn2 == "StringLit" { field_types = "s4" }
-                                    if vn2 == "BoolLit" { field_types = "i4" }
-                                    if vn2 == "NullLit" { field_types = "4" }
-                                    if vn2 == "Ident" { field_types = "s4" }
-                                    // Statement variants
-                                    if vn2 == "Expr" { field_types = "p" }
-                                    if vn2 == "Assign" { field_types = "pp4" }
-                                    if vn2 == "Return" { field_types = "p4" }
-                                    if vn2 == "Let" { field_types = "sp4" }
+                                    let ft_needle = "," + vn2 + "="
+                                    let ft_pos = ft_table.index_of(ft_needle)
+                                    if ft_pos >= 0 {
+                                        let ft_start = ft_pos + ft_needle.length
+                                        let ft_rest = ft_table.substring(ft_start, ft_table.length)
+                                        let ft_comma = ft_rest.index_of(",")
+                                        if ft_comma >= 0 {
+                                            field_types = ft_rest.substring(0, ft_comma)
+                                        }
+                                    }
                                 }
                             }
                             mut field_idx = 0
