@@ -84,8 +84,7 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        forge_parser_set_pos(self.pos)
-        forge_parser_is_at_end() == 1
+        self.pos >= forge_token_list_len()
     }
 
     fn peek(self) -> Token {
@@ -116,10 +115,8 @@ impl Parser {
 
     // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
-        // Always sync C-side position from self.pos — prevents stale global state
-        forge_parser_set_pos(self.pos)
-        forge_watchdog(self.pos, "check_id")
         if self.pos >= forge_token_list_len() { return kid == 99 }
+        // Use self.pos directly — no C-side sync needed for read-only check
         forge_peek_kind_id(self.pos) == kid
     }
 

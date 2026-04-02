@@ -3366,6 +3366,9 @@ void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
 
 static int _ac_set_trace = 0;
 int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
+    if (name.ptr && name.len == 2 && name.ptr[0] == 's' && name.ptr[1] == 'p') {
+        fprintf(stderr, "  [AC_SET_SP] ptr=%p fn=%p count=%d\n", ptr, _ac_fn_ptr, _ac_count);
+    }
     if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
     // Update existing entry if same name AND same function
     for (int i = 0; i < _ac_count; i++) {
@@ -3556,15 +3559,21 @@ void* forge_alloca_cache_get(ForgeString name) {
         return NULL;
     }
     // First pass: search current function scope
+    int sp_trace = 0;
+    if (_ac_trace > 0) {
+        fprintf(stderr, "  [AC_GET] '%.*s' len=%lld fn=%p\n", name.len > 20 ? 20 : (int)name.len, name.ptr, (long long)name.len, _ac_fn_ptr);
+        _ac_trace--;
+        sp_trace = 1;
+    }
     for (int i = _ac_count - 1; i >= 0; i--) {
         if ((int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            if (sp_trace) {
+                fprintf(stderr, "    [sp@%d] fn=%p ptr=%p %s\n", i, _ac[i].fn, _ac[i].ptr,
+                        _ac[i].fn == _ac_fn_ptr ? "MATCH" : "miss");
+            }
             if (_ac[i].fn == _ac_fn_ptr) {
                 _ac_hit_count++;
-                if (_ac_trace > 0 && name.len <= 4) {
-                    fprintf(stderr, "  [ac_hit1] '%.*s' → %p (idx=%d)\n", (int)name.len, name.ptr, _ac[i].ptr, i);
-                    _ac_trace--;
-                }
                 return _ac[i].ptr;
             }
         }
