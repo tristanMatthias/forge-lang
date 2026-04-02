@@ -820,7 +820,11 @@ fn gen_call(e: Expr) -> string {
             let mangled = find_ns_fn(first.str_val, name)
             if mangled.length > 0 {
                 // Call the mangled wrapper function, skip children[0] (namespace ident)
-                let call_ret = find_fn_ret(mangled)
+                mut call_ret = find_fn_ret(mangled)
+                // Override return type for known ForgeString-returning functions
+                if mangled == "forge_string_substring" { call_ret = "%ForgeString" }
+                if mangled == "forge_string_char_at" { call_ret = "%ForgeString" }
+                if mangled == "forge_sh_substr" { call_ret = "%ForgeString" }
                 mut arg_str = ""
                 mut nsi = 1
                 while nsi < e.children.length {
@@ -1392,7 +1396,25 @@ fn gen_call(e: Expr) -> string {
     }
 
     // Regular function call (direct)
-    let call_ret = find_fn_ret(name)
+    // For desugared calls, name might be the method name, not the full function name.
+    // Check callee ident for the real function name.
+    mut real_name = name
+    if e.children.length > 0 {
+        let callee: Expr = e.children[0]
+        if is_ident_expr(callee) { real_name = callee.str_val }
+    }
+    mut call_ret = find_fn_ret(real_name)
+    // Override return type for known ForgeString-returning functions
+    if real_name == "forge_string_substring" { call_ret = "%ForgeString" }
+    if real_name == "forge_string_char_at" { call_ret = "%ForgeString" }
+    if real_name == "forge_string_concat" { call_ret = "%ForgeString" }
+    if real_name == "forge_string_new" { call_ret = "%ForgeString" }
+    if real_name == "forge_sh_substr" { call_ret = "%ForgeString" }
+    if real_name == "forge_int_to_string" { call_ret = "%ForgeString" }
+    if real_name == "forge_selfhost_get_arg" { call_ret = "%ForgeString" }
+    if real_name == "forge_selfhost_fs_read" { call_ret = "%ForgeString" }
+    if real_name == "forge_read_file" { call_ret = "%ForgeString" }
+    if real_name == "forge_float_to_string" { call_ret = "%ForgeString" }
     mut arg_str = ""
     mut i = 0
     while i < e.children.length {
