@@ -434,7 +434,13 @@ bash scripts/audit_stage2.sh output.ll
 **Score:** 143 → 1835 (REAL score revealed)
 **Result:** ❌ The "143" was from a stale file (April 1 ~14:34). All commits after 0880c3c added verify-before-write which crashed, preventing output.ll updates. Every experiment since was measuring the STALE file.
 **Kept/Reverted:** KEPT (write-before-verify is correct)
-**Lesson:** ALWAYS check output.ll timestamp. The 143→1835 regression was caused by commits between 0880c3c and HEAD.
+**Lesson:** ALWAYS check output.ll timestamp. The "143" was stale, "1835" was from broken declaration changes. REAL score is 190, matching baseline.
+
+### EXP-042: Real baseline established
+**Date:** 2026-04-02
+**Score:** 190 (confirmed fresh at both 0880c3c and HEAD after fixes)
+**Breakdown:** br_i1_false=29(87pts) + call_type_mismatch=103(103pts) = 190
+**Status:** Stage 2 compiles, links, runs. Reads 1 file (module resolution broken). Finds 0 functions.
 
 ### EXP-038: Enum field boxing in mini (match forge-lang's approach)
 **Date:** 2026-04-01
