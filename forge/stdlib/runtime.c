@@ -3251,46 +3251,71 @@ static void* _cbc_ctx = NULL;
 static void** _cbc_args = NULL;
 static int64_t _cbc_arg_count = 0;
 void forge_cbc_set_builder(void* b, void* ctx) { _cbc_builder = b; _cbc_ctx = ctx; }
-void forge_cbc_set_args(void** args, int64_t count) { _cbc_args = args; _cbc_arg_count = count; }
+void forge_cbc_set_args(void** args, int64_t count) {
+    _cbc_args = args;
+    _cbc_arg_count = count;
+    fprintf(stderr, "  [CBC_ARGS] ptr=%p count=%lld\n", args, (long long)count);
+}
+
+// Properly typed function pointers for LLVM C API (no variadic casts)
+typedef void* (*bc2_fn)(void*, void*, void*, void**, unsigned, const char*);
+typedef void* (*gvt_fn2)(void*);
+typedef void* (*gpt_fn)(void*, int);
+typedef int (*gtk_fn)(void*);
+typedef void* (*tof_fn)(void*);
+typedef void* (*ext_fn)(void*, void*, unsigned, const char*);
+typedef void* (*p2i_fn)(void*, void*, void*, const char*);
+typedef void* (*i2p_fn)(void*, void*, void*, const char*);
+typedef void* (*ci_fn)(void*, unsigned long long, int);
+typedef void* (*i64t_fn)(void*);
+typedef void* (*pt_fn)(void*, unsigned);
 
 void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t arg_count_UNUSED) {
-    // Use C-side stored args (immune to mini local variable corruption)
     void** arg_values = _cbc_args;
     int64_t arg_count = _cbc_arg_count;
     if (!fn_val || !_cbc_builder || !arg_values) return NULL;
-    typedef void* (*fn_t)(void*, ...);  // generic function pointer
-    static fn_t bc2=0, gvt=0, gpt=0, gtk2=0, tof2=0, ext2=0, p2i2=0, i2p2=0, ci2=0, i64t2=0, pt2=0;
+    static bc2_fn bc2=0;
+    static gvt_fn2 gvt=0;
+    static gpt_fn gpt=0;
+    static gtk_fn gtk2=0;
+    static tof_fn tof2=0;
+    static ext_fn ext2=0;
+    static p2i_fn p2i2=0;
+    static i2p_fn i2p2=0;
+    static ci_fn ci2=0;
+    static i64t_fn i64t2=0;
+    static pt_fn pt2=0;
     if (!bc2) {
-        bc2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMBuildCall2");
-        gvt = (fn_t)dlsym(RTLD_DEFAULT, "LLVMGlobalGetValueType");
-        gpt = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_fn_get_param_type");
-        gtk2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
-        tof2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
-        ext2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMBuildExtractValue");
-        p2i2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMBuildPtrToInt");
-        i2p2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMBuildIntToPtr");
-        ci2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMConstInt");
-        i64t2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMInt64TypeInContext");
-        pt2 = (fn_t)dlsym(RTLD_DEFAULT, "LLVMPointerTypeInContext");
+        bc2 = (bc2_fn)dlsym(RTLD_DEFAULT, "LLVMBuildCall2");
+        gvt = (gvt_fn2)dlsym(RTLD_DEFAULT, "LLVMGlobalGetValueType");
+        gpt = (gpt_fn)dlsym(RTLD_DEFAULT, "forge_llvm_fn_get_param_type");
+        gtk2 = (gtk_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+        tof2 = (tof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+        ext2 = (ext_fn)dlsym(RTLD_DEFAULT, "LLVMBuildExtractValue");
+        p2i2 = (p2i_fn)dlsym(RTLD_DEFAULT, "LLVMBuildPtrToInt");
+        i2p2 = (i2p_fn)dlsym(RTLD_DEFAULT, "LLVMBuildIntToPtr");
+        ci2 = (ci_fn)dlsym(RTLD_DEFAULT, "LLVMConstInt");
+        i64t2 = (i64t_fn)dlsym(RTLD_DEFAULT, "LLVMInt64TypeInContext");
+        pt2 = (pt_fn)dlsym(RTLD_DEFAULT, "LLVMPointerTypeInContext");
     }
     if (!bc2 || !gvt) return NULL;
     void* ft = gvt(fn_val);
     if (!ft) return NULL;
     void* i64_ty = i64t2 ? i64t2(_cbc_ctx) : NULL;
-    void* ptr_ty = pt2 ? pt2(_cbc_ctx, (unsigned)0) : NULL;
+    void* ptr_ty = pt2 ? pt2(_cbc_ctx, 0) : NULL;
     for (int i = 0; i < arg_count; i++) {
         void* val = arg_values[i];
-        if (!val) { if (ci2 && i64_ty) arg_values[i] = ci2(i64_ty, (unsigned long long)0, 0); continue; }
+        if (!val) { if (ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0); continue; }
         if (!gpt || !gtk2 || !tof2) continue;
         void* pty = gpt(ft, i);
         if (!pty) continue;
-        int vk = (int)(intptr_t)gtk2(tof2(val));
-        int pk = (int)(intptr_t)gtk2(pty);
+        int vk = gtk2(tof2(val));
+        int pk = gtk2(pty);
         if (vk == pk) continue;
-        if (vk == 10 && pk == 12 && ext2) arg_values[i] = ext2(_cbc_builder, val, (unsigned)0, "sp");
+        if (vk == 10 && pk == 12 && ext2) arg_values[i] = ext2(_cbc_builder, val, 0, "sp");
         if (vk == 12 && pk == 8 && p2i2 && i64_ty) arg_values[i] = p2i2(_cbc_builder, val, i64_ty, "pi");
         if (vk == 8 && pk == 12 && i2p2 && ptr_ty) arg_values[i] = i2p2(_cbc_builder, val, ptr_ty, "ip");
-        if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, (unsigned long long)0, 0);
+        if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0);
     }
     return bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
 }

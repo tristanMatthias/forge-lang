@@ -956,9 +956,23 @@ pub extern "C" fn forge_llvm_value_array_new(count: c_int) -> *mut LLVMPtr {
 }
 
 #[no_mangle]
+static mut VAS_TRACE: i32 = 0;
+
+#[no_mangle]
+pub extern "C" fn forge_vas_trace(n: i64) {
+    unsafe { VAS_TRACE = n as i32; }
+}
+
+#[no_mangle]
 pub extern "C" fn forge_llvm_value_array_set(arr: *mut LLVMPtr, index: c_int, val: LLVMPtr) {
     if arr.is_null() { return; }
-    unsafe { *arr.offset(index as isize) = val; }
+    unsafe {
+        if VAS_TRACE > 0 {
+            eprintln!("  [VAS] arr={:p} idx={} val={:p}", arr, index, val);
+            VAS_TRACE -= 1;
+        }
+        *arr.offset(index as isize) = val;
+    }
 }
 
 #[no_mangle]

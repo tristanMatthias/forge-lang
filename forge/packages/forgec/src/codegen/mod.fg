@@ -1245,6 +1245,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_debug_value_array", make_fn_type_2(CG_VOID, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_cbc_set_builder", make_fn_type_2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_cbc_set_args", make_fn_type_2(CG_VOID, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_vas_trace", make_fn_type_1(CG_VOID, CG_I64))
     llvm.add_function(CG_MOD, "forge_checked_build_call_c", make_fn_type_3(CG_PTR, CG_PTR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", make_fn_type_2(CG_I64, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set_fn", make_fn_type_1(CG_VOID, CG_PTR))
@@ -1823,8 +1824,9 @@ impl Codegen {
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
             let arg_arr = llvm.value_array_new(total_args)
-            // Store in C-side global immediately — the mini corrupts local pointers
+            // Store in C-side global immediately
             forge_cbc_set_args(arg_arr, total_args)
+            if total_args == 8 { forge_vas_trace(20) }
             llvm.value_array_set(arg_arr, 0, self_ptr)
             // Process args using INDEX access (not for loop — avoids list iteration issues)
             mut argi = 0
