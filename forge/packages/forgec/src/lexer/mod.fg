@@ -117,9 +117,18 @@ impl Lexer {
     // to avoid force-unwrap codegen issues in && expressions.
     fn peek_ch(self) -> string {
         if self.pos < self.source.length {
-            self.source[self.pos]
+            forge_string_char_at(self.source, self.pos)
         } else {
             ""
+        }
+    }
+
+    // Byte-level peek — returns integer byte value (immune to ForgeString corruption)
+    fn peek_byte(self) -> int {
+        if self.pos < self.source.length {
+            forge_sh_byteat(self.source, self.pos)
+        } else {
+            0
         }
     }
 
@@ -274,8 +283,9 @@ impl Lexer {
             return self.lex_number(start_pos, start_line, start_col)
         }
 
-        // Identifiers and keywords (use C-side check, immune to ForgeString corruption)
-        if forge_is_ident_start(ch) == 1 {
+        // Identifiers and keywords — use byte-level check (immune to ForgeString corruption)
+        let byte = self.peek_byte()
+        if (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || byte == 95 || byte == 36 {
             // Skip $ handling for now (nullable peek_at checks are unreliable)
             if ch == "$" {
                 // Just treat as identifier
