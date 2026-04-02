@@ -263,6 +263,9 @@ export fn store_fn_source(name: string, body_source: string) {
 
 export fn store_fn_param_count(count: int) {
     FN_PARAM_COUNTS = FN_PARAM_COUNTS.push(count)
+    // Also store in C-side fn store (immune to Forge list corruption)
+    let fn_idx = forge_fn_store_count() - 1
+    forge_fn_store_set_param_count(fn_idx, count)
 }
 
 export fn store_fn_param_name(name: string) {
@@ -454,16 +457,14 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_IS_MAP_INDEX = 0
     CG_LAST_STRUCT_TYPE = ""
 
-    // Define params
+    // Define params — use C-side registries (immune to Forge list corruption)
     mut pi = 0
     while pi < pc {
-        let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
-        let param_val = llvm.get_param(fn_val, pi)
         let pt_idx = param_offset + pi
-        mut param_type_name = "int"
-        if pt_idx < FN_ALL_PARAM_TYPES.length {
-            param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
-        }
+        let pname = forge_param_name_get(pt_idx)
+        let param_val = llvm.get_param(fn_val, pi)
+        mut param_type_name = forge_param_type_get(pt_idx)
+        if param_type_name == "" { param_type_name = "int" }
         let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
         mut p_ty = CG_I64
         if param_type_name == "string" { p_ty = CG_STR }

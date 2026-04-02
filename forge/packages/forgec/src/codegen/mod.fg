@@ -2407,6 +2407,14 @@ impl Codegen {
             llvm.position_at_end(CG_B, entry_bb)
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
+        // Register type annotation for emit_ident load type resolution
+        mut var_type_name = "int"
+        if is_str { var_type_name = "string" }
+        if CG_LAST_ENUM_TYPE != "" { var_type_name = CG_LAST_ENUM_TYPE }
+        if CG_LAST_STRUCT_TYPE != "" { var_type_name = CG_LAST_STRUCT_TYPE }
+        if CG_LAST_IS_LIST == 1 { var_type_name = "List" }
+        if CG_LAST_IS_PTR == 1 { var_type_name = "ptr" }
+        forge_var_type_set(name, var_type_name)
         // Restore builder position and store value
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)

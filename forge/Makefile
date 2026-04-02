@@ -86,7 +86,7 @@ $(STAGE1_LL): $(MINI_BIN) $(shell find packages/forgec/src -name '*.fg' ! -path 
 	@echo "=== Mini compiling source → Stage 1 IR ==="
 	-$(MINI_BIN) build $(SOURCE) 2>&1 | tee $(BUILD)/mini.log; true
 	@if [ -f /tmp/mini_output.ll ]; then \
-		LC_ALL=C sed -i '' 's/ptr 0,/ptr null,/g; s/ptr 0$$/ptr null/' /tmp/mini_output.ll; \
+		LC_ALL=C sed -i '' 's/ptr 0,/ptr null,/g; s/ptr 0$$/ptr null/; s/%ForgeString [0-9][0-9]*/%ForgeString zeroinitializer/g' /tmp/mini_output.ll; \
 		mv /tmp/mini_output.ll $(STAGE1_LL); \
 		echo "  Stage 1 IR: $$(grep -c '^define' $(STAGE1_LL)) functions, $$(wc -l < $(STAGE1_LL)) lines"; \
 	else \

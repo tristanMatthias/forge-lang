@@ -278,13 +278,13 @@ fn build_compile_separate(paths_csv: string, output: string) {
     mut cg = codegen_new()
     declare_all_fns()
     eprintln("  declared " + string(FN_NAMES.length) + " fns")
-    // Emit each function body
+    // Emit each function body — use C-side registries (immune to list corruption)
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
-        mut pc = 0
-        if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
-        let bsrc = FN_BODY_SOURCES[fi]
+    let total_fns = forge_fn_store_count()
+    while fi < total_fns {
+        let pc = forge_fn_store_get_param_count(fi)
+        let bsrc = forge_fn_store_get_body(fi)
         if bsrc.length > 0 {
             emit_fn_body_from_source(cg, fi, param_offset)
         }
