@@ -73,6 +73,8 @@ crate::runtime_fn! { name: "forge_write_lines_append", feature: "strings", param
 crate::runtime_fn! { name: "forge_ir_open", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_ir_line", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_ir_close", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_ir_hoist_begin", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_ir_hoist_end", feature: "strings", params: [], ret: I64 }
 
 crate::runtime_fn! { name: "forge_alloc_stats", feature: "strings", params: [], ret: Void }
 

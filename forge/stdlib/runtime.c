@@ -2472,21 +2472,41 @@ void forge_set_alloca_name_c(ForgeString name) {
 }
 
 
-// Alloca hoisting: when active, alloca lines are buffered and emitted
-// at the entry block (right after "entry:" label) instead of inline.
+// Alloca hoisting: when active, ALL lines are buffered in memory.
+// At function end (forge_ir_hoist_end), the entry block allocas are moved
+// to the top, right after "entry:", before other instructions.
+// This prevents non-entry-block dynamic allocas that corrupt the stack on ARM64.
+#define IR_HOIST_BUF_SIZE (256 * 1024)  // 256KB per function
+static char _ir_hoist_buf[IR_HOIST_BUF_SIZE];
+static int _ir_hoist_len = 0;
 #define IR_ALLOCA_BUF_SIZE 2048
-#define IR_ALLOCA_LINE_SIZE 128
+#define IR_ALLOCA_LINE_SIZE 256
 static char _ir_alloca_buf[IR_ALLOCA_BUF_SIZE][IR_ALLOCA_LINE_SIZE];
 static int _ir_alloca_count = 0;
 static int _ir_alloca_hoist = 0;  // 1 = hoisting active
 
-void forge_ir_hoist_begin(void) {
+static int _is_alloca_line(const char* p, int len) {
+    // Match "  %rN = alloca " or "  %NAME = alloca "
+    if (len < 14) return 0;
+    if (p[0] != ' ' || p[1] != ' ' || p[2] != '%') return 0;
+    for (int i = 3; i < len - 9; i++) {
+        if (p[i] == '=' && p[i+1] == ' ' && i+8 < len &&
+            p[i+2] == 'a' && p[i+3] == 'l' && p[i+4] == 'l' &&
+            p[i+5] == 'o' && p[i+6] == 'c' && p[i+7] == 'a' && p[i+8] == ' ') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int64_t forge_ir_hoist_begin(void) {
     _ir_alloca_count = 0;
+    _ir_hoist_len = 0;
     _ir_alloca_hoist = 1;
+    return 0;
 }
 
 void forge_ir_hoist_flush(void) {
-    // Emit all buffered allocas
     if (!_ir_file) return;
     for (int i = 0; i < _ir_alloca_count; i++) {
         fputs(_ir_alloca_buf[i], _ir_file);
@@ -2495,45 +2515,41 @@ void forge_ir_hoist_flush(void) {
     _ir_alloca_count = 0;
 }
 
-void forge_ir_hoist_end(void) {
+int64_t forge_ir_hoist_end(void) {
+    if (!_ir_alloca_hoist || !_ir_file) { _ir_alloca_hoist = 0; return 0; }
+    // Write: hoisted allocas first, then body
+    forge_ir_hoist_flush();
+    // Write buffered body
+    if (_ir_hoist_len > 0) {
+        fwrite(_ir_hoist_buf, 1, _ir_hoist_len, _ir_file);
+    }
     _ir_alloca_hoist = 0;
+    _ir_hoist_len = 0;
     _ir_alloca_count = 0;
+    return 0;
 }
 
 void forge_ir_line(ForgeString line) {
     if (!_ir_file) return;
     if (line.ptr && line.len > 0) {
-        // Detect alloca lines and buffer them when hoisting is active
-        // Pattern: "  %rN = alloca TYPE"
-        if (_ir_alloca_hoist && line.len > 12 && line.len < IR_ALLOCA_LINE_SIZE - 1) {
-            // Check for "  %r" prefix followed by "= alloca "
-            const char* p = line.ptr;
-            if (p[0] == ' ' && p[1] == ' ' && p[2] == '%' && p[3] == 'r') {
-                // Find "= alloca "
-                const char* eq = NULL;
-                for (int i = 4; i < line.len - 8; i++) {
-                    if (p[i] == '=' && p[i+1] == ' ' && p[i+2] == 'a' && p[i+3] == 'l' && p[i+4] == 'l') {
-                        eq = p + i;
-                        break;
-                    }
-                }
-                if (eq && memcmp(eq, "= alloca ", 9) == 0) {
-                    // Buffer this alloca line
-                    if (_ir_alloca_count < IR_ALLOCA_BUF_SIZE) {
-                        memcpy(_ir_alloca_buf[_ir_alloca_count], p, line.len);
-                        _ir_alloca_buf[_ir_alloca_count][line.len] = '\0';
-                        _ir_alloca_count++;
-                        return;  // Don't write inline
-                    }
+        if (_ir_alloca_hoist) {
+            // Check if this is an alloca line
+            if (_is_alloca_line(line.ptr, line.len)) {
+                if (_ir_alloca_count < IR_ALLOCA_BUF_SIZE && line.len < IR_ALLOCA_LINE_SIZE - 1) {
+                    memcpy(_ir_alloca_buf[_ir_alloca_count], line.ptr, line.len);
+                    _ir_alloca_buf[_ir_alloca_count][line.len] = '\0';
+                    _ir_alloca_count++;
+                    return;  // Don't write to body buffer
                 }
             }
-        }
-        // Detect "entry:" label and flush buffered allocas
-        if (line.len >= 6 && memcmp(line.ptr, "entry:", 6) == 0) {
-            fwrite(line.ptr, 1, line.len, _ir_file);
-            fputc('\n', _ir_file);
-            forge_ir_hoist_flush();
-            return;
+            // Buffer non-alloca line in body buffer
+            if (_ir_hoist_len + line.len + 1 < IR_HOIST_BUF_SIZE) {
+                memcpy(_ir_hoist_buf + _ir_hoist_len, line.ptr, line.len);
+                _ir_hoist_len += line.len;
+                _ir_hoist_buf[_ir_hoist_len++] = '\n';
+                return;
+            }
+            // Buffer full — fall through to direct write
         }
         fwrite(line.ptr, 1, line.len, _ir_file);
     }
@@ -3315,6 +3331,16 @@ void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t
         if (vk == 12 && pk == 8 && p2i2 && i64_ty) arg_values[i] = p2i2(_cbc_builder, val, i64_ty, "pi");
         if (vk == 8 && pk == 12 && i2p2 && ptr_ty) arg_values[i] = i2p2(_cbc_builder, val, ptr_ty, "ip");
         if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0);
+    }
+    // Debug: trace arg types for calls with 2 args
+    static int _cbc_trace = 20;
+    if (_cbc_trace > 0 && arg_count == 2 && gtk2 && tof2) {
+        for (int j = 0; j < 2; j++) {
+            int vk = arg_values[j] ? gtk2(tof2(arg_values[j])) : -1;
+            int pk = gpt ? gtk2(gpt(ft, j)) : -1;
+            fprintf(stderr, "  [CBC2] arg[%d] vk=%d pk=%d val=%p\n", j, vk, pk, arg_values[j]);
+        }
+        _cbc_trace--;
     }
     void* result = bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
     return result;

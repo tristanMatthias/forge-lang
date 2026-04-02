@@ -1879,8 +1879,8 @@ fn codegen_let(s: Stmt) -> int {
         ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
         final_val = conv
     }
-    // Emit alloca at current position — the C-side hoisting will move it to entry
-    // if hoisting is active (which it is during function body compilation).
+    // Alloca emitted via ir_line — C-side forge_ir_hoist detects and buffers it,
+    // then flushes all allocas to the entry block at function end.
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {

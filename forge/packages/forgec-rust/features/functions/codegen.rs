@@ -207,8 +207,9 @@ impl<'ctx> Codegen<'ctx> {
         // Handle special built-in functions
         if let Expr::Ident(name, _) = callee {
             // Dispatch built-in functions via registry
+            // If the feature handler returns None, fall through to generic call path
             if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
-                return match def.feature_id {
+                let builtin_result = match def.feature_id {
                     "printing" => match name.as_str() {
                         "println" => self.compile_println(args),
                         "print" => self.compile_print(args),
@@ -279,6 +280,10 @@ impl<'ctx> Codegen<'ctx> {
                     },
                     _ => None,
                 };
+                if builtin_result.is_some() {
+                    return builtin_result;
+                }
+                // Fall through to generic call path for unhandled runtime functions
             }
 
             // Handle enum constructors: EnumName.variant(args)
