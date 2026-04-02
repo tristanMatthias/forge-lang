@@ -664,6 +664,17 @@ int64_t forge_is_whitespace_not_newline(ForgeString ch) {
 }
 
 // C-side keyword ID lookup (bypasses Statement.If tag corruption)
+// Forward declaration
+int64_t forge_kind_id_for_keyword(ForgeString text);
+
+// Keyword detection from source range — takes ptr+len+start+end as ints
+// Avoids ALL ForgeString passing (struct returns are corrupted in Stage 2)
+int64_t forge_keyword_from_range(void* src_ptr, int64_t src_len, int64_t start, int64_t end) {
+    if (!src_ptr || start < 0 || end <= start || end > src_len) return 0;
+    ForgeString text = {(char*)src_ptr + start, end - start};
+    return forge_kind_id_for_keyword(text);
+}
+
 int64_t forge_kind_id_for_keyword(ForgeString text) {
     if (!text.ptr || text.len <= 0) return 0;
     static int _kw_trace = 50;

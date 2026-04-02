@@ -1,5 +1,5 @@
-; ModuleID = 'forgec_output  declared  fnsoutput.ll  emit done'
-source_filename = "forgec_output  declared  fnsoutput.ll  emit done"
+; ModuleID = 'forgec_output'
+source_filename = "forgec_output"
 
 %ForgeString = type { ptr, i64 }
 
@@ -42,3 +42,5 @@ declare void @forge_set_args()
 declare void @forge_selfhost_process_exit()
 
 declare void @forge_eprintln_stringmainenicthelmgivme()
+
+declare i64 @"forge_keyword_from_range  declared  fnsoutput.ll  emit done"()

@@ -279,6 +279,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
+    llvm.add_function(CG_MOD, "forge_keyword_from_range", make_fn_type(CG_I64, [CG_PTR, CG_I64, CG_I64, CG_I64]))
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()

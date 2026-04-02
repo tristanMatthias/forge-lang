@@ -671,8 +671,8 @@ impl Lexer {
 
         let span = self.make_span(start_pos, start_line, start_col)
 
-        // Use C-side keyword detection (immune to ForgeString corruption in Stage 2)
-        let kw_id = forge_kind_id_for_keyword(text)
+        // Use C-side keyword detection from source range (avoids ForgeString passing entirely)
+        let kw_id = forge_keyword_from_range(self.source, ident_start, self.pos)
 
         // Check for tagged template: ident immediately followed by ` (only if not a keyword)
         if kw_id == 0 && !self.is_at_end() && self.peek_byte() == 96 {
