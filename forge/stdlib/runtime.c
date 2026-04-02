@@ -3188,6 +3188,27 @@ ForgeString forge_fn_store_get_name(int64_t idx) {
 
 int64_t forge_fn_store_count(void) { return _fn_store_count; }
 
+// Declare an LLVM function by fn_store index — uses C-side name directly
+// Bypasses ForgeString return corruption in mini
+void* forge_declare_fn_by_idx(void* module, int64_t idx, void* fn_type) {
+    if (idx < 0 || idx >= _fn_store_count || !module || !fn_type) return NULL;
+    typedef void* (*af_fn)(void*, const char*, void*);
+    static af_fn af = NULL;
+    if (!af) af = (af_fn)dlsym(RTLD_DEFAULT, "LLVMAddFunction");
+    if (!af) return NULL;
+    return af(module, _fn_store[idx].name, fn_type);
+}
+
+// Look up LLVM function by fn_store index — bypasses ForgeString return to avoid mini corruption
+void* forge_get_fn_val_by_idx(void* module, int64_t idx) {
+    if (idx < 0 || idx >= _fn_store_count || !module) return NULL;
+    typedef void* (*gnf_fn)(void*, const char*);
+    static gnf_fn gnf = NULL;
+    if (!gnf) gnf = (gnf_fn)dlsym(RTLD_DEFAULT, "LLVMGetNamedFunction");
+    if (!gnf) return NULL;
+    return gnf(module, _fn_store[idx].name);
+}
+
 void forge_fn_store_dump_param_counts(void) {
     for (int i = 0; i < _fn_store_count; i++) {
         if (_fn_store[i].param_count == 0 && strlen(_fn_store[i].name) > 5) {

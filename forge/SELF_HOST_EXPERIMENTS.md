@@ -416,4 +416,13 @@ bash scripts/audit_stage2.sh output.ll
 **Score:** N/A (diagnostic)
 **Result:** C-side returns correct names (no find_nmod). Ghost function comes from mini corrupting ForgeString AFTER return from C. The string pointer in the ForgeString struct gets stale/reused memory that contains "find_nmod" from a previous allocation.
 
+### EXP-036: C-side function name lookup (bypass ForgeString return)
+**Date:** 2026-04-01
+**Milestone:** M5 (Stage 2 module resolution)
+**Hypothesis:** ForgeString return from C→Forge is corrupted by the mini. A C-side function that looks up the LLVM function by fn_store index (without returning a ForgeString to Forge) should work.
+**Change:** Add forge_get_fn_val_by_idx(module, idx) that returns the LLVM function value directly.
+**Score:** 143 → TBD
+**Result:** TBD
+**Lesson:** TBD
+
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.

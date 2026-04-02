@@ -3270,6 +3270,8 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_alloca_cache_stats()")
     ir_raw("declare void @forge_trace_ei_type(%ForgeString)")
     ir_raw("declare void @forge_set_cg_ctx(ptr)")
+    ir_raw("declare ptr @forge_get_fn_val_by_idx(ptr, i64)")
+    ir_raw("declare ptr @forge_declare_fn_by_idx(ptr, i64, ptr)")
     ir_raw("declare void @forge_ir_hoist_begin()")
     ir_raw("declare void @forge_ir_hoist_end()")
     ir_raw("declare void @forge_set_alloca_name(%ForgeString)")

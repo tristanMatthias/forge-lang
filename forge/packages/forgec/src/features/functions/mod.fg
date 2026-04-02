@@ -304,9 +304,12 @@ export fn declare_all_functions(cg: Codegen) {
         if is_main { ret_ty = CG_I32 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        cg.functions[name] = fn_val
-        DECLARED_FNS[name] = fn_val
+        // Use C-side declaration (bypasses ForgeString corruption in mini)
+        let fn_val = forge_declare_fn_by_idx(CG_MOD, i, fn_type)
+        if fn_val != null {
+            cg.functions[name] = fn_val
+            DECLARED_FNS[name] = fn_val
+        }
         i = i + 1
     }
 }
@@ -455,7 +458,8 @@ export fn declare_all_fns() {
             fn_val = llvm.add_function(CG_MOD, "main", main_ft)
         } else {
             let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
-            fn_val = llvm.add_function(CG_MOD, name, fn_type)
+            // Use C-side declaration (bypasses ForgeString corruption in mini)
+            fn_val = forge_declare_fn_by_idx(CG_MOD, i, fn_type)
         }
         llvm.type_array_free(param_arr)
         DECLARED_FNS[name] = fn_val
@@ -474,8 +478,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let is_main = name == "main"
     let pc = forge_fn_store_get_param_count(idx)
 
-    // Use LLVM lookup (avoids map ptr-as-i64 corruption)
-    let fn_val = llvm.get_named_function(CG_MOD, name)
+    // Use C-side index-based lookup (bypasses ForgeString corruption in mini)
+    let fn_val = forge_get_fn_val_by_idx(CG_MOD, idx)
     if fn_val == null { return }
     cg.current_fn = fn_val
     cg_reinit_types()
@@ -978,7 +982,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+        // Use C-side declaration (bypasses ForgeString corruption in mini)
+        let fn_val = forge_declare_fn_by_idx(CG_MOD, i, fn_type)
         DECLARED_FNS[name] = fn_val
 
         // Per-file mode: skip body for functions from other files (extern declaration only)
