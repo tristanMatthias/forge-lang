@@ -442,6 +442,15 @@ bash scripts/audit_stage2.sh output.ll
 **Breakdown:** br_i1_false=29(87pts) + call_type_mismatch=103(103pts) = 190
 **Status:** Stage 2 compiles, links, runs. Reads 1 file (module resolution broken). Finds 0 functions.
 
+### EXP-043: Revert to 7c19b6f source + fix scan_mods + patch llc error
+**Date:** 2026-04-02
+**Milestone:** Stage 3
+**Hypothesis:** 7c19b6f was the last commit where Stage 1 found all 38 modules. Reverting to that source and fixing scan_mods to use forge_sh_indexof (already declared in module) should work. One llc error (insertvalue %Codegen should be %Lexer) needs patching.
+**Change:** Reverted to 7c19b6f source. scan_mods uses forge_sh_indexof. Patch insertvalue %Codegen → %Lexer in output.ll.
+**Score:** 246
+**Result:** TBD — testing Stage 2 → Stage 3
+**Lesson:** TBD
+
 ### EXP-038: Enum field boxing in mini (match forge-lang's approach)
 **Date:** 2026-04-01
 **Milestone:** ROOT CAUSE FIX

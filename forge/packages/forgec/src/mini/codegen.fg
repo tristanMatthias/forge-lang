@@ -338,8 +338,11 @@ fn gen_expr(e: Expr) -> string {
                     if fty == "ptr" && (final_val == "0" || final_val == "zeroinitializer") { final_val = "null" }
                     if fty == "double" && final_val == "0" { final_val = "0.0" }
                     let nr = new_reg()
-                    ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + final_val + ", " + string(fidx))
-                    reg_set_type(nr, sty)
+                    // Recompute sty each iteration — the mini corrupts let-binding
+                    // strings across loop iterations in large functions
+                    let sty_fresh = "%" + sname
+                    ir_line(nr + " = insertvalue " + sty_fresh + " " + cur + ", " + fty + " " + final_val + ", " + string(fidx))
+                    reg_set_type(nr, sty_fresh)
                     cur = nr
                 }
                 fi = fi + 1
