@@ -3325,7 +3325,18 @@ void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t
             fprintf(stderr, "  [CBC_CALL] arg[%d] vk=%d pk=%d val=%p\n", j, vk, pk, arg_values[j]);
         }
     }
-    return bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
+    void* result = bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
+    // Debug: print the call instruction we just created
+    if (arg_count == 8) {
+        typedef const char* (*pvts_fn)(void*);
+        static pvts_fn pvts = NULL;
+        if (!pvts) pvts = (pvts_fn)dlsym(RTLD_DEFAULT, "LLVMPrintValueToString");
+        if (pvts && result) {
+            const char* ir = pvts(result);
+            fprintf(stderr, "  [CBC_IR] %s\n", ir ? ir : "(null)");
+        }
+    }
+    return result;
 }
 
 // Debug: dump entire value array
