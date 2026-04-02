@@ -1805,7 +1805,9 @@ impl Codegen {
         }
         // Try impl method: Type_method (single underscore) or Type__method (double)
         mut method_ns = ns
-        let vst = var_struct_type(ns)
+        mut vst = var_struct_type(ns)
+        // Fallback: for "self", use C-side self type (set by emit_fn_body_from_source)
+        if vst == "" && ns == "self" { vst = forge_get_self_type() }
         if vst != "" { method_ns = vst }
         // Try both naming conventions
         let method_name_1 = method_ns + "_" + method

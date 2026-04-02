@@ -3317,6 +3317,14 @@ void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t
         if (vk == 8 && pk == 12 && i2p2 && ptr_ty) arg_values[i] = i2p2(_cbc_builder, val, ptr_ty, "ip");
         if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0);
     }
+    // Debug: check what we're passing to LLVMBuildCall2
+    if (arg_count == 8 && gtk2 && tof2) {
+        for (int j = 0; j < 3; j++) {
+            int vk = gtk2(tof2(arg_values[j]));
+            int pk = gpt ? gtk2(gpt(ft, j)) : -1;
+            fprintf(stderr, "  [CBC_CALL] arg[%d] vk=%d pk=%d val=%p\n", j, vk, pk, arg_values[j]);
+        }
+    }
     return bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
 }
 
