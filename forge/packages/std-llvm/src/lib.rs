@@ -427,13 +427,34 @@ pub extern "C" fn forge_llvm_add_function(m: LLVMPtr, name: *const c_char, fn_ty
         eprintln!("WARNING: add_function null arg: m={:?} name={} type={:?}", m, n, fn_type);
         return std::ptr::null_mut();
     }
-    unsafe { LLVMAddFunction(m, name, fn_type) }
+    unsafe {
+        let s = std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?");
+        if s.contains("find_nmod") {
+            eprintln!("  [AF] CAUGHT find_nmod creation!");
+            // Print backtrace hint
+            let bt = std::backtrace::Backtrace::force_capture();
+            eprintln!("  [AF] backtrace: {:?}", bt);
+        }
+        LLVMAddFunction(m, name, fn_type)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMGetNamedFunction(m, name) }
+    unsafe {
+        static mut GNF_TRACE: i32 = 50;
+        if GNF_TRACE > 0 {
+            let s = std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?");
+            if s.contains("index_of") || s.contains("find_nmod") || s.contains("find_byte") {
+                let result = LLVMGetNamedFunction(m, name);
+                eprintln!("  [GNF] '{}' → {:p}", s, result);
+                GNF_TRACE -= 1;
+                return result;
+            }
+        }
+        LLVMGetNamedFunction(m, name)
+    }
 }
 
 #[no_mangle]

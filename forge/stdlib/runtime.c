@@ -3206,7 +3206,11 @@ void* forge_declare_fn_by_idx(void* module, int64_t idx, void* fn_type) {
     static af_fn af = NULL;
     if (!af) af = (af_fn)dlsym(RTLD_DEFAULT, "LLVMAddFunction");
     if (!af) return NULL;
-    return af(module, _fn_store[idx].name, fn_type);
+    void* result = af(module, _fn_store[idx].name, fn_type);
+    if (strstr(_fn_store[idx].name, "find_nmod")) {
+        fprintf(stderr, "  [DECLARE] CAUGHT find_nmod at idx=%lld name='%s'\n", (long long)idx, _fn_store[idx].name);
+    }
+    return result;
 }
 
 // Look up LLVM function by fn_store index — bypasses ForgeString return to avoid mini corruption

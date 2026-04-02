@@ -426,6 +426,16 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** KEPT
 **Lesson:** C-side name bypass works for declaration loops. But the parser re-parse of function bodies ALSO uses ForgeString operations (string comparison for method name matching). The corruption is pervasive — every ForgeString operation in the mini-compiled code is affected. The fix must be in the mini's struct return handling, not in individual workarounds.
 
+### EXP-041: CRITICAL — score 143 was from STALE output.ll
+**Date:** 2026-04-02
+**Milestone:** ALL — measurement fix
+**Hypothesis:** The score 143 was stable because changes weren't being measured.
+**Change:** Changed codegen_write_ir to write IR BEFORE verify (was verify-before-write, which crashed and prevented output)
+**Score:** 143 → 1835 (REAL score revealed)
+**Result:** ❌ The "143" was from a stale file (April 1 ~14:34). All commits after 0880c3c added verify-before-write which crashed, preventing output.ll updates. Every experiment since was measuring the STALE file.
+**Kept/Reverted:** KEPT (write-before-verify is correct)
+**Lesson:** ALWAYS check output.ll timestamp. The 143→1835 regression was caused by commits between 0880c3c and HEAD.
+
 ### EXP-038: Enum field boxing in mini (match forge-lang's approach)
 **Date:** 2026-04-01
 **Milestone:** ROOT CAUSE FIX

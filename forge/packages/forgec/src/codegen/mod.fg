@@ -890,14 +890,14 @@ export fn codegen_init(name: string) {
 }
 
 export fn codegen_write_ir(path: string) {
-    // Run LLVM verifier before writing — catches type mismatches early
+    // Write IR FIRST (before verify, which may crash for invalid IR)
+    llvm.print_module_to_file(CG_MOD, path)
+    // Then verify — if it crashes, at least we have the IR for analysis
     let verify_result = llvm.verify_module(CG_MOD)
     if verify_result != 0 {
         eprintln("WARNING: LLVM module verification failed — IR may have type errors")
-        // Write verification errors to file for analysis
         llvm.verify_module_to_file(CG_MOD, path + ".verify")
     }
-    llvm.print_module_to_file(CG_MOD, path)
 }
 
 export fn codegen_emit_object(path: string) -> bool {
