@@ -3177,6 +3177,12 @@ ForgeString forge_fn_store_get_body(int64_t idx) {
 ForgeString forge_fn_store_get_name(int64_t idx) {
     if (idx < 0 || idx >= _fn_store_count) return (ForgeString){NULL, 0};
     int64_t nlen = strlen(_fn_store[idx].name);
+    // Trace: print name being returned (detect ghost functions)
+    static int _gn_emit_phase = 0;
+    if (strcmp(_fn_store[idx].name, "emit_fn_body_from_source") == 0) _gn_emit_phase = 1;
+    if (_gn_emit_phase && idx >= 400 && idx < 425) {
+        fprintf(stderr, "  [GN #%lld] %s\n", (long long)idx, _fn_store[idx].name);
+    }
     return forge_string_new(_fn_store[idx].name, nlen);
 }
 

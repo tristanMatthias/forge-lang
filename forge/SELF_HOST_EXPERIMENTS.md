@@ -408,4 +408,12 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** KEPT (correct approach)
 **Lesson:** fn_store body extraction IS correct (byte positions via token spans work). The bug is in the PARSER RE-PARSE during emit_fn_body_from_source — the desugaring doesn't fire for scan_mods despite identical code working for other functions. The body text IS `src.index_of("\nmod ")` but the output is `call @find_nmod`. This is either a parser state issue (stale globals) or the mini-compiled parser has a code path that skips desugaring for certain function bodies.
 
+### EXP-035: Trace fn_store_get_name for ghost find_nmod
+**Date:** 2026-04-01
+**Milestone:** M5 (Stage 2 module resolution)
+**Hypothesis:** `find_nmod` appears in Stage 2 output but is NOT in source or fn_store. The mini-compiled emit loop uses forge_fn_store_get_name (C-side) which should return correct names. If C-side returns correct names but the output has wrong function definitions, the corruption happens in the ForgeString return from C→Forge.
+**Change:** Add C-side trace in forge_fn_store_get_name to print every name at emit time.
+**Score:** N/A (diagnostic)
+**Result:** C-side returns correct names (no find_nmod). Ghost function comes from mini corrupting ForgeString AFTER return from C. The string pointer in the ForgeString struct gets stale/reused memory that contains "find_nmod" from a previous allocation.
+
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.
