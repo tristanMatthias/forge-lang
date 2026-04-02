@@ -74,11 +74,11 @@ export fn parse_impl_block(p: Parser) -> Statement? {
         p.parse_type_params()
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(102) == null { return null }
     p.skip_newlines()
 
     // Parse each method and store as a function
-    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+    while !p.check_id(103) && !p.is_at_end() {
         p.skip_newlines()
         if p.check(TokenKind.Fn) {
             // Parse method as a function, storing with mangled name
@@ -88,13 +88,13 @@ export fn parse_impl_block(p: Parser) -> Statement? {
                 p.pos = PARSE_END_POS
                 PARSE_END_POS = -1
             }
-        } else if !p.check(TokenKind.RBrace) {
+        } else if !p.check_id(103) {
             p.advance() // skip unexpected tokens
         }
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(103)
 
     PARSE_END_POS = p.pos
     let id = next_node_id()
@@ -117,7 +117,7 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let params = p.parse_params()
 
     mut return_type_name = ""
-    if p.check(TokenKind.Arrow) {
+    if p.check_id(109) {
         p.advance()
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {

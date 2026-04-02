@@ -50,7 +50,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
 
     mut return_type_name = ""
     mut return_type: TypeExpr? = null
-    if p.check(TokenKind.Arrow) {
+    if p.check_id(109) {
         p.advance()
         // Capture return type name
         let ret_tok = p.peek()
@@ -123,7 +123,7 @@ fn parse_export(p: Parser) -> Statement? {
     if ek == 42 {
         p.advance()
         p.expect_ident()
-        if p.check(TokenKind.LBrace) { p.parse_block() }
+        if p.check_id(102) { p.parse_block() }
         PARSE_END_POS = p.pos
         let id = next_node_id()
         return feature_stmt("functions", "noop", id, start)

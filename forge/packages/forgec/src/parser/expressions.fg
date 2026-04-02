@@ -332,10 +332,10 @@ impl Parser {
 
         while !self.is_at_end() {
             // Function call: expr(args...)
-            if self.check(TokenKind.LParen) {
+            if self.check_id(100) {
                 self.advance()
                 let args = self.parse_call_args()
-                let close = self.expect(TokenKind.RParen)
+                let close = self.expect_id(101)
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
                 result_is_llvm = false
@@ -346,7 +346,7 @@ impl Parser {
             }
 
             // Member access: expr.field or expr.method(args)
-            if self.check(TokenKind.Dot) {
+            if self.check_id(110) {
                 self.advance()
                 // Numeric tuple access: expr.0
                 let pk = self.peek()
@@ -373,7 +373,7 @@ impl Parser {
                     let maybe_enum_tag = match_enum_tag(maybe_enum_full)
                     if maybe_enum_tag >= 0 {
                         // This is an enum variant, handle constructor
-                        if self.check(TokenKind.LParen) {
+                        if self.check_id(100) {
                             let ety = cg_get_enum_ty_for(enum_type_name)
                             // Use alloca+store approach (handles string fields correctly)
                             let enum_alloca = llvm.build_alloca(CG_B, ety, "et")
@@ -386,7 +386,7 @@ impl Parser {
                             let vft = cg_enum_variant_field_types(enum_type_name, field)
                             self.advance() // consume (
                             mut ai = 0
-                            while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                            while !self.check_id(101) && !self.is_at_end() {
                                 mut cg2 = codegen_new()
                                 let aexpr = self.parse_expr()
                                 if aexpr != null {
@@ -417,7 +417,7 @@ impl Parser {
                                     }
                                     ai = ai + 1
                                 }
-                                if self.check(TokenKind.Comma) { self.advance() }
+                                if self.check_id(106) { self.advance() }
                                 self.skip_newlines()
                             }
                             self.advance() // consume )
@@ -438,11 +438,11 @@ impl Parser {
                     }
 
                     // Check for method call: field followed by (
-                    if self.check(TokenKind.LParen) {
+                    if self.check_id(100) {
                         // Method call: obj.method(args)
                         self.advance() // consume (
                         let method_result = self.emit_method_call_inline(obj_val, field)
-                        self.expect(TokenKind.RParen)
+                        self.expect_id(101)
                         result_is_llvm = true
                         result_llvm = method_result
                         // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
@@ -469,7 +469,7 @@ impl Parser {
                     let enum_tag = match_enum_tag(enum_full)
                     if enum_tag >= 0 {
                         // Check if this constructor has args (data variant)
-                        if self.check(TokenKind.LParen) {
+                        if self.check_id(100) {
                             // Per-enum type (like Rust) — use alloca+store for safe field storage
                             let ety = cg_get_enum_ty_for(enum_cname)
                             let enum_alloca2 = llvm.build_alloca(CG_B, ety, "e2")
@@ -478,10 +478,10 @@ impl Parser {
                             llvm.build_store(CG_B, llvm.const_int(CG_I8, enum_tag, 0), tag_ptr2)
                             let payload_ptr2 = llvm.build_struct_gep2(CG_B, ety, enum_alloca2, 1, "p2")
                             let vft2 = cg_enum_variant_field_types(enum_cname, field)
-                            if self.check(TokenKind.LParen) {
+                            if self.check_id(100) {
                                 self.advance()
                                 mut ai = 0
-                                while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                                while !self.check_id(101) && !self.is_at_end() {
                                     mut cg = codegen_new()
                                     let aexpr = self.parse_expr()
                                     if aexpr != null {
@@ -511,7 +511,7 @@ impl Parser {
                                         }
                                         ai = ai + 1
                                     }
-                                    if self.check(TokenKind.Comma) { self.advance() }
+                                    if self.check_id(106) { self.advance() }
                                     self.skip_newlines()
                                 }
                                 self.advance() // consume )
@@ -645,7 +645,7 @@ impl Parser {
 
                 // Desugar string method calls: obj.method(args) → forge_string_method(obj, args)
                 if !CG_ACTIVE {
-                    if self.check(TokenKind.LParen) {
+                    if self.check_id(100) {
                         mut is_str_method = false
                         if field == "substring" { is_str_method = true }
                         if field == "index_of" { is_str_method = true }
@@ -653,7 +653,7 @@ impl Parser {
                         if is_str_method {
                             self.advance()
                             let ma = self.parse_call_args()
-                            self.expect(TokenKind.RParen)
+                            self.expect_id(101)
                             let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                             mut aa: List<Expr> = [result]
                             for a in ma { aa = aa.push(a) }
@@ -672,7 +672,7 @@ impl Parser {
 
             // Cross-newline dot chaining: allow .field after newline
             // Disabled inside match arms to prevent consuming .Variant patterns
-            if !IN_MATCH_ARM && self.check(TokenKind.Newline) {
+            if !IN_MATCH_ARM && self.check_id(120) {
                 let next = self.peek_at_meaningful(0)
                 if next.kind is .Dot {
                     self.skip_newlines()
@@ -681,13 +681,13 @@ impl Parser {
             }
 
             // Index access: expr[index]
-            if self.check(TokenKind.LBracket) {
+            if self.check_id(104) {
                 // Capture object variable name BEFORE parsing index (index parsing changes LAST_IDENT_NAME)
                 let index_obj_name = LAST_IDENT_NAME
                 self.advance()
                 let index = self.parse_expr()
                 if index == null { return null }
-                if self.expect(TokenKind.RBracket) == null { return null }
+                if self.expect_id(105) == null { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
                 // In codegen mode: emit indexing inline
@@ -783,13 +783,13 @@ impl Parser {
             }
 
             // Null chain: expr? (also no-op for now)
-            if self.check(TokenKind.Question) {
+            if self.check_id(88) {
                 self.advance()
                 continue
             }
 
             // Struct literal: Ident { field: value, ... }
-            if self.check(TokenKind.LBrace) && self.is_struct_literal() {
+            if self.check_id(102) && self.is_struct_literal() {
                 let slit = self.parse_struct_literal()
                 if !CG_ACTIVE {
                     // Pure AST: return the Call-encoded struct literal
@@ -814,7 +814,7 @@ impl Parser {
                 if negated { self.advance() }
 
                 // Expect .Variant
-                if self.check(TokenKind.Dot) {
+                if self.check_id(110) {
                     self.advance()
                     let variant_name = self.expect_ident()
 
@@ -895,14 +895,14 @@ impl Parser {
     fn parse_call_args(self) -> List<Expr> {
         mut args: List<Expr> = []
 
-        while !self.check(TokenKind.RParen) && !self.is_at_end() {
+        while !self.check_id(101) && !self.is_at_end() {
             self.skip_newlines()
             let arg = self.parse_expr()
             if arg != null {
                 args = args.push(arg!)
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) {
+            if self.check_id(106) {
                 self.advance()
             }
         }
@@ -985,7 +985,7 @@ impl Parser {
             }
 
             // Check for single-param closure: x -> expr
-            if self.check(TokenKind.Arrow) {
+            if self.check_id(109) {
                 self.advance()
                 self.skip_newlines()
                 let body = self.parse_expr()
@@ -1046,7 +1046,7 @@ impl Parser {
         let start = self.advance().span // consume (
 
         // Empty parens: ()
-        if self.check(TokenKind.RParen) {
+        if self.check_id(101) {
             self.advance()
             return Expr.NullLit(start) // unit/void
         }
@@ -1057,21 +1057,21 @@ impl Parser {
         self.skip_newlines()
 
         // Check for tuple: (a, b, ...)
-        if self.check(TokenKind.Comma) {
+        if self.check_id(106) {
             // TODO: create tuple expression
             self.advance()
-            while !self.check(TokenKind.RParen) && !self.is_at_end() {
+            while !self.check_id(101) && !self.is_at_end() {
                 self.skip_newlines()
                 self.parse_expr() // consume but don't collect for now
                 self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
+                if self.check_id(106) { self.advance() }
             }
-            self.expect(TokenKind.RParen)
+            self.expect_id(101)
             return first // TODO: return Tuple expr
         }
 
         self.skip_newlines()
-        if self.expect(TokenKind.RParen) == null { return null }
+        if self.expect_id(101) == null { return null }
 
         first // parenthesized expression (inner expr already emitted inline if in codegen)
     }
@@ -1159,7 +1159,7 @@ impl Parser {
             mut parsed_field_types = ""  // comma-separated "s" (string), "i" (int), "l" (list), or "e:EnumName" (enum)
             mut field_enum_names: List<string> = []  // enum type names per field (empty if not enum)
 
-            while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+            while !self.check_id(103) && !self.is_at_end() {
                 self.skip_newlines()
                 let field_tok = self.peek()
                 if field_tok.kind_id == 1 {
@@ -1167,7 +1167,7 @@ impl Parser {
                     if field_count > 0 { parsed_fields = parsed_fields + "," }
                     parsed_fields = parsed_fields + fname
                     self.advance() // consume field name
-                    if self.check(TokenKind.Colon) {
+                    if self.check_id(107) {
                         self.advance() // consume :
                         // Reset type flags before emitting field value
                         CG_LAST_ENUM_TYPE = ""
@@ -1210,10 +1210,10 @@ impl Parser {
                     break
                 }
                 self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
+                if self.check_id(106) { self.advance() }
                 self.skip_newlines()
             }
-            self.expect(TokenKind.RBrace)
+            self.expect_id(103)
 
             // Create struct type with correct field types
             let ft = llvm.type_array_new(field_count)
@@ -1329,12 +1329,12 @@ impl Parser {
         // Non-codegen: encode as Call("__s_TypeName", [field1, field2, ...])
         let struct_name = LAST_IDENT_NAME
         mut field_values: List<Expr> = []
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while !self.check_id(103) && !self.is_at_end() {
             self.skip_newlines()
             let field_tok = self.peek()
             if field_tok.kind_id == 1 {
                 self.advance()
-                if self.check(TokenKind.Colon) {
+                if self.check_id(107) {
                     self.advance()
                     let fval = self.parse_expr()
                     if fval != null {
@@ -1348,10 +1348,10 @@ impl Parser {
                 break
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(106) { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBrace)
+        self.expect_id(103)
         // Return Call-encoded struct lit
         Expr.Call(Expr.Ident("__s_" + struct_name, start), field_values, start)
     }
@@ -1374,7 +1374,7 @@ impl Parser {
             mut first_elem_is_str = 0
 
             self.skip_newlines()
-            while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+            while !self.check_id(105) && !self.is_at_end() {
                 CG_LAST_IS_STR = 0
                 mut cg = codegen_new()
                 let elem = self.parse_expr()
@@ -1385,10 +1385,10 @@ impl Parser {
                     count = count + 1
                 }
                 self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
+                if self.check_id(106) { self.advance() }
                 self.skip_newlines()
             }
-            self.expect(TokenKind.RBracket)
+            self.expect_id(105)
             CG_LAST_LIST_ELEM_IS_STR = first_elem_is_str
 
             let count_val = llvm.const_int(CG_I64, count, 0)
@@ -1440,13 +1440,13 @@ impl Parser {
 
         // Non-codegen: parse and discard
         self.skip_newlines()
-        while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+        while !self.check_id(105) && !self.is_at_end() {
             self.parse_expr()
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(106) { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBracket)
+        self.expect_id(105)
         Expr.Block(Block { statements: [], span: start })
     }
 
@@ -1458,10 +1458,10 @@ impl Parser {
         if name == "" { return null }
 
         // .Variant(args) — enum constructor with args
-        if self.check(TokenKind.LParen) {
+        if self.check_id(100) {
             self.advance()
             let args = self.parse_call_args()
-            self.expect(TokenKind.RParen)
+            self.expect_id(101)
             let span = self.merge_spans(start, self.peek_at(-1).span)
             return Expr.Ident(".${name}", span)
         }
@@ -1618,7 +1618,7 @@ impl Parser {
         let scrutinee_var = LAST_IDENT_NAME
 
         self.skip_newlines()
-        if self.expect(TokenKind.LBrace) == null { return null }
+        if self.expect_id(102) == null { return null }
 
         if CG_ACTIVE {
             // Emit scrutinee value once
@@ -1642,9 +1642,9 @@ impl Parser {
             // Parse and emit arms as if-else chain
             // For each arm: compare → cond_br to arm body or next check
             self.skip_newlines()
-            while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+            while !self.check_id(103) && !self.is_at_end() {
                 self.skip_newlines()
-                if self.check(TokenKind.RBrace) { break }
+                if self.check_id(103) { break }
 
                 // Reset type flags at arm boundary to prevent leakage from previous arm's body
                 CG_LAST_IS_STR = 0
@@ -1654,19 +1654,19 @@ impl Parser {
                 // Check for wildcard _
                 let is_wildcard = self.check(TokenKind.Underscore)
                 // Check for .Variant pattern
-                let is_dot_variant = self.check(TokenKind.Dot)
+                let is_dot_variant = self.check_id(110)
 
                 if is_wildcard {
                     // _ -> body (default arm — always matches)
                     self.advance() // consume _
                     self.skip_newlines()
-                    if self.check(TokenKind.Arrow) { self.advance() }
+                    if self.check_id(109) { self.advance() }
                     self.skip_newlines()
                     // Parse and emit body, capturing result for phi
                     let prev_match = IN_MATCH_ARM
                     IN_MATCH_ARM = true
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                    if self.check(TokenKind.LBrace) {
+                    if self.check_id(102) {
                         arm_result = self.parse_block_for_value(cg)
                     } else if self.check(TokenKind.Return) {
                         self.parse_return()
@@ -1698,19 +1698,19 @@ impl Parser {
                     let variant_name = self.expect_ident()
                     // Capture binding names from sub-pattern
                     mut binding_names: List<string> = []
-                    if self.check(TokenKind.LParen) {
+                    if self.check_id(100) {
                         self.advance()
-                        while !self.check(TokenKind.RParen) && !self.is_at_end() {
+                        while !self.check_id(101) && !self.is_at_end() {
                             let bname = self.expect_ident()
                             if bname != "" { binding_names = binding_names.push(bname) }
-                            if self.check(TokenKind.Comma) { self.advance() }
+                            if self.check_id(106) { self.advance() }
                             self.skip_newlines()
                         }
                         self.advance() // consume )
                     }
 
                     self.skip_newlines()
-                    if self.check(TokenKind.Arrow) { self.advance() }
+                    if self.check_id(109) { self.advance() }
                     self.skip_newlines()
 
                     let tag = match_enum_tag(variant_name)
@@ -1785,7 +1785,7 @@ impl Parser {
                     let prev_match2 = IN_MATCH_ARM
                     IN_MATCH_ARM = true
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                    if self.check(TokenKind.LBrace) {
+                    if self.check_id(102) {
                         arm_result = self.parse_block_for_value(cg)
                     } else if self.check(TokenKind.Return) {
                         // Handle return statement in match arm body
@@ -1817,7 +1817,7 @@ impl Parser {
                 let pat_is_str = CG_LAST_IS_STR == 1
 
                 self.skip_newlines()
-                if self.check(TokenKind.Arrow) { self.advance() }
+                if self.check_id(109) { self.advance() }
                 self.skip_newlines()
 
                 // Create arm body block and next check block
@@ -1844,7 +1844,7 @@ impl Parser {
                 let prev_match3 = IN_MATCH_ARM
                 IN_MATCH_ARM = true
                 mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                if self.check(TokenKind.LBrace) {
+                if self.check_id(102) {
                     arm_result = self.parse_block_for_value(cg)
                 } else if self.check(TokenKind.Return) {
                     self.parse_return()
@@ -1919,20 +1919,20 @@ impl Parser {
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while !self.check_id(103) && !self.is_at_end() {
             self.skip_newlines()
             mut pat_tag = -1
-            if self.check(TokenKind.Dot) {
+            if self.check_id(110) {
                 self.advance()
                 let vname = self.expect_ident()
                 // Try qualified name first (Color.Green), then bare (Green)
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
-                if self.check(TokenKind.LParen) {
+                if self.check_id(100) {
                     self.advance()
-                    while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
-                    if self.check(TokenKind.RParen) { self.advance() }
+                    while !self.check_id(101) && !self.is_at_end() { self.advance() }
+                    if self.check_id(101) { self.advance() }
                 }
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
@@ -1943,13 +1943,13 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Arrow) { self.advance() }
+            if self.check_id(109) { self.advance() }
             self.skip_newlines()
 
             let prev_match = IN_MATCH_ARM
             IN_MATCH_ARM = true
             mut body = Block { statements: [], span: start }
-            if self.check(TokenKind.LBrace) {
+            if self.check_id(102) {
                 body = self.parse_block()
             } else {
                 let e = self.parse_expr()
@@ -1967,10 +1967,10 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(106) { self.advance() }
             self.skip_newlines()
         }
-        if self.check(TokenKind.RBrace) { self.advance() }
+        if self.check_id(103) { self.advance() }
 
         // Store match data in PENDING_MATCH globals
         MATCH_SCRUTINEE = scrutinee!

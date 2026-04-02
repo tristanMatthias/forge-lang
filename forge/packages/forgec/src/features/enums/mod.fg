@@ -69,12 +69,12 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         return null
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(102) == null { return null }
     p.skip_newlines()
 
     mut tag = 0
     mut max_slots = 0
-    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+    while !p.check_id(103) && !p.is_at_end() {
         p.skip_newlines()
         let variant_name = p.expect_ident()
         if variant_name == "" { break }
@@ -85,13 +85,13 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         // Parse optional fields, track types, and count slots
         mut variant_slots = 0
         mut field_types_str = ""
-        if p.check(TokenKind.LParen) {
+        if p.check_id(100) {
             p.advance()
-            while !p.check(TokenKind.RParen) && !p.is_at_end() {
+            while !p.check_id(101) && !p.is_at_end() {
                 p.expect_ident()
                 mut field_slots = 1  // default: 1 slot (int, bool, ptr, etc.)
                 mut field_code = "i"
-                if p.check(TokenKind.Colon) {
+                if p.check_id(107) {
                     p.advance()
                     // Check the type name BEFORE parse_type_expr consumes it
                     let type_text = p.peek().text
@@ -113,9 +113,9 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                 }
                 variant_slots = variant_slots + field_slots
                 field_types_str = field_types_str + field_code
-                if p.check(TokenKind.Comma) { p.advance() }
+                if p.check_id(106) { p.advance() }
             }
-            p.expect(TokenKind.RParen)
+            p.expect_id(101)
         }
         if variant_slots > max_slots { max_slots = variant_slots }
         // Register per-variant field type info
@@ -125,11 +125,11 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
         tag = tag + 1
         p.skip_newlines()
-        if p.check(TokenKind.Comma) { p.advance() }
+        if p.check_id(106) { p.advance() }
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(103)
 
     CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
     // Enum declarations register tags + max field count.

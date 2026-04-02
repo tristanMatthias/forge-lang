@@ -69,7 +69,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
     }
 
     // Parse the struct body { field: type, ... }
-    if p.check(TokenKind.LBrace) {
+    if p.check_id(102) {
         p.advance() // consume {
         p.skip_newlines()
 
@@ -79,7 +79,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
         mut field_types_str = ""  // comma-separated type names
         mut field_count = 0
 
-        while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+        while !p.check_id(103) && !p.is_at_end() {
             if field_count > 0 {
                 field_names = field_names + ","
                 field_is_str = field_is_str + ","
@@ -88,7 +88,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
             // Skip optional 'mut' modifier on fields
             if p.check(TokenKind.Mut) { p.advance() }
             let fname = p.expect_ident()
-            p.expect(TokenKind.Colon)
+            p.expect_id(107)
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
             // Capture generic arg for List<T> → store as "List:T"
@@ -121,10 +121,10 @@ fn parse_type_decl(p: Parser) -> Statement? {
             field_count = field_count + 1
 
             p.skip_newlines()
-            if p.check(TokenKind.Comma) { p.advance() }
+            if p.check_id(106) { p.advance() }
             p.skip_newlines()
         }
-        p.expect(TokenKind.RBrace)
+        p.expect_id(103)
 
         // Register struct type — create LLVM type if codegen is active
         if CG_ACTIVE {

@@ -60,7 +60,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     mut ann_is_list = 0
     mut ann_elem_name = ""
     mut type_ann: TypeExpr? = null
-    if p.check(TokenKind.Colon) {
+    if p.check_id(107) {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
