@@ -291,7 +291,7 @@ impl Parser {
 
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
-        if self.check(TokenKind.Not) {
+        if self.check_id(84) {
             let start = self.advance().span
             let operand = self.parse_unary_expr() // right-associative
             if operand == null { return null }
@@ -299,7 +299,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Not, operand!, span)
         }
 
-        if self.check(TokenKind.Minus) {
+        if self.check_id(71) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -307,7 +307,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Neg, operand!, span)
         }
 
-        if self.check(TokenKind.Tilde) {
+        if self.check_id(77) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -758,7 +758,7 @@ impl Parser {
             }
 
             // Force unwrap: expr! — extract inner value from nullable {i8, T}
-            if self.check(TokenKind.Not) {
+            if self.check_id(84) {
                 self.advance()
                 if CG_ACTIVE {
                     mut cg = codegen_new()
@@ -804,10 +804,10 @@ impl Parser {
             }
 
             // `is` keyword: expr is .Variant / expr is not .Variant
-            if self.check(TokenKind.Is) {
+            if self.check_id(55) {
                 self.advance() // consume 'is'
                 // Check for 'not' (! token) or 'not' (ident keyword)
-                mut negated = self.check(TokenKind.Not)
+                mut negated = self.check_id(84)
                 if !negated && self.peek().kind_id == 1 && self.peek().text == "not" {
                     negated = true
                 }
@@ -1521,11 +1521,11 @@ impl Parser {
             mut else_val = llvm.const_int(CG_I64, 0, 0)
             mut else_is_nullable = false
             self.skip_newlines()
-            if self.check(TokenKind.Else) {
+            if self.check_id(26) {
                 has_else = true
                 self.advance()
                 self.skip_newlines()
-                if self.check(TokenKind.If) {
+                if self.check_id(25) {
                     let nested = self.parse_if_expr()
                     if nested != null {
                         else_val = cg.emit_expr(nested!)
@@ -1576,11 +1576,11 @@ impl Parser {
         self.skip_newlines()
         mut has_else = false
         mut else_block = Block { statements: [], span: start }
-        if self.check(TokenKind.Else) {
+        if self.check_id(26) {
             has_else = true
             self.advance()
             self.skip_newlines()
-            if self.check(TokenKind.If) {
+            if self.check_id(25) {
                 let nested = self.parse_if_expr()
                 if nested != null {
                     else_block = Block {
@@ -1652,7 +1652,7 @@ impl Parser {
                 CG_HAS_LAST_VAL = 0
 
                 // Check for wildcard _
-                let is_wildcard = self.check(TokenKind.Underscore)
+                let is_wildcard = self.check_id(60)
                 // Check for .Variant pattern
                 let is_dot_variant = self.check_id(110)
 
@@ -1668,7 +1668,7 @@ impl Parser {
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check_id(102) {
                         arm_result = self.parse_block_for_value(cg)
-                    } else if self.check(TokenKind.Return) {
+                    } else if self.check_id(24) {
                         self.parse_return()
                     } else {
                         let _body = self.parse_expr()
@@ -1787,7 +1787,7 @@ impl Parser {
                     mut arm_result = llvm.const_int(CG_I64, 0, 0)
                     if self.check_id(102) {
                         arm_result = self.parse_block_for_value(cg)
-                    } else if self.check(TokenKind.Return) {
+                    } else if self.check_id(24) {
                         // Handle return statement in match arm body
                         self.parse_return()
                     } else {
@@ -1846,7 +1846,7 @@ impl Parser {
                 mut arm_result = llvm.const_int(CG_I64, 0, 0)
                 if self.check_id(102) {
                     arm_result = self.parse_block_for_value(cg)
-                } else if self.check(TokenKind.Return) {
+                } else if self.check_id(24) {
                     self.parse_return()
                 } else {
                     let _body = self.parse_expr()
@@ -1934,7 +1934,7 @@ impl Parser {
                     while !self.check_id(101) && !self.is_at_end() { self.advance() }
                     if self.check_id(101) { self.advance() }
                 }
-            } else if self.check(TokenKind.Underscore) {
+            } else if self.check_id(60) {
                 self.advance()
                 pat_tag = -1
                 has_default = true

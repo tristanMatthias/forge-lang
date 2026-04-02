@@ -264,11 +264,11 @@ impl Parser {
                     self.skip_newlines()
                     mut has_else = 0
                     mut else_block = Block { statements: [], span: start }
-                    if self.check(TokenKind.Else) {
+                    if self.check_id(26) {
                         has_else = 1
                         self.advance()
                         self.skip_newlines()
-                        if self.check(TokenKind.If) {
+                        if self.check_id(25) {
                             // else-if chain: parse recursively as statement
                             let nested = self.parse_statement()
                             if nested != null {
@@ -333,7 +333,7 @@ impl Parser {
                                 }
                                 if self.check_id(101) { self.advance() }
                             }
-                        } else if self.check(TokenKind.Underscore) {
+                        } else if self.check_id(60) {
                             self.advance()
                             pat_tag = -1
                             has_default = 1
@@ -467,7 +467,7 @@ impl Parser {
         if expr == null { return null }
 
         // Check for assignment: expr = value
-        if self.check(TokenKind.Eq) {
+        if self.check_id(80) {
             // Save target variable name before RHS parsing overwrites LAST_IDENT_NAME
             let assign_target_name = LAST_IDENT_NAME
             let eq_span = self.advance().span // consume =
@@ -511,7 +511,7 @@ impl Parser {
         }
 
         // Check for channel send: expr <- value
-        if self.check(TokenKind.LeftArrow) {
+        if self.check_id(116) {
             self.advance()
             let value = self.parse_expr()
             if value == null {
@@ -603,7 +603,7 @@ impl Parser {
             let name = tok.text
             let start = self.advance().span
             // Check for generic: Name<A, B>
-            if self.check(TokenKind.Lt) {
+            if self.check_id(83) {
                 let args = self.parse_type_args()
                 if args != null {
                     return TypeExpr.Generic(name, args!, start)
@@ -636,10 +636,10 @@ impl Parser {
     }
 
     fn parse_type_args(self) -> List<TypeExpr>? {
-        if self.expect(TokenKind.Lt) == null { return null }
+        if self.expect_id(83) == null { return null }
         mut args: List<TypeExpr> = []
 
-        while !self.check(TokenKind.Gt) && !self.is_at_end() {
+        while !self.check_id(85) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
@@ -651,12 +651,12 @@ impl Parser {
         }
 
         // Handle >> as > >
-        if self.check(TokenKind.ShiftRight) {
+        if self.check_id(117) {
             // Split >> into two > tokens — consume one
             // TODO: proper token splitting
             self.advance()
         } else {
-            if self.expect(TokenKind.Gt) == null { return null }
+            if self.expect_id(85) == null { return null }
         }
 
         args
@@ -749,7 +749,7 @@ impl Parser {
         while !self.check_id(103) && !self.is_at_end() {
             self.skip_newlines()
             mut mutable = false
-            if self.check(TokenKind.Mut) {
+            if self.check_id(21) {
                 self.advance()
                 mutable = true
             }
@@ -794,7 +794,7 @@ impl Parser {
     fn parse_param(self) -> Param? {
         let start = self.current_span()
         mut mutable = false
-        if self.check(TokenKind.Mut) {
+        if self.check_id(21) {
             self.advance()
             mutable = true
         }
@@ -820,7 +820,7 @@ impl Parser {
 
         // Optional default value: = expr
         mut default_value: Expr? = null
-        if self.check(TokenKind.Eq) {
+        if self.check_id(80) {
             self.advance()
             default_value = self.parse_expr()
         }
@@ -831,11 +831,11 @@ impl Parser {
     // ─── Type Parameters ───────────────────────
 
     fn parse_type_params(self) -> List<string> {
-        if !self.check(TokenKind.Lt) { return [] }
+        if !self.check_id(83) { return [] }
         self.advance() // consume <
 
         mut params: List<string> = []
-        while !self.check(TokenKind.Gt) && !self.is_at_end() {
+        while !self.check_id(85) && !self.is_at_end() {
             self.skip_newlines()
             let name = self.expect_ident()
             if name != null {
@@ -847,7 +847,7 @@ impl Parser {
             }
         }
 
-        if self.expect(TokenKind.Gt) == null { return params }
+        if self.expect_id(85) == null { return params }
         params
     }
 

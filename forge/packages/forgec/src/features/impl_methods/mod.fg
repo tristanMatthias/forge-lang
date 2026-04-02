@@ -59,7 +59,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
 
     // Check for "impl Trait for Type"
     mut type_name = first_name
-    if p.check(TokenKind.For) {
+    if p.check_id(28) {
         p.advance()
         let tn = p.expect_ident()
         if tn == "" {
@@ -70,7 +70,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
     }
 
     // Skip type params if present
-    if p.check(TokenKind.Lt) {
+    if p.check_id(83) {
         p.parse_type_params()
     }
 
@@ -80,7 +80,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
     // Parse each method and store as a function
     while !p.check_id(103) && !p.is_at_end() {
         p.skip_newlines()
-        if p.check(TokenKind.Fn) {
+        if p.check_id(23) {
             // Parse method as a function, storing with mangled name
             parse_impl_method_as_fn(p, type_name)
             // Sync position (parse_impl_method_as_fn receives p by value)

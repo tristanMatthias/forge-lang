@@ -76,7 +76,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     }
 
     // Expect = value
-    if p.expect(TokenKind.Eq) == null {
+    if p.expect_id(80) == null {
         p.error("expected '=' in variable declaration")
         return null
     }

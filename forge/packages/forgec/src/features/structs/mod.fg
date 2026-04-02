@@ -63,7 +63,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
     let type_params = p.parse_type_params()
 
-    if p.expect(TokenKind.Eq) == null {
+    if p.expect_id(80) == null {
         p.error("expected '=' in type declaration")
         return null
     }
@@ -86,13 +86,13 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 field_types_str = field_types_str + ","
             }
             // Skip optional 'mut' modifier on fields
-            if p.check(TokenKind.Mut) { p.advance() }
+            if p.check_id(21) { p.advance() }
             let fname = p.expect_ident()
             p.expect_id(107)
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
             // Capture generic arg for List<T> → store as "List:T"
-            if p.check(TokenKind.Lt) {
+            if p.check_id(83) {
                 p.advance()
                 let gen_arg = p.expect_ident()
                 // Store as "List:Diagnostic" so element type is recoverable
@@ -102,14 +102,14 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 // Skip remaining generic args
                 mut depth = 1
                 while depth > 0 && !p.is_at_end() {
-                    if p.check(TokenKind.Lt) { depth = depth + 1 }
-                    if p.check(TokenKind.Gt) { depth = depth - 1 }
+                    if p.check_id(83) { depth = depth + 1 }
+                    if p.check_id(85) { depth = depth - 1 }
                     if depth > 0 { p.advance() }
                 }
-                if p.check(TokenKind.Gt) { p.advance() }
+                if p.check_id(85) { p.advance() }
             }
             // Check for nullable ?
-            if p.check(TokenKind.Question) { p.advance() }
+            if p.check_id(88) { p.advance() }
 
             if ftype_name == "string" {
                 field_is_str = field_is_str + "1"
