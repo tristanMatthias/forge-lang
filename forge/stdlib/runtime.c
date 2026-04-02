@@ -3192,6 +3192,9 @@ ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
     return (ForgeString){ .ptr = (char*)data, .len = old_count + 1 };
 }
 
+// Debug: extract enum tag from {i64 tag, ptr payload} struct
+int64_t forge_enum_tag(int64_t tag, void* payload) { return tag; }
+
 // Debug: write ForgeString to file, print debug info
 void forge_mini_write_debug(ForgeString path, ForgeString content) {
     char cpath[4096];
