@@ -666,6 +666,11 @@ int64_t forge_is_whitespace_not_newline(ForgeString ch) {
 // C-side keyword ID lookup (bypasses Statement.If tag corruption)
 int64_t forge_kind_id_for_keyword(ForgeString text) {
     if (!text.ptr || text.len <= 0) return 0;
+    static int _kw_trace = 10;
+    if (_kw_trace > 0 && text.len <= 6) {
+        fprintf(stderr, "  [KW] '%.*s' len=%lld\n", (int)text.len, text.ptr, (long long)text.len);
+        _kw_trace--;
+    }
     #define KW(s, id) if (text.len == sizeof(s)-1 && memcmp(text.ptr, s, sizeof(s)-1) == 0) return id;
     KW("let", 20) KW("mut", 21) KW("const", 22) KW("fn", 23)
     KW("return", 24) KW("if", 25) KW("else", 26) KW("match", 27)

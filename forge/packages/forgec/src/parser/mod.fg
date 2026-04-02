@@ -243,43 +243,16 @@ impl Parser {
         CG_LAST_IS_MAP = 0
         CG_IS_MAP_INDEX = 0
 
-        match tok.kind {
-            .Let -> {
-                let r = parse_let(self)
-                self.sync_pos()
-                return r
-            }
-            .Mut -> {
-                let r = parse_mut(self)
-                self.sync_pos()
-                return r
-            }
-            .Const -> {
-                let r = parse_const(self)
-                self.sync_pos()
-                return r
-            }
-            .Fn -> {
-                let r = parse_fn(self)
-                self.sync_pos()
-                return r
-            }
-            .Export -> {
-                let r = parse_export(self)
-                self.sync_pos()
-                return r
-            }
-            .While -> {
-                let r = parse_while(self)
-                self.sync_pos()
-                return r
-            }
-            .For -> {
-                let r = parse_for(self)
-                self.sync_pos()
-                return r
-            }
-            .If -> {
+        // Use kind_id integer dispatch (immune to enum tag corruption in Stage 2)
+        let kid = tok.kind_id
+        if kid == 20 { let r = parse_let(self); self.sync_pos(); return r }
+        if kid == 21 { let r = parse_mut(self); self.sync_pos(); return r }
+        if kid == 22 { let r = parse_const(self); self.sync_pos(); return r }
+        if kid == 23 { let r = parse_fn(self); self.sync_pos(); return r }
+        if kid == 39 { let r = parse_export(self); self.sync_pos(); return r }
+        if kid == 30 { let r = parse_while(self); self.sync_pos(); return r }
+        if kid == 28 { let r = parse_for(self); self.sync_pos(); return r }
+        if kid == 25 {
                 if !CG_ACTIVE {
                     // Parse if-statement as Statement.If (avoids PENDING_IF forward refs)
                     let start = self.advance().span // consume 'if'
@@ -420,71 +393,42 @@ impl Parser {
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()
             }
-            .TypeKw -> {
-                let r = parse_type_decl(self)
-                self.sync_pos()
-                return r
-            }
-            .Enum -> {
-                let r = parse_enum_decl(self)
-                self.sync_pos()
-                return r
-            }
-            .Impl -> {
-                let r = parse_impl_block(self)
-                self.sync_pos()
-                return r
-            }
-            .Use -> {
-                // Skip 'use' statements — module imports are no-op in single-file mode
-                self.advance() // consume 'use'
-                // Skip until newline or end
-                while !self.is_at_end() && !self.check(TokenKind.Newline) {
-                    self.advance()
-                }
-                return Statement.Expr(Expr.IntLit(0, tok.span))
-            }
-            .Mod -> {
-                // Skip 'mod' declarations — no-op in single-file mode
-                self.advance() // consume 'mod'
-                self.expect_ident() // consume module name
-                return Statement.Expr(Expr.IntLit(0, tok.span))
-            }
-            .Trait -> {
-                // Skip trait declarations — parse and discard
-                self.advance() // consume 'trait'
-                self.expect_ident() // trait name
-                if self.check(TokenKind.LBrace) {
-                    self.parse_block() // skip body
-                }
-                return Statement.Expr(Expr.IntLit(0, tok.span))
-            }
-            _ -> {}
+        // kind_id 35 = type, 34 = enum, 43 = impl, 36 = use, 37 = mod, 42 = trait
+        if kid == 35 { let r = parse_type_decl(self); self.sync_pos(); return r }
+        if kid == 34 { let r = parse_enum_decl(self); self.sync_pos(); return r }
+        if kid == 43 { let r = parse_impl_block(self); self.sync_pos(); return r }
+        if kid == 36 {
+            self.advance()
+            while !self.is_at_end() && !self.check(TokenKind.Newline) { self.advance() }
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        if kid == 37 {
+            self.advance()
+            self.expect_ident()
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        if kid == 42 {
+            self.advance()
+            self.expect_ident()
+            if self.check(TokenKind.LBrace) { self.parse_block() }
+            return Statement.Expr(Expr.IntLit(0, tok.span))
         }
 
-        // Built-in structural statements
-        match tok.kind {
-            .Return -> {
-                self.parse_return()
-            }
-            .Break -> {
-                self.advance() // consume 'break'
-                if CG_ACTIVE && WHILE_END_BB != null {
-                    llvm.build_br(CG_B, WHILE_END_BB)
-                }
-                Statement.Expr(Expr.IntLit(0, tok.span))
-            }
-            .Continue -> {
-                self.advance() // consume 'continue'
-                if CG_ACTIVE && WHILE_COND_BB != null {
-                    llvm.build_br(CG_B, WHILE_COND_BB)
-                }
-                Statement.Expr(Expr.IntLit(0, tok.span))
-            }
-            _ -> {
-                self.parse_expr_or_assign()
-            }
+        // kind_id 24 = return, 32 = break, 33 = continue
+        if kid == 24 { return self.parse_return() }
+        if kid == 32 {
+            self.advance()
+            if CG_ACTIVE && WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+            return Statement.Break(tok.span)
         }
+        if kid == 33 {
+            self.advance()
+            if CG_ACTIVE && WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+            return Statement.Continue(tok.span)
+        }
+
+        // Default: expression or assignment
+        self.parse_expr_or_assign()
     }
 
     fn sync_pos(self) {

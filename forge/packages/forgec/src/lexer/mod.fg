@@ -274,8 +274,8 @@ impl Lexer {
             return self.lex_number(start_pos, start_line, start_col)
         }
 
-        // Identifiers and keywords
-        if is_ident_start(ch) {
+        // Identifiers and keywords (use C-side check, immune to ForgeString corruption)
+        if forge_is_ident_start(ch) == 1 {
             // Skip $ handling for now (nullable peek_at checks are unreliable)
             if ch == "$" {
                 // Just treat as identifier
@@ -665,11 +665,11 @@ impl Lexer {
         }
 
         // Return keyword or identifier
-        // Bootstrap workaround: nullable return from keyword_kind is unreliable.
-        // Use is_keyword check (returns bool, not nullable) instead.
-        if is_keyword(text) {
-            let kw = keyword_kind(text)
-            return token_new(kw!, span)
+        // Use C-side keyword detection (immune to ForgeString corruption in Stage 2)
+        let kw_id = forge_kind_id_for_keyword(text)
+        if kw_id > 0 {
+            // Create token with correct kind_id directly
+            return Token { kind: TokenKind.Ident, text: text, span: span, kind_id: kw_id }
         }
 
         token_ident(text, span)

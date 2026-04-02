@@ -246,11 +246,17 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
+    eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
+    eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
+    eprintln("  [scan] " + string(idx) + " lexer created")
     let tokens = lex.tokenize()
+    eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
     mut p = parser_new_with_source(tokens, source)
+    eprintln("  [scan] " + string(idx) + " parser created")
     p.parse_program()
+    eprintln("  [scan] " + string(idx) + " parsed OK")
 }
 
 fn build_compile_separate(paths_csv: string, output: string) {

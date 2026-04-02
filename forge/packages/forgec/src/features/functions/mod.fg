@@ -112,35 +112,24 @@ fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 fn parse_export(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'export'
 
-    match p.peek().kind {
-        .Fn -> parse_fn_decl(p, true)
-        .Let -> parse_var_binding(p, .Let, true)
-        .Mut -> parse_var_binding(p, .Mut, true)
-        .Const -> parse_var_binding(p, .Const, true)
-        .TypeKw -> {
-            // export type — treat same as type
-            parse_type_decl(p)
-        }
-        .Enum -> {
-            // export enum — treat same as enum
-            parse_enum_decl(p)
-        }
-        .Trait -> {
-            // export trait — skip (trait is no-op for codegen)
-            p.advance() // consume 'trait'
-            p.expect_ident() // trait name
-            if p.check(TokenKind.LBrace) {
-                p.parse_block() // skip body
-            }
-            PARSE_END_POS = p.pos
-            let id = next_node_id()
-            feature_stmt("functions", "noop", id, start)
-        }
-        _ -> {
-            p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
-            null
-        }
+    // Use kind_id dispatch (immune to enum tag corruption in Stage 2)
+    let ek = p.peek().kind_id
+    if ek == 23 { return parse_fn_decl(p, true) }
+    if ek == 20 { return parse_var_binding(p, .Let, true) }
+    if ek == 21 { return parse_var_binding(p, .Mut, true) }
+    if ek == 22 { return parse_var_binding(p, .Const, true) }
+    if ek == 35 { return parse_type_decl(p) }
+    if ek == 34 { return parse_enum_decl(p) }
+    if ek == 42 {
+        p.advance()
+        p.expect_ident()
+        if p.check(TokenKind.LBrace) { p.parse_block() }
+        PARSE_END_POS = p.pos
+        let id = next_node_id()
+        return feature_stmt("functions", "noop", id, start)
     }
+    p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
+    null
 }
 
 // ─── Check ──────────────────────────────────────
