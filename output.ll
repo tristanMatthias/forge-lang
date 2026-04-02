@@ -443,6 +443,20 @@ declare void @forge_alloca_cache_trace(i64)
 
 declare i64 @forge_enum_tag(i64, ptr)
 
+declare void @forge_debug_val_kind(%ForgeString, ptr)
+
+declare void @forge_debug_type_kind(%ForgeString, ptr)
+
+declare void @forge_debug_value_array(ptr, i64)
+
+declare void @forge_cbc_set_builder(ptr, ptr)
+
+declare void @forge_cbc_set_args(ptr, i64)
+
+declare void @forge_vas_trace(i64)
+
+declare ptr @forge_checked_build_call_c(ptr, ptr, i64)
+
 declare i64 @forge_alloca_cache_set(%ForgeString, ptr)
 
 declare void @forge_alloca_cache_set_fn(ptr)
