@@ -666,7 +666,7 @@ int64_t forge_is_whitespace_not_newline(ForgeString ch) {
 // C-side keyword ID lookup (bypasses Statement.If tag corruption)
 int64_t forge_kind_id_for_keyword(ForgeString text) {
     if (!text.ptr || text.len <= 0) return 0;
-    static int _kw_trace = 10;
+    static int _kw_trace = 50;
     if (_kw_trace > 0 && text.len <= 6) {
         fprintf(stderr, "  [KW] '%.*s' len=%lld\n", (int)text.len, text.ptr, (long long)text.len);
         _kw_trace--;
@@ -4017,7 +4017,15 @@ int64_t forge_sh_length(ForgeString s) {
     return s.len;
 }
 int64_t forge_sh_byteat(ForgeString s, int64_t idx) {
-    return forge_string_byte_at(s, idx);
+    static int _sba_trace = 10;
+    int64_t result = forge_string_byte_at(s, idx);
+    if (_sba_trace > 0) {
+        fprintf(stderr, "  [BA] idx=%lld byte=%lld char='%c' s.ptr=%p s.len=%lld\n",
+            (long long)idx, (long long)result, (result >= 32 && result < 127) ? (char)result : '?',
+            s.ptr, (long long)s.len);
+        _sba_trace--;
+    }
+    return result;
 }
 // scan_mods helper: find "\nmod " in source, return position or -1
 // This replaces forge_string_index_of for the self-hosting scan phase
