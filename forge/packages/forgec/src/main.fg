@@ -226,15 +226,15 @@ fn try_load_mod(dir: string, mod_name: string) {
     }
 }
 
-// Byte-based scan for \nmod in source text
+// Scan for \nmod in source text using index_of (declared in Stage 2 module)
 fn scan_mods(src: string, dir: string) {
-    let found = find_nmod(src)
+    let found = src.index_of("\nmod ")
     if found < 0 { return }
     let name_start = found + 5
-    let rest = forge_string_substring(src, name_start, src.length)
+    let rest = src.substring(name_start, src.length)
     let mod_name = mod_name_from(rest)
     try_load_mod(dir, mod_name)
-    let remaining = forge_string_substring(src, name_start, src.length)
+    let remaining = src.substring(name_start, src.length)
     scan_mods(remaining, dir)
 }
 

@@ -3328,6 +3328,13 @@ void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t
         int pk = gtk2(pty);
         if (vk == pk) continue;
         if (vk == 10 && pk == 12 && ext2) arg_values[i] = ext2(_cbc_builder, val, 0, "sp");
+        if (vk == 10 && pk == 8 && ext2 && p2i2 && i64_ty) {
+            // struct→i64: extract field 0 (ptr), then ptrtoint to i64
+            static int _s2i_trace = 10;
+            if (_s2i_trace > 0) { fprintf(stderr, "  [S2I] coercing struct→i64 for arg %d\n", i); _s2i_trace--; }
+            void* extracted = ext2(_cbc_builder, val, 0, "si");
+            if (extracted) arg_values[i] = p2i2(_cbc_builder, extracted, i64_ty, "si2");
+        }
         if (vk == 12 && pk == 8 && p2i2 && i64_ty) arg_values[i] = p2i2(_cbc_builder, val, i64_ty, "pi");
         if (vk == 8 && pk == 12 && i2p2 && ptr_ty) arg_values[i] = i2p2(_cbc_builder, val, ptr_ty, "ip");
         if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0);
