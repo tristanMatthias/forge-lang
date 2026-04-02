@@ -3244,6 +3244,21 @@ void forge_debug_type_kind(ForgeString label, void* ty) {
     int kind = kf(ty);
     fprintf(stderr, "  [tk] %.*s ty=%p kind=%d\n", (int)label.len, label.ptr, ty, kind);
 }
+// Debug: dump entire value array
+void forge_debug_value_array(void** arr, int64_t count) {
+    typedef void* (*type_of_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    static type_of_fn tof = NULL;
+    static kind_fn kf = NULL;
+    if (!tof) tof = (type_of_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kf) kf = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    fprintf(stderr, "  [VA_DUMP] count=%lld\n", (long long)count);
+    for (int i = 0; i < count && i < 10; i++) {
+        void* v = arr[i];
+        int k = (v && tof && kf) ? kf(tof(v)) : -1;
+        fprintf(stderr, "    [%d] val=%p kind=%d\n", i, v, k);
+    }
+}
 void forge_debug_val_kind(ForgeString label, void* val) {
     if (!val) { fprintf(stderr, "  [vk] %.*s null\n", (int)label.len, label.ptr); return; }
     typedef void* (*type_of_fn)(void*);
@@ -3856,10 +3871,15 @@ static void* _last_emit_result = NULL;
 void forge_set_last_emit_result(void* val) {
     _last_emit_result = val;
     if (_ler_trace > 0) {
-        fprintf(stderr, "  [LER_SET] val=%p\n", val);
+        void* bt[5];
+        int n = backtrace(bt, 5);
+        char** syms = backtrace_symbols(bt, n);
+        fprintf(stderr, "  [LER_SET] val=%p caller=%s\n", val, n > 1 && syms ? syms[1] : "?");
+        free(syms);
         _ler_trace--;
     }
 }
+
 void* forge_get_last_emit_result(void) {
     if (_ler_trace > 0) {
         fprintf(stderr, "  [LER_GET] val=%p\n", _last_emit_result);

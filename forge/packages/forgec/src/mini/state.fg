@@ -6,6 +6,9 @@
 mut TOKENS: List<Tok> = []
 mut POS: int = 0
 mut IR: List<string> = []
+// Entry block allocas — emitted at function start, not at current position.
+// Prevents dynamic allocas inside loops which corrupt local variables.
+mut ENTRY_ALLOCAS: List<string> = []
 mut REG_N: int = 0
 mut LBL_N: int = 0
 mut STR_N: int = 0
@@ -628,6 +631,23 @@ fn expect(text: string) {
 
 fn skip_nl() {
     while check_kind(4) { advance() }
+}
+
+// Buffer an alloca for the entry block (emitted by flush_entry_allocas)
+fn ir_entry_alloca(s: string) {
+    ENTRY_ALLOCAS = ENTRY_ALLOCAS.push("  " + s)
+}
+
+// Emit all buffered entry allocas — called right after the entry label
+fn flush_entry_allocas() {
+    mut i = 0
+    while i < ENTRY_ALLOCAS.length {
+        let a = ENTRY_ALLOCAS[i]
+        forge_ir_line(a)
+        IR = IR.push(a)
+        i = i + 1
+    }
+    ENTRY_ALLOCAS = []
 }
 
 fn ir_line(s: string) {

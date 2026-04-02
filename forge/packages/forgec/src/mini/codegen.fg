@@ -1879,6 +1879,8 @@ fn codegen_let(s: Stmt) -> int {
         ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
         final_val = conv
     }
+    // Emit alloca at current position — the C-side hoisting will move it to entry
+    // if hoisting is active (which it is during function body compilation).
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {
@@ -3257,6 +3259,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_enum_tag(i64, ptr)")
     ir_raw("declare i64 @forge_enum_payload_null(i64, ptr)")
     ir_raw("declare void @forge_debug_val_kind(%ForgeString, ptr)")
+    ir_raw("declare void @forge_debug_value_array(ptr, i64)")
     ir_raw("declare void @forge_debug_type_kind(%ForgeString, ptr)")
     ir_raw("declare void @forge_set_ler_trace(i64)")
     ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
