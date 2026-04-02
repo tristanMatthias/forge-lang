@@ -3366,8 +3366,9 @@ void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
 
 static int _ac_set_trace = 0;
 int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
-    if (name.ptr && name.len == 2 && name.ptr[0] == 's' && name.ptr[1] == 'p') {
-        fprintf(stderr, "  [AC_SET_SP] ptr=%p fn=%p count=%d\n", ptr, _ac_fn_ptr, _ac_count);
+    if (_ac_set_trace > 0 && name.ptr && name.len <= 4) {
+        fprintf(stderr, "  [AC_SET] '%.*s' ptr=%p fn=%p\n", (int)name.len, name.ptr, ptr, _ac_fn_ptr);
+        _ac_set_trace--;
     }
     if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
     // Update existing entry if same name AND same function
