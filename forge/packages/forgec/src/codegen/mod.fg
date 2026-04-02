@@ -1243,6 +1243,9 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_debug_val_kind", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_debug_type_kind", make_fn_type_2(CG_VOID, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_debug_value_array", make_fn_type_2(CG_VOID, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_cbc_set_builder", make_fn_type_2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_cbc_set_args", make_fn_type_2(CG_VOID, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_checked_build_call_c", make_fn_type_3(CG_PTR, CG_PTR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", make_fn_type_2(CG_I64, CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_set_fn", make_fn_type_1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_get", make_fn_type_1(CG_PTR, CG_STR))
@@ -1309,26 +1312,10 @@ fn coerce_call_arg(val: ptr, fn_ty: ptr, arg_idx: int) -> ptr {
 //          struct→i64 (extractvalue 0), ptr load for self-by-ptr, null guards.
 fn checked_build_call(fn_val: ptr, arg_values: ptr, arg_count: int, name: string) -> ptr {
     if fn_val == null { return llvm.const_int(CG_I64, 0, 0) }
-    let ft = llvm.global_get_value_type(fn_val)
-    // Coerce each argument to match the expected parameter type
-    mut i = 0
-    while i < arg_count {
-        let val = llvm.value_array_get(arg_values, i)
-        if val != null && ft != null {
-            let coerced = coerce_call_arg(val, ft, i)
-            if coerced != val {
-                llvm.value_array_set(arg_values, i, coerced)
-            }
-        } else if val == null {
-            llvm.value_array_set(arg_values, i, llvm.const_int(CG_I64, 0, 0))
-        }
-        i = i + 1
-    }
-    // Re-fetch function type right before build_call — the local 'ft' variable
-    // may be corrupted by the mini's dynamic alloca stack management during the
-    // coercion loop above.
-    let ft2 = llvm.global_get_value_type(fn_val)
-    llvm.build_call(CG_B, ft2, fn_val, arg_values, arg_count, name)
+    // Store args in C-side global — the mini corrupts local arg_values pointer.
+    forge_cbc_set_builder(CG_B, CG_CTX)
+    forge_cbc_set_args(arg_values, arg_count)
+    forge_checked_build_call_c(fn_val, arg_values, arg_count)
 }
 
 // ─── Checked build_store: validates value type matches alloca type ────────────
@@ -1836,6 +1823,8 @@ impl Codegen {
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
             let arg_arr = llvm.value_array_new(total_args)
+            // Store in C-side global immediately — the mini corrupts local pointers
+            forge_cbc_set_args(arg_arr, total_args)
             llvm.value_array_set(arg_arr, 0, self_ptr)
             // Process args using INDEX access (not for loop — avoids list iteration issues)
             mut argi = 0
