@@ -812,7 +812,16 @@ fn push_var_list(name: string, reg_name: string, ty: string, lelem: string) {
 mut FIND_FN_RET_RESULT: string = "i64"
 
 fn do_find_fn_ret(name: string) {
-    FIND_FN_RET_RESULT = "i64"
+    // Known ForgeString-returning runtime functions (checked before list search)
+    let known_str = ",forge_string_substring,forge_string_char_at,forge_string_concat,forge_string_new,forge_sh_substr,forge_int_to_string,forge_selfhost_get_arg,forge_selfhost_fs_read,forge_read_file,forge_float_to_string,"
+    let needle = "," + name + ","
+    mut found_known = false
+    if known_str.index_of(needle) >= 0 { found_known = true }
+    if found_known {
+        FIND_FN_RET_RESULT = "%ForgeString"
+    } else {
+        FIND_FN_RET_RESULT = "i64"
+    }
     mut i = 0
     while i < FN_NAMES.length {
         if FN_NAMES[i] == name {
