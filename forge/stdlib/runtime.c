@@ -3204,8 +3204,32 @@ ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
     return (ForgeString){ .ptr = (char*)data, .len = old_count + 1 };
 }
 
-// Debug: extract enum tag from {i64 tag, ptr payload} struct
+// Debug: extract enum tag and payload from {i64 tag, ptr payload} struct
 int64_t forge_enum_tag(int64_t tag, void* payload) { return tag; }
+int64_t forge_enum_payload_null(int64_t tag, void* payload) { return payload == NULL ? 1 : 0; }
+
+// Debug: print an LLVM value's type kind (uses dlsym to avoid linker dependency)
+void forge_debug_type_kind(ForgeString label, void* ty) {
+    typedef int (*kind_fn)(void*);
+    static kind_fn kf = NULL;
+    if (!kf) { kf = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind"); }
+    if (!kf || !ty) { fprintf(stderr, "  [tk] %.*s null\n", (int)label.len, label.ptr); return; }
+    int kind = kf(ty);
+    fprintf(stderr, "  [tk] %.*s ty=%p kind=%d\n", (int)label.len, label.ptr, ty, kind);
+}
+void forge_debug_val_kind(ForgeString label, void* val) {
+    if (!val) { fprintf(stderr, "  [vk] %.*s null\n", (int)label.len, label.ptr); return; }
+    typedef void* (*type_of_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    static type_of_fn tof = NULL;
+    static kind_fn kf = NULL;
+    if (!tof) { tof = (type_of_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf"); }
+    if (!kf) { kf = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind"); }
+    if (!tof || !kf) { fprintf(stderr, "  [vk] %.*s dlsym failed\n", (int)label.len, label.ptr); return; }
+    void* ty = tof(val);
+    int kind = ty ? kf(ty) : -1;
+    fprintf(stderr, "  [vk] %.*s val=%p kind=%d\n", (int)label.len, label.ptr, val, kind);
+}
 
 // Debug: write ForgeString to file, print debug info
 void forge_mini_write_debug(ForgeString path, ForgeString content) {

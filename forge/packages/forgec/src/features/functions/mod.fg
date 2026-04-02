@@ -536,13 +536,16 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         // self param: store ptr directly in cache (no alloca copy needed)
         mut alloca = param_val
         if pname != "self" {
+            forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            forge_alloca_cache_set(pname, alloca)
+            // Auto-cache in build_alloca handles forge_alloca_cache_set.
+            // Don't call it explicitly — the mini's alloca variable gets corrupted
+            // across loop iterations, storing the wrong (previous) alloca.
             forge_alloca_cache_set_type(pname, p_ty)
             llvm.build_store(CG_B, param_val, alloca)
         } else {
+            forge_set_alloca_name(pname)
             alloca = llvm.build_alloca(CG_B, CG_PTR, pname)
-            forge_alloca_cache_set(pname, alloca)
             forge_alloca_cache_set_type(pname, CG_PTR)
             llvm.build_store(CG_B, param_val, alloca)
         }
