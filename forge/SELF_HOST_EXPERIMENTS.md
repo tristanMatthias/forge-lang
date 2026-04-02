@@ -446,6 +446,15 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** REVERTED codegen/state changes, KEPT C-side efield storage
 **Lesson:** The mini's match arm codegen has TWO paths: (1) binding extraction via push_var (which I fixed), (2) direct body code that accesses the original enum. Path (2) doesn't use extracted bindings — it loads from the enum param alloca directly. Boxing changes the alloca type, breaking path (2). Need to fix match arm body generation to use extracted bindings, not original enum, before boxing can work.
 
+### EXP-040: Minimal repro — verify mini struct return on ARM64
+**Date:** 2026-04-02
+**Milestone:** ROOT CAUSE — mini struct return
+**Hypothesis:** The mini's IR for simple ForgeString operations looks correct (test_struct_return.fg compiles). The corruption may only manifest for LIST operations (which chain multiple ForgeString returns). Need to create a test that specifically triggers the corruption pattern: store ForgeString to alloca, call another function, load ForgeString from alloca, compare.
+**Change:** Create minimal test cases that isolate the struct return corruption
+**Score:** N/A (diagnostic)
+**Result:** ✅ FOUND THE BUG — minimal repro created. Mini generates GEPs to enum payload fields but NEVER LOADS the values. Binding allocas are never populated. The body code reads uninitialized memory or the return alloca.
+**Lesson:** The {i64, ptr} struct corruption was a RED HERRING. The actual bug is in the mini's match arm codegen: it generates GEPs but skips the load+store to binding allocas. The GEPs are dead code. This is in codegen_match around lines 2446-2470 where binding extraction should load from GEP pointers but doesn't.
+
 ### EXP-037: Trace forge_string_eq for index_of to confirm parser works
 **Date:** 2026-04-01
 **Milestone:** M5 (Stage 2 module resolution)

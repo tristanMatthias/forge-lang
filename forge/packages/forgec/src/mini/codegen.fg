@@ -497,26 +497,7 @@ fn gen_expr(e: Expr) -> string {
                             store_val = "zeroinitializer"
                         }
                     }
-                    // Boxing: use C-side to check if field should be boxed
-                    let is_boxed = forge_efield_is_boxed(fs + fi)
-                    if is_boxed == 1 && store_val != "0" && store_val != "null" && store_val != "zeroinitializer" {
-                        let raw_ty = forge_efield_get_raw(fs + fi)
-                        if raw_ty != "" {
-                            let box_size = new_reg()
-                            ir_line(box_size + " = ptrtoint ptr getelementptr (" + raw_ty + ", ptr null, i32 1) to i64")
-                            let box_ptr = new_reg()
-                            ir_line(box_ptr + " = call ptr @forge_alloc(i64 " + box_size + ")")
-                            ir_line("store " + raw_ty + " " + store_val + ", ptr " + box_ptr)
-                            ir_line("store ptr " + box_ptr + ", ptr " + fptr)
-                        } else {
-                            ir_line("store ptr null, ptr " + fptr)
-                        }
-                    } else if is_boxed == 1 {
-                        // Null/zero boxed field
-                        ir_line("store ptr null, ptr " + fptr)
-                    } else {
-                        ir_line("store " + fty + " " + store_val + ", ptr " + fptr)
-                    }
+                    ir_line("store " + fty + " " + store_val + ", ptr " + fptr)
                     fi = fi + 1
                 }
             }
@@ -2444,45 +2425,29 @@ fn codegen_match(s: Stmt) -> int {
                     if is_comma || bpos == arm.str2.length {
                         let bname = arm.str2.substring(bstart, bpos)
                         if bname != "_" && bi < fc_arm {
-                            // Use C-side for reliable type lookup (Forge lists corrupt)
-                            let bind_ty = forge_efield_get_boxed(fs_arm + bi)
+                            let bind_ty = EFIELD_TYPES[fs_arm + bi]
                             let fld_ptr = new_reg()
                             ir_line(fld_ptr + " = getelementptr inbounds " + variant_ty + ", ptr " + payload_ptr + ", i32 0, i32 " + string(bi))
                             let fld_val = new_reg()
                             let load_ty = type_to_llvm_field(bind_ty)
                             ir_line(fld_val + " = load " + load_ty + ", ptr " + fld_ptr)
-                            // Unbox if needed: load actual value through the ptr
-                            mut final_val = fld_val
-                            mut final_ty = load_ty
-                            let is_boxed = forge_efield_is_boxed(fs_arm + bi)
-                            if is_boxed == 1 {
-                                let raw_ty = forge_efield_get_raw(fs_arm + bi)
-                                if raw_ty != "" && fld_val != "null" {
-                                    let unboxed = new_reg()
-                                    ir_line(unboxed + " = load " + raw_ty + ", ptr " + fld_val)
-                                    final_val = unboxed
-                                    final_ty = raw_ty
-                                    reg_set_type(unboxed, raw_ty)
-                                }
-                            }
                             let balloca = new_reg()
-                            ir_line(balloca + " = alloca " + final_ty)
-                            ir_line("store " + final_ty + " " + final_val + ", ptr " + balloca)
-                            // Use final_ty (raw/unboxed type) for variable registration
-                            if final_ty == "%ForgeString" {
+                            ir_line(balloca + " = alloca " + load_ty)
+                            ir_line("store " + load_ty + " " + fld_val + ", ptr " + balloca)
+                            if bind_ty == "%ForgeString" {
                                 push_var(bname, balloca, "%ForgeString")
-                            } else if final_ty == "{ ptr, i64 }" || is_list_type(final_ty) {
-                                if is_list_type(final_ty) {
-                                    let ety = final_ty.substring(5, final_ty.length)
-                                    push_var_list(bname, balloca, final_ty, ety)
+                            } else if bind_ty == "{ ptr, i64 }" || is_list_type(bind_ty) {
+                                if is_list_type(bind_ty) {
+                                    let ety = bind_ty.substring(5, bind_ty.length)
+                                    push_var_list(bname, balloca, bind_ty, ety)
                                 } else {
                                     push_var_list(bname, balloca, "list_i64", "i64")
                                 }
-                            } else if final_ty.length > 1 && final_ty.substring(0, 1) == "%" {
-                                let sname = final_ty.substring(1, final_ty.length)
-                                push_var_with_struct(bname, balloca, final_ty, sname)
+                            } else if bind_ty.length > 1 && bind_ty.substring(0, 1) == "%" {
+                                let sname = bind_ty.substring(1, bind_ty.length)
+                                push_var_with_struct(bname, balloca, bind_ty, sname)
                             } else {
-                                push_var(bname, balloca, final_ty)
+                                push_var(bname, balloca, bind_ty)
                             }
                         }
                         bi = bi + 1
@@ -3275,11 +3240,6 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_string_compare(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_eq(%ForgeString, %ForgeString)")
     ir_raw("declare ptr @forge_alloc(i64)")
-    ir_raw("declare void @forge_efield_add(%ForgeString, %ForgeString)")
-    ir_raw("declare %ForgeString @forge_efield_get_boxed(i64)")
-    ir_raw("declare %ForgeString @forge_efield_get_raw(i64)")
-    ir_raw("declare i64 @forge_efield_is_boxed(i64)")
-    ir_raw("declare i64 @forge_efield_count()")
     ir_raw("declare i64 @span(i64)")
     ir_raw("declare i32 @puts(ptr)")
     ir_raw("declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)")
@@ -3414,22 +3374,6 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_scan_csv(%ForgeString)")
     ir_raw("declare %ForgeString @forge_extract_body_source(%ForgeString, i64, i64)")
     ir_raw("declare void @forge_set_scan_source(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_efield_add")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_efield_get_boxed")
-    FN_RETTYPES = FN_RETTYPES.push("string")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_efield_get_raw")
-    FN_RETTYPES = FN_RETTYPES.push("string")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_efield_is_boxed")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
     FN_NAMES = FN_NAMES.push("forge_extract_body_source")
     FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
