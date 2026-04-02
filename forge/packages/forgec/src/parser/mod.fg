@@ -84,7 +84,7 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        // Entirely C-side (Forge || and struct access broken in Stage 2)
+        forge_parser_set_pos(self.pos)
         forge_parser_is_at_end() == 1
     }
 
@@ -107,20 +107,20 @@ impl Parser {
     }
 
     fn advance(self) -> Token {
-        forge_watchdog(forge_parser_get_pos(), "advance")
         let tok = self.peek()
-        // Advance both Forge-side and C-side position
         self.pos = self.pos + 1
-        forge_parser_advance_pos()
+        // Always set C-side position from self.pos (not increment — avoids drift)
+        forge_parser_set_pos(self.pos)
         tok
     }
 
     // Check by kind_id integer — no allocation, no function call
     fn check_id(self, kid: int) -> bool {
-        forge_watchdog(forge_parser_get_pos(), "check_id")
-        if forge_parser_get_pos() >= forge_token_list_len() { return kid == 99 }
-        // Use C-side kind_id accessor with C-side position
-        forge_peek_kind_id(forge_parser_get_pos()) == kid
+        // Always sync C-side position from self.pos — prevents stale global state
+        forge_parser_set_pos(self.pos)
+        forge_watchdog(self.pos, "check_id")
+        if self.pos >= forge_token_list_len() { return kid == 99 }
+        forge_peek_kind_id(self.pos) == kid
     }
 
     fn check(self, kind: TokenKind) -> bool {

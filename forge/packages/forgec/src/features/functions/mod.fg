@@ -651,10 +651,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut body_parser = parser_new(body_tokens)
         body_parser.expect_id(102)
         body_parser.skip_newlines()
-        // Sync C-side parser position to body_parser's position.
-        // check_id uses forge_parser_get_pos (C-side global), not self.pos.
-        // Without this sync, check_id reads from the wrong position.
-        forge_parser_set_pos(body_parser.pos)
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             if llvm.block_has_terminator(CG_B) { break }
             let before = body_parser.pos

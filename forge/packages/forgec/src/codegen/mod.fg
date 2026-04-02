@@ -1994,11 +1994,8 @@ impl Codegen {
                     _ -> {}
                 }
             }
-            self.emit_expr(arg)
-            // Use C-side last_emit_result instead of TypedValue.val —
-            // the TypedValue return gets stack-clobbered by deep emit_expr recursion
-            // in Stage 1's compiled code (mini alloca corruption).
-            mut aval = forge_get_last_emit_result()
+            let atv = self.emit_expr(arg)
+            mut aval = atv.val
             if aval == null { aval = llvm.const_int(CG_I64, 0, 0) }
             llvm.value_array_set(arg_arr, i, aval)
             i = i + 1
