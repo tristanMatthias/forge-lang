@@ -441,9 +441,10 @@ bash scripts/audit_stage2.sh output.ll
 **Milestone:** ROOT CAUSE FIX
 **Hypothesis:** The root cause is the mini's {i64, ptr} struct return corruption on ARM64. This breaks Forge lists (which return {ptr, i64} ForgeStrings), which breaks EFIELD_TYPES tracking, which prevents enum boxing. Moving EFIELD_TYPES to a C-side array (like fn_store, param_names, var_types — all of which work) breaks the circular dependency and enables enum boxing.
 **Change:** (1) Add C-side efield_type_set/get in runtime.c (2) Use C-side storage during enum registration (3) Re-implement enum boxing with C-side types for construction + extraction
-**Score:** 143 → TBD
-**Result:** TBD
-**Lesson:** TBD
+**Score:** 143 → COMPILE ERROR
+**Result:** ❌ Boxing exposes pre-existing match arm codegen bug: match bodies access original enum alloca instead of extracted bindings. GEPs generated but body code loads from param alloca (%r3) not binding variables.
+**Kept/Reverted:** REVERTED codegen/state changes, KEPT C-side efield storage
+**Lesson:** The mini's match arm codegen has TWO paths: (1) binding extraction via push_var (which I fixed), (2) direct body code that accesses the original enum. Path (2) doesn't use extracted bindings — it loads from the enum param alloca directly. Boxing changes the alloca type, breaking path (2). Need to fix match arm body generation to use extracted bindings, not original enum, before boxing can work.
 
 ### EXP-037: Trace forge_string_eq for index_of to confirm parser works
 **Date:** 2026-04-01
