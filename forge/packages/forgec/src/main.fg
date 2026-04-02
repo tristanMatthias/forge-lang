@@ -246,17 +246,11 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
-    eprintln("  [scan] " + string(idx) + " reading " + filepath)
     let source = fs.read(filepath)
-    eprintln("  [scan] " + string(idx) + " read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    eprintln("  [scan] " + string(idx) + " lexer created")
     let tokens = lex.tokenize()
-    eprintln("  [scan] " + string(idx) + " " + string(tokens.length) + " tok")
     mut p = parser_new_with_source(tokens, source)
-    eprintln("  [scan] " + string(idx) + " parser created")
     p.parse_program()
-    eprintln("  [scan] " + string(idx) + " parsed OK")
 }
 
 fn build_compile_separate(paths_csv: string, output: string) {
@@ -279,7 +273,6 @@ fn build_compile_separate(paths_csv: string, output: string) {
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
     codegen_init("forgec_output")
-    llvm.add_function(CG_MOD, "forge_keyword_from_range", make_fn_type(CG_I64, [CG_PTR, CG_I64, CG_I64, CG_I64]))
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
@@ -389,9 +382,8 @@ fn main() {
         process.exit(1)
     }
 
-    // Use C-side arg access (immune to list indexing corruption in Stage 2)
-    let command = forge_selfhost_get_arg(1)
-    let input = forge_selfhost_get_arg(2)
+    let command = args[1]
+    let input = args[2]
 
     // Reset CSV BEFORE any branching (avoids emit_assign-in-if bug)
     MODULE_PATHS_CSV = ""

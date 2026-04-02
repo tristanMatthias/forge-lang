@@ -12,16 +12,16 @@ use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
 
-mut CG_CTX: int = 0
-export mut CG_MOD: int = 0
-mut CG_B: int = 0
-mut CG_I64: int = 0
-mut CG_I32: int = 0
-mut CG_I8: int = 0
-mut CG_VOID: int = 0
-mut CG_PTR: int = 0
-mut CG_F64: int = 0
-export mut CG_STR: int = 0
+mut CG_CTX: ptr = null
+export mut CG_MOD: ptr = null
+mut CG_B: ptr = null
+mut CG_I64: ptr = null
+mut CG_I32: ptr = null
+mut CG_I8: ptr = null
+mut CG_VOID: ptr = null
+mut CG_PTR: ptr = null
+mut CG_F64: ptr = null
+export mut CG_STR: ptr = null
 mut CG_RT_PRINTLN: ptr = null
 mut CG_RT_I2S: ptr = null
 mut CG_RT_SNEW: ptr = null
@@ -2112,20 +2112,20 @@ impl Codegen {
                                 let vn2 = variant_qname.substring(dot_pos + 1, variant_qname.length)
                                 // Try CSV first
                                 field_types = cg_enum_variant_field_types(ename, vn2)
-                                // CSV table lookup for field types (avoids assignment-in-if bug)
-                                // p=ptr(boxed enum/struct), i=i64, s=ForgeString, l=list, 4=Span
+                                // Hardcoded fallback for common Expr/Statement variants
                                 if field_types == "" {
-                                    let ft_table = ",IntLit=i4,FloatLit=i4,StringLit=s4,BoolLit=i4,NullLit=4,Ident=s4,Binary=pip4,Unary=ip4,Call=pl4,MemberAccess=ps4,Index=pp4,Expr=p,Assign=pp4,Return=p4,Let=sp4,If=ppp4i4,Match=pssli4,While=pp4,For=spp4,Block=l,Feature=p,Break=4,Continue=4,IsCheck=psi4,"
-                                    let ft_needle = "," + vn2 + "="
-                                    let ft_pos = ft_table.index_of(ft_needle)
-                                    if ft_pos >= 0 {
-                                        let ft_start = ft_pos + ft_needle.length
-                                        let ft_rest = ft_table.substring(ft_start, ft_table.length)
-                                        let ft_comma = ft_rest.index_of(",")
-                                        if ft_comma >= 0 {
-                                            field_types = ft_rest.substring(0, ft_comma)
-                                        }
-                                    }
+                                    // Expr variants: most have (value/name: s, span: 4)
+                                    if vn2 == "IntLit" { field_types = "i4" }
+                                    if vn2 == "FloatLit" { field_types = "i4" }
+                                    if vn2 == "StringLit" { field_types = "s4" }
+                                    if vn2 == "BoolLit" { field_types = "i4" }
+                                    if vn2 == "NullLit" { field_types = "4" }
+                                    if vn2 == "Ident" { field_types = "s4" }
+                                    // Statement variants
+                                    if vn2 == "Expr" { field_types = "p" }
+                                    if vn2 == "Assign" { field_types = "pp4" }
+                                    if vn2 == "Return" { field_types = "p4" }
+                                    if vn2 == "Let" { field_types = "sp4" }
                                 }
                             }
                             mut field_idx = 0
@@ -2394,7 +2394,7 @@ impl Codegen {
                 si = si - 1
             }
         }
-        if CG_B == 0 { return }
+        if CG_B == null { return }
         if alloca_ty == 0 { return }
         // Create alloca in ENTRY block (ensures dominance across all basic blocks)
         let cur_bb = llvm.get_insert_block(CG_B)

@@ -120,20 +120,6 @@ impl Parser {
         a != "" && a == b
     }
 
-    fn check_id(self, kid: int) -> bool {
-        if self.is_at_end() { return false }
-        self.peek().kind_id == kid
-    }
-
-    fn expect_id(self, kid: int) -> Token? {
-        if self.check_id(kid) {
-            self.advance()
-        } else {
-            self.error("expected token")
-            null
-        }
-    }
-
     fn expect(self, kind: TokenKind) -> Token? {
         if self.check(kind) {
             self.advance()
@@ -168,7 +154,7 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
-        while self.check_id(120) {
+        while self.check(TokenKind.Newline) {
             self.advance()
         }
     }
@@ -178,10 +164,10 @@ impl Parser {
     fn skip_to_matching_brace(self) {
         mut depth = 1
         while depth > 0 && !self.is_at_end() {
-            if self.check_id(102) {
+            if self.check(TokenKind.LBrace) {
                 depth = depth + 1
             }
-            if self.check_id(103) {
+            if self.check(TokenKind.RBrace) {
                 depth = depth - 1
             }
             self.advance()
@@ -257,37 +243,43 @@ impl Parser {
         CG_LAST_IS_MAP = 0
         CG_IS_MAP_INDEX = 0
 
-        // Use kind_id integer dispatch (immune to enum tag corruption in Stage 2)
-        let kid = tok.kind_id
-        if kid == 20 {  let r = parse_let(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 21 {  let r = parse_mut(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 22 {  let r = parse_const(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 23 {  let r = parse_fn(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 39 {  let r = parse_export(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 30 {  let r = parse_while(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 28 {  let r = parse_for(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 25 {
+        match tok.kind {
+            .Let -> {
+                let r = parse_let(self)
+                self.sync_pos()
+                return r
+            }
+            .Mut -> {
+                let r = parse_mut(self)
+                self.sync_pos()
+                return r
+            }
+            .Const -> {
+                let r = parse_const(self)
+                self.sync_pos()
+                return r
+            }
+            .Fn -> {
+                let r = parse_fn(self)
+                self.sync_pos()
+                return r
+            }
+            .Export -> {
+                let r = parse_export(self)
+                self.sync_pos()
+                return r
+            }
+            .While -> {
+                let r = parse_while(self)
+                self.sync_pos()
+                return r
+            }
+            .For -> {
+                let r = parse_for(self)
+                self.sync_pos()
+                return r
+            }
+            .If -> {
                 if !CG_ACTIVE {
                     // Parse if-statement as Statement.If (avoids PENDING_IF forward refs)
                     let start = self.advance().span // consume 'if'
@@ -299,11 +291,11 @@ impl Parser {
                     self.skip_newlines()
                     mut has_else = 0
                     mut else_block = Block { statements: [], span: start }
-                    if self.check_id(26) {
+                    if self.check(TokenKind.Else) {
                         has_else = 1
                         self.advance()
                         self.skip_newlines()
-                        if self.check_id(25) {
+                        if self.check(TokenKind.If) {
                             // else-if chain: parse recursively as statement
                             let nested = self.parse_statement()
                             if nested != null {
@@ -318,7 +310,7 @@ impl Parser {
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()
             }
-        if kid == 27 {
+            .Match -> {
                 if !CG_ACTIVE {
                     // Parse match-statement as Statement.Match (avoids PENDING_MATCH forward refs)
                     let start = self.advance().span // consume 'match'
@@ -327,7 +319,7 @@ impl Parser {
                     if scrutinee == null { return null }
                     let scrutinee_var = LAST_IDENT_NAME
                     self.skip_newlines()
-                    if self.expect_id(102) == null { return null }
+                    if self.expect(TokenKind.LBrace) == null { return null }
                     self.skip_newlines()
 
                     let enum_type = cg_var_enum_type(scrutinee_var)
@@ -337,11 +329,11 @@ impl Parser {
                     mut has_default = 0
                     mut default_body = Block { statements: [], span: start }
 
-                    while !self.check_id(103) && !self.is_at_end() {
+                    while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                         self.skip_newlines()
                         mut pat_tag = -1
                         mut arm_bind_csv = ""
-                        if self.check_id(110) {
+                        if self.check(TokenKind.Dot) {
                             self.advance()
                             let vname = self.expect_ident()
                             let qname = enum_type + "." + vname
@@ -350,10 +342,10 @@ impl Parser {
                             pat_tag = match_enum_tag(qname)
                             if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                             // Capture binding names
-                            if self.check_id(100) {
+                            if self.check(TokenKind.LParen) {
                                 self.advance()
                                 mut bind_idx = 0
-                                while !self.check_id(101) && !self.is_at_end() {
+                                while !self.check(TokenKind.RParen) && !self.is_at_end() {
                                     let bname = self.expect_ident()
                                     if bname != "" && bname != "_" {
                                         if bind_idx > 0 { arm_bind_csv = arm_bind_csv + "," }
@@ -363,12 +355,12 @@ impl Parser {
                                         arm_bind_csv = arm_bind_csv + "_"
                                     }
                                     bind_idx = bind_idx + 1
-                                    if self.check_id(106) { self.advance() }
+                                    if self.check(TokenKind.Comma) { self.advance() }
                                     self.skip_newlines()
                                 }
-                                if self.check_id(101) { self.advance() }
+                                if self.check(TokenKind.RParen) { self.advance() }
                             }
-                        } else if self.check_id(60) {
+                        } else if self.check(TokenKind.Underscore) {
                             self.advance()
                             pat_tag = -1
                             has_default = 1
@@ -376,12 +368,12 @@ impl Parser {
                             self.advance()
                         }
                         self.skip_newlines()
-                        if self.check_id(109) { self.advance() }
+                        if self.check(TokenKind.Arrow) { self.advance() }
                         self.skip_newlines()
                         let prev_match = IN_MATCH_ARM
                         IN_MATCH_ARM = true
                         mut body = Block { statements: [], span: start }
-                        if self.check_id(102) {
+                        if self.check(TokenKind.LBrace) {
                             body = self.parse_block()
                         } else {
                             let e = self.parse_expr()
@@ -400,10 +392,10 @@ impl Parser {
                             arm_bindings_list = arm_bindings_list.push(arm_bind_csv)
                         }
                         self.skip_newlines()
-                        if self.check_id(106) { self.advance() }
+                        if self.check(TokenKind.Comma) { self.advance() }
                         self.skip_newlines()
                     }
-                    if self.check_id(103) { self.advance() }
+                    if self.check(TokenKind.RBrace) { self.advance() }
 
                     // Build tag CSV
                     mut tag_csv = ""
@@ -428,51 +420,71 @@ impl Parser {
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()
             }
-        // kind_id 35 = type, 34 = enum, 43 = impl, 36 = use, 37 = mod, 42 = trait
-        if kid == 35 {  let r = parse_type_decl(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 34 {  let r = parse_enum_decl(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 43 {  let r = parse_impl_block(self)
-            self.sync_pos()
-            return r
-        }
-        if kid == 36 {
-            self.advance()
-            while !self.is_at_end() && !self.check_id(120) { self.advance() }
-            return Statement.Expr(Expr.IntLit(0, tok.span))
-        }
-        if kid == 37 {
-            self.advance()
-            self.expect_ident()
-            return Statement.Expr(Expr.IntLit(0, tok.span))
-        }
-        if kid == 42 {
-            self.advance()
-            self.expect_ident()
-            if self.check_id(102) { self.parse_block() }
-            return Statement.Expr(Expr.IntLit(0, tok.span))
+            .TypeKw -> {
+                let r = parse_type_decl(self)
+                self.sync_pos()
+                return r
+            }
+            .Enum -> {
+                let r = parse_enum_decl(self)
+                self.sync_pos()
+                return r
+            }
+            .Impl -> {
+                let r = parse_impl_block(self)
+                self.sync_pos()
+                return r
+            }
+            .Use -> {
+                // Skip 'use' statements — module imports are no-op in single-file mode
+                self.advance() // consume 'use'
+                // Skip until newline or end
+                while !self.is_at_end() && !self.check(TokenKind.Newline) {
+                    self.advance()
+                }
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Mod -> {
+                // Skip 'mod' declarations — no-op in single-file mode
+                self.advance() // consume 'mod'
+                self.expect_ident() // consume module name
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Trait -> {
+                // Skip trait declarations — parse and discard
+                self.advance() // consume 'trait'
+                self.expect_ident() // trait name
+                if self.check(TokenKind.LBrace) {
+                    self.parse_block() // skip body
+                }
+                return Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            _ -> {}
         }
 
-        // kind_id 24 = return, 32 = break, 33 = continue
-        if kid == 24 { return self.parse_return() }
-        if kid == 32 {
-            self.advance()
-            if CG_ACTIVE && WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
-            return Statement.Break(tok.span)
+        // Built-in structural statements
+        match tok.kind {
+            .Return -> {
+                self.parse_return()
+            }
+            .Break -> {
+                self.advance() // consume 'break'
+                if CG_ACTIVE && WHILE_END_BB != null {
+                    llvm.build_br(CG_B, WHILE_END_BB)
+                }
+                Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            .Continue -> {
+                self.advance() // consume 'continue'
+                if CG_ACTIVE && WHILE_COND_BB != null {
+                    llvm.build_br(CG_B, WHILE_COND_BB)
+                }
+                Statement.Expr(Expr.IntLit(0, tok.span))
+            }
+            _ -> {
+                self.parse_expr_or_assign()
+            }
         }
-        if kid == 33 {
-            self.advance()
-            if CG_ACTIVE && WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
-            return Statement.Continue(tok.span)
-        }
-
-        // Default: expression or assignment
-        self.parse_expr_or_assign()
     }
 
     fn sync_pos(self) {
@@ -486,7 +498,7 @@ impl Parser {
         let start = self.advance().span // consume 'return'
 
         // Bare return (no value)
-        if self.is_at_end() || self.check_id(120) || self.check_id(103) {
+        if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
             return Statement.Return(Expr.NullLit(start), start)
         }
 
@@ -511,7 +523,7 @@ impl Parser {
         if expr == null { return null }
 
         // Check for assignment: expr = value
-        if self.check_id(80) {
+        if self.check(TokenKind.Eq) {
             // Save target variable name before RHS parsing overwrites LAST_IDENT_NAME
             let assign_target_name = LAST_IDENT_NAME
             let eq_span = self.advance().span // consume =
@@ -555,7 +567,7 @@ impl Parser {
         }
 
         // Check for channel send: expr <- value
-        if self.check_id(116) {
+        if self.check(TokenKind.LeftArrow) {
             self.advance()
             let value = self.parse_expr()
             if value == null {
@@ -573,12 +585,12 @@ impl Parser {
     fn parse_block(self) -> Block {
         let start = self.current_span()
         let empty = Block { statements: [], span: start }
-        if self.expect_id(102) == null { return empty }
+        if self.expect(TokenKind.LBrace) == null { return empty }
 
         self.skip_newlines()
         mut statements: List<Statement> = []
 
-        while !self.check_id(103) && !self.is_at_end() {
+        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             let before = self.pos
             let stmt = self.parse_statement()
             if stmt != null {
@@ -588,7 +600,7 @@ impl Parser {
             self.skip_newlines()
         }
 
-        self.expect_id(103)
+        self.expect(TokenKind.RBrace)
 
         Block {
             statements,
@@ -611,7 +623,7 @@ impl Parser {
 
     // Parse a block or wrap a single statement in a block
     fn parse_block_or_stmt(self) -> Block? {
-        if self.check_id(102) {
+        if self.check(TokenKind.LBrace) {
             self.parse_block()
         } else {
             let start = self.current_span()
@@ -631,7 +643,7 @@ impl Parser {
         if ty == null { return null }
 
         // Check for nullable modifier: Type?
-        if self.check_id(88) {
+        if self.check(TokenKind.Question) {
             let span = self.advance().span
             return TypeExpr.Nullable(ty!, span)
         }
@@ -647,7 +659,7 @@ impl Parser {
             let name = tok.text
             let start = self.advance().span
             // Check for generic: Name<A, B>
-            if self.check_id(83) {
+            if self.check(TokenKind.Lt) {
                 let args = self.parse_type_args()
                 if args != null {
                     return TypeExpr.Generic(name, args!, start)
@@ -680,27 +692,27 @@ impl Parser {
     }
 
     fn parse_type_args(self) -> List<TypeExpr>? {
-        if self.expect_id(83) == null { return null }
+        if self.expect(TokenKind.Lt) == null { return null }
         mut args: List<TypeExpr> = []
 
-        while !self.check_id(85) && !self.is_at_end() {
+        while !self.check(TokenKind.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
                 args = args.push(ty!)
             }
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
         // Handle >> as > >
-        if self.check_id(117) {
+        if self.check(TokenKind.ShiftRight) {
             // Split >> into two > tokens — consume one
             // TODO: proper token splitting
             self.advance()
         } else {
-            if self.expect_id(85) == null { return null }
+            if self.expect(TokenKind.Gt) == null { return null }
         }
 
         args
@@ -708,24 +720,24 @@ impl Parser {
 
     fn parse_function_type(self) -> TypeExpr? {
         let start = self.advance().span // consume 'fn'
-        if self.expect_id(100) == null { return null }
+        if self.expect(TokenKind.LParen) == null { return null }
 
         mut params: List<TypeExpr> = []
-        while !self.check_id(101) && !self.is_at_end() {
+        while !self.check(TokenKind.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let ty = self.parse_type_expr()
             if ty != null {
                 params = params.push(ty!)
             }
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
-        if self.expect_id(101) == null { return null }
+        if self.expect(TokenKind.RParen) == null { return null }
 
         // -> ReturnType
         mut ret: TypeExpr? = TypeExpr.Named("void", start)
-        if self.check_id(109) {
+        if self.check(TokenKind.Arrow) {
             self.advance()
             ret = self.parse_type_expr()
         }
@@ -737,7 +749,7 @@ impl Parser {
     fn parse_tuple_or_paren_type(self) -> TypeExpr? {
         let start = self.advance().span // consume (
 
-        if self.check_id(101) {
+        if self.check(TokenKind.RParen) {
             self.advance()
             return TypeExpr.Tuple([], start)
         }
@@ -745,24 +757,24 @@ impl Parser {
         let first = self.parse_type_expr()
         if first == null { return null }
 
-        if self.check_id(106) {
+        if self.check(TokenKind.Comma) {
             // Tuple type
             self.advance()
             mut elements: List<TypeExpr> = [first!]
-            while !self.check_id(101) && !self.is_at_end() {
+            while !self.check(TokenKind.RParen) && !self.is_at_end() {
                 self.skip_newlines()
                 let ty = self.parse_type_expr()
                 if ty != null {
                     elements = elements.push(ty!)
                 }
-                if self.check_id(106) {
+                if self.check(TokenKind.Comma) {
                     self.advance()
                 }
             }
-            if self.expect_id(101) == null { return null }
+            if self.expect(TokenKind.RParen) == null { return null }
 
             // Check for -> ReturnType (function type)
-            if self.check_id(109) {
+            if self.check(TokenKind.Arrow) {
                 self.advance()
                 let ret = self.parse_type_expr()
                 if ret == null { return null }
@@ -772,10 +784,10 @@ impl Parser {
             return TypeExpr.Tuple(elements, start)
         }
 
-        if self.expect_id(101) == null { return null }
+        if self.expect(TokenKind.RParen) == null { return null }
 
         // Check for -> ReturnType (single-param function type)
-        if self.check_id(109) {
+        if self.check(TokenKind.Arrow) {
             self.advance()
             let ret = self.parse_type_expr()
             if ret == null { return null }
@@ -790,26 +802,26 @@ impl Parser {
         let start = self.advance().span // consume {
         mut fields: List<TypeField> = []
 
-        while !self.check_id(103) && !self.is_at_end() {
+        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
             mut mutable = false
-            if self.check_id(21) {
+            if self.check(TokenKind.Mut) {
                 self.advance()
                 mutable = true
             }
             let name = self.expect_ident()
             if name == null { return null }
-            if self.expect_id(107) == null { return null }
+            if self.expect(TokenKind.Colon) == null { return null }
             let ty = self.parse_type_expr()
             if ty == null { return null }
             fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
             self.skip_newlines()
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        if self.expect_id(103) == null { return null }
+        if self.expect(TokenKind.RBrace) == null { return null }
         TypeExpr.Struct(fields, start)
     }
 
@@ -817,28 +829,28 @@ impl Parser {
 
     fn parse_params(self) -> List<Param> {
         PARSED_PARAM_TYPES = []
-        self.expect_id(100)
+        self.expect(TokenKind.LParen)
         mut params: List<Param> = []
 
-        while !self.check_id(101) && !self.is_at_end() {
+        while !self.check(TokenKind.RParen) && !self.is_at_end() {
             self.skip_newlines()
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
             }
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        self.expect_id(101)
+        self.expect(TokenKind.RParen)
         params
     }
 
     fn parse_param(self) -> Param? {
         let start = self.current_span()
         mut mutable = false
-        if self.check_id(21) {
+        if self.check(TokenKind.Mut) {
             self.advance()
             mutable = true
         }
@@ -849,7 +861,7 @@ impl Parser {
         // Capture the type name text before parsing (for struct type lookup)
         mut type_name_text = "int"  // default
         mut type_ann: TypeExpr? = null
-        if self.check_id(107) {
+        if self.check(TokenKind.Colon) {
             self.advance()
             // Capture the next token's text as the type name
             let type_tok = self.peek()
@@ -864,7 +876,7 @@ impl Parser {
 
         // Optional default value: = expr
         mut default_value: Expr? = null
-        if self.check_id(80) {
+        if self.check(TokenKind.Eq) {
             self.advance()
             default_value = self.parse_expr()
         }
@@ -875,23 +887,23 @@ impl Parser {
     // ─── Type Parameters ───────────────────────
 
     fn parse_type_params(self) -> List<string> {
-        if !self.check_id(83) { return [] }
+        if !self.check(TokenKind.Lt) { return [] }
         self.advance() // consume <
 
         mut params: List<string> = []
-        while !self.check_id(85) && !self.is_at_end() {
+        while !self.check(TokenKind.Gt) && !self.is_at_end() {
             self.skip_newlines()
             let name = self.expect_ident()
             if name != null {
                 params = params.push(name!)
             }
             // TODO: bounds (T: Clone)
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }
 
-        if self.expect_id(85) == null { return params }
+        if self.expect(TokenKind.Gt) == null { return params }
         params
     }
 
@@ -907,7 +919,7 @@ impl Parser {
                 items = items.push(item!)
             }
             self.skip_newlines()
-            if self.check_id(106) {
+            if self.check(TokenKind.Comma) {
                 self.advance()
             }
         }

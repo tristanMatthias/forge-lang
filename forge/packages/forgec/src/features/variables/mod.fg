@@ -60,7 +60,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     mut ann_is_list = 0
     mut ann_elem_name = ""
     mut type_ann: TypeExpr? = null
-    if p.check_id(107) {
+    if p.check(TokenKind.Colon) {
         p.advance()
         // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
@@ -76,7 +76,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     }
 
     // Expect = value
-    if p.expect_id(80) == null {
+    if p.expect(TokenKind.Eq) == null {
         p.error("expected '=' in variable declaration")
         return null
     }

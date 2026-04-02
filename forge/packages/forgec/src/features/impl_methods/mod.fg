@@ -59,7 +59,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
 
     // Check for "impl Trait for Type"
     mut type_name = first_name
-    if p.check_id(28) {
+    if p.check(TokenKind.For) {
         p.advance()
         let tn = p.expect_ident()
         if tn == "" {
@@ -70,17 +70,17 @@ export fn parse_impl_block(p: Parser) -> Statement? {
     }
 
     // Skip type params if present
-    if p.check_id(83) {
+    if p.check(TokenKind.Lt) {
         p.parse_type_params()
     }
 
-    if p.expect_id(102) == null { return null }
+    if p.expect(TokenKind.LBrace) == null { return null }
     p.skip_newlines()
 
     // Parse each method and store as a function
-    while !p.check_id(103) && !p.is_at_end() {
+    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
         p.skip_newlines()
-        if p.check_id(23) {
+        if p.check(TokenKind.Fn) {
             // Parse method as a function, storing with mangled name
             parse_impl_method_as_fn(p, type_name)
             // Sync position (parse_impl_method_as_fn receives p by value)
@@ -88,13 +88,13 @@ export fn parse_impl_block(p: Parser) -> Statement? {
                 p.pos = PARSE_END_POS
                 PARSE_END_POS = -1
             }
-        } else if !p.check_id(103) {
+        } else if !p.check(TokenKind.RBrace) {
             p.advance() // skip unexpected tokens
         }
         p.skip_newlines()
     }
 
-    p.expect_id(103)
+    p.expect(TokenKind.RBrace)
 
     PARSE_END_POS = p.pos
     let id = next_node_id()
@@ -117,7 +117,7 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let params = p.parse_params()
 
     mut return_type_name = ""
-    if p.check_id(109) {
+    if p.check(TokenKind.Arrow) {
         p.advance()
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
