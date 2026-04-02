@@ -21,36 +21,13 @@ use codegen.{codegen_new, create_globals_typed, codegen_init, codegen_write_ir, 
 use features.variables.{VAR_GLOBAL_COUNT, VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK}
 use features.functions.{CURRENT_FILE_INDEX, EMIT_FILE_IDX, FN_NAMES, FN_BODY_SOURCES, FN_PARAM_COUNTS, emit_all_fn_bodies, declare_all_fns, emit_fn_body_from_source, materialize_struct_types}
 
-// Byte-based string search — uses forge_string_byte_at (returns i64, no type tracking issues)
-// 10=\n, 47=/, 32=space, 109=m, 111=o, 100=d
+// Find the position of a single character in a string
+// Uses index_of with a single-char string (available in Stage 2)
 fn find_byte(s: string, byte_val: int) -> int {
-    let len = s.length
-    mut i = 0
-    while i < len {
-        if forge_string_byte_at(s, i) == byte_val { return i }
-        i = i + 1
-    }
-    return -1
-}
-
-fn find_nmod(s: string) -> int {
-    let len = s.length
-    if len < 5 { return -1 }
-    mut i = 0
-    while i < len - 4 {
-        if forge_string_byte_at(s, i) == 10 {
-            if forge_string_byte_at(s, i + 1) == 109 {
-                if forge_string_byte_at(s, i + 2) == 111 {
-                    if forge_string_byte_at(s, i + 3) == 100 {
-                        if forge_string_byte_at(s, i + 4) == 32 {
-                            return i
-                        }
-                    }
-                }
-            }
-        }
-        i = i + 1
-    }
+    // Convert byte to char string for index_of
+    if byte_val == 10 { return s.index_of("\n") }
+    if byte_val == 47 { return s.index_of("/") }
+    if byte_val == 32 { return s.index_of(" ") }
     return -1
 }
 
