@@ -3070,8 +3070,10 @@ void forge_fn_store_add(ForgeString name, ForgeString body) {
     if (!name.ptr || name.len <= 0 || name.len > 127) return;
     // If body is empty/corrupt, try to re-extract from source using C-side token spans
     ForgeString actual_body = body;
-    fprintf(stderr, "  [fn_store_add] body.ptr=%p body.len=%lld scan_src.ptr=%p scan_src.len=%lld\n",
-        body.ptr, (long long)body.len, _current_scan_source.ptr, (long long)_current_scan_source.len);
+    if (body.ptr && body.len > 0 && body.len < 200) {
+        fprintf(stderr, "  [fn_store_add] len=%lld first20=[%.*s]\n",
+            (long long)body.len, body.len > 20 ? 20 : (int)body.len, body.ptr);
+    }
     if ((!body.ptr || body.len <= 0 || body.len > 100000) && _current_scan_source.ptr) {
         // Walk backwards from current parser position to find the { } block
         // The last consumed block should be the function body
@@ -3107,11 +3109,21 @@ void forge_fn_store_add(ForgeString name, ForgeString body) {
     b[actual_body.len] = '\0';
     _fn_store[_fn_store_count].body = b;
     _fn_store[_fn_store_count].body_len = actual_body.len;
+    if (_fn_store_count == 77) {
+        fprintf(stderr, "  [STORE #77] ptr=%p byte1=0x%02x byte2=0x%02x byte10=0x%02x\n",
+                b, (unsigned char)b[0], (unsigned char)b[1], (unsigned char)b[10]);
+    }
     _fn_store_count++;
 }
 
 ForgeString forge_fn_store_get_body(int64_t idx) {
     if (idx < 0 || idx >= _fn_store_count) return (ForgeString){NULL, 0};
+    if (idx == 77 && _fn_store[idx].body) {
+        fprintf(stderr, "  [get_body #77] len=%lld bytes:", (long long)_fn_store[idx].body_len);
+        for (int k = 0; k < 20 && k < _fn_store[idx].body_len; k++)
+            fprintf(stderr, " %02x", (unsigned char)_fn_store[idx].body[k]);
+        fprintf(stderr, "\n");
+    }
     return (ForgeString){_fn_store[idx].body, _fn_store[idx].body_len};
 }
 
