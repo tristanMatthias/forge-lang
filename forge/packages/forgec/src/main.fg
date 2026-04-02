@@ -286,6 +286,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
         let pc = forge_fn_store_get_param_count(fi)
         let bsrc = forge_fn_store_get_body(fi)
         if bsrc.length > 0 {
+            eprintln("  >> " + string(fi))
             emit_fn_body_from_source(cg, fi, param_offset)
         }
         param_offset = param_offset + pc

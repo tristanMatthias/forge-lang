@@ -259,6 +259,8 @@ export fn store_fn_source(name: string, body_source: string) {
     FN_NAMES = FN_NAMES.push(name)
     FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
     FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
+    // Also store in C-side fn_store (immune to Forge list corruption)
+    forge_fn_store_add(name, body_source)
 }
 
 export fn store_fn_param_count(count: int) {
