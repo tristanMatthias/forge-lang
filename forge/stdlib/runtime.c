@@ -3156,6 +3156,15 @@ void forge_fn_store_add(ForgeString name, ForgeString body) {
 
 ForgeString forge_fn_store_get_body(int64_t idx) {
     if (idx < 0 || idx >= _fn_store_count) return (ForgeString){NULL, 0};
+    if (strcmp(_fn_store[idx].name, "scan_mods") == 0) {
+        fprintf(stderr, "  [get_body scan_mods] idx=%lld len=%lld bytes:", (long long)idx, (long long)_fn_store[idx].body_len);
+        for (int k = 0; k < 80 && k < _fn_store[idx].body_len; k++) {
+            unsigned char c = (unsigned char)_fn_store[idx].body[k];
+            if (c >= 32 && c < 127) fprintf(stderr, "%c", c);
+            else fprintf(stderr, "\\x%02x", c);
+        }
+        fprintf(stderr, "\n");
+    }
     if (idx == 77 && _fn_store[idx].body) {
         fprintf(stderr, "  [get_body #77] len=%lld bytes:", (long long)_fn_store[idx].body_len);
         for (int k = 0; k < 20 && k < _fn_store[idx].body_len; k++)

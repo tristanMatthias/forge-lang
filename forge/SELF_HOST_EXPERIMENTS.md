@@ -398,4 +398,14 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** KEPT (cleaner code, removes corrupted pointer paths)
 **Lesson:** get_allocated_type returns kind=10 for ALL allocas due to mini pointer corruption. forge_alloca_cache_get_type also corrupted. String-based forge_var_type_get works and is immune to corruption, but functionally equivalent since forge_str_var_check/forge_ptr_var_check already covered the same cases. Kept for code clarity.
 
+### EXP-034: Revert scan_mods to use index_of + investigate body re-parse
+**Date:** 2026-04-01
+**Milestone:** M5 (module resolution)
+**Hypothesis:** scan_mods should use src.index_of("\nmod ") instead of find_nmod (which depends on undeclared forge_string_byte_at). The fn_store body IS correct (C-side trace confirmed). But the Stage 1 parser produces find_nmod calls from `src.index_of` body text.
+**Change:** Reverted scan_mods to index_of. Removed find_nmod/find_byte. Rewrote find_byte as index_of-based.
+**Score:** 143 → 143
+**Result:** ⚪ NO CHANGE — parser desugaring works for other functions (14 forge_string_index_of calls exist) but NOT for scan_mods specifically. Root cause under investigation.
+**Kept/Reverted:** KEPT (correct approach)
+**Lesson:** fn_store body extraction IS correct (byte positions via token spans work). The bug is in the PARSER RE-PARSE during emit_fn_body_from_source — the desugaring doesn't fire for scan_mods despite identical code working for other functions. The body text IS `src.index_of("\nmod ")` but the output is `call @find_nmod`. This is either a parser state issue (stale globals) or the mini-compiled parser has a code path that skips desugaring for certain function bodies.
+
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.

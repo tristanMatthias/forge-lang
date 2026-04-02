@@ -644,8 +644,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     VAR_LIST_INIT_CSV = ""
     mut last_val = llvm.const_int(CG_I64, 0, 0)
     if body_src != "" {
-        if name == "Lexer__lex_string" {
-            eprintln("  body_len=" + string(body_src.length) + " body[0..40]=[" + body_src.substring(0, 40) + "]")
+        if name == "scan_mods" {
+            eprintln("  body_len=" + string(body_src.length) + " body[0..80]=[" + body_src.substring(0, 80) + "]")
         }
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
