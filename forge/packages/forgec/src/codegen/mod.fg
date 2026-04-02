@@ -911,6 +911,7 @@ export fn codegen_cleanup() {
 
 fn cg_init_ctx(name: string) {
     CG_CTX = llvm.context_create()
+    forge_set_cg_ctx(CG_CTX)
     if CG_CTX == null {
         eprintln("FATAL: LLVM context_create returned null!")
         
@@ -1579,6 +1580,7 @@ impl Codegen {
             // and forge_alloca_cache_get_type(name) return corrupted pointers (always kind=10).
             // Only use annotations for primitive types (string, ptr, float).
             // Struct types stay as i64 because values are still stored as i64 by emit_expr.
+            forge_trace_ei_type(name)
             let vt = forge_var_type_get(name)
             if vt == "string" {
                 load_ty = CG_STR

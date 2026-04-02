@@ -3492,6 +3492,23 @@ static struct { char name[64]; void* ptr; void* fn; void* alloca_type; } _ac[ALL
 static int _ac_count = 0;
 
 // Clear cache AND record current function pointer for staleness detection
+// Forward declarations for trace
+ForgeString forge_var_type_get(ForgeString name);
+int64_t forge_str_var_check(ForgeString name);
+int64_t forge_ptr_var_check(ForgeString name);
+
+// Debug: trace emit_ident type resolution for a specific variable
+void forge_trace_ei_type(ForgeString name) {
+    if (!name.ptr || name.len != 2) return;
+    if (name.ptr[0] != 's' || name.ptr[1] != 'l') return;
+    // Check var_type_get
+    ForgeString vt = forge_var_type_get(name);
+    int64_t str_check = forge_str_var_check(name);
+    int64_t ptr_check = forge_ptr_var_check(name);
+    fprintf(stderr, "  [EI-TRACE] sl: vt='%.*s' str_check=%lld ptr_check=%lld\n",
+            vt.ptr ? (int)vt.len : 0, vt.ptr ? vt.ptr : "", (long long)str_check, (long long)ptr_check);
+}
+
 int64_t forge_alloca_cache_clear(void) {
     // Preserve global entries (fn == NULL) — only clear function-scoped entries
     int write = 0;
@@ -3810,6 +3827,23 @@ ForgeString forge_var_type_get(ForgeString name) {
     return (ForgeString){NULL, 0};
 }
 
+// Raw C-string version for Rust wrapper (bypasses ForgeString ABI issues)
+// Return the CG_CTX LLVM context pointer (stored by Stage 1 codegen)
+static void* _cg_ctx_ptr = NULL;
+void forge_set_cg_ctx(void* ctx) { _cg_ctx_ptr = ctx; }
+void* forge_get_cg_ctx(void) { return _cg_ctx_ptr; }
+
+const char* forge_var_type_get_raw(const char* name, int64_t name_len) {
+    if (!name || name_len <= 0) return NULL;
+    for (int i = _var_type_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_var_types[i].name) == name_len &&
+            memcmp(_var_types[i].name, name, name_len) == 0) {
+            return _var_types[i].type_name;
+        }
+    }
+    return NULL;
+}
+
 void forge_var_type_clear(void) { _var_type_count = _var_type_global_count; }
 void forge_var_type_set_global_count(void) { _var_type_global_count = _var_type_count; }
 
@@ -3841,6 +3875,20 @@ int64_t forge_str_var_add(ForgeString name) {
         _str_count++;
     }
     return 0;
+}
+
+int64_t forge_str_var_check_raw(const char* name, int64_t name_len) {
+    if (!name || name_len <= 0) return 0;
+    for (int i = _str_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_str_names[i]) == name_len && memcmp(_str_names[i], name, name_len) == 0) return 1;
+    }
+    return 0;
+}
+
+int64_t forge_ptr_var_check_raw(const char* name, int64_t name_len) {
+    // Forward to existing check via ForgeString
+    ForgeString fs = {(char*)name, name_len};
+    return forge_ptr_var_check(fs);
 }
 
 int64_t forge_str_var_check(ForgeString name) {
