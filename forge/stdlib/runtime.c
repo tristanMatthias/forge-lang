@@ -547,7 +547,7 @@ double forge_string_parse_float(ForgeString s) {
 static int eq_call_count = 0;
 int8_t forge_string_eq(ForgeString a, ForgeString b) {
     // Trace: catch "index_of" comparisons to debug parser desugaring
-    static int _eq_trace = 5000;
+    static int _eq_trace = 0;
     if (_eq_trace > 0 && b.len == 8 && b.ptr && memcmp(b.ptr, "index_of", 8) == 0) {
         fprintf(stderr, "  [SEQ] a='%.*s'(%lld) == 'index_of' → %d\n",
             a.ptr && a.len > 0 && a.len < 30 ? (int)a.len : 0,

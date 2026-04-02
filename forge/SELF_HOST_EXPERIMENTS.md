@@ -426,4 +426,14 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** KEPT
 **Lesson:** C-side name bypass works for declaration loops. But the parser re-parse of function bodies ALSO uses ForgeString operations (string comparison for method name matching). The corruption is pervasive — every ForgeString operation in the mini-compiled code is affected. The fix must be in the mini's struct return handling, not in individual workarounds.
 
+### EXP-037: Trace forge_string_eq for index_of to confirm parser works
+**Date:** 2026-04-01
+**Milestone:** M5 (Stage 2 module resolution)
+**Hypothesis:** The parser desugaring might fail for scan_mods' index_of call.
+**Change:** Added trace to forge_string_eq for "index_of" comparisons.
+**Score:** N/A (diagnostic)
+**Result:** Parser desugaring WORKS — 28 successful "index_of" matches. The AST is correct. The bug is in emit_call: the Expr.Ident name field gets corrupted between AST creation and codegen use. The Expr enum's payload pointer (field 1 of {i64, ptr}) is corrupted during function argument passing in the mini-compiled code.
+**Kept/Reverted:** Traces removed after diagnosis
+**Lesson:** The corruption chain: Expr passed by value ({i64, ptr}) → payload ptr corrupted → name field extracted from wrong memory → wrong function called. This is an Expr struct passing bug in the mini, not a string comparison bug.
+
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.
