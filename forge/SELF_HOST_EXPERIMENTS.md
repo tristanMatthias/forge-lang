@@ -426,6 +426,16 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** KEPT
 **Lesson:** C-side name bypass works for declaration loops. But the parser re-parse of function bodies ALSO uses ForgeString operations (string comparison for method name matching). The corruption is pervasive — every ForgeString operation in the mini-compiled code is affected. The fix must be in the mini's struct return handling, not in individual workarounds.
 
+### EXP-038: Enum field boxing in mini (match forge-lang's approach)
+**Date:** 2026-04-01
+**Milestone:** ROOT CAUSE FIX
+**Hypothesis:** The mini stores enum fields as inline struct types (%Expr = 16 bytes in the variant payload). When the Expr is extracted and passed between functions, the {i64, ptr} value gets corrupted. Forge-lang solved this by boxing complex fields to ptr (heap allocated). Applying the same fix to the mini should prevent the corruption.
+**Change:** In mini's enum variant registration, store complex enum/struct field types as "ptr" instead of "%TypeName". During construction: alloc + store. During extraction: load through ptr. Same as forge-lang's "Enum Boxing" breakthrough.
+**Score:** 143 → COMPILE ERROR (type mismatches in boxed field access)
+**Result:** ❌ COMPILE ERROR — boxing changes the struct layout (field offsets shift). ForgeString fields in some enum variants get incorrectly loaded as ptr despite exclusion. Likely caused by EFIELD_TYPES list corruption (Forge list push) causing the boxing condition to fire for wrong fields. The approach is correct but the implementation needs the Forge list corruption fixed first (circular dependency).
+**Kept/Reverted:** REVERTED
+**Lesson:** Enum boxing is the RIGHT approach (matches forge-lang's breakthrough) but can't be implemented reliably when the mini's Forge lists are corrupted. The EFIELD_TYPES list push may misalign boxing/raw-type entries. Need either: (1) C-side field type storage (like fn_store), or (2) fix Forge list corruption first.
+
 ### EXP-037: Trace forge_string_eq for index_of to confirm parser works
 **Date:** 2026-04-01
 **Milestone:** M5 (Stage 2 module resolution)
