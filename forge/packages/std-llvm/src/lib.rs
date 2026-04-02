@@ -796,6 +796,13 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
         if cache_len > 0 && cache_len < 100 {
             unsafe {
                 forge_alloca_cache_set_raw(cache_name, cache_len, result);
+                // Debug: trace auto-cache storage
+                if VAS_TRACE > 0 && cache_len <= 4 {
+                    let s = std::slice::from_raw_parts(cache_name as *const u8, cache_len as usize);
+                    eprintln!("  [AUTO_CACHE] name='{}' result={:p} armed={}",
+                        std::str::from_utf8_unchecked(s), result, armed);
+                    VAS_TRACE -= 1;
+                }
                 // Detect ForgeString-typed allocas (struct with 2 elements)
                 let alloca_ty = LLVMGetAllocatedType(result);
                 if !alloca_ty.is_null() {

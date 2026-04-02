@@ -1543,7 +1543,6 @@ impl Codegen {
 
     // ─── Identifier loading ─────────────────────
     fn emit_ident(self, name: string) -> TypedValue {
-        forge_debug_type_kind("CG_I64", CG_I64)
         if name == "EMPTYLIST" {
             return tv_typed(llvm.const_null(CG_STR), CG_LIST, "List<int>")
         }
@@ -1551,57 +1550,36 @@ impl Codegen {
         let cached_ptr = forge_alloca_cache_get(name)
         if cached_ptr != null {
             cg_reinit_types()
-            let cached_type = forge_alloca_cache_get_type(name)
             mut load_ty = CG_I64
             mut type_name = "int"
-            // Use LLVM alloca type (most reliable — reads directly from IR instruction)
-            mut check_type = llvm.get_allocated_type(cached_ptr)
-            if check_type == null {
-                check_type = cached_type
+            // Use forge_var_type_get (string-based C-side lookup) for type resolution.
+            // This is immune to mini's pointer corruption — both get_allocated_type(cached_ptr)
+            // and forge_alloca_cache_get_type(name) return corrupted pointers (always kind=10).
+            // Only use annotations for primitive types (string, ptr, float).
+            // Struct types stay as i64 because values are still stored as i64 by emit_expr.
+            let vt = forge_var_type_get(name)
+            if vt == "string" {
+                load_ty = CG_STR
+                type_name = "string"
+            } else if vt == "ptr" {
+                load_ty = CG_PTR
+                type_name = "ptr"
+            } else if vt == "float" {
+                load_ty = CG_F64
+                type_name = "float"
             }
-            if check_type != null {
-                let ck = llvm.get_type_kind(check_type)
-                if ck == 12 { load_ty = CG_PTR
-                    type_name = "ptr" }
-                if ck == 10 {
-                    load_ty = check_type
-                    let sname = forge_struct_var_get(name)
-                    if sname != "" {
-                        type_name = sname
-                    } else {
-                        cg_reinit_types()
-                        if check_type == CG_STR {
-                            type_name = "string"
-                        }
-                    }
-                }
-            }
-            // Handle array-typed allocas (byte arrays for struct params)
-            if load_ty == CG_I64 && check_type != null {
-                let ck2 = llvm.get_type_kind(check_type)
-                if ck2 == 11 {
-                    // Array alloca (kind 11) — use forge_var_type_get for the original type
-                    let vt = forge_var_type_get(name)
-                    if vt != "" {
-                        let resolved = resolve_type_to_llvm(vt)
-                        if resolved != null {
-                            load_ty = resolved
-                            type_name = vt
-                        }
-                    }
-                }
-            }
-            // Final fallback: check str_var cache
+            // Fallback: C-side caches (for variables without var_type entries)
             if load_ty == CG_I64 {
                 if forge_str_var_check(name) == 1 {
                     cg_reinit_types()
                     load_ty = CG_STR
                     type_name = "string"
+                } else if forge_ptr_var_check(name) == 1 {
+                    load_ty = CG_PTR
+                    type_name = "ptr"
                 }
             }
-            forge_debug_type_kind("ei_load_ty", load_ty)
             let loaded = llvm.build_load(CG_B, load_ty, cached_ptr, name)
-            forge_debug_val_kind("ei_loaded", loaded)
             forge_set_last_emit_result(loaded)
             return tv_typed(loaded, load_ty, type_name)
         }
@@ -1725,7 +1703,6 @@ impl Codegen {
     // ─── Function calls ─────────────────────────
     fn emit_call(self, callee: Expr, args: List<Expr>) -> TypedValue {
         let ctag = forge_enum_tag(callee)
-        eprintln("  [ec2] tag=" + string(ctag) + " args=" + string(args.length))
         match callee {
             .Ident(name, span) -> {
                 if name == "println" || name == "print" || name == "eprintln" || name == "eprint" {
@@ -1828,17 +1805,11 @@ impl Codegen {
             let arg_arr = llvm.value_array_new(total_args)
             // Store in C-side global immediately
             forge_cbc_set_args(arg_arr, total_args)
-            if total_args == 8 { forge_vas_trace(20) }
             llvm.value_array_set(arg_arr, 0, self_ptr)
             // Process args using INDEX access (not for loop — avoids list iteration issues)
             mut argi = 0
             while argi < args.length {
                 let arg_expr = args[argi]
-                let arg_tag = forge_enum_tag(arg_expr)
-                let arg_null = forge_enum_payload_null(arg_expr)
-                if total_args == 8 {
-                    eprintln("  [marg] " + method_name + " " + string(argi) + " tag=" + string(arg_tag) + " null=" + string(arg_null))
-                }
                 self.emit_expr(arg_expr)
                 let aval = forge_get_last_emit_result()
                 if aval != null {
@@ -2431,11 +2402,8 @@ impl Codegen {
     // ─── Statements ─────────────────────────────
     fn emit_statement(self, stmt: Statement) -> ptr {
         let stag = forge_enum_tag(stmt)
-        eprintln("  [es] tag=" + string(stag))
         match stmt {
             .Expr(expr) -> {
-                let eetag = forge_enum_tag(expr)
-                eprintln("    [es.expr] tag=" + string(eetag))
                 return self.emit_expr(expr).val
             }
             .Assign(target, value, s) -> { self.emit_assign(target, value) }

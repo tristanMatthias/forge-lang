@@ -3254,7 +3254,6 @@ void forge_cbc_set_builder(void* b, void* ctx) { _cbc_builder = b; _cbc_ctx = ct
 void forge_cbc_set_args(void** args, int64_t count) {
     _cbc_args = args;
     _cbc_arg_count = count;
-    fprintf(stderr, "  [CBC_ARGS] ptr=%p count=%lld\n", args, (long long)count);
 }
 
 // Properly typed function pointers for LLVM C API (no variadic casts)
@@ -3317,25 +3316,7 @@ void* forge_checked_build_call_c(void* fn_val, void** arg_values_UNUSED, int64_t
         if (vk == 8 && pk == 12 && i2p2 && ptr_ty) arg_values[i] = i2p2(_cbc_builder, val, ptr_ty, "ip");
         if (vk == 8 && pk == 10 && ci2 && i64_ty) arg_values[i] = ci2(i64_ty, 0, 0);
     }
-    // Debug: check what we're passing to LLVMBuildCall2
-    if (arg_count == 8 && gtk2 && tof2) {
-        for (int j = 0; j < 3; j++) {
-            int vk = gtk2(tof2(arg_values[j]));
-            int pk = gpt ? gtk2(gpt(ft, j)) : -1;
-            fprintf(stderr, "  [CBC_CALL] arg[%d] vk=%d pk=%d val=%p\n", j, vk, pk, arg_values[j]);
-        }
-    }
     void* result = bc2(_cbc_builder, ft, fn_val, arg_values, (unsigned)arg_count, "");
-    // Debug: print the call instruction we just created
-    if (arg_count == 8) {
-        typedef const char* (*pvts_fn)(void*);
-        static pvts_fn pvts = NULL;
-        if (!pvts) pvts = (pvts_fn)dlsym(RTLD_DEFAULT, "LLVMPrintValueToString");
-        if (pvts && result) {
-            const char* ir = pvts(result);
-            fprintf(stderr, "  [CBC_IR] %s\n", ir ? ir : "(null)");
-        }
-    }
     return result;
 }
 

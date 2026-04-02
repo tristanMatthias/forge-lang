@@ -378,4 +378,24 @@ bash scripts/audit_stage2.sh output.ll
 **Kept/Reverted:** REVERTED (primary version)
 **Lesson:** The alloca type is authoritative for LOADING, but some code paths use the loaded value in i64/ForgeString contexts (PHI nodes, conditional expressions). Using the alloca type as primary breaks these. The fix needs to propagate struct types through ALL downstream uses, not just the load. This is equivalent to a full type-flow analysis.
 
+### EXP-032: Restore parser method call desugaring + remove debug traces
+**Date:** 2026-04-01
+**Milestone:** M2
+**Hypothesis:** Commit 3f377bd removed parser-level method desugaring (obj.method(args) → Type__method(obj, args)), relying on codegen emit_method_or_ns_call. This crashed Stage 1 because the codegen path passes corrupted pointers (mini corruption). Restoring desugaring + removing debug traces that crashed emit_fn_body_from_source's own compilation should fix Stage 1.
+**Change:** parser/expressions.fg: restored string method and impl method desugaring. functions/mod.fg: removed if-body debug trace that caused NullLit crash.
+**Score:** CRASH → 143
+**Result:** ✅ Stage 1 runs again (was completely broken)
+**Kept/Reverted:** KEPT
+**Lesson:** Parser desugaring is necessary because the mini compiler corrupts local pointer variables in the codegen's emit_method_or_ns_call path. Single-line if bodies with semicolons also crash when the debug functions (forge_vas_trace etc.) are called inside them.
+
+### EXP-033: emit_ident uses forge_var_type_get (string-based) instead of get_allocated_type
+**Date:** 2026-04-01
+**Milestone:** M1
+**Hypothesis:** get_allocated_type(cached_ptr) always returns kind=10 (struct) because the mini corrupts cached_ptr between forge_alloca_cache_get and the call. Using forge_var_type_get (string-based lookup, immune to pointer corruption) should fix load types.
+**Change:** emit_ident: replaced get_allocated_type with forge_var_type_get string → resolve_type_to_llvm lookup
+**Score:** 143 → 143 (safe types only: no change)
+**Result:** ⚪ NO CHANGE — functionally equivalent to old approach for safe types
+**Kept/Reverted:** KEPT (cleaner code, removes corrupted pointer paths)
+**Lesson:** get_allocated_type returns kind=10 for ALL allocas due to mini pointer corruption. forge_alloca_cache_get_type also corrupted. String-based forge_var_type_get works and is immune to corruption, but functionally equivalent since forge_str_var_check/forge_ptr_var_check already covered the same cases. Kept for code clarity.
+
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.
