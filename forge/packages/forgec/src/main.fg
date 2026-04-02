@@ -382,8 +382,9 @@ fn main() {
         process.exit(1)
     }
 
-    let command = args[1]
-    let input = args[2]
+    // Use C-side arg access (immune to list indexing corruption in Stage 2)
+    let command = forge_selfhost_get_arg(1)
+    let input = forge_selfhost_get_arg(2)
 
     // Reset CSV BEFORE any branching (avoids emit_assign-in-if bug)
     MODULE_PATHS_CSV = ""
