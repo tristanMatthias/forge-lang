@@ -1,11 +1,11 @@
-; ModuleID = 'forgec_output'
-source_filename = "forgec_output"
+; ModuleID = 'N%!'
+source_filename = "N%!\02\01"
 
 %ForgeString = type { ptr, i64 }
 
 declare void @forge_println_string(%ForgeString)
 
-declare %ForgeString @forge_int_to_string(i64)
+declare %ForgeString @forge_int_to_stringforge_string_new(i64)
 
 declare %ForgeString @forge_string_new(ptr, i64)
 
@@ -13,7 +13,7 @@ declare %ForgeString @forge_string_concat(%ForgeString, %ForgeString)
 
 declare %ForgeString @forge_string_char_at(%ForgeString, i64)
 
-declare i64 @forge_string_length(%ForgeString)
+declare i64 @forge_string_lengthforge_string_eq(%ForgeString)
 
 declare i8 @forge_string_eq(%ForgeString, %ForgeString)
 
@@ -37,7 +37,7 @@ declare %ForgeString @forge_param_name_get(i64)
 
 declare void @forge_set_self_type(%ForgeString)
 
-declare %ForgeString @forge_get_self_type()
+declare %ForgeString @forge_get_self_typeforge_debug_enum()
 
 declare void @forge_debug_enum()
 
@@ -59,8 +59,6 @@ declare void @forge_struct_var_clear()
 
 declare void @forge_struct_var_add(%ForgeString, %ForgeString)
 
-declare void @forge_struct_var_add_by_type(%ForgeString, ptr)
-
 declare %ForgeString @forge_struct_var_get(%ForgeString)
 
 declare void @forge_set_last_emit_result(ptr)
@@ -79,17 +77,11 @@ declare %ForgeString @forge_struct_reg_get_name(i64)
 
 declare %ForgeString @forge_struct_reg_get_fields(i64)
 
-declare %ForgeString @forge_struct_reg_get_field_types(i64)
+declare %ForgeString @forge_struct_reg_get_field_typesforge_struct_reg_get_llvm_type(i64)
 
 declare ptr @forge_struct_reg_get_llvm_type(i64)
 
 declare ptr @forge_struct_reg_find_type(%ForgeString)
-
-declare void @forge_struct_reg_sync_types(ptr)
-
-declare i64 @forge_struct_reg_name_for_type_i64(ptr)
-
-declare %ForgeString @forge_struct_reg_last_name()
 
 declare void @forge_var_name_clear()
 
@@ -99,27 +91,27 @@ declare i64 @forge_var_name_exists(%ForgeString)
 
 declare void @forge_var_name_set_scope(i64)
 
-declare void @forge_fn_reg_clear()
+declare void @forge_fn_reg_clearforge_fn_reg_add()
 
 declare void @forge_fn_reg_add(%ForgeString, %ForgeString)
 
 declare %ForgeString @forge_fn_reg_get_ret(%ForgeString)
 
-declare i64 @forge_fn_reg_count()
+declare i64 @forge_fn_reg_countforge_scan_csvforge_scan_csv_set_cbforge_save_csv()
 
-declare i64 @forge_scan_csv(%ForgeString)
+declare i64 @forge_scan_csvforge_scan_csv_set_cbforge_save_csv(%ForgeString)
 
-declare void @forge_scan_csv_set_cb(ptr)
+declare void @forge_scan_csv_set_cbforge_save_csv(ptr)
 
 declare void @forge_save_csv(%ForgeString)
 
-declare i64 @forge_csv_byte_at(i64)
+declare i64 @forge_csv_byte_atforge_csv_lengthforge_csv_substr(i64)
 
-declare i64 @forge_csv_length()
+declare i64 @forge_csv_lengthforge_csv_substr()
 
 declare %ForgeString @forge_csv_substr(i64, i64)
 
-declare %ForgeString @forge_scan_csv_path(i64)
+declare %ForgeString @forge_scan_csv_pathforge_csv_next(i64)
 
 declare %ForgeString @forge_csv_next()
 
@@ -133,13 +125,13 @@ declare void @forge_mod_csv_clear()
 
 declare void @forge_mod_csv_add(%ForgeString)
 
-declare %ForgeString @forge_mod_csv_get()
+declare %ForgeString @forge_mod_csv_getforge_sh_indexofforge_sh_substrforge_sh_byteatforge_sh_length()
 
-declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)
+declare i64 @forge_sh_indexofforge_sh_substrforge_sh_byteatforge_sh_length(%ForgeString, %ForgeString)
 
-declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)
+declare %ForgeString @forge_sh_substrforge_sh_byteatforge_sh_length(%ForgeString, i64, i64)
 
-declare i64 @forge_sh_byteat(%ForgeString, i64)
+declare i64 @forge_sh_byteatforge_sh_length(%ForgeString, i64)
 
 declare i64 @forge_sh_length(%ForgeString)
 
@@ -181,15 +173,15 @@ declare void @forge_enable_peek_trace()
 
 declare void @forge_set_token_list(%ForgeString)
 
-declare i64 @forge_peek_kind_id(i64)
+declare i64 @forge_peek_kind_idforge_peek_text(i64)
 
 declare %ForgeString @forge_peek_text(i64)
 
-declare i64 @forge_token_list_len()
+declare i64 @forge_token_list_lenforge_is_alphaforge_is_digitforge_is_alnum()
 
-declare i64 @forge_is_alpha(%ForgeString)
+declare i64 @forge_is_alphaforge_is_digitforge_is_alnum(%ForgeString)
 
-declare i64 @forge_is_digit(%ForgeString)
+declare i64 @forge_is_digitforge_is_alnum(%ForgeString)
 
 declare i64 @forge_is_alnum(%ForgeString)
 
@@ -199,7 +191,7 @@ declare i64 @forge_is_ident_continue(%ForgeString)
 
 declare i64 @forge_is_hex_digit(%ForgeString)
 
-declare i64 @forge_is_whitespace_not_newline(%ForgeString)
+declare i64 @forge_is_whitespace_not_newlineforge_list_push(%ForgeString)
 
 declare %ForgeString @forge_list_push(%ForgeString, ptr, i64)
 
@@ -209,33 +201,27 @@ declare void @forge_fn_store_clear()
 
 declare void @forge_fn_store_add(%ForgeString, %ForgeString)
 
-declare void @forge_fn_store_set_param_count(i64, i64)
-
-declare i64 @forge_fn_store_get_param_count(i64)
-
 declare %ForgeString @forge_fn_store_get_body(i64)
 
 declare %ForgeString @forge_fn_store_get_name(i64)
 
 declare i64 @forge_fn_store_count()
 
-declare void @forge_dump_token_list(%ForgeString)
+declare void @forge_dump_token_listforge_allocforge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setForgeStringforge_set_args(%ForgeString)
 
-declare ptr @forge_alloc(i64)
+declare ptr @forge_allocforge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setForgeStringforge_set_args(i64)
 
-declare void @forge_memcpy(ptr, ptr, i64)
+declare void @forge_memcpyforge_map_newforge_map_hasforge_map_getforge_map_setForgeStringforge_set_args(ptr, ptr, i64)
 
-declare ptr @forge_map_new()
+declare ptr @forge_map_newforge_map_hasforge_map_getforge_map_setForgeStringforge_set_args()
 
-declare i8 @forge_map_has(ptr, %ForgeString)
+declare i8 @forge_map_hasforge_map_getforge_map_setForgeStringforge_set_args(ptr, %ForgeString)
 
-declare i64 @forge_map_get(ptr, %ForgeString)
+declare i64 @forge_map_getforge_map_setForgeStringforge_set_args(ptr, %ForgeString)
 
-declare void @forge_map_set(ptr, %ForgeString, i64)
+declare void @forge_map_setForgeStringforge_set_args(ptr, %ForgeString, i64)
 
 declare void @forge_set_args(i32, ptr)
-
-declare %ForgeString @forge_selfhost_process_args()
 
 declare i64 @forge_fn_is_str_return(%ForgeString)
 
@@ -299,10 +285,6 @@ declare ptr @forge_llvm_struct_create_named(ptr, ptr)
 
 declare ptr @forge_llvm_struct_set_body(ptr, ptr, ptr, ptr)
 
-declare ptr @forge_llvm_struct_get_type_at_index(ptr, ptr)
-
-declare ptr @forge_llvm_store_size_of_type(ptr, ptr)
-
 declare ptr @forge_llvm_struct_type(ptr, ptr, ptr)
 
 declare ptr @forge_llvm_get_type_by_name(ptr, ptr)
@@ -331,9 +313,9 @@ declare ptr @forge_llvm_get_basic_block_parent(ptr)
 
 declare ptr @forge_llvm_block_has_terminator(ptr)
 
-declare ptr @forge_llvm_get_entry_basic_block(ptr)
+declare ptr @forge_llvm_get_entry_basic_blockforge_llvm_get_first_instructionforge_llvm_create_builder(ptr)
 
-declare ptr @forge_llvm_get_first_instruction(ptr)
+declare ptr @forge_llvm_get_first_instructionforge_llvm_create_builder(ptr)
 
 declare ptr @forge_llvm_create_builder(ptr)
 
@@ -427,7 +409,7 @@ declare ptr @forge_llvm_value_array_get(ptr, ptr)
 
 declare void @forge_llvm_value_array_free(ptr)
 
-declare ptr @forge_llvm_global_get_value_type(ptr)
+declare ptr @forge_llvm_global_get_value_typeforge_llvm_get_allocated_type(ptr)
 
 declare ptr @forge_llvm_get_allocated_type(ptr)
 
@@ -439,19 +421,13 @@ declare ptr @forge_llvm_emit_object_file(ptr, ptr)
 
 declare i64 @forge_alloca_cache_clear()
 
-declare void @forge_alloca_cache_trace(i64)
-
-declare i64 @forge_enum_tag(i64, ptr)
-
 declare i64 @forge_alloca_cache_set(%ForgeString, ptr)
-
-declare void @forge_alloca_cache_set_fn(ptr)
 
 declare ptr @forge_alloca_cache_get(%ForgeString)
 
 declare void @forge_alloca_cache_set_type(%ForgeString, ptr)
 
-declare void @forge_alloca_cache_set_last_type(ptr)
+declare void @forge_alloca_cache_set_last_typeforge_alloca_cache_get_type(ptr)
 
 declare ptr @forge_alloca_cache_get_type(%ForgeString)
 
@@ -471,14 +447,14 @@ declare i64 @forge_var_counter_get()
 
 declare i64 @forge_var_counter_inc()
 
-declare i64 @forge_var_counter_reset(i64)
+declare i64 @"forge_var_counter_resetmainenEMPTYLISTList<int>intptr"(i64)
 
-declare ptr @forge_llvm_build_extract_value.1(ptr, ptr, i64, %ForgeString)
+declare ptr @forge_llvm_build_extract_valueforge_sh_indexofforge_sh_substrforge_sh_byteatforge_sh_lengthforgec_output()
 
-declare i64 @forge_sh_indexof.2(%ForgeString, %ForgeString)
+declare i64 @forge_sh_indexofforge_sh_substrforge_sh_byteatforge_sh_lengthforgec_output(%ForgeString, %ForgeString)
 
-declare %ForgeString @forge_sh_substr.3(%ForgeString, i64, i64)
+declare %ForgeString @forge_sh_substrforge_sh_byteatforge_sh_lengthforgec_output(%ForgeString, i64, i64)
 
-declare i64 @forge_sh_byteat.4(%ForgeString, i64)
+declare i64 @forge_sh_byteatforge_sh_lengthforgec_output(%ForgeString, i64)
 
-declare i64 @forge_sh_length.5(%ForgeString)
+declare i64 @forge_sh_lengthforgec_output(%ForgeString)
