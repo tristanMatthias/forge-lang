@@ -3678,6 +3678,13 @@ void forge_debug_enum(ForgeEnum e) {
 }
 void forge_debug_str(ForgeString s) {
     static int _ds_count = 0;
+    // Only trace names that look like index_of, find_nmod, or forge_string
+    if (s.ptr && s.len > 5 && s.len < 30) {
+        if (memcmp(s.ptr, "index", 5) == 0 || memcmp(s.ptr, "find", 4) == 0 ||
+            (s.len > 12 && memcmp(s.ptr, "forge_string", 12) == 0)) {
+            fprintf(stderr, "  [EC] '%.*s'\n", (int)s.len, s.ptr);
+        }
+    }
     if (_ds_count < 10) {
         if (s.ptr && s.len > 0 && s.len < 100) {
             fprintf(stderr, "  [str] len=%lld text='%.*s'\n", (long long)s.len, (int)s.len, (char*)s.ptr);

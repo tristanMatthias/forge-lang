@@ -1729,6 +1729,7 @@ impl Codegen {
         let ctag = forge_enum_tag(callee)
         match callee {
             .Ident(name, span) -> {
+                forge_debug_str(name)
                 if name == "println" || name == "print" || name == "eprintln" || name == "eprint" {
                     self.emit_println(args)
                     return tv_void()
