@@ -764,9 +764,13 @@ pub extern "C" fn forge_llvm_verify_module_to_file(m: LLVMPtr, path: *const c_ch
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if builder.is_null() {
+        eprintln!("WARNING: build_alloca with null builder, ty={:?} name={:?}", ty, name);
+        return std::ptr::null_mut();
+    }
     let ty = ensure_type(ty);
     if ty.is_null() {
-        eprintln!("WARNING: build_alloca with null type");
+        eprintln!("WARNING: build_alloca with null type, builder={:?}", builder);
         return std::ptr::null_mut();
     }
     let result = unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) };
