@@ -120,6 +120,20 @@ impl Parser {
         a != "" && a == b
     }
 
+    fn check_id(self, kid: int) -> bool {
+        if self.is_at_end() { return false }
+        self.peek().kind_id == kid
+    }
+
+    fn expect_id(self, kid: int) -> Token? {
+        if self.check_id(kid) {
+            self.advance()
+        } else {
+            self.error("expected token")
+            null
+        }
+    }
+
     fn expect(self, kind: TokenKind) -> Token? {
         if self.check(kind) {
             self.advance()
@@ -245,13 +259,34 @@ impl Parser {
 
         // Use kind_id integer dispatch (immune to enum tag corruption in Stage 2)
         let kid = tok.kind_id
-        if kid == 20 { let r = parse_let(self); self.sync_pos(); return r }
-        if kid == 21 { let r = parse_mut(self); self.sync_pos(); return r }
-        if kid == 22 { let r = parse_const(self); self.sync_pos(); return r }
-        if kid == 23 { let r = parse_fn(self); self.sync_pos(); return r }
-        if kid == 39 { let r = parse_export(self); self.sync_pos(); return r }
-        if kid == 30 { let r = parse_while(self); self.sync_pos(); return r }
-        if kid == 28 { let r = parse_for(self); self.sync_pos(); return r }
+        if kid == 20 {  let r = parse_let(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 21 {  let r = parse_mut(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 22 {  let r = parse_const(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 23 {  let r = parse_fn(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 39 {  let r = parse_export(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 30 {  let r = parse_while(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 28 {  let r = parse_for(self)
+            self.sync_pos()
+            return r
+        }
         if kid == 25 {
                 if !CG_ACTIVE {
                     // Parse if-statement as Statement.If (avoids PENDING_IF forward refs)
@@ -283,7 +318,7 @@ impl Parser {
                 // CG_ACTIVE: fall through to expression parser (inline emit)
                 return self.parse_expr_or_assign()
             }
-            .Match -> {
+        if kid == 27 {
                 if !CG_ACTIVE {
                     // Parse match-statement as Statement.Match (avoids PENDING_MATCH forward refs)
                     let start = self.advance().span // consume 'match'
@@ -394,9 +429,18 @@ impl Parser {
                 return self.parse_expr_or_assign()
             }
         // kind_id 35 = type, 34 = enum, 43 = impl, 36 = use, 37 = mod, 42 = trait
-        if kid == 35 { let r = parse_type_decl(self); self.sync_pos(); return r }
-        if kid == 34 { let r = parse_enum_decl(self); self.sync_pos(); return r }
-        if kid == 43 { let r = parse_impl_block(self); self.sync_pos(); return r }
+        if kid == 35 {  let r = parse_type_decl(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 34 {  let r = parse_enum_decl(self)
+            self.sync_pos()
+            return r
+        }
+        if kid == 43 {  let r = parse_impl_block(self)
+            self.sync_pos()
+            return r
+        }
         if kid == 36 {
             self.advance()
             while !self.is_at_end() && !self.check_id(120) { self.advance() }

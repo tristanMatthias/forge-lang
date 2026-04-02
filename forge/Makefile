@@ -1,68 +1,147 @@
-LLVM_PREFIX := /opt/homebrew/opt/llvm@18
-LLC := $(LLVM_PREFIX)/bin/llc
-LLVM_CONFIG := $(LLVM_PREFIX)/bin/llvm-config
-LLVM_LIBS := $(shell $(LLVM_CONFIG) --ldflags --libs core analysis bitwriter)
+# ═══════════════════════════════════════════════════════════════════
+# Forge Self-Hosting Build System
+# ═══════════════════════════════════════════════════════════════════
+#
+# Pipeline:
+#   1. cargo        → target/release/forgec       (Rust compiler)
+#   2. cargo        → libforge_llvm.a             (LLVM bindings)
+#   3. cc           → build/runtime.o             (C runtime)
+#   4. forgec build → build/mini                  (mini compiler binary)
+#   5. mini build   → build/stage1.ll             (Stage 1 IR)
+#   6. llc + cc     → build/stage1                (Stage 1 binary)
+#   7. stage1 build → build/stage2.ll             (Stage 2 IR)
+#   8. audit        → score                       (Stage 2 quality)
+#
+# Usage:
+#   make runtime     — compile runtime.o
+#   make mini        — build mini compiler binary
+#   make stage1-ir   — mini compiles source → Stage 1 IR
+#   make stage1      — link Stage 1 binary
+#   make stage2-ir   — Stage 1 compiles source → Stage 2 IR
+#   make audit       — audit Stage 2 IR quality
+#   make clean       — remove all build artifacts
+#
+# ═══════════════════════════════════════════════════════════════════
+
+LLVM_PREFIX  := /opt/homebrew/opt/llvm@18
+LLC          := $(LLVM_PREFIX)/bin/llc
+LLVM_CONFIG  := $(LLVM_PREFIX)/bin/llvm-config
+LLVM_LIBS    := $(shell $(LLVM_CONFIG) --ldflags --libs core analysis bitwriter)
+FORGEC       := LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) ./target/release/forgec
 STD_LLVM_LIB := packages/std-llvm/target/release/libforge_llvm.a
-RUNTIME := stdlib/runtime.c
-SOURCE := packages/forgec/src/main.fg
-BOOTSTRAP_IR := bootstrap.ll
+RUNTIME_SRC  := stdlib/runtime.c
+SOURCE       := packages/forgec/src/main.fg
+MINI_MAIN    := packages/forgec/src/mini/main.fg
 
-.PHONY: all clean build verify test
+BUILD        := build
+RUNTIME_O    := $(BUILD)/runtime.o
+MINI_BIN     := $(BUILD)/mini
+STAGE1_LL    := $(BUILD)/stage1.ll
+STAGE1_O     := $(BUILD)/stage1.o
+STAGE1_BIN   := $(BUILD)/stage1
+STAGE2_LL    := $(BUILD)/stage2.ll
 
-all: build
+# Link flags shared by stage1 and stage2
+LINK_FLAGS   := -lm -Wl,-stack_size,0x10000000 $(STD_LLVM_LIB) \
+                $(LLVM_LIBS) -lstdc++ -lz -lcurses
 
-# Build Rust std-llvm library
+.PHONY: all clean runtime mini stage1-ir stage1 stage2-ir audit test-mini help
+
+all: stage1
+help:
+	@echo "Targets: runtime mini stage1-ir stage1 stage2-ir audit clean"
+
+# ─── Prerequisites ────────────────────────────────────────────────
+
+# Rust compiler (forgec binary)
+target/release/forgec: $(shell find packages/forgec-rust -name '*.rs' 2>/dev/null) Cargo.toml
+	LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) cargo build --release
+
+# LLVM bindings library
 $(STD_LLVM_LIB): packages/std-llvm/src/lib.rs packages/std-llvm/Cargo.toml
 	cd packages/std-llvm && LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) cargo build --release
 
-# Build compiler from bootstrap IR
-build: $(STD_LLVM_LIB)
-	@mkdir -p build
-	@echo "=== Building from bootstrap.ll ==="
-	$(LLC) -O2 -filetype=obj $(BOOTSTRAP_IR) -o build/bootstrap.o
-	cc -c -O0 $(RUNTIME) -o build/runtime.o
-	cc -o build/forgec build/bootstrap.o build/runtime.o -lm \
-		-Wl,-stack_size,0x10000000 $(STD_LLVM_LIB) $(LLVM_LIBS) \
-		-lstdc++ -lz -lcurses -lm
-	@echo ""
-	@echo "  Built: build/forgec"
-	@echo "  $$(grep -c '^define' $(BOOTSTRAP_IR)) functions"
+# ─── Step 1: Runtime ─────────────────────────────────────────────
 
-# Verify: compiler produces identical IR (fixed point)
-verify: build
-	@echo "=== Verify fixed point ==="
-	./build/forgec build $(SOURCE)
-	@if [ -f output.ll ]; then \
-		if diff -q $(BOOTSTRAP_IR) output.ll > /dev/null 2>&1; then \
-			echo "FIXED POINT: bootstrap.ll = output.ll"; \
-		else \
-			echo "Diff: $$(diff $(BOOTSTRAP_IR) output.ll | wc -l) lines differ"; \
-		fi; \
-		rm -f output.ll; \
+$(BUILD):
+	@mkdir -p $(BUILD)
+
+runtime: $(RUNTIME_O)
+$(RUNTIME_O): $(RUNTIME_SRC) | $(BUILD)
+	@echo "=== Compiling runtime ==="
+	cc -c -O0 $(RUNTIME_SRC) -o $(RUNTIME_O)
+
+# ─── Step 2: Mini Compiler ───────────────────────────────────────
+
+mini: $(MINI_BIN)
+$(MINI_BIN): target/release/forgec $(STD_LLVM_LIB) $(RUNTIME_O) $(shell find packages/forgec/src/mini -name '*.fg') | $(BUILD)
+	@echo "=== Building mini compiler ==="
+	$(FORGEC) build $(MINI_MAIN) --dev -o $(MINI_BIN)
+	@echo "  Built: $(MINI_BIN)"
+
+# ─── Step 3: Stage 1 IR ─────────────────────────────────────────
+
+stage1-ir: $(STAGE1_LL)
+$(STAGE1_LL): $(MINI_BIN) $(shell find packages/forgec/src -name '*.fg' ! -path '*/mini/*') | $(BUILD)
+	@echo "=== Mini compiling source → Stage 1 IR ==="
+	-$(MINI_BIN) build $(SOURCE) 2>&1 | tee $(BUILD)/mini.log; true
+	@if [ -f /tmp/mini_output.ll ]; then \
+		LC_ALL=C sed -i '' 's/ptr 0,/ptr null,/g; s/ptr 0$$/ptr null/' /tmp/mini_output.ll; \
+		mv /tmp/mini_output.ll $(STAGE1_LL); \
+		echo "  Stage 1 IR: $$(grep -c '^define' $(STAGE1_LL)) functions, $$(wc -l < $(STAGE1_LL)) lines"; \
 	else \
-		echo "(Stage 2 did not produce output.ll — runtime MemberAccess bugs)"; \
-		echo "Fixed point was verified via: stage1 → stage2.ll == stage3.ll"; \
+		echo "ERROR: mini did not produce /tmp/mini_output.ll"; \
+		exit 1; \
 	fi
 
-# Test: compile and run a hello world
-test: build
-	@echo 'fn main() { println("hello from self-hosted Forge!") }' > /tmp/forge_test.fg
-	./build/forgec build /tmp/forge_test.fg
+# ─── Step 4: Stage 1 Binary ─────────────────────────────────────
+
+stage1: $(STAGE1_BIN)
+$(STAGE1_BIN): $(STAGE1_LL) $(RUNTIME_O) $(STD_LLVM_LIB)
+	@echo "=== Compiling Stage 1 binary ==="
+	$(LLC) -O2 -filetype=obj $(STAGE1_LL) -o $(STAGE1_O)
+	cc -o $(STAGE1_BIN) $(STAGE1_O) $(RUNTIME_O) $(LINK_FLAGS)
+	@echo "  Built: $(STAGE1_BIN)"
+	@$(STAGE1_BIN) 2>&1 | head -1
+
+# ─── Step 5: Stage 2 IR ─────────────────────────────────────────
+
+stage2-ir: $(STAGE2_LL)
+$(STAGE2_LL): $(STAGE1_BIN)
+	@echo "=== Stage 1 compiling source → Stage 2 IR ==="
+	$(STAGE1_BIN) build $(SOURCE)
 	@if [ -f output.ll ]; then \
-		$(LLC) -O2 -filetype=obj output.ll -o /tmp/forge_test.o && \
-		cc -c -O0 $(RUNTIME) -o /tmp/forge_test_rt.o && \
-		cc -o /tmp/forge_test /tmp/forge_test.o /tmp/forge_test_rt.o -lm && \
-		/tmp/forge_test && \
-		rm -f output.ll; \
+		mv output.ll $(STAGE2_LL); \
+		echo "  Stage 2 IR: $$(grep -c '^define' $(STAGE2_LL)) functions"; \
+	else \
+		echo "ERROR: stage1 did not produce output.ll"; \
+		exit 1; \
 	fi
 
-# Update bootstrap.ll after source changes (requires working forgec)
-update-bootstrap: build
-	./build/forgec build $(SOURCE)
-	@if [ -f output.ll ]; then \
-		cp output.ll $(BOOTSTRAP_IR); \
-		echo "Updated $(BOOTSTRAP_IR)"; \
-	else echo "Cannot update — forgec did not produce output.ll"; fi
+# ─── Audit ───────────────────────────────────────────────────────
+
+audit: $(STAGE2_LL)
+	@echo "=== Auditing Stage 2 IR ==="
+	bash scripts/audit_stage2.sh $(STAGE2_LL)
+
+# ─── Test: mini compiles hello world ─────────────────────────────
+
+test-mini: $(MINI_BIN) $(RUNTIME_O)
+	@echo "=== Testing mini on hello world ==="
+	@echo 'fn main() { println("hello from mini!") }' > /tmp/forge_mini_test.fg
+	$(MINI_BIN) build /tmp/forge_mini_test.fg
+	@if [ -f /tmp/mini_output.ll ]; then \
+		$(LLC) -O2 -filetype=obj /tmp/mini_output.ll -o /tmp/forge_mini_test.o && \
+		cc -o /tmp/forge_mini_test /tmp/forge_mini_test.o $(RUNTIME_O) -lm && \
+		/tmp/forge_mini_test && \
+		rm -f /tmp/forge_mini_test.fg /tmp/forge_mini_test.o /tmp/forge_mini_test /tmp/mini_output.ll; \
+		echo "  PASS"; \
+	else \
+		echo "  FAIL: no IR produced"; \
+		exit 1; \
+	fi
+
+# ─── Clean ───────────────────────────────────────────────────────
 
 clean:
-	rm -rf build/ output.ll a.out
+	rm -rf $(BUILD) output.ll a.out /tmp/mini_output.ll

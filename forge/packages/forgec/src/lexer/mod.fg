@@ -268,6 +268,7 @@ impl Lexer {
             return Token {
                 kind: TokenKind.Newline,
                 span: self.make_span(start_pos, start_line, start_col),
+                kind_id: 120,
             }
         }
 
@@ -831,20 +832,20 @@ impl Lexer {
     fn lex_operator(self, start_pos: int, start_line: int, start_col: int) -> Token {
         let ch = self.advance()
 
-        // Single-character tokens
-        if self.peek_byte() == 40 { return Token { kind: TokenKind.LParen, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 41 { return Token { kind: TokenKind.RParen, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 123 { return Token { kind: TokenKind.LBrace, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 125 { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 91 { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 93 { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 44 { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 58 { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 59 { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 64 { return Token { kind: TokenKind.At, span: self.make_span(start_pos, start_line, start_col) } }
+        // Single-character tokens (kind_id values match parser check_id expectations)
+        if self.peek_byte() == 40 { return Token { kind: TokenKind.LParen, span: self.make_span(start_pos, start_line, start_col), kind_id: 100 } }
+        if self.peek_byte() == 41 { return Token { kind: TokenKind.RParen, span: self.make_span(start_pos, start_line, start_col), kind_id: 101 } }
+        if self.peek_byte() == 123 { return Token { kind: TokenKind.LBrace, span: self.make_span(start_pos, start_line, start_col), kind_id: 102 } }
+        if self.peek_byte() == 125 { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col), kind_id: 103 } }
+        if self.peek_byte() == 91 { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col), kind_id: 104 } }
+        if self.peek_byte() == 93 { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col), kind_id: 105 } }
+        if self.peek_byte() == 44 { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col), kind_id: 106 } }
+        if self.peek_byte() == 58 { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col), kind_id: 107 } }
+        if self.peek_byte() == 59 { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col), kind_id: 108 } }
+        if self.peek_byte() == 64 { return Token { kind: TokenKind.At, span: self.make_span(start_pos, start_line, start_col), kind_id: 119 } }
         if self.peek_byte() == 35 { return Token { kind: TokenKind.Hash, span: self.make_span(start_pos, start_line, start_col), kind_id: 118 } }
-        if self.peek_byte() == 43 { return Token { kind: TokenKind.Plus, span: self.make_span(start_pos, start_line, start_col) } }
-        if self.peek_byte() == 42 { return Token { kind: TokenKind.Star, span: self.make_span(start_pos, start_line, start_col) } }
+        if self.peek_byte() == 43 { return Token { kind: TokenKind.Plus, span: self.make_span(start_pos, start_line, start_col), kind_id: 70 } }
+        if self.peek_byte() == 42 { return Token { kind: TokenKind.Star, span: self.make_span(start_pos, start_line, start_col), kind_id: 72 } }
         if self.peek_byte() == 37 { return Token { kind: TokenKind.Percent, span: self.make_span(start_pos, start_line, start_col) } }
         if self.peek_byte() == 94 { return Token { kind: TokenKind.Caret, span: self.make_span(start_pos, start_line, start_col) } }
         if self.peek_byte() == 126 { return Token { kind: TokenKind.Tilde, span: self.make_span(start_pos, start_line, start_col), kind_id: 77 } }
@@ -856,7 +857,7 @@ impl Lexer {
         if self.peek_byte() == 45 {
             if next == ">" {
                 self.advance()
-                return Token { kind: TokenKind.Arrow, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.Arrow, span: self.make_span(start_pos, start_line, start_col), kind_id: 109 }
             }
             return Token { kind: TokenKind.Minus, span: self.make_span(start_pos, start_line, start_col), kind_id: 71 }
         }
@@ -959,7 +960,7 @@ impl Lexer {
                 }
                 return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col), kind_id: 110 }
         }
 
         // /

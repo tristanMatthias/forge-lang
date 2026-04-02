@@ -731,25 +731,40 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         return r2
     }
     LAST_IS_STR = 0
-    // Integer operations
+    // Coerce ptr operands to i64 for integer arithmetic/comparison
+    mut ilhs = lhs
+    mut irhs = rhs
+    let lpty = reg_get_type(lhs)
+    let rpty = reg_get_type(rhs)
+    if lpty == "ptr" {
+        let conv = new_reg()
+        ir_line(conv + " = ptrtoint ptr " + lhs + " to i64")
+        ilhs = conv
+    }
+    if rpty == "ptr" {
+        let conv = new_reg()
+        ir_line(conv + " = ptrtoint ptr " + rhs + " to i64")
+        irhs = conv
+    }
+    // Integer operations (use ilhs/irhs which are ptr-coerced)
     if op == "+" {
-        ir_line(r + " = add i64 " + lhs + ", " + rhs)
+        ir_line(r + " = add i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "-" {
-        ir_line(r + " = sub i64 " + lhs + ", " + rhs)
+        ir_line(r + " = sub i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "*" {
-        ir_line(r + " = mul i64 " + lhs + ", " + rhs)
+        ir_line(r + " = mul i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "/" {
-        ir_line(r + " = sdiv i64 " + lhs + ", " + rhs)
+        ir_line(r + " = sdiv i64 " + ilhs + ", " + irhs)
         return r
     }
     if op == "%" {
-        ir_line(r + " = srem i64 " + lhs + ", " + rhs)
+        ir_line(r + " = srem i64 " + ilhs + ", " + irhs)
         return r
     }
     // Comparisons
@@ -761,9 +776,9 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
     if op == ">=" { pred = "sge" }
     if op == "&&" {
         let l1 = new_reg()
-        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+        ir_line(l1 + " = trunc i64 " + ilhs + " to i1")
         let r1 = new_reg()
-        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+        ir_line(r1 + " = trunc i64 " + irhs + " to i1")
         ir_line(r + " = and i1 " + l1 + ", " + r1)
         let r2 = new_reg()
         ir_line(r2 + " = zext i1 " + r + " to i64")
@@ -771,15 +786,15 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
     }
     if op == "||" {
         let l1 = new_reg()
-        ir_line(l1 + " = trunc i64 " + lhs + " to i1")
+        ir_line(l1 + " = trunc i64 " + ilhs + " to i1")
         let r1 = new_reg()
-        ir_line(r1 + " = trunc i64 " + rhs + " to i1")
+        ir_line(r1 + " = trunc i64 " + irhs + " to i1")
         ir_line(r + " = or i1 " + l1 + ", " + r1)
         let r2 = new_reg()
         ir_line(r2 + " = zext i1 " + r + " to i64")
         return r2
     }
-    ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
+    ir_line(r + " = icmp " + pred + " i64 " + ilhs + ", " + irhs)
     let r2 = new_reg()
     ir_line(r2 + " = zext i1 " + r + " to i64")
     r2
@@ -1296,8 +1311,14 @@ fn gen_call(e: Expr) -> string {
             let elem = gen_expr_child(e, 1)
             mut ety = "i64"
             if LAST_IS_STR == 1 { ety = "%ForgeString" }
+            if LAST_IS_PTR == 1 { ety = "ptr" }
             if LAST_STRUCT_TYPE != "" { ety = "%" + LAST_STRUCT_TYPE }
             if LAST_ENUM_TYPE != "" { ety = "%" + LAST_ENUM_TYPE }
+            // Also check register type for ptr values
+            if ety == "i64" {
+                let ert = reg_get_type(elem)
+                if ert == "ptr" { ety = "ptr" }
+            }
             return gen_list_push(obj, elem, ety, saved_elem)
         }
     }
@@ -1396,25 +1417,7 @@ fn gen_call(e: Expr) -> string {
     }
 
     // Regular function call (direct)
-    // For desugared calls, name might be the method name, not the full function name.
-    // Check callee ident for the real function name.
-    mut real_name = name
-    if e.children.length > 0 {
-        let callee: Expr = e.children[0]
-        if is_ident_expr(callee) { real_name = callee.str_val }
-    }
-    mut call_ret = find_fn_ret(real_name)
-    // Override return type for known ForgeString-returning functions
-    if real_name == "forge_string_substring" { call_ret = "%ForgeString" }
-    if real_name == "forge_string_char_at" { call_ret = "%ForgeString" }
-    if real_name == "forge_string_concat" { call_ret = "%ForgeString" }
-    if real_name == "forge_string_new" { call_ret = "%ForgeString" }
-    if real_name == "forge_sh_substr" { call_ret = "%ForgeString" }
-    if real_name == "forge_int_to_string" { call_ret = "%ForgeString" }
-    if real_name == "forge_selfhost_get_arg" { call_ret = "%ForgeString" }
-    if real_name == "forge_selfhost_fs_read" { call_ret = "%ForgeString" }
-    if real_name == "forge_read_file" { call_ret = "%ForgeString" }
-    if real_name == "forge_float_to_string" { call_ret = "%ForgeString" }
+    mut call_ret = find_fn_ret(name)
     mut arg_str = ""
     mut i = 0
     while i < e.children.length {
@@ -1605,7 +1608,10 @@ fn codegen_let(s: Stmt) -> int {
     }
     // Final check: only override if register type is clearly more accurate
     let final_rt = reg_get_type(final_val)
-    if final_rt == "ptr" && ty == "%ForgeString" { ty = "ptr"; LAST_IS_PTR = 1 }
+    if final_rt == "ptr" && ty == "%ForgeString" {
+        ty = "ptr"
+        LAST_IS_PTR = 1
+    }
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {
@@ -1930,7 +1936,7 @@ fn codegen_assign(s: Stmt) -> int {
             let var_idx = find_var(target.str_val)
             if var_idx >= 0 {
                 let store_ty = VAR_TYPES[var_idx]
-                let load_ty = get_load_type(store_ty)
+                mut load_ty = get_load_type(store_ty)
                 let rt = reg_get_type(val)
                 // Handle type conversions
                 mut final_val = val
@@ -2602,7 +2608,11 @@ fn compile(source: string) -> string {
             skip_nl()
             let impl_name = advance().text
             skip_nl()
-            if check("for") { advance(); skip_nl(); advance() }
+            if check("for") {
+                advance()
+                skip_nl()
+                advance()
+            }
             skip_nl()
             while !check("{") && POS < TOKENS.length { advance() }
             advance() // consume {
@@ -2707,6 +2717,18 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_eprintln_string(%ForgeString)")
     ir_raw("declare %ForgeString @forge_string_char_at(%ForgeString, i64)")
     ir_raw("declare i64 @forge_keyword_from_range(ptr, i64, i64, i64)")
+    ir_raw("declare i64 @forge_sh_byteat(%ForgeString, i64)")
+    ir_raw("declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)")
+    FN_NAMES = FN_NAMES.push("forge_sh_substr")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int,int")
+    ir_raw("declare %ForgeString @forge_selfhost_get_arg(i64)")
+    FN_NAMES = FN_NAMES.push("forge_selfhost_get_arg")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
     ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
     // Register ForgeString-returning functions in FN_RETTYPES so gen_call uses correct return type
     FN_NAMES = FN_NAMES.push("forge_string_substring")

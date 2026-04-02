@@ -6,6 +6,7 @@
 mut TOKENS: List<Tok> = []
 mut POS: int = 0
 mut IR: List<string> = []
+mut IR_LINE_COUNT: int = 0
 mut REG_N: int = 0
 mut LBL_N: int = 0
 mut STR_N: int = 0
@@ -386,7 +387,6 @@ fn enum_llvm_type_str(enum_idx: int) -> string {
     // Extraction: load ptr → GEP → load field
     "{ i8, ptr }"
 }
-}
 
 // Convert stored field type to LLVM load type
 fn type_to_llvm_field(fty: string) -> string {
@@ -405,6 +405,7 @@ fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "string" { return "%ForgeString" }
     if ty_name == "float" { return "double" }
     if ty_name == "List" { return "{ ptr, i64 }" }
+    if ty_name == "ptr" { return "ptr" }
     if ty_name == "fn" { return "ptr" }
     if ty_name == "Map" { return "ptr" }
     // Check if it's a known struct
@@ -539,7 +540,10 @@ fn parse_type_decl_top() {
             }
         }
         mut is_nullable = false
-        if check("?") { advance(); is_nullable = true }
+        if check("?") {
+            advance()
+            is_nullable = true
+        }
         mut ftype = type_to_llvm(ftype_name)
         // For List<T> fields, store as "list_ELEMTYPE" for element tracking
         if ftype_name == "List" && ftype_generic != "" {
@@ -604,11 +608,9 @@ fn skip_nl() {
 }
 
 fn ir_line(s: string) {
-    // Fix ptr 0 → ptr null globally
-    mut fixed = s
-    if s.contains("ptr 0,") { fixed = s.substring(0, s.index_of("ptr 0,")) + "ptr null," + s.substring(s.index_of("ptr 0,") + 6, s.length) }
-    if fixed.length > 6 && fixed.substring(fixed.length - 5, fixed.length) == "ptr 0" { fixed = fixed.substring(0, fixed.length - 1) + "null" }
-    IR = IR.push("  " + fixed)
+    // Stream to file (avoids O(n²) list push)
+    forge_ir_line("  " + s)
+    IR_LINE_COUNT = IR_LINE_COUNT + 1
     // Auto-track register types from emitted IR
     if s.length > 6 && s.substring(0, 2) == "%r" {
         let eq_pos = s.index_of(" = ")
@@ -666,7 +668,8 @@ fn ir_line(s: string) {
 }
 
 fn ir_raw(s: string) {
-    IR = IR.push(s)
+    forge_ir_line(s)
+    IR_LINE_COUNT = IR_LINE_COUNT + 1
 }
 
 fn new_reg() -> string {
@@ -890,7 +893,6 @@ fn scan_fn_sig() {
     while !check("{") && POS < TOKENS.length { advance() }
     skip_block()
     // Register
-    
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)

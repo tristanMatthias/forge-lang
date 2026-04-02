@@ -25,10 +25,65 @@ Everything for a feature lives in its directory. Don't grep — go to the direct
 
 ## Build
 
+### Rust Compiler (for features, tests, non-self-hosting work)
 ```bash
 cd forge/
 LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 cargo build --release
 ```
+
+### Self-Hosting Build Pipeline (Makefile)
+
+**ALL self-hosting builds MUST use the Makefile. No ad-hoc commands.**
+
+```bash
+cd forge/
+
+# Build everything up to Stage 1 binary:
+make stage1
+
+# Individual steps:
+make runtime      # compile stdlib/runtime.c → build/runtime.o
+make mini         # Rust compiler builds mini → build/mini
+make stage1-ir    # mini compiles source → build/stage1.ll
+make stage1       # llc + link → build/stage1
+make stage2-ir    # Stage 1 compiles source → build/stage2.ll
+make audit        # audit Stage 2 IR quality (score)
+
+# Testing:
+make test-mini    # mini compiles + runs hello world
+
+# Clean:
+make clean        # remove build/ and artifacts
+```
+
+#### Pipeline Explained
+```
+Rust compiler (target/release/forgec)
+  ↓ builds
+Mini compiler (build/mini) — text-based IR generator
+  ↓ compiles packages/forgec/src/main.fg
+Stage 1 IR (build/stage1.ll) — LLVM IR for the self-hosted compiler
+  ↓ llc + cc
+Stage 1 binary (build/stage1) — self-hosted compiler, uses LLVM C API
+  ↓ compiles packages/forgec/src/main.fg
+Stage 2 IR (build/stage2.ll) — LLVM IR produced by Stage 1
+  ↓ audit
+Score (lower is better)
+```
+
+#### Current Status (April 2, 2026)
+- `make mini` — WORKS (builds mini binary)
+- `make test-mini` — WORKS (mini compiles hello world)
+- `make stage1-ir` — PARTIAL (mini produces 390 fns / 48K lines, but llc fails on ForgeString return type mismatch for `forge_string_substring`)
+- `make stage1` — BLOCKED by stage1-ir llc error
+- `make stage2-ir` — BLOCKED by stage1
+
+#### Key Constraints
+- The mini's lexer MUST use C-side token accumulation (`forge_tok_clear/push/to_list`) — the Forge list `.push()` is O(n²) and hangs at 60K+ tokens
+- The Rust compiler has a phi domination bug for ForgeString-returning functions in if-else chains — bind return values to `let _x = ...` to work around
+- The mini source (mini/*.fg) MUST NOT use semicolons as statement separators — Forge uses newlines
+- The mini MUST have `use @std.process` and `use @std.fs` in main.fg
+- NEVER run self-hosting build commands directly — always use `make <target>`
 
 ## CLI Commands
 

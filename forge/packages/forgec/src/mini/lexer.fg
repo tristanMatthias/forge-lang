@@ -230,11 +230,14 @@ fn tokenize(source: string) -> List<Tok> {
     LEX_SRC = source
     LEX_POS = 0
     LEX_LINE = 1
-    mut tokens: List<Tok> = []
+    // Use C-side token accumulator (amortized O(1) push instead of O(n) list copy)
+    forge_tok_clear()
     while true {
         let tok: Tok = lex_next()
-        tokens = tokens.push(tok)
+        forge_tok_push(tok.kind, tok.text, tok.line)
         if tok.kind == 0 { break }
     }
-    tokens
+    let count = forge_tok_count()
+    eprintln("  " + string(count) + " tokens")
+    forge_tok_to_list()
 }
