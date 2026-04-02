@@ -10,12 +10,11 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
-use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES, PARSED_PARAM_NAMES}
+use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
 use checker.TypeChecker
 use codegen.Codegen
 use features.while_loops.PARSE_END_POS
 use features.functions.{store_fn_source, store_fn_param_count, store_fn_param_name, store_fn_param_type, store_fn_return_type}
-use features.variables.{IN_FUNCTION_BODY}
 
 // ─── Side Table ─────────────────────────────────
 
@@ -60,7 +59,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
 
     // Check for "impl Trait for Type"
     mut type_name = first_name
-    if p.check_id(28) {  // For
+    if p.check(TokenKind.For) {
         p.advance()
         let tn = p.expect_ident()
         if tn == "" {
@@ -71,17 +70,17 @@ export fn parse_impl_block(p: Parser) -> Statement? {
     }
 
     // Skip type params if present
-    if p.check_id(78) {  // Lt
+    if p.check(TokenKind.Lt) {
         p.parse_type_params()
     }
 
-    if p.expect_id(102) == null { return null }  // LBrace
+    if p.expect(TokenKind.LBrace) == null { return null }
     p.skip_newlines()
 
     // Parse each method and store as a function
-    while !p.check_id(103) && !p.is_at_end() {  // RBrace
+    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
         p.skip_newlines()
-        if p.check_id(23) {  // Fn
+        if p.check(TokenKind.Fn) {
             // Parse method as a function, storing with mangled name
             parse_impl_method_as_fn(p, type_name)
             // Sync position (parse_impl_method_as_fn receives p by value)
@@ -89,13 +88,13 @@ export fn parse_impl_block(p: Parser) -> Statement? {
                 p.pos = PARSE_END_POS
                 PARSE_END_POS = -1
             }
-        } else if !p.check_id(103) {  // RBrace
+        } else if !p.check(TokenKind.RBrace) {
             p.advance() // skip unexpected tokens
         }
         p.skip_newlines()
     }
 
-    p.expect_id(103)  // RBrace
+    p.expect(TokenKind.RBrace)
 
     PARSE_END_POS = p.pos
     let id = next_node_id()
@@ -115,10 +114,10 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let fn_name = "${type_name}__${method_name}"
 
     PARSED_PARAM_TYPES = []
-    let params: List<Param> = p.parse_params()
+    let params = p.parse_params()
 
     mut return_type_name = ""
-    if p.check_id(86) {  // Arrow
+    if p.check(TokenKind.Arrow) {
         p.advance()
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
@@ -129,14 +128,11 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
 
     // Capture body source text (same as regular functions)
     let block_open_span = p.peek().span
-    IN_FUNCTION_BODY = 1
     let body = p.parse_block()
-    IN_FUNCTION_BODY = 0
-    // Get close position directly (avoid if-assignment bug)
-    let close_tok_idx = p.pos - 1
-    let block_close_end = p.tokens[close_tok_idx].span.end
+    mut block_close_end = block_open_span.end
+    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
     mut body_src = ""
-    if p.source.length > 0 {
+    if p.source.length > 0 && block_close_end > block_open_span.start {
         body_src = p.source.substring(block_open_span.start, block_close_end + 1)
     }
 
@@ -147,36 +143,21 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     // Count non-self params and store param info
     mut param_count = 0
     mut pi = 0
-    // For impl methods, first param is always "self" with type = type_name
-    // Use C-side registry directly (immune to mini codegen type bugs)
-    if params.length > 0 {
-        forge_param_name_add("self")
-        forge_param_type_add(type_name)
-        FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push("self")
-        FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(type_name)
-        param_count = 1
-    }
-    // Remaining params (non-self) — use PARSED_PARAM_NAMES for actual names
-    pi = 1
-    while pi < params.length {
-        if pi < PARSED_PARAM_NAMES.length {
-            forge_param_name_add(PARSED_PARAM_NAMES[pi])
+    for param in params {
+        if param.name == "self" {
+            // self param is the type being impl'd — treated as struct type
+            store_fn_param_name("self")
+            store_fn_param_type(type_name)
+            param_count = param_count + 1
         } else {
-            forge_param_name_add("p")
+            store_fn_param_name(param.name)
+            if pi < PARSED_PARAM_TYPES.length {
+                store_fn_param_type(PARSED_PARAM_TYPES[pi])
+            } else {
+                store_fn_param_type("int")
+            }
+            param_count = param_count + 1
         }
-        if pi < PARSED_PARAM_TYPES.length {
-            forge_param_type_add(PARSED_PARAM_TYPES[pi])
-            FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push(PARSED_PARAM_TYPES[pi])
-        } else {
-            forge_param_type_add("int")
-            FN_ALL_PARAM_TYPES = FN_ALL_PARAM_TYPES.push("int")
-        }
-        if pi < PARSED_PARAM_NAMES.length {
-            FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push(PARSED_PARAM_NAMES[pi])
-        } else {
-            FN_ALL_PARAM_NAMES = FN_ALL_PARAM_NAMES.push("p")
-        }
-        param_count = param_count + 1
         pi = pi + 1
     }
     store_fn_param_count(param_count)
@@ -201,11 +182,11 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
         return null
     }
 
-    let params: List<Param> = p.parse_params()
+    let params = p.parse_params()
     if params == null { return null }
 
     mut return_type: TypeExpr? = null
-    if p.check_id(86) {  // Arrow
+    if p.check(.Arrow) {
         p.advance()
         return_type = p.parse_type_expr()
     }

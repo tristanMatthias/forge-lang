@@ -52,14 +52,14 @@ fn parse_trait(p: Parser) -> Statement? {
         return null
     }
 
-    if p.expect_id(102) == null { return null }  // LBrace
+    if p.expect(.LBrace) == null { return null }
     p.skip_newlines()
 
     mut methods: List<TraitMethod> = []
 
-    while !p.check_id(103) && !p.is_at_end() {  // RBrace
+    while !p.check(.RBrace) && !p.is_at_end() {
         p.skip_newlines()
-        if p.check_id(23) {  // Fn
+        if p.check(.Fn) {
             let method = parse_trait_method(p)
             if method != null {
                 methods = methods.push(method!)
@@ -70,7 +70,7 @@ fn parse_trait(p: Parser) -> Statement? {
         p.skip_newlines()
     }
 
-    if p.expect_id(103) == null { return null }  // RBrace
+    if p.expect(.RBrace) == null { return null }
 
     let id = next_node_id()
     TRAIT_DECLS["${id}"] = TraitDeclData {
@@ -86,30 +86,30 @@ fn parse_trait_method(p: Parser) -> TraitMethod? {
     let name = p.expect_ident()
     if name == null { return null }
 
-    if p.expect_id(100) == null { return null }  // LParen
+    if p.expect(.LParen) == null { return null }
 
     mut params: List<TraitMethodParam> = []
-    while !p.check_id(101) && !p.is_at_end() {  // RParen
+    while !p.check(.RParen) && !p.is_at_end() {
         p.skip_newlines()
         let param_name = p.expect_ident()
         if param_name == null { break }
 
         let is_self = param_name! == "self"
         mut type_ann: TypeExpr? = null
-        if p.check_id(112) {  // Colon
+        if p.check(.Colon) {
             p.advance()
             type_ann = p.parse_type_expr()
         }
 
         params = params.push(TraitMethodParam { name: param_name!, type_ann, is_self })
 
-        if p.check_id(110) { p.advance() }  // Comma
+        if p.check(.Comma) { p.advance() }
     }
-    if p.expect_id(101) == null { return null }  // RParen
+    if p.expect(.RParen) == null { return null }
 
     // Optional return type: -> Type
     mut return_type: TypeExpr? = null
-    if p.check_id(86) {  // Arrow
+    if p.check(.Arrow) {
         p.advance()
         return_type = p.parse_type_expr()
     }

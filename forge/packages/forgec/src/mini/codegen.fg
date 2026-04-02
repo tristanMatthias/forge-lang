@@ -4,10 +4,6 @@
 
 // Access child Expr from a List<Expr>
 fn gen_child(children: List<Expr>, idx: int) -> string {
-    if idx < 0 || idx >= children.length {
-        eprintln("  [gen_child] OOB idx=" + string(idx) + " len=" + string(children.length))
-        return "0"
-    }
     let child: Expr = children[idx]
     gen_expr(child)
 }
@@ -137,7 +133,7 @@ fn gen_expr(e: Expr) -> string {
                         let cmp = new_reg()
                         mut cmp_pred = "eq"
                         if e.str_val == "!=" { cmp_pred = "ne" }
-                        ir_line(cmp + " = icmp " + cmp_pred + " i64 " + tag + ", " + string(vidx))
+                        ir_line(cmp + " = icmp " + cmp_pred + " i8 " + tag + ", " + string(vidx))
                         let r = new_reg()
                         ir_line(r + " = zext i1 " + cmp + " to i64")
                         LAST_IS_STR = 0
@@ -161,7 +157,7 @@ fn gen_expr(e: Expr) -> string {
                 let cmp = new_reg()
                 mut is_pred = "eq"
                 if e.str_val == "is_not" { is_pred = "ne" }
-                ir_line(cmp + " = icmp " + is_pred + " i64 " + tag + ", " + string(vidx))
+                ir_line(cmp + " = icmp " + is_pred + " i8 " + tag + ", " + string(vidx))
                 let r = new_reg()
                 ir_line(r + " = zext i1 " + cmp + " to i64")
                 LAST_IS_STR = 0
@@ -169,58 +165,6 @@ fn gen_expr(e: Expr) -> string {
                 LAST_STRUCT_TYPE = ""
                 LAST_ENUM_TYPE = ""
                 return r
-            }
-            // Short-circuit && and || : don't evaluate RHS if LHS determines result
-            if e.str_val == "&&" {
-                let lhs_sc = gen_expr_child(e, 0)
-                let lhs_i1 = new_reg()
-                ir_line(lhs_i1 + " = icmp ne i64 " + lhs_sc + ", 0")
-                let sc_rhs_l = new_label("sc_rhs")
-                let sc_merge_l = new_label("sc_merge")
-                let sc_false_l = new_label("sc_false")
-                ir_line("br i1 " + lhs_i1 + ", label %" + sc_rhs_l + ", label %" + sc_false_l)
-                ir_raw(sc_rhs_l + ":")
-                let rhs_sc = gen_expr_child(e, 1)
-                let rhs_i1 = new_reg()
-                ir_line(rhs_i1 + " = icmp ne i64 " + rhs_sc + ", 0")
-                let sc_rhs_end = new_reg()
-                ir_line(sc_rhs_end + " = zext i1 " + rhs_i1 + " to i64")
-                // Use a landing label to capture current block (RHS may have created new blocks)
-                let sc_rhs_land = new_label("sc_rhs_end")
-                ir_line("br label %" + sc_rhs_land)
-                ir_raw(sc_rhs_land + ":")
-                ir_line("br label %" + sc_merge_l)
-                ir_raw(sc_false_l + ":")
-                ir_line("br label %" + sc_merge_l)
-                ir_raw(sc_merge_l + ":")
-                let phi = new_reg()
-                ir_line(phi + " = phi i64 [ " + sc_rhs_end + ", %" + sc_rhs_land + " ], [ 0, %" + sc_false_l + " ]")
-                return phi
-            }
-            if e.str_val == "||" {
-                let lhs_sc = gen_expr_child(e, 0)
-                let lhs_i1 = new_reg()
-                ir_line(lhs_i1 + " = icmp ne i64 " + lhs_sc + ", 0")
-                let sc_rhs_l = new_label("sc_rhs")
-                let sc_merge_l = new_label("sc_merge")
-                let sc_true_l = new_label("sc_true")
-                ir_line("br i1 " + lhs_i1 + ", label %" + sc_true_l + ", label %" + sc_rhs_l)
-                ir_raw(sc_rhs_l + ":")
-                let rhs_sc = gen_expr_child(e, 1)
-                let rhs_i1 = new_reg()
-                ir_line(rhs_i1 + " = icmp ne i64 " + rhs_sc + ", 0")
-                let sc_rhs_end = new_reg()
-                ir_line(sc_rhs_end + " = zext i1 " + rhs_i1 + " to i64")
-                let sc_rhs_land = new_label("sc_rhs_end")
-                ir_line("br label %" + sc_rhs_land)
-                ir_raw(sc_rhs_land + ":")
-                ir_line("br label %" + sc_merge_l)
-                ir_raw(sc_true_l + ":")
-                ir_line("br label %" + sc_merge_l)
-                ir_raw(sc_merge_l + ":")
-                let phi = new_reg()
-                ir_line(phi + " = phi i64 [ 1, %" + sc_true_l + " ], [ " + sc_rhs_end + ", %" + sc_rhs_land + " ]")
-                return phi
             }
             let lhs = gen_expr_child(e, 0)
             let lhs_str = LAST_IS_STR
@@ -250,26 +194,34 @@ fn gen_expr(e: Expr) -> string {
                 let rrt2 = reg_get_type(rhs)
                 mut lt_val = ""
                 mut rt_val = ""
-                // LHS: extract tag if it's the enum type, otherwise use as i64
+                // LHS: extract tag if it's the enum type, otherwise truncate i64→i8
                 if lrt == ety || lrt == "" {
                     let lt = new_reg()
                     ir_line(lt + " = extractvalue " + ety + " " + lhs + ", 0")
                     lt_val = lt
-                } else {
+                } else if lrt == "i8" {
                     lt_val = lhs
+                } else {
+                    let lt = new_reg()
+                    ir_line(lt + " = trunc i64 " + lhs + " to i8")
+                    lt_val = lt
                 }
                 // RHS: same logic
                 if rrt2 == ety || rrt2 == "" {
                     let rt = new_reg()
                     ir_line(rt + " = extractvalue " + ety + " " + rhs + ", 0")
                     rt_val = rt
-                } else {
+                } else if rrt2 == "i8" {
                     rt_val = rhs
+                } else {
+                    let rt = new_reg()
+                    ir_line(rt + " = trunc i64 " + rhs + " to i8")
+                    rt_val = rt
                 }
                 let cmp = new_reg()
                 mut pred = "eq"
                 if e.str_val == "!=" { pred = "ne" }
-                ir_line(cmp + " = icmp " + pred + " i64 " + lt_val + ", " + rt_val)
+                ir_line(cmp + " = icmp " + pred + " i8 " + lt_val + ", " + rt_val)
                 let r = new_reg()
                 ir_line(r + " = zext i1 " + cmp + " to i64")
                 LAST_IS_STR = 0
@@ -331,7 +283,7 @@ fn gen_expr(e: Expr) -> string {
             let field_csv = e.str_val.substring(pipe_idx + 1, e.str_val.length)
             let si = find_struct(sname)
             let sty = struct_llvm_type(sname)
-            mut cur = "zeroinitializer"
+            mut cur = "undef"
             mut fi = 0
             while fi < e.children.length {
                 // Get field name from CSV
@@ -385,12 +337,6 @@ fn gen_expr(e: Expr) -> string {
                     // Fix literal 0 for non-i64 field types
                     if fty == "ptr" && (final_val == "0" || final_val == "zeroinitializer") { final_val = "null" }
                     if fty == "double" && final_val == "0" { final_val = "0.0" }
-                    if fty == "%ForgeString" && final_val == "0" { final_val = "zeroinitializer" }
-                    if fty == "{ ptr, i64 }" && final_val == "0" { final_val = "zeroinitializer" }
-                    // Any struct/enum type with literal 0
-                    if fty.length > 1 && fty.substring(0, 1) == "%" && fty != "%ForgeString" && final_val == "0" {
-                        final_val = "zeroinitializer"
-                    }
                     let nr = new_reg()
                     ir_line(nr + " = insertvalue " + sty + " " + cur + ", " + fty + " " + final_val + ", " + string(fidx))
                     reg_set_type(nr, sty)
@@ -405,10 +351,9 @@ fn gen_expr(e: Expr) -> string {
             return cur
         }
         .EnumLit -> {
-            // Heap-allocated enum: { i64 tag, ptr payload }
+            // Heap-allocated enum: { i8 tag, ptr payload }
             // Payload is a heap-allocated variant struct
             let dot_idx = e.str_val.index_of(".")
-            if dot_idx < 0 { return "0" }
             mut ename = e.str_val.substring(0, dot_idx)
             if ename.length == 0 && CUR_RET_TY.length > 1 && CUR_RET_TY.substring(0, 1) == "%" {
                 let candidate = CUR_RET_TY.substring(1, CUR_RET_TY.length)
@@ -416,30 +361,13 @@ fn gen_expr(e: Expr) -> string {
                 if find_enum(candidate) >= 0 { ename = candidate }
             }
             let vname = e.str_val.substring(dot_idx + 1, e.str_val.length)
-            mut ei = find_enum(ename)
+            let ei = find_enum(ename)
             // If enum not found, return 0 (unresolved shorthand)
             if ei < 0 { return "0" }
-            mut vidx = enum_variant_index(ei, vname)
-            // If variant not found in resolved enum, search ALL enums
-            if vidx < 0 {
-                mut search_ei = 0
-                while search_ei < ENUM_NAMES.length {
-                    let try_vidx = enum_variant_index(search_ei, vname)
-                    if try_vidx >= 0 {
-                        ei = search_ei
-                        ename = ENUM_NAMES[search_ei]
-                        vidx = try_vidx
-                        break
-                    }
-                    search_ei = search_ei + 1
-                }
-            }
+            let vidx = enum_variant_index(ei, vname)
             let ety = "%" + ename
 
-            if vidx < 0 { return "0" }
-            if ei < 0 || ei >= ENUM_VARIANT_STARTS.length { return "0" }
             let gvi = ENUM_VARIANT_STARTS[ei] + vidx
-            if gvi < 0 || gvi >= EVAR_FIELD_COUNTS.length { return "0" }
             let fc = EVAR_FIELD_COUNTS[gvi]
             let fs = EVAR_FIELD_STARTS[gvi]
 
@@ -448,11 +376,7 @@ fn gen_expr(e: Expr) -> string {
             mut vfi = 0
             while vfi < fc {
                 if vfi > 0 { variant_fields = variant_fields + ", " }
-                if fs + vfi < EFIELD_TYPES.length {
-                    variant_fields = variant_fields + EFIELD_TYPES[fs + vfi]
-                } else {
-                    variant_fields = variant_fields + "i64"
-                }
+                variant_fields = variant_fields + EFIELD_TYPES[fs + vfi]
                 vfi = vfi + 1
             }
             let variant_ty = "{ " + variant_fields + " }"
@@ -469,8 +393,7 @@ fn gen_expr(e: Expr) -> string {
                 mut fi = 0
                 while fi < fc && fi < e.children.length {
                     let fval = gen_expr_child(e, fi)
-                    mut fty = "i64"
-                    if fs + fi < EFIELD_TYPES.length { fty = EFIELD_TYPES[fs + fi] }
+                    let fty = EFIELD_TYPES[fs + fi]
                     let fptr = new_reg()
                     ir_line(fptr + " = getelementptr inbounds " + variant_ty + ", ptr " + payload_ptr + ", i32 0, i32 " + string(fi))
                     mut store_val = fval
@@ -487,24 +410,14 @@ fn gen_expr(e: Expr) -> string {
                         if fty == "double" { store_val = "0.0" }
                         if fty == "%ForgeString" { store_val = "zeroinitializer" }
                     }
-                    // Fix literal 0 for non-i64 types
-                    if store_val == "0" && fty != "i64" && fty != "i8" {
-                        if fty == "%ForgeString" { store_val = "zeroinitializer" }
-                        if fty == "ptr" { store_val = "null" }
-                        if fty == "double" { store_val = "0.0" }
-                        if fty == "{ ptr, i64 }" { store_val = "zeroinitializer" }
-                        if fty.length > 1 && fty.substring(0, 1) == "%" && fty != "%ForgeString" {
-                            store_val = "zeroinitializer"
-                        }
-                    }
                     ir_line("store " + fty + " " + store_val + ", ptr " + fptr)
                     fi = fi + 1
                 }
             }
 
-            // Build enum value: { i64 tag, ptr payload }
+            // Build enum value: { i8 tag, ptr payload }
             let e1 = new_reg()
-            ir_line(e1 + " = insertvalue " + ety + " zeroinitializer, i64 " + string(vidx) + ", 0")
+            ir_line(e1 + " = insertvalue " + ety + " zeroinitializer, i8 " + string(vidx) + ", 0")
             let e2 = new_reg()
             ir_line(e2 + " = insertvalue " + ety + " " + e1 + ", ptr " + payload_ptr + ", 1")
             reg_set_type(e2, ety)
@@ -552,7 +465,7 @@ fn gen_expr(e: Expr) -> string {
                 ei = ei + 1
             }
             let ls1 = new_reg()
-            ir_line(ls1 + " = insertvalue { ptr, i64 } zeroinitializer, ptr " + data + ", 0")
+            ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
             let ls2 = new_reg()
             ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + string(count) + ", 1")
             LAST_IS_LIST = 1
@@ -724,7 +637,7 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
                 let lp = new_reg()
                 ir_line(lp + " = inttoptr i64 " + lhs + " to ptr")
                 let ls = new_reg()
-                ir_line(ls + " = insertvalue %ForgeString zeroinitializer, ptr " + lp + ", 0")
+                ir_line(ls + " = insertvalue %ForgeString undef, ptr " + lp + ", 0")
                 let ls2 = new_reg()
                 ir_line(ls2 + " = insertvalue %ForgeString " + ls + ", i64 0, 1")
                 str_lhs = ls2
@@ -733,7 +646,7 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
                 let rp = new_reg()
                 ir_line(rp + " = inttoptr i64 " + rhs + " to ptr")
                 let rs = new_reg()
-                ir_line(rs + " = insertvalue %ForgeString zeroinitializer, ptr " + rp + ", 0")
+                ir_line(rs + " = insertvalue %ForgeString undef, ptr " + rp + ", 0")
                 let rs2 = new_reg()
                 ir_line(rs2 + " = insertvalue %ForgeString " + rs + ", i64 0, 1")
                 str_rhs = rs2
@@ -815,80 +728,25 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         return r2
     }
     LAST_IS_STR = 0
-    // Float operations
-    let lf = reg_get_type(lhs) == "double"
-    let rf = reg_get_type(rhs) == "double"
-    if lf || rf || LAST_IS_FLOAT == 1 {
-        // Ensure both operands are double
-        mut fl = lhs
-        mut fr = rhs
-        if !lf {
-            let conv = new_reg()
-            ir_line(conv + " = sitofp i64 " + lhs + " to double")
-            fl = conv
-        }
-        if !rf {
-            let conv = new_reg()
-            ir_line(conv + " = sitofp i64 " + rhs + " to double")
-            fr = conv
-        }
-        if op == "+" { ir_line(r + " = fadd double " + fl + ", " + fr) }
-        if op == "-" { ir_line(r + " = fsub double " + fl + ", " + fr) }
-        if op == "*" { ir_line(r + " = fmul double " + fl + ", " + fr) }
-        if op == "/" { ir_line(r + " = fdiv double " + fl + ", " + fr) }
-        if op == "%" { ir_line(r + " = frem double " + fl + ", " + fr) }
-        if op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
-            reg_set_type(r, "double")
-            LAST_IS_FLOAT = 1
-            return r
-        }
-        // Float comparison
-        mut fpred = "oeq"
-        if op == "!=" { fpred = "one" }
-        if op == "<" { fpred = "olt" }
-        if op == ">" { fpred = "ogt" }
-        if op == "<=" { fpred = "ole" }
-        if op == ">=" { fpred = "oge" }
-        ir_line(r + " = fcmp " + fpred + " double " + fl + ", " + fr)
-        let r2 = new_reg()
-        ir_line(r2 + " = zext i1 " + r + " to i64")
-        LAST_IS_FLOAT = 0
-        return r2
-    }
-    // Coerce ptr operands to i64 for integer arithmetic
-    mut ilhs = lhs
-    mut irhs = rhs
-    let lpty = reg_get_type(lhs)
-    let rpty = reg_get_type(rhs)
-    if lpty == "ptr" {
-        let conv = new_reg()
-        ir_line(conv + " = ptrtoint ptr " + lhs + " to i64")
-        ilhs = conv
-    }
-    if rpty == "ptr" {
-        let conv = new_reg()
-        ir_line(conv + " = ptrtoint ptr " + rhs + " to i64")
-        irhs = conv
-    }
     // Integer operations
     if op == "+" {
-        ir_line(r + " = add i64 " + ilhs + ", " + irhs)
+        ir_line(r + " = add i64 " + lhs + ", " + rhs)
         return r
     }
     if op == "-" {
-        ir_line(r + " = sub i64 " + ilhs + ", " + irhs)
+        ir_line(r + " = sub i64 " + lhs + ", " + rhs)
         return r
     }
     if op == "*" {
-        ir_line(r + " = mul i64 " + ilhs + ", " + irhs)
+        ir_line(r + " = mul i64 " + lhs + ", " + rhs)
         return r
     }
     if op == "/" {
-        ir_line(r + " = sdiv i64 " + ilhs + ", " + irhs)
+        ir_line(r + " = sdiv i64 " + lhs + ", " + rhs)
         return r
     }
     if op == "%" {
-        ir_line(r + " = srem i64 " + ilhs + ", " + irhs)
+        ir_line(r + " = srem i64 " + lhs + ", " + rhs)
         return r
     }
     // Comparisons
@@ -918,26 +776,7 @@ fn gen_binary(op: string, lhs: string, rhs: string, lhs_str: int) -> string {
         ir_line(r2 + " = zext i1 " + r + " to i64")
         return r2
     }
-    // Check if either operand is ptr type and coerce
-    let lhs_ty = reg_get_type(lhs)
-    let rhs_ty = reg_get_type(rhs)
-    mut cmp_lhs = lhs
-    mut cmp_rhs = rhs
-    mut cmp_ty = "i64"
-    if lhs_ty == "ptr" || rhs_ty == "ptr" {
-        cmp_ty = "ptr"
-        if lhs_ty != "ptr" {
-            let conv = new_reg()
-            ir_line(conv + " = inttoptr i64 " + lhs + " to ptr")
-            cmp_lhs = conv
-        }
-        if rhs_ty != "ptr" {
-            let conv = new_reg()
-            ir_line(conv + " = inttoptr i64 " + rhs + " to ptr")
-            cmp_rhs = conv
-        }
-    }
-    ir_line(r + " = icmp " + pred + " " + cmp_ty + " " + cmp_lhs + ", " + cmp_rhs)
+    ir_line(r + " = icmp " + pred + " i64 " + lhs + ", " + rhs)
     let r2 = new_reg()
     ir_line(r2 + " = zext i1 " + r + " to i64")
     r2
@@ -975,35 +814,7 @@ fn gen_call(e: Expr) -> string {
     if e.children.length >= 1 {
         let first: Expr = e.children[0]
         if is_ident_expr(first) && first.str_val != "process" && first.str_val != "fs" {
-            mut mangled = find_ns_fn(first.str_val, name)
-            // Fallback: if namespace is known but method not found, try ns_method
-            if mangled.length == 0 && is_namespace(first.str_val) {
-                // Use forge_llvm_ prefix for llvm namespace (matches Rust wrapper naming)
-                if first.str_val == "llvm" {
-                    mangled = "forge_llvm_" + name
-                } else {
-                    mangled = first.str_val + "_" + name
-                }
-                // Auto-declare if not yet seen
-                mut already = false
-                mut ai = 0
-                while ai < AUTO_DECLARED.length {
-                    if AUTO_DECLARED[ai] == mangled { already = true }
-                    ai = ai + 1
-                }
-                if !already {
-                    AUTO_DECLARED = AUTO_DECLARED.push(mangled)
-                    // Register in FN tables — LLVM API functions return ptr, others i64
-                    FN_NAMES = FN_NAMES.push(mangled)
-                    if mangled.substring(0, 10) == "forge_llvm" {
-                        FN_RETTYPES = FN_RETTYPES.push("ptr")
-                    } else {
-                        FN_RETTYPES = FN_RETTYPES.push("i64")
-                    }
-                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-                }
-            }
+            let mangled = find_ns_fn(first.str_val, name)
             if mangled.length > 0 {
                 // Call the mangled wrapper function, skip children[0] (namespace ident)
                 let call_ret = find_fn_ret(mangled)
@@ -1026,16 +837,6 @@ fn gen_call(e: Expr) -> string {
                     if aty == "i64" {
                         let ns_art = reg_get_type(a)
                         if ns_art.length > 0 && ns_art != "i64" && ns_art != "i1" && ns_art != "i8" { aty = ns_art }
-                    }
-                    // Declared param type fallback for namespace calls
-                    if aty == "i64" {
-                        let declared_npty = find_fn_param_type(mangled, nsi - 1)
-                        if declared_npty.length > 0 {
-                            let ns_vrt = reg_get_type(a)
-                            if ns_vrt == declared_npty {
-                                aty = declared_npty
-                            }
-                        }
                     }
                     if a.length > 1 {
                         if a.substring(0, 1) == "@" { aty = "ptr" }
@@ -1061,7 +862,6 @@ fn gen_call(e: Expr) -> string {
                 LAST_STRUCT_TYPE = ""
                 LAST_ENUM_TYPE = ""
                 set_type_from_llvm(call_ret)
-                set_list_elem_from_fn(mangled)
                 return r
             }
         }
@@ -1102,16 +902,6 @@ fn gen_call(e: Expr) -> string {
                         if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
                         let arg_rt2 = reg_get_type(a)
                         if aty == "i64" && arg_rt2.length > 0 && arg_rt2 != "i64" && arg_rt2 != "i1" { aty = arg_rt2 }
-                        // Declared param type fallback for method calls
-                        if aty == "i64" {
-                            let declared_mpty = find_fn_param_type(method_name, mi)
-                            if declared_mpty.length > 0 {
-                                let m_vrt = reg_get_type(a)
-                                if m_vrt == declared_mpty {
-                                    aty = declared_mpty
-                                }
-                            }
-                        }
                         arg_str = arg_str + aty + " " + a
                         mi = mi + 1
                     }
@@ -1123,7 +913,6 @@ fn gen_call(e: Expr) -> string {
                     ir_line(r + " = call " + call_ret + " @" + method_name + "(" + arg_str + ")")
                     reg_set_type(r, call_ret)
                     set_type_from_llvm(call_ret)
-                    set_list_elem_from_fn(method_name)
                     return r
                 }
             }
@@ -1171,16 +960,6 @@ fn gen_call(e: Expr) -> string {
                                     aty = arg_rt
                                 }
                             }
-                            // Declared param type fallback for var method calls
-                            if aty == "i64" {
-                                let declared_vmpty = find_fn_param_type(method_name, mi)
-                                if declared_vmpty.length > 0 {
-                                    let vm_vrt = reg_get_type(a)
-                                    if vm_vrt == declared_vmpty {
-                                        aty = declared_vmpty
-                                    }
-                                }
-                            }
                             if a.length > 1 {
                                 if a.substring(0, 1) == "@" { aty = "ptr" }
                             }
@@ -1205,7 +984,6 @@ fn gen_call(e: Expr) -> string {
                         LAST_STRUCT_TYPE = ""
                         LAST_ENUM_TYPE = ""
                         set_type_from_llvm(call_ret)
-                        set_list_elem_from_fn(method_name)
                         return r
                     }
                 }
@@ -1274,7 +1052,7 @@ fn gen_call(e: Expr) -> string {
                     ir_line("br label %" + cond_l)
                     ir_raw(end_l + ":")
                     let ls1 = new_reg()
-                    ir_line(ls1 + " = insertvalue { ptr, i64 } zeroinitializer, ptr " + data + ", 0")
+                    ir_line(ls1 + " = insertvalue { ptr, i64 } undef, ptr " + data + ", 0")
                     let ls2 = new_reg()
                     ir_line(ls2 + " = insertvalue { ptr, i64 } " + ls1 + ", i64 " + argc + ", 1")
                     LAST_IS_LIST = 1
@@ -1413,27 +1191,12 @@ fn gen_call(e: Expr) -> string {
     // Built-in: println/eprintln
     if name == "println" || name == "eprintln" {
         let arg = gen_expr_child(e, 0)
-        if LAST_IS_STR == 1 {
-            if name == "println" {
-                ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
-            } else {
-                ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
-            }
-        } else if LAST_IS_FLOAT == 1 {
-            ir_line("call void @forge_println_float(double " + arg + ")")
+        if name == "println" {
+            ir_line("call void @forge_println_string(%ForgeString " + arg + ")")
         } else {
-            // Default: int
-            if name == "println" {
-                ir_line("call void @forge_println_int(i64 " + arg + ")")
-            } else {
-                // Convert int to string for eprintln
-                let s = new_reg()
-                ir_line(s + " = call %ForgeString @forge_int_to_string(i64 " + arg + ")")
-                ir_line("call void @forge_eprintln_string(%ForgeString " + s + ")")
-            }
+            ir_line("call void @forge_eprintln_string(%ForgeString " + arg + ")")
         }
         LAST_IS_STR = 0
-        LAST_IS_FLOAT = 0
         LAST_IS_LIST = 0
         LAST_STRUCT_TYPE = ""
         LAST_ENUM_TYPE = ""
@@ -1503,7 +1266,7 @@ fn gen_call(e: Expr) -> string {
                 let kp = new_reg()
                 ir_line(kp + " = inttoptr i64 " + key + " to ptr")
                 let ks = new_reg()
-                ir_line(ks + " = insertvalue %ForgeString zeroinitializer, ptr " + kp + ", 0")
+                ir_line(ks + " = insertvalue %ForgeString undef, ptr " + kp + ", 0")
                 let ks2 = new_reg()
                 ir_line(ks2 + " = insertvalue %ForgeString " + ks + ", i64 0, 1")
                 key_str = ks2
@@ -1526,12 +1289,8 @@ fn gen_call(e: Expr) -> string {
             let elem = gen_expr_child(e, 1)
             mut ety = "i64"
             if LAST_IS_STR == 1 { ety = "%ForgeString" }
-            if LAST_IS_PTR == 1 { ety = "ptr" }
             if LAST_STRUCT_TYPE != "" { ety = "%" + LAST_STRUCT_TYPE }
             if LAST_ENUM_TYPE != "" { ety = "%" + LAST_ENUM_TYPE }
-            // Also check register type for ptr values
-            let rt = reg_get_type(elem)
-            if rt == "ptr" { ety = "ptr" }
             return gen_list_push(obj, elem, ety, saved_elem)
         }
     }
@@ -1630,14 +1389,6 @@ fn gen_call(e: Expr) -> string {
     }
 
     // Regular function call (direct)
-    // Check if this is a Type_method call where first param is self (ptr)
-    // If so, pass the variable's ALLOCA pointer, not the loaded struct value
-    mut is_method_call = false
-    let uscore = name.index_of("_")
-    if uscore > 0 {
-        let maybe_type = name.substring(0, uscore)
-        if find_struct(maybe_type) >= 0 { is_method_call = true }
-    }
     let call_ret = find_fn_ret(name)
     mut arg_str = ""
     mut i = 0
@@ -1655,26 +1406,6 @@ fn gen_call(e: Expr) -> string {
         if LAST_IS_LIST == 1 { aty = "{ ptr, i64 }" }
         if LAST_STRUCT_TYPE != "" { aty = "%" + LAST_STRUCT_TYPE }
         if LAST_ENUM_TYPE != "" { aty = "%" + LAST_ENUM_TYPE }
-        // Method call: first arg is self — pass as ptr (alloca pointer)
-        if is_method_call && i == 0 && LAST_STRUCT_TYPE != "" {
-            // a is the loaded struct value, but we need the alloca pointer
-            // Find the variable and use its alloca register directly
-            let first_expr: Expr = e.children[0]
-            if is_ident_expr(first_expr) {
-                let vname = first_expr.str_val
-                mut vi = VAR_NAMES.length - 1
-                while vi >= 0 {
-                    if VAR_NAMES[vi] == vname {
-                        aty = "ptr"
-                        arg_str = arg_str + "ptr " + VAR_REGS[vi]
-                        i = i + 1
-                        break
-                    }
-                    vi = vi - 1
-                }
-                if vi >= 0 { continue }
-            }
-        }
         // Function reference: @name is a ptr
         if a.length > 1 {
             if a.substring(0, 1) == "@" { aty = "ptr" }
@@ -1686,17 +1417,6 @@ fn gen_call(e: Expr) -> string {
             let arg_rt = reg_get_type(a)
             if arg_rt.length > 0 && arg_rt != "i64" && arg_rt != "i1" && arg_rt != "i8" {
                 aty = arg_rt
-            }
-        }
-        // Declared param type fallback: only apply when the value's register type
-        // matches the declared type (meaning the value IS correct, flags just missed it).
-        if aty == "i64" {
-            let declared_pty = find_fn_param_type(name, i)
-            if declared_pty.length > 0 {
-                let val_rt = reg_get_type(a)
-                if val_rt == declared_pty {
-                    aty = declared_pty
-                }
             }
         }
         // Extern FFI: coerce ForgeString → ptr for string params
@@ -1715,7 +1435,7 @@ fn gen_call(e: Expr) -> string {
                 let sptr = new_reg()
                 ir_line(sptr + " = inttoptr i64 " + final_a + " to ptr")
                 let fs = new_reg()
-                ir_line(fs + " = insertvalue %ForgeString zeroinitializer, ptr " + sptr + ", 0")
+                ir_line(fs + " = insertvalue %ForgeString undef, ptr " + sptr + ", 0")
                 let fs2 = new_reg()
                 ir_line(fs2 + " = insertvalue %ForgeString " + fs + ", i64 0, 1")
                 final_a = fs2
@@ -1743,7 +1463,6 @@ fn gen_call(e: Expr) -> string {
     LAST_STRUCT_TYPE = ""
     LAST_ENUM_TYPE = ""
     set_type_from_llvm(call_ret)
-    set_list_elem_from_fn(name)
     r
 }
 
@@ -1808,12 +1527,11 @@ fn codegen_let(s: Stmt) -> int {
         ty = "{ ptr, i64 }"
         is_list = true
     }
-    // Only override with struct/enum type if NOT a list
-    if !is_list && LAST_STRUCT_TYPE != "" {
+    if LAST_STRUCT_TYPE != "" {
         ty = "%" + LAST_STRUCT_TYPE
         stype = LAST_STRUCT_TYPE
     }
-    if !is_list && LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
+    if LAST_ENUM_TYPE != "" { ty = "%" + LAST_ENUM_TYPE }
     // Register type table fallback
     if ty == "i64" {
         let rt = reg_get_type(val)
@@ -1845,7 +1563,6 @@ fn codegen_let(s: Stmt) -> int {
     }
     if ann_base == "Map" { ty = "ptr" }
     if ann_base == "fn" { ty = "ptr" }
-    if ann_base == "ptr" { ty = "ptr" }
     if find_struct(ann_base) >= 0 {
         ty = "%" + ann_base
         stype = ann_base
@@ -1863,24 +1580,7 @@ fn codegen_let(s: Stmt) -> int {
     }
     // Final check: only override if register type is clearly more accurate
     let final_rt = reg_get_type(final_val)
-    if final_rt == "ptr" && ty == "%ForgeString" {
-        ty = "ptr"
-        LAST_IS_PTR = 1
-    }
-    // Match alloca type to value type (not the other way around)
-    // If value is ptr but type defaulted to i64, use ptr alloca
-    let store_rt = reg_get_type(final_val)
-    if store_rt == "ptr" && ty == "i64" {
-        ty = "ptr"
-        LAST_IS_PTR = 1
-    }
-    if store_rt == "i64" && ty == "ptr" {
-        let conv = new_reg()
-        ir_line(conv + " = inttoptr i64 " + final_val + " to ptr")
-        final_val = conv
-    }
-    // Alloca emitted via ir_line — C-side forge_ir_hoist detects and buffers it,
-    // then flushes all allocas to the entry block at function end.
+    if final_rt == "ptr" && ty == "%ForgeString" { ty = "ptr"; LAST_IS_PTR = 1 }
     ir_line(alloca + " = alloca " + ty)
     ir_line("store " + ty + " " + final_val + ", ptr " + alloca)
     if is_list {
@@ -2034,13 +1734,9 @@ fn codegen_if(s: Stmt) -> int {
 
     // When one branch terminated (ret/break), the merge only receives the other branch.
     if (is_expr == 1 || use_retval) && (then_ended == 0 || else_ended == 0) {
-        // Use function return type for the result load (CUR_RET_TY) — LAST_STORE_TY
-        // reflects the last arm's store which might be i64 from a null/default arm
-        mut load_ty = CUR_RET_TY
-        if load_ty == "void" || load_ty == "i32" || load_ty.length == 0 {
-            load_ty = LAST_STORE_TY
-            if load_ty.length == 0 { load_ty = "i64" }
-        }
+        // Use LAST_STORE_TY (set by if_store_val) — matches what was actually stored
+        mut load_ty = LAST_STORE_TY
+        if load_ty.length == 0 { load_ty = "i64" }
         mut result_struct = ""
         mut result_enum = ""
         if load_ty.length > 1 && load_ty.substring(0, 1) == "%" {
@@ -2109,17 +1805,6 @@ fn codegen_for(s: Stmt) -> int {
 
     // Get length and set up element access
     mut elem_ty = LAST_LIST_ELEM_TYPE
-    // If element type unknown, look up from variable's stored element type
-    if elem_ty == "i64" || elem_ty == "" {
-        let iter_expr: Expr = s.children[0]
-        if iter_expr.kind is .Ident {
-            let vi = find_var(iter_expr.str_val)
-            if vi >= 0 && vi < VAR_LIST_ELEM_TYPE.length {
-                let stored = VAR_LIST_ELEM_TYPE[vi]
-                if stored != "" { elem_ty = stored }
-            }
-        }
-    }
     let len_r = new_reg()
     let data_r = new_reg()
 
@@ -2136,7 +1821,7 @@ fn codegen_for(s: Stmt) -> int {
         if it_rt == "i64" || (it_rt == "" && iter_is_list == 0) {
             // Value is i64 (enum field) — create an empty list
             let empty_ls = new_reg()
-            ir_line(empty_ls + " = insertvalue { ptr, i64 } zeroinitializer, i64 0, 1")
+            ir_line(empty_ls + " = insertvalue { ptr, i64 } undef, i64 0, 1")
             list_val = empty_ls
         }
         if true {
@@ -2220,7 +1905,7 @@ fn codegen_assign(s: Stmt) -> int {
             let var_idx = find_var(target.str_val)
             if var_idx >= 0 {
                 let store_ty = VAR_TYPES[var_idx]
-                mut load_ty = get_load_type(store_ty)
+                let load_ty = get_load_type(store_ty)
                 let rt = reg_get_type(val)
                 // Handle type conversions
                 mut final_val = val
@@ -2367,7 +2052,7 @@ fn codegen_match(s: Stmt) -> int {
             let arm_l = new_label("match_arm")
             let next_l = new_label("match_next")
             let cmp = new_reg()
-            ir_line(cmp + " = icmp eq i64 " + tag_r + ", " + string(vidx))
+            ir_line(cmp + " = icmp eq i8 " + tag_r + ", " + string(vidx))
             ir_line("br i1 " + cmp + ", label %" + arm_l + ", label %" + next_l)
             ir_raw(arm_l + ":")
             if arm.str2.length > 0 {
@@ -2376,27 +2061,9 @@ fn codegen_match(s: Stmt) -> int {
                 // 2. GEP to payload (field 1)
                 // 3. Cast to variant struct type
                 // 4. GEP to each field and load
-                // GEP-based payload extraction (more correct than extractvalue for padding)
-                // 1. Store scrutinee to alloca
-                // 2. GEP to payload ptr (field 1 of { i8, ptr })
-                // 3. Load the payload ptr
-                let scrut_alloca = new_reg()
-                ir_line(scrut_alloca + " = alloca %" + scrut_enum)
-                ir_line("store %" + scrut_enum + " " + scrutinee + ", ptr " + scrut_alloca)
-                let payload_gep = new_reg()
-                ir_line(payload_gep + " = getelementptr inbounds %" + scrut_enum + ", ptr " + scrut_alloca + ", i32 0, i32 1")
+                // Extract heap payload ptr from enum { i8, ptr }
                 let payload_ptr = new_reg()
-                ir_line(payload_ptr + " = load ptr, ptr " + payload_gep)
-
-                // Null guard: skip extraction if payload is null
-                let null_chk = new_reg()
-                ir_line(null_chk + " = icmp eq ptr " + payload_ptr + ", null")
-                let safe_l = new_label("payload_ok")
-                let skip_l = new_label("payload_null")
-                ir_line("br i1 " + null_chk + ", label %" + skip_l + ", label %" + safe_l)
-                ir_raw(skip_l + ":")
-                ir_line("br label %" + merge_l)
-                ir_raw(safe_l + ":")
+                ir_line(payload_ptr + " = extractvalue %" + scrut_enum + " " + scrutinee + ", 1")
 
                 // Build variant struct type string
                 let gvi_arm = ENUM_VARIANT_STARTS[ei] + vidx
@@ -2477,13 +2144,8 @@ fn codegen_match(s: Stmt) -> int {
     }
     ir_line("br label %" + merge_l)
     ir_raw(merge_l + ":")
-    // Use the function's return type for the match result load (not LAST_STORE_TY
-    // which reflects the last arm's store type — might be i64 from a default/null arm)
-    mut load_ty = CUR_RET_TY
-    if load_ty == "void" || load_ty == "i32" || load_ty.length == 0 {
-        load_ty = LAST_STORE_TY
-        if load_ty.length == 0 { load_ty = "i64" }
-    }
+    mut load_ty = LAST_STORE_TY
+    if load_ty.length == 0 { load_ty = "i64" }
     let mr = new_reg()
     ir_line(mr + " = load " + load_ty + ", ptr " + match_result)
     LAST_EXPR_VAL = mr
@@ -2599,22 +2261,8 @@ fn gen_fn_decl(f: FnDecl) {
         }
         mut pty = type_to_llvm(base_type)
         // Self parameter: pass as ptr for mutability
-        if p.name == "self" {
-            if pty.length > 1 && pty.substring(0, 1) == "%" {
-                self_struct_type = pty.substring(1, pty.length)
-            }
-            // self is always passed as ptr, but track the underlying struct type
-            // from the original type_name (set by impl handler or from struct type)
-            if pty == "ptr" {
-                // Look up struct from mangled name: TypeName_method → TypeName
-                let uscore = name.index_of("_")
-                if uscore > 0 {
-                    let impl_type_name = name.substring(0, uscore)
-                    if find_struct(impl_type_name) >= 0 || find_enum(impl_type_name) >= 0 {
-                        self_struct_type = impl_type_name
-                    }
-                }
-            }
+        if p.name == "self" && pty.length > 1 && pty.substring(0, 1) == "%" {
+            self_struct_type = pty.substring(1, pty.length)
             pty = "ptr"
         }
         param_types = param_types.push(pty)
@@ -2678,11 +2326,11 @@ fn gen_fn_decl(f: FnDecl) {
     mut gle: List<string> = []
     mut gi2 = 0
     while gi2 < gc {
-        if gi2 < VAR_NAMES.length { gn = gn.push(VAR_NAMES[gi2]) }
-        if gi2 < VAR_REGS.length { gr = gr.push(VAR_REGS[gi2]) }
-        if gi2 < VAR_TYPES.length { gt = gt.push(VAR_TYPES[gi2]) }
-        if gi2 < VAR_STRUCT_TYPE.length { gs = gs.push(VAR_STRUCT_TYPE[gi2]) }
-        if gi2 < VAR_LIST_ELEM_TYPE.length { gle = gle.push(VAR_LIST_ELEM_TYPE[gi2]) }
+        gn = gn.push(VAR_NAMES[gi2])
+        gr = gr.push(VAR_REGS[gi2])
+        gt = gt.push(VAR_TYPES[gi2])
+        gs = gs.push(VAR_STRUCT_TYPE[gi2])
+        gle = gle.push(VAR_LIST_ELEM_TYPE[gi2])
         gi2 = gi2 + 1
     }
     VAR_NAMES = gn
@@ -2723,9 +2371,6 @@ fn gen_fn_decl(f: FnDecl) {
         }
         i = i + 1
     }
-
-    // Enable alloca hoisting — allocas in the body will be buffered and flushed to entry
-    forge_ir_hoist_begin()
 
     // Generate body
     IN_FN_BODY = 1
@@ -2774,7 +2419,6 @@ fn gen_fn_decl(f: FnDecl) {
         }
     }
 
-    forge_ir_hoist_end()
     ir_raw("}")
     ir_raw("")
     // Emit any closure functions generated during this function
@@ -2880,188 +2524,6 @@ fn compile(source: string) -> string {
     GLOBAL_TYPES = []
     KNOWN_TYPE_NAMES = []
 
-    // Register runtime string functions with correct return types
-    FN_NAMES = FN_NAMES.push("forge_string_index_of")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_string_substring")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int,int")
-    FN_NAMES = FN_NAMES.push("forge_string_length")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_string_compare")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_string_eq")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_string_concat")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_string_char_at")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int")
-    FN_NAMES = FN_NAMES.push("forge_string_new")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("ptr,int")
-    FN_NAMES = FN_NAMES.push("forge_int_to_string")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_string_byte_at")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int")
-    // List push (amortized O(1))
-    FN_NAMES = FN_NAMES.push("forge_list_push_str")
-    FN_RETTYPES = FN_RETTYPES.push("{ ptr, i64 }")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    // Register C-side functions with correct return types
-    FN_NAMES = FN_NAMES.push("forge_csv_length")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_csv_byte_at")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_csv_next")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_csv_has_next")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_csv_scan_idx")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_csv_substr")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int,int")
-    FN_NAMES = FN_NAMES.push("forge_scan_csv_path")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_scan_csv")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_mod_csv_get")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_fn_store_get_body")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_fn_store_get_name")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_fn_reg_get_ret")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_param_type_get")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_param_name_get")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_param_name_add")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_set_self_type")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    // Alloca cache returns ptr (not i64!) — critical for correct Value* handling
-    FN_NAMES = FN_NAMES.push("forge_alloca_cache_get")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_idx_cache_get")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_get_self_type")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_struct_var_get")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    // C-side struct registry functions
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_add")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string,string")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_count")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_get_name")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_get_fields")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_get_field_types")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_get_llvm_type")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_set_llvm_type")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,ptr")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_find_type")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_sync_types")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("ptr")
-    FN_NAMES = FN_NAMES.push("forge_struct_reg_name_for_type_i64")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("ptr")
-    FN_NAMES = FN_NAMES.push("forge_sh_indexof")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(2)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,string")
-    FN_NAMES = FN_NAMES.push("forge_sh_substr")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string,int,int")
-    FN_NAMES = FN_NAMES.push("forge_sh_length")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-
     // Pass 0: pre-scan type/enum names + load packages
     eprintln("  pass 0: scanning type names...")
     scan_type_names()
@@ -3113,13 +2575,9 @@ fn compile(source: string) -> string {
             // Scan impl methods for fn signatures
             advance()
             skip_nl()
-            mut impl_name = advance().text
+            let impl_name = advance().text
             skip_nl()
-            if check("for") {
-                advance()
-                skip_nl()
-                impl_name = advance().text
-            }
+            if check("for") { advance(); skip_nl(); advance() }
             skip_nl()
             while !check("{") && POS < TOKENS.length { advance() }
             advance() // consume {
@@ -3131,8 +2589,7 @@ fn compile(source: string) -> string {
                     advance() // fn
                     let method_name = advance().text
                     let mangled = impl_name + "_" + method_name
-                    // Parse parameter types (reuse scan_params helper)
-                    scan_params()
+                    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
                     mut ret_ty = "void"
                     if check("->") {
                         advance()
@@ -3147,15 +2604,6 @@ fn compile(source: string) -> string {
                         if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
                         if rt == "List" { ret_ty = "{ ptr, i64 }" }
                         if check("<") {
-                            if rt == "List" {
-                                advance()
-                                skip_nl()
-                                let melem = peek().text
-                                let melem_ty = type_to_llvm(melem)
-                                if melem_ty != "i64" {
-                                    FN_RET_ELEM_CSV = FN_RET_ELEM_CSV + "," + mangled + ":" + melem_ty + ","
-                                }
-                            }
                             while !check(">") && POS < TOKENS.length { advance() }
                             if check(">") { advance() }
                         }
@@ -3165,8 +2613,8 @@ fn compile(source: string) -> string {
                     skip_block()
                     FN_NAMES = FN_NAMES.push(mangled)
                     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
-                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(SCAN_PARAM_COUNT)
-                    FN_PARAM_TYPES = FN_PARAM_TYPES.push(SCAN_PARAM_CSV)
+                    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+                    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
                 } else {
                     advance()
                 }
@@ -3231,8 +2679,6 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_float_to_string(double)")
     ir_raw("declare void @forge_print_string(%ForgeString)")
     ir_raw("declare void @forge_println_string(%ForgeString)")
-    ir_raw("declare void @forge_println_int(i64)")
-    ir_raw("declare void @forge_println_float(double)")
     ir_raw("declare void @forge_eprintln_string(%ForgeString)")
     ir_raw("declare %ForgeString @forge_string_char_at(%ForgeString, i64)")
     ir_raw("declare %ForgeString @forge_string_substring(%ForgeString, i64, i64)")
@@ -3249,111 +2695,6 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_mini_run(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_mini_run_list(%ForgeString, { ptr, i64 })")
     ir_raw("declare void @forge_exit(i64)")
-    ir_raw("declare i64 @forge_try_begin()")
-    ir_raw("declare void @forge_try_end()")
-    ir_raw("declare void @forge_alloc_stats()")
-    ir_raw("declare void @forge_watchdog(i64, ptr)")
-    ir_raw("declare void @forge_watchdog_reset()")
-    ir_raw("declare i64 @forge_alloca_cache_clear()")
-    ir_raw("declare void @forge_alloca_cache_trace(i64)")
-    ir_raw("declare i64 @forge_enum_tag(i64, ptr)")
-    ir_raw("declare i64 @forge_enum_payload_null(i64, ptr)")
-    ir_raw("declare void @forge_debug_val_kind(%ForgeString, ptr)")
-    ir_raw("declare void @forge_debug_value_array(ptr, i64)")
-    ir_raw("declare void @forge_debug_type_kind(%ForgeString, ptr)")
-    ir_raw("declare void @forge_set_ler_trace(i64)")
-    ir_raw("declare void @forge_cbc_set_builder(ptr, ptr)")
-    ir_raw("declare void @forge_cbc_set_args(ptr, i64)")
-    ir_raw("declare ptr @forge_checked_build_call_c(ptr, ptr, i64)")
-    ir_raw("declare void @forge_vas_trace(i64)")
-    ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
-    ir_raw("declare void @forge_alloca_cache_stats()")
-    ir_raw("declare void @forge_trace_ei_type(%ForgeString)")
-    ir_raw("declare void @forge_set_cg_ctx(ptr)")
-    ir_raw("declare ptr @forge_get_fn_val_by_idx(ptr, i64)")
-    ir_raw("declare ptr @forge_declare_fn_by_idx(ptr, i64, ptr)")
-    ir_raw("declare void @forge_ir_hoist_begin()")
-    ir_raw("declare void @forge_ir_hoist_end()")
-    ir_raw("declare void @forge_set_alloca_name(%ForgeString)")
-    ir_raw("declare void @forge_set_alloca_name_c(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_selfhost_get_arg(i64)")
-    ir_raw("declare void @forge_str_var_set_global_count()")
-    FN_NAMES = FN_NAMES.push("forge_str_var_set_global_count")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare void @forge_set_last_let_name(%ForgeString)")
-    ir_raw("declare void @forge_let_to_alloca_name()")
-    ir_raw("declare void @forge_arm_pending_alloca()")
-    ir_raw("declare void @forge_clear_last_let_name()")
-    ir_raw("declare i64 @forge_let_needs_alloca()")
-    FN_NAMES = FN_NAMES.push("forge_let_needs_alloca")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_clear_last_let_name")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_arm_pending_alloca")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare i64 @forge_fn_is_str_return(%ForgeString)")
-    ir_raw("declare void @forge_list_var_add(%ForgeString)")
-    ir_raw("declare void @forge_ptr_var_add(%ForgeString)")
-    ir_raw("declare i64 @forge_ptr_var_check(%ForgeString)")
-    ir_raw("declare void @forge_ptr_var_clear()")
-    ir_raw("declare void @forge_ptr_var_set_global()")
-    ir_raw("declare i64 @forge_list_var_check(%ForgeString)")
-    ir_raw("declare void @forge_list_var_clear()")
-    FN_NAMES = FN_NAMES.push("forge_fn_is_str_return")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_selfhost_get_arg")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    FN_NAMES = FN_NAMES.push("forge_set_last_let_name")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_let_to_alloca_name")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_set_alloca_name_c")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_ir_hoist_begin")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_ir_hoist_end")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare i64 @forge_alloca_cache_set(%ForgeString, ptr)")
-    ir_raw("declare ptr @forge_alloca_cache_get(%ForgeString)")
-    ir_raw("declare void @forge_alloca_cache_set_type(%ForgeString, ptr)")
-    ir_raw("declare void @forge_alloca_cache_set_last_type(ptr)")
-    ir_raw("declare ptr @forge_alloca_cache_get_type(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_alloca_cache_get_type")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    ir_raw("declare i64 @forge_str_var_add(%ForgeString)")
-    ir_raw("declare i64 @forge_str_var_check(%ForgeString)")
-    ir_raw("declare i64 @forge_str_var_clear()")
-    ir_raw("declare i64 @forge_is_null_val(ptr)")
-    ir_raw("declare i64 @forge_idx_cache_clear()")
-    ir_raw("declare i64 @forge_idx_cache_set(i64, ptr)")
-    ir_raw("declare ptr @forge_idx_cache_get(i64)")
-    ir_raw("declare i64 @forge_var_counter_get()")
-    ir_raw("declare i64 @forge_var_counter_inc()")
-    ir_raw("declare i64 @forge_var_counter_reset(i64)")
     ir_raw("declare %ForgeString @forge_read_file(%ForgeString)")
     ir_raw("declare i8 @forge_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_string_contains(%ForgeString, %ForgeString)")
@@ -3363,237 +2704,13 @@ fn compile(source: string) -> string {
     ir_raw("declare ptr @forge_map_new()")
     ir_raw("declare void @forge_map_set(ptr, %ForgeString, i64)")
     ir_raw("declare i64 @forge_map_get(ptr, %ForgeString)")
-    // Token accumulator (O(1) amortized push)
-    ir_raw("declare void @forge_tok_clear()")
-    ir_raw("declare void @forge_tok_push(i64, %ForgeString, i64)")
-    ir_raw("declare i64 @forge_tok_count()")
-    ir_raw("declare { ptr, i64 } @forge_tok_to_list()")
     ir_raw("declare i8 @forge_map_has(ptr, %ForgeString)")
-    // C-side function body store (immune to Forge list corruption)
-    // Module CSV accumulator
-    ir_raw("declare i64 @forge_scan_csv(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_extract_body_source(%ForgeString, i64, i64)")
-    ir_raw("declare void @forge_set_scan_source(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_extract_body_source")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("%ForgeString,i64,i64")
-    ir_raw("declare void @forge_scan_csv_set_cb(ptr)")
-    ir_raw("declare %ForgeString @forge_scan_csv_path(i64)")
-    ir_raw("declare void @forge_save_csv(%ForgeString)")
-    ir_raw("declare i64 @forge_csv_byte_at(i64)")
-    ir_raw("declare i64 @forge_csv_length()")
-    ir_raw("declare %ForgeString @forge_csv_substr(i64, i64)")
-    ir_raw("declare %ForgeString @forge_csv_next()")
-    ir_raw("declare void @forge_csv_scan_reset()")
-    ir_raw("declare i64 @forge_csv_scan_idx()")
-    ir_raw("declare i64 @forge_csv_has_next()")
-    ir_raw("declare void @forge_mod_csv_clear()")
-    ir_raw("declare void @forge_mod_csv_add(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_mod_csv_get()")
-    // Per-variable type name registry
-    ir_raw("declare void @forge_var_type_set(%ForgeString, %ForgeString)")
-    ir_raw("declare %ForgeString @forge_var_type_get(%ForgeString)")
-    ir_raw("declare void @forge_var_type_clear()")
-    ir_raw("declare void @forge_var_type_set_global_count()")
-    FN_NAMES = FN_NAMES.push("forge_var_type_get")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("%ForgeString")
-    // Param type registry
-    ir_raw("declare void @forge_param_type_clear()")
-    ir_raw("declare void @forge_param_type_add(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_param_type_get(i64)")
-    // Param name registry
-    ir_raw("declare void @forge_param_name_clear()")
-    ir_raw("declare void @forge_param_name_add(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_param_name_get(i64)")
-    // Self type tracking for method desugaring
-    ir_raw("declare void @forge_set_self_type(%ForgeString)")
-    ir_raw("declare %ForgeString @forge_get_self_type()")
-    // Debug
-    ir_raw("declare void @forge_debug_enum({ i64, ptr })")
-    ir_raw("declare void @forge_debug_str(%ForgeString)")
-    // C-side struct var type tracking
-    ir_raw("declare void @forge_struct_var_clear()")
-    ir_raw("declare void @forge_struct_var_add(%ForgeString, %ForgeString)")
-    ir_raw("declare void @forge_struct_var_add_by_type(%ForgeString, ptr)")
-    ir_raw("declare %ForgeString @forge_struct_var_get(%ForgeString)")
-    // C-side struct type registry
-    ir_raw("declare void @forge_set_last_emit_result(ptr)")
-    ir_raw("declare ptr @forge_get_last_emit_result()")
-    FN_NAMES = FN_NAMES.push("forge_get_last_emit_result")
-    FN_RETTYPES = FN_RETTYPES.push("ptr")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare void @forge_struct_reg_clear()")
-    ir_raw("declare void @forge_struct_reg_add(%ForgeString, %ForgeString, %ForgeString)")
-    ir_raw("declare void @forge_struct_reg_set_llvm_type(%ForgeString, ptr)")
-    ir_raw("declare i64 @forge_struct_reg_count()")
-    ir_raw("declare %ForgeString @forge_struct_reg_get_name(i64)")
-    ir_raw("declare %ForgeString @forge_struct_reg_get_fields(i64)")
-    ir_raw("declare %ForgeString @forge_struct_reg_get_field_types(i64)")
-    ir_raw("declare ptr @forge_struct_reg_get_llvm_type(i64)")
-    ir_raw("declare ptr @forge_struct_reg_find_type(%ForgeString)")
-    ir_raw("declare void @forge_struct_reg_sync_types(ptr)")
-    ir_raw("declare i64 @forge_struct_reg_name_for_type_i64(ptr)")
-    ir_raw("declare %ForgeString @forge_struct_reg_last_name()")
-    // C-side variable name tracking
-    ir_raw("declare void @forge_var_name_clear()")
-    ir_raw("declare void @forge_var_name_push(%ForgeString)")
-    ir_raw("declare i64 @forge_var_name_exists(%ForgeString)")
-    ir_raw("declare void @forge_var_name_set_scope(i64)")
-    // Function name/return-type registry
-    ir_raw("declare void @forge_fn_reg_clear()")
-    ir_raw("declare void @forge_fn_reg_add(%ForgeString, %ForgeString)")
-    ir_raw("declare %ForgeString @forge_fn_reg_get_ret(%ForgeString)")
-    ir_raw("declare i64 @forge_fn_reg_count()")
-    ir_raw("declare void @forge_fn_store_clear()")
-    ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
-    ir_raw("declare void @forge_fn_store_set_param_count(i64, i64)")
-    ir_raw("declare i64 @forge_fn_store_get_param_count(i64)")
-    ir_raw("declare %ForgeString @forge_fn_store_get_body(i64)")
-    ir_raw("declare %ForgeString @forge_fn_store_get_name(i64)")
-    ir_raw("declare i64 @forge_fn_store_count()")
-    ir_raw("declare void @forge_dump_token_list(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_dump_token_list")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    FN_NAMES = FN_NAMES.push("forge_fn_store_count")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    // C-side keyword detection (bypasses Statement.If/Return tag corruption)
-    ir_raw("declare i64 @forge_kind_id_for_keyword(%ForgeString)")
-    // C-side parser operations
-    ir_raw("declare i64 @forge_parser_consume_empty_params()")
-    FN_NAMES = FN_NAMES.push("forge_parser_consume_empty_params")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare %ForgeString @forge_parser_consume_block(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_parser_consume_block")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    ir_raw("declare i64 @forge_parser_is_at_rparen()")
-    FN_NAMES = FN_NAMES.push("forge_parser_is_at_rparen")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare i64 @forge_parser_is_at_end()")
-    FN_NAMES = FN_NAMES.push("forge_parser_is_at_end")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare i64 @forge_parser_expect_id(i64)")
-    FN_NAMES = FN_NAMES.push("forge_parser_expect_id")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    ir_raw("declare i64 @forge_parser_check_id(i64)")
-    FN_NAMES = FN_NAMES.push("forge_parser_check_id")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    ir_raw("declare void @forge_parser_skip_newlines()")
-    FN_NAMES = FN_NAMES.push("forge_parser_skip_newlines")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    // C-side parser debug
-    ir_raw("declare void @forge_debug_parser_state(%ForgeString)")
-    ir_raw("declare void @forge_enable_peek_trace()")
-    FN_NAMES = FN_NAMES.push("forge_enable_peek_trace")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_debug_parser_state")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    // C-side parser position tracking
-    ir_raw("declare void @forge_parser_set_ptr(ptr)")
-    FN_NAMES = FN_NAMES.push("forge_parser_set_ptr")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("ptr")
-    ir_raw("declare void @forge_parser_set_pos(i64)")
-    FN_NAMES = FN_NAMES.push("forge_parser_set_pos")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    ir_raw("declare i64 @forge_parser_get_pos()")
-    FN_NAMES = FN_NAMES.push("forge_parser_get_pos")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    ir_raw("declare void @forge_parser_advance_pos()")
-    FN_NAMES = FN_NAMES.push("forge_parser_advance_pos")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    // C-side token accessors (bypasses Token struct return value corruption)
-    ir_raw("declare void @forge_set_token_list(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_set_token_list")
-    FN_RETTYPES = FN_RETTYPES.push("void")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    ir_raw("declare i64 @forge_peek_kind_id(i64)")
-    FN_NAMES = FN_NAMES.push("forge_peek_kind_id")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    ir_raw("declare %ForgeString @forge_peek_text(i64)")
-    FN_NAMES = FN_NAMES.push("forge_peek_text")
-    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
-    ir_raw("declare i64 @forge_token_list_len()")
-    FN_NAMES = FN_NAMES.push("forge_token_list_len")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
-    FN_NAMES = FN_NAMES.push("forge_kind_id_for_keyword")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    // C-side character classification (bypasses Statement.Expr tag corruption)
-    ir_raw("declare i64 @forge_is_alpha(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_is_alpha")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    ir_raw("declare i64 @forge_is_digit(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_is_digit")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    ir_raw("declare i64 @forge_is_alnum(%ForgeString)")
-    ir_raw("declare i64 @forge_is_ident_start(%ForgeString)")
-    ir_raw("declare i64 @forge_is_ident_continue(%ForgeString)")
-    ir_raw("declare i64 @forge_is_hex_digit(%ForgeString)")
-    ir_raw("declare i64 @forge_is_whitespace_not_newline(%ForgeString)")
-    FN_NAMES = FN_NAMES.push("forge_is_whitespace_not_newline")
-    FN_RETTYPES = FN_RETTYPES.push("i64")
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
-    // C-side string helpers for Stage 2 bootstrap
-    ir_raw("declare i64 @forge_sh_indexof(%ForgeString, %ForgeString)")
-    ir_raw("declare %ForgeString @forge_sh_substr(%ForgeString, i64, i64)")
-    ir_raw("declare i64 @forge_sh_length(%ForgeString)")
     ir_raw("declare void @forge_mini_write_file(%ForgeString, %ForgeString)")
     ir_raw("declare void @forge_mini_write_debug(%ForgeString, %ForgeString)")
     ir_raw("declare i8 @forge_fs_write_string(ptr, i64, ptr, i64)")
     ir_raw("declare void @forge_write_lines(%ForgeString, { ptr, i64 })")
     ir_raw("declare %ForgeString @forge_join_lines({ ptr, i64 })")
-    ir_raw("declare void @forge_write_lines_append(%ForgeString, { ptr, i64 })")
-    ir_raw("declare void @forge_ir_open(%ForgeString)")
-    ir_raw("declare void @forge_ir_line(%ForgeString)")
-    ir_raw("declare void @forge_ir_close()")
     ir_raw("declare { ptr, i64 } @forge_list_push({ ptr, i64 }, ptr, i64)")
-    ir_raw("declare { ptr, i64 } @forge_list_push_str({ ptr, i64 }, %ForgeString)")
     ir_raw("")
     // Emit package extern function declarations
     emit_package_externs()
@@ -3652,19 +2769,6 @@ fn compile(source: string) -> string {
         if fi % 50 == 0 { eprintln("  codegen: " + string(fi) + "/" + string(fns.length) + " " + f.name) }
         gen_fn_decl(f)
         fi = fi + 1
-    }
-
-    // Emit auto-declared namespace functions (discovered during codegen)
-    mut adi = 0
-    while adi < AUTO_DECLARED.length {
-        let ad_name = AUTO_DECLARED[adi]
-        // Use ptr return for forge_llvm_* (LLVM API wrappers return ptrs)
-        if ad_name.length >= 10 && ad_name.substring(0, 10) == "forge_llvm" {
-            ir_raw("declare ptr @" + ad_name + "(...)")
-        } else {
-            ir_raw("declare i64 @" + ad_name + "(...)")
-        }
-        adi = adi + 1
     }
 
     "done"

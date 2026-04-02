@@ -253,12 +253,6 @@ fn ast_parse_primary() -> Expr {
         return expr_str(s)
     }
 
-    // Template string (backtick)
-    if tok.kind == 7 {
-        advance()
-        return expand_template(tok.text)
-    }
-
     // Bool literal
     if tok.kind == 6 {
         advance()
@@ -425,15 +419,6 @@ fn ast_parse_primary() -> Expr {
                 advance()
                 skip_nl()
                 while not_at_paren() {
-                    // Skip named parameter labels: name: value → just parse value
-                    if peek().kind == 1 && POS + 1 < TOKENS.length {
-                        let next: Tok = TOKENS[POS + 1]
-                        if next.text == ":" {
-                            advance()
-                            advance()
-                            skip_nl()
-                        }
-                    }
                     args = args.push(ast_parse_expr())
                     skip_nl()
                     if check(",") { advance() }
@@ -692,10 +677,7 @@ fn ast_parse_fn_decl() -> FnDecl {
         if check("mut") { advance() }
         let pname = advance().text
         if !check(":") {
-            // self param or untyped param
-            if pname == "self" {
-                params = params.push(Param { name: "self", type_name: "self" })
-            }
+            // self param or untyped param — skip
             skip_nl()
             if check(",") { advance() }
             skip_nl()
@@ -804,49 +786,33 @@ fn ast_parse_program() -> List<FnDecl> {
             // Parse impl block: impl TypeName { fn method(self) { ... } }
             advance()
             skip_nl()
-            mut impl_type = advance().text
-            // "impl Trait for Type" — use Type as the impl type for mangling
+            let impl_type = advance().text
+            // Skip "for TypeName" if present
             skip_nl()
             if check("for") {
                 advance()
                 skip_nl()
-                impl_type = advance().text
+                advance()  // skip target type
             }
             skip_nl()
             expect("{")
             skip_nl()
             while not_at_brace() {
                 skip_nl()
-                if POS < TOKENS.length {
-                    let _peek_tok: Tok = TOKENS[POS]
-                    if _peek_tok.text == "}" {
-                        eprintln("  [impl-exit] " + impl_type + " at pos=" + string(POS) + " tok=" + _peek_tok.text)
-                    }
-                }
                 if check("fn") {
-                    let _pre = POS
                     mut f = ast_parse_fn_decl()
-                    if POS < TOKENS.length {
-                        let _pt: Tok = TOKENS[POS]
-                        eprintln("  [impl-after] " + impl_type + "_" + f.name + " pos=" + string(_pre) + "->" + string(POS) + " next_kind=" + string(_pt.kind) + " next=" + _pt.text)
-                    }
                     // Mangle name: TypeName_method
                     f.name = impl_type + "_" + f.name
-                    // Check if first param is "self" — set its type to ptr
-                    if f.params.length > 0 {
-                        let first_p: Param = f.params[0]
-                        if first_p.type_name == "self" {
-                            mut new_params: List<Param> = []
-                            new_params = new_params.push(Param { name: "self", type_name: "ptr" })
-                            mut pi = 1
-                            while pi < f.params.length {
-                                let p: Param = f.params[pi]
-                                new_params = new_params.push(p)
-                                pi = pi + 1
-                            }
-                            f.params = new_params
-                        }
+                    // Inject self param with impl type
+                    mut new_params: List<Param> = []
+                    new_params = new_params.push(Param { name: "self", type_name: impl_type })
+                    mut pi = 0
+                    while pi < f.params.length {
+                        let p: Param = f.params[pi]
+                        new_params = new_params.push(p)
+                        pi = pi + 1
                     }
+                    f.params = new_params
                     fns = fns.push(f)
                 } else {
                     advance()

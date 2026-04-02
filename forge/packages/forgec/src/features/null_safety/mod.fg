@@ -73,35 +73,40 @@ fn make_optional_chain(object: Expr, field: string, span: Span) -> Expr {
 // ─── Check ──────────────────────────────────────
 
 fn check_null_safety(tc: TypeChecker, node: NodeRef) -> Type {
-    if node.kind_name == "force_unwrap" {
-        let d = get_unwrap(node.node_id)
-        if d == null { return Type.Unknown }
-        let data = d!
-        let inner = tc.infer_expr(data.expr)
-        return match inner {
-            .Nullable(t) -> t
-            _ -> inner
+    match node.kind_name {
+        "force_unwrap" -> {
+            let d = get_unwrap(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let inner = tc.infer_expr(data.expr)
+            // Unwrap nullable: T? -> T
+            match inner {
+                .Nullable(t) -> t
+                _ -> inner  // Already non-null
+            }
         }
-    }
-    if node.kind_name == "coalesce" {
-        let d = get_coalesce(node.node_id)
-        if d == null { return Type.Unknown }
-        let data = d!
-        let lhs_type = tc.infer_expr(data.lhs)
-        let rhs_type = tc.infer_expr(data.rhs)
-        return match lhs_type {
-            .Nullable(t) -> t
-            _ -> lhs_type
+        "coalesce" -> {
+            let d = get_coalesce(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let lhs_type = tc.infer_expr(data.lhs)
+            let rhs_type = tc.infer_expr(data.rhs)
+            // T? ?? T -> T
+            match lhs_type {
+                .Nullable(t) -> t
+                _ -> lhs_type
+            }
         }
+        "optional_chain" -> {
+            let d = get_optional_chain(node.node_id)
+            if d == null { return Type.Unknown }
+            let data = d!
+            let obj_type = tc.infer_expr(data.object)
+            // TODO: resolve field type, wrap in nullable
+            Type.Nullable(Type.Unknown)
+        }
+        _ -> Type.Unknown
     }
-    if node.kind_name == "optional_chain" {
-        let d = get_optional_chain(node.node_id)
-        if d == null { return Type.Unknown }
-        let data = d!
-        let obj_type = tc.infer_expr(data.object)
-        return Type.Nullable(Type.Unknown)
-    }
-    Type.Unknown
 }
 
 // ─── Emit ───────────────────────────────────────

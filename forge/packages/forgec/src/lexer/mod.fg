@@ -55,36 +55,35 @@ export fn string_to_chars(s: string) -> List<string> {
 }
 
 export fn is_alpha(ch: string) -> bool {
-    // C-side: completely bypasses Forge codegen issues (Statement.Expr tag corruption)
-    forge_is_alpha(ch) == 1
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
 }
 
 export fn is_digit(ch: string) -> bool {
-    forge_is_digit(ch) == 1
+    ch >= "0" && ch <= "9"
 }
 
 export fn is_hex_digit(ch: string) -> bool {
-    forge_is_hex_digit(ch) == 1
+    is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
 }
 
 export fn is_alnum(ch: string) -> bool {
-    forge_is_alnum(ch) == 1
+    is_alpha(ch) || is_digit(ch)
 }
 
 export fn is_ident_start(ch: string) -> bool {
-    forge_is_ident_start(ch) == 1
+    is_alpha(ch) || ch == "$"
 }
 
 export fn is_ident_continue(ch: string) -> bool {
-    forge_is_ident_continue(ch) == 1
+    is_alnum(ch) || ch == "$"
 }
 
 fn is_binary_digit(ch: string) -> bool {
-    forge_string_byte_at(ch, 0) == 48 || forge_string_byte_at(ch, 0) == 49
+    ch == "0" || ch == "1"
 }
 
 fn is_octal_digit(ch: string) -> bool {
-    forge_string_byte_at(ch, 0) >= 48 && forge_string_byte_at(ch, 0) <= 55
+    ch >= "0" && ch <= "7"
 }
 
 fn is_radix_digit(ch: string, radix: int) -> bool {
@@ -95,7 +94,8 @@ fn is_radix_digit(ch: string, radix: int) -> bool {
 }
 
 export fn is_whitespace_not_newline(ch: string) -> bool {
-    forge_is_whitespace_not_newline(ch) == 1
+    // Note: removed \r check — bootstrap confuses "r" with "\r" in string comparison
+    ch == " " || ch == "\t"
 }
 
 // ─── Lexer Methods ─────────────────────────────
@@ -117,9 +117,10 @@ impl Lexer {
     // to avoid force-unwrap codegen issues in && expressions.
     fn peek_ch(self) -> string {
         if self.pos < self.source.length {
-            return self.source[self.pos]
+            self.source[self.pos]
+        } else {
+            ""
         }
-        return ""
     }
 
     fn peek_at(self, offset: int) -> string? {
@@ -136,13 +137,13 @@ impl Lexer {
     fn peek_ch_at(self, offset: int) -> string {
         let idx = self.pos + offset
         if idx < self.source.length {
-            return self.source[idx]
+            self.source[idx]
+        } else {
+            ""
         }
-        return ""
     }
 
     fn advance(self) -> string {
-        if self.pos >= self.source.length { return "" }
         let ch = self.source[self.pos]
         self.pos = self.pos + 1
         if ch == "\n" {
@@ -179,39 +180,40 @@ impl Lexer {
     // ─── Whitespace & Comments ─────────────────
 
     fn skip_whitespace(self) {
-        // No && in while condition (compiled output doesn't short-circuit)
         while self.pos < self.source.length {
-            if !is_whitespace_not_newline(self.source[self.pos]) { return }
-            self.advance()
+            let ch = self.source[self.pos]
+            if is_whitespace_not_newline(ch) {
+                self.advance()
+            } else {
+                break
+            }
         }
     }
 
     fn skip_comments(self) {
-        // Skip // comments — use explicit returns to avoid if-branch merge bug
-        if self.pos + 1 >= self.source.length { return }
-        let c0 = self.source[self.pos]
-        if c0 != "/" { return }
-        let c1 = self.source[self.pos + 1]
-        if c1 != "/" { return }
-        // Got // — check for doc comment ///
-        if self.pos + 2 < self.source.length {
-            let c2 = self.source[self.pos + 2]
-            if c2 == "/" {
-                // Check for //// (regular comment, not doc)
-                if self.pos + 3 < self.source.length {
-                    let c3 = self.source[self.pos + 3]
-                    if c3 != "/" { return }
-                } else {
-                    return
+        // Skip // comments (but not /// doc comments)
+        if self.pos + 1 < self.source.length {
+            if self.source[self.pos] == "/" && self.source[self.pos + 1] == "/" {
+                // Check if it's a doc comment (///)
+                if self.pos + 2 < self.source.length && self.source[self.pos + 2] == "/" {
+                    // Check it's not //// (which is a regular comment)
+                    if self.pos + 3 < self.source.length && self.source[self.pos + 3] == "/" {
+                        // //// — regular comment, skip it
+                    } else {
+                        // /// — doc comment, don't skip (will be tokenized)
+                        return
+                    }
                 }
+                // Skip to end of line
+                while self.pos < self.source.length && self.source[self.pos] != "\n" {
+                    self.pos = self.pos + 1
+                    self.col = self.col + 1
+                }
+                // Skip whitespace after comment
+                self.skip_whitespace()
+                // Recursively skip more comments
+                self.skip_comments()
             }
-        }
-        // Skip to end of line
-        while self.pos < self.source.length {
-            let lch = self.source[self.pos]
-            if lch == "\n" { return }
-            self.pos = self.pos + 1
-            self.col = self.col + 1
         }
     }
 
@@ -220,13 +222,18 @@ impl Lexer {
     fn tokenize(self) -> List<Token> {
         mut tokens: List<Token> = []
 
-        self.skip_whitespace()
-        self.skip_comments()
         while !self.is_at_end() {
-            let token = self.next_token()
-            tokens = tokens.push(token)
             self.skip_whitespace()
             self.skip_comments()
+
+            if self.is_at_end() {
+                break
+            }
+
+            let token = self.next_token()
+            if token.kind_id != 99 {  // 99 = EOF
+                tokens = tokens.push(token)
+            }
         }
 
         // Add EOF (kind_id=99 for EOF detection)
@@ -252,8 +259,6 @@ impl Lexer {
             return Token {
                 kind: TokenKind.Newline,
                 span: self.make_span(start_pos, start_line, start_col),
-                text: "",
-                kind_id: 120,
             }
         }
 
@@ -396,15 +401,12 @@ impl Lexer {
                 let next_next = self.peek_at(1)
                 if next_next == null || (!is_alnum(next_next!) && next_next! != "_") {
                     let suffix = self.advance()
-                    mut multiplier = 1
-                    if suffix == "d" {
-                        multiplier = 86400000
-                    } else if suffix == "h" {
-                        multiplier = 3600000
-                    } else if suffix == "m" {
-                        multiplier = 60000
-                    } else if suffix == "s" {
-                        multiplier = 1000
+                    let multiplier = match suffix {
+                        "d" -> 86400000
+                        "h" -> 3600000
+                        "m" -> 60000
+                        "s" -> 1000
+                        _ -> 1
                     }
                     return token_int(value * multiplier, self.make_span(start_pos, start_line, start_col))
                 }
@@ -475,12 +477,20 @@ impl Lexer {
                     self.advance()
                     if !self.is_at_end() {
                         let escaped = self.advance()
-                        if escaped == "n" { text = text + "\n" }
-                        else if escaped == "t" { text = text + "\t" }
-                        else if escaped == "\\" { text = text + "\\" }
-                        else if escaped == "$" { text = text + "$" }
-                        else if escaped == close_ch { text = text + close_ch }
-                        else { text = text + escaped }
+                        match escaped {
+                            "n" -> { text = text + "\n" }
+                            "t" -> { text = text + "\t" }
+                            "\\" -> { text = text + "\\" }
+                            "$" -> { text = text + "$" }
+                            _ -> {
+                                // Also handle close_ch as escape target
+                                if escaped == close_ch {
+                                    text = text + close_ch
+                                } else {
+                                    text = text + escaped
+                                }
+                            }
+                        }
                     }
                     continue
                 }
@@ -640,7 +650,7 @@ impl Lexer {
 
         // Check for tagged template: ident immediately followed by `
         // (only if not a keyword)
-        let kind = keyword_kind_from_id(kind_id_for_keyword(text))
+        let kind = keyword_kind(text)
         if kind == null && !self.is_at_end() && self.peek_ch() == "`" {
             self.advance() // consume `
             return self.lex_tagged_template(text, start_pos, start_line, start_col)
@@ -655,21 +665,11 @@ impl Lexer {
         }
 
         // Return keyword or identifier
-        // Bootstrap workaround: avoid let statements (Statement.Let tag corrupted in Stage 2).
-        // Use forge_kind_id_for_keyword result directly in conditions.
-        if text == "true" { return token_bool(true, span) }
-        if text == "false" { return token_bool(false, span) }
-        if text == "null" { return Token { kind: TokenKind.NullLiteral, span: span, text: "null", kind_id: 8 } }
-        // Check if keyword using C-side function (avoids let + if corruption)
-        if forge_kind_id_for_keyword(text) > 0 {
-            // Create keyword token with correct kind_id
-            // Can't use let (tag corrupted), so pass kind_id directly
-            return Token {
-                kind: TokenKind.Ident(text),
-                span: span,
-                text: text,
-                kind_id: forge_kind_id_for_keyword(text),
-            }
+        // Bootstrap workaround: nullable return from keyword_kind is unreliable.
+        // Use is_keyword check (returns bool, not nullable) instead.
+        if is_keyword(text) {
+            let kw = keyword_kind(text)
+            return token_new(kw!, span)
         }
 
         token_ident(text, span)
@@ -803,126 +803,125 @@ impl Lexer {
         self.pos = saved_pos
         self.line = saved_line
         self.col = saved_col
-        Token { kind: TokenKind.Eof, span: self.current_span(), text: "", kind_id: 99 }
+        Token { kind: TokenKind.Eof, span: self.current_span() }
     }
 
     // ─── Operators & Punctuation ───────────────
 
     fn lex_operator(self, start_pos: int, start_line: int, start_col: int) -> Token {
         let ch = self.advance()
-        let sp = self.make_span(start_pos, start_line, start_col)
 
-        // Single-character tokens (all with kind_id for Stage 2 dispatch)
-        if ch == "(" { return token_with_id(TokenKind.LParen, sp, 100) }
-        if ch == ")" { return token_with_id(TokenKind.RParen, sp, 101) }
-        if ch == "{" { return token_with_id(TokenKind.LBrace, sp, 102) }
-        if ch == "}" { return token_with_id(TokenKind.RBrace, sp, 103) }
-        if ch == "[" { return token_with_id(TokenKind.LBracket, sp, 104) }
-        if ch == "]" { return token_with_id(TokenKind.RBracket, sp, 105) }
-        if ch == "," { return token_with_id(TokenKind.Comma, sp, 110) }
-        if ch == ":" { return token_with_id(TokenKind.Colon, sp, 112) }
-        if ch == ";" { return token_with_id(TokenKind.Semicolon, sp, 113) }
-        if ch == "@" { return token_with_id(TokenKind.At, sp, 114) }
-        if ch == "#" { return token_with_id(TokenKind.Hash, sp, 115) }
-        if ch == "+" { return token_with_id(TokenKind.Plus, sp, 70) }
-        if ch == "*" { return token_with_id(TokenKind.Star, sp, 72) }
-        if ch == "%" { return token_with_id(TokenKind.Percent, sp, 74) }
-        if ch == "^" { return token_with_id(TokenKind.Caret, sp, 95) }
-        if ch == "~" { return token_with_id(TokenKind.Tilde, sp, 96) }
+        // Single-character tokens
+        if ch == "(" { return Token { kind: TokenKind.LParen, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ")" { return Token { kind: TokenKind.RParen, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "{" { return Token { kind: TokenKind.LBrace, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "}" { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "[" { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "]" { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "," { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ":" { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == ";" { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "@" { return Token { kind: TokenKind.At, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "#" { return Token { kind: TokenKind.Hash, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "+" { return Token { kind: TokenKind.Plus, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "*" { return Token { kind: TokenKind.Star, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "%" { return Token { kind: TokenKind.Percent, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "^" { return Token { kind: TokenKind.Caret, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "~" { return Token { kind: TokenKind.Tilde, span: self.make_span(start_pos, start_line, start_col) } }
 
-        // Multi-character operators (all with kind_id for Stage 2 dispatch)
+        // Multi-character operators
         let next = self.peek_ch()
 
         // - or ->
         if ch == "-" {
             if next == ">" {
                 self.advance()
-                return token_with_id(TokenKind.Arrow, self.make_span(start_pos, start_line, start_col), 86)
+                return Token { kind: TokenKind.Arrow, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Minus, sp, 71)
+            return Token { kind: TokenKind.Minus, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // = or ==
         if ch == "=" {
             if next == "=" {
                 self.advance()
-                return token_with_id(TokenKind.EqEq, self.make_span(start_pos, start_line, start_col), 76)
+                return Token { kind: TokenKind.EqEq, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Eq, sp, 75)
+            return Token { kind: TokenKind.Eq, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // ! or !=
         if ch == "!" {
             if next == "=" {
                 self.advance()
-                return token_with_id(TokenKind.NotEq, self.make_span(start_pos, start_line, start_col), 77)
+                return Token { kind: TokenKind.NotEq, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Not, sp, 84)
+            return Token { kind: TokenKind.Not, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // < or <= or <- or <<
         if ch == "<" {
             if next == "=" {
                 self.advance()
-                return token_with_id(TokenKind.LtEq, self.make_span(start_pos, start_line, start_col), 79)
+                return Token { kind: TokenKind.LtEq, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == "-" {
                 self.advance()
-                return token_with_id(TokenKind.LeftArrow, self.make_span(start_pos, start_line, start_col), 87)
+                return Token { kind: TokenKind.LeftArrow, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == "<" {
                 self.advance()
-                return token_with_id(TokenKind.ShiftLeft, self.make_span(start_pos, start_line, start_col), 97)
+                return Token { kind: TokenKind.ShiftLeft, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Lt, sp, 78)
+            return Token { kind: TokenKind.Lt, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // > or >= or >>
         if ch == ">" {
             if next == "=" {
                 self.advance()
-                return token_with_id(TokenKind.GtEq, self.make_span(start_pos, start_line, start_col), 81)
+                return Token { kind: TokenKind.GtEq, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == ">" {
                 self.advance()
-                return token_with_id(TokenKind.ShiftRight, self.make_span(start_pos, start_line, start_col), 98)
+                return Token { kind: TokenKind.ShiftRight, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Gt, sp, 80)
+            return Token { kind: TokenKind.Gt, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // & or &&
         if ch == "&" {
             if next == "&" {
                 self.advance()
-                return token_with_id(TokenKind.And, self.make_span(start_pos, start_line, start_col), 82)
+                return Token { kind: TokenKind.And, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Ampersand, sp, 93)
+            return Token { kind: TokenKind.Ampersand, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // | or || or |>
         if ch == "|" {
             if next == "|" {
                 self.advance()
-                return token_with_id(TokenKind.Or, self.make_span(start_pos, start_line, start_col), 83)
+                return Token { kind: TokenKind.Or, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == ">" {
                 self.advance()
-                return token_with_id(TokenKind.Pipe, self.make_span(start_pos, start_line, start_col), 85)
+                return Token { kind: TokenKind.Pipe, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Bar, sp, 94)
+            return Token { kind: TokenKind.Bar, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // ? or ?. or ??
         if ch == "?" {
             if next == "." {
                 self.advance()
-                return token_with_id(TokenKind.QuestionDot, self.make_span(start_pos, start_line, start_col), 89)
+                return Token { kind: TokenKind.QuestionDot, span: self.make_span(start_pos, start_line, start_col) }
             }
             if next == "?" {
                 self.advance()
-                return token_with_id(TokenKind.DoubleQuestion, self.make_span(start_pos, start_line, start_col), 90)
+                return Token { kind: TokenKind.DoubleQuestion, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Question, sp, 88)
+            return Token { kind: TokenKind.Question, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // . or .. or ... or ..=
@@ -932,33 +931,126 @@ impl Lexer {
                 let next2 = self.peek()
                 if next2 == "." {
                     self.advance()
-                    return token_with_id(TokenKind.Spread, self.make_span(start_pos, start_line, start_col), 116)
+                    return Token { kind: TokenKind.Spread, span: self.make_span(start_pos, start_line, start_col) }
                 }
                 if next2 == "=" {
                     self.advance()
-                    return token_with_id(TokenKind.DotDotEq, self.make_span(start_pos, start_line, start_col), 92)
+                    return Token { kind: TokenKind.DotDotEq, span: self.make_span(start_pos, start_line, start_col) }
                 }
-                return token_with_id(TokenKind.DotDot, self.make_span(start_pos, start_line, start_col), 91)
+                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col) }
             }
-            return token_with_id(TokenKind.Dot, sp, 111)
+            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // /
         if ch == "/" {
-            return token_with_id(TokenKind.Slash, sp, 73)
+            return Token { kind: TokenKind.Slash, span: self.make_span(start_pos, start_line, start_col) }
         }
 
         // Unknown character
         let span = self.make_span(start_pos, start_line, start_col)
         self.add_error("F0001", "unexpected character: '${ch}'", span)
-        Token { kind: TokenKind.Eof, span: span, text: "", kind_id: 99 }
+        Token { kind: TokenKind.Eof, span }
     }
 }
 
 // ─── Keyword Lookup ────────────────────────────
 
-export fn is_keyword(text: string) -> bool { false }
-export fn keyword_kind(text: string) -> TokenKind? { null }
+export fn is_keyword(text: string) -> bool {
+    if text == "let" { return true }
+    if text == "mut" { return true }
+    if text == "const" { return true }
+    if text == "fn" { return true }
+    if text == "return" { return true }
+    if text == "if" { return true }
+    if text == "else" { return true }
+    if text == "match" { return true }
+    if text == "for" { return true }
+    if text == "in" { return true }
+    if text == "while" { return true }
+    if text == "loop" { return true }
+    if text == "break" { return true }
+    if text == "continue" { return true }
+    if text == "enum" { return true }
+    if text == "type" { return true }
+    if text == "use" { return true }
+    if text == "mod" { return true }
+    if text == "as" { return true }
+    if text == "export" { return true }
+    if text == "emit" { return true }
+    if text == "on" { return true }
+    if text == "trait" { return true }
+    if text == "impl" { return true }
+    if text == "defer" { return true }
+    if text == "errdefer" { return true }
+    if text == "spawn" { return true }
+    if text == "parallel" { return true }
+    if text == "with" { return true }
+    if text == "without" { return true }
+    if text == "only" { return true }
+    if text == "partial" { return true }
+    if text == "catch" { return true }
+    if text == "select" { return true }
+    if text == "component" { return true }
+    if text == "is" { return true }
+    if text == "table" { return true }
+    if text == "true" { return true }
+    if text == "false" { return true }
+    if text == "null" { return true }
+    if text == "Ok" { return true }
+    if text == "Err" { return true }
+    if text == "_" { return true }
+    false
+}
+
+export fn keyword_kind(text: string) -> TokenKind? {
+    match text {
+        "let" -> TokenKind.Let
+        "mut" -> TokenKind.Mut
+        "const" -> TokenKind.Const
+        "fn" -> TokenKind.Fn
+        "return" -> TokenKind.Return
+        "if" -> TokenKind.If
+        "else" -> TokenKind.Else
+        "match" -> TokenKind.Match
+        "for" -> TokenKind.For
+        "in" -> TokenKind.In
+        "while" -> TokenKind.While
+        "loop" -> TokenKind.Loop
+        "break" -> TokenKind.Break
+        "continue" -> TokenKind.Continue
+        "enum" -> TokenKind.Enum
+        "type" -> TokenKind.TypeKw
+        "use" -> TokenKind.Use
+        "mod" -> TokenKind.Mod
+        "as" -> TokenKind.As
+        "export" -> TokenKind.Export
+        "emit" -> TokenKind.Emit
+        "on" -> TokenKind.On
+        "trait" -> TokenKind.Trait
+        "impl" -> TokenKind.Impl
+        "defer" -> TokenKind.Defer
+        "errdefer" -> TokenKind.Errdefer
+        "spawn" -> TokenKind.Spawn
+        "parallel" -> TokenKind.Parallel
+        "with" -> TokenKind.With
+        "without" -> TokenKind.Without
+        "only" -> TokenKind.Only
+        "partial" -> TokenKind.Partial
+        "catch" -> TokenKind.Catch
+        "select" -> TokenKind.Select
+        "component" -> TokenKind.Component
+        "is" -> TokenKind.Is
+        "table" -> TokenKind.Table
+        "true" -> TokenKind.BoolLiteral(true)
+        "false" -> TokenKind.BoolLiteral(false)
+        "null" -> TokenKind.NullLiteral
+        "Ok" -> TokenKind.OkKw
+        "Err" -> TokenKind.ErrKw
+        "_" -> TokenKind.Underscore
+        _ -> null
+    }
+}
 
 // ─── Number Parsing Helpers ────────────────────
 

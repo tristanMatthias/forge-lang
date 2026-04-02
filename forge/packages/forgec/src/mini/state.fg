@@ -6,9 +6,6 @@
 mut TOKENS: List<Tok> = []
 mut POS: int = 0
 mut IR: List<string> = []
-// Entry block allocas — emitted at function start, not at current position.
-// Prevents dynamic allocas inside loops which corrupt local variables.
-mut ENTRY_ALLOCAS: List<string> = []
 mut REG_N: int = 0
 mut LBL_N: int = 0
 mut STR_N: int = 0
@@ -99,8 +96,6 @@ mut FN_NAMES: List<string> = []
 mut FN_RETTYPES: List<string> = []
 mut FN_PARAMCOUNTS: List<int> = []
 mut FN_PARAM_TYPES: List<string> = []  // CSV per function: "i64,%ForgeString,i64"
-// List return element type tracking as CSV: ",fn_name:elem_type,"
-mut FN_RET_ELEM_CSV: string = ""
 
 // Loop labels for break/continue
 mut LOOP_COND: List<string> = []
@@ -125,7 +120,6 @@ mut IN_MATCH_ARM: int = 0
 mut NS_NAMES: List<string> = []      // ["llvm", "llvm", ...]
 mut NS_FN_NAMES: List<string> = []   // ["build_trunc", "context_create", ...]
 mut NS_MANGLED: List<string> = []    // ["llvm_build_trunc", "llvm_context_create", ...]
-mut AUTO_DECLARED: List<string> = [] // Auto-declared namespace functions (not in package.fg)
 
 fn find_ns_fn(ns: string, method: string) -> string {
     mut i = 0
@@ -273,20 +267,6 @@ fn is_list_type(ty: string) -> bool {
 }
 
 
-// After a function call that returns a list, look up the element type from FN_RET_ELEM_CSV
-fn set_list_elem_from_fn(fn_name: string) {
-    if LAST_IS_LIST != 1 { return }
-    let needle = "," + fn_name + ":"
-    let idx = FN_RET_ELEM_CSV.index_of(needle)
-    if idx < 0 { return }
-    let start = idx + needle.length
-    let rest = FN_RET_ELEM_CSV.substring(start, FN_RET_ELEM_CSV.length)
-    let end = rest.index_of(",")
-    if end > 0 {
-        LAST_LIST_ELEM_TYPE = rest.substring(0, end)
-    }
-}
-
 fn set_type_from_llvm(ty: string) {
     // Given an LLVM return type, set LAST_IS_STR/LAST_IS_LIST/LAST_STRUCT_TYPE/LAST_ENUM_TYPE
     if ty == "%ForgeString" {
@@ -401,11 +381,11 @@ fn enum_max_slots(enum_idx: int) -> int {
 }
 
 fn enum_llvm_type_str(enum_idx: int) -> string {
-    // Heap-allocated payload: { i64 tag, ptr payload }
-    // Using i64 for tag (not i8) to avoid ABI issues with { i8, ptr } struct returns
+    // Heap-allocated payload: { i8 tag, ptr payload }
     // Construction: alloc variant struct → store fields → store ptr in enum
     // Extraction: load ptr → GEP → load field
-    "{ i64, ptr }"
+    "{ i8, ptr }"
+}
 }
 
 // Convert stored field type to LLVM load type
@@ -425,7 +405,6 @@ fn type_to_llvm(ty_name: string) -> string {
     if ty_name == "string" { return "%ForgeString" }
     if ty_name == "float" { return "double" }
     if ty_name == "List" { return "{ ptr, i64 }" }
-    if ty_name == "ptr" { return "ptr" }
     if ty_name == "fn" { return "ptr" }
     if ty_name == "Map" { return "ptr" }
     // Check if it's a known struct
@@ -560,10 +539,7 @@ fn parse_type_decl_top() {
             }
         }
         mut is_nullable = false
-        if check("?") {
-            advance()
-            is_nullable = true
-        }
+        if check("?") { advance(); is_nullable = true }
         mut ftype = type_to_llvm(ftype_name)
         // For List<T> fields, store as "list_ELEMTYPE" for element tracking
         if ftype_name == "List" && ftype_generic != "" {
@@ -604,12 +580,6 @@ fn check(text: string) -> bool {
     // Don't match string literals or numbers as keywords/symbols
     if t.kind == 3 { return false }
     if t.kind == 2 { return false }
-    // Fast reject: length mismatch
-    if t.text.length != text.length { return false }
-    // Fast reject: first byte mismatch
-    if t.text.length > 0 {
-        if t.text.byte_at(0) != text.byte_at(0) { return false }
-    }
     t.text == text
 }
 
@@ -633,29 +603,11 @@ fn skip_nl() {
     while check_kind(4) { advance() }
 }
 
-// Buffer an alloca for the entry block (emitted by flush_entry_allocas)
-fn ir_entry_alloca(s: string) {
-    ENTRY_ALLOCAS = ENTRY_ALLOCAS.push("  " + s)
-}
-
-// Emit all buffered entry allocas — called right after the entry label
-fn flush_entry_allocas() {
-    mut i = 0
-    while i < ENTRY_ALLOCAS.length {
-        let a = ENTRY_ALLOCAS[i]
-        forge_ir_line(a)
-        IR = IR.push(a)
-        i = i + 1
-    }
-    ENTRY_ALLOCAS = []
-}
-
 fn ir_line(s: string) {
     // Fix ptr 0 → ptr null globally
     mut fixed = s
     if s.contains("ptr 0,") { fixed = s.substring(0, s.index_of("ptr 0,")) + "ptr null," + s.substring(s.index_of("ptr 0,") + 6, s.length) }
     if fixed.length > 6 && fixed.substring(fixed.length - 5, fixed.length) == "ptr 0" { fixed = fixed.substring(0, fixed.length - 1) + "null" }
-    forge_ir_line("  " + fixed)
     IR = IR.push("  " + fixed)
     // Auto-track register types from emitted IR
     if s.length > 6 && s.substring(0, 2) == "%r" {
@@ -714,7 +666,6 @@ fn ir_line(s: string) {
 }
 
 fn ir_raw(s: string) {
-    forge_ir_line(s)
     IR = IR.push(s)
 }
 
@@ -886,93 +837,6 @@ fn find_fn_index(name: string) -> int {
     -1
 }
 
-// Get the idx-th comma-separated value from a CSV string
-// e.g. csv_get("i64,%ForgeString,ptr", 1) -> "%ForgeString"
-fn csv_get(csv: string, idx: int) -> string {
-    if csv == "" { return "" }
-    mut pos = 0
-    mut field = 0
-    mut start = 0
-    while pos <= csv.length {
-        if pos == csv.length || csv.byte_at(pos) == 44 {
-            if field == idx {
-                return csv.substring(start, pos)
-            }
-            field = field + 1
-            start = pos + 1
-        }
-        pos = pos + 1
-    }
-    ""
-}
-
-// Look up the declared LLVM type for parameter idx of function named fn_name
-fn find_fn_param_type(fn_name: string, idx: int) -> string {
-    let fi = find_fn_index(fn_name)
-    if fi < 0 { return "" }
-    if fi >= FN_PARAM_TYPES.length { return "" }
-    let raw = csv_get(FN_PARAM_TYPES[fi], idx)
-    if raw == "" { return "" }
-    // Already an LLVM type? Return as-is
-    if raw == "i64" { return "i64" }
-    if raw == "ptr" { return "ptr" }
-    if raw == "double" { return "double" }
-    if raw == "void" { return "void" }
-    if raw.length > 0 {
-        if raw.byte_at(0) == 37 { return raw }
-    }
-    if raw.length > 0 {
-        if raw.byte_at(0) == 123 { return raw }
-    }
-    // Resolve Forge type names to LLVM types
-    type_to_llvm(raw)
-}
-
-
-// Parse function parameters and build CSV of LLVM types
-// Results stored in SCAN_PARAM_CSV and SCAN_PARAM_COUNT
-export mut SCAN_PARAM_CSV: string = ""
-export mut SCAN_PARAM_COUNT: int = 0
-
-fn scan_params() {
-    SCAN_PARAM_CSV = ""
-    SCAN_PARAM_COUNT = 0
-    if check("(") {
-        advance()
-        skip_nl()
-        while !check(")") && POS < TOKENS.length {
-            skip_nl()
-            if check(",") { advance() }
-            skip_nl()
-            if check(")") { break }
-            let pname = advance().text
-            skip_nl()
-            if check(":") {
-                advance()
-                skip_nl()
-                let ty_name = advance().text
-                if check("<") {
-                    while !check(">") && POS < TOKENS.length { advance() }
-                    if check(">") { advance() }
-                }
-                if check("?") { advance() }
-                mut pty = "i64"
-                if pname == "self" {
-                    pty = "ptr"
-                } else {
-                    pty = type_to_llvm(ty_name)
-                }
-                if SCAN_PARAM_COUNT > 0 { SCAN_PARAM_CSV = SCAN_PARAM_CSV + "," }
-                SCAN_PARAM_CSV = SCAN_PARAM_CSV + pty
-                SCAN_PARAM_COUNT = SCAN_PARAM_COUNT + 1
-            }
-            skip_nl()
-        }
-        if check(")") { advance() }
-    } else {
-        while !check("{") && !check("->") && POS < TOKENS.length { advance() }
-    }
-}
 
 fn skip_block() {
     // Skip a { ... } block including nested blocks
@@ -989,8 +853,9 @@ fn skip_block() {
 fn scan_fn_sig() {
     advance() // consume 'fn'
     let name = advance().text
-    // Parse parameter types
-    scan_params()
+    // scan fn sig
+    // Skip params
+    while !check("{") && !check("->") && POS < TOKENS.length { advance() }
     mut ret_ty = "void"
     if check("->") {
         advance()
@@ -1004,16 +869,9 @@ fn scan_fn_sig() {
         if find_enum(rt) >= 0 { ret_ty = "%" + rt }
         // Fallback: check known type names from pass 0
         if ret_ty == "void" && is_known_type(rt) { ret_ty = "%" + rt }
-        mut ret_elem = ""
         if rt == "List" { ret_ty = "{ ptr, i64 }" }
-        // Capture generic element type for List-returning functions
+        // Skip generic params
         if check("<") {
-            advance()
-            skip_nl()
-            if rt == "List" {
-                let elem_tok = peek().text
-                ret_elem = type_to_llvm(elem_tok)
-            }
             while !check(">") && POS < TOKENS.length { advance() }
             if check(">") { advance() }
         }
@@ -1023,14 +881,11 @@ fn scan_fn_sig() {
     while !check("{") && POS < TOKENS.length { advance() }
     skip_block()
     // Register
-
+    
     FN_NAMES = FN_NAMES.push(name)
     FN_RETTYPES = FN_RETTYPES.push(ret_ty)
-    if ret_elem != "" {
-        FN_RET_ELEM_CSV = FN_RET_ELEM_CSV + "," + name + ":" + ret_elem + ","
-    }
-    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(SCAN_PARAM_COUNT)
-    FN_PARAM_TYPES = FN_PARAM_TYPES.push(SCAN_PARAM_CSV)
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(0)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("")
 }
 
 // Global variable tracking for pass 1

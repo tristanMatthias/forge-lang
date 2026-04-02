@@ -103,7 +103,6 @@ export enum Expr {
     MemberAccess(object: Expr, field: string, span: Span)
     Index(object: Expr, index: Expr, span: Span)
     Block(block: Block)
-    IsCheck(subject: Expr, variant: string, negated: int, span: Span)
     Feature(expr: FeatureExpr)
 }
 

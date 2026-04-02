@@ -8,7 +8,7 @@ use core.types.{Type, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, TypeField}
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, CG_LIST, CG_STRUCT_NAMES, CG_STRUCT_TYPES, register_struct_type, register_struct_type_full, codegen_new, cg_enum_max_fields, cg_make_enum_type}
+use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_LIST, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, register_struct_type_full, codegen_new, cg_enum_max_fields, cg_make_enum_type}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -63,13 +63,13 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
     let type_params = p.parse_type_params()
 
-    if p.expect_id(75) == null {  // Eq
+    if p.expect(TokenKind.Eq) == null {
         p.error("expected '=' in type declaration")
         return null
     }
 
     // Parse the struct body { field: type, ... }
-    if p.check_id(102) {  // LBrace
+    if p.check(TokenKind.LBrace) {
         p.advance() // consume {
         p.skip_newlines()
 
@@ -79,40 +79,37 @@ fn parse_type_decl(p: Parser) -> Statement? {
         mut field_types_str = ""  // comma-separated type names
         mut field_count = 0
 
-        while !p.check_id(103) && !p.is_at_end() {  // RBrace
+        while !p.check(TokenKind.RBrace) && !p.is_at_end() {
             if field_count > 0 {
                 field_names = field_names + ","
                 field_is_str = field_is_str + ","
                 field_types_str = field_types_str + ","
             }
             // Skip optional 'mut' modifier on fields
-            if p.check_id(21) { p.advance() }  // Mut
+            if p.check(TokenKind.Mut) { p.advance() }
             let fname = p.expect_ident()
-            p.expect_id(112)  // Colon
+            p.expect(TokenKind.Colon)
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
-            // Capture generic arg for List<T> → store as "List<T>"
-            if p.check_id(78) {  // Lt
+            // Capture generic arg for List<T> → store as "List:T"
+            if p.check(TokenKind.Lt) {
                 p.advance()
                 let gen_arg = p.expect_ident()
-                // Store as "List<Diagnostic>" so resolve_type_to_llvm can match it
+                // Store as "List:Diagnostic" so element type is recoverable
                 if ftype_name == "List" || ftype_name == "Map" {
-                    ftype_name = ftype_name + "<" + gen_arg + ">"
+                    ftype_name = ftype_name + ":" + gen_arg
                 }
                 // Skip remaining generic args
                 mut depth = 1
                 while depth > 0 && !p.is_at_end() {
-                    if p.check_id(78) { depth = depth + 1 }  // Lt
-                    if p.check_id(80) { depth = depth - 1 }  // Gt
+                    if p.check(TokenKind.Lt) { depth = depth + 1 }
+                    if p.check(TokenKind.Gt) { depth = depth - 1 }
                     if depth > 0 { p.advance() }
                 }
-                if p.check_id(80) { p.advance() }  // Gt
+                if p.check(TokenKind.Gt) { p.advance() }
             }
             // Check for nullable ?
-            if p.check_id(88) {  // Question
-                p.advance()
-                ftype_name = ftype_name + "?"
-            }
+            if p.check(TokenKind.Question) { p.advance() }
 
             if ftype_name == "string" {
                 field_is_str = field_is_str + "1"
@@ -124,13 +121,13 @@ fn parse_type_decl(p: Parser) -> Statement? {
             field_count = field_count + 1
 
             p.skip_newlines()
-            if p.check_id(110) { p.advance() }  // Comma
+            if p.check(TokenKind.Comma) { p.advance() }
             p.skip_newlines()
         }
-        p.expect_id(103)  // RBrace
+        p.expect(TokenKind.RBrace)
 
-        // Register struct type — always create LLVM type
-        if CG_CTX != null {
+        // Register struct type — create LLVM type if codegen is active
+        if CG_ACTIVE {
             let field_types_arr = llvm.type_array_new(field_count)
             mut fi = 0
             mut ftype_pos = 0
@@ -168,7 +165,40 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
 // Resolve a type name to its LLVM type for struct fields
 fn resolve_field_llvm_type(type_name: string) -> ptr {
-    resolve_type_to_llvm(type_name)
+    if type_name == "string" { return CG_STR }
+    if type_name == "int" { return CG_I64 }
+    if type_name == "float" { return CG_I64 }  // float is still i64-sized
+    if type_name == "bool" { return CG_I64 }
+    if type_name == "ptr" { return CG_I64 }
+    // Check if it starts with "List<" — list is {ptr, i64}
+    if type_name.length > 5 {
+        if type_name[0] == "L" {
+            if type_name[1] == "i" {
+                if type_name[2] == "s" {
+                    if type_name[3] == "t" {
+                        return CG_LIST
+                    }
+                }
+            }
+        }
+    }
+    // Check enum type
+    let emf = cg_enum_max_fields(type_name)
+    if emf > 0 {
+        let ety = cg_make_enum_type(type_name)
+        if ety != null { return ety }
+    }
+    // Check struct type
+    mut sti = CG_STRUCT_NAMES.length - 1
+    while sti >= 0 {
+        if CG_STRUCT_NAMES[sti] == type_name {
+            let sty = CG_STRUCT_TYPES[sti]
+            if sty != null { return sty }
+        }
+        sti = sti - 1
+    }
+    // Default: i64
+    CG_I64
 }
 
 // ─── Struct Literal Construction ────────────────

@@ -38,9 +38,10 @@ export fn new_diagnostic_bag() -> DiagnosticBag {
 }
 
 export fn bag_add(bag: DiagnosticBag, d: Diagnostic) {
-    // Simple no-op — diagnostics managed via eprintln at call sites
-    // Avoids struct field method call (bag.diagnostics.push) which
-    // generates broken IR in mini-built Stage 1
+    bag.diagnostics.push(d)
+    if d.severity == .Error {
+        bag.has_errors = true
+    }
 }
 
 export fn bag_error_count(bag: DiagnosticBag) -> int {

@@ -164,24 +164,6 @@ export fn token_new(kind: TokenKind, span: Span) -> Token {
     Token { kind: kind, span: span, text: "", kind_id: 0 }
 }
 
-// Token with explicit kind_id (for operators, delimiters, keywords)
-export fn token_with_id(kind: TokenKind, span: Span, kid: int) -> Token {
-    Token { kind: kind, span: span, text: "", kind_id: kid }
-}
-
-// Token with text and kind_id (3 params to avoid 4-param entry block numbering issue)
-export fn token_kw(kind: TokenKind, text: string, span: Span) -> Token {
-    let kid = kind_id_for_keyword(text)
-    Token { kind: kind, span: span, text: text, kind_id: kid }
-}
-
-// Map keyword text to unique kind_id (20-60)
-export fn kind_id_for_keyword(text: string) -> int {
-    // Delegate to C-side (immune to Statement.If/Return tag corruption)
-    // C function handles all keywords including "_" → 60
-    forge_kind_id_for_keyword(text)
-}
-
 export fn token_ident(name: string, span: Span) -> Token {
     Token { kind: TokenKind.Ident(name), span: span, text: name, kind_id: 1 }
 }
@@ -197,75 +179,6 @@ export fn token_float(value: float, span: Span) -> Token {
 
 export fn token_string(value: string, span: Span) -> Token {
     Token { kind: TokenKind.StringLiteral(value), span: span, text: value, kind_id: 4 }
-}
-
-// Int-dispatched keyword → TokenKind lookup
-// MUST be before token_bool to avoid body extraction consuming them
-export fn keyword_kind_from_id(kid: int) -> TokenKind? {
-    if kid == 0 { return null }
-    let r1 = kw_a(kid)
-    if r1 != null { return r1 }
-    let r2 = kw_b(kid)
-    if r2 != null { return r2 }
-    let r3 = kw_c(kid)
-    if r3 != null { return r3 }
-    return kw_d(kid)
-}
-
-fn kw_a(kid: int) -> TokenKind? {
-    if kid == 20 { return TokenKind.Let }
-    if kid == 21 { return TokenKind.Mut }
-    if kid == 22 { return TokenKind.Const }
-    if kid == 23 { return TokenKind.Fn }
-    if kid == 24 { return TokenKind.Return }
-    if kid == 25 { return TokenKind.If }
-    if kid == 26 { return TokenKind.Else }
-    if kid == 27 { return TokenKind.Match }
-    return null
-}
-
-fn kw_b(kid: int) -> TokenKind? {
-    if kid == 28 { return TokenKind.For }
-    if kid == 29 { return TokenKind.In }
-    if kid == 30 { return TokenKind.While }
-    if kid == 31 { return TokenKind.Loop }
-    if kid == 32 { return TokenKind.Break }
-    if kid == 33 { return TokenKind.Continue }
-    if kid == 34 { return TokenKind.Enum }
-    if kid == 35 { return TokenKind.TypeKw }
-    if kid == 36 { return TokenKind.Use }
-    if kid == 37 { return TokenKind.Mod }
-    if kid == 38 { return TokenKind.As }
-    if kid == 39 { return TokenKind.Export }
-    return null
-}
-
-fn kw_c(kid: int) -> TokenKind? {
-    if kid == 40 { return TokenKind.Emit }
-    if kid == 41 { return TokenKind.On }
-    if kid == 42 { return TokenKind.Trait }
-    if kid == 43 { return TokenKind.Impl }
-    if kid == 44 { return TokenKind.Defer }
-    if kid == 45 { return TokenKind.Errdefer }
-    if kid == 46 { return TokenKind.Spawn }
-    if kid == 47 { return TokenKind.Parallel }
-    if kid == 48 { return TokenKind.With }
-    if kid == 49 { return TokenKind.Catch }
-    if kid == 50 { return TokenKind.Select }
-    if kid == 51 { return TokenKind.Component }
-    return null
-}
-
-fn kw_d(kid: int) -> TokenKind? {
-    if kid == 52 { return TokenKind.Without }
-    if kid == 53 { return TokenKind.Only }
-    if kid == 54 { return TokenKind.Partial }
-    if kid == 55 { return TokenKind.Is }
-    if kid == 56 { return TokenKind.Table }
-    if kid == 58 { return TokenKind.OkKw }
-    if kid == 59 { return TokenKind.ErrKw }
-    if kid == 60 { return TokenKind.Underscore }
-    return null
 }
 
 export fn token_bool(value: bool, span: Span) -> Token {
