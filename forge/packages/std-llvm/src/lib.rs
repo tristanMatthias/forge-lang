@@ -27,6 +27,15 @@ static mut PENDING_ALLOCA_NAME: [u8; 64] = [0u8; 64];
 
 #[no_mangle]
 pub extern "C" fn forge_set_alloca_name(name_ptr: *const c_char, name_len: i64) {
+    extern "C" {
+        // C-side: sets pending alloca name AND arms the flag
+        fn forge_set_alloca_name_c_raw(name_ptr: *const c_char, name_len: i64);
+    }
+    // Delegate to C version which sets both the name AND the armed flag
+    // (_use_pending_for_next_alloca). Without the flag, build_alloca's
+    // auto-cache ignores the pending name entirely.
+    unsafe { forge_set_alloca_name_c_raw(name_ptr, name_len); }
+    // Also store in Rust-side buffer for backward compat
     unsafe {
         PENDING_ALLOCA_NAME = [0u8; 64];
         if !name_ptr.is_null() && name_len > 0 && name_len < 64 {

@@ -2435,20 +2435,42 @@ void forge_arm_pending_alloca(void) {
 int forge_check_pending_alloca(void) {
     int v = _use_pending_for_next_alloca;
     _use_pending_for_next_alloca = 0;
+    static int _cpa_trace = 50;
+    if (_cpa_trace > 0 && forge_pending_alloca_name_len > 0) {
+        fprintf(stderr, "  [CPA] armed=%d name='%.*s'\n", v, (int)forge_pending_alloca_name_len, forge_pending_alloca_name);
+        _cpa_trace--;
+    }
     return v;
 }
 
 // C-side pending alloca name setter (called from Forge define_var)
+// Raw version for Rust wrapper (takes ptr + len instead of ForgeString)
+void forge_set_alloca_name_c_raw(const char* name_ptr, int64_t name_len) {
+    if (name_ptr && name_len > 0 && name_len < 64) {
+        memcpy(forge_pending_alloca_name, name_ptr, name_len);
+        forge_pending_alloca_name[name_len] = '\0';
+        forge_pending_alloca_name_len = name_len;
+        _use_pending_for_next_alloca = 1;
+    } else {
+        forge_pending_alloca_name[0] = '\0';
+        forge_pending_alloca_name_len = 0;
+        _use_pending_for_next_alloca = 0;
+    }
+}
+
 void forge_set_alloca_name_c(ForgeString name) {
     if (name.ptr && name.len > 0 && name.len < 64) {
         memcpy(forge_pending_alloca_name, name.ptr, name.len);
         forge_pending_alloca_name[name.len] = '\0';
         forge_pending_alloca_name_len = name.len;
+        _use_pending_for_next_alloca = 1;
     } else {
         forge_pending_alloca_name[0] = '\0';
         forge_pending_alloca_name_len = 0;
+        _use_pending_for_next_alloca = 0;
     }
 }
+
 
 // Alloca hoisting: when active, alloca lines are buffered and emitted
 // at the entry block (right after "entry:" label) instead of inline.
@@ -3206,6 +3228,11 @@ ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
 
 // Debug: extract enum tag and payload from {i64 tag, ptr payload} struct
 int64_t forge_enum_tag(int64_t tag, void* payload) { return tag; }
+
+// Debug: last emit result tracking
+static void* _last_emit_ptr = NULL;
+static int _ler_trace = 0;
+void forge_set_ler_trace(int64_t n) { _ler_trace = (int)n; }
 int64_t forge_enum_payload_null(int64_t tag, void* payload) { return payload == NULL ? 1 : 0; }
 
 // Debug: print an LLVM value's type kind (uses dlsym to avoid linker dependency)
@@ -3826,6 +3853,18 @@ void* forge_struct_reg_find_type(ForgeString name) {
 
 // Last emit result (C-side, immune to Forge global corruption)
 static void* _last_emit_result = NULL;
-void forge_set_last_emit_result(void* val) { _last_emit_result = val; }
-void* forge_get_last_emit_result(void) { return _last_emit_result; }
+void forge_set_last_emit_result(void* val) {
+    _last_emit_result = val;
+    if (_ler_trace > 0) {
+        fprintf(stderr, "  [LER_SET] val=%p\n", val);
+        _ler_trace--;
+    }
+}
+void* forge_get_last_emit_result(void) {
+    if (_ler_trace > 0) {
+        fprintf(stderr, "  [LER_GET] val=%p\n", _last_emit_result);
+        _ler_trace--;
+    }
+    return _last_emit_result;
+}
 

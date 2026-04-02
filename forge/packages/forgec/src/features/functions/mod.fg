@@ -468,7 +468,7 @@ export fn declare_all_fns() {
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let name = forge_fn_store_get_name(idx)
     eprintln("  emit: " + name)
-    if name == "Lexer__lex_string" { forge_alloca_cache_trace(100) }
+    if name == "Lexer__lex_string" { forge_alloca_cache_trace(100); forge_set_ler_trace(50) }
     // Use C-side body store (immune to Forge list corruption that misaligns indices)
     let body_src = forge_fn_store_get_body(idx)
     let is_main = name == "main"

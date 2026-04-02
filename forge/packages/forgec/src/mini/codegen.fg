@@ -3258,6 +3258,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_enum_payload_null(i64, ptr)")
     ir_raw("declare void @forge_debug_val_kind(%ForgeString, ptr)")
     ir_raw("declare void @forge_debug_type_kind(%ForgeString, ptr)")
+    ir_raw("declare void @forge_set_ler_trace(i64)")
     ir_raw("declare void @forge_alloca_cache_set_fn(ptr)")
     ir_raw("declare void @forge_alloca_cache_stats()")
     ir_raw("declare void @forge_ir_hoist_begin()")
