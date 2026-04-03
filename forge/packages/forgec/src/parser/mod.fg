@@ -68,6 +68,8 @@ export fn parser_new(tokens: List<Token>) -> Parser {
 }
 
 export fn parser_new_with_source(tokens: List<Token>, source: string) -> Parser {
+    forge_set_token_list(tokens)
+    forge_parser_set_pos(0)
     Parser {
         tokens,
         pos: 0,
@@ -83,12 +85,13 @@ impl Parser {
     // ─── Token Navigation ──────────────────────
 
     fn is_at_end(self) -> bool {
-        self.pos >= self.tokens.length || self.peek().kind_id == 99
+        forge_parser_get_pos() >= forge_token_list_len()
     }
 
     fn peek(self) -> Token {
-        if self.pos < self.tokens.length {
-            let tok = self.tokens[self.pos]
+        let _cpos = forge_parser_get_pos()
+        if _cpos < forge_token_list_len() {
+            let tok = self.tokens[_cpos]
             return tok
         } else {
             Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
@@ -108,6 +111,7 @@ impl Parser {
         let tok = self.peek()
         if self.pos < self.tokens.length {
             self.pos = self.pos + 1
+            forge_parser_advance_pos()
         }
         tok
     }

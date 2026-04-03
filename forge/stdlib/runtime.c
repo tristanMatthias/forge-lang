@@ -705,7 +705,7 @@ void forge_parser_set_pos(int64_t pos) { _c_parser_pos = pos; }
 int64_t forge_parser_get_pos(void) {
     return _c_parser_pos;
 }
-static int _adv_trace = 1;
+static int _adv_trace = 0;
 void forge_parser_advance_pos(void) {
     _c_parser_pos++;
     if (_adv_trace && _c_parser_pos <= 20) {

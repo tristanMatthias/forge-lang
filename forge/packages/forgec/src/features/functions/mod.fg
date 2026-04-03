@@ -256,6 +256,7 @@ export mut EMIT_FILE_IDX: int = -1               // -1 = all files, >= 0 = only 
 
 // Store source text for re-parsing during codegen
 export fn store_fn_source(name: string, body_source: string) {
+    forge_fn_store_add(name, body_source)
     FN_NAMES = FN_NAMES.push(name)
     FN_BODY_SOURCES = FN_BODY_SOURCES.push(body_source)
     FN_FILE_INDEX = FN_FILE_INDEX.push(CURRENT_FILE_INDEX)
@@ -431,11 +432,12 @@ export fn declare_all_fns() {
 
 // Emit a single function body from source — called per-function (no re-declaration)
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
-    let name = FN_NAMES[idx]
-    let body_src = FN_BODY_SOURCES[idx]
+    let name = forge_fn_store_get_name(idx)
+    let body_src = forge_fn_store_get_body(idx)
+    eprintln("  >> " + name)
     let is_main = name == "main"
     mut pc = 0
-    if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
+    pc = forge_fn_store_get_param_count(idx)
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
