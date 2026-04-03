@@ -271,8 +271,11 @@ fn build_compile_separate(paths_csv: string, output: string) {
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
+    eprintln("[P2:1] codegen_init")
     codegen_init("forgec_output")
+    eprintln("[P2:2] create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    eprintln("[P2:3] declare_all_fns")
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()

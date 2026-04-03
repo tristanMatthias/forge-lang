@@ -315,6 +315,7 @@ export fn declare_all_fns() {
     cg_reinit_types()
     // Create struct LLVM types
     let struct_count = CG_STRUCT_NAMES.length
+    eprintln("[DAF] struct_count=" + string(struct_count))
     mut si = 0
     while si < struct_count {
         cg_reinit_types()

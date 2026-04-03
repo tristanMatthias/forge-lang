@@ -236,6 +236,15 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
         mut is_str_global = is_str
         if name.index_of("CSV") >= 0 { is_str_global = true }
         if name.index_of("PATHS") >= 0 { is_str_global = true }
+        // List<T> globals use {ptr, i64} = ForgeString layout, need str load for .length
+        if name.index_of("NAMES") >= 0 { is_str_global = true }
+        if name.index_of("FIELDS") >= 0 { is_str_global = true }
+        if name.index_of("TYPES") >= 0 { is_str_global = true }
+        if name.index_of("PTRS") >= 0 { is_str_global = true }
+        if name.index_of("SOURCES") >= 0 { is_str_global = true }
+        if name.index_of("BODIES") >= 0 { is_str_global = true }
+        if name.index_of("COUNTS") >= 0 { is_str_global = true }
+        if name.index_of("CACHE") >= 0 { is_str_global = true }
         if name.index_of("REG_") >= 0 { is_str_global = false }
         if name.index_of("REGISTRY") >= 0 { is_str_global = false }
         mut is_str_flag2 = 0
