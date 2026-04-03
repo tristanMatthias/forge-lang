@@ -20,7 +20,7 @@ export fn parse_while(p: Parser) -> Statement? {
     if condition == null { return null }
     p.skip_newlines()
     let body = p.parse_block()
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     Statement.While(condition!, body, start)
 }
 
@@ -36,7 +36,7 @@ export fn emit_while_ast(cg: Codegen, condition: Expr, body: Block) {
     WHILE_END_BB = we
     llvm.build_br(CG_B, wc)
     llvm.position_at_end(CG_B, wc)
-    let cv = cg.emit_expr(condition)
+    let cv = cg.emit_expr(condition).val
     let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "wt")
     llvm.build_cond_br(CG_B, ci, wb, we)
     llvm.position_at_end(CG_B, wb)

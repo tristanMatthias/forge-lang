@@ -1,6 +1,6 @@
 // ─── Variables Feature ─────────────────────────
 // Handles: let, mut, const bindings.
-// Side table stores VarDeclData keyed by node_id.
+// Parse-only: always creates AST nodes. Codegen handled by emit_statement.
 
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
@@ -8,15 +8,12 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, CG_LIST_VAR_CSV, CG_STR_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, CG_NULLABLE_VAR_NAMES, CG_NULLABLE_VAR_INNER, codegen_new}
+use codegen.{Codegen, codegen_new}
 use features.while_loops.PARSE_END_POS
-use @std.llvm
 
 // ─── Side Table ──────────────────────────────────
 
 mut VAR_DECLS: Map<string, VarDeclData> = {}
-
-// ─── Data Types ──────────────────────────────────
 
 enum VarKind { Let, Mut, Const }
 
@@ -34,17 +31,15 @@ fn get_var_decl(node_id: int) -> VarDeclData? {
     if VAR_DECLS.has(key) { VAR_DECLS[key] } else { null }
 }
 
-// ─── Parse ──────────────────────────────────────
+// ─── Global tracking (for create_globals_typed) ──
 
-// Track whether we're inside a function body (to detect top-level globals)
 export mut IN_FUNCTION_BODY: int = 0
-
-// Global variable tracking
 export mut VAR_GLOBAL_COUNT: int = 0
 export mut VAR_GLOBAL_NAMES: List<string> = []
-// Bitmask: bit i = 1 if global i is string/list type
 export mut VAR_GLOBAL_STR_MASK: int = 0
 export mut VAR_GLOBAL_IS_STR: int = 0
+
+// ─── Parser ──────────────────────────────────────
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
@@ -55,23 +50,11 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Optional type annotation: : Type
-    // Capture type annotation info for global type detection
-    mut ann_is_list = 0
-    mut ann_elem_name = ""
+    // Optional type annotation
     mut type_ann: TypeExpr? = null
     if p.check(TokenKind.Colon) {
         p.advance()
-        // Peek: if next is "List", capture element type name
         let type_tok = p.peek()
-        if type_tok.kind_id == 1 && type_tok.text == "List" {
-            ann_is_list = 1
-            // Element type is 2 tokens ahead: List < ElementType >
-            let elem_tok = p.peek_at(2)
-            if elem_tok.kind_id == 1 {
-                ann_elem_name = elem_tok.text
-            }
-        }
         type_ann = p.parse_type_expr()
     }
 
@@ -81,11 +64,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Peek at value token to detect type for globals (before parse_expr consumes it)
-    let value_tok_kind = p.peek().kind_id
-    // kind_id 4 = StringLit, 2 = IntLit, 3 = FloatLit
-    // LBracket = list literal, LBrace = map literal
     let value_tok_key = p.kind_to_key(p.peek().kind)
+    let value_tok_kind = p.peek().kind_id
 
     let value = p.parse_expr()
     if value == null {
@@ -93,9 +73,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Register top-level globals with type detection from value token
+    // Register top-level globals
     if IN_FUNCTION_BODY != 1 {
-        // Set bit in bitmask if this is a string/list/map global
         if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
             mut bit = 1
             mut shift = 0
@@ -109,98 +88,9 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
     }
 
-    // When CG_ACTIVE is off, return AST node for emit_block to handle
-    if !CG_ACTIVE {
-        PARSE_END_POS = p.pos
-        return Statement.Let(var_name, value!, start)
-    }
-
-    // Emit inline during re-parse+codegen (Map storage corrupts complex data)
-    if CG_ACTIVE {
-        // Check if parse_list_literal or postfix set a pre-computed LLVM value
-        mut val = null
-        if CG_HAS_LAST_VAL == 1 {
-            CG_HAS_LAST_VAL = 0
-            val = CG_LAST_VAL
-        } else {
-            mut cg = codegen_new()
-            val = cg.emit_expr(value!)
-        }
-        // Detect string/list/map type
-        let is_str = CG_LAST_IS_STR == 1
-        let is_map = CG_LAST_IS_MAP == 1
-        mut var_type = Type.Int
-        if is_map {
-            var_type = Type.MapType(Type.String, Type.Int)
-        } else if is_str {
-            var_type = Type.String
-        }
-        // Also check if value expression is a string literal
-        match value! {
-            .StringLit(v, s) -> {
-                mut cg = codegen_new()
-                cg.define_var(var_name, Type.String, val)
-            }
-            _ -> {
-                mut cg = codegen_new()
-                cg.define_var(var_name, var_type, val)
-            }
-        }
-        // Register map variable name for reliable lookup
-        if is_map {
-            CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
-        }
-        // Register list variable for for-loop element type detection + indexing
-        if value_tok_key == "LBracket" || ann_is_list == 1 || CG_LAST_IS_LIST == 1 {
-            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${var_name},"
-            // Determine element type from annotation or first element
-            let elem_is_str_detected = ann_elem_name == "string" || ann_elem_name == "String" || CG_LAST_LIST_ELEM_IS_STR == 1
-            if elem_is_str_detected {
-                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${var_name},"
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:string,"
-            } else if ann_elem_name != "" {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:${ann_elem_name},"
-            } else {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:int,"
-            }
-            CG_LAST_LIST_ELEM_IS_STR = 0
-            CG_LAST_IS_LIST = 0
-        }
-        // Register enum variable
-        if CG_LAST_ENUM_TYPE != "" {
-            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + var_name + ":" + CG_LAST_ENUM_TYPE + ","
-            CG_LAST_ENUM_TYPE = ""
-        }
-        // Register nullable variable for null comparison and unwrap
-        if CG_LAST_IS_NULLABLE == 1 {
-            CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(var_name)
-            mut inner_type_name = "int"
-            if is_str { inner_type_name = "string" }
-            CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner_type_name)
-        }
-        // Register struct variable type + copy field info from temp
-        if CG_LAST_STRUCT_TYPE != "" {
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(var_name)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
-            // Copy field list from the temp struct variable (last entry)
-            let last_fi = CG_STRUCT_VAR_FIELDS.length - 1
-            if last_fi >= 0 {
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_VAR_FIELDS[last_fi])
-            } else {
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("")
-            }
-        }
-        // Reset flags for next expression
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_LAST_IS_NULLABLE = 0
-        CG_LAST_STRUCT_TYPE = ""
-        CG_HAS_LAST_VAL = 0
-    }
-
+    // Always return AST node — codegen handles emission via define_var
     PARSE_END_POS = p.pos
-    let id = next_node_id()
-    feature_stmt("variables", "let_decl", id, start)
+    Statement.Let(var_name, value!, start)
 }
 
 fn parse_let(p: Parser) -> Statement? { parse_var_binding(p, .Let, false) }
@@ -213,31 +103,25 @@ fn check_var(tc: TypeChecker, node: NodeRef) {
     let d = get_var_decl(node.node_id)
     if d == null { return }
     let data = d!
-
     let val_type = tc.infer_expr(data.value)
-    // TODO: resolve type annotation (currently both branches return val_type)
     let ty = val_type
-
     let mutable = data.var_kind is .Mut
     tc.env.define(data.name, ty, mutable)
 }
 
 fn top_level_var(tc: TypeChecker, node: NodeRef) {
-    // Pre-register variable in scope for forward references
     check_var(tc, node)
 }
 
 // ─── Emit ───────────────────────────────────────
 
 fn emit_var(cg: Codegen, node: NodeRef) {
-    // No-op: variables are emitted inline during parsing
+    // No-op: variables emitted via emit_statement → define_var
     return
 }
 
 // ─── Registration ───────────────────────────────
 
-// Register feature imperatively (bootstrap compiler cannot compile struct literals with fn pointers)
-// Old: register_feature(FeatureRegistration { id: "variables", ... })
 reg_parser("let", parse_let)
 reg_parser("mut", parse_mut)
 reg_parser("const", parse_const)

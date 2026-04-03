@@ -23,7 +23,7 @@ use core.types.Type
 use core.error.E_SYNTAX
 use lexer.{parse_int, parse_float, lexer_new}
 use parser.{parser_new}
-use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_B, CG_CTX, CG_MOD, CG_I8, CG_I64, CG_STR, CG_LIST, CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, codegen_new, is_list_var, is_str_list_var, list_elem_llvm_type, list_elem_type, is_nullable_var, nullable_var_inner_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_null_value, make_nullable_type, wrap_nullable, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
+use codegen.{CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV, codegen_new, cg_get_enum_ty_for, cg_enum_variant_field_types, cg_enum_field_slot_offset}
 use @std.llvm
 
 mut BINOP_COUNTER: int = 0
@@ -44,27 +44,50 @@ impl Parser {
     // Map current token to BinOp for a given precedence level.
     // Returns "" for no match (bootstrap workaround: nullable returns unreliable)
     fn token_to_binop_key(self, level: int) -> string {
-        let k = self.kind_to_key(self.peek().kind)
-        match level {
-            1  -> if k == "Pipe" { "Pipe" } else { "" }
-            2  -> if k == "Or" { "Or" } else { "" }
-            3  -> if k == "And" { "And" } else { "" }
-            4  -> if k == "EqEq" { "Eq" } else if k == "NotEq" { "NotEq" } else { "" }
-            5  -> {
-                if k == "Lt" { "Lt" }
-                else if k == "LtEq" { "LtEq" }
-                else if k == "Gt" { "Gt" }
-                else if k == "GtEq" { "GtEq" }
-                else { "" }
-            }
-            6  -> if k == "Bar" { "BitOr" } else { "" }
-            7  -> if k == "Caret" { "BitXor" } else { "" }
-            8  -> if k == "Ampersand" { "BitAnd" } else { "" }
-            9  -> if k == "ShiftLeft" { "Shl" } else if k == "ShiftRight" { "Shr" } else { "" }
-            10 -> if k == "Plus" { "Add" } else if k == "Minus" { "Sub" } else { "" }
-            11 -> if k == "Star" { "Mul" } else if k == "Slash" { "Div" } else if k == "Percent" { "Mod" } else { "" }
-            _  -> ""
+        // Use kind_id for dispatch (bootstrap: kind_to_key match unreliable)
+        let kid = self.peek().kind_id
+        if level == 1 {
+            if kid == 85 { return "Pipe" }
         }
+        if level == 2 {
+            if kid == 83 { return "Or" }
+        }
+        if level == 3 {
+            if kid == 82 { return "And" }
+        }
+        if level == 4 {
+            if kid == 76 { return "Eq" }
+            if kid == 77 { return "NotEq" }
+        }
+        if level == 5 {
+            if kid == 78 { return "Lt" }
+            if kid == 79 { return "LtEq" }
+            if kid == 80 { return "Gt" }
+            if kid == 81 { return "GtEq" }
+        }
+        if level == 6 {
+            if kid == 94 { return "BitOr" }
+        }
+        if level == 7 {
+            if kid == 95 { return "BitXor" }
+        }
+        if level == 8 {
+            if kid == 93 { return "BitAnd" }
+        }
+        if level == 9 {
+            if kid == 97 { return "Shl" }
+            if kid == 98 { return "Shr" }
+        }
+        if level == 10 {
+            if kid == 70 { return "Add" }
+            if kid == 71 { return "Sub" }
+        }
+        if level == 11 {
+            if kid == 72 { return "Mul" }
+            if kid == 73 { return "Div" }
+            if kid == 74 { return "Mod" }
+        }
+        return ""
     }
 
     fn binop_from_key(self, key: string) -> BinOp {
@@ -92,20 +115,17 @@ impl Parser {
 
     // Parse the next-higher precedence level for a given level.
     fn parse_next_level(self, level: int) -> Expr? {
-        match level {
-            1  -> self.parse_binary_level(2)    // pipe → or
-            2  -> self.parse_binary_level(3)    // or → and
-            3  -> self.parse_binary_level(4)    // and → equality
-            4  -> self.parse_binary_level(5)    // eq → comparison
-            5  -> self.parse_binary_level(6)    // cmp → bitor
-            6  -> self.parse_binary_level(7)    // bitor → bitxor
-            7  -> self.parse_binary_level(8)    // bitxor → bitand
-            8  -> self.parse_binary_level(9)    // bitand → shift
-            9  -> self.parse_binary_level(10)   // shift → add
-            10 -> self.parse_binary_level(11)   // add → mul
-            11 -> self.parse_unary_expr()       // mul → unary (base case)
-            _  -> self.parse_unary_expr()
-        }
+        if level == 1  { return self.parse_binary_level(2) }
+        if level == 2  { return self.parse_binary_level(3) }
+        if level == 3  { return self.parse_binary_level(4) }
+        if level == 4  { return self.parse_binary_level(5) }
+        if level == 5  { return self.parse_binary_level(6) }
+        if level == 6  { return self.parse_binary_level(7) }
+        if level == 7  { return self.parse_binary_level(8) }
+        if level == 8  { return self.parse_binary_level(9) }
+        if level == 9  { return self.parse_binary_level(10) }
+        if level == 10 { return self.parse_binary_level(11) }
+        self.parse_unary_expr()
     }
 
     // Generic binary operator loop for any precedence level.
@@ -114,11 +134,6 @@ impl Parser {
         if left == null { return null }
 
         mut result = left!
-        // In codegen mode: track the LLVM value directly to avoid Expr destructuring
-        mut result_is_llvm = false
-        mut result_llvm: ptr = null
-        // Track whether the current result is a string (for string concatenation)
-        mut result_is_str = CG_LAST_IS_STR == 1
 
         while true {
             let op_key = self.token_to_binop_key(level)
@@ -127,159 +142,10 @@ impl Parser {
             self.advance()
             self.skip_newlines()
 
-            // Null comparison fast-path: x == null or x != null
-            let rhs_key = self.kind_to_key(self.peek().kind)
-            if CG_ACTIVE && (op_key == "Eq" || op_key == "NotEq") && rhs_key == "NullLiteral" {
-                self.advance() // consume 'null'
-                mut cg = codegen_new()
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                let tag = llvm.build_extract_value(CG_B, lhs, 0, "nt")
-                let zero_tag = llvm.const_int(CG_I8, 0, 0)
-                mut pred = 33
-                if op_key == "Eq" { pred = 32 }
-                let cmp = llvm.build_icmp(CG_B, pred, tag, zero_tag, "nc")
-                let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ne")
-                result_is_llvm = true
-                result_llvm = ext
-                result_is_str = false
-                CG_LAST_IS_NULLABLE = 0  // result is a boolean i64, not nullable
-                result = Expr.IntLit(0, self.current_span())
-                continue
-            }
-
-            // Short-circuit && and || : create conditional blocks BEFORE parsing RHS
-            if CG_ACTIVE && (op_key == "And" || op_key == "Or") {
-                mut cg = codegen_new()
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                // Truncate LHS to i1
-                let lhs_i1 = llvm.build_trunc(CG_B, lhs, llvm.int1_type(CG_CTX), "sl")
-                let current_bb = llvm.get_insert_block(CG_B)
-                let current_fn = llvm.get_basic_block_parent(current_bb)
-                let rhs_bb = llvm.append_basic_block(CG_CTX, current_fn, "sr")
-                let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "sm")
-                // For &&: if LHS false → skip to merge (result=0), else eval RHS
-                // For ||: if LHS true → skip to merge (result=1), else eval RHS
-                if op_key == "And" {
-                    llvm.build_cond_br(CG_B, lhs_i1, rhs_bb, merge_bb)
-                } else {
-                    llvm.build_cond_br(CG_B, lhs_i1, merge_bb, rhs_bb)
-                }
-                // Parse+emit RHS inside rhs_bb
-                llvm.position_at_end(CG_B, rhs_bb)
-                let right = self.parse_next_level(level)
-                if right == null { return null }
-                let rhs = cg.emit_expr(right!)
-                // Truncate RHS result to i1
-                let rhs_i1 = llvm.build_trunc(CG_B, rhs, llvm.int1_type(CG_CTX), "sri")
-                let rhs_end_bb = llvm.get_insert_block(CG_B) // might have changed
-                llvm.build_br(CG_B, merge_bb)
-                // Merge: phi node selects result
-                llvm.position_at_end(CG_B, merge_bb)
-                // For &&: from lhs_bb → 0, from rhs_bb → rhs result
-                // For ||: from lhs_bb → 1, from rhs_bb → rhs result
-                mut short_val = llvm.const_int(llvm.int1_type(CG_CTX), 1, 0)
-                if op_key == "And" { short_val = llvm.const_int(llvm.int1_type(CG_CTX), 0, 0) }
-                let phi = llvm.build_phi(CG_B, llvm.int1_type(CG_CTX), "sp")
-                llvm.add_incoming(phi, short_val, current_bb)
-                llvm.add_incoming(phi, rhs_i1, rhs_end_bb)
-                let sc_result = llvm.build_zext(CG_B, phi, llvm.int64_type(CG_CTX), "se")
-                result_is_llvm = true
-                result_llvm = sc_result
-                result_is_str = false
-                result = Expr.IntLit(0, self.current_span())
-                continue
-            }
-
             let right = self.parse_next_level(level)
             if right == null { return null }
-            // Capture rhs_is_str from parse (for string literals)
-            mut rhs_is_str = CG_LAST_IS_STR == 1
-
-            if CG_ACTIVE {
-                mut cg = codegen_new()
-                // Get LHS: either from tracked LLVM value or emit AST
-                mut lhs = cg.emit_expr(result)
-                if result_is_llvm { lhs = result_llvm }
-                let rhs = cg.emit_expr(right!)
-                // Re-check rhs_is_str after emit (string() sets it during emit)
-                if CG_LAST_IS_STR == 1 { rhs_is_str = true }
-                // String operations: concat and comparison
-                // Detect if either operand is a string
-                let either_is_str = result_is_str || rhs_is_str
-                mut val: ptr = null
-                mut did_str_op = false
-                // String concat
-                if op_key == "Add" {
-                    if either_is_str {
-                        val = call_rt_2_ss(CG_RT_SCONCAT, lhs, rhs, CG_STR, "cc")
-                        did_str_op = true
-                    }
-                }
-                // String equality
-                if op_key == "Eq" || op_key == "NotEq" {
-                    if either_is_str {
-                        let eq_val = call_rt_2_ss(CG_RT_SEQ, lhs, rhs, CG_I8, "se")
-                        val = llvm.build_zext(CG_B, eq_val, llvm.int64_type(CG_CTX), "ex")
-                        if op_key == "NotEq" {
-                            val = llvm.build_icmp(CG_B, 32, val, llvm.const_int(CG_I64, 0, 0), "neq")
-                            val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "nx")
-                        }
-                        did_str_op = true
-                    }
-                }
-                // String ordering
-                if op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
-                    if either_is_str {
-                        let cmp_val = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
-                        let zero = llvm.const_int(CG_I64, 0, 0)
-                        if op_key == "Lt" { val = llvm.build_icmp(CG_B, 40, cmp_val, zero, "sl") }
-                        if op_key == "LtEq" { val = llvm.build_icmp(CG_B, 41, cmp_val, zero, "sle") }
-                        if op_key == "Gt" { val = llvm.build_icmp(CG_B, 38, cmp_val, zero, "sg") }
-                        if op_key == "GtEq" { val = llvm.build_icmp(CG_B, 39, cmp_val, zero, "sge") }
-                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "sx")
-                        did_str_op = true
-                    }
-                }
-                // Default: integer/bool operation
-                if !did_str_op {
-                    val = emit_binop(lhs, op_key, rhs)
-                }
-                // Comparison ops return i1 — zero-extend to i64
-                if !did_str_op {
-                    if op_key == "Eq" || op_key == "NotEq" || op_key == "Lt" || op_key == "LtEq" || op_key == "Gt" || op_key == "GtEq" {
-                        val = llvm.build_zext(CG_B, val, llvm.int64_type(CG_CTX), "cx")
-                    }
-                }
-                // Track the LLVM value directly (no AST round-trip)
-                result_is_llvm = true
-                result_llvm = val
-                // String concat produces a string; other ops produce ints
-                result_is_str = op_key == "Add" && result_is_str && rhs_is_str
-                // Still update result for the non-codegen return path
-                result = Expr.IntLit(0, self.current_span())
-            } else {
-                let span = self.merge_spans(self.current_span(), self.current_span())
-                result = Expr.Binary(result, op, right!, span)
-            }
-        }
-
-        // In codegen mode: store the final LLVM value in a temp variable
-        if result_is_llvm {
-            mut cg = codegen_new()
-            BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "_b${BINOP_COUNTER}"
-            mut tmp_ty = Type.Int
-            if result_is_str { tmp_ty = Type.String }
-            cg.define_var(tmp, tmp_ty, result_llvm)
-            mut cg_str_flag = 0
-            if result_is_str { cg_str_flag = 1 }
-            CG_LAST_IS_STR = cg_str_flag
-            // Track for implicit function returns
-            CG_LAST_VAL = result_llvm
-            CG_HAS_LAST_VAL = 1
-            return Expr.Ident(tmp, self.current_span())
+            let span = self.merge_spans(self.current_span(), self.current_span())
+            result = Expr.Binary(result, op, right!, span)
         }
         result
     }
@@ -291,7 +157,7 @@ impl Parser {
 
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
-        if self.check(TokenKind.Not) {
+        if self.check_id(84) {
             let start = self.advance().span
             let operand = self.parse_unary_expr() // right-associative
             if operand == null { return null }
@@ -299,7 +165,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Not, operand!, span)
         }
 
-        if self.check(TokenKind.Minus) {
+        if self.check_id(71) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -307,7 +173,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Neg, operand!, span)
         }
 
-        if self.check(TokenKind.Tilde) {
+        if self.check_id(96) {
             let start = self.advance().span
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -324,29 +190,23 @@ impl Parser {
         if expr == null { return null }
 
         mut result = expr!
-        // Track LLVM value for inline emit (same pattern as parse_binary_level)
-        mut result_is_llvm = false
-        mut result_llvm: ptr = null
-        mut result_is_str = CG_LAST_IS_STR == 1  // inherit string type from primary expr
-        mut result_is_map = CG_LAST_IS_MAP == 1
+        // Parser always builds AST — codegen handles types via TypedValue
 
         while !self.is_at_end() {
             // Function call: expr(args...)
-            if self.check(TokenKind.LParen) {
+            if self.check_id(100) {
                 self.advance()
                 let args = self.parse_call_args()
-                let close = self.expect(TokenKind.RParen)
+                let close = self.expect_id(101)
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
-                result_is_llvm = false
                 // Clear HAS_LAST_VAL — args consumed by call, not by var binding
-                CG_HAS_LAST_VAL = 0
                 // Don't clear CG_LAST_ENUM_TYPE here — the emit_call will clear it
                 continue
             }
 
             // Member access: expr.field or expr.method(args)
-            if self.check(TokenKind.Dot) {
+            if self.check_id(111) {
                 self.advance()
                 // Numeric tuple access: expr.0
                 let pk = self.peek()
@@ -354,325 +214,87 @@ impl Parser {
                     let field_span = self.advance().span
                     let span = self.merge_spans(self.current_span(), field_span)
                     result = Expr.Index(result, Expr.IntLit(parse_int(pk.text), field_span), span)
-                    result_is_llvm = false
                     continue
                 }
                 let field = self.expect_ident()
                 if field == "" { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
-                // In codegen mode: handle known properties and methods inline
-                if CG_ACTIVE {
-                    mut cg = codegen_new()
-                    mut obj_val = cg.emit_expr(result)
-                    if result_is_llvm { obj_val = result_llvm }
-
-                    // Check if this is an enum constructor BEFORE method call
-                    let enum_type_name = LAST_IDENT_NAME  // save before arg parsing overwrites
-                    let maybe_enum_full = "${enum_type_name}.${field}"
-                    let maybe_enum_tag = match_enum_tag(maybe_enum_full)
-                    if maybe_enum_tag >= 0 {
-                        // This is an enum variant, handle constructor
-                        if self.check(TokenKind.LParen) {
-                            let ety = cg_get_enum_ty_for(enum_type_name)
-                            // Use alloca+store approach (handles string fields correctly)
-                            let enum_alloca = llvm.build_alloca(CG_B, ety, "et")
-                            llvm.build_store(CG_B, llvm.const_null(ety), enum_alloca)
-                            // Store tag
-                            let tag_ptr = llvm.build_struct_gep2(CG_B, ety, enum_alloca, 0, "tp")
-                            llvm.build_store(CG_B, llvm.const_int(CG_I8, maybe_enum_tag, 0), tag_ptr)
-                            // Get payload pointer (index 1 = first i64 slot)
-                            let payload_ptr = llvm.build_struct_gep2(CG_B, ety, enum_alloca, 1, "pp")
-                            let vft = cg_enum_variant_field_types(enum_type_name, field)
-                            self.advance() // consume (
-                            mut ai = 0
-                            while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                                mut cg2 = codegen_new()
-                                let aexpr = self.parse_expr()
-                                if aexpr != null {
-                                    mut aval = cg2.emit_expr(aexpr!)
-                                    // Box enum args as pointers (like Rust's Box<T>)
-                                    if CG_LAST_ENUM_TYPE != "" {
-                                        let ebox2 = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "eb")
-                                        llvm.build_store(CG_B, aval, ebox2)
-                                        aval = llvm.build_ptr_to_int(CG_B, ebox2, CG_I64, "ep")
-                                        CG_LAST_ENUM_TYPE = ""
-                                    }
-                                    // Store field via memory (handles any type including strings)
-                                    let slot_off = cg_enum_field_slot_offset(vft, ai)
-                                    let idx_arr = llvm.value_array_new(1)
-                                    llvm.value_array_set(idx_arr, 0, llvm.const_int(CG_I64, slot_off, 0))
-                                    let field_ptr = llvm.build_gep2(CG_B, CG_I64, payload_ptr, idx_arr, 1, "fp")
-                                    llvm.value_array_free(idx_arr)
-                                    // Multi-slot types (string, list, Span) need bitcast to ptr
-                                    mut is_multi_slot = false
-                                    if ai < vft.length {
-                                        if vft[ai] != "i" { is_multi_slot = true }
-                                    }
-                                    if is_multi_slot {
-                                        let typed_fptr = llvm.build_bitcast(CG_B, field_ptr, llvm.pointer_type(CG_CTX), "tf")
-                                        llvm.build_store(CG_B, aval, typed_fptr)
-                                    } else {
-                                        llvm.build_store(CG_B, aval, field_ptr)
-                                    }
-                                    ai = ai + 1
-                                }
-                                if self.check(TokenKind.Comma) { self.advance() }
-                                self.skip_newlines()
-                            }
-                            self.advance() // consume )
-                            let eval = llvm.build_load(CG_B, ety, enum_alloca, "ev")
-                            result_is_llvm = true
-                            result_llvm = eval
-                            CG_LAST_ENUM_TYPE = enum_type_name
-                            CG_LAST_VAL = eval
-                            CG_HAS_LAST_VAL = 1
-                        } else {
-                            // Unit variant: just the tag
-                            result_is_llvm = true
-                            result_llvm = llvm.const_int(CG_I64, maybe_enum_tag, 0)
-                        }
-                        result_is_str = false
-                        result = Expr.IntLit(maybe_enum_tag, span)
-                        continue
-                    }
-
-                    // Check for method call: field followed by (
-                    if self.check(TokenKind.LParen) {
-                        // Method call: obj.method(args)
-                        self.advance() // consume (
-                        let method_result = self.emit_method_call_inline(obj_val, field)
-                        self.expect(TokenKind.RParen)
-                        result_is_llvm = true
-                        result_llvm = method_result
-                        // Use CG_LAST_IS_STR set by emit_method_call_inline for user-defined methods
-                        // For built-in string methods, most return strings except indexOf/length
-                        result_is_str = field != "index_of" && field != "length" && CG_LAST_STRUCT_TYPE == ""
-                        if CG_LAST_IS_STR == 1 { result_is_str = true }
-                        result = Expr.IntLit(0, span)
-                        continue
-                    }
-
-                    // Property access
-                    if field == "length" {
-                        let len_val = call_rt_1(CG_RT_SLEN, CG_STR, CG_I64, obj_val, "len")
-                        result_is_llvm = true
-                        result_llvm = len_val
-                        result_is_str = false
-                        result = Expr.IntLit(0, span)
-                        continue
-                    }
-
-                    // Enum variant construction: Color.Green or Expr.IntLit(42, span)
-                    let enum_cname = LAST_IDENT_NAME
-                    let enum_full = "${enum_cname}.${field}"
-                    let enum_tag = match_enum_tag(enum_full)
-                    if enum_tag >= 0 {
-                        // Check if this constructor has args (data variant)
-                        if self.check(TokenKind.LParen) {
-                            // Per-enum type (like Rust) — use alloca+store for safe field storage
-                            let ety = cg_get_enum_ty_for(enum_cname)
-                            let enum_alloca2 = llvm.build_alloca(CG_B, ety, "e2")
-                            llvm.build_store(CG_B, llvm.const_null(ety), enum_alloca2)
-                            let tag_ptr2 = llvm.build_struct_gep2(CG_B, ety, enum_alloca2, 0, "t2")
-                            llvm.build_store(CG_B, llvm.const_int(CG_I8, enum_tag, 0), tag_ptr2)
-                            let payload_ptr2 = llvm.build_struct_gep2(CG_B, ety, enum_alloca2, 1, "p2")
-                            let vft2 = cg_enum_variant_field_types(enum_cname, field)
-                            if self.check(TokenKind.LParen) {
-                                self.advance()
-                                mut ai = 0
-                                while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                                    mut cg = codegen_new()
-                                    let aexpr = self.parse_expr()
-                                    if aexpr != null {
-                                        mut aval = cg.emit_expr(aexpr!)
-                                        // Box enum args as pointers (like Rust's Box<T>)
-                                        if CG_LAST_ENUM_TYPE != "" {
-                                            let ebox = llvm.build_alloca(CG_B, cg_get_enum_ty_for(CG_LAST_ENUM_TYPE), "eb")
-                                            llvm.build_store(CG_B, aval, ebox)
-                                            aval = llvm.build_ptr_to_int(CG_B, ebox, CG_I64, "ep")
-                                            CG_LAST_ENUM_TYPE = ""
-                                        }
-                                        // Store field via memory (handles any type including strings)
-                                        let slot_off2 = cg_enum_field_slot_offset(vft2, ai)
-                                        let idx_arr2 = llvm.value_array_new(1)
-                                        llvm.value_array_set(idx_arr2, 0, llvm.const_int(CG_I64, slot_off2, 0))
-                                        let field_ptr2 = llvm.build_gep2(CG_B, CG_I64, payload_ptr2, idx_arr2, 1, "f2")
-                                        llvm.value_array_free(idx_arr2)
-                                        mut is_multi_slot2 = false
-                                        if ai < vft2.length {
-                                            if vft2[ai] != "i" { is_multi_slot2 = true }
-                                        }
-                                        if is_multi_slot2 {
-                                            let typed_fptr2 = llvm.build_bitcast(CG_B, field_ptr2, llvm.pointer_type(CG_CTX), "tf2")
-                                            llvm.build_store(CG_B, aval, typed_fptr2)
-                                        } else {
-                                            llvm.build_store(CG_B, aval, field_ptr2)
-                                        }
-                                        ai = ai + 1
-                                    }
-                                    if self.check(TokenKind.Comma) { self.advance() }
-                                    self.skip_newlines()
-                                }
-                                self.advance() // consume )
-                            }
-                            let eval = llvm.build_load(CG_B, ety, enum_alloca2, "ev2")
-                            result_is_llvm = true
-                            result_llvm = eval
-                            CG_LAST_ENUM_TYPE = enum_cname
-                            CG_LAST_VAL = eval
-                            CG_HAS_LAST_VAL = 1
-                        } else {
-                            // Unit-only enum: plain i64 tag
-                            result_is_llvm = true
-                            result_llvm = llvm.const_int(CG_I64, enum_tag, 0)
-                        }
-                        result_is_str = false
-                        result = Expr.IntLit(enum_tag, span)
-                        continue
-                    }
-
-                    // Struct field access: use CG_LAST_STRUCT_TYPE if set (for chained access)
-                    // otherwise look up via variable name
-                    mut struct_type_for_field = CG_LAST_STRUCT_TYPE
-                    let var_name_for_struct = LAST_IDENT_NAME
-                    mut svi = CG_STRUCT_VAR_NAMES.length - 1
-                    // If we have a known struct type from chained access, find its field info
-                    if struct_type_for_field != "" {
-                        svi = CG_STRUCT_NAMES.length - 1
-                        while svi >= 0 {
-                            if CG_STRUCT_NAMES[svi] == struct_type_for_field { break }
-                            svi = svi - 1
-                        }
-                        if svi >= 0 {
-                            // Use struct registry directly (not var registry)
-                            let sfields = CG_STRUCT_FIELDS[svi]
-                            mut fidx = 0
-                            mut fcur = ""
-                            mut fpos = 0
-                            mut found = false
-                            while fpos < sfields.length {
-                                let fch = sfields[fpos]
-                                if fch == "," {
-                                    if fcur == field { found = true }
-                                    if !found {
-                                        fidx = fidx + 1
-                                        fcur = ""
-                                    }
-                                } else {
-                                    fcur = fcur + fch
-                                }
-                                fpos = fpos + 1
-                            }
-                            if fcur == field { found = true }
-                            if found {
-                                let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, "cf")
-                                result_is_llvm = true
-                                result_llvm = field_val
-                                let field_type_name = get_struct_field_type(struct_type_for_field, fidx)
-                                let is_list_field = field_type_name.length >= 4 && field_type_name[0] == "L"
-                                result_is_str = field_type_name == "string" || is_list_field
-                                // Track list element type for for-in loops
-                                if is_list_field {
-                                    // "List:Diagnostic" → register element type
-                                    let colon_pos = field_type_name.index_of(":")
-                                    if colon_pos > 0 {
-                                        let elem_type = field_type_name.substring(colon_pos + 1, field_type_name.length)
-                                        // Use field name as the list var name
-                                        CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + field + ","
-                                        CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + "," + field + ":" + elem_type + ","
-                                        // Also track temp name that will be created by postfix exit
-                                        CG_LAST_IS_LIST = 1
-                                    }
-                                }
-                                if field_type_name != "string" && field_type_name != "int" && field_type_name != "float" && field_type_name != "bool" && field_type_name != "ptr" && !is_list_field {
-                                    CG_LAST_STRUCT_TYPE = field_type_name
-                                } else {
-                                    CG_LAST_STRUCT_TYPE = ""
-                                }
-                                result = Expr.IntLit(0, span)
-                                continue
-                            }
-                        }
-                    }
-                    // Fall back to variable-based lookup
-                    svi = CG_STRUCT_VAR_NAMES.length - 1
-                    while svi >= 0 {
-                        if CG_STRUCT_VAR_NAMES[svi] == var_name_for_struct {
-                            let sfields = CG_STRUCT_VAR_FIELDS[svi]
-                            // Find field index in comma-separated list
-                            mut fidx = 0
-                            mut fcur = ""
-                            mut fpos = 0
-                            mut found = false
-                            while fpos < sfields.length {
-                                let fch = sfields[fpos]
-                                if fch == "," {
-                                    if fcur == field { found = true }
-                                    if !found {
-                                        fidx = fidx + 1
-                                        fcur = ""
-                                    }
-                                } else {
-                                    fcur = fcur + fch
-                                }
-                                fpos = fpos + 1
-                            }
-                            if fcur == field { found = true }
-                            if found {
-                                let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
-                                result_is_llvm = true
-                                result_llvm = field_val
-                                // Check if this field is a string or list type ({ptr, i64})
-                                let struct_type_name = CG_STRUCT_VAR_TYPES[svi]
-                                let field_type_name = get_struct_field_type(struct_type_name, fidx)
-                                result_is_str = field_type_name == "string" || field_type_name == "List"
-                                result_is_map = false
-                                // If field is a struct/enum type, track it
-                                if field_type_name != "string" && field_type_name != "int" && field_type_name != "float" && field_type_name != "bool" && field_type_name != "ptr" && field_type_name != "List" {
-                                    CG_LAST_STRUCT_TYPE = field_type_name
-                                } else {
-                                    CG_LAST_STRUCT_TYPE = ""
-                                }
-                                result = Expr.IntLit(0, span)
-                                break
-                            }
-                        }
-                        svi = svi - 1
-                    }
-                    if svi >= 0 { continue }
-                }
+                // CG_ACTIVE removed — codegen handles member access via emit_member_access
 
                 // Desugar string method calls: obj.method(args) → forge_string_method(obj, args)
-                if !CG_ACTIVE {
-                    if self.check(TokenKind.LParen) {
-                        mut is_str_method = false
-                        if field == "substring" { is_str_method = true }
-                        if field == "index_of" { is_str_method = true }
-                        if field == "contains" { is_str_method = true }
-                        if is_str_method {
-                            self.advance()
-                            let ma = self.parse_call_args()
-                            self.expect(TokenKind.RParen)
-                            let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
-                            mut aa: List<Expr> = [result]
-                            for a in ma { aa = aa.push(a) }
-                            result = Expr.Call(Expr.Ident("forge_string_" + field, span), aa, sp2)
-                            result_is_llvm = false
-                            result_is_str = field == "substring"
+                // Always desugar — codegen MemberAccess is unreliable in self-hosting chain
+                if self.check_id(100) {
+                    mut is_str_method = false
+                    if field == "substring" { is_str_method = true }
+                    if field == "index_of" { is_str_method = true }
+                    if field == "contains" { is_str_method = true }
+                    if is_str_method {
+                        self.advance()
+                        let ma = self.parse_call_args()
+                        self.expect_id(101)
+                        let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+                        mut aa: List<Expr> = [result]
+                        for a in ma { aa = aa.push(a) }
+                        result = Expr.Call(Expr.Ident("forge_string_" + field, span), aa, sp2)
+                        continue
+                    }
+                }
+
+                // Universal method call desugaring: obj.method(args) → Type__method(obj, args)
+                // This bypasses the broken MemberAccess codegen in the self-hosting chain
+                // Works even when CG_ACTIVE=false (body re-parse) since it only transforms AST, no LLVM emit
+                if self.check_id(100) {
+                    // Try to resolve as impl method
+                    let obj_var = LAST_IDENT_NAME
+                    // For "self", use C-side self type (immune to global assignment bugs)
+                    mut vst = var_struct_type(obj_var)
+                    if obj_var == "self" && vst == "" {
+                        vst = forge_get_self_type()
+                    }
+                    if vst != "" {
+                        // Try both Type__method (full compiler) and Type_method (mini) naming
+                        let method_name_2 = vst + "__" + field
+                        let method_name_1 = vst + "_" + field
+                        mut method_name = method_name_2
+                        mut found_method = false
+                        mut fni = 0
+                        let expr_fn_total = forge_fn_store_count()
+                        while fni < expr_fn_total {
+                            let fni_name = forge_fn_store_get_name(fni)
+                            if fni_name == method_name_2 {
+                                found_method = true
+                                method_name = method_name_2
+                                break
+                            }
+                            if fni_name == method_name_1 {
+                                found_method = true
+                                method_name = method_name_1
+                                break
+                            }
+                            fni = fni + 1
+                        }
+                        if found_method {
+                            self.advance() // consume (
+                            let method_args = self.parse_call_args()
+                            self.expect_id(101)
+                            let sp3 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
+                            // Build args: [obj, ...method_args]
+                            mut all_args: List<Expr> = [result]
+                            for a in method_args { all_args = all_args.push(a) }
+                            result = Expr.Call(Expr.Ident(method_name, span), all_args, sp3)
                             continue
                         }
                     }
                 }
 
                 result = Expr.MemberAccess(result, field, span)
-                result_is_llvm = false
                 continue
             }
 
             // Cross-newline dot chaining: allow .field after newline
             // Disabled inside match arms to prevent consuming .Variant patterns
-            if !IN_MATCH_ARM && self.check(TokenKind.Newline) {
+            if !IN_MATCH_ARM && self.check_id(120) {
                 let next = self.peek_at_meaningful(0)
                 if next.kind is .Dot {
                     self.skip_newlines()
@@ -681,167 +303,65 @@ impl Parser {
             }
 
             // Index access: expr[index]
-            if self.check(TokenKind.LBracket) {
+            if self.check_id(104) {
                 // Capture object variable name BEFORE parsing index (index parsing changes LAST_IDENT_NAME)
                 let index_obj_name = LAST_IDENT_NAME
                 self.advance()
                 let index = self.parse_expr()
                 if index == null { return null }
-                if self.expect(TokenKind.RBracket) == null { return null }
+                if self.expect_id(105) == null { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
                 // In codegen mode: emit indexing inline
-                if CG_ACTIVE {
-                    mut cg = codegen_new()
-                    mut obj_val = cg.emit_expr(result)
-                    if result_is_llvm { obj_val = result_llvm }
-                    let idx_val = cg.emit_expr(index!)
-
-                    // Check if this is a list variable (needs GEP, not char_at)
-                    let is_list = is_list_var(index_obj_name)
-                    let is_str_list = is_str_list_var(index_obj_name)
-
-                    if result_is_map {
-                        // Map indexing: forge_map_get(map_ptr, key) → i64
-                        // Also save the map+key for potential map[key] = value assignment
-                        CG_MAP_INDEX_OBJ = obj_val
-                        CG_MAP_INDEX_KEY = idx_val
-                        CG_IS_MAP_INDEX = 1
-                        let get_args = llvm.value_array_new(2)
-                        llvm.value_array_set(get_args, 0, obj_val)
-                        llvm.value_array_set(get_args, 1, idx_val)
-                        let get_pt = llvm.type_array_new(2)
-                        llvm.type_array_set(get_pt, 0, CG_PTR)
-                        llvm.type_array_set(get_pt, 1, CG_STR)
-                        let get_ft = llvm.function_type(CG_I64, get_pt, 2, 0)
-                        llvm.type_array_free(get_pt)
-                        let get_val = llvm.build_call(CG_B, get_ft, CG_RT_MAP_GET, get_args, 2, "mg")
-                        llvm.value_array_free(get_args)
-                        result_is_llvm = true
-                        result_llvm = get_val
-                        result_is_str = false
-                        result_is_map = false
-                    } else if result_is_str && !is_list {
-                        // String indexing: forge_string_char_at(str, idx) → ForgeString
-                        let char_val = call_rt_2(CG_RT_SCHARAT, CG_STR, CG_STR, obj_val, idx_val, "ca")
-                        result_is_llvm = true
-                        result_llvm = char_val
-                        result_is_str = true
-                    } else {
-                        // List/array indexing: GEP + load from data pointer
-                        // Use correct element type (int=8B, string=16B, struct=varies)
-                        mut elem_ty = CG_I64
-                        if is_list { elem_ty = list_elem_llvm_type(index_obj_name) }
-                        let data_ptr = llvm.build_extract_value(CG_B, obj_val, 0, "ld")
-                        let indices = llvm.value_array_new(1)
-                        llvm.value_array_set(indices, 0, idx_val)
-                        let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "ep")
-                        llvm.value_array_free(indices)
-                        let elem_val = llvm.build_load(CG_B, elem_ty, elem_ptr, "em")
-                        result_is_llvm = true
-                        result_llvm = elem_val
-                        // Track type: string elements → str, struct elements → set struct type
-                        mut elem_type_name = ""
-                        if is_list { elem_type_name = list_elem_type(index_obj_name) }
-                        result_is_str = elem_type_name == "string"
-                        if elem_type_name != "" && elem_type_name != "string" && elem_type_name != "int" {
-                            CG_LAST_STRUCT_TYPE = elem_type_name
-                        }
-                    }
-                    result = Expr.IntLit(0, span)
-                    continue
-                }
 
                 result = Expr.Index(result, index!, span)
-                result_is_llvm = false
                 continue
             }
 
             // Force unwrap: expr! — extract inner value from nullable {i8, T}
-            if self.check(TokenKind.Not) {
+            if self.check_id(84) {
                 self.advance()
-                if CG_ACTIVE {
-                    mut cg = codegen_new()
-                    mut nullable_val = cg.emit_expr(result)
-                    if result_is_llvm { nullable_val = result_llvm }
-                    let var_is_nullable = is_nullable_var(LAST_IDENT_NAME)
-                    if var_is_nullable || CG_LAST_IS_NULLABLE == 1 {
-                        let inner_val = llvm.build_extract_value(CG_B, nullable_val, 1, "uw")
-                        result_is_llvm = true
-                        result_llvm = inner_val
-                        if var_is_nullable {
-                            let inner_type = nullable_var_inner_type(LAST_IDENT_NAME)
-                            result_is_str = inner_type == "string"
-                        } else {
-                            result_is_str = CG_LAST_IS_STR == 1
-                        }
-                        CG_LAST_IS_NULLABLE = 0
-                        result = Expr.IntLit(0, self.current_span())
-                    }
-                }
                 continue
             }
 
             // Null chain: expr? (also no-op for now)
-            if self.check(TokenKind.Question) {
+            if self.check_id(88) {
                 self.advance()
                 continue
             }
 
             // Struct literal: Ident { field: value, ... }
-            if self.check(TokenKind.LBrace) && self.is_struct_literal() {
+            if self.check_id(102) && self.is_struct_literal() {
                 let slit = self.parse_struct_literal()
-                if !CG_ACTIVE {
+                if true {
                     // Pure AST: return the Call-encoded struct literal
                     if slit != null { result = slit! }
                 } else {
                     // CG_ACTIVE: struct built inline, use placeholder
-                    result_is_llvm = false
-                    result_is_str = false
                     result = Expr.IntLit(0, self.current_span())
                 }
                 continue
             }
 
             // `is` keyword: expr is .Variant / expr is not .Variant
-            if self.check(TokenKind.Is) {
+            if self.check_id(55) {
                 self.advance() // consume 'is'
                 // Check for 'not' (! token) or 'not' (ident keyword)
-                mut negated = self.check(TokenKind.Not)
+                mut negated = self.check_id(84)
                 if !negated && self.peek().kind_id == 1 && self.peek().text == "not" {
                     negated = true
                 }
                 if negated { self.advance() }
 
                 // Expect .Variant
-                if self.check(TokenKind.Dot) {
+                if self.check_id(111) {
                     self.advance()
                     let variant_name = self.expect_ident()
 
-                    if CG_ACTIVE {
-                        mut cg = codegen_new()
-                        mut obj_val = cg.emit_expr(result)
-                        if result_is_llvm { obj_val = result_llvm }
-                        let tag = match_enum_tag(variant_name)
-                        let tag_val = llvm.const_int(CG_I64, tag, 0)
-                        // For named enum types, extract tag byte first
-                        mut cmp_lhs = obj_val
-                        if CG_LAST_ENUM_TYPE != "" {
-                            let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
-                            cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
-                        }
-                        mut pred = 32
-                        if negated { pred = 33 }
-                        let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
-                        let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
-                        result_is_llvm = true
-                        result_llvm = ext
-                        result_is_str = false
-                        // Result is boolean, not enum
-                        CG_LAST_ENUM_TYPE = ""
-                        CG_LAST_STRUCT_TYPE = ""
-                    }
-                    result = Expr.IntLit(0, self.current_span())
+                    // Store as IsCheck AST node for deferred emit_expr
+                    mut neg_val = 0
+                    if negated { neg_val = 1 }
+                    result = Expr.IsCheck(result, variant_name, neg_val, self.current_span())
                     continue
                 }
                 // Not a .Variant — fall through
@@ -851,41 +371,7 @@ impl Parser {
             break
         }
 
-        // If we tracked an LLVM value, store it in a temp var
-        if result_is_llvm {
-            mut cg = codegen_new()
-            BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "_p${BINOP_COUNTER}"
-            mut tmp_ty = Type.Int
-            if result_is_str { tmp_ty = Type.String }
-            cg.define_var(tmp, tmp_ty, result_llvm)
-            // If result is an enum, register in enum var tracking
-            if CG_LAST_ENUM_TYPE != "" {
-                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + tmp + ":" + CG_LAST_ENUM_TYPE + ","
-            }
-            // If result is a struct, register temp var in struct tracking
-            if CG_LAST_STRUCT_TYPE != "" {
-                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
-                // Copy field info from the struct registry
-                mut sfi = CG_STRUCT_FIELDS.length - 1
-                while sfi >= 0 {
-                    if CG_STRUCT_NAMES[sfi] == CG_LAST_STRUCT_TYPE {
-                        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_FIELDS[sfi])
-                        break
-                    }
-                    sfi = sfi - 1
-                }
-                if sfi < 0 { CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("") }
-            }
-            mut cg_str_flag2 = 0
-            if result_is_str { cg_str_flag2 = 1 }
-            CG_LAST_IS_STR = cg_str_flag2
-            return Expr.Ident(tmp, self.current_span())
-        }
-        // Don't clear CG_LAST_IS_STR — it was already set correctly by
-        // parse_list_literal, postfix LLVM tracking, or parse_primary_expr.
-        // Clearing it here loses the flag for list/method-call results.
+        // Parser always returns AST — codegen handles types
 
         result
     }
@@ -895,14 +381,14 @@ impl Parser {
     fn parse_call_args(self) -> List<Expr> {
         mut args: List<Expr> = []
 
-        while !self.check(TokenKind.RParen) && !self.is_at_end() {
+        while !self.check_id(101) && !self.is_at_end() {
             self.skip_newlines()
             let arg = self.parse_expr()
             if arg != null {
                 args = args.push(arg!)
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) {
+            if self.check_id(110) {
                 self.advance()
             }
         }
@@ -929,28 +415,16 @@ impl Parser {
         if tok.kind_id == 4 {
             // StringLiteral
             let span = self.advance().span
-            CG_LAST_IS_STR = 1
             return Expr.StringLit(tok.text, span)
         }
-        if tok.kind_id == 5 {
-            // BoolLiteral
+        if tok.kind_id == 5 || tok.text == "true" || tok.text == "false" {
+            // BoolLiteral (text fallback for bootstrap — kind_id may not be set)
             let span = self.advance().span
             return Expr.BoolLit(tok.text == "true", span)
         }
         if tok.kind_id == 6 {
             // TemplateLiteral / DollarString
             let span = self.advance().span
-            if CG_ACTIVE {
-                // Parse raw template text and emit LLVM IR for string interpolation
-                let result = emit_template_expr(tok.text)
-                BINOP_COUNTER = BINOP_COUNTER + 1
-                let tmp = "_t${BINOP_COUNTER}"
-                mut cg = codegen_new()
-                cg.define_var(tmp, Type.String, result)
-                CG_LAST_IS_STR = 1
-                return Expr.Ident(tmp, span)
-            }
-            CG_LAST_IS_STR = 1
             return decompose_template(tok.text, span)
         }
         if tok.kind_id == 1 {
@@ -960,32 +434,9 @@ impl Parser {
             LAST_IDENT_NAME = name
 
             // Track string/map/struct/nullable/enum type for this ident
-            if CG_ACTIVE {
-                mut cg = codegen_new()
-                // Check struct type
-                let st = var_struct_type(name)
-                // Enum var detection deferred to constructor arg handling
-                // Check nullable
-                if is_nullable_var(name) {
-                    CG_LAST_IS_NULLABLE = 1
-                } else {
-                    CG_LAST_IS_NULLABLE = 0
-                }
-                // Use st later for field access
-                if cg.is_string_var(name) {
-                    CG_LAST_IS_STR = 1
-                    CG_LAST_IS_MAP = 0
-                } else if cg.is_map_var(name) {
-                    CG_LAST_IS_MAP = 1
-                    CG_LAST_IS_STR = 0
-                } else {
-                    CG_LAST_IS_STR = 0
-                    CG_LAST_IS_MAP = 0
-                }
-            }
 
             // Check for single-param closure: x -> expr
-            if self.check(TokenKind.Arrow) {
+            if self.check_id(86) {
                 self.advance()
                 self.skip_newlines()
                 let body = self.parse_expr()
@@ -996,48 +447,21 @@ impl Parser {
             return Expr.Ident(name, span)
         }
 
-        match tok.kind {
-            .NullLiteral -> {
-                let span = self.advance().span
-                Expr.NullLit(span)
-            }
-
-            // Parenthesized expression or tuple
-            .LParen -> {
-                self.parse_paren_expr()
-            }
-
-            // Block expression { ... }
-            .LBrace -> {
-                self.parse_block_expr()
-            }
-
-            // List literal [ ... ]
-            .LBracket -> {
-                self.parse_list_literal()
-            }
-
-            // Dot-prefixed enum variant: .Variant
-            .Dot -> {
-                self.parse_dot_variant()
-            }
-
-            // If expression
-            .If -> {
-                self.parse_if_expr()
-            }
-
-            // Match expression (will be registered by pattern_matching feature)
-            .Match -> {
-                self.parse_match_expr()
-            }
-
-            _ -> {
-                self.error("unexpected token")
-                self.advance() // skip the bad token
-                null
-            }
+        // Use kind_id dispatch (bootstrap: match tok.kind doesn't dispatch reliably)
+        if tok.kind_id == 8 || tok.text == "null" {
+            let span = self.advance().span
+            return Expr.NullLit(span)
         }
+        if tok.kind_id == 100 { return self.parse_paren_expr() }
+        if tok.kind_id == 102 { return self.parse_block_expr() }
+        if tok.kind_id == 104 { return self.parse_list_literal() }
+        if tok.kind_id == 111 { return self.parse_dot_variant() }
+        if tok.kind_id == 25 { return self.parse_if_expr() }
+        if tok.kind_id == 27 { return self.parse_match_expr() }
+
+        self.error("unexpected token")
+        self.advance()
+        null
     }
 
     // ─── Parenthesized / Tuple ─────────────────
@@ -1046,7 +470,7 @@ impl Parser {
         let start = self.advance().span // consume (
 
         // Empty parens: ()
-        if self.check(TokenKind.RParen) {
+        if self.check_id(101) {
             self.advance()
             return Expr.NullLit(start) // unit/void
         }
@@ -1057,21 +481,21 @@ impl Parser {
         self.skip_newlines()
 
         // Check for tuple: (a, b, ...)
-        if self.check(TokenKind.Comma) {
+        if self.check_id(110) {
             // TODO: create tuple expression
             self.advance()
-            while !self.check(TokenKind.RParen) && !self.is_at_end() {
+            while !self.check_id(101) && !self.is_at_end() {
                 self.skip_newlines()
                 self.parse_expr() // consume but don't collect for now
                 self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
+                if self.check_id(110) { self.advance() }
             }
-            self.expect(TokenKind.RParen)
+            self.expect_id(101)
             return first // TODO: return Tuple expr
         }
 
         self.skip_newlines()
-        if self.expect(TokenKind.RParen) == null { return null }
+        if self.expect_id(101) == null { return null }
 
         first // parenthesized expression (inner expr already emitted inline if in codegen)
     }
@@ -1086,33 +510,6 @@ impl Parser {
         }
 
         // Check for empty {} → map literal (when used as value expression)
-        if CG_ACTIVE {
-            // Peek: if next meaningful token after { is }, it's an empty map
-            let next = self.peek_at(1)
-            if self.kind_to_key(next.kind) == "RBrace" || self.kind_to_key(next.kind) == "Newline" {
-                // Check if NEXT after newlines is RBrace
-                mut offset = 1
-                while self.kind_to_key(self.peek_at(offset).kind) == "Newline" {
-                    offset = offset + 1
-                }
-                if self.kind_to_key(self.peek_at(offset).kind) == "RBrace" {
-                    // Empty block → create a map via forge_map_new()
-                    self.advance() // consume {
-                    self.skip_newlines()
-                    self.advance() // consume }
-                    let map_ptr = call_rt_0(CG_RT_MAP_NEW, CG_PTR, "mn")
-                    BINOP_COUNTER = BINOP_COUNTER + 1
-                    let tmp = "_m${BINOP_COUNTER}"
-                    mut cg = codegen_new()
-                    cg.define_var(tmp, Type.Int, map_ptr)
-                    CG_LAST_IS_STR = 0
-                    CG_LAST_IS_MAP = 1
-                    CG_LAST_VAL = map_ptr
-                    CG_HAS_LAST_VAL = 1
-                    return Expr.Ident(tmp, self.current_span())
-                }
-            }
-        }
 
         let block = self.parse_block()
         if block == null { return null }
@@ -1150,191 +547,16 @@ impl Parser {
         let start = self.advance().span // consume {
 
         // In codegen mode: build LLVM struct value inline
-        if CG_ACTIVE {
-            let struct_name = LAST_IDENT_NAME
-            // Collect field values, names, and types
-            let vals = llvm.value_array_new(32)
-            mut field_count = 0
-            mut parsed_fields = ""
-            mut parsed_field_types = ""  // comma-separated "s" (string), "i" (int), "l" (list), or "e:EnumName" (enum)
-            mut field_enum_names: List<string> = []  // enum type names per field (empty if not enum)
-
-            while !self.check(TokenKind.RBrace) && !self.is_at_end() {
-                self.skip_newlines()
-                let field_tok = self.peek()
-                if field_tok.kind_id == 1 {
-                    let fname = field_tok.text
-                    if field_count > 0 { parsed_fields = parsed_fields + "," }
-                    parsed_fields = parsed_fields + fname
-                    self.advance() // consume field name
-                    if self.check(TokenKind.Colon) {
-                        self.advance() // consume :
-                        // Reset type flags before emitting field value
-                        CG_LAST_ENUM_TYPE = ""
-                        CG_LAST_IS_STR = 0
-                        CG_LAST_IS_LIST = 0
-                        CG_LAST_STRUCT_TYPE = ""
-                        mut cg = codegen_new()
-                        let expr_val = self.parse_expr()
-                        // Use CG_LAST_VAL if set (struct/list values), else re-emit
-                        mut val: ptr = null
-                        if CG_HAS_LAST_VAL == 1 {
-                            CG_HAS_LAST_VAL = 0
-                            val = CG_LAST_VAL
-                        } else {
-                            val = cg.emit_expr(expr_val!)
-                        }
-                        llvm.value_array_set(vals, field_count, val)
-                        // Track field type
-                        if field_count > 0 { parsed_field_types = parsed_field_types + "," }
-                        if CG_LAST_ENUM_TYPE != "" {
-                            parsed_field_types = parsed_field_types + "e"
-                            field_enum_names = field_enum_names.push(CG_LAST_ENUM_TYPE)
-                        } else if CG_LAST_STRUCT_TYPE != "" {
-                            // Struct-typed field: use the struct type name
-                            parsed_field_types = parsed_field_types + "t"
-                            field_enum_names = field_enum_names.push(CG_LAST_STRUCT_TYPE)
-                        } else if CG_LAST_IS_STR == 1 {
-                            parsed_field_types = parsed_field_types + "s"
-                            field_enum_names = field_enum_names.push("")
-                        } else if CG_LAST_IS_LIST == 1 {
-                            parsed_field_types = parsed_field_types + "l"
-                            field_enum_names = field_enum_names.push("")
-                        } else {
-                            parsed_field_types = parsed_field_types + "i"
-                            field_enum_names = field_enum_names.push("")
-                        }
-                        field_count = field_count + 1
-                    }
-                } else {
-                    break
-                }
-                self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
-                self.skip_newlines()
-            }
-            self.expect(TokenKind.RBrace)
-
-            // Create struct type with correct field types
-            let ft = llvm.type_array_new(field_count)
-            mut fti = 0
-            mut ftpos = 0
-            while fti < field_count && ftpos < parsed_field_types.length {
-                let ftch = parsed_field_types[ftpos]
-                if ftch == "s" {
-                    llvm.type_array_set(ft, fti, CG_STR)
-                } else if ftch == "e" {
-                    // Enum field: use the named enum LLVM type
-                    if fti < field_enum_names.length {
-                        let ename = field_enum_names[fti]
-                        if ename != "" {
-                            let ety = cg_get_enum_ty_for(ename)
-                            llvm.type_array_set(ft, fti, ety)
-                        } else {
-                            llvm.type_array_set(ft, fti, CG_I64)
-                        }
-                    } else {
-                        llvm.type_array_set(ft, fti, CG_I64)
-                    }
-                } else if ftch == "t" {
-                    // Struct-typed field: look up the struct's LLVM type
-                    if fti < field_enum_names.length {
-                        let sname = field_enum_names[fti]
-                        mut found_sty = false
-                        if sname != "" {
-                            mut sti = CG_STRUCT_NAMES.length - 1
-                            while sti >= 0 {
-                                if CG_STRUCT_NAMES[sti] == sname {
-                                    let sty = CG_STRUCT_TYPES[sti]
-                                    if sty != null {
-                                        llvm.type_array_set(ft, fti, sty)
-                                        found_sty = true
-                                    }
-                                    break
-                                }
-                                sti = sti - 1
-                            }
-                        }
-                        if !found_sty {
-                            llvm.type_array_set(ft, fti, CG_I64)
-                        }
-                    } else {
-                        llvm.type_array_set(ft, fti, CG_I64)
-                    }
-                } else if ftch == "l" {
-                    llvm.type_array_set(ft, fti, CG_LIST)
-                } else {
-                    llvm.type_array_set(ft, fti, CG_I64)
-                }
-                fti = fti + 1
-                ftpos = ftpos + 2  // skip comma
-            }
-            // Use the REGISTERED named struct type (not anonymous)
-            mut struct_ty: ptr = null
-            mut sti = CG_STRUCT_TYPES.length - 1
-            while sti >= 0 {
-                if CG_STRUCT_NAMES[sti] == struct_name {
-                    struct_ty = CG_STRUCT_TYPES[sti]
-                    break
-                }
-                sti = sti - 1
-            }
-            // Fallback to anonymous type if not found
-            if struct_ty == null {
-                struct_ty = llvm.struct_type(CG_CTX, ft, field_count, 0)
-            }
-            llvm.type_array_free(ft)
-            // Use alloca + GEP stores (avoids named vs anonymous struct type mismatch in insertvalue)
-            BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "_s${BINOP_COUNTER}"
-            let alloca = llvm.build_alloca(CG_B, struct_ty, tmp)
-            // Zero-init the struct
-            llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
-            mut fi = 0
-            while fi < field_count {
-                let v = llvm.value_array_get(vals, fi)
-                let field_ptr = llvm.build_struct_gep2(CG_B, struct_ty, alloca, fi, "sp")
-                llvm.build_store(CG_B, v, field_ptr)
-                fi = fi + 1
-            }
-            llvm.value_array_free(vals)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(0)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-            // Register as struct variable so emit_ident loads with correct type
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
-            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(parsed_fields)
-
-            // Register struct type in codegen (with LLVM type this time)
-            CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(struct_name)
-            CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(parsed_fields)
-            CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push("")
-            CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(struct_ty)
-
-            // Register struct variable + type + field names
-            CG_LAST_IS_STR = 0
-            CG_LAST_STRUCT_TYPE = struct_name
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
-            CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(parsed_fields)
-            // Load the completed struct from alloca
-            let completed = llvm.build_load(CG_B, struct_ty, alloca, "sv")
-            CG_LAST_VAL = completed
-            CG_HAS_LAST_VAL = 1
-            return Expr.Ident(tmp, start)
-        }
 
         // Non-codegen: encode as Call("__s_TypeName", [field1, field2, ...])
         let struct_name = LAST_IDENT_NAME
         mut field_values: List<Expr> = []
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while !self.check_id(103) && !self.is_at_end() {
             self.skip_newlines()
             let field_tok = self.peek()
             if field_tok.kind_id == 1 {
                 self.advance()
-                if self.check(TokenKind.Colon) {
+                if self.check_id(112) {
                     self.advance()
                     let fval = self.parse_expr()
                     if fval != null {
@@ -1348,10 +570,10 @@ impl Parser {
                 break
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(110) { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBrace)
+        self.expect_id(103)
         // Return Call-encoded struct lit
         Expr.Call(Expr.Ident("__s_" + struct_name, start), field_values, start)
     }
@@ -1361,96 +583,18 @@ impl Parser {
     fn parse_list_literal(self) -> Expr? {
         let start = self.advance().span // consume [
 
-        if CG_ACTIVE {
-            // Count elements first by parsing and emitting each immediately
-            // Use a two-pass approach: first count, then emit
-            // Actually, use a growing approach: start with alloc(8*16), fill, realloc if needed
-            // Simpler: collect LLVM values in a fixed buffer via value_array
 
-            // Parse and emit elements, collecting LLVM values
-            let max_elems = 64  // max list literal size
-            let vals = llvm.value_array_new(max_elems)
-            mut count = 0
-            mut first_elem_is_str = 0
-
-            self.skip_newlines()
-            while !self.check(TokenKind.RBracket) && !self.is_at_end() {
-                CG_LAST_IS_STR = 0
-                mut cg = codegen_new()
-                let elem = self.parse_expr()
-                if elem != null {
-                    let val = cg.emit_expr(elem!)
-                    llvm.value_array_set(vals, count, val)
-                    if count == 0 { first_elem_is_str = CG_LAST_IS_STR }
-                    count = count + 1
-                }
-                self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
-                self.skip_newlines()
-            }
-            self.expect(TokenKind.RBracket)
-            CG_LAST_LIST_ELEM_IS_STR = first_elem_is_str
-
-            let count_val = llvm.const_int(CG_I64, count, 0)
-
-            // Determine element type and size
-            mut elem_ty = CG_I64
-            if first_elem_is_str == 1 { elem_ty = CG_STR }
-            mut elem_size = 8
-            if first_elem_is_str == 1 { elem_size = 16 }
-            let elem_size_val = llvm.const_int(CG_I64, elem_size, 0)
-
-            // Allocate buffer: forge_alloc(count * elem_size)
-            let size = llvm.build_mul(CG_B, count_val, elem_size_val, "lz")
-            let data_ptr = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, size, "ld")
-
-            // Store each element via GEP
-            mut i = 0
-            while i < count {
-                let idx = llvm.const_int(CG_I64, i, 0)
-                let indices = llvm.value_array_new(1)
-                llvm.value_array_set(indices, 0, idx)
-                let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "ep")
-                llvm.value_array_free(indices)
-                // Retrieve the pre-emitted value
-                let val = llvm.value_array_get(vals, i)
-                llvm.build_store(CG_B, val, elem_ptr)
-                i = i + 1
-            }
-            llvm.value_array_free(vals)
-
-            // Build list struct {data_ptr, count}
-            let undef = llvm.get_undef(CG_LIST)
-            let s1 = llvm.build_insert_value(CG_B, undef, data_ptr, 0, "ls1")
-            let s2 = llvm.build_insert_value(CG_B, s1, count_val, 1, "ls2")
-
-            // Return the list struct value directly as a StringLit marker
-            // (StringLit triggers Type.String in parse_var_binding)
-            // This is a hack but avoids the CG_LAST_IS_STR timing issue
-            BINOP_COUNTER = BINOP_COUNTER + 1
-            let tmp = "_l${BINOP_COUNTER}"
-            mut cg = codegen_new()
-            cg.define_var(tmp, Type.String, s2)
-            CG_LAST_IS_STR = 1
-            CG_LAST_IS_LIST = 1
-            CG_LAST_VAL = s2
-            CG_HAS_LAST_VAL = 1
-            return Expr.Ident(tmp, start)
-        }
-
-        // Non-codegen: parse elements and store as Call("__list__", elements)
-        // This preserves list literal data for AST-based codegen emission
-        mut elems: List<Expr> = []
+        // Non-codegen: parse and discard
         self.skip_newlines()
-        while !self.check(TokenKind.RBracket) && !self.is_at_end() {
-            let elem = self.parse_expr()
-            if elem != null { elems = elems.push(elem!) }
+        while !self.check_id(105) && !self.is_at_end() {
+            self.parse_expr()
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(110) { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBracket)
-        Expr.Call(Expr.Ident("__list__", start), elems, start)
+        self.expect_id(105)
+        // Use Ident sentinel — Block variant match is unreliable in compiled output
+        Expr.Ident("EMPTYLIST", start)
     }
 
     // ─── Dot Variant ───────────────────────────
@@ -1461,10 +605,10 @@ impl Parser {
         if name == "" { return null }
 
         // .Variant(args) — enum constructor with args
-        if self.check(TokenKind.LParen) {
+        if self.check_id(100) {
             self.advance()
             let args = self.parse_call_args()
-            self.expect(TokenKind.RParen)
+            self.expect_id(101)
             let span = self.merge_spans(start, self.peek_at(-1).span)
             return Expr.Ident(".${name}", span)
         }
@@ -1487,103 +631,17 @@ impl Parser {
 
         self.skip_newlines()
 
-        if CG_ACTIVE {
-            // Inline emit: control flow needs immediate basic blocks
-            mut cg = codegen_new()
-            let cond_val = cg.emit_expr(condition!)
-            let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
-
-            let current_bb = llvm.get_insert_block(CG_B)
-            let current_fn = llvm.get_basic_block_parent(current_bb)
-
-            let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "th")
-            let else_bb = llvm.append_basic_block(CG_CTX, current_fn, "el")
-            let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ic")
-
-            llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
-
-            // Emit then block
-            llvm.position_at_end(CG_B, then_bb)
-            let then_block = self.parse_block()
-            mut then_val = cg.emit_block(then_block)
-            mut then_is_nullable = CG_LAST_IS_NULLABLE == 1
-            // In nullable function context, wrap non-nullable then value before branching
-            if CG_FN_RETURNS_NULLABLE == 1 && !then_is_nullable {
-                then_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, then_val)
-                then_is_nullable = true
-            }
-            let then_end_bb = llvm.get_insert_block(CG_B)
-            let then_terminated = llvm.block_has_terminator(CG_B)
-            if !then_terminated {
-                llvm.build_br(CG_B, merge_bb)
-            }
-
-            // Emit else block
-            llvm.position_at_end(CG_B, else_bb)
-            mut has_else = false
-            mut else_val = llvm.const_int(CG_I64, 0, 0)
-            mut else_is_nullable = false
-            self.skip_newlines()
-            if self.check(TokenKind.Else) {
-                has_else = true
-                self.advance()
-                self.skip_newlines()
-                if self.check(TokenKind.If) {
-                    let nested = self.parse_if_expr()
-                    if nested != null {
-                        else_val = cg.emit_expr(nested!)
-                    }
-                } else {
-                    let else_block = self.parse_block()
-                    else_val = cg.emit_block(else_block)
-                }
-                else_is_nullable = CG_LAST_IS_NULLABLE == 1
-                // In nullable function context, wrap non-nullable else value before branching
-                if CG_FN_RETURNS_NULLABLE == 1 && !else_is_nullable {
-                    else_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, else_val)
-                    else_is_nullable = true
-                }
-            }
-            let else_end_bb = llvm.get_insert_block(CG_B)
-            let else_terminated = llvm.block_has_terminator(CG_B)
-            if !else_terminated {
-                llvm.build_br(CG_B, merge_bb)
-            }
-
-            llvm.position_at_end(CG_B, merge_bb)
-
-            // PHI to merge values from both branches (if-as-expression)
-            if has_else && !then_terminated && !else_terminated {
-                // In nullable function, use {i8, T} type for PHI
-                if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
-                    let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
-                    let phi = llvm.build_phi(CG_B, nullable_ty, "iv")
-                    llvm.add_incoming(phi, then_val, then_end_bb)
-                    llvm.add_incoming(phi, else_val, else_end_bb)
-                    CG_LAST_VAL = phi
-                    CG_HAS_LAST_VAL = 1
-                    CG_LAST_IS_NULLABLE = 1
-                } else {
-                    let phi = llvm.build_phi(CG_B, CG_I64, "iv")
-                    llvm.add_incoming(phi, then_val, then_end_bb)
-                    llvm.add_incoming(phi, else_val, else_end_bb)
-                    CG_LAST_VAL = phi
-                    CG_HAS_LAST_VAL = 1
-                }
-            }
-            return Expr.IntLit(0, start)
-        }
 
         // Non-codegen path: store in side table
         let then_block = self.parse_block()
         self.skip_newlines()
         mut has_else = false
         mut else_block = Block { statements: [], span: start }
-        if self.check(TokenKind.Else) {
+        if self.check_id(26) {
             has_else = true
             self.advance()
             self.skip_newlines()
-            if self.check(TokenKind.If) {
+            if self.check_id(25) {
                 let nested = self.parse_if_expr()
                 if nested != null {
                     else_block = Block {
@@ -1616,298 +674,11 @@ impl Parser {
         let scrutinee = self.parse_expr()
         if scrutinee == null { return null }
 
-        // Track scrutinee type
-        let scrutinee_is_str = CG_LAST_IS_STR == 1
         let scrutinee_var = LAST_IDENT_NAME
 
         self.skip_newlines()
-        if self.expect(TokenKind.LBrace) == null { return null }
+        if self.expect_id(102) == null { return null }
 
-        if CG_ACTIVE {
-            // Emit scrutinee value once
-            mut cg = codegen_new()
-            let subj_val = cg.emit_expr(scrutinee!)
-            // Detect if scrutinee is a tagged union enum
-            let scr_etype = csv_var_enum_type(scrutinee_var)
-            let scrutinee_is_enum = scr_etype != ""
-
-            let current_bb = llvm.get_insert_block(CG_B)
-            let current_fn = llvm.get_basic_block_parent(current_bb)
-
-            // Create merge block (all arms branch here when done)
-            let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "me")
-
-            // Track arm values and blocks for phi node (match-as-expression)
-            mut arm_vals: List<ptr> = []
-            mut arm_bbs: List<ptr> = []
-            mut match_arms_are_str: bool = false
-
-            // Parse and emit arms as if-else chain
-            // For each arm: compare → cond_br to arm body or next check
-            self.skip_newlines()
-            while !self.check(TokenKind.RBrace) && !self.is_at_end() {
-                self.skip_newlines()
-                if self.check(TokenKind.RBrace) { break }
-
-                // Reset type flags at arm boundary to prevent leakage from previous arm's body
-                CG_LAST_IS_STR = 0
-                CG_LAST_IS_MAP = 0
-                CG_HAS_LAST_VAL = 0
-
-                // Check for wildcard _
-                let is_wildcard = self.check(TokenKind.Underscore)
-                // Check for .Variant pattern
-                let is_dot_variant = self.check(TokenKind.Dot)
-
-                if is_wildcard {
-                    // _ -> body (default arm — always matches)
-                    self.advance() // consume _
-                    self.skip_newlines()
-                    if self.check(TokenKind.Arrow) { self.advance() }
-                    self.skip_newlines()
-                    // Parse and emit body, capturing result for phi
-                    let prev_match = IN_MATCH_ARM
-                    IN_MATCH_ARM = true
-                    mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                    if self.check(TokenKind.LBrace) {
-                        arm_result = self.parse_block_for_value(cg)
-                    } else if self.check(TokenKind.Return) {
-                        self.parse_return()
-                    } else {
-                        let _body = self.parse_expr()
-                        if _body != null {
-                            arm_result = cg.emit_expr(_body!)
-                        }
-                    }
-                    // Pick up pre-computed value from nested match or other expression
-                    if CG_HAS_LAST_VAL == 1 {
-                        arm_result = CG_LAST_VAL
-                        CG_HAS_LAST_VAL = 0
-                    }
-                    IN_MATCH_ARM = prev_match
-                    if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
-                    if !llvm.block_has_terminator(CG_B) {
-                        arm_vals = arm_vals.push(arm_result)
-                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
-                        llvm.build_br(CG_B, merge_bb)
-                    }
-                    self.skip_newlines()
-                    continue
-                }
-
-                if is_dot_variant {
-                    // .Variant -> body — compare tag (scrutinee is an int tag for simple enums)
-                    self.advance() // consume .
-                    let variant_name = self.expect_ident()
-                    // Capture binding names from sub-pattern
-                    mut binding_names: List<string> = []
-                    if self.check(TokenKind.LParen) {
-                        self.advance()
-                        while !self.check(TokenKind.RParen) && !self.is_at_end() {
-                            let bname = self.expect_ident()
-                            if bname != "" { binding_names = binding_names.push(bname) }
-                            if self.check(TokenKind.Comma) { self.advance() }
-                            self.skip_newlines()
-                        }
-                        self.advance() // consume )
-                    }
-
-                    self.skip_newlines()
-                    if self.check(TokenKind.Arrow) { self.advance() }
-                    self.skip_newlines()
-
-                    let tag = match_enum_tag(variant_name)
-                    let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "ma")
-                    let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "mn")
-
-                    // Compare: extract tag for tagged unions, direct compare for i64
-                    let tag_val = llvm.const_int(CG_I64, tag, 0)
-                    mut cmp: ptr = null
-                    if scrutinee_is_enum {
-                        let stag = llvm.build_extract_value(CG_B, subj_val, 0, "tg")
-                        let stag_ext = llvm.build_zext(CG_B, stag, llvm.int64_type(CG_CTX), "tx")
-                        cmp = llvm.build_icmp(CG_B, 32, stag_ext, tag_val, "mc")
-                    } else {
-                        cmp = llvm.build_icmp(CG_B, 32, subj_val, tag_val, "mc")
-                    }
-                    llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
-
-                    // Emit arm body
-                    llvm.position_at_end(CG_B, arm_bb)
-                    // Define bindings from payload via memory (handles string fields)
-                    if binding_names.length > 0 {
-                        if scrutinee_is_enum {
-                            // Alloca and store the enum to get a pointer for GEP
-                            let ext_ety = cg_get_enum_ty_for(scr_etype)
-                            let ext_alloca = llvm.build_alloca(CG_B, ext_ety, "mt")
-                            llvm.build_store(CG_B, subj_val, ext_alloca)
-                            let ext_payload = llvm.build_struct_gep2(CG_B, ext_ety, ext_alloca, 1, "mp")
-                            let ext_vft = cg_enum_variant_field_types(scr_etype, variant_name)
-                            mut bi = 0
-                            for bname in binding_names {
-                                let slot_off3 = cg_enum_field_slot_offset(ext_vft, bi)
-                                let idx_arr3 = llvm.value_array_new(1)
-                                llvm.value_array_set(idx_arr3, 0, llvm.const_int(CG_I64, slot_off3, 0))
-                                let bind_ptr = llvm.build_gep2(CG_B, CG_I64, ext_payload, idx_arr3, 1, "bp")
-                                llvm.value_array_free(idx_arr3)
-                                // Determine field type and load appropriately
-                                mut bind_fc = "i"
-                                if bi < ext_vft.length {
-                                    bind_fc = ext_vft[bi]
-                                }
-                                if bind_fc == "s" {
-                                    // String field: load ForgeString through bitcasted ptr
-                                    let str_bptr = llvm.build_bitcast(CG_B, bind_ptr, llvm.pointer_type(CG_CTX), "sb")
-                                    let fv = llvm.build_load(CG_B, CG_STR, str_bptr, bname)
-                                    let alloca = llvm.build_alloca(CG_B, CG_STR, bname)
-                                    llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bname)
-                                    CG_LAST_IS_STR = 1
-                                } else if bind_fc == "l" {
-                                    // List field: load {ptr, i64} through bitcasted ptr
-                                    let list_bptr = llvm.build_bitcast(CG_B, bind_ptr, llvm.pointer_type(CG_CTX), "lb")
-                                    let fv = llvm.build_load(CG_B, CG_LIST, list_bptr, bname)
-                                    let alloca = llvm.build_alloca(CG_B, CG_LIST, bname)
-                                    llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                                } else {
-                                    // Int/ptr/other: load i64 directly
-                                    let fv = llvm.build_load(CG_B, CG_I64, bind_ptr, bname)
-                                    let alloca = llvm.build_alloca(CG_B, CG_I64, bname)
-                                    llvm.build_store(CG_B, fv, alloca)
-                                    CG_VAR_NAMES = CG_VAR_NAMES.push(bname)
-                                    CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
-                                }
-                                bi = bi + 1
-                            }
-                        }
-                    }
-                    let prev_match2 = IN_MATCH_ARM
-                    IN_MATCH_ARM = true
-                    mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                    if self.check(TokenKind.LBrace) {
-                        arm_result = self.parse_block_for_value(cg)
-                    } else if self.check(TokenKind.Return) {
-                        // Handle return statement in match arm body
-                        self.parse_return()
-                    } else {
-                        let _body = self.parse_expr()
-                        if _body != null { arm_result = cg.emit_expr(_body!) }
-                    }
-                    if CG_HAS_LAST_VAL == 1 {
-                        arm_result = CG_LAST_VAL
-                        CG_HAS_LAST_VAL = 0
-                    }
-                    IN_MATCH_ARM = prev_match2
-                    if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
-                    if !llvm.block_has_terminator(CG_B) {
-                        arm_vals = arm_vals.push(arm_result)
-                        arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
-                        llvm.build_br(CG_B, merge_bb)
-                    }
-
-                    // Continue checking from next block
-                    llvm.position_at_end(CG_B, next_bb)
-                    self.skip_newlines()
-                    continue
-                }
-
-                // Regular pattern: parse as expression (integer, string literal, etc.)
-                let pattern = self.parse_expr()
-                let pat_is_str = CG_LAST_IS_STR == 1
-
-                self.skip_newlines()
-                if self.check(TokenKind.Arrow) { self.advance() }
-                self.skip_newlines()
-
-                // Create arm body block and next check block
-                let arm_bb = llvm.append_basic_block(CG_CTX, current_fn, "ma")
-                let next_bb = llvm.append_basic_block(CG_CTX, current_fn, "mn")
-
-                // Compare scrutinee to pattern
-                if pattern != null {
-                    let pat_val = cg.emit_expr(pattern!)
-                    mut cmp_val: ptr = null
-                    if scrutinee_is_str || pat_is_str {
-                        // String comparison
-                        let eq_val = call_rt_2_ss(CG_RT_SEQ, subj_val, pat_val, CG_I8, "ms")
-                        let eq_ext = llvm.build_zext(CG_B, eq_val, llvm.int64_type(CG_CTX), "mx")
-                        cmp_val = llvm.build_icmp(CG_B, 33, eq_ext, llvm.const_int(CG_I64, 0, 0), "msc")
-                    } else {
-                        cmp_val = llvm.build_icmp(CG_B, 32, subj_val, pat_val, "mc")
-                    }
-                    llvm.build_cond_br(CG_B, cmp_val, arm_bb, next_bb)
-                }
-
-                // Emit arm body
-                llvm.position_at_end(CG_B, arm_bb)
-                let prev_match3 = IN_MATCH_ARM
-                IN_MATCH_ARM = true
-                mut arm_result = llvm.const_int(CG_I64, 0, 0)
-                if self.check(TokenKind.LBrace) {
-                    arm_result = self.parse_block_for_value(cg)
-                } else if self.check(TokenKind.Return) {
-                    self.parse_return()
-                } else {
-                    let _body = self.parse_expr()
-                    if _body != null { arm_result = cg.emit_expr(_body!) }
-                }
-                if CG_HAS_LAST_VAL == 1 {
-                    arm_result = CG_LAST_VAL
-                    CG_HAS_LAST_VAL = 0
-                }
-                IN_MATCH_ARM = prev_match3
-                if CG_LAST_IS_STR == 1 { match_arms_are_str = true }
-                if !llvm.block_has_terminator(CG_B) {
-                    arm_vals = arm_vals.push(arm_result)
-                    arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
-                    llvm.build_br(CG_B, merge_bb)
-                }
-
-                // Continue checking from next block
-                llvm.position_at_end(CG_B, next_bb)
-                self.skip_newlines()
-            }
-
-            // If we fall through all arms (no match), jump to merge with default value
-            if !llvm.block_has_terminator(CG_B) {
-                if match_arms_are_str {
-                    // Default: empty string {null, 0}
-                    let undef = llvm.get_undef(CG_STR)
-                    let z1 = llvm.build_insert_value(CG_B, undef, llvm.const_null(CG_PTR), 0, "dp")
-                    let z2 = llvm.build_insert_value(CG_B, z1, llvm.const_int(CG_I64, 0, 0), 1, "dl")
-                    arm_vals = arm_vals.push(z2)
-                } else {
-                    arm_vals = arm_vals.push(llvm.const_int(CG_I64, 0, 0))
-                }
-                arm_bbs = arm_bbs.push(llvm.get_insert_block(CG_B))
-                llvm.build_br(CG_B, merge_bb)
-            }
-
-            // Bootstrap workaround: expect() returns nullable which causes domination errors.
-            // The while loop already confirmed RBrace is next, so just advance().
-            self.advance()
-            llvm.position_at_end(CG_B, merge_bb)
-
-            // Build phi node so match can be used as an expression
-            if arm_vals.length > 0 {
-                mut phi_ty = CG_I64
-                if match_arms_are_str { phi_ty = CG_STR }
-                let phi = llvm.build_phi(CG_B, phi_ty, "mv")
-                mut phi_i = 0
-                while phi_i < arm_vals.length {
-                    llvm.add_incoming(phi, arm_vals[phi_i], arm_bbs[phi_i])
-                    phi_i = phi_i + 1
-                }
-                CG_LAST_VAL = phi
-                CG_HAS_LAST_VAL = 1
-                if match_arms_are_str { CG_LAST_IS_STR = 1 }
-            }
-            return Expr.IntLit(0, start)
-        }
 
         // Non-codegen: parse match arms with PENDING_MATCH
         // Note: { was already consumed by expect(LBrace) above
@@ -1922,22 +693,22 @@ impl Parser {
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while !self.check_id(103) && !self.is_at_end() {
             self.skip_newlines()
             mut pat_tag = -1
-            if self.check(TokenKind.Dot) {
+            if self.check_id(111) {
                 self.advance()
                 let vname = self.expect_ident()
                 // Try qualified name first (Color.Green), then bare (Green)
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
-                if self.check(TokenKind.LParen) {
+                if self.check_id(100) {
                     self.advance()
-                    while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
-                    if self.check(TokenKind.RParen) { self.advance() }
+                    while !self.check_id(101) && !self.is_at_end() { self.advance() }
+                    if self.check_id(101) { self.advance() }
                 }
-            } else if self.check(TokenKind.Underscore) {
+            } else if self.check_id(60) {
                 self.advance()
                 pat_tag = -1
                 has_default = true
@@ -1946,13 +717,13 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Arrow) { self.advance() }
+            if self.check_id(86) { self.advance() }
             self.skip_newlines()
 
             let prev_match = IN_MATCH_ARM
             IN_MATCH_ARM = true
             mut body = Block { statements: [], span: start }
-            if self.check(TokenKind.LBrace) {
+            if self.check_id(102) {
                 body = self.parse_block()
             } else {
                 let e = self.parse_expr()
@@ -1970,13 +741,12 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.check_id(110) { self.advance() }
             self.skip_newlines()
         }
-        if self.check(TokenKind.RBrace) { self.advance() }
+        if self.check_id(103) { self.advance() }
 
-        // Store match data in PENDING_MATCH globals
-        MATCH_SCRUTINEE = scrutinee!
+        // Build __m_tag1,tag2,...(scrutinee, body1, body2, ...) call expression
         mut tag_csv = ""
         mut ti = 0
         while ti < arm_tags.length {
@@ -1984,12 +754,20 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
-        MATCH_ARM_TAGS = tag_csv
-        MATCH_ARM_BODIES = arm_bodies
-        MATCH_DEFAULT = default_body
-        MATCH_HAS_DEFAULT = has_default
-        PENDING_MATCH = true
-        Expr.IntLit(-1, start)
+        // Build args: [scrutinee, arm_body_exprs...]
+        mut call_args: List<Expr> = []
+        call_args = call_args.push(scrutinee!)
+        mut ai = 0
+        while ai < arm_bodies.length {
+            call_args = call_args.push(Expr.Block(arm_bodies[ai]))
+            ai = ai + 1
+        }
+        if has_default {
+            call_args = call_args.push(Expr.Block(default_body))
+            tag_csv = tag_csv + ",-1"
+        }
+        let match_fn = Expr.Ident("__m_" + tag_csv, start)
+        Expr.Call(match_fn, call_args, start)
     }
 
     // ─── Span Helper ───────────────────────────
@@ -2006,7 +784,7 @@ impl Parser {
 
 // ─── Struct Field Helpers ────────────────────────
 
-use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_LAST_STRUCT_TYPE, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
+use codegen.{CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, struct_field_index, var_struct_type, cg_enum_max_fields, cg_make_enum_type, make_nullable_type}
 use features.functions.{FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS}
 use features.if_else.{store_if_expr}
 
@@ -2076,540 +854,6 @@ fn is_struct_field_str(struct_name: string, field_idx: int) -> bool {
     false
 }
 
-// ─── Method Call Inline Emit ─────────────────────
-
-impl Parser {
-    fn emit_method_call_inline(self, obj_val: ptr, method: string) -> ptr {
-        // Capture object variable name BEFORE parsing args (args parsing changes LAST_IDENT_NAME)
-        let obj_var_name = LAST_IDENT_NAME
-        // Parse args
-        let args = self.parse_call_args()
-
-        if method == "substring" {
-            // string.substring(start, end) → forge_string_substring(str, start, end)
-            if args.length >= 2 {
-                mut cg = codegen_new()
-                let start_val = cg.emit_expr(args[0])
-                let end_val = cg.emit_expr(args[1])
-                let call_args = llvm.value_array_new(3)
-                llvm.value_array_set(call_args, 0, obj_val)
-                llvm.value_array_set(call_args, 1, start_val)
-                llvm.value_array_set(call_args, 2, end_val)
-                let param_types = llvm.type_array_new(3)
-                llvm.type_array_set(param_types, 0, CG_STR)
-                llvm.type_array_set(param_types, 1, CG_I64)
-                llvm.type_array_set(param_types, 2, CG_I64)
-                let ft = llvm.function_type(CG_STR, param_types, 3, 0)
-                llvm.type_array_free(param_types)
-                let result = llvm.build_call(CG_B, ft, CG_RT_SSUBSTR, call_args, 3, "ss")
-                llvm.value_array_free(call_args)
-                return result
-            }
-        }
-
-        if method == "index_of" {
-            if args.length >= 1 {
-                mut cg = codegen_new()
-                let sub_val = cg.emit_expr(args[0])
-                return call_rt_2_ss(CG_RT_SINDEXOF, obj_val, sub_val, CG_I64, "io")
-            }
-        }
-
-        if method == "push" {
-            // List.push(item) → allocate new array, copy old, append, return new list
-            if args.length >= 1 {
-                mut cg = codegen_new()
-                // Use CG_LAST_VAL if available (struct literals set this)
-                mut item_val: ptr = null
-                if CG_HAS_LAST_VAL == 1 {
-                    CG_HAS_LAST_VAL = 0
-                    item_val = CG_LAST_VAL
-                } else {
-                    item_val = cg.emit_expr(args[0])
-                }
-                let elem_ty = list_elem_llvm_type(obj_var_name)
-                return emit_list_push_typed(obj_val, item_val, elem_ty)
-            }
-        }
-
-        if method == "has" {
-            // Map.has(key) → forge_map_has(map_ptr, key) → i8
-            if args.length >= 1 {
-                mut cg = codegen_new()
-                let key_val = cg.emit_expr(args[0])
-                let has_args = llvm.value_array_new(2)
-                llvm.value_array_set(has_args, 0, obj_val)
-                llvm.value_array_set(has_args, 1, key_val)
-                let has_pt = llvm.type_array_new(2)
-                llvm.type_array_set(has_pt, 0, CG_PTR)
-                llvm.type_array_set(has_pt, 1, CG_STR)
-                let has_ft = llvm.function_type(CG_I8, has_pt, 2, 0)
-                llvm.type_array_free(has_pt)
-                let result = llvm.build_call(CG_B, has_ft, CG_RT_MAP_HAS, has_args, 2, "has")
-                llvm.value_array_free(has_args)
-                // zext i8 to i64
-                return llvm.build_zext(CG_B, result, llvm.int64_type(CG_CTX), "hx")
-            }
-        }
-
-        // Try user-defined method from impl blocks: TypeName__method
-        // The object's struct type determines the type name
-        let obj_type = var_struct_type(obj_var_name)
-        if obj_type != "" {
-            let mangled = "${obj_type}__${method}"
-            let fn_ref = llvm.get_named_function(CG_MOD, mangled)
-            if fn_ref != null {
-                // Find function index and param offset for the mangled name
-                mut fn_idx = -1
-                mut fn_param_offset = 0
-                mut fi = 0
-                while fi < FN_NAMES.length {
-                    if FN_NAMES[fi] == mangled {
-                        fn_idx = fi
-                        break
-                    }
-                    if fi < FN_PARAM_COUNTS.length {
-                        fn_param_offset = fn_param_offset + FN_PARAM_COUNTS[fi]
-                    }
-                    fi = fi + 1
-                }
-                mut fn_pc = args.length + 1
-                if fn_idx >= 0 && fn_idx < FN_PARAM_COUNTS.length { fn_pc = FN_PARAM_COUNTS[fn_idx] }
-
-                // Call TypeName__method(self, args...)
-                let total_args = args.length + 1
-                let call_args = llvm.value_array_new(total_args)
-                let call_pts = llvm.type_array_new(total_args)
-                // First arg is self (struct type)
-                llvm.value_array_set(call_args, 0, obj_val)
-                // Look up struct LLVM type
-                mut self_ty = CG_I64
-                mut sti = CG_STRUCT_NAMES.length - 1
-                while sti >= 0 {
-                    if CG_STRUCT_NAMES[sti] == obj_type {
-                        let sty = CG_STRUCT_TYPES[sti]
-                        if sty != null { self_ty = sty }
-                        break
-                    }
-                    sti = sti - 1
-                }
-                llvm.type_array_set(call_pts, 0, self_ty)
-                // Remaining args — look up actual param types
-                mut ai = 0
-                while ai < args.length {
-                    mut cg2 = codegen_new()
-                    llvm.value_array_set(call_args, ai + 1, cg2.emit_expr(args[ai]))
-                    // Look up param type from registry (offset +1 to skip self)
-                    mut pty = CG_I64
-                    let pt_idx = fn_param_offset + ai + 1
-                    if pt_idx < FN_ALL_PARAM_TYPES.length {
-                        let ptn = FN_ALL_PARAM_TYPES[pt_idx]
-                        if ptn == "string" {
-                            pty = CG_STR
-                        } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
-                            let call_emf = cg_enum_max_fields(ptn)
-                            if call_emf > 0 {
-                                pty = cg_make_enum_type(ptn)
-                            }
-                            if call_emf == 0 {
-                                mut psti = CG_STRUCT_NAMES.length - 1
-                                while psti >= 0 {
-                                    if CG_STRUCT_NAMES[psti] == ptn {
-                                        let psty = CG_STRUCT_TYPES[psti]
-                                        if psty != null { pty = psty }
-                                        break
-                                    }
-                                    psti = psti - 1
-                                }
-                            }
-                        }
-                    }
-                    llvm.type_array_set(call_pts, ai + 1, pty)
-                    ai = ai + 1
-                }
-                // Look up return type from FN_RETURN_TYPES
-                mut call_ret_ty = CG_I64
-                CG_LAST_IS_STR = 0
-                CG_LAST_STRUCT_TYPE = ""
-                CG_LAST_IS_NULLABLE = 0
-                if fn_idx >= 0 && fn_idx < FN_RETURN_TYPES.length {
-                    mut rtn = FN_RETURN_TYPES[fn_idx]
-                    let rtn_len = rtn.length
-                    if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                        CG_LAST_IS_NULLABLE = 1
-                        rtn = rtn.substring(0, rtn_len - 1)
-                    } }
-                    if rtn == "string" {
-                        call_ret_ty = CG_STR
-                        CG_LAST_IS_STR = 1
-                    } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                        // Check enum return type
-                        let ret_emf = cg_enum_max_fields(rtn)
-                        if ret_emf > 0 {
-                            call_ret_ty = cg_make_enum_type(rtn)
-                        }
-                        // Struct return type
-                        if ret_emf == 0 {
-                            mut rsti = CG_STRUCT_NAMES.length - 1
-                            while rsti >= 0 {
-                                if CG_STRUCT_NAMES[rsti] == rtn {
-                                    let rsty = CG_STRUCT_TYPES[rsti]
-                                    if rsty != null { call_ret_ty = rsty }
-                                    break
-                                }
-                                rsti = rsti - 1
-                            }
-                            CG_LAST_STRUCT_TYPE = rtn
-                        }
-                    }
-                    if CG_LAST_IS_NULLABLE == 1 {
-                        call_ret_ty = make_nullable_type(call_ret_ty)
-                    }
-                }
-                let call_ft = llvm.function_type(call_ret_ty, call_pts, total_args, 0)
-                llvm.type_array_free(call_pts)
-                let call_result = llvm.build_call(CG_B, call_ft, fn_ref, call_args, total_args, "mc")
-                llvm.value_array_free(call_args)
-                CG_LAST_VAL = call_result
-                CG_HAS_LAST_VAL = 1
-                return call_result
-            }
-        }
-
-        // Default: return 0
-        llvm.const_int(CG_I64, 0, 0)
-    }
-}
-
-// ─── Runtime Call Helpers ────────────────────────
-
-use codegen.{CG_RT_SCONCAT, CG_RT_SNEW, CG_RT_I2S, CG_RT_SCHARAT, CG_RT_SLEN, CG_RT_SEQ, CG_RT_SCMP, CG_RT_SSUBSTR, CG_RT_SINDEXOF, CG_RT_ALLOC, CG_RT_MEMCPY, CG_RT_MAP_NEW, CG_RT_MAP_HAS, CG_RT_MAP_GET, CG_RT_MAP_SET, CG_LAST_IS_MAP, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_IS_MAP_INDEX, CG_STR, CG_LIST, CG_I64, CG_I8, CG_PTR, CG_VOID}
-use codegen.{CG_VAR_NAMES, CG_VAR_IS_STR, CG_VAR_PTRS, CG_STR_VAR_NAMES}
-use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT, cg_var_enum_type}
-use parser.templates.{decompose_template}
-
-fn call_rt_0(fn_ref: ptr, ret_ty: ptr, name: string) -> ptr {
-    let args = llvm.value_array_new(0)
-    let param_types = llvm.type_array_new(0)
-    let ft = llvm.function_type(ret_ty, param_types, 0, 0)
-    llvm.type_array_free(param_types)
-    let result = llvm.build_call(CG_B, ft, fn_ref, args, 0, name)
-    llvm.value_array_free(args)
-    result
-}
-
-fn call_rt_1(fn_ref: ptr, arg_ty: ptr, ret_ty: ptr, arg: ptr, name: string) -> ptr {
-    let args = llvm.value_array_new(1)
-    llvm.value_array_set(args, 0, arg)
-    let param_types = llvm.type_array_new(1)
-    llvm.type_array_set(param_types, 0, arg_ty)
-    let ft = llvm.function_type(ret_ty, param_types, 1, 0)
-    llvm.type_array_free(param_types)
-    let result = llvm.build_call(CG_B, ft, fn_ref, args, 1, name)
-    llvm.value_array_free(args)
-    result
-}
-
-fn call_rt_2(fn_ref: ptr, arg1_ty: ptr, ret_ty: ptr, arg1: ptr, arg2: ptr, name: string) -> ptr {
-    let args = llvm.value_array_new(2)
-    llvm.value_array_set(args, 0, arg1)
-    llvm.value_array_set(args, 1, arg2)
-    let param_types = llvm.type_array_new(2)
-    llvm.type_array_set(param_types, 0, arg1_ty)
-    // Infer second arg type from the function — use i64 as default
-    llvm.type_array_set(param_types, 1, llvm.int64_type(CG_CTX))
-    let ft = llvm.function_type(ret_ty, param_types, 2, 0)
-    llvm.type_array_free(param_types)
-    let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
-    llvm.value_array_free(args)
-    result
-}
-
-fn call_rt_2_ss(fn_ref: ptr, arg1: ptr, arg2: ptr, ret_ty: ptr, name: string) -> ptr {
-    // Call with two ForgeString args
-    let args = llvm.value_array_new(2)
-    llvm.value_array_set(args, 0, arg1)
-    llvm.value_array_set(args, 1, arg2)
-    let param_types = llvm.type_array_new(2)
-    llvm.type_array_set(param_types, 0, CG_STR)
-    llvm.type_array_set(param_types, 1, CG_STR)
-    let ft = llvm.function_type(ret_ty, param_types, 2, 0)
-    llvm.type_array_free(param_types)
-    let result = llvm.build_call(CG_B, ft, fn_ref, args, 2, name)
-    llvm.value_array_free(args)
-    result
-}
-
-// ─── String Template Codegen ─────────────────────
-
-mut TPL_COUNTER: int = 0
-
-// Emit a raw string literal as a ForgeString LLVM value: forge_string_new(ptr, len)
-fn emit_str_lit(text: string) -> ptr {
-    let raw = llvm.build_global_string_ptr(CG_B, text, "ts")
-    let len = llvm.const_int(CG_I64, text.length, 0)
-    call_rt_2(CG_RT_SNEW, CG_PTR, CG_STR, raw, len, "tn")
-}
-
-// Look up a variable by name. Returns its loaded value.
-// Sets tpl_var_is_str flag: 1 = string, 0 = int.
-mut TPL_VAR_IS_STR: int = 0
-fn tpl_load_var(name: string) -> ptr {
-    // Determine if string using dedicated name list (CG_VAR_IS_STR parallel list is unreliable)
-    mut is_str = 0
-    mut si = CG_STR_VAR_NAMES.length - 1
-    while si >= 0 {
-        if CG_STR_VAR_NAMES[si] == name {
-            is_str = 1
-            break
-        }
-        si = si - 1
-    }
-    // Search in reverse for most recent definition
-    mut vi = CG_VAR_NAMES.length - 1
-    while vi >= 0 {
-        if CG_VAR_NAMES[vi] == name {
-            TPL_VAR_IS_STR = is_str
-            mut load_ty = CG_I64
-            if is_str == 1 { load_ty = CG_STR }
-            return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
-        }
-        vi = vi - 1
-    }
-    // Fallback: return 0 as i64
-    TPL_VAR_IS_STR = 0
-    llvm.const_int(CG_I64, 0, 0)
-}
-
-// Convert a value to ForgeString if it isn't already one.
-fn tpl_to_string(val: ptr, is_str: int) -> ptr {
-    if is_str == 1 {
-        return val
-    }
-    // Assume int — call forge_int_to_string
-    call_rt_1(CG_RT_I2S, CG_I64, CG_STR, val, "ti")
-}
-
-// Concatenate two ForgeString values.
-fn tpl_concat(a: ptr, b: ptr) -> ptr {
-    call_rt_2_ss(CG_RT_SCONCAT, a, b, CG_STR, "tc")
-}
-
-// Parse template text and emit LLVM IR for string interpolation.
-// Template text is the raw content (without outer quotes), e.g. "hello ${name}".
-// Splits on ${ and } to find literal and variable segments.
-// Only handles simple variable references like ${name} (single identifiers).
-export fn emit_template_expr(text: string) -> ptr {
-    mut result: ptr = null
-    mut has_result = false
-    mut pos = 0
-    let len = text.length
-
-    while pos < len {
-        // Look for ${ starting from pos
-        mut found_dollar = false
-        mut dollar_pos = pos
-        while dollar_pos < len - 1 {
-            if text[dollar_pos] == "$" && text[dollar_pos + 1] == "{" {
-                found_dollar = true
-                break
-            }
-            dollar_pos = dollar_pos + 1
-        }
-
-        if found_dollar {
-            // Emit literal segment before ${
-            if dollar_pos > pos {
-                let lit = text.substring(pos, dollar_pos)
-                let lit_val = emit_str_lit(lit)
-                if has_result {
-                    result = tpl_concat(result, lit_val)
-                } else {
-                    result = lit_val
-                    has_result = true
-                }
-            }
-
-            // Find matching } with brace balancing for nested expressions
-            let expr_start = dollar_pos + 2
-            mut close_pos = expr_start
-            mut brace_depth = 1
-            while close_pos < len && brace_depth > 0 {
-                if text[close_pos] == "{" {
-                    brace_depth = brace_depth + 1
-                } else if text[close_pos] == "}" {
-                    brace_depth = brace_depth - 1
-                }
-                if brace_depth > 0 {
-                    close_pos = close_pos + 1
-                }
-            }
-
-            // Extract the expression source text
-            let expr_src = text.substring(expr_start, close_pos)
-
-            // Emit the interpolated expression via re-lex + re-parse + emit
-            let expr_val = tpl_emit_interpolation(expr_src)
-
-            if has_result {
-                result = tpl_concat(result, expr_val)
-            } else {
-                result = expr_val
-                has_result = true
-            }
-
-            pos = close_pos + 1
-        } else {
-            // No more ${...} — emit remaining literal
-            if pos < len {
-                let lit = text.substring(pos, len)
-                let lit_val = emit_str_lit(lit)
-                if has_result {
-                    result = tpl_concat(result, lit_val)
-                } else {
-                    result = lit_val
-                    has_result = true
-                }
-            }
-            pos = len
-        }
-    }
-
-    // Handle empty template
-    if !has_result {
-        result = emit_str_lit("")
-    }
-
-    result
-}
-
-// Emit an interpolated expression from template string.
-// Re-lexes and re-parses the expression source, emits LLVM IR,
-// and auto-stringifies non-string results.
-fn tpl_emit_interpolation(expr_src: string) -> ptr {
-    // Fast path: simple identifier (no operators/dots/parens)
-    mut is_simple = expr_src.length > 0
-    mut ci = 0
-    while ci < expr_src.length && is_simple {
-        let ch = expr_src[ci]
-        if ch == "." || ch == "(" || ch == ")" || ch == "[" || ch == "]" || ch == "+" || ch == "-" || ch == "*" || ch == "/" || ch == "%" || ch == " " || ch == "!" || ch == "<" || ch == ">" || ch == "=" {
-            is_simple = false
-        }
-        ci = ci + 1
-    }
-
-    if is_simple {
-        let var_val = tpl_load_var(expr_src)
-        return tpl_to_string(var_val, TPL_VAR_IS_STR)
-    }
-
-    // Full expression: re-lex → re-parse → emit
-    mut lex = lexer_new(expr_src)
-    let tokens = lex.tokenize()
-    if tokens.length == 0 {
-        return emit_str_lit("")
-    }
-
-    mut p = parser_new(tokens)
-    let expr = p.parse_expr()
-    if expr == null {
-        return emit_str_lit("")
-    }
-
-    // Capture string flag set by parse_expr's inline codegen (e.g. struct field access)
-    let parse_is_str = CG_LAST_IS_STR
-    CG_LAST_IS_STR = 0
-    mut cg = codegen_new()
-    let val = cg.emit_expr(expr!)
-    // Use emit_expr's flag if it set one, otherwise fall back to parse_expr's flag
-    mut is_str = parse_is_str
-    if CG_LAST_IS_STR == 1 { is_str = 1 }
-
-    let str_val = tpl_to_string(val, is_str)
-    CG_LAST_IS_STR = 1
-    str_val
-}
-
-// ─── List Operations ────────────────────────────
-
-fn emit_list_push(list_val: ptr, item_val: ptr) -> ptr {
-    emit_list_push_typed(list_val, item_val, CG_I64)
-}
-
-fn emit_list_push_typed(list_val: ptr, item_val: ptr, elem_ty: ptr) -> ptr {
-    // List is {ptr data, i64 count}
-    // Element size from LLVM's sizeof (returns i64 constant)
-    let elem_size_val = llvm.size_of(elem_ty)
-
-    // 1. Extract data_ptr and count
-    let data_ptr = llvm.build_extract_value(CG_B, list_val, 0, "ld")
-    let old_count = llvm.build_extract_value(CG_B, list_val, 1, "lc")
-
-    // 2. new_count = old_count + 1
-    let one = llvm.const_int(CG_I64, 1, 0)
-    let new_count = llvm.build_add(CG_B, old_count, one, "nc")
-
-    // 3. Allocate new buffer: forge_alloc(new_count * elem_size)
-    let new_size = llvm.build_mul(CG_B, new_count, elem_size_val, "ns")
-    let new_data = call_rt_1(CG_RT_ALLOC, CG_I64, CG_PTR, new_size, "nd")
-
-    // 4. Copy old data: forge_memcpy(new_data, data_ptr, old_count * elem_size)
-    let old_size = llvm.build_mul(CG_B, old_count, elem_size_val, "os")
-    let mcpy_args = llvm.value_array_new(3)
-    llvm.value_array_set(mcpy_args, 0, new_data)
-    llvm.value_array_set(mcpy_args, 1, data_ptr)
-    llvm.value_array_set(mcpy_args, 2, old_size)
-    let mcpy_pt = llvm.type_array_new(3)
-    llvm.type_array_set(mcpy_pt, 0, CG_PTR)
-    llvm.type_array_set(mcpy_pt, 1, CG_PTR)
-    llvm.type_array_set(mcpy_pt, 2, CG_I64)
-    let mcpy_ft = llvm.function_type(CG_VOID, mcpy_pt, 3, 0)
-    llvm.type_array_free(mcpy_pt)
-    llvm.build_call(CG_B, mcpy_ft, CG_RT_MEMCPY, mcpy_args, 3, "")
-    llvm.value_array_free(mcpy_args)
-
-    // 5. Store item at new_data[old_count] using correct element type for GEP
-    let indices = llvm.value_array_new(1)
-    llvm.value_array_set(indices, 0, old_count)
-    let elem_ptr = llvm.build_gep2(CG_B, elem_ty, new_data, indices, 1, "ep")
-    llvm.value_array_free(indices)
-    llvm.build_store(CG_B, item_val, elem_ptr)
-
-    // 6. Build new list struct {new_data, new_count}
-    let undef = llvm.get_undef(CG_LIST)
-    let s1 = llvm.build_insert_value(CG_B, undef, new_data, 0, "s1")
-    let s2 = llvm.build_insert_value(CG_B, s1, new_count, 1, "s2")
-    s2
-}
-
-// ─── Binary Op Inline Emit ──────────────────────
-// Free function (not method) to avoid passing large Parser struct by value.
-
-fn emit_binop(lhs: ptr, op_key: string, rhs: ptr) -> ptr {
-    if op_key == "Add" { return llvm.build_add(CG_B, lhs, rhs, "add") }
-    if op_key == "Sub" { return llvm.build_sub(CG_B, lhs, rhs, "sub") }
-    if op_key == "Mul" { return llvm.build_mul(CG_B, lhs, rhs, "mul") }
-    if op_key == "Div" { return llvm.build_sdiv(CG_B, lhs, rhs, "div") }
-    if op_key == "Mod" { return llvm.build_srem(CG_B, lhs, rhs, "mod") }
-    if op_key == "Eq" { return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq") }
-    if op_key == "NotEq" { return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne") }
-    if op_key == "Lt" { return llvm.build_icmp(CG_B, 40, lhs, rhs, "lt") }
-    if op_key == "LtEq" { return llvm.build_icmp(CG_B, 41, lhs, rhs, "le") }
-    if op_key == "Gt" { return llvm.build_icmp(CG_B, 38, lhs, rhs, "gt") }
-    if op_key == "GtEq" { return llvm.build_icmp(CG_B, 39, lhs, rhs, "ge") }
-    if op_key == "And" { return llvm.build_and(CG_B, lhs, rhs, "and") }
-    if op_key == "Or" { return llvm.build_or(CG_B, lhs, rhs, "or") }
-    if op_key == "BitAnd" { return llvm.build_and(CG_B, lhs, rhs, "ba") }
-    if op_key == "BitOr" { return llvm.build_or(CG_B, lhs, rhs, "bo") }
-    if op_key == "BitXor" { return llvm.build_xor(CG_B, lhs, rhs, "bx") }
-    if op_key == "Shl" { return llvm.build_shl(CG_B, lhs, rhs, "sl") }
-    if op_key == "Shr" { return llvm.build_ashr(CG_B, lhs, rhs, "sr") }
-    rhs // Pipe or fallback
-}
-
-// ─── Expr Span Access ──────────────────────────
-// Helper to get span from any Expr variant.
-
 impl Expr {
     fn span(self) -> Span {
         match self {
@@ -2630,19 +874,15 @@ impl Expr {
     }
 }
 
-// ─── Enum Tag Registry ──────────────────────────
-// Maps enum variant names to their tag indices.
-// Populated during enum declaration parsing.
-// Used by match expressions to compare against variant tags.
+// ─── Enum Variant Registry ──────────────────────
 
-export mut ENUM_VARIANT_NAMES: List<string> = []   // "Color.Red", "Color.Green", etc.
-export mut ENUM_VARIANT_TAGS: List<int> = []        // 0, 1, 2, etc.
+mut ENUM_VARIANT_NAMES: List<string> = []
+mut ENUM_VARIANT_TAGS: List<int> = []
 
 export fn register_enum_variant(enum_name: string, variant_name: string, tag: int) {
-    let full_name = "${enum_name}.${variant_name}"
-    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(full_name)
+    ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(enum_name + "." + variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
-    // Also register short name (just variant)
+    // Also register short name for simple lookup
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
 }
@@ -2683,7 +923,7 @@ fn csv_enum_max_fields(name: string) -> int {
 fn make_enum_llvm_type(name: string) -> ptr {
     let mf = csv_enum_max_fields(name)
     if mf == 0 { return null }
-    if !CG_ACTIVE { return null }
+    if true { return null }
     let fc = mf + 1
     let fields = llvm.type_array_new(fc)
     llvm.type_array_set(fields, 0, CG_I8)

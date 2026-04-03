@@ -8,7 +8,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_I8, CG_PTR, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR, CG_LAST_IS_STR, CG_LAST_ENUM_TYPE, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_nullable_type, wrap_nullable, codegen_new}
+use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_nullable_type, wrap_nullable, codegen_new}
 use @std.llvm
 
 // ─── Data Types ──────────────────────────────────
@@ -80,7 +80,7 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     let data = d!
 
     // Emit condition
-    let cond_val = cg.emit_expr(data.condition)
+    let cond_val = cg.emit_expr(data.condition).val
     // Truncate to i1 (comparison results are i64 after zext)
     let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
 
@@ -136,7 +136,6 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
             let phi = llvm.build_phi(CG_B, nullable_ty, "iv")
             llvm.add_incoming(phi, then_val, then_end_bb)
             llvm.add_incoming(phi, else_val, else_end_bb)
-            CG_LAST_IS_NULLABLE = 1
             return phi
         }
         let phi = llvm.build_phi(CG_B, CG_I64, "iv")

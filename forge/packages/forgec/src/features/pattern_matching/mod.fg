@@ -32,6 +32,7 @@ type MatchArm = {
     guard: Expr?,
     body: Expr,
     span: Span,
+    tag: int,
 }
 
 type MatchData = {
@@ -66,12 +67,12 @@ fn parse_match(p: Parser) -> Expr? {
     if subject == null { return null }
 
     p.skip_newlines()
-    if p.expect(.LBrace) == null { return null }
+    if p.expect_id(102) == null { return null }  // LBrace
     p.skip_newlines()
 
     mut arms: List<MatchArm> = []
 
-    while !p.check(.RBrace) && !p.is_at_end() {
+    while !p.check_id(103) && !p.is_at_end() {  // RBrace
         p.skip_newlines()
         let arm = parse_match_arm(p)
         if arm != null {
@@ -80,7 +81,7 @@ fn parse_match(p: Parser) -> Expr? {
         p.skip_newlines()
     }
 
-    if p.expect(.RBrace) == null { return null }
+    if p.expect_id(103) == null { return null }  // RBrace
 
     make_match_expr(subject!, arms, start)
 }
@@ -94,14 +95,14 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     // Optional guard: if condition
     // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
     mut guard: Expr? = null
-    if p.check(.If) {
+    if p.check_id(24) {  // If
         p.advance()
         guard = p.parse_expr()
     }
 
     // Expect -> body
     p.skip_newlines()
-    if p.expect(.Arrow) == null {
+    if p.expect_id(86) == null {  // Arrow
         p.error("expected '->' in match arm")
         return null
     }
@@ -110,7 +111,7 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
     // Body: block or expression
     // Bootstrap workaround: avoid if-as-expression with method calls (causes domination errors)
     mut body: Expr? = null
-    if p.check(.LBrace) {
+    if p.check_id(102) {  // LBrace
         let block = p.parse_block()
         if block != null { body = Expr.Block(block!) }
     } else {
@@ -119,8 +120,21 @@ fn parse_match_arm(p: Parser) -> MatchArm? {
 
     if body == null { return null }
 
-    MatchArm { pattern: pattern!, guard, body: body!, span: start }
+    // Pre-compute tag from last parsed pattern (bootstrap: avoids match in emit_match)
+    mut arm_tag = -1
+    if LAST_PATTERN_VARIANT.length > 0 {
+        arm_tag = match_enum_tag(LAST_PATTERN_VARIANT)
+    }
+    if LAST_PATTERN_INT != -9999 {
+        arm_tag = LAST_PATTERN_INT
+        LAST_PATTERN_INT = -9999
+    }
+
+    MatchArm { pattern: pattern!, guard, body: body!, span: start, tag: arm_tag }
 }
+
+// Store last parsed int literal value for tag computation
+mut LAST_PATTERN_INT: int = -9999
 
 // ─── Pattern Parsing ────────────────────────────
 
@@ -129,9 +143,9 @@ fn parse_pattern(p: Parser) -> Pattern? {
     if first == null { return null }
 
     // Check for or-pattern: pattern | pattern
-    if p.check(.Bar) {
+    if p.check_id(94) {  // Bar
         mut alternatives: List<Pattern> = [first!]
-        while p.check(.Bar) {
+        while p.check_id(94) {  // Bar
             p.advance()
             p.skip_newlines()
             let next = parse_simple_pattern(p)
@@ -145,7 +159,11 @@ fn parse_pattern(p: Parser) -> Pattern? {
     first
 }
 
+// Bootstrap aid: store last-parsed variant name for tag lookup (avoids match in emit_match)
+mut LAST_PATTERN_VARIANT: string = ""
+
 fn parse_simple_pattern(p: Parser) -> Pattern? {
+    LAST_PATTERN_VARIANT = ""
     let tok = p.peek()
 
     match tok.kind {
@@ -162,22 +180,24 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
             if name == null { return null }
 
             // Optional sub-patterns: .Variant(p1, p2)
-            if p.check(.LParen) {
+            if p.check_id(100) {  // LParen
                 p.advance()
                 mut fields: List<Pattern> = []
-                while !p.check(.RParen) && !p.is_at_end() {
+                while !p.check_id(101) && !p.is_at_end() {  // RParen
                     p.skip_newlines()
                     let sub = parse_pattern(p)
                     if sub != null {
                         fields = fields.push(sub!)
                     }
                     p.skip_newlines()
-                    if p.check(.Comma) { p.advance() }
+                    if p.check_id(110) { p.advance() }  // Comma
                 }
-                p.expect(.RParen)
+                p.expect_id(101)  // RParen
+                LAST_PATTERN_VARIANT = name!
                 Pattern.EnumVariant(name!, fields, start)
             } else {
                 // Simple variant: .Variant (no fields)
+                LAST_PATTERN_VARIANT = name!
                 Pattern.EnumVariant(name!, [], start)
             }
         }
@@ -185,6 +205,7 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
         // Literal patterns: int, float, string, bool, null
         .IntLiteral(value) -> {
             let span = p.advance().span
+            LAST_PATTERN_INT = value
             Pattern.Literal(Expr.IntLit(value, span))
         }
         .FloatLiteral(value) -> {
@@ -214,16 +235,16 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
         .LParen -> {
             let start = p.advance().span
             mut elements: List<Pattern> = []
-            while !p.check(.RParen) && !p.is_at_end() {
+            while !p.check_id(101) && !p.is_at_end() {  // RParen
                 p.skip_newlines()
                 let sub = parse_pattern(p)
                 if sub != null {
                     elements = elements.push(sub!)
                 }
                 p.skip_newlines()
-                if p.check(.Comma) { p.advance() }
+                if p.check_id(110) { p.advance() }  // Comma
             }
-            p.expect(.RParen)
+            p.expect_id(101)  // RParen
             Pattern.Tuple(elements, start)
         }
 
@@ -288,17 +309,51 @@ fn emit_match(cg: Codegen, node: NodeRef) -> ptr {
     let data = d!
 
     // Emit subject
-    let subject_val = cg.emit_expr(data.subject)
+    let subject_val = cg.emit_expr(data.subject).val
 
-    // For now, compile as if-else chain
-    // TODO: proper tag-based dispatch for enum patterns, phi merging
-
-    // Simple fallback: evaluate first arm's body
-    if data.arms.length > 0 {
-        return cg.emit_expr(data.arms[0].body)
+    // Extract tag from subject (enum { i8 tag, ptr payload })
+    let tag_byte = llvm.build_extract_value(CG_B, subject_val, 0, "tg")
+    mut subj_tag = subject_val
+    if tag_byte != null {
+        subj_tag = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
     }
 
-    llvm.const_int(CG_I64, 0, 0)
+    let mfn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+    let merge_bb = llvm.append_basic_block(CG_CTX, mfn, "me")
+    // Result alloca for match result (i64 — works for int/ptr/bool results)
+    let result_alloca = llvm.build_alloca(CG_B, CG_I64, "mr")
+
+    // Dispatch on arm.tag (pre-computed during parsing, no match needed)
+    mut ai = 0
+    while ai < data.arms.length {
+        let arm: MatchArm = data.arms[ai]
+        let arm_bb = llvm.append_basic_block(CG_CTX, mfn, "ma")
+        let next_bb = llvm.append_basic_block(CG_CTX, mfn, "mn")
+
+        if arm.tag >= 0 {
+            // Compare tag (works for both enum tags and int literal values)
+            let tag_val = llvm.const_int(CG_I64, arm.tag, 0)
+            let cmp = llvm.build_icmp(CG_B, 32, subj_tag, tag_val, "mc")
+            llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+        } else {
+            // Wildcard/default: unconditional
+            llvm.build_br(CG_B, arm_bb)
+        }
+
+        llvm.position_at_end(CG_B, arm_bb)
+        let arm_val = cg.emit_expr(arm.body).val
+        if arm_val != null && !llvm.block_has_terminator(CG_B) {
+            llvm.build_store(CG_B, arm_val, result_alloca)
+        }
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+        llvm.position_at_end(CG_B, next_bb)
+        ai = ai + 1
+    }
+    // Default fallback: branch to merge
+    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+    llvm.position_at_end(CG_B, merge_bb)
+    let result = llvm.build_load(CG_B, CG_I64, result_alloca, "mv")
+    result
 }
 
 // ─── Pattern Span Access ────────────────────────
