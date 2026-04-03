@@ -1940,7 +1940,9 @@ impl Codegen {
         } else {
             CG_LAST_IS_NULLABLE = 0
         }
-        let ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0)
+        // Use the function's declared type — avoids param type mismatches
+        // (FN_ALL_PARAM_TYPES lookup fails for extern functions not in FN_NAMES)
+        let ft = llvm.global_get_value_type(fn_val)
         llvm.type_array_free(param_arr)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
