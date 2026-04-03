@@ -1202,6 +1202,12 @@ pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
     unsafe { LLVMTypeOf(val) }
 }
 
+/// Alias without forge_ prefix (method dispatch tries llvm_type_of first)
+#[no_mangle]
+pub extern "C" fn llvm_type_of(val: LLVMPtr) -> LLVMPtr {
+    forge_llvm_type_of(val)
+}
+
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_type_kind(ty: LLVMPtr) -> c_int {
     if ty.is_null() { return 0; }
@@ -1627,6 +1633,7 @@ pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
     if val.is_null() { return std::ptr::null_mut(); }
     unsafe { LLVMGlobalGetValueType(val) }
 }
+
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_allocated_type(alloca: LLVMPtr) -> LLVMPtr {

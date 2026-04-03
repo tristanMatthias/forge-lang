@@ -1271,25 +1271,6 @@ impl Codegen {
             }
             .Ident(name, span) -> { return self.emit_ident(name) }
             .Binary(left, op, right, span) -> { return self.emit_binary(left, op, right) }
-            .IsCheck(subject, variant, negated, span) -> {
-                let obj_tv = self.emit_expr(subject)
-                let tag = match_enum_tag(variant)
-                let tag_val = llvm.const_int(CG_I64, tag, 0)
-                mut cmp_lhs = obj_tv.val
-                // If it's an enum, extract the tag field
-                // Check if subject is an enum by trying extractvalue
-                if tv_is_struct(obj_tv) {
-                    let etag = llvm.build_extract_value(CG_B, obj_tv.val, 0, "it")
-                    if etag != null {
-                        cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
-                    }
-                }
-                mut pred = 32
-                if negated == 1 { pred = 33 }
-                let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
-                let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
-                return tv_bool(ext)
-            }
             .Unary(op, operand, span) -> {
                 let inner = self.emit_expr(operand)
                 match op {
@@ -1589,7 +1570,7 @@ impl Codegen {
         if fn_ref3 != null {
             // Get self pointer
             let self_tv = self.emit_ident(ns)
-            let self_ptr = forge_alloca_cache_get(ns)
+            let self_ptr: ptr = forge_alloca_cache_get(ns)
             if self_ptr == null { return tv_int(llvm.const_int(CG_I64, 0, 0)) }
             let total_args = args.length + 1
             let arg_arr = llvm.value_array_new(total_args)
@@ -2013,7 +1994,7 @@ impl Codegen {
                 let data = llvm.build_extract_value(CG_B, iter_tv.val, 0, "fd")
                 llvm.build_br(CG_B, cond_bb)
                 llvm.position_at_end(CG_B, cond_bb)
-                let idx_ptr = forge_alloca_cache_get("__for_idx")
+                let idx_ptr: ptr = forge_alloca_cache_get("__for_idx")
                 let cur_idx = llvm.build_load(CG_B, CG_I64, idx_ptr, "fi")
                 let cmp = llvm.build_icmp(CG_B, 40, cur_idx, len, "fc")
                 llvm.build_cond_br(CG_B, cmp, body_bb, end_bb)
@@ -2033,10 +2014,16 @@ impl Codegen {
                 llvm.position_at_end(CG_B, end_bb)
             }
             .Break(s) -> {
-                if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+                if WHILE_END_BB != null {
+                    llvm.build_br(CG_B, WHILE_END_BB)
+                }
+                return null
             }
             .Continue(s) -> {
-                if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+                if WHILE_COND_BB != null {
+                    llvm.build_br(CG_B, WHILE_COND_BB)
+                }
+                return null
             }
             .Feature(fe) -> { self.dispatch_stmt(fe) }
             _ -> {}

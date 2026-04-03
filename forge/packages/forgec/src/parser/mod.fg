@@ -155,10 +155,9 @@ impl Parser {
     }
 
     fn expect_ident(self) -> string {
-        // Advance and return text from C-side token accessor
-        // Use explicit return (implicit return = expression statement which gets dropped)
+        let tok = self.peek()
         self.advance()
-        return forge_peek_text(forge_parser_get_pos() - 1)
+        tok.text
     }
 
     fn _old_expect_ident(self) -> string {
