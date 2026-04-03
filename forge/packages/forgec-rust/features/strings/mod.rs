@@ -168,6 +168,8 @@ crate::runtime_fn! { name: "forge_parser_is_at_rparen", feature: "strings", para
 crate::runtime_fn! { name: "forge_peek_kind_id", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_peek_text", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_watchdog", feature: "strings", params: [I64, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_kind_id_for_keyword", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_sh_byteat", feature: "strings", params: [ForgeString, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_parser_get_pos", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_extract_body_source", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
