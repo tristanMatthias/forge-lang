@@ -27,13 +27,13 @@ fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
     eprintln("  lexer created, len=" + string(source.length))
     eprintln("  tokenizing...")
-    let tokens = Lexer_tokenize(lex)
+    let tokens = lex.tokenize()
     eprintln("  " + string(tokens.length) + " tokens")
 
     eprintln("  parsing...")
     mut p = parser_new_with_source(tokens, source)
     eprintln("  parser created, parsing program...")
-    let program = Parser_parse_program(p)
+    let program = p.parse_program()
     eprintln("  parsed!")
     eprintln("OK")
     return true
@@ -45,7 +45,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut p = parser_new_with_source(tokens, source)
-    let program = Parser_parse_program(p)
+    let program = p.parse_program()
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -55,7 +55,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut tc = type_checker_new()
-    TypeChecker_check_program(tc, program)
+    tc.check_program(program)
 
     if tc.diagnostics.has_errors {
         let err_output = render_all(tc.diagnostics, source, filename)
@@ -198,8 +198,9 @@ fn try_load_mod(dir: string, mod_name: string) {
 
 // Helper: scan for \nmod in remaining text, recurse
 fn scan_mods(src: string, dir: string) {
+    // Use forge_sh_indexof (declared in module, immune to desugaring corruption)
     let needle = "\nmod "
-    let found = src.index_of(needle)
+    let found = forge_sh_indexof(src, needle)
     if found < 0 { return }
     let name_start = found + 5
     let rest = src.substring(name_start, src.length)
@@ -246,13 +247,10 @@ fn resolve_module_paths(filepath: string) -> List<string> {
 fn scan_one_file(filepath: string, idx: int) {
     CURRENT_FILE_INDEX = idx
     let source = fs.read(filepath)
-    eprintln("  scan: src=" + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = Lexer_tokenize(lex)
-    eprintln("  scan: tokens=" + string(tokens.length))
+    let tokens = lex.tokenize()
     mut p = parser_new_with_source(tokens, source)
-    Parser_parse_program(p)
-    eprintln("  scan: fns=" + string(FN_NAMES.length))
+    p.parse_program()
 }
 
 fn build_compile_separate(paths_csv: string, output: string) {
@@ -274,24 +272,20 @@ fn build_compile_separate(paths_csv: string, output: string) {
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
-    eprintln("[P2:1] codegen_init")
     codegen_init("forgec_output")
-    eprintln("[P2:2] create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
-    eprintln("[P2:3] declare_all_fns")
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
     declare_all_fns()
     eprintln("  declared " + string(FN_NAMES.length) + " fns")
-    // Emit each function body — use C-side registries (immune to list corruption)
+    // Emit each function body
     mut param_offset = 0
     mut fi = 0
-    let total_fns = forge_fn_store_count()
-    while fi < total_fns {
-        let pc = forge_fn_store_get_param_count(fi)
-        let bsrc = forge_fn_store_get_body(fi)
+    while fi < FN_NAMES.length {
+        mut pc = 0
+        if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
+        let bsrc = FN_BODY_SOURCES[fi]
         if bsrc.length > 0 {
-            eprintln("  >> " + string(fi))
             emit_fn_body_from_source(cg, fi, param_offset)
         }
         param_offset = param_offset + pc
@@ -323,10 +317,10 @@ fn build_compile_single(input_file: string, output: string) {
     let source = fs.read(input_file)
     eprintln("BC: read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = Lexer_tokenize(lex)
+    let tokens = lex.tokenize()
     eprintln("BC: " + string(tokens.length) + " tokens")
     mut p = parser_new_with_source(tokens, source)
-    Parser_parse_program(p)
+    p.parse_program()
     eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
