@@ -1737,6 +1737,7 @@ pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
     d!("forge_llvm_build_br", ptr, [ptr, ptr]);
     d!("forge_llvm_build_cond_br", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_alloca", ptr, [ptr, ptr, ptr]);
+    d!("forge_llvm_get_allocated_type", ptr, [ptr]);
     d!("forge_llvm_build_store", ptr, [ptr, ptr, ptr]);
     d!("forge_llvm_build_load", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_call", ptr, [ptr, ptr, ptr, ptr, i32t, ptr]);

@@ -96,7 +96,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("impl_methods", "impl_block", id, start)
 }
@@ -164,7 +164,7 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     store_fn_return_type(return_type_name)
 
     // Set PARSE_END_POS so the caller can sync (Parser passed by value)
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
 }
 
 // ─── Original Parse (for registry-based dispatch) ───

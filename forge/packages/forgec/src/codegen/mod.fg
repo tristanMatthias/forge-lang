@@ -910,7 +910,115 @@ impl Codegen {
             }
             .Assign(target, value, span) -> { self.emit_assign(target, value) }
             .Return(value, span) -> { self.emit_return(value) }
+            .Let(name, value, span) -> { self.emit_let(name, value) }
+            .If(cond, then_b, else_b, has_else, span) -> { self.emit_if_stmt(cond, then_b, else_b, has_else) }
+            .While(cond, body, span) -> { self.emit_while_stmt(cond, body) }
+            .For(var_name, iter, body, span) -> { self.emit_for_stmt(var_name, iter, body) }
+            .Match(scrut, tags, binds, bodies, def, has_def, span) -> { self.emit_match_stmt(scrut, tags, binds, bodies, def, has_def) }
+            .Break(span) -> {
+                if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+            }
+            .Continue(span) -> {
+                if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+            }
             .Feature(fe) -> { self.dispatch_stmt(fe) }
+        }
+    }
+
+    fn emit_let(self, name: string, value: Expr) {
+        let val = self.emit_expr(value)
+        let is_str = CG_LAST_IS_STR == 1
+        let is_map = CG_LAST_IS_MAP == 1
+        mut var_type = Type.Int
+        if is_str { var_type = Type.String }
+        if is_map { var_type = Type.MapType(Type.String, Type.Int) }
+        self.define_var(name, var_type, val)
+        if is_map { CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name) }
+        CG_LAST_IS_STR = 0
+        CG_LAST_IS_MAP = 0
+        CG_HAS_LAST_VAL = 0
+    }
+
+    fn emit_if_stmt(self, cond: Expr, then_b: Block, else_b: Block, has_else: int) {
+        let cond_val = self.emit_expr(cond)
+        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
+        let fn_val = self.current_fn
+        let then_bb = llvm.append_basic_block(CG_CTX, fn_val, "then")
+        let else_bb = llvm.append_basic_block(CG_CTX, fn_val, "else")
+        let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "merge")
+        llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
+        llvm.position_at_end(CG_B, then_bb)
+        self.emit_block(then_b)
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+        llvm.position_at_end(CG_B, else_bb)
+        if has_else == 1 { self.emit_block(else_b) }
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+        llvm.position_at_end(CG_B, merge_bb)
+    }
+
+    fn emit_while_stmt(self, cond: Expr, body: Block) {
+        let fn_val = self.current_fn
+        let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "wc")
+        let body_bb = llvm.append_basic_block(CG_CTX, fn_val, "wb")
+        let end_bb = llvm.append_basic_block(CG_CTX, fn_val, "we")
+        let save_cond = WHILE_COND_BB
+        let save_end = WHILE_END_BB
+        WHILE_COND_BB = cond_bb
+        WHILE_END_BB = end_bb
+        llvm.build_br(CG_B, cond_bb)
+        llvm.position_at_end(CG_B, cond_bb)
+        let cval = self.emit_expr(cond)
+        let ci1 = llvm.build_trunc(CG_B, cval, llvm.int1_type(CG_CTX), "wci")
+        llvm.build_cond_br(CG_B, ci1, body_bb, end_bb)
+        llvm.position_at_end(CG_B, body_bb)
+        self.emit_block(body)
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, cond_bb) }
+        llvm.position_at_end(CG_B, end_bb)
+        WHILE_COND_BB = save_cond
+        WHILE_END_BB = save_end
+    }
+
+    fn emit_for_stmt(self, var_name: string, iter: Expr, body: Block) {
+        // Emit iterable
+        let list_val = self.emit_expr(iter)
+        let list_is_str = CG_LAST_IS_STR
+        // Get length: extract field 1 (for {ptr, i64} lists)
+        let len_val = llvm.build_extract_value(CG_B, list_val, 1, "len")
+        // Create counter
+        let counter = llvm.build_alloca(CG_B, CG_I64, "fi")
+        llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), counter)
+        let fn_val = self.current_fn
+        let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "fc")
+        let body_bb = llvm.append_basic_block(CG_CTX, fn_val, "fb")
+        let end_bb = llvm.append_basic_block(CG_CTX, fn_val, "fe")
+        let save_cond = WHILE_COND_BB
+        let save_end = WHILE_END_BB
+        WHILE_COND_BB = cond_bb
+        WHILE_END_BB = end_bb
+        llvm.build_br(CG_B, cond_bb)
+        llvm.position_at_end(CG_B, cond_bb)
+        let idx = llvm.build_load(CG_B, CG_I64, counter, "idx")
+        let cmp = llvm.build_icmp(CG_B, 38, idx, len_val, "fc")
+        llvm.build_cond_br(CG_B, cmp, body_bb, end_bb)
+        llvm.position_at_end(CG_B, body_bb)
+        // Define loop var (just use counter as the element for now)
+        self.define_var(var_name, Type.Int, idx)
+        self.emit_block(body)
+        // Increment
+        let next = llvm.build_add(CG_B, llvm.build_load(CG_B, CG_I64, counter, "ci"), llvm.const_int(CG_I64, 1, 0), "inc")
+        llvm.build_store(CG_B, next, counter)
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, cond_bb) }
+        llvm.position_at_end(CG_B, end_bb)
+        WHILE_COND_BB = save_cond
+        WHILE_END_BB = save_end
+    }
+
+    fn emit_match_stmt(self, scrut: Expr, tags: string, binds: string, bodies: List<Block>, def: Block, has_def: int) {
+        // Simplified match: emit scrutinee, then if/else chain for each arm
+        let scrut_val = self.emit_expr(scrut)
+        // For now, just emit default body (full match dispatch is complex)
+        if has_def == 1 {
+            self.emit_block(def)
         }
     }
 
@@ -1480,16 +1588,38 @@ impl Codegen {
         while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // Check CSV for string type (immune to list corruption)
+                // Use LLVM's own type system: get the alloca's allocated type
+                // This is always correct, regardless of flag corruption
+                let alloca_ptr = CG_VAR_PTRS[vi]
+                let alloc_ty = llvm.get_allocated_type(alloca_ptr)
+                mut load_ty = CG_I64
+                if alloc_ty != null { load_ty = alloc_ty }
+                // Detect string type for downstream flag tracking
+                CG_LAST_IS_STR = 0
+                CG_LAST_IS_NULLABLE = 0
+                CG_LAST_ENUM_TYPE = ""
+                CG_LAST_STRUCT_TYPE = ""
+                if load_ty == CG_STR { CG_LAST_IS_STR = 1 }
+                // Check CSV for string type as fallback
                 let str_needle = "," + name + ","
                 let is_str_local = CG_STR_LOCALS_CSV.index_of(str_needle) >= 0
-                mut load_ty = CG_I64
                 if is_str_local {
+                    cg_reinit_types()
                     load_ty = CG_STR
                     CG_LAST_IS_STR = 1
                 }
-                CG_LAST_IS_NULLABLE = 0
-                // Check nullable first (takes precedence)
+                // Check string var names list
+                mut si = CG_STR_VAR_NAMES.length - 1
+                while si >= 0 {
+                    if CG_STR_VAR_NAMES[si] == name {
+                        cg_reinit_types()
+                        load_ty = CG_STR
+                        CG_LAST_IS_STR = 1
+                        break
+                    }
+                    si = si - 1
+                }
+                // Check nullable
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
                     mut inner_ty = CG_I64
@@ -1497,18 +1627,7 @@ impl Codegen {
                     load_ty = make_nullable_type(inner_ty)
                     CG_LAST_IS_NULLABLE = 1
                 }
-                // Check string
-                mut si = CG_STR_VAR_NAMES.length - 1
-                while si >= 0 {
-                    if CG_STR_VAR_NAMES[si] == name {
-                        load_ty = CG_STR
-                        CG_LAST_IS_STR = 1
-                        break
-                    }
-                    si = si - 1
-                }
                 // Check enum type
-                CG_LAST_ENUM_TYPE = ""
                 cg_reinit_types()
                 let vet = cg_var_enum_type(name)
                 if vet != "" {
@@ -1517,7 +1636,6 @@ impl Codegen {
                     CG_LAST_ENUM_TYPE = vet
                 }
                 // Check struct type
-                CG_LAST_STRUCT_TYPE = ""
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
                     CG_LAST_STRUCT_TYPE = struct_type_name
@@ -1531,8 +1649,8 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
-                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+                CG_LAST_VAR_PTR = alloca_ptr
+                return llvm.build_load(CG_B, load_ty, alloca_ptr, name)
             }
             vi = vi - 1
         }
@@ -1813,114 +1931,81 @@ impl Codegen {
     }
 
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> ptr {
-        // Find param offset for this function
-        mut fn_param_offset = 0
-        mut fn_idx = 0
-        while fn_idx < FN_NAMES.length {
-            if FN_NAMES[fn_idx] == fn_name { break }
-            if fn_idx < FN_PARAM_COUNTS.length {
-                fn_param_offset = fn_param_offset + FN_PARAM_COUNTS[fn_idx]
-            }
-            fn_idx = fn_idx + 1
-        }
-
+        // Emit all argument values
         let arg_arr = llvm.value_array_new(args.length)
-        let param_arr = llvm.type_array_new(args.length)
         mut i = 0
         for arg in args {
             llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
-            // Look up param type
-            mut pty = CG_I64
-            let pt_idx = fn_param_offset + i
-            if pt_idx < FN_ALL_PARAM_TYPES.length {
-                let ptn = FN_ALL_PARAM_TYPES[pt_idx]
-                if ptn == "string" {
-                    pty = CG_STR
-                } else if ptn != "int" && ptn != "float" && ptn != "bool" && ptn != "ptr" && ptn != "" {
-                    pty = resolve_type_to_llvm(ptn)
-                }
-            }
-            llvm.type_array_set(param_arr, i, pty)
             i = i + 1
         }
-        // Look up return type from FN_RETURN_TYPES
+
+        // Use the function's actual LLVM type (works for both user and runtime fns)
         cg_reinit_types()
-        mut call_ret_ty = CG_I64
-        mut call_is_nullable = false
-        // For extern runtime functions, use known return types
+        let fn_ty = llvm.global_get_value_type(fn_val)
+        let r = llvm.build_call(CG_B, fn_ty, fn_val, arg_arr, args.length, "call")
+        llvm.value_array_free(arg_arr)
+
+        // Track return type for downstream codegen (string detection, etc.)
+        CG_LAST_IS_NULLABLE = 0
         mut is_extern_str_return = false
-        if fn_name == "forge_selfhost_process_args" { call_ret_ty = CG_STR
+        if fn_name == "forge_selfhost_process_args" { CG_LAST_IS_STR = 1
             is_extern_str_return = true
             CG_LAST_IS_LIST = 1 }
-        if fn_name == "forge_selfhost_fs_read" { call_ret_ty = CG_STR
+        if fn_name == "forge_selfhost_fs_read" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_selfhost_process_run" { call_ret_ty = CG_STR
+        if fn_name == "forge_selfhost_process_run" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_string_concat" { call_ret_ty = CG_STR
+        if fn_name == "forge_string_concat" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_string_new" { call_ret_ty = CG_STR
+        if fn_name == "forge_string_new" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_string_char_at" { call_ret_ty = CG_STR
+        if fn_name == "forge_string_char_at" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_string_substring" { call_ret_ty = CG_STR
+        if fn_name == "forge_string_substring" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        if fn_name == "forge_int_to_string" { call_ret_ty = CG_STR
+        if fn_name == "forge_int_to_string" { CG_LAST_IS_STR = 1
             is_extern_str_return = true }
-        mut fi = 0
-        while fi < FN_NAMES.length {
-            if FN_NAMES[fi] == fn_name {
-                if fi < FN_RETURN_TYPES.length {
-                    mut rtn = FN_RETURN_TYPES[fi]
-                    // Detect nullable return type
-                    let rtn_len = rtn.length
-                    if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                        call_is_nullable = true
-                        rtn = rtn.substring(0, rtn_len - 1)
-                    } }
-                    if rtn == "string" {
-                        call_ret_ty = CG_STR
-                        CG_LAST_IS_STR = 1
-                    } else if rtn.length >= 4 {
-                        // Check specifically for "List" prefix (not just "L")
-                        mut is_list_ret = false
-                        if rtn[0] == "L" {
-                            if rtn[1] == "i" {
-                                if rtn[2] == "s" {
-                                    if rtn[3] == "t" { is_list_ret = true }
+        if fn_name == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
+        // Look up user-defined return type
+        if !is_extern_str_return {
+            mut fi = 0
+            while fi < FN_NAMES.length {
+                if FN_NAMES[fi] == fn_name {
+                    if fi < FN_RETURN_TYPES.length {
+                        mut rtn = FN_RETURN_TYPES[fi]
+                        let rtn_len = rtn.length
+                        if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
+                            CG_LAST_IS_NULLABLE = 1
+                            rtn = rtn.substring(0, rtn_len - 1)
+                        } }
+                        if rtn == "string" {
+                            CG_LAST_IS_STR = 1
+                        } else if rtn.length >= 4 {
+                            mut is_list_ret = false
+                            if rtn[0] == "L" {
+                                if rtn[1] == "i" {
+                                    if rtn[2] == "s" {
+                                        if rtn[3] == "t" { is_list_ret = true }
+                                    }
                                 }
                             }
-                        }
-                        if is_list_ret {
-                            call_ret_ty = CG_STR
-                            CG_LAST_IS_STR = 1
-                            CG_LAST_IS_LIST = 1
-                        } else {
-                            call_ret_ty = resolve_type_to_llvm(rtn)
+                            if is_list_ret {
+                                CG_LAST_IS_STR = 1
+                                CG_LAST_IS_LIST = 1
+                            } else {
+                                let ret_emf = cg_enum_max_fields(rtn)
+                                if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
+                            }
+                        } else if rtn != "" {
                             let ret_emf = cg_enum_max_fields(rtn)
                             if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
                         }
-                    } else if rtn != "" {
-                        call_ret_ty = resolve_type_to_llvm(rtn)
-                        let ret_emf = cg_enum_max_fields(rtn)
-                        if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
                     }
+                    break
                 }
-                break
+                fi = fi + 1
             }
-            fi = fi + 1
         }
-        // Wrap return type for nullable
-        if call_is_nullable {
-            call_ret_ty = make_nullable_type(call_ret_ty)
-            CG_LAST_IS_NULLABLE = 1
-        } else {
-            CG_LAST_IS_NULLABLE = 0
-        }
-        let ft = llvm.function_type(call_ret_ty, param_arr, args.length, 0)
-        llvm.type_array_free(param_arr)
-        let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
-        llvm.value_array_free(arg_arr)
-        if is_extern_str_return { CG_LAST_IS_STR = 1 }
         r
     }
 

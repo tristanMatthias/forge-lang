@@ -746,7 +746,7 @@ int64_t forge_token_span_start(ForgeString token_list, int64_t index) {
 int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
     if (!token_list.ptr || index < 0 || index >= token_list.len) return 0;
     char* base = token_list.ptr + index * 112;
-    return *(int64_t*)(base + 24);
+    return *(int64_t*)(base + 64);
 }
 // Quick kind_id lookup from C-side stored token list (no struct return needed)
 static int _peek_trace = 0;

@@ -225,6 +225,7 @@ extern "C" {
     fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
     fn LLVMGetStructElementTypes(struct_type: LLVMPtr, dest: *mut LLVMPtr);
     fn LLVMGetInstructionOpcode(inst: LLVMPtr) -> c_uint;
+    fn LLVMGetOperand(val: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
     // Aggregate operations (GEP, insert/extract)
@@ -1075,6 +1076,27 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
                     } else {
                         *args.add(i) = extracted;
                     }
+                }
+            }
+            // i64 → struct coercion: the i64 was loaded from an alloca that
+            // actually holds a struct. Re-derive from the load's source operand.
+            if param_kind == 10 && arg_kind == 8 {
+                // Check if the arg is a LoadInst — if so, reload with correct type
+                let opcode = LLVMGetInstructionOpcode(arg);
+                eprintln!("  [COERCE] i64→struct arg#{} opcode={}", i, opcode);
+                if opcode == 33 { // LLVMLoad2 opcode
+                    let src_ptr = LLVMGetOperand(arg, 0);
+                    if !src_ptr.is_null() {
+                        eprintln!("  [COERCE] reloading from {:p}", src_ptr);
+                        *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
+                    }
+                } else if opcode == 27 { // Old LLVMLoad opcode
+                    let src_ptr = LLVMGetOperand(arg, 0);
+                    if !src_ptr.is_null() {
+                        *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
+                    }
+                } else {
+                    eprintln!("  [COERCE] can't fix non-load i64→struct");
                 }
             }
         }

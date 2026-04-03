@@ -111,7 +111,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     // When CG_ACTIVE is off, return AST node for emit_block to handle
     if !CG_ACTIVE {
-        PARSE_END_POS = p.pos
+        PARSE_END_POS = forge_parser_get_pos()
         return Statement.Let(var_name, value!, start)
     }
 
@@ -198,7 +198,7 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         CG_HAS_LAST_VAL = 0
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("variables", "let_decl", id, start)
 }

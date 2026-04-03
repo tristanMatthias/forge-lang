@@ -71,17 +71,18 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         return_type = parsed_ret
     }
 
-    // Skip body by brace counting — don't full-parse (body re-parsed during emit)
+    // Skip body by brace counting using C-side kind_id directly
     let open_pos = forge_parser_get_pos()
-    if p.check(TokenKind.LBrace) { p.advance() }
+    if forge_peek_kind_id(forge_parser_get_pos()) == 102 { p.advance() }
     mut depth = 1
     while depth > 0 && !p.is_at_end() {
-        if p.check(TokenKind.LBrace) { depth = depth + 1 }
-        if p.check(TokenKind.RBrace) { depth = depth - 1 }
+        let cur_kid = forge_peek_kind_id(forge_parser_get_pos())
+        if cur_kid == 102 { depth = depth + 1 }
+        if cur_kid == 103 { depth = depth - 1 }
         if depth > 0 { p.advance() }
     }
-    if p.check(TokenKind.RBrace) { p.advance() }
-    let close_pos = forge_parser_get_pos()
+    if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
+    let close_pos = forge_parser_get_pos() - 1
     let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
     // Store for codegen — name, body, param count, names, types, return type
@@ -100,7 +101,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         pi = pi + 1
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }
@@ -110,35 +111,36 @@ fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 fn parse_export(p: Parser) -> Statement? {
     let start = p.advance().span // consume 'export'
 
-    match p.peek().kind {
-        .Fn -> parse_fn_decl(p, true)
-        .Let -> parse_var_binding(p, .Let, true)
-        .Mut -> parse_var_binding(p, .Mut, true)
-        .Const -> parse_var_binding(p, .Const, true)
-        .TypeKw -> {
-            // export type — treat same as type
-            parse_type_decl(p)
+    // kind_id dispatch (enum matching fails in bootstrap)
+    let ekid = forge_peek_kind_id(forge_parser_get_pos())
+    if ekid == 23 { return parse_fn_decl(p, true) }
+    if ekid == 20 { return parse_var_binding(p, .Let, true) }
+    if ekid == 21 { return parse_var_binding(p, .Mut, true) }
+    if ekid == 22 { return parse_var_binding(p, .Const, true) }
+    // export type / export enum / export trait / export impl — brace-count skip
+    if ekid == 42 || ekid == 43 || ekid == 34 || ekid == 35 {
+        p.advance() // consume type/enum/trait/impl keyword
+        p.expect_ident() // name
+        // Skip to opening brace
+        while !p.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
+            p.advance()
         }
-        .Enum -> {
-            // export enum — treat same as enum
-            parse_enum_decl(p)
-        }
-        .Trait -> {
-            // export trait — skip (trait is no-op for codegen)
-            p.advance() // consume 'trait'
-            p.expect_ident() // trait name
-            if p.check(TokenKind.LBrace) {
-                p.parse_block() // skip body
+        if forge_peek_kind_id(forge_parser_get_pos()) == 102 {
+            p.advance() // consume {
+            mut bdepth = 1
+            while bdepth > 0 && !p.is_at_end() {
+                let bk = forge_peek_kind_id(forge_parser_get_pos())
+                if bk == 102 { bdepth = bdepth + 1 }
+                if bk == 103 { bdepth = bdepth - 1 }
+                if bdepth > 0 { p.advance() }
             }
-            PARSE_END_POS = p.pos
-            let id = next_node_id()
-            feature_stmt("functions", "noop", id, start)
+            if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
         }
-        _ -> {
-            p.error("expected 'fn', 'let', 'mut', or 'const' after 'export'")
-            null
-        }
+        PARSE_END_POS = forge_parser_get_pos()
+        let id = next_node_id()
+        return feature_stmt("functions", "noop", id, start)
     }
+    null
 }
 
 // ─── Check ──────────────────────────────────────

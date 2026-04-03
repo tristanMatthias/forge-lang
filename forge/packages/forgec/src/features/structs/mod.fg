@@ -158,7 +158,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
         let value = p.parse_type_expr()
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("structs", "type_decl", id, start)
 }

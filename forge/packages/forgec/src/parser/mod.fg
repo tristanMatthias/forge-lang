@@ -99,8 +99,8 @@ impl Parser {
     }
 
     fn peek_at(self, offset: int) -> Token {
-        let idx = self.pos + offset
-        if idx < self.tokens.length {
+        let idx = forge_parser_get_pos() + offset
+        if idx < forge_token_list_len() {
             self.tokens[idx]
         } else {
             Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
@@ -109,7 +109,7 @@ impl Parser {
 
     fn advance(self) -> Token {
         let tok = self.peek()
-        if self.pos < self.tokens.length {
+        if forge_parser_get_pos() < forge_token_list_len() {
             self.pos = self.pos + 1
             forge_parser_advance_pos()
         }
@@ -122,6 +122,19 @@ impl Parser {
         let a = self.kind_to_key(self.peek().kind)
         let b = self.kind_to_key(kind)
         a != "" && a == b
+    }
+
+    fn check_id(self, kid: int) -> bool {
+        if forge_parser_get_pos() >= forge_token_list_len() { return kid == 99 }
+        forge_peek_kind_id(forge_parser_get_pos()) == kid
+    }
+
+    fn expect_id(self, kid: int) -> Token? {
+        if self.check_id(kid) {
+            self.advance()
+        } else {
+            null
+        }
     }
 
     fn expect(self, kind: TokenKind) -> Token? {
@@ -194,8 +207,8 @@ impl Parser {
         // Peek at the nth non-newline token
         mut count = 0
         mut offset = 0
-        while self.pos + offset < self.tokens.length {
-            let tok = self.tokens[self.pos + offset]
+        while forge_parser_get_pos() + offset < forge_token_list_len() {
+            let tok = self.tokens[forge_parser_get_pos() + offset]
             if tok.kind is not .Newline {
                 if count == n {
                     return tok
@@ -218,13 +231,13 @@ impl Parser {
         self.skip_newlines()
 
         while !self.is_at_end() {
-            let before = self.pos
+            let before = forge_parser_get_pos()
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
             }
             // Safety: skip token if parser didn't advance
-            if self.pos == before {
+            if forge_parser_get_pos() == before {
                 self.advance()
             }
             self.skip_newlines()
@@ -271,7 +284,7 @@ impl Parser {
             if wcond == null { return null }
             self.skip_newlines()
             let wbody = self.parse_block()
-            PARSE_END_POS = self.pos
+            PARSE_END_POS = forge_parser_get_pos()
             return Statement.While(wcond!, wbody, wstart)
         }
         if kid == 28 {
@@ -283,7 +296,7 @@ impl Parser {
             if fiter == null { return null }
             self.skip_newlines()
             let fbody = self.parse_block()
-            PARSE_END_POS = self.pos
+            PARSE_END_POS = forge_parser_get_pos()
             return Statement.For(fname, fiter!, fbody, fstart)
         }
         if kid == 24 { return self.parse_return() }
@@ -305,21 +318,29 @@ impl Parser {
             self.expect_ident()
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        if kid == 42 {
+        // Skip type/enum/impl/trait declarations by brace counting
+        // (calling into feature parsers hangs due to by-value parser + enum matching)
+        if kid == 42 || kid == 43 || kid == 35 || kid == 34 {
             self.advance()
             self.expect_ident()
-            if self.check(TokenKind.LBrace) { self.parse_block() }
+            // Skip to { then brace-count
+            while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
+                self.advance()
+            }
+            if forge_peek_kind_id(forge_parser_get_pos()) == 102 {
+                self.advance()
+                mut bdepth = 1
+                while bdepth > 0 && !self.is_at_end() {
+                    let bk = forge_peek_kind_id(forge_parser_get_pos())
+                    if bk == 102 { bdepth = bdepth + 1 }
+                    if bk == 103 { bdepth = bdepth - 1 }
+                    if bdepth > 0 { self.advance() }
+                }
+                if forge_peek_kind_id(forge_parser_get_pos()) == 103 { self.advance() }
+            }
+            PARSE_END_POS = forge_parser_get_pos()
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        if kid == 43 { let r = parse_impl_block(self)
-            self.sync_pos()
-            return r }
-        if kid == 35 { let r = parse_type_decl(self)
-            self.sync_pos()
-            return r }
-        if kid == 34 { let r = parse_enum_decl(self)
-            self.sync_pos()
-            return r }
 
         match tok.kind {
             .Let -> {
@@ -567,7 +588,7 @@ impl Parser {
 
     fn sync_pos(self) {
         if PARSE_END_POS >= 0 {
-            self.pos = PARSE_END_POS
+            forge_parser_set_pos(PARSE_END_POS)
             PARSE_END_POS = -1
         }
     }
@@ -669,12 +690,12 @@ impl Parser {
         mut statements: List<Statement> = []
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
-            let before = self.pos
+            let before = forge_parser_get_pos()
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
             }
-            if self.pos == before { self.advance() }
+            if forge_parser_get_pos() == before { self.advance() }
             self.skip_newlines()
         }
 
