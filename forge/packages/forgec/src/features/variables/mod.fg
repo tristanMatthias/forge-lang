@@ -8,7 +8,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_LAST_IS_LIST, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_LAST_VAL, CG_HAS_LAST_VAL, CG_LAST_STRUCT_TYPE, CG_LAST_LIST_ELEM_IS_STR, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_B, CG_I64, CG_VAR_NAMES, CG_VAR_IS_MAP, CG_MAP_VAR_NAMES, CG_VAR_PTRS, CG_LIST_VAR_CSV, CG_STR_LIST_VAR_CSV, CG_LIST_ELEM_TYPE_CSV, CG_NULLABLE_VAR_NAMES, CG_NULLABLE_VAR_INNER, codegen_new}
+use codegen.{Codegen}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -109,98 +109,8 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
     }
 
-    // When CG_ACTIVE is off, return AST node for emit_block to handle
-    if !CG_ACTIVE {
-        PARSE_END_POS = forge_parser_get_pos()
-        return Statement.Let(var_name, value!, start)
-    }
-
-    // Emit inline during re-parse+codegen (Map storage corrupts complex data)
-    if CG_ACTIVE {
-        // Check if parse_list_literal or postfix set a pre-computed LLVM value
-        mut val = null
-        if CG_HAS_LAST_VAL == 1 {
-            CG_HAS_LAST_VAL = 0
-            val = CG_LAST_VAL
-        } else {
-            mut cg = codegen_new()
-            val = cg.emit_expr(value!)
-        }
-        // Detect string/list/map type
-        let is_str = CG_LAST_IS_STR == 1
-        let is_map = CG_LAST_IS_MAP == 1
-        mut var_type = Type.Int
-        if is_map {
-            var_type = Type.MapType(Type.String, Type.Int)
-        } else if is_str {
-            var_type = Type.String
-        }
-        // Also check if value expression is a string literal
-        match value! {
-            .StringLit(v, s) -> {
-                mut cg = codegen_new()
-                cg.define_var(var_name, Type.String, val)
-            }
-            _ -> {
-                mut cg = codegen_new()
-                cg.define_var(var_name, var_type, val)
-            }
-        }
-        // Register map variable name for reliable lookup
-        if is_map {
-            CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(var_name)
-        }
-        // Register list variable for for-loop element type detection + indexing
-        if value_tok_key == "LBracket" || ann_is_list == 1 || CG_LAST_IS_LIST == 1 {
-            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${var_name},"
-            // Determine element type from annotation or first element
-            let elem_is_str_detected = ann_elem_name == "string" || ann_elem_name == "String" || CG_LAST_LIST_ELEM_IS_STR == 1
-            if elem_is_str_detected {
-                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${var_name},"
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:string,"
-            } else if ann_elem_name != "" {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:${ann_elem_name},"
-            } else {
-                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${var_name}:int,"
-            }
-            CG_LAST_LIST_ELEM_IS_STR = 0
-            CG_LAST_IS_LIST = 0
-        }
-        // Register enum variable
-        if CG_LAST_ENUM_TYPE != "" {
-            CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + var_name + ":" + CG_LAST_ENUM_TYPE + ","
-            CG_LAST_ENUM_TYPE = ""
-        }
-        // Register nullable variable for null comparison and unwrap
-        if CG_LAST_IS_NULLABLE == 1 {
-            CG_NULLABLE_VAR_NAMES = CG_NULLABLE_VAR_NAMES.push(var_name)
-            mut inner_type_name = "int"
-            if is_str { inner_type_name = "string" }
-            CG_NULLABLE_VAR_INNER = CG_NULLABLE_VAR_INNER.push(inner_type_name)
-        }
-        // Register struct variable type + copy field info from temp
-        if CG_LAST_STRUCT_TYPE != "" {
-            CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(var_name)
-            CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
-            // Copy field list from the temp struct variable (last entry)
-            let last_fi = CG_STRUCT_VAR_FIELDS.length - 1
-            if last_fi >= 0 {
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(CG_STRUCT_VAR_FIELDS[last_fi])
-            } else {
-                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push("")
-            }
-        }
-        // Reset flags for next expression
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_LAST_IS_NULLABLE = 0
-        CG_LAST_STRUCT_TYPE = ""
-        CG_HAS_LAST_VAL = 0
-    }
-
     PARSE_END_POS = forge_parser_get_pos()
-    let id = next_node_id()
-    feature_stmt("variables", "let_decl", id, start)
+    return Statement.Let(var_name, value!, start)
 }
 
 fn parse_let(p: Parser) -> Statement? { parse_var_binding(p, .Let, false) }

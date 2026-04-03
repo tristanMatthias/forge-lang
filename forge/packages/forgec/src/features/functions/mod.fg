@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_VAR_TYPES, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_VAR_TYPES, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -537,18 +537,14 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     PENDING_MATCH = false
     cg_reinit_types()
 
-    // Pure AST parse then emit
+    // Parse body to AST, then emit
     if body_src != "" {
-        eprintln("  [PARSE] CG_ACTIVE=false")
-        CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
         forge_set_token_list(body_tokens)
         forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
-        eprintln("  [PARSE] CG_ACTIVE=true")
-        CG_ACTIVE = true
         cg_reinit_types()
         let last = cg.emit_block(body)
         CG_LAST_VAL = last
@@ -831,7 +827,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         if fn_is_nullable { CG_FN_NULLABLE_RET_TY = ret_ty }
 
         // Re-lex and re-parse the body source text
-        // CG_ACTIVE stays true for control flow (if/else, while, for) that emits inline.
+        // Control flow (if/else, while, for) is handled by AST-mode emit.
         // Returns, assignments, and expressions use proper AST via emit_block.
         if body_src != "" {
             mut body_lex = lexer_new(body_src)

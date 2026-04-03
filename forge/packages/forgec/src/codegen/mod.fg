@@ -70,8 +70,7 @@ export mut CG_GLOBAL_COUNT: int = 0
 // Boundary index: vars before this index are globals, after are function-locals
 export mut CG_VAR_SCOPE_START: int = 0
 
-// Flag indicating codegen is active (CG_B != null check unreliable for ptr)
-export mut CG_ACTIVE: bool = false
+// CG_ACTIVE removed — parser is now a pure parser, codegen is separate
 
 // Debug: recursion depth counter for emit_expr
 export mut EMIT_DEPTH: int = 0
@@ -775,7 +774,7 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
-    CG_ACTIVE = true
+    // codegen initialized
 }
 
 export fn codegen_write_ir(path: string) {
@@ -788,7 +787,7 @@ export fn codegen_emit_object(path: string) -> bool {
 }
 
 export fn codegen_cleanup() {
-    CG_ACTIVE = false
+    // codegen cleaned up
     cg_cleanup()
 }
 

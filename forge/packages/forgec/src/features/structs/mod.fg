@@ -8,7 +8,7 @@ use core.types.{Type, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, TypeField}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ACTIVE, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_LIST, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, register_struct_type_full, codegen_new, cg_enum_max_fields, cg_make_enum_type}
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_PTR, CG_STR, CG_LIST, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_LAST_STRUCT_TYPE, CG_LAST_VAL, CG_HAS_LAST_VAL, register_struct_type, register_struct_type_full, codegen_new, cg_enum_max_fields, cg_make_enum_type}
 use features.while_loops.PARSE_END_POS
 use @std.llvm
 
@@ -126,33 +126,8 @@ fn parse_type_decl(p: Parser) -> Statement? {
         }
         p.expect(TokenKind.RBrace)
 
-        // Register struct type — create LLVM type if codegen is active
-        if CG_ACTIVE {
-            let field_types_arr = llvm.type_array_new(field_count)
-            mut fi = 0
-            mut ftype_pos = 0
-            mut ftype_cur = ""
-            while ftype_pos < field_types_str.length {
-                let ch = field_types_str[ftype_pos]
-                if ch == "," {
-                    llvm.type_array_set(field_types_arr, fi, resolve_field_llvm_type(ftype_cur))
-                    fi = fi + 1
-                    ftype_cur = ""
-                } else {
-                    ftype_cur = ftype_cur + ch
-                }
-                ftype_pos = ftype_pos + 1
-            }
-            if ftype_cur != "" {
-                llvm.type_array_set(field_types_arr, fi, resolve_field_llvm_type(ftype_cur))
-            }
-            let struct_ty = llvm.struct_type(CG_CTX, field_types_arr, field_count, 0)
-            llvm.type_array_free(field_types_arr)
-            register_struct_type_full(name, field_names, field_is_str, field_types_str, struct_ty)
-        } else {
-            // Store string info for lazy LLVM type creation later
-            register_struct_type_full(name, field_names, field_is_str, field_types_str, null)
-        }
+        // Store field info for lazy LLVM type creation during codegen
+        register_struct_type_full(name, field_names, field_is_str, field_types_str, null)
     } else {
         // Non-struct type alias — skip
         let value = p.parse_type_expr()
