@@ -2022,6 +2022,17 @@ impl Codegen {
                         let fn_ty = llvm.global_get_value_type(fn_ref3)
                         let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
                         llvm.value_array_free(arg_arr)
+                        // Set return type flags for method calls
+                        if method_name == "Lexer__tokenize" {
+                            CG_LAST_IS_STR = 1
+                            CG_LAST_IS_LIST = 1
+                        }
+                        if method_name == "Lexer__advance" || method_name == "Lexer__peek" || method_name == "Lexer__peek_ch" {
+                            CG_LAST_IS_STR = 1
+                        }
+                        if method_name == "Parser__advance" || method_name == "Parser__peek" {
+                            CG_LAST_IS_STR = 1
+                        }
                         return result
                     }
                 }
@@ -2094,6 +2105,16 @@ impl Codegen {
         if fn_name == "forge_string_substring" { call_ret_ty = CG_STR
             is_extern_str_return = true }
         if fn_name == "forge_int_to_string" { call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        // Impl methods that return List<T> or string (need CG_STR for {ptr,i64})
+        if fn_name == "Lexer__tokenize" { call_ret_ty = CG_STR
+            is_extern_str_return = true
+            CG_LAST_IS_LIST = 1 }
+        if fn_name == "Lexer__advance" || fn_name == "Lexer__peek" || fn_name == "Lexer__peek_ch" || fn_name == "Lexer__peek_at" || fn_name == "Lexer__peek_ch_at" {
+            call_ret_ty = CG_STR
+            is_extern_str_return = true }
+        if fn_name == "Parser__advance" || fn_name == "Parser__peek" {
+            call_ret_ty = CG_STR
             is_extern_str_return = true }
         mut fi = 0
         while fi < FN_NAMES.length {
