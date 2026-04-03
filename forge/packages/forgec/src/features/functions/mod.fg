@@ -398,8 +398,12 @@ export fn declare_all_fns() {
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
                 let tname = FN_ALL_PARAM_TYPES[pt_idx]
-                // SKIP: let resolved = resolve_type_to_llvm(tname)
-                // SKIP: if resolved != null { param_ty = resolved }
+                if tname == "string" { param_ty = CG_STR }
+                else if tname != "int" && tname != "float" && tname != "bool" && tname != "ptr" && tname != "" {
+                    cg_reinit_types()
+                    let resolved = resolve_type_to_llvm(tname)
+                    if resolved != null && resolved != CG_I64 { param_ty = resolved }
+                }
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -413,10 +417,10 @@ export fn declare_all_fns() {
                 rtn = rtn.substring(0, rtn.length - 1)
             } }
             if rtn == "string" { ret_ty = CG_STR }
-            else if rtn != "" {
+            else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
                 cg_reinit_types()
-                // SKIP: let resolved = resolve_type_to_llvm(rtn)
-                // SKIP: if resolved != null { ret_ty = resolved }
+                let resolved = resolve_type_to_llvm(rtn)
+                if resolved != null && resolved != CG_I64 { ret_ty = resolved }
             }
         }
         cg_reinit_types()        cg_reinit_types()
