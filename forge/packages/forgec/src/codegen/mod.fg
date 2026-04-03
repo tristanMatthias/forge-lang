@@ -1981,12 +1981,25 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    let method_name = ns + "__" + f
+                    // Use struct type name (not variable name) for method lookup
+                    mut type_ns = ns
+                    let stype = var_struct_type(ns)
+                    if stype != "" { type_ns = stype }
+                    let method_name = type_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self as pointer (not value) so field mutations propagate
+                        // Prepend self as pointer so field mutations propagate
+                        // If self is already a ptr param (stored in ptr alloca),
+                        // load the pointer value — don't add extra indirection
                         let obj_val = self.emit_ident(ns)
-                        let self_ptr = CG_LAST_VAR_PTR
+                        mut self_ptr = CG_LAST_VAR_PTR
+                        // Check if the struct var CSV has this name — if so, it's a struct alloca
+                        // (pass alloca address). Otherwise it's a ptr alloca (load ptr value).
+                        let is_struct_alloca = CG_STRUCT_VAR_CSV.index_of("," + ns + ":") >= 0
+                        if !is_struct_alloca && self_ptr != null {
+                            cg_reinit_types()
+                            self_ptr = llvm.build_load(CG_B, CG_PTR, self_ptr, "sp")
+                        }
                         cg_reinit_types()
                         let total_args = args.length + 1
                         let arg_arr = llvm.value_array_new(total_args)
@@ -2724,6 +2737,21 @@ impl Codegen {
         mut var_name = ""
         match obj {
             .Ident(name, span) -> { var_name = name }
+            .MemberAccess(inner_obj, inner_field, inner_span) -> {
+                // Chained access: a.b.field — evaluate a.b first, then apply .field
+                let inner_val = self.emit_member_access(inner_obj, inner_field)
+                // For .length on the result: call forge_string_length
+                if field == "length" {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(1)
+                    llvm.value_array_set(ca, 0, inner_val)
+                    let ft = make_fn_type_1(CG_I64, CG_STR)
+                    let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+                    llvm.value_array_free(ca)
+                    return result
+                }
+                return inner_val
+            }
             _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
@@ -2762,19 +2790,12 @@ impl Codegen {
         let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
         mut field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
         if var_name == "self" && obj_ptr != null && struct_ty != null {
-            // self is a pointer — load ptr from alloca, then GEP field
+            // self is a pointer — load full struct through ptr, then extract field
+            // (extractvalue handles field types automatically, no type lookup needed)
             cg_reinit_types()
             let self_ptr_val = llvm.build_load(CG_B, CG_PTR, obj_ptr, "selfp")
-            let field_ptr = llvm.build_struct_gep2(CG_B, struct_ty, self_ptr_val, fidx, field)
-            if field_ptr != null {
-                // Determine field type from struct field info
-                cg_reinit_types()
-                mut field_load_ty = CG_I64
-                let field_is_str = struct_field_is_str(struct_type_name, fidx)
-                if field_is_str { field_load_ty = CG_STR }
-                field_val = llvm.build_load(CG_B, field_load_ty, field_ptr, field)
-                if field_is_str { CG_LAST_IS_STR = 1 }
-            }
+            let struct_val = llvm.build_load(CG_B, struct_ty, self_ptr_val, "self_st")
+            field_val = llvm.build_extract_value(CG_B, struct_val, fidx, field)
         }
 
         // Set string flag and list element type for this field
