@@ -2022,6 +2022,8 @@ impl Codegen {
                         let fn_ty = llvm.global_get_value_type(fn_ref3)
                         let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
                         llvm.value_array_free(arg_arr)
+                        // Reset struct type (method dispatch sets it to self's type)
+                        CG_LAST_STRUCT_TYPE = ""
                         // Set return type flags for method calls
                         if method_name == "Lexer__tokenize" {
                             CG_LAST_IS_STR = 1
