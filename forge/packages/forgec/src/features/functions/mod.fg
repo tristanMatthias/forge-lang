@@ -71,20 +71,18 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         return_type = parsed_ret
     }
 
-    // Capture body source by reconstructing from token positions
-    // Use raw source between the { and } tokens (span-based extraction)
-    let block_open_span = p.peek().span  // span of the {
-    IN_FUNCTION_BODY = 1
-    let body = p.parse_block()
-    IN_FUNCTION_BODY = 0
-    // The } token was consumed by parse_block, so peek_at(-1) is the }
-    // Use the source positions: from block_open to current position
-    mut block_close_end = block_open_span.end
-    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
-    mut body_src = ""
-    if p.source.length > 0 && block_close_end > block_open_span.start {
-        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    // Skip body by brace counting — don't full-parse (body re-parsed during emit)
+    let open_pos = forge_parser_get_pos()
+    if p.check(TokenKind.LBrace) { p.advance() }
+    mut depth = 1
+    while depth > 0 && !p.is_at_end() {
+        if p.check(TokenKind.LBrace) { depth = depth + 1 }
+        if p.check(TokenKind.RBrace) { depth = depth - 1 }
+        if depth > 0 { p.advance() }
     }
+    if p.check(TokenKind.RBrace) { p.advance() }
+    let close_pos = forge_parser_get_pos()
+    let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
     // Store for codegen — name, body, param count, names, types, return type
     store_fn_source(name, body_src)
