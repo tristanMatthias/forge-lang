@@ -1119,6 +1119,112 @@ impl Codegen {
         r
     }
 
+    // Determine the type name of an expression WITHOUT emitting it
+    fn expr_type_name(self, expr: Expr) -> string {
+        match expr {
+            .IntLit(_, _) -> { return "int" }
+            .FloatLit(_, _) -> { return "float" }
+            .StringLit(_, _) -> { return "string" }
+            .BoolLit(_, _) -> { return "bool" }
+            .NullLit(_) -> { return "null" }
+            .Ident(name, _) -> {
+                // Look up in CG_VAR_TYPES
+                mut vi = CG_VAR_NAMES.length - 1
+                while vi >= 0 {
+                    if CG_VAR_NAMES[vi] == name {
+                        if vi < CG_VAR_TYPES.length { return CG_VAR_TYPES[vi] }
+                        return "int"
+                    }
+                    vi = vi - 1
+                }
+                return "int"
+            }
+            .Call(callee, _, _) -> {
+                match callee {
+                    .Ident(name, _) -> {
+                        // Built-in casts
+                        if name == "string" { return "string" }
+                        if name == "int" { return "int" }
+                        if name == "float" { return "float" }
+                        if name == "bool" { return "bool" }
+                        // Known runtime functions
+                        if name == "forge_string_concat" { return "string" }
+                        if name == "forge_string_substring" { return "string" }
+                        if name == "forge_string_char_at" { return "string" }
+                        if name == "forge_int_to_string" { return "string" }
+                        if name == "forge_string_new" { return "string" }
+                        if name == "forge_string_index_of" { return "int" }
+                        if name == "forge_string_length" { return "int" }
+                        if name == "forge_string_compare" { return "int" }
+                        // User-defined functions
+                        mut fi = 0
+                        while fi < FN_NAMES.length {
+                            if FN_NAMES[fi] == name {
+                                if fi < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[fi] }
+                                return "int"
+                            }
+                            fi = fi + 1
+                        }
+                    }
+                    .MemberAccess(obj, method, _) -> {
+                        // String methods
+                        if method == "substring" { return "string" }
+                        if method == "char_at" { return "string" }
+                        if method == "index_of" { return "int" }
+                        if method == "length" { return "int" }
+                        // Resolve impl method return type
+                        mut obj_name = ""
+                        match obj {
+                            .Ident(n, _) -> { obj_name = n }
+                            _ -> {}
+                        }
+                        if obj_name != "" {
+                            let st = var_struct_type(obj_name)
+                            if st != "" {
+                                let mname = st + "_" + method
+                                mut mi = 0
+                                while mi < FN_NAMES.length {
+                                    if FN_NAMES[mi] == mname {
+                                        if mi < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[mi] }
+                                    }
+                                    mi = mi + 1
+                                }
+                            }
+                        }
+                    }
+                    _ -> {}
+                }
+                return "int"
+            }
+            .Binary(l, op, r, _) -> {
+                match op {
+                    .Add -> {
+                        // String + anything = string
+                        let lt = self.expr_type_name(l)
+                        let rt = self.expr_type_name(r)
+                        if lt == "string" || rt == "string" { return "string" }
+                        return "int"
+                    }
+                    .Eq -> { return "bool" }
+                    .NotEq -> { return "bool" }
+                    .Lt -> { return "bool" }
+                    .LtEq -> { return "bool" }
+                    .Gt -> { return "bool" }
+                    .GtEq -> { return "bool" }
+                    .And -> { return "bool" }
+                    .Or -> { return "bool" }
+                    _ -> { return "int" }
+                }
+            }
+            .MemberAccess(obj, field, _) -> {
+                if field == "length" { return "int" }
+                return "int"
+            }
+            _ -> { return "int" }
+        }
+        "int"
+    }
+
     fn emit_expr_inner(self, expr: Expr) -> ptr {
         match expr {
             .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
@@ -1804,17 +1910,17 @@ impl Codegen {
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
-        // Check if left is a string before emitting right (emit_expr resets flags)
+        // Determine types BEFORE emitting (no global flag dependency)
+        let left_type = self.expr_type_name(left)
+        let right_type = self.expr_type_name(right)
+        mut lhs_is_str = 0
+        mut rhs_is_str = 0
+        if left_type == "string" { lhs_is_str = 1 }
+        if right_type == "string" { rhs_is_str = 1 }
         let lhs = self.emit_expr(left)
-        let lhs_is_str = CG_LAST_IS_STR
-        CG_LAST_IS_STR = 0
         let rhs = self.emit_expr(right)
-        let rhs_is_str = CG_LAST_IS_STR
-        CG_LAST_IS_STR = 0
         match op {
             .Add -> {
-                // Only use string concat when BOTH sides are strings
-                // (prevents false concat from stale CG_LAST_IS_STR on struct int fields)
                 if lhs_is_str == 1 && rhs_is_str == 1 {
                     return self.emit_string_concat(lhs, lhs_is_str, rhs, rhs_is_str)
                 }
@@ -2231,35 +2337,14 @@ impl Codegen {
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
                 let ev = self.emit_expr(val)
-                // Correct CG_LAST_IS_STR for known i64-returning extern functions
-                match val {
-                    .Call(callee, _, _) -> {
-                        match callee {
-                            .Ident(cn, _) -> {
-                                if cn == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_length" { CG_LAST_IS_STR = 0 }
-                                if cn == "forge_string_compare" { CG_LAST_IS_STR = 0 }
-                            }
-                            _ -> {}
-                        }
-                    }
-                    _ -> {}
-                }
-                let let_is_list = CG_LAST_IS_LIST
-                let let_is_str = CG_LAST_IS_STR
+                // Determine type from expression (no global flag dependency)
+                let val_type = self.expr_type_name(val)
                 mut ty = Type.Int
-                if let_is_str == 1 { ty = Type.String }
+                if val_type == "string" { ty = Type.String }
                 self.define_var(name, ty, ev)
-                // Explicitly register string vars (CG_LAST_IS_STR may be corrupted by define_var pushes)
-                if let_is_str == 1 {
+                if val_type == "string" {
                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
                 }
-                // Register list variables for correct indexing
-                if let_is_list == 1 {
-                    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
-                    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
-                }
-                CG_LAST_IS_LIST = 0
                 if CG_LAST_STRUCT_TYPE != "" {
                     CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
                     CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
