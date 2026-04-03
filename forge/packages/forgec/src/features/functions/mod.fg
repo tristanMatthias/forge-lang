@@ -437,7 +437,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     eprintln("  >> " + name)
     let is_main = name == "main"
     mut pc = 0
-    pc = forge_fn_store_get_param_count(idx)
+    if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)

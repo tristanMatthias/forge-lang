@@ -1076,8 +1076,8 @@ impl Codegen {
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }
             .StringLit(value, span) -> { return self.emit_string(value) }
             .BoolLit(value, span) -> {
-                // value is the runtime boolean (0 or 1) from match binding
-                return self.emit_ident("value")
+                if value { return llvm.const_int(CG_I64, 1, 0) }
+                return llvm.const_int(CG_I64, 0, 0)
             }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
