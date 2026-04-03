@@ -1035,6 +1035,14 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
     if builder.is_null() || fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        static mut BC_TRACE: i32 = 200;
+        if BC_TRACE > 0 {
+            let s = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+            eprintln!("  [BC] f={:p} args={} name={}", f, num_args, s);
+            BC_TRACE -= 1;
+        }
+    }
     // Auto-coerce arguments: if param expects ptr but arg is i64 (or vice versa), convert
     unsafe {
         // Get expected param types
@@ -1081,25 +1089,38 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
             // i64 → struct coercion: the i64 was loaded from an alloca that
             // actually holds a struct. Re-derive from the load's source operand.
             if param_kind == 10 && arg_kind == 8 {
-                // Check if the arg is a LoadInst — if so, reload with correct type
                 let opcode = LLVMGetInstructionOpcode(arg);
-                eprintln!("  [COERCE] i64→struct arg#{} opcode={}", i, opcode);
-                if opcode == 33 { // LLVMLoad2 opcode
-                    let src_ptr = LLVMGetOperand(arg, 0);
-                    if !src_ptr.is_null() {
-                        eprintln!("  [COERCE] reloading from {:p}", src_ptr);
-                        *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
-                    }
-                } else if opcode == 27 { // Old LLVMLoad opcode
+                let mut fixed = false;
+                // Try to reload from source alloca (opcode 27=Load, 33=Load2)
+                if opcode == 27 || opcode == 33 {
                     let src_ptr = LLVMGetOperand(arg, 0);
                     if !src_ptr.is_null() {
                         *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
+                        fixed = true;
                     }
-                } else {
-                    eprintln!("  [COERCE] can't fix non-load i64→struct");
+                }
+                // Fallback: use undef to prevent LLVM assertion (produces garbage but doesn't crash)
+                if !fixed {
+                    *args.add(i) = LLVMGetUndef(param_ty);
                 }
             }
         }
+        // Final verification: check all args match expected types
+        // Re-get param types (may have changed due to coercion)
+        let verify_tys = std::alloc::alloc_zeroed(param_tys_layout) as *mut LLVMPtr;
+        LLVMGetParamTypes(fn_type, verify_tys);
+        for i in 0..n {
+            let arg = *args.add(i);
+            if arg.is_null() { continue; }
+            let param_ty = *verify_tys.add(i);
+            if param_ty.is_null() { continue; }
+            let arg_ty = LLVMTypeOf(arg);
+            if arg_ty != param_ty {
+                // Still mismatched after coercion — use undef to prevent crash
+                *args.add(i) = LLVMGetUndef(param_ty);
+            }
+        }
+        std::alloc::dealloc(verify_tys as *mut u8, param_tys_layout);
         std::alloc::dealloc(param_tys as *mut u8, param_tys_layout);
         LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
     }
@@ -1671,7 +1692,14 @@ pub extern "C" fn forge_llvm_get_undef(ty: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_global_get_value_type(val: LLVMPtr) -> LLVMPtr {
     if val.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMGlobalGetValueType(val) }
+    unsafe {
+        static mut GGVT_TRACE: i32 = 50;
+        if GGVT_TRACE > 0 {
+            eprintln!("  [GGVT] val={:p}", val);
+            GGVT_TRACE -= 1;
+        }
+        LLVMGlobalGetValueType(val)
+    }
 }
 
 

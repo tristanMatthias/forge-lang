@@ -534,6 +534,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
     // Pure AST parse then emit
     if body_src != "" {
+        eprintln("  [PARSE] CG_ACTIVE=false")
         CG_ACTIVE = false
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
@@ -541,6 +542,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
+        eprintln("  [PARSE] CG_ACTIVE=true")
         CG_ACTIVE = true
         cg_reinit_types()
         let last = cg.emit_block(body)

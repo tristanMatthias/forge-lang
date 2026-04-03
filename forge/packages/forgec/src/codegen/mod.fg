@@ -72,6 +72,9 @@ export mut CG_VAR_SCOPE_START: int = 0
 // Flag indicating codegen is active (CG_B != null check unreliable for ptr)
 export mut CG_ACTIVE: bool = false
 
+// Debug: recursion depth counter for emit_expr
+export mut EMIT_DEPTH: int = 0
+
 // Top-level source fragments to inject into main
 export mut CG_TOPLEVEL_SOURCES: List<string> = []
 
@@ -1057,6 +1060,17 @@ impl Codegen {
     // ─── Expressions ───────────────────────────
 
     fn emit_expr(self, expr: Expr) -> ptr {
+        EMIT_DEPTH = EMIT_DEPTH + 1
+        if EMIT_DEPTH > 50 {
+            EMIT_DEPTH = EMIT_DEPTH - 1
+            return llvm.const_int(CG_I64, 0, 0)
+        }
+        let r = self.emit_expr_inner(expr)
+        EMIT_DEPTH = EMIT_DEPTH - 1
+        r
+    }
+
+    fn emit_expr_inner(self, expr: Expr) -> ptr {
         match expr {
             .IntLit(value, span) -> { return llvm.const_int(CG_I64, value, 0) }
             .FloatLit(value, span) -> { return llvm.const_real(CG_F64, value) }

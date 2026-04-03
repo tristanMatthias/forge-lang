@@ -439,6 +439,14 @@ impl Parser {
 
                     // Check for method call: field followed by (
                     if self.check(TokenKind.LParen) {
+                        if !CG_ACTIVE {
+                            // AST mode: produce Call(MemberAccess(...), args) node
+                            self.advance() // consume (
+                            let mc_args = self.parse_call_args()
+                            self.expect(TokenKind.RParen)
+                            result = Expr.Call(Expr.MemberAccess(result, field, span), mc_args, span)
+                            continue
+                        }
                         // Method call: obj.method(args)
                         self.advance() // consume (
                         let method_result = self.emit_method_call_inline(obj_val, field)
@@ -455,6 +463,10 @@ impl Parser {
 
                     // Property access
                     if field == "length" {
+                        if !CG_ACTIVE {
+                            result = Expr.MemberAccess(result, field, span)
+                            continue
+                        }
                         let len_val = call_rt_1(CG_RT_SLEN, CG_STR, CG_I64, obj_val, "len")
                         result_is_llvm = true
                         result_llvm = len_val
