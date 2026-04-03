@@ -669,7 +669,8 @@ impl Lexer {
         // Use is_keyword check (returns bool, not nullable) instead.
         if is_keyword(text) {
             let kw = keyword_kind(text)
-            return token_new(kw!, span)
+            let kid = keyword_id(text)
+            return Token { kind: kw!, span: span, text: text, kind_id: kid }
         }
 
         token_ident(text, span)
@@ -1001,6 +1002,36 @@ export fn is_keyword(text: string) -> bool {
     if text == "Err" { return true }
     if text == "_" { return true }
     false
+}
+
+// Integer IDs for keywords — used by parser for kind_id dispatch (avoids enum matching)
+export fn keyword_id(text: string) -> int {
+    if text == "let" { return 20 }
+    if text == "mut" { return 21 }
+    if text == "const" { return 22 }
+    if text == "fn" { return 23 }
+    if text == "return" { return 24 }
+    if text == "if" { return 25 }
+    if text == "else" { return 26 }
+    if text == "match" { return 27 }
+    if text == "for" { return 28 }
+    if text == "in" { return 29 }
+    if text == "while" { return 30 }
+    if text == "loop" { return 31 }
+    if text == "break" { return 32 }
+    if text == "continue" { return 33 }
+    if text == "enum" { return 34 }
+    if text == "type" { return 35 }
+    if text == "use" { return 36 }
+    if text == "mod" { return 37 }
+    if text == "as" { return 38 }
+    if text == "export" { return 39 }
+    if text == "trait" { return 40 }
+    if text == "impl" { return 41 }
+    if text == "true" { return 50 }
+    if text == "false" { return 51 }
+    if text == "null" { return 52 }
+    0
 }
 
 export fn keyword_kind(text: string) -> TokenKind? {

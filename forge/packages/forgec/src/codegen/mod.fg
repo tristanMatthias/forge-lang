@@ -925,6 +925,13 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type_2(CG_STR, CG_STR, CG_STR))
     cg_reinit_types()
     llvm.add_function(CG_MOD, "forge_eprintln_string", make_fn_type_1(CG_VOID, CG_STR))
+    // C-side parser helpers (immune to struct field access issues in bootstrap)
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "forge_parser_is_at_end", make_fn_type_0(CG_I64))
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "forge_parser_get_pos", make_fn_type_0(CG_I64))
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "forge_token_list_len", make_fn_type_0(CG_I64))
     // LLVM API functions
     cg_reinit_types()
     let p1 = make_fn_type_1(CG_PTR, CG_PTR)
