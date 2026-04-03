@@ -2296,8 +2296,20 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
         cap = *(int64_t*)raw;
         // Validate: cap must be >= len and reasonable
         if (cap < len || cap > len * 4 + 16 || cap > 1000000) {
-            cap = 0;
-            raw = NULL;
+            // Invalid header — this list was allocated by forge_alloc (no capacity prefix).
+            // Migrate to capacity-tracked format: allocate with header, copy data, continue.
+            int64_t mig_cap = len < 8 ? 8 : len * 2;
+            char* mig_raw = (char*)malloc(sizeof(int64_t) + mig_cap * elem_size);
+            if (mig_raw) {
+                *(int64_t*)mig_raw = mig_cap;
+                memcpy(mig_raw + sizeof(int64_t), list.ptr, len * elem_size);
+                list.ptr = mig_raw + sizeof(int64_t);
+                raw = mig_raw;
+                cap = mig_cap;
+            } else {
+                cap = 0;
+                raw = NULL;
+            }
         }
     }
 
