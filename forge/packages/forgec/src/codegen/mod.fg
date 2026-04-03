@@ -1877,6 +1877,20 @@ impl Codegen {
                 }
             }
             .MemberAccess(o, f, s) -> {
+                // Built-in method calls: obj.has(key), obj.push(val), etc.
+                if f == "has" && args.length >= 1 {
+                    let obj_val = self.emit_expr(o)
+                    let key_val = self.emit_expr(args[0])
+                    let ha = llvm.value_array_new(2)
+                    llvm.value_array_set(ha, 0, obj_val)
+                    llvm.value_array_set(ha, 1, key_val)
+                    cg_reinit_types()
+                    let hft = mft2(CG_I8, CG_PTR, CG_STR)
+                    let hresult = llvm.build_call(CG_B, hft, CG_RT_MAP_HAS, ha, 2, "has")
+                    llvm.value_array_free(ha)
+                    return llvm.build_zext(CG_B, hresult, llvm.int64_type(CG_CTX), "hx")
+                }
+
                 // Namespace.method call: process.args(), fs.read(), llvm.build_add(), etc.
                 mut ns = ""
                 match o {
@@ -1904,7 +1918,11 @@ impl Codegen {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
                     // Try method call: Type__method (impl methods)
-                    let method_name = ns + "__" + f
+                    // Resolve the struct type name for the object variable
+                    mut impl_ns = ns
+                    let st = var_struct_type(ns)
+                    if st != "" { impl_ns = st }
+                    let method_name = impl_ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
                         // Prepend self (the object) as first arg
@@ -1925,6 +1943,17 @@ impl Codegen {
                         let fn_ty = llvm.global_get_value_type(fn_ref3)
                         let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
                         llvm.value_array_free(arg_arr)
+                        // Set CG_LAST_IS_STR if method return type is string
+                        mut mfi = 0
+                        while mfi < FN_NAMES.length {
+                            if FN_NAMES[mfi] == method_name {
+                                if mfi < FN_RETURN_TYPES.length {
+                                    if FN_RETURN_TYPES[mfi] == "string" { CG_LAST_IS_STR = 1 }
+                                }
+                                break
+                            }
+                            mfi = mfi + 1
+                        }
                         return result
                     }
                 }

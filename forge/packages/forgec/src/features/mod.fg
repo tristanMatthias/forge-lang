@@ -25,6 +25,7 @@ mod traits
 mod generics
 mod pipe_operator
 mod modules
+mod is_keyword
 // mod error_propagation  // has parse errors with Ok_/Err_ tokens
 
 use core.ast.NodeRef
@@ -47,6 +48,7 @@ use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
 use closures.{check_closure, emit_closure}
 use null_safety.{check_null_safety, emit_null_safety}
+use is_keyword.{emit_is_check}
 // use error_propagation.{check_error_prop, emit_error_prop}  // not exported yet
 
 export fn init_features() {
@@ -79,6 +81,7 @@ export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     else if fid == "closures" { return emit_closure(cg, node) }
     else if fid == "null_safety" { return emit_null_safety(cg, node) }
     else if fid == "structs" { return emit_struct_lit(cg, node) }
+    else if fid == "is_keyword" { return emit_is_check(cg, node.node_id) }
     else {
         eprintln("[dispatch_emit_expr] unknown feature: ${fid}")
     }

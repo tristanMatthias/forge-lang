@@ -1,0 +1,48 @@
+use core.ast.{Expr, Span, next_node_id, feature_expr}
+use codegen.{CG_B, CG_CTX, CG_I64, CG_MOD, Codegen, codegen_new, cg_reinit_types, match_enum_tag, CG_LAST_ENUM_TYPE}
+use @std.llvm
+
+// ─── Side-Table Data ──────────────────────────────
+type IsCheckData = {
+    subject: Expr,
+    variant_name: string,
+    negated: bool,
+    span: Span,
+}
+
+mut IS_CHECK_DATA: Map<string, IsCheckData> = {}
+
+// ─── Construction (called from parser) ────────────
+export fn make_is_check(subject: Expr, variant_name: string, negated: bool, span: Span) -> Expr {
+    let id = next_node_id()
+    IS_CHECK_DATA["${id}"] = IsCheckData { subject, variant_name, negated, span }
+    feature_expr("is_keyword", "Is", id, span)
+}
+
+// ─── Codegen (called from dispatch_emit_expr) ─────
+export fn emit_is_check(cg: Codegen, node_id: int) -> ptr {
+    let key = "${node_id}"
+    if !IS_CHECK_DATA.has(key) { return llvm.const_int(CG_I64, 0, 0) }
+    let data = IS_CHECK_DATA[key]
+
+    // Emit subject expression
+    let obj_val = cg.emit_expr(data.subject)
+
+    // Get tag value for variant
+    let tag = match_enum_tag(data.variant_name)
+    let tag_val = llvm.const_int(CG_I64, tag, 0)
+
+    // Extract tag byte from enum struct (field 0)
+    mut cmp_lhs = obj_val
+    let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
+    if etag != null {
+        cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
+    }
+
+    // Compare: EQ (32) for `is`, NE (33) for `is not`
+    mut pred = 32
+    if data.negated { pred = 33 }
+    let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
+    let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
+    ext
+}
