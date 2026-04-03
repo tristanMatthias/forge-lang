@@ -92,25 +92,9 @@ export mut CG_STRUCT_VAR_NAMES: List<string> = []   // variable names
 export mut CG_STRUCT_VAR_CSV: string = ""            // ",varname:TypeName," format (immune to corruption)
 export mut CG_STRUCT_VAR_TYPES: List<string> = []   // struct type names
 export mut CG_STRUCT_VAR_FIELDS: List<string> = []  // comma-separated field names
-// Also the last struct type name for propagation through var binding
-export mut CG_LAST_STRUCT_TYPE: string = ""
-
-// Flag: the most recently emitted expression was a string value (int because bool globals unreliable)
-export mut CG_LAST_IS_STR: int = 0
-
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
 export mut CG_LAST_VAL: ptr = null
-export mut CG_LAST_VAR_PTR: ptr = null  // alloca pointer from most recent emit_ident
 export mut CG_HAS_LAST_VAL: int = 0
-export mut CG_LAST_IS_MAP: int = 0
-export mut CG_LAST_IS_LIST: int = 0   // set to 1 when last expr was a list literal
-export mut CG_LAST_LIST_ELEM_IS_STR: int = 0  // set to 1 when list literal first element is string
-export mut CG_LAST_LIST_ELEM_TYPE: string = ""  // element type name for last list expression (e.g., "Statement", "Token")
-export mut CG_LAST_IS_NULLABLE: int = 0  // set to 1 when last expr was nullable
-// Set when the last expression was a map index access (for map[key] = value)
-export mut CG_MAP_INDEX_OBJ: ptr = null   // the map ptr
-export mut CG_MAP_INDEX_KEY: ptr = null   // the key ForgeString value
-export mut CG_IS_MAP_INDEX: int = 0       // 1 if last expr was map[key]
 
 // Match expression globals (PENDING pattern)
 export mut PENDING_MATCH: bool = false
@@ -412,7 +396,6 @@ export fn list_elem_llvm_type(name: string) -> ptr {
 }
 
 // ─── Enum Tagged Union Helpers ───────────────────
-export mut CG_LAST_ENUM_TYPE: string = ""  // set by enum constructor
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
 export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
 export mut CG_UNIVERSAL_ENUM_TY: ptr = null // DEPRECATED — use per-enum types
@@ -755,12 +738,6 @@ export fn codegen_init(name: string) {
     CG_STRUCT_VAR_TYPES = []
     CG_STRUCT_VAR_FIELDS = []
     CG_VAR_SCOPE_START = 0
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
-    CG_LAST_IS_LIST = 0
-    CG_LAST_IS_NULLABLE = 0
-    CG_LAST_ENUM_TYPE = ""
-    CG_LAST_STRUCT_TYPE = ""
     CG_HAS_LAST_VAL = 0
     CG_UNIVERSAL_ENUM_TY = null
     CG_ENUM_TYPE_CACHE_NAMES = []
@@ -911,9 +888,7 @@ impl Codegen {
     fn emit_statement(self, stmt: Statement) {
         match stmt {
             .Expr(expr) -> {
-                let val = self.emit_expr(expr)
-                CG_LAST_VAL = val
-                CG_HAS_LAST_VAL = 1
+                self.emit_expr(expr)
             }
             .Assign(target, value, span) -> { self.emit_assign(target, value) }
             .Return(value, span) -> { self.emit_return(value) }
@@ -933,16 +908,15 @@ impl Codegen {
     }
 
     fn emit_let(self, name: string, value: Expr) {
+        let val_type = self.expr_type_name(value)
         let val = self.emit_expr(value)
-        let is_str = CG_LAST_IS_STR == 1
-        let is_map = CG_LAST_IS_MAP == 1
+        let is_str = val_type == "string"
+        let is_map = val_type == "map"
         mut var_type = Type.Int
         if is_str { var_type = Type.String }
         if is_map { var_type = Type.MapType(Type.String, Type.Int) }
         self.define_var(name, var_type, val)
         if is_map { CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name) }
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
         CG_HAS_LAST_VAL = 0
     }
 
@@ -1090,8 +1064,10 @@ impl Codegen {
     }
 
     fn emit_ret_value(self, value: Expr) {
+        let ret_type = self.expr_type_name(value)
         let val = self.emit_expr(value)
-        if CG_FN_RETURNS_NULLABLE == 1 && CG_LAST_IS_NULLABLE != 1 {
+        let is_nullable = ret_type == "nullable" || ret_type == "null"
+        if CG_FN_RETURNS_NULLABLE == 1 && !is_nullable {
             llvm.build_ret(CG_B, wrap_nullable(CG_FN_NULLABLE_INNER_TY, val))
         } else {
             llvm.build_ret(CG_B, val)
@@ -1262,7 +1238,6 @@ impl Codegen {
             }
             .NullLit(span) -> {
                 if CG_FN_RETURNS_NULLABLE == 1 {
-                    CG_LAST_IS_NULLABLE = 1
                     return make_null_value(CG_FN_NULLABLE_INNER_TY)
                 }
                 return llvm.const_null(CG_PTR)
@@ -1283,10 +1258,7 @@ impl Codegen {
             .Call(callee, args, span) -> { return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> {
-                // Reset stale list flags before checking
-                CG_LAST_LIST_ELEM_TYPE = ""
-                CG_LAST_IS_LIST = 0
-                // Check if object is a known list variable BEFORE emitting (flags get corrupted)
+                // Check if object is a known list variable BEFORE emitting
                 mut obj_var_name = ""
                 match obj {
                     .Ident(n, s) -> { obj_var_name = n }
@@ -1297,14 +1269,13 @@ impl Codegen {
                 let obj_type = self.expr_type_name(obj)
                 let obj_val = self.emit_expr(obj)
                 mut obj_is_str = 0
-                mut obj_is_list = 0
                 mut obj_is_map = 0
                 if obj_type == "string" { obj_is_str = 1 }
                 if obj_type == "map" { obj_is_map = 1 }
+                mut obj_is_list = 0
                 if obj_type.length > 5 {
                     if obj_type.substring(0, 5) == "list:" { obj_is_list = 1 }
                 }
-                let obj_list_elem = CG_LAST_LIST_ELEM_TYPE
                 let idx_val = self.emit_expr(idx)
                 cg_reinit_types()
                 if obj_is_map == 1 {
@@ -1319,15 +1290,11 @@ impl Codegen {
                     llvm.type_array_free(gt)
                     let result = llvm.build_call(CG_B, gf, CG_RT_MAP_GET, ga, 2, "mg")
                     llvm.value_array_free(ga)
-                    CG_IS_MAP_INDEX = 1
-                    CG_MAP_INDEX_OBJ = obj_val
-                    CG_MAP_INDEX_KEY = idx_val
                     return result
                 }
                 // Default: use charAt for string indexing
                 // Use GEP only for explicitly known list variables
-                mut use_gep = is_known_list || is_str_list
-                if obj_list_elem != "" { use_gep = true }
+                mut use_gep = is_known_list || is_str_list || obj_is_list == 1
                 if !use_gep {
                     let ca = llvm.value_array_new(2)
                     llvm.value_array_set(ca, 0, obj_val)
@@ -1339,7 +1306,6 @@ impl Codegen {
                     llvm.type_array_free(ct)
                     let result = llvm.build_call(CG_B, cf, CG_RT_SCHARAT, ca, 2, "ch")
                     llvm.value_array_free(ca)
-                    CG_LAST_IS_STR = 1
                     return result
                 }
                 // List: extract data pointer, GEP to element, load
@@ -1347,13 +1313,11 @@ impl Codegen {
                 mut elem_ty = CG_I64
                 // Use CG_STR for string list elements
                 if is_str_list { elem_ty = CG_STR }
-                // Also check CG_STR_VAR_NAMES (more reliable than CSV — handles process.args)
+                // Also check if obj is string type
                 if obj_var_name != "" && obj_is_str == 1 { elem_ty = CG_STR }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Ensure index is integer (might be ForgeString if CG_LAST_IS_STR leaked)
-                // Try extractvalue — if idx is a struct, extract field 0 (i64 part)
-                // If it's already i64, extractvalue returns null (not aggregate) and we keep idx_val
+                // Ensure index is integer (might be ForgeString)
                 mut safe_idx = idx_val
                 let maybe_int = llvm.build_extract_value(CG_B, idx_val, 0, "ix")
                 if maybe_int != null { safe_idx = maybe_int }
@@ -1363,7 +1327,6 @@ impl Codegen {
                 llvm.value_array_free(gi)
                 if gp == null { return llvm.const_int(CG_I64, 0, 0) }
                 let ev = llvm.build_load(CG_B, elem_ty, gp, "ev")
-                if elem_ty == CG_STR { CG_LAST_IS_STR = 1 }
                 return ev
             }
             .Block(block) -> { return self.emit_block(block) }
@@ -1441,7 +1404,9 @@ impl Codegen {
                 let tag_val = llvm.const_int(CG_I64, match_enum_tag(pat), 0)
                 // For struct-typed enums, extract tag first
                 mut cmp_lhs = subj
-                if CG_LAST_ENUM_TYPE != "" {
+                let scrut_type = self.expr_type_name(args[0])
+                let scrut_is_enum = scrut_type.length > 5 && scrut_type.substring(0, 5) == "enum:"
+                if scrut_is_enum {
                     let etag = llvm.build_extract_value(CG_B, subj, 0, "tg")
                     cmp_lhs = llvm.build_zext(CG_B, etag, CG_I64, "te")
                 }
@@ -1534,17 +1499,14 @@ impl Codegen {
             phi_bbs = phi_bbs.push(de)
         } else {
             // No default — add empty fallthrough for PHI completeness
-            mut def_val = llvm.const_int(CG_I64, 0, 0)
-            if CG_LAST_IS_STR == 1 { def_val = self.emit_string("") }
+            let def_val = llvm.const_int(CG_I64, 0, 0)
             phi_vals = phi_vals.push(def_val)
             phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
             llvm.build_br(CG_B, merge_bb)
         }
         llvm.position_at_end(CG_B, merge_bb)
         if phi_vals.length > 0 {
-            mut phi_ty = CG_I64
-            if CG_LAST_IS_STR == 1 { phi_ty = CG_STR }
-            let phi = llvm.build_phi(CG_B, phi_ty, "mv")
+            let phi = llvm.build_phi(CG_B, CG_I64, "mv")
             mut pi = 0
             while pi < phi_vals.length {
                 llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
@@ -1585,7 +1547,6 @@ impl Codegen {
         }
         // Load completed struct
         let sv = llvm.build_load(CG_B, struct_ty, alloca, "sv")
-        CG_LAST_STRUCT_TYPE = struct_name
         // Register as struct var
         let tmp = "_s" + string(fi)
         CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
@@ -1601,20 +1562,11 @@ impl Codegen {
     }
 
     fn emit_assign(self, target: Expr, value: Expr) {
-        // target should be an Ident — use emit_ident to find alloca, then store
+        // target should be an Ident — find alloca directly from CG_VAR_NAMES/PTRS
         match target {
             .Ident(name, span) -> {
-                // First: emit_ident to find the alloca (sets CG_LAST_VAR_PTR)
-                CG_LAST_VAR_PTR = null
-                self.emit_ident(name)
-                // Save target ptr BEFORE emit_expr (RHS may overwrite CG_LAST_VAR_PTR)
-                let target_ptr = CG_LAST_VAR_PTR
                 let val = self.emit_expr(value)
-                if target_ptr != null {
-                    llvm.build_store(CG_B, val, target_ptr)
-                    return
-                }
-                // Fallback: search CG_VAR_NAMES
+                // Search CG_VAR_NAMES for the alloca pointer
                 mut vi = CG_VAR_NAMES.length - 1
                 while vi >= 0 {
                     if CG_VAR_NAMES[vi] == name {
@@ -1771,14 +1723,12 @@ impl Codegen {
         let ft = mft2(CG_STR, CG_STR, CG_STR)
         let result = llvm.build_call(CG_B, ft, CG_RT_SCONCAT, ca, 2, "cc")
         llvm.value_array_free(ca)
-        CG_LAST_IS_STR = 1
         result
     }
 
     fn emit_string(self, value: string) -> ptr {
         // Create string as a constant struct (position-independent, no builder call needed)
         // This prevents forward SSA references when strings are used in loop bodies
-        CG_LAST_IS_STR = 1
         llvm.const_string(CG_MOD, value, value.length)
     }
 
@@ -1792,29 +1742,21 @@ impl Codegen {
                 let alloca_ptr = CG_VAR_PTRS[vi]
                 // Determine load type from CG_VAR_TYPES (primary source)
                 mut load_ty = CG_I64
-                CG_LAST_IS_STR = 0
-                CG_LAST_IS_NULLABLE = 0
-                CG_LAST_ENUM_TYPE = ""
-                CG_LAST_STRUCT_TYPE = ""
                 if vi < CG_VAR_TYPES.length {
                     let vtype = CG_VAR_TYPES[vi]
                     if vtype == "string" {
                         load_ty = CG_STR
-                        CG_LAST_IS_STR = 1
                     } else if vtype == "float" {
                         load_ty = CG_I64
                     } else if vtype == "map" {
-                        CG_LAST_IS_MAP = 1
                         load_ty = CG_PTR
                     } else if vtype.length > 5 {
                         if vtype.substring(0, 5) == "enum:" {
                             let ename = vtype.substring(5, vtype.length)
-                            CG_LAST_ENUM_TYPE = ename
                             let ety = cg_get_enum_ty_for(ename)
                             if ety != null { load_ty = ety }
                         } else if vtype.substring(0, 7) == "struct:" {
                             let sname = vtype.substring(7, vtype.length)
-                            CG_LAST_STRUCT_TYPE = sname
                             mut sti = CG_STRUCT_NAMES.length - 1
                             while sti >= 0 {
                                 if CG_STRUCT_NAMES[sti] == sname {
@@ -1826,24 +1768,19 @@ impl Codegen {
                             }
                         } else if vtype.substring(0, 5) == "list:" {
                             load_ty = CG_STR
-                            CG_LAST_IS_STR = 1
                         }
-                    } else if vtype == "nullable" {
-                        CG_LAST_IS_NULLABLE = 1
                     }
                 } else {
                     // Fallback: use LLVM's allocated type
                     let alloc_ty = llvm.get_allocated_type(alloca_ptr)
                     if alloc_ty != null { load_ty = alloc_ty }
-                    if load_ty == CG_STR { CG_LAST_IS_STR = 1 }
                 }
-                // Legacy fallbacks (will be removed in later phases)
+                // Legacy fallbacks for string vars
                 mut si = CG_STR_VAR_NAMES.length - 1
                 while si >= 0 {
                     if CG_STR_VAR_NAMES[si] == name {
                         cg_reinit_types()
                         load_ty = CG_STR
-                        CG_LAST_IS_STR = 1
                         break
                     }
                     si = si - 1
@@ -1854,7 +1791,6 @@ impl Codegen {
                     mut inner_ty = CG_I64
                     if inner_name == "string" { inner_ty = CG_STR }
                     load_ty = make_nullable_type(inner_ty)
-                    CG_LAST_IS_NULLABLE = 1
                 }
                 // Check enum type
                 cg_reinit_types()
@@ -1862,12 +1798,10 @@ impl Codegen {
                 if vet != "" {
                     let ety = cg_get_enum_ty_for(vet)
                     if ety != null { load_ty = ety }
-                    CG_LAST_ENUM_TYPE = vet
                 }
                 // Check struct type
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
-                    CG_LAST_STRUCT_TYPE = struct_type_name
                     mut sti = CG_STRUCT_NAMES.length - 1
                     while sti >= 0 {
                         if CG_STRUCT_NAMES[sti] == struct_type_name {
@@ -1878,7 +1812,6 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                CG_LAST_VAR_PTR = alloca_ptr
                 return llvm.build_load(CG_B, load_ty, alloca_ptr, name)
             }
             vi = vi - 1
@@ -1893,30 +1826,16 @@ impl Codegen {
                 let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
                 mut load_ty = CG_I64
                 if is_str_global { load_ty = CG_STR }
-                CG_LAST_IS_STR = 0
-                if is_str_global { CG_LAST_IS_STR = 1 }
-                CG_LAST_IS_NULLABLE = 0
                 if is_nullable_var(name) {
                     let inner_name = nullable_var_inner_type(name)
                     mut inner_ty2 = CG_I64
                     if inner_name == "string" { inner_ty2 = CG_STR }
                     load_ty = make_nullable_type(inner_ty2)
-                    CG_LAST_IS_NULLABLE = 1
-                }
-                // Skip CG_STR_VAR_NAMES search — all globals are ForgeString
-                mut si = -1  // skip
-                while si >= 0 {
-                    if CG_STR_VAR_NAMES[si] == name {
-                        break
-                    }
-                    si = si - 1
                 }
                 // Check enum type
-                CG_LAST_ENUM_TYPE = ""
                 let g_vet = cg_var_enum_type(name)
                 if g_vet != "" {
                     if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
-                    CG_LAST_ENUM_TYPE = g_vet
                 }
                 let struct_type_name = var_struct_type(name)
                 if struct_type_name != "" {
@@ -1930,7 +1849,6 @@ impl Codegen {
                         sti = sti - 1
                     }
                 }
-                CG_LAST_VAR_PTR = CG_VAR_PTRS[vi]
                 return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
             }
             vi = vi - 1
@@ -2062,7 +1980,6 @@ impl Codegen {
                 if name == "string" && args.length > 0 {
                     let val = self.emit_expr(args[0])
                     // Call forge_int_to_string(val) → ForgeString
-                    CG_LAST_IS_STR = 1
                     let ca = llvm.value_array_new(1)
                     llvm.value_array_set(ca, 0, val)
                     let ft = mft1(CG_STR, CG_I64)
@@ -2074,37 +1991,7 @@ impl Codegen {
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
-                    // Reset type flags — the call consumed the enum arg
-                    CG_LAST_IS_NULLABLE = 0
-                    CG_LAST_ENUM_TYPE = ""
                     CG_HAS_LAST_VAL = 0
-                    mut fi = 0
-                    while fi < FN_NAMES.length {
-                        if FN_NAMES[fi] == name {
-                            if fi < FN_RETURN_TYPES.length {
-                                mut rtn = FN_RETURN_TYPES[fi]
-                                // Detect nullable return (ends with ?)
-                                let rtn_len = rtn.length
-                                if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                                    CG_LAST_IS_NULLABLE = 1
-                                    rtn = rtn.substring(0, rtn_len - 1)
-                                } }
-                                if rtn == "string" {
-                                    CG_LAST_IS_STR = 1
-                                } else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                                    // Check if it's an enum return type
-                                    let post_emf = cg_enum_max_fields(rtn)
-                                    if post_emf > 0 {
-                                        CG_LAST_ENUM_TYPE = rtn
-                                    } else {
-                                        CG_LAST_STRUCT_TYPE = rtn
-                                    }
-                                }
-                            }
-                            break
-                        }
-                        fi = fi + 1
-                    }
                     return call_result
                 }
             }
@@ -2176,17 +2063,6 @@ impl Codegen {
                         let fn_ty = llvm.global_get_value_type(fn_ref3)
                         let result = llvm.build_call(CG_B, fn_ty, fn_ref3, arg_arr, total_args, "mc")
                         llvm.value_array_free(arg_arr)
-                        // Set CG_LAST_IS_STR if method return type is string
-                        mut mfi = 0
-                        while mfi < FN_NAMES.length {
-                            if FN_NAMES[mfi] == method_name {
-                                if mfi < FN_RETURN_TYPES.length {
-                                    if FN_RETURN_TYPES[mfi] == "string" { CG_LAST_IS_STR = 1 }
-                                }
-                                break
-                            }
-                            mfi = mfi + 1
-                        }
                         return result
                     }
                 }
@@ -2221,67 +2097,6 @@ impl Codegen {
         let r = llvm.build_call(CG_B, fn_ty, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
 
-        // Track return type for downstream codegen (string detection, etc.)
-        CG_LAST_IS_NULLABLE = 0
-        mut is_extern_str_return = false
-        if fn_name == "forge_selfhost_process_args" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true
-            CG_LAST_IS_LIST = 1 }
-        if fn_name == "forge_selfhost_fs_read" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_selfhost_process_run" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_string_concat" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_string_new" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_string_char_at" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_string_substring" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_int_to_string" { CG_LAST_IS_STR = 1
-            is_extern_str_return = true }
-        if fn_name == "forge_string_index_of" { CG_LAST_IS_STR = 0 }
-        // Look up user-defined return type
-        if !is_extern_str_return {
-            mut fi = 0
-            while fi < FN_NAMES.length {
-                if FN_NAMES[fi] == fn_name {
-                    if fi < FN_RETURN_TYPES.length {
-                        mut rtn = FN_RETURN_TYPES[fi]
-                        let rtn_len = rtn.length
-                        if rtn_len > 1 { if rtn[rtn_len - 1] == "?" {
-                            CG_LAST_IS_NULLABLE = 1
-                            rtn = rtn.substring(0, rtn_len - 1)
-                        } }
-                        if rtn == "string" {
-                            CG_LAST_IS_STR = 1
-                        } else if rtn.length >= 4 {
-                            mut is_list_ret = false
-                            if rtn[0] == "L" {
-                                if rtn[1] == "i" {
-                                    if rtn[2] == "s" {
-                                        if rtn[3] == "t" { is_list_ret = true }
-                                    }
-                                }
-                            }
-                            if is_list_ret {
-                                CG_LAST_IS_STR = 1
-                                CG_LAST_IS_LIST = 1
-                            } else {
-                                let ret_emf = cg_enum_max_fields(rtn)
-                                if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
-                            }
-                        } else if rtn != "" {
-                            let ret_emf = cg_enum_max_fields(rtn)
-                            if ret_emf > 0 { CG_LAST_ENUM_TYPE = rtn }
-                        }
-                    }
-                    break
-                }
-                fi = fi + 1
-            }
-        }
         r
     }
 
@@ -2314,8 +2129,9 @@ impl Codegen {
                     }
                 }
                 _ -> {
+                    let arg_type = self.expr_type_name(arg)
                     let val = self.emit_expr(arg)
-                    if CG_LAST_IS_STR == 1 {
+                    if arg_type == "string" {
                         self.emit_println_str(val)
                     } else {
                         self.emit_println_int(val)
@@ -2346,13 +2162,6 @@ impl Codegen {
     }
 
     fn emit_statement(self, stmt: Statement) -> ptr {
-        // Reset type flags at statement boundary
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
-        CG_LAST_IS_LIST = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_ENUM_TYPE = ""
-        CG_LAST_STRUCT_TYPE = ""
         match stmt {
             .Expr(expr) -> {
                 if PENDING_IF {
@@ -2368,23 +2177,25 @@ impl Codegen {
             .Assign(t, v, s) -> { self.emit_assign(t, v) }
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
-                let ev = self.emit_expr(val)
-                // Determine type from expression (no global flag dependency)
                 let val_type = self.expr_type_name(val)
+                let ev = self.emit_expr(val)
                 mut ty = Type.Int
                 if val_type == "string" { ty = Type.String }
                 self.define_var(name, ty, ev)
                 if val_type == "string" {
                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
                 }
-                if CG_LAST_STRUCT_TYPE != "" {
+                // Check if val_type indicates a struct
+                let is_struct_val = val_type.length > 7 && val_type.substring(0, 7) == "struct:"
+                if is_struct_val {
+                    let stype = val_type.substring(7, val_type.length)
                     CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(CG_LAST_STRUCT_TYPE)
-                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + CG_LAST_STRUCT_TYPE + ","
+                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(stype)
+                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + stype + ","
                     mut fn_str = ""
                     mut fsi = CG_STRUCT_FIELDS.length - 1
                     while fsi >= 0 {
-                        if CG_STRUCT_NAMES[fsi] == CG_LAST_STRUCT_TYPE {
+                        if CG_STRUCT_NAMES[fsi] == stype {
                             fn_str = CG_STRUCT_FIELDS[fsi]
                             break
                         }
@@ -2661,20 +2472,19 @@ impl Codegen {
                         .Ident(n, _) -> { iter_var_name = n }
                         _ -> {}
                     }
+                    // Determine element type BEFORE emitting (no global flag dependency)
+                    let iter_ty2 = self.expr_type_name(iter)
+                    // Determine element type from list_elem_type lookup
+                    mut for_elem_type = ""
+                    if iter_var_name != "" { for_elem_type = list_elem_type(iter_var_name) }
                     let fl = self.emit_expr(iter)
-                    // Determine element type for proper GEP/load sizing
-                    let for_elem_type = CG_LAST_LIST_ELEM_TYPE
                     mut elem_llvm_ty = CG_I64
                     if for_elem_type != "" {
                         cg_reinit_types()
                         let resolved = resolve_type_to_llvm(for_elem_type)
                         if resolved != null { elem_llvm_ty = resolved }
                     }
-                    if CG_LAST_LIST_ELEM_IS_STR == 1 {
-                        elem_llvm_ty = CG_STR
-                    }
                     // Use ForgeString elements when iterable type is string/list
-                    let iter_ty2 = self.expr_type_name(iter)
                     if (iter_ty2 == "string" || iter_ty2.length > 5) && for_elem_type == "" {
                         if iter_ty2 == "string" {
                             cg_reinit_types()
@@ -2774,38 +2584,19 @@ impl Codegen {
 
     fn define_var(self, name: string, ty: Type, value: ptr) {
         let is_str = ty is .String
-        let is_map = CG_LAST_IS_MAP == 1
+        let is_map = ty is .MapType
         cg_reinit_types()
+        // Determine alloca type from the LLVM value's type (most reliable source)
         mut alloca_ty = CG_I64
         if is_str {
             alloca_ty = CG_STR
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
         }
-        // For nullable types, use the {i8, T} struct type
-        if CG_LAST_IS_NULLABLE == 1 {
-            mut inner_ty3 = CG_I64
-            if is_str { inner_ty3 = CG_STR }
-            alloca_ty = make_nullable_type(inner_ty3)
-        }
-        // For enum tagged union types — per-enum sizing
-        if CG_LAST_ENUM_TYPE != "" {
-            let ety = cg_get_enum_ty_for(CG_LAST_ENUM_TYPE)
-            if ety != null { alloca_ty = ety }
-        }
-        // For struct types, use the registered struct LLVM type
-        if CG_LAST_STRUCT_TYPE != "" {
-            // Search from END to find the most recent entry (with LLVM type)
-            mut si = CG_STRUCT_NAMES.length - 1
-            while si >= 0 {
-                if CG_STRUCT_NAMES[si] == CG_LAST_STRUCT_TYPE {
-                    let found_ty = CG_STRUCT_TYPES[si]
-                    if found_ty != null {
-                        alloca_ty = found_ty
-                    }
-                    break
-                }
-                si = si - 1
-            }
+        if is_map { alloca_ty = CG_PTR }
+        // Use LLVM type-of to detect non-i64 types (enum, struct, nullable)
+        let val_llvm_ty = llvm.type_of(value)
+        if val_llvm_ty != null && val_llvm_ty != CG_I64 && !is_str && !is_map {
+            alloca_ty = val_llvm_ty
         }
         if CG_B == null { return }
         if alloca_ty == 0 { return }
@@ -2824,13 +2615,36 @@ impl Codegen {
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
         CG_VAR_NAMES = CG_VAR_NAMES.push(name)
-        // Determine canonical type name
+        // Determine canonical type name from alloca type
         mut var_type_name = "int"
         if is_str { var_type_name = "string" }
         if is_map { var_type_name = "map" }
-        if CG_LAST_IS_NULLABLE == 1 { var_type_name = "nullable" }
-        if CG_LAST_ENUM_TYPE != "" { var_type_name = "enum:" + CG_LAST_ENUM_TYPE }
-        if CG_LAST_STRUCT_TYPE != "" { var_type_name = "struct:" + CG_LAST_STRUCT_TYPE }
+        // Detect type from alloca type when expr_type_name couldn't determine it
+        if var_type_name == "int" && alloca_ty == CG_STR {
+            var_type_name = "string"
+        }
+        if var_type_name == "int" && alloca_ty != CG_I64 {
+            // Check enum cache
+            mut ei = CG_ENUM_TYPE_CACHE_PTRS.length - 1
+            while ei >= 0 {
+                if CG_ENUM_TYPE_CACHE_PTRS[ei] == alloca_ty {
+                    var_type_name = "enum:" + CG_ENUM_TYPE_CACHE_NAMES[ei]
+                    break
+                }
+                ei = ei - 1
+            }
+            // Check struct types
+            if var_type_name == "int" {
+                mut si = CG_STRUCT_TYPES.length - 1
+                while si >= 0 {
+                    if CG_STRUCT_TYPES[si] == alloca_ty {
+                        var_type_name = "struct:" + CG_STRUCT_NAMES[si]
+                        break
+                    }
+                    si = si - 1
+                }
+            }
+        }
         CG_VAR_TYPES = CG_VAR_TYPES.push(var_type_name)
         mut is_str_flag3 = 0
         if is_str { is_str_flag3 = 1 }
@@ -2868,7 +2682,6 @@ impl Codegen {
         // Enum constructor: Color.Green → tag value
         let tag = match_enum_tag(var_name + "." + field)
         if tag >= 0 {
-            CG_LAST_ENUM_TYPE = var_name
             return llvm.const_int(CG_I64, tag, 0)
         }
 
@@ -2895,84 +2708,6 @@ impl Codegen {
         let obj_val = self.emit_ident(var_name)
         let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
 
-        // Set string flag and list element type for this field
-        CG_LAST_LIST_ELEM_TYPE = ""
-        mut si = 0
-        while si < CG_STRUCT_NAMES.length {
-            if CG_STRUCT_NAMES[si] == struct_type_name {
-                // Check field_is_str
-                let field_strs = CG_STRUCT_FIELD_IS_STR[si]
-                mut idx = 0
-                mut current = ""
-                mut fi = 0
-                while fi < field_strs.length {
-                    let ch = field_strs[fi]
-                    if ch == "," {
-                        if idx == fidx {
-                            if current == "1" { CG_LAST_IS_STR = 1 }
-                        }
-                        idx = idx + 1
-                        current = ""
-                    } else {
-                        current = current + ch
-                    }
-                    fi = fi + 1
-                }
-                if idx == fidx {
-                    if current == "1" { CG_LAST_IS_STR = 1 }
-                }
-                // Check field type name for List element type
-                if si < CG_STRUCT_FIELD_TYPE_NAMES.length {
-                    let ftns = CG_STRUCT_FIELD_TYPE_NAMES[si]
-                    mut tidx = 0
-                    mut tcur = ""
-                    mut tfi = 0
-                    while tfi < ftns.length {
-                        let tch = ftns[tfi]
-                        if tch == "," {
-                            if tidx == fidx {
-                                // Check if type starts with "List:"
-                                if tcur.length > 5 {
-                                    if tcur[0] == "L" {
-                                        if tcur[1] == "i" {
-                                            if tcur[2] == "s" {
-                                                if tcur[3] == "t" {
-                                                    if tcur[4] == ":" {
-                                                        CG_LAST_LIST_ELEM_TYPE = tcur.substring(5, tcur.length)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            tidx = tidx + 1
-                            tcur = ""
-                        } else {
-                            tcur = tcur + tch
-                        }
-                        tfi = tfi + 1
-                    }
-                    if tidx == fidx {
-                        if tcur.length > 5 {
-                            if tcur[0] == "L" {
-                                if tcur[1] == "i" {
-                                    if tcur[2] == "s" {
-                                        if tcur[3] == "t" {
-                                            if tcur[4] == ":" {
-                                                CG_LAST_LIST_ELEM_TYPE = tcur.substring(5, tcur.length)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                break
-            }
-            si = si + 1
-        }
         field_val
     }
 }

@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_IS_MAP_INDEX, CG_LAST_STRUCT_TYPE, CG_LAST_IS_NULLABLE, CG_LAST_ENUM_TYPE, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_VAR_TYPES, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_HAS_LAST_VAL, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_VAR_TYPES, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -466,11 +466,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_STRUCT_VAR_NAMES = []
     CG_STRUCT_VAR_TYPES = []
     CG_STRUCT_VAR_FIELDS = []
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
     CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
 
     // Define params
     mut pi = 0
@@ -534,12 +530,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         pi = pi + 1
     }
 
-    CG_LAST_IS_STR = 0
-    CG_LAST_IS_MAP = 0
     CG_HAS_LAST_VAL = 0
-    CG_IS_MAP_INDEX = 0
-    CG_LAST_STRUCT_TYPE = ""
-    CG_LAST_IS_NULLABLE = 0
     PENDING_IF = false
     PENDING_MATCH = false
     cg_reinit_types()
@@ -762,12 +753,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         CG_STRUCT_VAR_TYPES = []
         CG_STRUCT_VAR_FIELDS = []
 
-        // Reset type tracking flags BEFORE param definition
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
+        // Reset tracking BEFORE param definition
         CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
 
         // Define params with correct types
         pi = 0
@@ -832,12 +819,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         param_offset = param_offset + pc
 
         // Reset type tracking flags before each function body
-        CG_LAST_IS_STR = 0
-        CG_LAST_IS_MAP = 0
         CG_HAS_LAST_VAL = 0
-        CG_IS_MAP_INDEX = 0
-        CG_LAST_STRUCT_TYPE = ""
-        CG_LAST_IS_NULLABLE = 0
 
         // Set nullable return tracking for this function
         CG_FN_RETURNS_NULLABLE = 0
@@ -869,15 +851,10 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
             } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
-                // Nullable function with a last value
+                // Nullable function with a last value — always wrap
                 CG_HAS_LAST_VAL = 0
-                // If the last value is already nullable (e.g., null literal), use directly
-                if CG_LAST_IS_NULLABLE == 1 {
-                    llvm.build_ret(CG_B, CG_LAST_VAL)
-                } else {
-                    let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
-                    llvm.build_ret(CG_B, wrapped_ret)
-                }
+                let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
+                llvm.build_ret(CG_B, wrapped_ret)
             } else if fn_is_nullable {
                 // Nullable function with no last value — return null
                 let null_ret = make_null_value(fn_nullable_inner)
