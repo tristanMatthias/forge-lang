@@ -726,6 +726,36 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
     return -1
 }
 
+// Check if a struct field at given index is a string type
+export fn struct_field_is_str(struct_name: string, field_idx: int) -> bool {
+    mut si = 0
+    while si < CG_STRUCT_NAMES.length {
+        if CG_STRUCT_NAMES[si] == struct_name {
+            if si < CG_STRUCT_FIELD_IS_STR.length {
+                let field_strs = CG_STRUCT_FIELD_IS_STR[si]
+                mut idx = 0
+                mut current = ""
+                mut fi = 0
+                while fi < field_strs.length {
+                    let ch = field_strs[fi]
+                    if ch == "," {
+                        if idx == field_idx { return current == "1" }
+                        idx = idx + 1
+                        current = ""
+                    } else {
+                        current = current + ch
+                    }
+                    fi = fi + 1
+                }
+                if idx == field_idx { return current == "1" }
+            }
+            return false
+        }
+        si = si + 1
+    }
+    false
+}
+
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
     // Try CSV first (immune to list corruption)
@@ -1467,7 +1497,13 @@ impl Codegen {
                                     cg_reinit_types()
                                     let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
                                     if struct_ty != null {
-                                        let fp = llvm.build_struct_gep2(CG_B, struct_ty, CG_VAR_PTRS[vi], fidx, "sf")
+                                        // For self (ptr param): load ptr first, then GEP
+                                        mut base = CG_VAR_PTRS[vi]
+                                        if obj_name == "self" {
+                                            cg_reinit_types()
+                                            base = llvm.build_load(CG_B, CG_PTR, base, "selfp")
+                                        }
+                                        let fp = llvm.build_struct_gep2(CG_B, struct_ty, base, fidx, "sf")
                                         if fp != null {
                                             llvm.build_store(CG_B, val, fp)
                                         }
@@ -1948,13 +1984,13 @@ impl Codegen {
                     let method_name = ns + "__" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self (the object) as first arg
+                        // Prepend self as pointer (not value) so field mutations propagate
                         let obj_val = self.emit_ident(ns)
-                        // Emit all args + obj_val as first param
+                        let self_ptr = CG_LAST_VAR_PTR
                         cg_reinit_types()
                         let total_args = args.length + 1
                         let arg_arr = llvm.value_array_new(total_args)
-                        llvm.value_array_set(arg_arr, 0, obj_val)
+                        llvm.value_array_set(arg_arr, 0, self_ptr)
                         mut argi = 0
                         for arg in args {
                             llvm.value_array_set(arg_arr, argi + 1, self.emit_expr(arg))
@@ -2718,9 +2754,28 @@ impl Codegen {
         let fidx = struct_field_index(struct_type_name, field)
         if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
 
-        // Load the struct value and extract the field
+        // Load the struct value/ptr and access field
         let obj_val = self.emit_ident(var_name)
-        let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
+        let obj_ptr = CG_LAST_VAR_PTR
+        // For self (ptr param): use GEP+load. For struct values: use extract_value.
+        cg_reinit_types()
+        let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
+        mut field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
+        if var_name == "self" && obj_ptr != null && struct_ty != null {
+            // self is a pointer — load ptr from alloca, then GEP field
+            cg_reinit_types()
+            let self_ptr_val = llvm.build_load(CG_B, CG_PTR, obj_ptr, "selfp")
+            let field_ptr = llvm.build_struct_gep2(CG_B, struct_ty, self_ptr_val, fidx, field)
+            if field_ptr != null {
+                // Determine field type from struct field info
+                cg_reinit_types()
+                mut field_load_ty = CG_I64
+                let field_is_str = struct_field_is_str(struct_type_name, fidx)
+                if field_is_str { field_load_ty = CG_STR }
+                field_val = llvm.build_load(CG_B, field_load_ty, field_ptr, field)
+                if field_is_str { CG_LAST_IS_STR = 1 }
+            }
+        }
 
         // Set string flag and list element type for this field
         CG_LAST_LIST_ELEM_TYPE = ""

@@ -145,7 +145,8 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     mut pi = 0
     for param in params {
         if param.name == "self" {
-            // self param is the type being impl'd — treated as struct type
+            // self param — store actual type name (for struct field resolution)
+            // but pass as ptr at LLVM level (for field mutation to propagate)
             store_fn_param_name("self")
             store_fn_param_type(type_name)
             param_count = param_count + 1
