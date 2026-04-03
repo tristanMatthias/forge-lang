@@ -93,7 +93,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         pi = pi + 1
     }
 
-    PARSE_END_POS = p.pos
+    PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()
     feature_stmt("functions", "fn_decl", id, start)
 }
