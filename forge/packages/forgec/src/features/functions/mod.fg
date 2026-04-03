@@ -308,8 +308,9 @@ export fn declare_all_functions(cg: Codegen) {
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
     cg_reinit_types()
-    // Create struct LLVM types
-    let struct_count = CG_STRUCT_NAMES.length
+    // Skip struct LLVM type creation (bootstrap: CG_STRUCT_NAMES.length unreliable)
+    // Structs are created on-demand during codegen via resolve_type_to_llvm
+    let struct_count = 0
     mut si = 0
     while si < struct_count {
         cg_reinit_types()

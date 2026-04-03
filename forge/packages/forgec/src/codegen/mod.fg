@@ -138,6 +138,69 @@ fn make_fn_type(ret: ptr, params: List<ptr>) -> ptr {
     llvm.type_array_free(arr)
     ft
 }
+fn mft0(ret: ptr) -> ptr {
+    let a = llvm.type_array_new(0)
+    let f = llvm.function_type(ret, a, 0, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft1(ret: ptr, p0: ptr) -> ptr {
+    let a = llvm.type_array_new(1)
+    llvm.type_array_set(a, 0, p0)
+    let f = llvm.function_type(ret, a, 1, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft2(ret: ptr, p0: ptr, p1: ptr) -> ptr {
+    let a = llvm.type_array_new(2)
+    llvm.type_array_set(a, 0, p0)
+    llvm.type_array_set(a, 1, p1)
+    let f = llvm.function_type(ret, a, 2, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft3(ret: ptr, p0: ptr, p1: ptr, p2: ptr) -> ptr {
+    let a = llvm.type_array_new(3)
+    llvm.type_array_set(a, 0, p0)
+    llvm.type_array_set(a, 1, p1)
+    llvm.type_array_set(a, 2, p2)
+    let f = llvm.function_type(ret, a, 3, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft4(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr) -> ptr {
+    let a = llvm.type_array_new(4)
+    llvm.type_array_set(a, 0, p0)
+    llvm.type_array_set(a, 1, p1)
+    llvm.type_array_set(a, 2, p2)
+    llvm.type_array_set(a, 3, p3)
+    let f = llvm.function_type(ret, a, 4, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft5(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr, p4: ptr) -> ptr {
+    let a = llvm.type_array_new(5)
+    llvm.type_array_set(a, 0, p0)
+    llvm.type_array_set(a, 1, p1)
+    llvm.type_array_set(a, 2, p2)
+    llvm.type_array_set(a, 3, p3)
+    llvm.type_array_set(a, 4, p4)
+    let f = llvm.function_type(ret, a, 5, 0)
+    llvm.type_array_free(a)
+    f
+}
+fn mft6(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr, p4: ptr, p5: ptr) -> ptr {
+    let a = llvm.type_array_new(6)
+    llvm.type_array_set(a, 0, p0)
+    llvm.type_array_set(a, 1, p1)
+    llvm.type_array_set(a, 2, p2)
+    llvm.type_array_set(a, 3, p3)
+    llvm.type_array_set(a, 4, p4)
+    llvm.type_array_set(a, 5, p5)
+    let f = llvm.function_type(ret, a, 6, 0)
+    llvm.type_array_free(a)
+    f
+}
 
 // Store a top-level statement's source text for injection into main
 export fn store_toplevel_source(src: string) {
@@ -767,21 +830,21 @@ fn cg_init_str() {
 
 fn cg_init_runtime() {
     // Core
-    CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println_string", make_fn_type(CG_VOID, [CG_STR]))
-    CG_RT_I2S = llvm.add_function(CG_MOD, "forge_int_to_string", make_fn_type(CG_STR, [CG_I64]))
-    CG_RT_SNEW = llvm.add_function(CG_MOD, "forge_string_new", make_fn_type(CG_STR, [CG_PTR, CG_I64]))
+    CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println_string", mft1(CG_VOID, CG_STR))
+    CG_RT_I2S = llvm.add_function(CG_MOD, "forge_int_to_string", mft1(CG_STR, CG_I64))
+    CG_RT_SNEW = llvm.add_function(CG_MOD, "forge_string_new", mft2(CG_STR, CG_PTR, CG_I64))
     // String operations
-    CG_RT_SCONCAT = llvm.add_function(CG_MOD, "forge_string_concat", make_fn_type(CG_STR, [CG_STR, CG_STR]))
-    CG_RT_SCHARAT = llvm.add_function(CG_MOD, "forge_string_char_at", make_fn_type(CG_STR, [CG_STR, CG_I64]))
-    CG_RT_SLEN = llvm.add_function(CG_MOD, "forge_string_length", make_fn_type(CG_I64, [CG_STR]))
-    CG_RT_SEQ = llvm.add_function(CG_MOD, "forge_string_eq", make_fn_type(CG_I8, [CG_STR, CG_STR]))
-    CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", make_fn_type(CG_I64, [CG_STR, CG_STR]))
-    CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", make_fn_type(CG_STR, [CG_STR, CG_I64, CG_I64]))
-    CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
-    llvm.add_function(CG_MOD, "forge_c_index_of", make_fn_type(CG_I64, [CG_STR, CG_STR]))
+    CG_RT_SCONCAT = llvm.add_function(CG_MOD, "forge_string_concat", mft2(CG_STR, CG_STR, CG_STR))
+    CG_RT_SCHARAT = llvm.add_function(CG_MOD, "forge_string_char_at", mft2(CG_STR, CG_STR, CG_I64))
+    CG_RT_SLEN = llvm.add_function(CG_MOD, "forge_string_length", mft1(CG_I64, CG_STR))
+    CG_RT_SEQ = llvm.add_function(CG_MOD, "forge_string_eq", mft2(CG_I8, CG_STR, CG_STR))
+    CG_RT_SCMP = llvm.add_function(CG_MOD, "forge_string_compare", mft2(CG_I64, CG_STR, CG_STR))
+    CG_RT_SSUBSTR = llvm.add_function(CG_MOD, "forge_string_substring", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
+    CG_RT_SINDEXOF = llvm.add_function(CG_MOD, "forge_string_index_of", mft2(CG_I64, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_c_index_of", mft2(CG_I64, CG_STR, CG_STR))
     // Memory
-    CG_RT_ALLOC = llvm.add_function(CG_MOD, "forge_alloc", make_fn_type(CG_PTR, [CG_I64]))
-    CG_RT_MEMCPY = llvm.add_function(CG_MOD, "forge_memcpy", make_fn_type(CG_VOID, [CG_PTR, CG_PTR, CG_I64]))
+    CG_RT_ALLOC = llvm.add_function(CG_MOD, "forge_alloc", mft1(CG_PTR, CG_I64))
+    CG_RT_MEMCPY = llvm.add_function(CG_MOD, "forge_memcpy", mft3(CG_VOID, CG_PTR, CG_PTR, CG_I64))
     // List type: {ptr, i64}
     let lf = llvm.type_array_new(2)
     llvm.type_array_set(lf, 0, CG_PTR)
@@ -789,18 +852,19 @@ fn cg_init_runtime() {
     CG_LIST = llvm.struct_type(CG_CTX, lf, 2, 0)
     llvm.type_array_free(lf)
     // Map runtime functions (pointer-based: map is heap-allocated ptr)
-    CG_RT_MAP_NEW = llvm.add_function(CG_MOD, "forge_map_new", make_fn_type(CG_PTR, []))
-    CG_RT_MAP_HAS = llvm.add_function(CG_MOD, "forge_map_has", make_fn_type(CG_I8, [CG_PTR, CG_STR]))
-    CG_RT_MAP_GET = llvm.add_function(CG_MOD, "forge_map_get", make_fn_type(CG_I64, [CG_PTR, CG_STR]))
-    CG_RT_MAP_SET = llvm.add_function(CG_MOD, "forge_map_set", make_fn_type(CG_VOID, [CG_PTR, CG_STR, CG_I64]))
+    cg_reinit_types()
+    CG_RT_MAP_NEW = llvm.add_function(CG_MOD, "forge_map_new", mft0(CG_PTR))
+    CG_RT_MAP_HAS = llvm.add_function(CG_MOD, "forge_map_has", mft2(CG_I8, CG_PTR, CG_STR))
+    CG_RT_MAP_GET = llvm.add_function(CG_MOD, "forge_map_get", mft2(CG_I64, CG_PTR, CG_STR))
+    CG_RT_MAP_SET = llvm.add_function(CG_MOD, "forge_map_set", mft3(CG_VOID, CG_PTR, CG_STR, CG_I64))
     // Process/FS functions (self-hosted compiler support — selfhost_ prefix avoids package conflicts)
     cg_reinit_types()
-    llvm.add_function(CG_MOD, "forge_set_args", make_fn_type(CG_VOID, [CG_I32, CG_PTR]))
-    llvm.add_function(CG_MOD, "forge_selfhost_process_args", make_fn_type(CG_STR, []))
-    llvm.add_function(CG_MOD, "forge_selfhost_fs_read", make_fn_type(CG_STR, [CG_STR]))
-    llvm.add_function(CG_MOD, "forge_selfhost_process_exit", make_fn_type(CG_VOID, [CG_I64]))
-    llvm.add_function(CG_MOD, "forge_selfhost_process_run", make_fn_type(CG_STR, [CG_STR, CG_STR]))
-    llvm.add_function(CG_MOD, "forge_eprintln_string", make_fn_type(CG_VOID, [CG_STR]))
+    llvm.add_function(CG_MOD, "forge_set_args", mft2(CG_VOID, CG_I32, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_args", mft0(CG_STR))
+    llvm.add_function(CG_MOD, "forge_selfhost_fs_read", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_exit", mft1(CG_VOID, CG_I64))
+    llvm.add_function(CG_MOD, "forge_selfhost_process_run", mft2(CG_STR, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_eprintln_string", mft1(CG_VOID, CG_STR))
 }
 
 fn cg_cleanup() {
@@ -1379,21 +1443,21 @@ impl Codegen {
         if lhs_is_str != 1 {
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, lhs)
-            let ft = make_fn_type(CG_STR, [CG_I64])
+            let ft = mft1(CG_STR, CG_I64)
             l = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "l2s")
             llvm.value_array_free(ca)
         }
         if rhs_is_str != 1 {
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, rhs)
-            let ft = make_fn_type(CG_STR, [CG_I64])
+            let ft = mft1(CG_STR, CG_I64)
             r = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "r2s")
             llvm.value_array_free(ca)
         }
         let ca = llvm.value_array_new(2)
         llvm.value_array_set(ca, 0, l)
         llvm.value_array_set(ca, 1, r)
-        let ft = make_fn_type(CG_STR, [CG_STR, CG_STR])
+        let ft = mft2(CG_STR, CG_STR, CG_STR)
         let result = llvm.build_call(CG_B, ft, CG_RT_SCONCAT, ca, 2, "cc")
         llvm.value_array_free(ca)
         CG_LAST_IS_STR = 1
@@ -1636,7 +1700,7 @@ impl Codegen {
                     CG_LAST_IS_STR = 1
                     let ca = llvm.value_array_new(1)
                     llvm.value_array_set(ca, 0, val)
-                    let ft = make_fn_type(CG_STR, [CG_I64])
+                    let ft = mft1(CG_STR, CG_I64)
                     let result = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "i2s")
                     llvm.value_array_free(ca)
                     return result
@@ -1904,7 +1968,7 @@ impl Codegen {
         // Convert int to string, then print
         let ca = llvm.value_array_new(1)
         llvm.value_array_set(ca, 0, val)
-        let ft = make_fn_type(CG_STR, [CG_I64])
+        let ft = mft1(CG_STR, CG_I64)
         let sv = llvm.build_call(CG_B, ft, CG_RT_I2S, ca, 1, "ts")
         llvm.value_array_free(ca)
         self.emit_println_str(sv)
@@ -1914,7 +1978,7 @@ impl Codegen {
         // Print ForgeString directly
         let pa = llvm.value_array_new(1)
         llvm.value_array_set(pa, 0, str_val)
-        let pft = make_fn_type(CG_VOID, [CG_STR])
+        let pft = mft1(CG_VOID, CG_STR)
         llvm.build_call(CG_B, pft, CG_RT_PRINTLN, pa, 1, "")
         llvm.value_array_free(pa)
     }
@@ -2456,7 +2520,7 @@ impl Codegen {
             let obj_val = self.emit_ident(var_name)
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, obj_val)
-            let ft = make_fn_type(CG_I64, [CG_STR])
+            let ft = mft1(CG_I64, CG_STR)
             let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
             llvm.value_array_free(ca)
             return result

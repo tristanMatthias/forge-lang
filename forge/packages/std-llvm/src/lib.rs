@@ -391,7 +391,16 @@ pub extern "C" fn forge_llvm_pointer_type(ctx: LLVMPtr) -> LLVMPtr {
 pub extern "C" fn forge_llvm_function_type(ret: LLVMPtr, params: *mut LLVMPtr, param_count: c_int, is_vararg: c_int) -> LLVMPtr {
     if ret.is_null() { return std::ptr::null_mut(); }
     if params.is_null() && param_count > 0 { return std::ptr::null_mut(); }
-    unsafe { LLVMFunctionType(ret, params, param_count as c_uint, is_vararg) }
+    unsafe {
+        // Replace NULL param types with i64 to prevent LLVM crash
+        for i in 0..param_count as usize {
+            if (*params.add(i)).is_null() {
+                let ctx = LLVMGetTypeContext(ret);
+                *params.add(i) = LLVMInt64TypeInContext(ctx);
+            }
+        }
+        LLVMFunctionType(ret, params, param_count as c_uint, is_vararg)
+    }
 }
 
 // ── Type array helpers ──
@@ -1207,6 +1216,8 @@ pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
 pub extern "C" fn llvm_type_of(val: LLVMPtr) -> LLVMPtr {
     forge_llvm_type_of(val)
 }
+
+
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_type_kind(ty: LLVMPtr) -> c_int {

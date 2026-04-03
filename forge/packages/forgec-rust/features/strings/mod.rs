@@ -169,11 +169,30 @@ crate::runtime_fn! { name: "forge_peek_kind_id", feature: "strings", params: [I6
 crate::runtime_fn! { name: "forge_peek_text", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_watchdog", feature: "strings", params: [I64, ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_kind_id_for_keyword", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_sh_indexof", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_mod_csv_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_mod_csv_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_mod_csv_get", feature: "strings", params: [], ret: ForgeString }
 crate::runtime_fn! { name: "forge_sh_byteat", feature: "strings", params: [ForgeString, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_parser_get_pos", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_extract_body_source", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }
+
+// C-side functions used by self-hosted compiler (detected by check_undeclared.sh)
+crate::runtime_fn! { name: "forge_c_index_of", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_exit", feature: "strings", params: [I64], ret: Void }
+crate::runtime_fn! { name: "forge_keyword_from_range", feature: "strings", params: [Ptr, I64, I64, I64], ret: I64 }
+crate::runtime_fn! { name: "forge_map_get", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_map_has", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_map_new", feature: "strings", params: [], ret: Ptr }
+crate::runtime_fn! { name: "forge_map_set", feature: "strings", params: [Ptr, ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_memcpy", feature: "strings", params: [Ptr, Ptr, I64], ret: Void }
+crate::runtime_fn! { name: "forge_selfhost_get_arg", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_sh_substr", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_string_to_float", feature: "strings", params: [ForgeString], ret: F64 }
+crate::runtime_fn! { name: "forge_var_type_get", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_var_type_set", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
 
 pub mod checker;
 pub mod codegen;

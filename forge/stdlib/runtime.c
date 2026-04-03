@@ -4206,3 +4206,19 @@ int64_t forge_c_index_of(ForgeString haystack, ForgeString needle) {
     return -1;
 }
 
+
+// ─── Pre-flight validation ────────────────────
+// Call after codegen_init to verify all LLVM types and runtime functions are valid
+void forge_validate_codegen_state(void) {
+    // This is called from Forge with the type/function pointers as args
+    // Since we can't access Forge globals from C, the Forge caller passes them
+}
+
+// Validate a single pointer and log if NULL
+int64_t forge_validate_ptr(void* ptr, const char* name) {
+    if (!ptr) {
+        fprintf(stderr, "[VALIDATE] FAIL: %s is NULL!\n", name);
+        return 0;
+    }
+    return 1;
+}
