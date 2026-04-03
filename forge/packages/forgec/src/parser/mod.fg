@@ -16,6 +16,7 @@ use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{CG_ACTIVE, CG_LAST_IS_STR, CG_LAST_IS_MAP, CG_HAS_LAST_VAL, CG_LAST_VAL, CG_B, CG_VAR_NAMES, CG_VAR_PTRS, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_TYPES, CG_IS_MAP_INDEX, CG_MAP_INDEX_OBJ, CG_MAP_INDEX_KEY, CG_RT_MAP_SET, CG_PTR, CG_STR, CG_I64, CG_VOID, codegen_new, var_struct_type, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, wrap_nullable, make_null_value, cg_var_enum_type}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
+use features.impl_methods.parse_impl_block
 use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
@@ -319,7 +320,7 @@ impl Parser {
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
         // Skip type/enum/impl/trait declarations by brace counting
-        // (calling into feature parsers hangs due to by-value parser + enum matching)
+        // (impl methods need struct type registration to work; see is_keyword for AST approach)
         if kid == 42 || kid == 43 || kid == 35 || kid == 34 {
             self.advance()
             self.expect_ident()

@@ -126,15 +126,19 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
         p.parse_type_expr()
     }
 
-    // Capture body source text (same as regular functions)
-    let block_open_span = p.peek().span
-    let body = p.parse_block()
-    mut block_close_end = block_open_span.end
-    if p.pos > 0 { block_close_end = p.tokens[p.pos - 1].span.end }
-    mut body_src = ""
-    if p.source.length > 0 && block_close_end > block_open_span.start {
-        body_src = p.source.substring(block_open_span.start, block_close_end + 1)
+    // Capture body source by brace counting (same as parse_fn_decl)
+    let open_pos = forge_parser_get_pos()
+    if forge_peek_kind_id(forge_parser_get_pos()) == 102 { p.advance() }
+    mut depth = 1
+    while depth > 0 && !p.is_at_end() {
+        let cur_kid = forge_peek_kind_id(forge_parser_get_pos())
+        if cur_kid == 102 { depth = depth + 1 }
+        if cur_kid == 103 { depth = depth - 1 }
+        if depth > 0 { p.advance() }
     }
+    if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
+    let close_pos = forge_parser_get_pos() - 1
+    let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
     // Store function data for codegen (using the mangled name)
     // Filter out 'self' param: replace it with the type name as param type
