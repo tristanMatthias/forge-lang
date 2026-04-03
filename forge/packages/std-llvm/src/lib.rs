@@ -1485,13 +1485,40 @@ pub extern "C" fn forge_llvm_build_ptrtoint(builder: LLVMPtr, val: LLVMPtr, dest
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_inttoptr(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    unsafe { LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name)) }
+    if builder.is_null() || val.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        // struct → ptr: extract field 0 (the data pointer) instead of inttoptr
+        if val_kind == 10 {
+            return LLVMBuildExtractValue(builder, val, 0, safe_name(name));
+        }
+        // ptr → ptr: no conversion needed
+        if val_kind == 12 {
+            return val;
+        }
+        LLVMBuildIntToPtr(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_ptr_to_int(builder: LLVMPtr, val: LLVMPtr, dest_ty: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if val.is_null() || dest_ty.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name)) }
+    unsafe {
+        let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
+        // struct → i64: extract field 0 (ptr), then ptrtoint
+        if val_kind == 10 {
+            let extracted = LLVMBuildExtractValue(builder, val, 0, b"s0\0".as_ptr() as *const c_char);
+            if !extracted.is_null() && LLVMGetTypeKind(LLVMTypeOf(extracted)) == 12 {
+                return LLVMBuildPtrToInt(builder, extracted, dest_ty, safe_name(name));
+            }
+            return extracted;
+        }
+        // i64 → i64: no conversion needed
+        if val_kind == 8 {
+            return val;
+        }
+        LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name))
+    }
 }
 
 #[no_mangle]
