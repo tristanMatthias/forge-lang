@@ -1042,6 +1042,13 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
             if param_kind == 8 && arg_kind == 12 {
                 *args.add(i) = LLVMBuildPtrToInt(builder, arg, param_ty, b"coerce\0".as_ptr() as *const c_char);
             }
+            // struct → ptr coercion (extract field 0, which is ptr for ForgeString)
+            if param_kind == 12 && arg_kind == 10 {
+                let extracted = LLVMBuildExtractValue(builder, arg, 0, b"coerce\0".as_ptr() as *const c_char);
+                if !extracted.is_null() {
+                    *args.add(i) = extracted;
+                }
+            }
             // struct → i64 coercion (extract field 0)
             if param_kind == 8 && arg_kind == 10 {
                 let extracted = LLVMBuildExtractValue(builder, arg, 0, b"coerce\0".as_ptr() as *const c_char);
