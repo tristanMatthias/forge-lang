@@ -90,8 +90,8 @@ impl Parser {
     }
 
     fn peek(self) -> Token {
-        if self.pos < self.tokens.length {
-            let tok = self.tokens[self.pos]
+        if forge_parser_get_pos() < forge_token_list_len() {
+            let tok = self.tokens[forge_parser_get_pos()]
             return tok
         } else {
             Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
@@ -99,7 +99,7 @@ impl Parser {
     }
 
     fn peek_at(self, offset: int) -> Token {
-        let idx = self.pos + offset
+        let idx = forge_parser_get_pos() + offset
         if idx < self.tokens.length {
             self.tokens[idx]
         } else {
@@ -112,7 +112,6 @@ impl Parser {
         let tok = self.peek()
         eprintln("  [PS] here")
         // Advance both Forge-side and C-side position
-        self.pos = self.pos + 1
         forge_parser_advance_pos()
         tok
     }
@@ -126,7 +125,7 @@ impl Parser {
     }
 
     fn check(self, kind: TokenKind) -> bool {
-        forge_watchdog(self.pos, "check")
+        forge_watchdog(forge_parser_get_pos(), "check")
         let tok = self.peek()
         eprintln("  [PS] here")
         let expected = self.kind_to_id(kind)
@@ -263,8 +262,8 @@ impl Parser {
         // Peek at the nth non-newline token
         mut count = 0
         mut offset = 0
-        while self.pos + offset < self.tokens.length {
-            let tok = self.tokens[self.pos + offset]
+        while forge_parser_get_pos() + offset < self.tokens.length {
+            let tok = self.tokens[forge_parser_get_pos() + offset]
             if tok.kind is not .Newline {
                 if count == n {
                     return tok
@@ -323,7 +322,7 @@ impl Parser {
         // kind_id fast dispatch — try tok.kind_id first (works in Stage 1)
         // In Stage 2, tok.kind_id is garbage, so we also check forge_peek_kind_id
         // which reads directly from token list memory at correct offset
-        forge_parser_set_pos(self.pos)
+        forge_parser_set_pos(forge_parser_get_pos())
         if tok.kind_id == 20 || forge_peek_kind_id(forge_parser_get_pos()) == 20 { let r = parse_let(self)
             self.sync_pos()
             return r }
@@ -773,7 +772,7 @@ impl Parser {
     fn sync_pos(self) {
         eprintln("  [sync_pos] PARSE_END_POS=" + string(PARSE_END_POS) + " c_pos=" + string(forge_parser_get_pos()))
         if PARSE_END_POS >= 0 {
-            self.pos = PARSE_END_POS
+            forge_parser_set_pos(PARSE_END_POS)
             forge_parser_set_pos(PARSE_END_POS)
             PARSE_END_POS = -1
         }
@@ -840,7 +839,7 @@ impl Parser {
     fn parse_block(self) -> Block {
         let start = self.current_span()
         let empty = Block { statements: [], span: start }
-        let pb_open_pos = self.pos
+        let pb_open_pos = forge_parser_get_pos()
         if self.expect_id(102) == null {
             eprintln("PB_NO_BRACE pos=" + string(pb_open_pos))
             return empty
@@ -851,12 +850,12 @@ impl Parser {
         mut _pb_count = 0
 
         while !self.check_id(103) && !self.is_at_end() {
-            let before = self.pos
+            let before = forge_parser_get_pos()
             let stmt = self.parse_statement()
             if stmt != null {
                 statements = statements.push(stmt!)
             }
-            if self.pos == before {
+            if forge_parser_get_pos() == before {
                 eprintln("PB_STUCK pos=" + string(self.pos) + " tok=" + self.peek().text)
                 self.advance()
             }
@@ -1095,12 +1094,12 @@ impl Parser {
         PARSED_PARAM_NAMES = []
         // Consume ( — function call must be in a condition to survive Stage 2 compilation
         // (standalone expression statements are dropped when Statement.Expr tag is wrong)
-        if forge_parser_expect_id(100) >= 0 { self.pos = forge_parser_get_pos() }
+        if forge_parser_expect_id(100) >= 0 { forge_parser_set_pos(forge_parser_get_pos()) }
         mut params: List<Param> = []
 
         while forge_parser_is_at_rparen() == 0 {
             self.skip_newlines()
-            let before_pos = self.pos
+            let before_pos = forge_parser_get_pos()
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
@@ -1109,14 +1108,14 @@ impl Parser {
                 self.advance()
             }
             // Safety: if parse_param didn't advance, skip one token to avoid infinite loop
-            if self.pos == before_pos {
+            if forge_parser_get_pos() == before_pos {
                 eprintln("  [WARN] parse_params stuck at pos=" + string(self.pos) + " kind_id=" + string(self.peek().kind_id) + " text=" + self.peek().text)
                 self.advance()
             }
         }
 
         // Consume ) — in condition to survive Stage 2
-        if forge_parser_expect_id(101) >= 0 { self.pos = forge_parser_get_pos() }
+        if forge_parser_expect_id(101) >= 0 { forge_parser_set_pos(forge_parser_get_pos()) }
         params
     }
 
