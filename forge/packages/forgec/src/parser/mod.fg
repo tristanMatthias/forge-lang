@@ -319,9 +319,14 @@ impl Parser {
             self.expect_ident()
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        // Skip type/enum/impl/trait declarations by brace counting
-        // (impl methods need struct type registration to work; see is_keyword for AST approach)
-        if kid == 42 || kid == 43 || kid == 35 || kid == 34 {
+        // Parse impl blocks to register methods for later codegen
+        if kid == 43 {
+            let r = parse_impl_block(self)
+            self.sync_pos()
+            return r
+        }
+        // Skip type/enum/trait declarations by brace counting
+        if kid == 42 || kid == 35 || kid == 34 {
             self.advance()
             self.expect_ident()
             // Skip to { then brace-count

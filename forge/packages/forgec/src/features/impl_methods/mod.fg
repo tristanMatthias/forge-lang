@@ -108,10 +108,9 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let method_name = p.expect_ident()
     if method_name == "" { return }
 
-    // Create mangled function name: TypeName__methodName
-    // (Can't use . in LLVM function names, so use __)
-    // BUT: for method dispatch, we also need "TypeName.methodName" in the lookup
-    let fn_name = "${type_name}__${method_name}"
+    // Create mangled function name: TypeName_methodName
+    // Uses single underscore to match Rust compiler convention
+    let fn_name = "${type_name}_${method_name}"
 
     PARSED_PARAM_TYPES = []
     let params = p.parse_params()

@@ -2017,7 +2017,8 @@ impl Codegen {
                     mut impl_ns = ns
                     let st = var_struct_type(ns)
                     if st != "" { impl_ns = st }
-                    let method_name = impl_ns + "__" + f
+                    // Try method call: Type_method (single underscore, matches Rust convention)
+                    let method_name = impl_ns + "_" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
                         // Prepend self (the object) as first arg
