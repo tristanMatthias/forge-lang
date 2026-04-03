@@ -838,7 +838,7 @@ export fn codegen_init(name: string) {
     CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
     CG_NULLABLE_STR_TY = null
-    let dfns = map_new()
+    let dfns = forge_map_new()
     DECLARED_FNS = dfns
     cg_init_ctx(name)
     cg_init_int_types()
@@ -1277,8 +1277,8 @@ impl Codegen {
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
                 mut cmp_lhs = obj_tv.val
                 // If it's an enum, extract the tag field
-                let obj_kind = llvm.get_type_kind(llvm.type_of(obj_tv.val))
-                if obj_kind == 13 {
+                // Check if subject is an enum by trying extractvalue
+                if tv_is_struct(obj_tv) {
                     let etag = llvm.build_extract_value(CG_B, obj_tv.val, 0, "it")
                     if etag != null {
                         cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
@@ -1365,12 +1365,15 @@ impl Codegen {
                 if ck == 12 { load_ty = CG_PTR
                     type_name = "ptr" }
                 if ck == 13 {
-                    if cached_type == CG_STR {
+                    // Use cached type for load (handles ForgeString, structs, enums)
+                    load_ty = cached_type
+                    // Check via LLVM type name lookup (immune to CG_STR pointer invalidation)
+                    cg_reinit_types()
+                    let str_ty = llvm.get_type_by_name(CG_CTX, "ForgeString")
+                    if cached_type == str_ty || cached_type == CG_STR {
                         load_ty = CG_STR
                         type_name = "string"
                     } else {
-                        load_ty = cached_type
-                        // Look up struct/enum name
                         let sname = forge_struct_var_get(name)
                         if sname != "" { type_name = sname }
                     }
@@ -1449,11 +1452,8 @@ impl Codegen {
             .Div -> { return tv_int(llvm.build_sdiv(CG_B, lhs, rhs, "div")) }
             .Mod -> { return tv_int(llvm.build_srem(CG_B, lhs, rhs, "mod")) }
             .Eq -> {
-                if lhs_is_str || rhs_is_str {
-                    // Verify with actual LLVM types
-                    let lt = llvm.type_of(lhs)
-                    let rt = llvm.type_of(rhs)
-                    if lt == CG_STR || rt == CG_STR {
+                if lhs_is_str {
+                    if rhs_is_str {
                         let cmp_r = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
                         return tv_bool(llvm.build_icmp(CG_B, 32, cmp_r, llvm.const_int(CG_I64, 0, 0), "eq"))
                     }
@@ -1461,10 +1461,8 @@ impl Codegen {
                 return tv_bool(llvm.build_icmp(CG_B, 32, lhs, rhs, "eq"))
             }
             .NotEq -> {
-                if lhs_is_str || rhs_is_str {
-                    let lt = llvm.type_of(lhs)
-                    let rt = llvm.type_of(rhs)
-                    if lt == CG_STR || rt == CG_STR {
+                if lhs_is_str {
+                    if rhs_is_str {
                         let cmp_r = call_rt_2_ss(CG_RT_SCMP, lhs, rhs, CG_I64, "sc")
                         return tv_bool(llvm.build_icmp(CG_B, 33, cmp_r, llvm.const_int(CG_I64, 0, 0), "ne"))
                     }
@@ -1506,14 +1504,24 @@ impl Codegen {
                     return tv_void()
                 }
                 // Struct literal: __s_TypeName(field1, field2, ...)
-                if name.length > 4 && name[0] == "_" && name[1] == "_" && name[2] == "s" && name[3] == "_" {
-                    let sn = name.substring(4, name.length)
-                    return self.emit_struct_literal(sn, args)
-                }
-                // Match expression: __m_pat1,pat2,...
-                if name.length > 4 && name[0] == "_" && name[1] == "_" && name[2] == "m" && name[3] == "_" {
-                    let patterns = name.substring(4, name.length)
-                    return self.emit_match_call(patterns, args)
+                if name.length > 4 {
+                    if name[0] == "_" {
+                        if name[1] == "_" {
+                            if name[2] == "s" {
+                                if name[3] == "_" {
+                                    let sn = name.substring(4, name.length)
+                                    return self.emit_struct_literal(sn, args)
+                                }
+                            }
+                            // Match expression: __m_pat1,pat2,...
+                            if name[2] == "m" {
+                                if name[3] == "_" {
+                                    let patterns = name.substring(4, name.length)
+                                    return self.emit_match_call(patterns, args)
+                                }
+                            }
+                        }
+                    }
                 }
                 // Cast: string(x)
                 if name == "string" && args.length > 0 {
@@ -1668,6 +1676,27 @@ impl Codegen {
         tv_typed(val, CG_PTR, rtn)
     }
 
+    // Determine TypedValue from a function's return type name
+    fn tv_from_return_type(self, val: ptr, rtn: string) -> TypedValue {
+        if rtn == "" || rtn == "int" || rtn == "bool" { return tv_int(val) }
+        if rtn == "string" { return tv_str(val) }
+        if rtn == "ptr" { return tv_ptr(val) }
+        if rtn == "void" { return tv_void() }
+        if rtn == "float" { return tv_typed(val, CG_F64, "float") }
+        // Nullable (ends with ?)
+        if rtn.length > 1 && rtn[rtn.length - 1] == "?" {
+            return tv_typed(val, CG_PTR, rtn)
+        }
+        // List
+        if rtn.length >= 4 && rtn.substring(0, 4) == "List" {
+            return tv_typed(val, CG_LIST, rtn)
+        }
+        // Struct or enum
+        let resolved = resolve_type_to_llvm(rtn)
+        if resolved != null { return tv_typed(val, resolved, rtn) }
+        tv_typed(val, CG_PTR, rtn)
+    }
+
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> TypedValue {
         let arg_arr = llvm.value_array_new(args.length)
         mut i = 0
@@ -1680,9 +1709,8 @@ impl Codegen {
         let ft = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        // Determine return type from C-side registry
-        let rtn = forge_fn_reg_get_ret(fn_name)
-        self.tv_from_return_type(r, rtn)
+        // Return as int for now (skip registry lookup to avoid corruption)
+        tv_int(r)
     }
 
     // ─── Member access ──────────────────────────
@@ -1699,7 +1727,15 @@ impl Codegen {
                 let fi = struct_field_index(stype, field)
                 if fi >= 0 {
                     let obj_tv = self.emit_ident(var_name)
-                    let fv = llvm.build_extract_value(CG_B, obj_tv.val, fi, "sf")
+                    // If obj is a ptr (self param), load the struct through the ptr
+                    mut struct_val = obj_tv.val
+                    if tv_is_ptr(obj_tv) {
+                        let sty = resolve_type_to_llvm(stype)
+                        if sty != null {
+                            struct_val = llvm.build_load(CG_B, sty, obj_tv.val, "sl")
+                        }
+                    }
+                    let fv = llvm.build_extract_value(CG_B, struct_val, fi, "sf")
                     // Determine field type from struct registry
                     mut ftype_name = "int"
                     mut si = 0
@@ -1711,7 +1747,12 @@ impl Codegen {
                             mut fstart = 0
                             mut fpos = 0
                             while fpos <= ftnames.length {
-                                if fpos == ftnames.length || ftnames[fpos] == "," {
+                                mut is_sep = false
+                                if fpos == ftnames.length { is_sep = true }
+                                if !is_sep {
+                                    if ftnames[fpos] == "," { is_sep = true }
+                                }
+                                if is_sep {
                                     if fidx == fi {
                                         ftype_name = ftnames.substring(fstart, fpos)
                                     }
@@ -1835,7 +1876,8 @@ impl Codegen {
                 let tag = int(pat)
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
                 mut cmp_val = subj_tv.val
-                let sk = llvm.get_type_kind(llvm.type_of(subj_tv.val))
+                mut sk = 0
+                if subj_tv.val != null { sk = llvm.get_type_kind(llvm.type_of(subj_tv.val)) }
                 if sk == 13 {
                     let etag = llvm.build_extract_value(CG_B, subj_tv.val, 0, "mt")
                     if etag != null { cmp_val = llvm.build_zext(CG_B, etag, CG_I64, "mz") }
@@ -1876,13 +1918,15 @@ impl Codegen {
         if alloca_ty == null { alloca_ty = CG_I64 }
         if CG_B == 0 { return }
         if alloca_ty == 0 { return }
-        // LLVMTypeOf fallback
-        if alloca_ty == CG_I64 && tv.val != null {
-            let val_ty = llvm.type_of(tv.val)
-            if val_ty != null {
-                let kind = llvm.get_type_kind(val_ty)
-                if kind == 12 { alloca_ty = CG_PTR }
-                if kind == 13 { alloca_ty = val_ty }
+        // LLVMTypeOf fallback (guard against null/dangling values)
+        if alloca_ty == CG_I64 {
+            if tv.val != null {
+                let val_ty = llvm.type_of(tv.val)
+                if val_ty != null {
+                    let kind = llvm.get_type_kind(val_ty)
+                    if kind == 12 { alloca_ty = CG_PTR }
+                    if kind == 13 { alloca_ty = val_ty }
+                }
             }
         }
         // Create alloca in entry block
@@ -2034,9 +2078,47 @@ impl Codegen {
         let tv = self.emit_expr(value)
         match target {
             .Ident(name, span) -> {
-                let ptr = forge_alloca_cache_get(name)
-                if ptr != null {
-                    llvm.build_store(CG_B, tv.val, ptr)
+                let var_ptr = forge_alloca_cache_get(name)
+                if var_ptr != null {
+                    llvm.build_store(CG_B, tv.val, var_ptr)
+                }
+            }
+            .MemberAccess(obj, field, span) -> {
+                // self.field = value → GEP to field, store
+                mut obj_name = ""
+                match obj {
+                    .Ident(n, s) -> { obj_name = n }
+                    _ -> {}
+                }
+                if obj_name != "" {
+                    let stype = var_struct_type(obj_name)
+                    if stype != "" {
+                        let fi = struct_field_index(stype, field)
+                        if fi >= 0 {
+                            let obj_ptr = forge_alloca_cache_get(obj_name)
+                            if obj_ptr != null {
+                                // obj_ptr might be ptr to ptr (self), or ptr to struct
+                                let alloca_ty = forge_alloca_cache_get_type(obj_name)
+                                let ak = llvm.get_type_kind(alloca_ty)
+                                if ak == 12 {
+                                    // ptr alloca (self) — load ptr, then GEP struct field
+                                    let struct_ptr = llvm.build_load(CG_B, CG_PTR, obj_ptr, "sp")
+                                    let sty = resolve_type_to_llvm(stype)
+                                    if sty != null {
+                                        let field_ptr = llvm.build_struct_gep2(CG_B, sty, struct_ptr, fi, "fp")
+                                        llvm.build_store(CG_B, tv.val, field_ptr)
+                                    }
+                                } else {
+                                    // Direct struct alloca — GEP directly
+                                    let sty = resolve_type_to_llvm(stype)
+                                    if sty != null {
+                                        let field_ptr = llvm.build_struct_gep2(CG_B, sty, obj_ptr, fi, "fp")
+                                        llvm.build_store(CG_B, tv.val, field_ptr)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             _ -> {}

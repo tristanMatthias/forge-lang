@@ -254,10 +254,19 @@ fn emit_struct_lit(cg: Codegen, node: NodeRef) -> ptr {
 
     mut i = 0
     for f in data.fields {
-        let field_tv = cg.emit_expr(f.value)
-        val = llvm.build_insert_value(CG_B, val, field_tv.val, i, f.name)
+        let field_val = cg.emit_expr(f.value)
+        val = llvm.build_insert_value(CG_B, val, field_val, i, f.name)
         i = i + 1
     }
+
+    // Store in alloca and register as struct variable
+    let alloca = llvm.build_alloca(CG_B, struct_ty, data.type_name)
+    llvm.build_store(CG_B, val, alloca)
+
+    // Set struct type tracking for variable binding
+    CG_LAST_STRUCT_TYPE = data.type_name
+    CG_LAST_VAL = val
+    CG_HAS_LAST_VAL = 1
 
     val
 }

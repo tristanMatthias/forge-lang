@@ -623,8 +623,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_set_self_type("")
     }
 
-    // Parse each statement with CG_ACTIVE=false (builds AST), emit via emit_statement
+    // Parse and emit function body — statement at a time, same scope
     VAR_LIST_INIT_CSV = ""
+    mut last_val = llvm.const_int(CG_I64, 0, 0)
     if body_src != "" {
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
@@ -635,77 +636,23 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         body_parser.skip_newlines()
         while !body_parser.check_id(103) && !body_parser.is_at_end() {
             if llvm.block_has_terminator(CG_B) { break }
-            let peek_kid = body_parser.peek().kind_id
             let before = body_parser.pos
-            // Pre-capture let name for alloca cache (C-side token access)
-            if peek_kid == 20 || peek_kid == 21 || peek_kid == 22 {
-                if forge_peek_kind_id(forge_parser_get_pos() + 1) == 1 {
-                    forge_set_last_let_name(forge_peek_text(forge_parser_get_pos() + 1))
-                }
-            }
-            // Parse statement (always builds AST)
             let stmt = body_parser.parse_statement()
             cg_reinit_types()
-            // Emit via AST walk
             if stmt != null {
-                cg.emit_statement(stmt!)
-            }
-            // Fallback alloca for let bindings where define_var missed
-            if (peek_kid == 20 || peek_kid == 21 || peek_kid == 22) && forge_let_needs_alloca() == 1 {
-                let cur2 = llvm.get_insert_block(CG_B)
-                let fn2 = llvm.get_basic_block_parent(cur2)
-                let eb2 = llvm.get_entry_basic_block(fn2)
-                let fi2 = llvm.get_first_instruction(eb2)
-                if fi2 != null { llvm.position_before(CG_B, fi2) }
-                else { llvm.position_at_end(CG_B, eb2) }
-                forge_let_to_alloca_name()
-                forge_arm_pending_alloca()
-                mut fallback_ty = CG_STR
-                if CG_LAST_VAL != null {
-                    let val_ty = llvm.type_of(CG_LAST_VAL)
-                    if val_ty != null {
-                        let kind = llvm.get_type_kind(val_ty)
-                        if kind == 12 { fallback_ty = CG_PTR }
-                        if kind == 13 { fallback_ty = val_ty }
-                    }
-                }
-                let va = llvm.build_alloca(CG_B, fallback_ty, "")
-                forge_alloca_cache_set_last_type(fallback_ty)
-                llvm.position_at_end(CG_B, cur2)
-                if CG_LAST_VAL != null && va != null {
-                    llvm.build_store(CG_B, CG_LAST_VAL, va)
-                }
+                last_val = cg.emit_statement(stmt!)
             }
             if body_parser.pos == before { body_parser.advance() }
             body_parser.skip_newlines()
         }
     }
 
-    // Implicit return — must match declared return type
+    // Implicit return using last emitted value
     if !llvm.block_has_terminator(CG_B) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
         } else {
-            // Compute return type late (after body emit, before implicit ret)
-            cg_reinit_types()
-            mut ret_type_name = ""
-            if idx < FN_RETURN_TYPES.length { ret_type_name = FN_RETURN_TYPES[idx] }
-            if ret_type_name.length > 1 { if ret_type_name[ret_type_name.length - 1] == "?" {
-                ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
-            } }
-            cg_reinit_types()
-            let ret_ty = resolve_type_to_llvm(ret_type_name)
-            if ret_ty != null && ret_ty != CG_I64 && CG_HAS_LAST_VAL == 1 {
-                // Struct/enum return: use CG_LAST_VAL if available
-                llvm.build_ret(CG_B, CG_LAST_VAL)
-            } else if ret_ty != null && ret_ty != CG_I64 {
-                // No value available: fallback to undef
-                llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
-            } else {
-                // Use CG_LAST_VAL (set at line 549 from emit_block result)
-                // Falls back to RetVoid if null
-                llvm.build_ret(CG_B, CG_LAST_VAL)
-            }
+            llvm.build_ret(CG_B, last_val)
         }
     }
 }
@@ -1014,41 +961,34 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         // Re-lex and re-parse the body source text
         // CG_ACTIVE stays true for control flow (if/else, while, for) that emits inline.
         // Returns, assignments, and expressions use proper AST via emit_block.
+        mut last_val2 = llvm.const_int(CG_I64, 0, 0)
         if body_src != "" {
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
             forge_set_token_list(body_tokens)
             forge_parser_set_pos(0)
             mut body_parser = parser_new(body_tokens)
-            let body = body_parser.parse_block()
-            let last = cg.emit_block(body)
-            // Only update CG_LAST_VAL if not already set by inline emit (e.g., PHI from if-expr)
-            if CG_HAS_LAST_VAL != 1 {
+            body_parser.expect_id(102)
+            body_parser.skip_newlines()
+            while !body_parser.check_id(103) && !body_parser.is_at_end() {
+                if llvm.block_has_terminator(CG_B) { break }
+                let before2 = body_parser.pos
+                let stmt = body_parser.parse_statement()
+                cg_reinit_types()
+                if stmt != null {
+                    last_val2 = cg.emit_statement(stmt!)
+                }
+                if body_parser.pos == before2 { body_parser.advance() }
+                body_parser.skip_newlines()
             }
         }
 
-        // Add implicit return only if the block doesn't already terminate
+        // Implicit return using last emitted value
         if !llvm.block_has_terminator(CG_B) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-            } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
-                // Nullable function with a last value
-                // If the last value is already nullable (e.g., null literal), use directly
-                if CG_LAST_IS_NULLABLE == 1 {
-                    llvm.build_ret(CG_B, CG_LAST_VAL)
-                } else {
-                    let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
-                    llvm.build_ret(CG_B, wrapped_ret)
-                }
-            } else if fn_is_nullable {
-                // Nullable function with no last value — return null
-                let null_ret = make_null_value(fn_nullable_inner)
-                llvm.build_ret(CG_B, null_ret)
-            } else if CG_HAS_LAST_VAL == 1 {
-                // Return the last expression value from emit_block
-                llvm.build_ret(CG_B, CG_LAST_VAL)
             } else {
-                llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+                llvm.build_ret(CG_B, last_val2)
             }
         }
         // Reset nullable tracking

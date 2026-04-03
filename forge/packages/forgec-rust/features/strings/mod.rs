@@ -147,6 +147,23 @@ crate::runtime_fn! { name: "forge_fn_store_clear", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_fn_store_add", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_fn_store_get_body", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_fn_store_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_fn_store_get_name", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_fn_store_set_param_count", feature: "strings", params: [I64, I64], ret: Void }
+crate::runtime_fn! { name: "forge_fn_store_get_param_count", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_set_type", feature: "strings", params: [ForgeString, Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_alloca_cache_get", feature: "strings", params: [ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_str_var_add", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_ptr_var_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_ptr_var_set_global", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_list_var_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_list_var_check", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_set_token_list", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_token_list_len", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_parser_is_at_end", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_parser_get_pos", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_extract_body_source", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }
 
 pub mod checker;
 pub mod codegen;
