@@ -6,7 +6,7 @@ use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_emit_stmt}
 use parser.Parser
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_VAR_NAMES, CG_VAR_PTRS, codegen_new}
+use codegen.{Codegen, CG_CTX, CG_B, CG_I64, CG_STR, CG_RT_SLEN, CG_VAR_NAMES, CG_VAR_PTRS, CG_VAR_TYPES, codegen_new}
 use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
@@ -67,6 +67,7 @@ export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Bloc
     llvm.build_store(CG_B, ev, va)
     CG_VAR_NAMES = CG_VAR_NAMES.push(var_name)
     CG_VAR_PTRS = CG_VAR_PTRS.push(va)
+    CG_VAR_TYPES = CG_VAR_TYPES.push("int")
     cg.emit_block(body)
     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, fx) }
     llvm.position_at_end(CG_B, fx)
