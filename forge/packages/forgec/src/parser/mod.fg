@@ -502,8 +502,39 @@ impl Parser {
                 }
             return Statement.Match(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default, start)
         }
+        // Skip use/mod/trait/impl/type/enum declarations (not handled by kind_id dispatch above)
+        if tok.kind_id == 36 {
+            self.advance()
+            while !self.is_at_end() && !self.check_id(120) { self.advance() }
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        if tok.kind_id == 37 {
+            self.advance()
+            self.expect_ident()
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        if tok.kind_id == 40 {
+            self.advance()
+            self.expect_ident()
+            if self.check_id(102) { self.parse_block() }
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        if tok.kind_id == 41 {
+            let r = parse_impl_block(self)
+            self.sync_pos()
+            return r
+        }
+        if tok.kind_id == 35 {
+            let r = parse_type_decl(self)
+            self.sync_pos()
+            return r
+        }
+        if tok.kind_id == 34 {
+            let r = parse_enum_decl(self)
+            self.sync_pos()
+            return r
+        }
         // Catch-all: any token not handled above is an expression or assignment
-        // This replaces the broken `_ ->` match arm in mini-built binaries
         if tok.kind_id == 1 || forge_peek_kind_id(forge_parser_get_pos()) == 1 || forge_peek_kind_id(forge_parser_get_pos()) == 2 || forge_peek_kind_id(forge_parser_get_pos()) == 3 || forge_peek_kind_id(forge_parser_get_pos()) == 4 || forge_peek_kind_id(forge_parser_get_pos()) == 5 || forge_peek_kind_id(forge_parser_get_pos()) == 6 || forge_peek_kind_id(forge_parser_get_pos()) == 7 || forge_peek_kind_id(forge_parser_get_pos()) == 8 || forge_peek_kind_id(forge_parser_get_pos()) == 100 || forge_peek_kind_id(forge_parser_get_pos()) == 84 || forge_peek_kind_id(forge_parser_get_pos()) == 71 {
             // Ident(1), IntLit(2), FloatLit(3), StringLit(4), BoolLit(5), TemplateLit(6), DollarStr(7), NullLit(8), LParen(100), Not(84), Minus(71)
             return self.parse_expr_or_assign()

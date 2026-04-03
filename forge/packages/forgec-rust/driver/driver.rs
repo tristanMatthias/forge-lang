@@ -1199,6 +1199,7 @@ impl Driver {
             path_str(runtime_obj)?,
             "-o".to_string(),
             path_str(output)?,
+            "-Wl,-stack_size,0x10000000".to_string(), // 256MB stack for deep parser recursion
         ];
 
         // Add package native library paths
