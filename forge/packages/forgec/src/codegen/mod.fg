@@ -1016,13 +1016,52 @@ impl Codegen {
         WHILE_END_BB = save_end
     }
 
-    fn emit_match_stmt(self, scrut: Expr, tags: string, binds: string, bodies: List<Block>, def: Block, has_def: int) {
-        // Simplified match: emit scrutinee, then if/else chain for each arm
-        let scrut_val = self.emit_expr(scrut)
-        // For now, just emit default body (full match dispatch is complex)
+    fn emit_match_stmt(self, scrut: Expr, tags_csv: string, binds: string, bodies: List<Block>, def: Block, has_def: int) {
+        let subj_raw = self.emit_expr(scrut)
+        // Extract enum tag if scrutinee is a tagged union
+        mut subj = subj_raw
+        let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+        if tag_byte != null {
+            subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
+        }
+        let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+        let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
+        // Parse tag CSV
+        mut tag_list: List<int> = []
+        mut tpos = 0
+        mut tcur = ""
+        while tpos < tags_csv.length {
+            let ch = tags_csv[tpos]
+            if ch == "," {
+                tag_list = tag_list.push(int(tcur))
+                tcur = ""
+            } else {
+                tcur = tcur + ch
+            }
+            tpos = tpos + 1
+        }
+        if tcur != "" { tag_list = tag_list.push(int(tcur)) }
+        // Emit each arm as if-else chain
+        mut ai = 0
+        while ai < tag_list.length && ai < bodies.length {
+            cg_reinit_types()
+            let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
+            let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
+            let tag_val = llvm.const_int(CG_I64, tag_list[ai], 0)
+            let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+            llvm.position_at_end(CG_B, arm_bb)
+            self.emit_block(bodies[ai])
+            if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+            llvm.position_at_end(CG_B, next_bb)
+            ai = ai + 1
+        }
+        // Default arm
         if has_def == 1 {
             self.emit_block(def)
         }
+        if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
+        llvm.position_at_end(CG_B, merge_bb)
     }
 
     fn emit_return(self, value: Expr) {
