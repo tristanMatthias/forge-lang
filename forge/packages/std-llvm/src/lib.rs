@@ -1119,9 +1119,9 @@ pub extern "C" fn forge_llvm_const_string(module: LLVMPtr, text: *const c_char, 
     TYPE_CACHE.with(|c| {
         let cache = c.borrow();
         unsafe {
-            // Create the string data as a global constant
-            let str_const = LLVMConstStringInContext(cache.ctx, text, len as c_uint, 1);
-            let arr_ty = LLVMArrayType(cache.i8, len as c_uint);
+            // Create the string data as a global constant (null-terminated for C interop)
+            let str_const = LLVMConstStringInContext(cache.ctx, text, len as c_uint, 0);
+            let arr_ty = LLVMArrayType(cache.i8, (len + 1) as c_uint);
             let global = LLVMAddGlobal(module, arr_ty, safe_name(std::ptr::null()));
             LLVMSetInitializer(global, str_const);
             LLVMSetGlobalConstant(global, 1);

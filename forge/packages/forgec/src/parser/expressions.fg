@@ -1438,16 +1438,19 @@ impl Parser {
             return Expr.Ident(tmp, start)
         }
 
-        // Non-codegen: parse and discard
+        // Non-codegen: parse elements and store as Call("__list__", elements)
+        // This preserves list literal data for AST-based codegen emission
+        mut elems: List<Expr> = []
         self.skip_newlines()
         while !self.check(TokenKind.RBracket) && !self.is_at_end() {
-            self.parse_expr()
+            let elem = self.parse_expr()
+            if elem != null { elems = elems.push(elem!) }
             self.skip_newlines()
             if self.check(TokenKind.Comma) { self.advance() }
             self.skip_newlines()
         }
         self.expect(TokenKind.RBracket)
-        Expr.Block(Block { statements: [], span: start })
+        Expr.Call(Expr.Ident("__list__", start), elems, start)
     }
 
     // ─── Dot Variant ───────────────────────────
