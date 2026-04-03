@@ -257,7 +257,7 @@ impl Lexer {
         if ch == "\n" {
             self.advance()
             return Token {
-                kind: TokenKind.Newline,
+                kind: TokenKind.Newline, text: "", kind_id: 120,
                 span: self.make_span(start_pos, start_line, start_col),
             }
         }
@@ -813,12 +813,12 @@ impl Lexer {
         let ch = self.advance()
 
         // Single-character tokens
-        if ch == "(" { return Token { kind: TokenKind.LParen, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == ")" { return Token { kind: TokenKind.RParen, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "{" { return Token { kind: TokenKind.LBrace, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "}" { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "[" { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "]" { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "(" { return Token { kind: TokenKind.LParen, span: self.make_span(start_pos, start_line, start_col), text: "(", kind_id: 100 } }
+        if ch == ")" { return Token { kind: TokenKind.RParen, span: self.make_span(start_pos, start_line, start_col), text: ")", kind_id: 101 } }
+        if ch == "{" { return Token { kind: TokenKind.LBrace, span: self.make_span(start_pos, start_line, start_col), text: "{", kind_id: 102 } }
+        if ch == "}" { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col), text: "}", kind_id: 103 } }
+        if ch == "[" { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col), text: "[", kind_id: 104 } }
+        if ch == "]" { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col), text: "]", kind_id: 105 } }
         if ch == "," { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col) } }
         if ch == ":" { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col) } }
         if ch == ";" { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col) } }

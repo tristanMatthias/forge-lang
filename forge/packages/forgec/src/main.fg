@@ -272,11 +272,17 @@ fn build_compile_separate(paths_csv: string, output: string) {
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
+    eprintln("[BSC] before codegen_init")
     codegen_init("forgec_output")
+    eprintln("[BSC] after codegen_init")
+    eprintln("[BSC] before create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    eprintln("[BSC] after create_globals")
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
+    eprintln("[BSC] before declare_all_fns")
     declare_all_fns()
+    eprintln("[BSC] after declare_all_fns")
     eprintln("  declared " + string(FN_NAMES.length) + " fns")
     // Emit each function body
     mut param_offset = 0
@@ -324,11 +330,17 @@ fn build_compile_single(input_file: string, output: string) {
     eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
+    eprintln("[BSC] before codegen_init")
     codegen_init("forgec_output")
+    eprintln("[BSC] after codegen_init")
+    eprintln("[BSC] before create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
+    eprintln("[BSC] after create_globals")
     EMIT_FILE_IDX = -1
     mut cg = codegen_new()
+    eprintln("[BSC] before declare_all_fns")
     declare_all_fns()
+    eprintln("[BSC] after declare_all_fns")
     eprintln("  declared " + string(FN_NAMES.length) + " fns")
     // Emit each function body (parse once, emit once — no re-declaration)
     mut param_offset = 0

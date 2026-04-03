@@ -392,10 +392,17 @@ pub extern "C" fn forge_llvm_function_type(ret: LLVMPtr, params: *mut LLVMPtr, p
     if ret.is_null() { return std::ptr::null_mut(); }
     if params.is_null() && param_count > 0 { return std::ptr::null_mut(); }
     unsafe {
+        // Validate ret type is a real LLVM type (kind > 0)
+        let ret_kind = LLVMGetTypeKind(ret);
+        if ret_kind > 20 {
+            eprintln!("[GUARD] forge_llvm_function_type: ret has bad kind {}", ret_kind);
+            return std::ptr::null_mut();
+        }
         // Replace NULL param types with i64 to prevent LLVM crash
+        let ctx = LLVMGetTypeContext(ret);
         for i in 0..param_count as usize {
-            if (*params.add(i)).is_null() {
-                let ctx = LLVMGetTypeContext(ret);
+            let p = *params.add(i);
+            if p.is_null() || LLVMGetTypeKind(p) > 20 {
                 *params.add(i) = LLVMInt64TypeInContext(ctx);
             }
         }

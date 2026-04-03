@@ -829,6 +829,7 @@ fn cg_init_str() {
 }
 
 fn cg_init_runtime() {
+    cg_reinit_types()
     // Core
     CG_RT_PRINTLN = llvm.add_function(CG_MOD, "forge_println_string", mft1(CG_VOID, CG_STR))
     CG_RT_I2S = llvm.add_function(CG_MOD, "forge_int_to_string", mft1(CG_STR, CG_I64))
