@@ -27,13 +27,13 @@ fn check(source: string, filename: string) -> bool {
     mut lex = lexer_new(source)
     eprintln("  lexer created, len=" + string(source.length))
     eprintln("  tokenizing...")
-    let tokens = Lexer__tokenize(lex)
+    let tokens = Lexer_tokenize(lex)
     eprintln("  " + string(tokens.length) + " tokens")
 
     eprintln("  parsing...")
     mut p = parser_new_with_source(tokens, source)
     eprintln("  parser created, parsing program...")
-    let program = Parser__parse_program(p)
+    let program = Parser_parse_program(p)
     eprintln("  parsed!")
     eprintln("OK")
     return true
@@ -45,7 +45,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut p = parser_new_with_source(tokens, source)
-    let program = Parser__parse_program(p)
+    let program = Parser_parse_program(p)
 
     if p.diagnostics.length > 0 {
         for d in p.diagnostics {
@@ -55,7 +55,7 @@ fn check(source: string, filename: string) -> bool {
     }
 
     mut tc = type_checker_new()
-    TypeChecker__check_program(tc, program)
+    TypeChecker_check_program(tc, program)
 
     if tc.diagnostics.has_errors {
         let err_output = render_all(tc.diagnostics, source, filename)
@@ -248,10 +248,10 @@ fn scan_one_file(filepath: string, idx: int) {
     let source = fs.read(filepath)
     eprintln("  scan: src=" + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = Lexer__tokenize(lex)
+    let tokens = Lexer_tokenize(lex)
     eprintln("  scan: tokens=" + string(tokens.length))
     mut p = parser_new_with_source(tokens, source)
-    Parser__parse_program(p)
+    Parser_parse_program(p)
     eprintln("  scan: fns=" + string(FN_NAMES.length))
 }
 
@@ -323,10 +323,10 @@ fn build_compile_single(input_file: string, output: string) {
     let source = fs.read(input_file)
     eprintln("BC: read " + string(source.length) + " bytes")
     mut lex = lexer_new(source)
-    let tokens = Lexer__tokenize(lex)
+    let tokens = Lexer_tokenize(lex)
     eprintln("BC: " + string(tokens.length) + " tokens")
     mut p = parser_new_with_source(tokens, source)
-    Parser__parse_program(p)
+    Parser_parse_program(p)
     eprintln("BC: parsed, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies

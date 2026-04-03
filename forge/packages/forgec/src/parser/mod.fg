@@ -69,6 +69,7 @@ export fn parser_new(tokens: List<Token>) -> Parser {
 }
 
 export fn parser_new_with_source(tokens: List<Token>, source: string) -> Parser {
+    forge_set_token_list(tokens)
     Parser {
         tokens,
         pos: 0,
@@ -109,6 +110,7 @@ impl Parser {
     fn advance(self) -> Token {
         forge_watchdog(forge_parser_get_pos(), "advance")
         let tok = self.peek()
+        eprintln("  [PS] here")
         // Advance both Forge-side and C-side position
         self.pos = self.pos + 1
         forge_parser_advance_pos()
@@ -126,6 +128,7 @@ impl Parser {
     fn check(self, kind: TokenKind) -> bool {
         forge_watchdog(self.pos, "check")
         let tok = self.peek()
+        eprintln("  [PS] here")
         let expected = self.kind_to_id(kind)
         if expected == 0 { return false }
         if tok.kind_id == expected { return true }
@@ -156,12 +159,15 @@ impl Parser {
 
     fn expect_ident(self) -> string {
         let tok = self.peek()
+        eprintln("  [PS] here")
+        self.advance()
         self.advance()
         tok.text
     }
 
     fn _old_expect_ident(self) -> string {
         let tok = self.peek()
+        eprintln("  [PS] here")
         if tok.kind_id == 1 {
             self.advance()
             return tok.text
@@ -312,6 +318,7 @@ impl Parser {
         if self.is_at_end() { return null }
 
         let tok = self.peek()
+        eprintln("  [PS] here")
 
         // kind_id fast dispatch — try tok.kind_id first (works in Stage 1)
         // In Stage 2, tok.kind_id is garbage, so we also check forge_peek_kind_id
@@ -877,6 +884,7 @@ impl Parser {
 
     fn parse_primary_type(self) -> TypeExpr? {
         let tok = self.peek()
+        eprintln("  [PS] here")
 
         // Ident → type name (bootstrap workaround: use kind_id)
         if tok.kind_id == 1 {

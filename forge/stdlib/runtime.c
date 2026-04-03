@@ -730,26 +730,26 @@ void forge_set_token_list(ForgeString list) { _c_token_list = list; }
 // Token layout: {TokenKind{i8,ptr}=16, Span{i64,i64,i64,i64}=32, ForgeString{ptr,i64}=16, i64=8} = 72
 int64_t forge_token_kind_id(ForgeString token_list, int64_t index) {
     if (!token_list.ptr || index < 0 || index >= token_list.len) return 99; // EOF
-    char* base = token_list.ptr + index * 72;
-    return *(int64_t*)(base + 64);
+    char* base = token_list.ptr + index * 112;
+    return *(int64_t*)(base + 104);
 }
 ForgeString forge_token_text(ForgeString token_list, int64_t index) {
     if (!token_list.ptr || index < 0 || index >= token_list.len) return (ForgeString){NULL, 0};
-    char* base = token_list.ptr + index * 72;
-    return *(ForgeString*)(base + 48);
+    char* base = token_list.ptr + index * 112;
+    return *(ForgeString*)(base + 88);
 }
 int64_t forge_token_span_start(ForgeString token_list, int64_t index) {
     if (!token_list.ptr || index < 0 || index >= token_list.len) return 0;
-    char* base = token_list.ptr + index * 72;
-    return *(int64_t*)(base + 16);
+    char* base = token_list.ptr + index * 112;
+    return *(int64_t*)(base + 56);
 }
 int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
     if (!token_list.ptr || index < 0 || index >= token_list.len) return 0;
-    char* base = token_list.ptr + index * 72;
+    char* base = token_list.ptr + index * 112;
     return *(int64_t*)(base + 24);
 }
 // Quick kind_id lookup from C-side stored token list (no struct return needed)
-static int _peek_trace = 0;
+static int _peek_trace = 1;
 int64_t forge_peek_kind_id(int64_t pos) {
     int64_t kid = forge_token_kind_id(_c_token_list, pos);
     if (_peek_trace && pos < 20) {
@@ -3267,10 +3267,10 @@ void forge_dump_token_list(ForgeString list) {
         char* base = list.ptr + i * token_size;
         int8_t kind_tag = *(int8_t*)base;
         void* kind_ptr = *(void**)(base + 8);
-        int64_t kind_id = *(int64_t*)(base + 64);
-        char* text_ptr = *(char**)(base + 48);
+        int64_t kind_id = *(int64_t*)(base + 104);
+        char* text_ptr = *(char**)(base + 88);
         int64_t text_len = *(int64_t*)(base + 56);
-        int64_t span_start = *(int64_t*)(base + 16);
+        int64_t span_start = *(int64_t*)(base + 56);
         int64_t span_end = *(int64_t*)(base + 24);
         fprintf(stderr, "  tok[%d] tag=%d kptr=%p kid=%lld span=%lld-%lld txt_ptr=%p txt_len=%lld",
             i, (int)kind_tag, kind_ptr, (long long)kind_id,
