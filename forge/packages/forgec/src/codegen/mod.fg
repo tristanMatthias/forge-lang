@@ -697,7 +697,7 @@ export fn codegen_init(name: string) {
     CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
     CG_NULLABLE_STR_TY = null
-    let dfns = map_new()
+    let dfns = forge_map_new()
     DECLARED_FNS = dfns
     cg_init_ctx(name)
     cg_init_int_types()

@@ -153,6 +153,23 @@ test-mini: $(MINI_BIN) $(RUNTIME_O)
 		exit 1; \
 	fi
 
+# ─── Test: Stage 1 compiles hello world ─────────────────────────
+
+test-stage1: $(STAGE1_RUST) $(RUNTIME_O)
+	@echo "=== Testing Stage 1 (self-hosted) on hello world ==="
+	@echo 'fn main() { println("hello from stage 2!") }' > /tmp/forge_s1_test.fg
+	@$(STAGE1_RUST) build /tmp/forge_s1_test.fg 2>/dev/null
+	@if [ -f output.ll ]; then \
+		$(LLC) -O0 -filetype=obj output.ll -o /tmp/forge_s1_test.o && \
+		cc -o /tmp/forge_s1_test /tmp/forge_s1_test.o $(RUNTIME_O) -lm && \
+		/tmp/forge_s1_test && \
+		rm -f /tmp/forge_s1_test.fg /tmp/forge_s1_test.o /tmp/forge_s1_test output.ll; \
+		echo "  PASS"; \
+	else \
+		echo "  FAIL: no IR produced"; \
+		exit 1; \
+	fi
+
 # ─── Clean ───────────────────────────────────────────────────────
 
 clean:
