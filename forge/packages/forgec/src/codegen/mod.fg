@@ -1174,12 +1174,36 @@ impl Codegen {
                         if method == "char_at" { return "string" }
                         if method == "index_of" { return "int" }
                         if method == "length" { return "int" }
-                        // Resolve impl method return type
+                        // Namespace methods
                         mut obj_name = ""
                         match obj {
                             .Ident(n, _) -> { obj_name = n }
                             _ -> {}
                         }
+                        // Known namespace.method return types
+                        if obj_name == "process" && method == "args" { return "string" }
+                        if obj_name == "process" && method == "run" { return "string" }
+                        if obj_name == "fs" && method == "read" { return "string" }
+                        // Try looking up mangled name in FN_NAMES
+                        if obj_name != "" {
+                            let direct = obj_name + "_" + method
+                            mut di = 0
+                            while di < FN_NAMES.length {
+                                if FN_NAMES[di] == direct {
+                                    if di < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[di] }
+                                }
+                                di = di + 1
+                            }
+                            let prefixed = "forge_" + obj_name + "_" + method
+                            mut pi2 = 0
+                            while pi2 < FN_NAMES.length {
+                                if FN_NAMES[pi2] == prefixed {
+                                    if pi2 < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[pi2] }
+                                }
+                                pi2 = pi2 + 1
+                            }
+                        }
+                        // Resolve impl method return type
                         if obj_name != "" {
                             let st = var_struct_type(obj_name)
                             if st != "" {
