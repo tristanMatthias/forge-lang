@@ -426,50 +426,36 @@ impl<'ctx> Codegen<'ctx> {
         let new_val = self.compile_expr(&args.first()?.value)?;
         let elem_llvm_ty = self.type_to_llvm_basic(&elem_type);
 
-        // Extract current data ptr and len
-        let (data_ptr, old_len) = self.extract_list_fields(list_val)?;
+        // Store element to a temporary alloca so we can pass a pointer to forge_list_push
+        let elem_alloca = self.builder.build_alloca(elem_llvm_ty, "push_elem").unwrap();
+        self.builder.build_store(elem_alloca, new_val).unwrap();
 
-        // New length = old_len + 1
-        let new_len = self.builder.build_int_add(
-            old_len,
-            self.context.i64_type().const_int(1, false),
-            "new_len",
-        ).unwrap();
-
-        // Allocate new buffer
+        // Call forge_list_push(list, elem_ptr, elem_size) → returns new list {ptr, i64}
         let elem_size = elem_llvm_ty.size_of().unwrap();
-        let new_total = self.builder.build_int_mul(elem_size, new_len, "new_total").unwrap();
-        let new_ptr = self.call_runtime("forge_alloc", &[new_total.into()], "new_data")?
-            .into_pointer_value();
+        let list_push_fn = self.module.get_function("forge_list_push")
+            .unwrap_or_else(|| {
+                // Declare forge_list_push if not already declared
+                let list_ty = self.context.struct_type(
+                    &[self.context.ptr_type(inkwell::AddressSpace::default()).into(),
+                      self.context.i64_type().into()], false);
+                let fn_ty = list_ty.fn_type(&[
+                    list_ty.into(), // list
+                    self.context.ptr_type(inkwell::AddressSpace::default()).into(), // elem ptr
+                    self.context.i64_type().into(), // elem size
+                ], false);
+                self.module.add_function("forge_list_push", fn_ty, None)
+            });
 
-        // Copy old data if non-empty (null ptr for empty lists would crash memcpy)
-        let old_total = self.builder.build_int_mul(elem_size, old_len, "old_total").unwrap();
-        let is_empty = self.builder.build_int_compare(
-            inkwell::IntPredicate::EQ, old_len, self.context.i64_type().const_zero(), "is_empty"
-        ).unwrap();
-        let function = self.current_function();
-        let copy_bb = self.context.append_basic_block(function, "push_copy");
-        let done_bb = self.context.append_basic_block(function, "push_done");
-        self.builder.build_conditional_branch(is_empty, done_bb, copy_bb).unwrap();
-        self.builder.position_at_end(copy_bb);
-        // Use LLVM memcpy intrinsic (always available, no runtime dependency)
-        self.builder.build_memcpy(new_ptr, 1, data_ptr, 1, old_total).ok();
-        self.builder.build_unconditional_branch(done_bb).unwrap();
-        self.builder.position_at_end(done_bb);
-
-        // Store new element at index old_len
-        let new_elem_ptr = unsafe {
-            self.builder.build_gep(elem_llvm_ty, new_ptr, &[old_len], "new_elem_ptr").unwrap()
-        };
-        self.builder.build_store(new_elem_ptr, new_val).unwrap();
-
-        // Build new list struct
-        let new_list = self.build_list_struct(&elem_type, new_ptr, new_len);
+        let result = self.builder.build_call(
+            list_push_fn,
+            &[(*list_val).into(), elem_alloca.into(), elem_size.into()],
+            "pushed",
+        ).unwrap().try_as_basic_value().basic()?;
 
         // Update the mutable variable
         if let Expr::Ident(name, _) = list_expr {
             if let Some((ptr, _)) = self.lookup_var(name) {
-                self.builder.build_store(ptr, new_list).unwrap();
+                self.builder.build_store(ptr, result).unwrap();
             }
         }
 
