@@ -1,4 +1,5 @@
 use super::*;
+use inkwell::values::BasicValue;
 
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn compile_if(
@@ -65,11 +66,11 @@ impl<'ctx> Codegen<'ctx> {
         let then_val = self.compile_block_for_value(then_branch);
         self.pop_scope();
         let then_end_bb = self.builder.get_insert_block().unwrap();
-        if then_end_bb.get_terminator().is_none() {
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
-        }
+        let then_had_terminator = then_end_bb.get_terminator().is_some();
 
-        // Else branch
+        // Else branch — compile but DON'T add terminators yet.
+        // We need to insert alloca stores before terminators when both
+        // branches produce values (avoids phi domination with nested ifs).
         self.builder.position_at_end(else_bb);
         let mut else_val = None;
         if let Some(else_b) = else_branch {
@@ -78,33 +79,60 @@ impl<'ctx> Codegen<'ctx> {
             self.pop_scope();
         }
         let else_end_bb = self.builder.get_insert_block().unwrap();
-        if else_end_bb.get_terminator().is_none() {
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
-        }
+        let else_had_terminator = else_end_bb.get_terminator().is_some();
 
-        self.builder.position_at_end(merge_bb);
-
-        // Only create phi if both branches reach the merge block.
-        // If a branch terminates with return, it won't branch to merge,
-        // so its values don't dominate the merge block.
-        // Simple check: did we add the unconditional branch to merge? (line 69/82 above)
-        // If the block had a terminator BEFORE we added ours, we didn't add one.
-        // We can check: the then_end_bb/else_end_bb terminators — if they're Return, skip phi.
-        let then_returns = then_end_bb.get_terminator().map_or(false, |t| {
+        let then_returns = then_had_terminator && then_end_bb.get_terminator().map_or(false, |t| {
             t.get_opcode() == inkwell::values::InstructionOpcode::Return
         });
-        let else_returns = else_end_bb.get_terminator().map_or(false, |t| {
+        let else_returns = else_had_terminator && else_end_bb.get_terminator().map_or(false, |t| {
             t.get_opcode() == inkwell::values::InstructionOpcode::Return
         });
 
         if let (Some(tv), Some(ev)) = (&then_val, &else_val) {
-            // Also skip phi for struct types in if-without-else (common source of domination errors)
             let is_struct_type = tv.is_struct_value();
             let has_else = else_branch.is_some();
             if tv.get_type() == ev.get_type() && !then_returns && !else_returns && (!is_struct_type || has_else) {
-                let phi = self.builder.build_phi(tv.get_type(), "if_result").unwrap();
-                phi.add_incoming(&[(tv, then_end_bb), (ev, else_end_bb)]);
-                return Some(phi.as_basic_value());
+                // Use alloca-based value passing instead of phi nodes.
+                // Phi nodes break when nested if-else chains produce values in
+                // inner merge blocks that don't dominate the outer merge.
+                // Alloca+store+load avoids this; LLVM's mem2reg promotes to phi where safe.
+                // We store values BEFORE adding branch terminators so the values
+                // are still in scope (dominate the store position).
+                let result_ty = tv.get_type();
+                let tmp_builder = self.context.create_builder();
+                let entry = function.get_first_basic_block().unwrap();
+                let mut insert_pt = entry.get_first_instruction();
+                while let Some(ref instr) = insert_pt {
+                    if instr.get_opcode() == inkwell::values::InstructionOpcode::Alloca {
+                        insert_pt = instr.get_next_instruction();
+                    } else {
+                        break;
+                    }
+                }
+                if let Some(ref instr) = insert_pt {
+                    tmp_builder.position_before(instr);
+                } else {
+                    tmp_builder.position_at_end(entry);
+                }
+                let alloca = tmp_builder.build_alloca(result_ty, "if_result_tmp").unwrap();
+
+                // Store then value in its block (value dominates here),
+                // then add branch terminator
+                if !then_had_terminator {
+                    self.builder.position_at_end(then_end_bb);
+                    self.builder.build_store(alloca, *tv).unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+                // Store else value in its block, then add branch terminator
+                if !else_had_terminator {
+                    self.builder.position_at_end(else_end_bb);
+                    self.builder.build_store(alloca, *ev).unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+
+                self.builder.position_at_end(merge_bb);
+                let result = self.builder.build_load(result_ty, alloca, "if_result").unwrap();
+                return Some(result);
             }
 
             // Check if we need to wrap values into a nullable type
@@ -117,12 +145,21 @@ impl<'ctx> Codegen<'ctx> {
             let is_else_null = matches!(else_type, Type::Nullable(_));
 
             if is_then_null || is_else_null {
+                // Ensure terminators exist for nullable wrapping path
+                if !then_had_terminator && then_end_bb.get_terminator().is_none() {
+                    self.builder.position_at_end(then_end_bb);
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+                if !else_had_terminator && else_end_bb.get_terminator().is_none() {
+                    self.builder.position_at_end(else_end_bb);
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+
                 // Determine the nullable result type
                 let nullable_ty = if let Some(ref ret_ty) = self.current_fn_return_type {
                     if matches!(ret_ty, Type::Nullable(_)) {
                         ret_ty.clone()
                     } else {
-                        // Infer from whichever branch is non-null
                         let inner = if !is_then_null { then_type.clone() } else if let Type::Nullable(inner) = &else_type { *inner.clone() } else { else_type.clone() };
                         Type::Nullable(Box::new(inner))
                     }
@@ -136,7 +173,6 @@ impl<'ctx> Codegen<'ctx> {
                 // Wrap each branch value into the nullable struct via alloca
                 // Then branch
                 self.builder.position_at_end(then_end_bb);
-                // Remove the existing terminator (branch to merge) so we can insert before it
                 if let Some(term) = then_end_bb.get_terminator() {
                     term.erase_from_basic_block();
                 }
@@ -170,6 +206,16 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Fallthrough: add branch terminators if not yet added
+        if !then_had_terminator && then_end_bb.get_terminator().is_none() {
+            self.builder.position_at_end(then_end_bb);
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+        }
+        if !else_had_terminator && else_end_bb.get_terminator().is_none() {
+            self.builder.position_at_end(else_end_bb);
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+        }
+        self.builder.position_at_end(merge_bb);
         then_val.or(else_val)
     }
     /// Compile all statements in a block, tracking the last expression value.
@@ -177,7 +223,7 @@ impl<'ctx> Codegen<'ctx> {
     /// ends with a non-expression statement.
     pub(crate) fn compile_block_for_value(&mut self, block: &Block) -> Option<BasicValueEnum<'ctx>> {
         let mut last_val = None;
-        let entry_bb = self.builder.get_insert_block();
+        let before_bb = self.builder.get_insert_block();
         for stmt in &block.statements {
             // If block already terminated (return/break), stop compiling
             if let Some(bb) = self.builder.get_insert_block() {
@@ -199,6 +245,21 @@ impl<'ctx> Codegen<'ctx> {
         if let Some(bb) = self.builder.get_insert_block() {
             if bb.get_terminator().is_some() {
                 return None;
+            }
+        }
+        // If the value's defining instruction is in a different block than the
+        // current builder position, it might not dominate. Discard to prevent
+        // phi domination errors. Values from compile_if's alloca path are in
+        // the current block (merge_bb) and pass this check.
+        if let Some(ref val) = last_val {
+            if let Some(current_bb) = self.builder.get_insert_block() {
+                if let Some(instr) = val.as_instruction_value() {
+                    if let Some(val_bb) = instr.get_parent() {
+                        if val_bb != current_bb {
+                            return None;
+                        }
+                    }
+                }
             }
         }
         last_val

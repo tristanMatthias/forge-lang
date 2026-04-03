@@ -7,7 +7,7 @@ description = "LLVM C API wrapper for generating LLVM IR from Forge"
 [native]
 library = "forge_llvm"
 link_flags = [
-    "-L/opt/homebrew/opt/llvm@19/lib",
-    "-lLLVM-19",
+    "-L/opt/homebrew/opt/llvm@18/lib",
+    "-lLLVM-18",
     "-lc++",
 ]

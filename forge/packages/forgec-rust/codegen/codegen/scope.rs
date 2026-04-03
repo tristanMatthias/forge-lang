@@ -177,6 +177,34 @@ impl<'ctx> Codegen<'ctx> {
         tmp_builder.build_alloca(llvm_ty, name).unwrap()
     }
 
+    /// Like create_entry_block_alloca but takes a raw LLVM type instead of a Forge Type.
+    /// Used when we need to create temporary allocas for value promotion.
+    pub(crate) fn create_entry_block_alloca_raw(
+        &self,
+        llvm_ty: inkwell::types::BasicTypeEnum<'ctx>,
+        name: &str,
+    ) -> PointerValue<'ctx> {
+        let function = self.current_function();
+        let entry = function.get_first_basic_block().unwrap();
+
+        let tmp_builder = self.context.create_builder();
+        let mut insert_before = entry.get_first_instruction();
+        while let Some(ref instr) = insert_before {
+            if instr.get_opcode() == inkwell::values::InstructionOpcode::Alloca {
+                insert_before = instr.get_next_instruction();
+            } else {
+                break;
+            }
+        }
+        if let Some(ref instr) = insert_before {
+            tmp_builder.position_before(instr);
+        } else {
+            tmp_builder.position_at_end(entry);
+        }
+
+        tmp_builder.build_alloca(llvm_ty, name).unwrap()
+    }
+
     /// Wrap a raw C string pointer as a ForgeString by calling strlen + forge_string_new.
     /// This is the standard pattern for converting `ptr` → `{ptr, len}` ForgeString.
     pub(crate) fn wrap_ptr_as_string(
