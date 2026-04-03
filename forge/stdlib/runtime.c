@@ -725,7 +725,7 @@ void forge_parser_set_ptr(void* ptr) {
 static ForgeString _c_token_list = {NULL, 0};
 static ForgeString _current_scan_source = {NULL, 0};
 void forge_set_scan_source(ForgeString src) { _current_scan_source = src; }
-void forge_set_token_list(ForgeString list) { _c_token_list = list; fprintf(stderr, "  [stl] ptr=%p len=%lld\n", list.ptr, (long long)list.len); for(int i=0;i<5&&i<list.len;i++){char*b=list.ptr+i*112;fprintf(stderr,"  [t%d] kid=%lld\n",i,*(long long*)(b+104));} }
+void forge_set_token_list(ForgeString list) { _c_token_list = list; }
 // Access token fields by index from C-side stored list
 // Token layout: {TokenKind{i8,ptr}=16, Span{i64,i64,i64,i64}=32, ForgeString{ptr,i64}=16, i64=8} = 72
 int64_t forge_token_kind_id(ForgeString token_list, int64_t index) {

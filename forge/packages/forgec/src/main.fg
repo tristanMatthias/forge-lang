@@ -287,7 +287,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
     // Emit each function body
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
+    while fi < forge_fn_store_count() {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         let bsrc = FN_BODY_SOURCES[fi]
@@ -345,7 +345,7 @@ fn build_compile_single(input_file: string, output: string) {
     // Emit each function body (parse once, emit once — no re-declaration)
     mut param_offset = 0
     mut fi = 0
-    while fi < FN_NAMES.length {
+    while fi < forge_fn_store_count() {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         let bsrc = FN_BODY_SOURCES[fi]

@@ -536,6 +536,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
         forge_set_token_list(body_tokens)
+        forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
         CG_ACTIVE = true
@@ -826,6 +827,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             mut body_lex = lexer_new(body_src)
             let body_tokens = body_lex.tokenize()
             forge_set_token_list(body_tokens)
+        forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
             let body = body_parser.parse_block()
             let last = cg.emit_block(body)
