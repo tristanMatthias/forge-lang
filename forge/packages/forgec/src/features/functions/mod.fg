@@ -436,6 +436,13 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     let is_main = name == "main"
     mut pc = 0
     if idx < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[idx] }
+    // Recompute param_offset from Forge lists (C-side fn_store counts may differ)
+    mut forge_param_offset = 0
+    mut oi = 0
+    while oi < idx {
+        if oi < FN_PARAM_COUNTS.length { forge_param_offset = forge_param_offset + FN_PARAM_COUNTS[oi] }
+        oi = oi + 1
+    }
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
@@ -459,13 +466,16 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     CG_IS_MAP_INDEX = 0
     CG_LAST_STRUCT_TYPE = ""
 
-    // Define params — use C-side registries (immune to Forge list corruption)
+    // Define params — use Forge lists (C-side registries aren't populated in AST path)
+    eprintln("[FN] " + name + " pc=" + pc.to_string() + " off=" + param_offset.to_string())
     mut pi = 0
     while pi < pc {
-        let pt_idx = param_offset + pi
-        let pname = forge_param_name_get(pt_idx)
+        let pt_idx = forge_param_offset + pi
+        mut pname = ""
+        if pt_idx < FN_ALL_PARAM_NAMES.length { pname = FN_ALL_PARAM_NAMES[pt_idx] }
         let param_val = llvm.get_param(fn_val, pi)
-        mut param_type_name = forge_param_type_get(pt_idx)
+        mut param_type_name = ""
+        if pt_idx < FN_ALL_PARAM_TYPES.length { param_type_name = FN_ALL_PARAM_TYPES[pt_idx] }
         if param_type_name == "" { param_type_name = "int" }
         let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
         mut p_ty = CG_I64
