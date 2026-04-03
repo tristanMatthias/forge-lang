@@ -257,7 +257,7 @@ impl Lexer {
         if ch == "\n" {
             self.advance()
             return Token {
-                kind: TokenKind.Newline,
+                kind: TokenKind.Newline, text: "", kind_id: 120,
                 span: self.make_span(start_pos, start_line, start_col),
             }
         }
@@ -938,14 +938,14 @@ impl Lexer {
                     self.advance()
                     return Token { kind: TokenKind.DotDotEq, span: self.make_span(start_pos, start_line, start_col) }
                 }
-                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col), text: "..", kind_id: 87 }
             }
             return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col), text: ".", kind_id: 73 }
         }
 
         // /
         if ch == "/" {
-            return Token { kind: TokenKind.Slash, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Slash, span: self.make_span(start_pos, start_line, start_col), text: "/", kind_id: 93 }
         }
 
         // Unknown character
