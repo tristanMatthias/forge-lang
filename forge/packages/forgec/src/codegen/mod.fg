@@ -1690,7 +1690,18 @@ impl Codegen {
         let ft = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, ft, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-        // Return as int for now (skip registry lookup to avoid corruption)
+        // Determine return type from FN_RETURN_TYPES
+        mut fi = 0
+        while fi < FN_NAMES.length {
+            if FN_NAMES[fi] == fn_name {
+                if fi < FN_RETURN_TYPES.length {
+                    let rtn = FN_RETURN_TYPES[fi]
+                    return self.tv_from_return_type(r, rtn)
+                }
+                break
+            }
+            fi = fi + 1
+        }
         tv_int(r)
     }
 
