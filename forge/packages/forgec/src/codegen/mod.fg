@@ -1642,32 +1642,59 @@ impl Codegen {
     fn emit_ident(self, name: string) -> ptr {
         // Search current function locals first (from END to scope start)
         // then globals (from scope start-1 to 0)
-        // This prevents stale locals from other functions being found
         mut vi = CG_VAR_NAMES.length - 1
         while vi >= CG_VAR_SCOPE_START {
             if CG_VAR_NAMES[vi] == name {
                 cg_reinit_types()
-                // Use LLVM's own type system: get the alloca's allocated type
-                // This is always correct, regardless of flag corruption
                 let alloca_ptr = CG_VAR_PTRS[vi]
-                let alloc_ty = llvm.get_allocated_type(alloca_ptr)
+                // Determine load type from CG_VAR_TYPES (primary source)
                 mut load_ty = CG_I64
-                if alloc_ty != null { load_ty = alloc_ty }
-                // Detect string type for downstream flag tracking
                 CG_LAST_IS_STR = 0
                 CG_LAST_IS_NULLABLE = 0
                 CG_LAST_ENUM_TYPE = ""
                 CG_LAST_STRUCT_TYPE = ""
-                if load_ty == CG_STR { CG_LAST_IS_STR = 1 }
-                // Check CSV for string type as fallback
-                let str_needle = "," + name + ","
-                let is_str_local = CG_STR_LOCALS_CSV.index_of(str_needle) >= 0
-                if is_str_local {
-                    cg_reinit_types()
-                    load_ty = CG_STR
-                    CG_LAST_IS_STR = 1
+                if vi < CG_VAR_TYPES.length {
+                    let vtype = CG_VAR_TYPES[vi]
+                    if vtype == "string" {
+                        load_ty = CG_STR
+                        CG_LAST_IS_STR = 1
+                    } else if vtype == "float" {
+                        load_ty = CG_I64
+                    } else if vtype == "map" {
+                        CG_LAST_IS_MAP = 1
+                        load_ty = CG_PTR
+                    } else if vtype.length > 5 {
+                        if vtype.substring(0, 5) == "enum:" {
+                            let ename = vtype.substring(5, vtype.length)
+                            CG_LAST_ENUM_TYPE = ename
+                            let ety = cg_get_enum_ty_for(ename)
+                            if ety != null { load_ty = ety }
+                        } else if vtype.substring(0, 7) == "struct:" {
+                            let sname = vtype.substring(7, vtype.length)
+                            CG_LAST_STRUCT_TYPE = sname
+                            mut sti = CG_STRUCT_NAMES.length - 1
+                            while sti >= 0 {
+                                if CG_STRUCT_NAMES[sti] == sname {
+                                    let sty = CG_STRUCT_TYPES[sti]
+                                    if sty != null { load_ty = sty }
+                                    break
+                                }
+                                sti = sti - 1
+                            }
+                        } else if vtype.substring(0, 5) == "list:" {
+                            load_ty = CG_STR
+                            CG_LAST_IS_STR = 1
+                        }
+                    } else if vtype == "nullable" {
+                        CG_LAST_IS_NULLABLE = 1
+                    }
+                } else {
+                    // Fallback: use LLVM's allocated type
+                    let alloc_ty = llvm.get_allocated_type(alloca_ptr)
+                    if alloc_ty != null { load_ty = alloc_ty }
+                    if load_ty == CG_STR { CG_LAST_IS_STR = 1 }
                 }
-                // Check string var names list
+                // Legacy fallbacks (will be removed in later phases)
                 mut si = CG_STR_VAR_NAMES.length - 1
                 while si >= 0 {
                     if CG_STR_VAR_NAMES[si] == name {
