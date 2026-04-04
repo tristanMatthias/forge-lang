@@ -3641,6 +3641,7 @@ void forge_debug_lexer(void* ptr) {
 #define ALLOCA_CACHE_SIZE 4096
 static void* _ac_fn_ptr = NULL; // current LLVM function pointer — entries from other functions are stale
 static void* _ac_builder = NULL; // LLVM builder for deriving current function
+static void* _ac_llvm_ctx = NULL; // LLVM context for type lookups
 static struct { char name[64]; char type_name[32]; void* ptr; void* fn; void* alloca_type; } _ac[ALLOCA_CACHE_SIZE];
 static int _ac_count = 0;
 
@@ -3659,9 +3660,8 @@ static void* _ac_get_current_fn(void) {
     return gbbp(bb);
 }
 
-void forge_alloca_cache_set_builder(void* builder) {
-    _ac_builder = builder;
-}
+void forge_alloca_cache_set_builder(void* builder) { _ac_builder = builder; }
+void forge_alloca_cache_set_context(void* ctx) { _ac_llvm_ctx = ctx; }
 
 // ---- Enum type registry (replaces CG_ENUM_TYPE_CSV global) ----
 #define ENUM_REG_SIZE 256
@@ -4019,9 +4019,18 @@ int64_t forge_alloca_cache_load_field(ForgeString var_name, ForgeString struct_t
     if (!gio3) gio3 = (_gio_fn2)dlsym(RTLD_DEFAULT, "LLVMGetInstructionOpcode");
     if (!gat3 || !gio3) return 0;
 
+    void* struct_ty = NULL;
     int opcode = gio3(alloca);
-    if (opcode != 26) return 0; // Not an alloca
-    void* struct_ty = gat3(alloca);
+    if (opcode == 26) {
+        struct_ty = gat3(alloca);
+    }
+    // If not an alloca (e.g., self-by-pointer param), look up by type name
+    if (!struct_ty && slen > 0 && _ac_llvm_ctx) {
+        typedef void* (*gtbn_fn)(void*, const char*);
+        static gtbn_fn gtbn = NULL;
+        if (!gtbn) gtbn = (gtbn_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+        if (gtbn) struct_ty = gtbn(_ac_llvm_ctx, sname);
+    }
     if (!struct_ty) return 0;
 
     // Build GEP: getelementptr inbounds %StructType, ptr %alloca, i32 0, i32 field_idx

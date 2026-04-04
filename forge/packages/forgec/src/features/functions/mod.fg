@@ -337,9 +337,17 @@ export fn declare_all_fns() {
             while pi < pc {
                 let pt_idx = param_offset + pi
                 mut param_ty = CG_I64
+                // Check if this is a 'self' param — pass by pointer for struct mutation
+                mut is_self_param = false
+                if pt_idx < FN_ALL_PARAM_NAMES.length {
+                    if FN_ALL_PARAM_NAMES[pt_idx] == "self" { is_self_param = true }
+                }
                 if pt_idx < FN_ALL_PARAM_TYPES.length {
                     let tname = FN_ALL_PARAM_TYPES[pt_idx]
-                    if tname == "string" { param_ty = CG_STR }
+                    if is_self_param {
+                        // Self params always pass by pointer (enables mutation)
+                        param_ty = CG_PTR
+                    } else if tname == "string" { param_ty = CG_STR }
                     else if tname == "List" || (tname.length > 5 && tname.substring(0, 5) == "List:") { param_ty = CG_STR }
                     else if tname != "int" && tname != "float" && tname != "bool" && tname != "ptr" && tname != "" {
                         let resolved = resolve_type_to_llvm(tname)
@@ -417,12 +425,18 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if pt_idx < FN_ALL_PARAM_TYPES.length {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
-        mut p_ty = resolve_type_to_llvm(param_type_name)
-        if p_ty == null { p_ty = CG_I64 }
-        let alloca = llvm.build_alloca(CG_B, p_ty, pname)
-        llvm.build_store(CG_B, param_val, alloca)
-        forge_alloca_cache_set(pname, alloca)
-        forge_alloca_cache_set_var_type(pname, param_type_name)
+        if pname == "self" {
+            // Self param is a pointer to caller's alloca — use directly
+            forge_alloca_cache_set(pname, param_val)
+            forge_alloca_cache_set_var_type(pname, param_type_name)
+        } else {
+            mut p_ty = resolve_type_to_llvm(param_type_name)
+            if p_ty == null { p_ty = CG_I64 }
+            let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+            llvm.build_store(CG_B, param_val, alloca)
+            forge_alloca_cache_set(pname, alloca)
+            forge_alloca_cache_set_var_type(pname, param_type_name)
+        }
         pi = pi + 1
     }
 
@@ -509,7 +523,13 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             mut param_ty = CG_I64
             if pt_idx < FN_ALL_PARAM_TYPES.length {
                 let type_name = FN_ALL_PARAM_TYPES[pt_idx]
-                param_ty = resolve_type_to_llvm(type_name)
+                // Self params pass by pointer for mutation support
+                mut is_self = false
+                if pt_idx < FN_ALL_PARAM_NAMES.length {
+                    if FN_ALL_PARAM_NAMES[pt_idx] == "self" { is_self = true }
+                }
+                if is_self { param_ty = CG_PTR }
+                else { param_ty = resolve_type_to_llvm(type_name) }
             }
             llvm.type_array_set(param_arr, pi, param_ty)
             pi = pi + 1
@@ -594,11 +614,15 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                     is_struct_param = true
                 }
             }
-            let alloca = llvm.build_alloca(CG_B, p_ty, pname)
-            llvm.build_store(CG_B, param_val, alloca)
-            forge_alloca_cache_set(pname, alloca)
+            if pname == "self" {
+                // Self param is a pointer — use directly
+                forge_alloca_cache_set(pname, param_val)
+            } else {
+                let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+                llvm.build_store(CG_B, param_val, alloca)
+                forge_alloca_cache_set(pname, alloca)
+            }
             forge_alloca_cache_set_var_type(pname, param_type_name)
-            // Struct/enum type info is tracked via alloca cache (set_var_type above)
             pi = pi + 1
         }
         param_offset = param_offset + pc

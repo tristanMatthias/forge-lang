@@ -514,9 +514,15 @@ pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name:
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_create_builder(ctx: LLVMPtr) -> LLVMPtr {
-    extern "C" { fn forge_alloca_cache_set_builder(b: *mut c_void); }
+    extern "C" {
+        fn forge_alloca_cache_set_builder(b: *mut c_void);
+        fn forge_alloca_cache_set_context(ctx: *mut c_void);
+    }
     let b = unsafe { LLVMCreateBuilderInContext(ctx) };
-    unsafe { forge_alloca_cache_set_builder(b); }
+    unsafe {
+        forge_alloca_cache_set_builder(b);
+        forge_alloca_cache_set_context(ctx);
+    }
     b
 }
 

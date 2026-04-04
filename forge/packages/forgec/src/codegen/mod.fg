@@ -2098,13 +2098,14 @@ impl Codegen {
                     let method_name = impl_ns + "_" + f
                     let fn_ref3 = llvm.get_named_function(CG_MOD, method_name)
                     if fn_ref3 != null {
-                        // Prepend self (the object) as first arg
-                        let obj_val = self.emit_ident(ns)
-                        // Emit all args + obj_val as first param
+                        // Prepend self (the object) as first arg — pass by pointer
+                        let obj_alloca_i = forge_alloca_cache_has(ns)
+                        mut obj_ptr = self.emit_ident(ns)
+                        if obj_alloca_i != 0 { obj_ptr = obj_alloca_i }
                         cg_reinit_types()
                         let total_args = args.length + 1
                         let arg_arr = llvm.value_array_new(total_args)
-                        llvm.value_array_set(arg_arr, 0, obj_val)
+                        llvm.value_array_set(arg_arr, 0, obj_ptr)
                         mut argi = 0
                         for arg in args {
                             llvm.value_array_set(arg_arr, argi + 1, self.emit_expr(arg))
