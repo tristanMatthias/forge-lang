@@ -3884,6 +3884,19 @@ void* forge_alloca_cache_get(ForgeString name) {
     return NULL;
 }
 
+// Lookup by name AND explicit function pointer (for when _ac_fn_ptr is wrong)
+void* forge_alloca_cache_get_in_fn(ForgeString name, void* fn) {
+    if (!name.ptr || name.len <= 0) return NULL;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            return _ac[i].ptr;
+        }
+    }
+    return NULL;
+}
+
 // ---- Per-variable type name cache ----
 // Stores Forge-level type names (e.g., "string", "int", "Token", "List<Expr>")
 // Populated from type annotations during parsing. Used by codegen for correct alloca types.
