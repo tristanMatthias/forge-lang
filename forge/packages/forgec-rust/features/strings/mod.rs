@@ -148,6 +148,7 @@ crate::runtime_fn! { name: "forge_alloca_cache_type_id", feature: "strings", par
 crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", params: [ForgeString, ForgeString, I64, Ptr], ret: I64 }
 
 // C-side function body store (immune to Forge list push corruption)
 crate::runtime_fn! { name: "forge_fn_store_clear", feature: "strings", params: [], ret: Void }

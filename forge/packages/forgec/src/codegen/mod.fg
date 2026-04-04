@@ -987,6 +987,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_set_var_type", mft2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_get_var_type", mft1(CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
 }
 
@@ -1946,6 +1947,20 @@ impl Codegen {
         mut var_name = ""
         match obj {
             .Ident(name, span) -> { var_name = name }
+            .MemberAccess(inner_obj, inner_field, _) -> {
+                // Chained access: self.source.length → emit inner first
+                let inner_val = self.emit_member_access(inner_obj, inner_field)
+                // Handle .length on the result
+                if field == "length" {
+                    let ca = llvm.value_array_new(1)
+                    llvm.value_array_set(ca, 0, inner_val)
+                    let ft = mft1(CG_I64, CG_STR)
+                    let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+                    llvm.value_array_free(ca)
+                    return result
+                }
+                return inner_val
+            }
             _ -> { return llvm.const_int(CG_I64, 0, 0) }
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
@@ -1956,8 +1971,14 @@ impl Codegen {
             return llvm.const_int(CG_I64, tag, 0)
         }
 
-        // Special case: .length property
+        // Special case: .length property on string/list variables
         if field == "length" {
+            let vt = self.expr_type_name(obj)
+            let is_list = vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
+            if is_list {
+                let obj_val = self.emit_ident(var_name)
+                return llvm.build_extract_value(CG_B, obj_val, 1, "len")
+            }
             let obj_val = self.emit_ident(var_name)
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, obj_val)
@@ -1975,10 +1996,13 @@ impl Codegen {
         let fidx = struct_field_index(struct_type_name, field)
         if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
 
-        // Load the struct value and extract the field
+        // Use GEP to access the field directly from the alloca (avoids loading the whole struct)
+        let field_val = forge_alloca_cache_load_field(var_name, struct_type_name, fidx, CG_B)
+        if field_val != 0 { return field_val }
+
+        // Fallback: load whole struct and extract
         let obj_val = self.emit_ident(var_name)
-        let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
-        field_val
+        llvm.build_extract_value(CG_B, obj_val, fidx, field)
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
@@ -2687,51 +2711,4 @@ impl Codegen {
         vt == "map"
     }
 
-    fn emit_member_access(self, obj: Expr, field: string) -> ptr {
-        // Handle obj.field: extract the variable name from obj, look up struct type, extract field
-        mut var_name = ""
-        match obj {
-            .Ident(name, span) -> { var_name = name }
-            _ -> { return llvm.const_int(CG_I64, 0, 0) }
-        }
-        if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
-
-        // Enum constructor: Color.Green → tag value
-        let tag = match_enum_tag(var_name + "." + field)
-        if tag >= 0 {
-            return llvm.const_int(CG_I64, tag, 0)
-        }
-
-        // Special case: .length property
-        if field == "length" {
-            let obj_val = self.emit_ident(var_name)
-            // For lists: extract field 1 directly (it's the count)
-            let vt = self.expr_type_name(obj)
-            let is_list = vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
-            if is_list {
-                return llvm.build_extract_value(CG_B, obj_val, 1, "len")
-            }
-            // For strings: call forge_string_length
-            let ca = llvm.value_array_new(1)
-            llvm.value_array_set(ca, 0, obj_val)
-            let ft = mft1(CG_I64, CG_STR)
-            let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
-            llvm.value_array_free(ca)
-            return result
-        }
-
-        // Look up the variable's struct type
-        let struct_type_name = var_struct_type(var_name)
-        if struct_type_name == "" { return llvm.const_int(CG_I64, 0, 0) }
-
-        // Find the field index in the struct's field list
-        let fidx = struct_field_index(struct_type_name, field)
-        if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
-
-        // Load the struct value and extract the field
-        let obj_val = self.emit_ident(var_name)
-        let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
-
-        field_val
-    }
 }

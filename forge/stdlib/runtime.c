@@ -3633,6 +3633,7 @@ void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {
     }
 }
 
+// Debug: trace set_var_type
 // Get the Forge type name for a variable (returns ForgeString, empty if not found)
 ForgeString forge_alloca_cache_get_var_type(ForgeString name) {
     ForgeString empty = {NULL, 0};
@@ -3679,6 +3680,93 @@ int64_t forge_alloca_cache_type_id(ForgeString name) {
         }
     }
     return 0;
+}
+
+// GEP into a struct alloca and load a field.
+// Returns the loaded field value as i64 (actually an LLVMValueRef), 0 if not found.
+typedef void* (*ggep_fn)(void*, void*, void*, void**, unsigned, const char*); // LLVMBuildStructGEP2
+typedef void* (*gstn_fn)(void*, const char*); // LLVMGetTypeByName2
+int64_t forge_alloca_cache_load_field(ForgeString var_name, ForgeString struct_type_name,
+                                       int64_t field_idx, void* builder) {
+    if (!var_name.ptr || var_name.len <= 0) return 0;
+    void* cur_fn = _ac_get_current_fn();
+    void* alloca = NULL;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == var_name.len &&
+            memcmp(_ac[i].name, var_name.ptr, var_name.len) == 0) {
+            alloca = _ac[i].ptr;
+            break;
+        }
+    }
+    if (!alloca || !builder) return 0;
+
+    // Get the struct LLVM type
+    static gstn_fn gstn = NULL;
+    if (!gstn) gstn = (gstn_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+    if (!gstn) return 0;
+
+    // Get LLVM context from builder
+    static gib_fn gib2 = NULL;
+    static gbbp_fn gbbp2 = NULL;
+    typedef void* (*gfc_fn)(void*); // LLVMGetModuleContext via parent
+    if (!gib2) gib2 = (gib_fn)dlsym(RTLD_DEFAULT, "LLVMGetInsertBlock");
+    if (!gbbp2) gbbp2 = (gbbp_fn)dlsym(RTLD_DEFAULT, "LLVMGetBasicBlockParent");
+
+    // Build the struct type name as null-terminated string
+    char sname[64];
+    int slen = struct_type_name.len > 63 ? 63 : (int)struct_type_name.len;
+    memcpy(sname, struct_type_name.ptr, slen);
+    sname[slen] = '\0';
+
+    // We need the module context to look up the type
+    // Use a different approach: get allocated type from the alloca
+    static _gat_fn2 gat3 = NULL;
+    static _gio_fn2 gio3 = NULL;
+    if (!gat3) gat3 = (_gat_fn2)dlsym(RTLD_DEFAULT, "LLVMGetAllocatedType");
+    if (!gio3) gio3 = (_gio_fn2)dlsym(RTLD_DEFAULT, "LLVMGetInstructionOpcode");
+    if (!gat3 || !gio3) return 0;
+
+    int opcode = gio3(alloca);
+    if (opcode != 26) return 0; // Not an alloca
+    void* struct_ty = gat3(alloca);
+    if (!struct_ty) return 0;
+
+    // Build GEP: getelementptr inbounds %StructType, ptr %alloca, i32 0, i32 field_idx
+    typedef void* (*bgep_fn)(void*, void*, void*, unsigned, const char*);
+    static bgep_fn bgep = NULL;
+    if (!bgep) bgep = (bgep_fn)dlsym(RTLD_DEFAULT, "LLVMBuildStructGEP2");
+    if (!bgep) return 0;
+
+    // Build field name
+    char fname[64];
+    snprintf(fname, sizeof(fname), "f%lld", (long long)field_idx);
+
+    void* field_ptr = bgep(builder, struct_ty, alloca, (unsigned)field_idx, fname);
+    if (!field_ptr) return 0;
+
+    // Determine field type from struct type
+    typedef void* (*gset_fn)(void*, unsigned); // LLVMStructGetTypeAtIndex
+    typedef int (*gcet_fn)(void*); // LLVMCountStructElementTypes
+    static gset_fn gset = NULL;
+    static gcet_fn gcet = NULL;
+    if (!gset) gset = (gset_fn)dlsym(RTLD_DEFAULT, "LLVMStructGetTypeAtIndex");
+    if (!gcet) gcet = (gcet_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+    if (!gset || !gcet) return 0;
+
+    int num_fields = gcet(struct_ty);
+    if (field_idx < 0 || field_idx >= num_fields) return 0;
+    void* field_ty = gset(struct_ty, (unsigned)field_idx);
+    if (!field_ty) return 0;
+
+    // Load the field
+    typedef void* (*_bl2_fn)(void*, void*, void*, const char*);
+    static _bl2_fn bl2_2 = NULL;
+    if (!bl2_2) bl2_2 = (_bl2_fn)dlsym(RTLD_DEFAULT, "LLVMBuildLoad2");
+    if (!bl2_2) return 0;
+
+    void* loaded = bl2_2(builder, field_ty, field_ptr, fname);
+    return (int64_t)(uintptr_t)loaded;
 }
 
 // Returns alloca pointer as i64 (0 for miss), avoiding ptr return type issues

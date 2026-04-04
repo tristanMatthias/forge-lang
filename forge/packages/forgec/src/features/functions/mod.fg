@@ -419,7 +419,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if p_ty == null { p_ty = CG_I64 }
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
-        // alloca auto-registered in C-side cache by build_alloca
+        forge_alloca_cache_set(pname, alloca)
+        forge_alloca_cache_set_var_type(pname, param_type_name)
         pi = pi + 1
     }
 
