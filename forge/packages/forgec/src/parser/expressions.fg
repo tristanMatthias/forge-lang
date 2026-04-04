@@ -20,7 +20,7 @@
 use core.token.{Token, TokenKind, Span}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ENUM_TYPE_CSV, CG_ENUM_VAR_CSV}
+use codegen.{CG_ENUM_TYPE_CSV}
 use features.is_keyword.make_is_check
 // Suppress cross-newline dot chaining inside match arm bodies
 mut IN_MATCH_ARM: bool = false
@@ -787,30 +787,14 @@ fn csv_enum_max_fields(name: string) -> int {
     0
 }
 
-// CSV lookup: get enum type name for a variable. Returns "" if not enum.
+// Get enum type name for a variable via alloca cache
 fn csv_var_enum_type(name: string) -> string {
-    let needle = "," + name + ":"
-    let nl = needle.length
-    let cl = CG_ENUM_VAR_CSV.length
-    mut i = 0
-    while i + nl <= cl {
-        mut ok = true
-        mut j = 0
-        while j < nl {
-            if CG_ENUM_VAR_CSV[i + j] != needle[j] { ok = false }
-            j = j + 1
+    let vt = forge_alloca_cache_get_var_type(name)
+    if vt.length > 0 {
+        let enum_needle = "," + vt + ":"
+        if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+            return vt
         }
-        if ok {
-            mut r = ""
-            mut k = i + nl
-            while k < cl {
-                if CG_ENUM_VAR_CSV[k] == "," { break }
-                r = r + CG_ENUM_VAR_CSV[k]
-                k = k + 1
-            }
-            return r
-        }
-        i = i + 1
     }
     ""
 }

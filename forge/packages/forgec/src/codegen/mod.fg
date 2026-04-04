@@ -320,7 +320,7 @@ export fn list_elem_llvm_type(name: string) -> ptr {
 
 // ─── Enum Tagged Union Helpers ───────────────────
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
-export mut CG_ENUM_VAR_CSV: string = ""    // ",varname:EnumType,"
+// Enum variable type tracking uses alloca cache (forge_alloca_cache_set_var_type)
 export mut CG_UNIVERSAL_ENUM_TY: ptr = null // DEPRECATED — use per-enum types
 // Per-enum type cache
 mut CG_ENUM_TYPE_CACHE_NAMES: List<string> = []
@@ -384,28 +384,14 @@ export fn cg_make_enum_type(name: string) -> ptr {
 }
 
 export fn cg_var_enum_type(name: string) -> string {
-    let needle = "," + name + ":"
-    let nl = needle.length
-    let cl = CG_ENUM_VAR_CSV.length
-    mut i = 0
-    while i + nl <= cl {
-        mut ok = true
-        mut j = 0
-        while j < nl {
-            if CG_ENUM_VAR_CSV[i + j] != needle[j] { ok = false }
-            j = j + 1
+    // Check alloca cache for the variable's type name
+    let vt = forge_alloca_cache_get_var_type(name)
+    if vt.length > 0 {
+        // If it's an enum type (registered in CG_ENUM_TYPE_CSV), return it
+        let enum_needle = "," + vt + ":"
+        if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+            return vt
         }
-        if ok {
-            mut r = ""
-            mut k = i + nl
-            while k < cl {
-                if CG_ENUM_VAR_CSV[k] == "," { break }
-                r = r + CG_ENUM_VAR_CSV[k]
-                k = k + 1
-            }
-            return r
-        }
-        i = i + 1
     }
     ""
 }
@@ -2618,12 +2604,10 @@ impl Codegen {
                         let fe = llvm.build_load(CG_B, elem_llvm_ty, fp, "ev")
                         let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
                         llvm.build_store(CG_B, fe, fv)
-                        // Register enum loop var for match
+                        // Register loop var type in alloca cache
                         if for_elem_type != "" {
-                            let enum_needle = "," + for_elem_type + ":"
-                            if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
-                                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + vn + ":" + for_elem_type + ","
-                            }
+                            forge_alloca_cache_set(vn, fv)
+                            forge_alloca_cache_set_var_type(vn, for_elem_type)
                         }
                         self.emit_block(body)
                         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, f3) }
