@@ -13,6 +13,8 @@ use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_HAS_LAST_VAL, CG_ENUM_VAR_CSV, CG_STR
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
+use features.impl_methods.{parse_impl_block}
+use features.enums.{parse_enum_decl}
 use features.while_loops.PARSE_END_POS
 use parser.{LAST_PARAM_TYPE_NAME, PARSED_PARAM_TYPES}
 
@@ -117,9 +119,9 @@ fn parse_export(p: Parser) -> Statement? {
     if ekid == 20 { return parse_var_binding(p, .Let, true) }
     if ekid == 21 { return parse_var_binding(p, .Mut, true) }
     if ekid == 22 { return parse_var_binding(p, .Const, true) }
-    // export type / export enum / export trait / export impl — brace-count skip
+    // export type/enum/impl/trait — brace-count skip
     if ekid == 42 || ekid == 43 || ekid == 34 || ekid == 35 {
-        p.advance() // consume type/enum/trait/impl keyword
+        p.advance() // consume trait keyword
         p.expect_ident() // name
         // Skip to opening brace
         while !p.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
@@ -457,6 +459,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     cg_reinit_types()
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
+    if entry == null {
+        eprintln("  [SKIP] null entry block for: " + name)
+        return
+    }
     llvm.position_at_end(CG_B, entry)
 
     CG_VAR_SCOPE_START = CG_VAR_NAMES.length

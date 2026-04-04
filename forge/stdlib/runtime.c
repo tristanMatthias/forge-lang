@@ -75,6 +75,9 @@ int64_t forge_try_call(void (*fn)(void)) {
     return crashed;
 }
 
+// ---- Crash context tracking ----
+static const char* _forge_current_fn = NULL;
+
 // ---- Signal handlers ----
 
 static void forge_signal_handler(int signum) {
@@ -95,6 +98,14 @@ static void forge_signal_handler(int signum) {
     if (used > 7 * 1024 * 1024) {
         const char* so_msg = " (likely STACK OVERFLOW)\n";
         write(STDERR_FILENO, so_msg, strlen(so_msg));
+    }
+
+    // Print current function context
+    if (_forge_current_fn) {
+        const char* fn_msg = "While compiling: ";
+        write(STDERR_FILENO, fn_msg, strlen(fn_msg));
+        write(STDERR_FILENO, _forge_current_fn, strlen(_forge_current_fn));
+        write(STDERR_FILENO, "\n", 1);
     }
 
     // Print backtrace for debugging
@@ -248,6 +259,14 @@ ForgeString forge_string_new(const char* data, int64_t len) {
     memcpy(buf, data, len);
     buf[len] = '\0';
     return (ForgeString){ .ptr = buf, .len = len };
+}
+
+void forge_set_current_fn(ForgeString name) {
+    static char buf[256];
+    int n = name.len < 255 ? (int)name.len : 255;
+    if (name.ptr) memcpy(buf, name.ptr, n);
+    buf[n] = 0;
+    _forge_current_fn = buf;
 }
 
 ForgeString forge_string_concat(ForgeString a, ForgeString b) {
