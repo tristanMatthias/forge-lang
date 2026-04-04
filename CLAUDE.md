@@ -71,19 +71,63 @@ Stage 2 IR (build/stage2.ll) — LLVM IR produced by Stage 1
 Score (lower is better)
 ```
 
-#### Current Status (April 2, 2026)
-- `make mini` — WORKS (builds mini binary)
-- `make test-mini` — WORKS (mini compiles hello world)
-- `make stage1-ir` — PARTIAL (mini produces 390 fns / 48K lines, but llc fails on ForgeString return type mismatch for `forge_string_substring`)
-- `make stage1` — BLOCKED by stage1-ir llc error
-- `make stage2-ir` — BLOCKED by stage1
+#### Current Status (April 4, 2026)
+- `make stage1-rust` — WORKS (Rust compiler builds Stage 1 binary directly)
+- `make test-stage1` — WORKS (Stage 1 compiles hello world)
+- Stage 2 IR: score 155, 388 functions, llc passes, binary links + runs
+- Stage 2 functional: 4/11 (tokenizes, parses, crashes at LLVM init — 0 fns scanned)
+- `make stage1-ir` — BLOCKED (mini's llc error, use stage1-rust instead)
 
 #### Key Constraints
-- The mini's lexer MUST use C-side token accumulation (`forge_tok_clear/push/to_list`) — the Forge list `.push()` is O(n²) and hangs at 60K+ tokens
-- The Rust compiler has a phi domination bug for ForgeString-returning functions in if-else chains — bind return values to `let _x = ...` to work around
-- The mini source (mini/*.fg) MUST NOT use semicolons as statement separators — Forge uses newlines
-- The mini MUST have `use @std.process` and `use @std.fs` in main.fg
 - NEVER run self-hosting build commands directly — always use `make <target>`
+- The Rust compiler has a `ptr != null` bug for namespace call returns — workaround: i64-based C-side functions or check `lhs.is_pointer_value()` in compile_binary_op
+- BasicBlockRefs CANNOT survive Forge global store/load — use C-side `forge_loop_push/break` stack instead
+- Struct methods use self-by-pointer (ptr, not value) for mutation persistence
+- Parser kind_id dispatch runs BEFORE match-based dispatch — must produce correct AST nodes in BOTH paths
+
+## Debugging & Analysis Tools
+
+### Scripts
+```bash
+# Audit Stage 2 IR quality (score, lower is better)
+bash scripts/audit_stage2.sh output.ll
+
+# Check a specific function's IR for patterns
+bash scripts/check_function.sh <function_name> [keyword]
+# Example: bash scripts/check_function.sh Lexer_skip_whitespace forge_loop
+
+# Run Stage 2 functional tests (11 milestones)
+bash scripts/test_stage2.sh
+```
+
+### C-side Debug Functions (runtime.c)
+Call from Forge source — no string allocation overhead:
+```forge
+forge_trace_i64(val1, val2)          // Print two i64s to stderr: "[T] val1 val2"
+forge_cg_trace_enable(1)             // Enable codegen tracing
+forge_cg_trace_stmt(fn_name, tag)    // Log statement emission
+forge_cg_trace_emit(label, val)      // Log value emission
+forge_dump_function(fn_val)          // Dump LLVM function IR to stderr
+```
+
+**IMPORTANT**: Never use `eprintln("text" + string(val))` for tracing in hot paths (lexer, parser). String concatenation allocates and can cause infinite recursion. Always use `forge_trace_i64` or other C-side functions.
+
+### C-side Registries (runtime.c)
+All type/variable tracking uses C-side storage (immune to Forge list corruption):
+- **Alloca cache**: `forge_alloca_cache_set/has/load/load_field` — per-function variable storage
+- **Alloca type names**: `forge_alloca_cache_set_var_type/get_var_type` — Forge type names per variable
+- **Struct types**: `forge_struct_type_register/get_fields/get_field_types`, `forge_struct_field_index`
+- **Enum types**: `forge_enum_type_register/max_fields/exists`, `forge_enum_variant_fields_set/get`
+- **Global variables**: `forge_global_var_register/count/name/is_str`, `forge_global_type_kind`
+- **Global access**: `forge_get_named_global_i64`, `forge_store_to_global`, `forge_load_from_global`
+- **Loop stack**: `forge_loop_push/pop/break/continue` — BasicBlockRef stack for break/continue
+- **Per-function state**: `forge_fn_nullable_set/get_flag/get_inner/get_ret`, `forge_last_val_set/get/has/clear`
+- **Emit depth**: `forge_emit_depth_push/pop`
+
+### Known Issues
+- **`ptr != null` produces `br i1 false`** when the variable's inferred type is `Unknown` (i64 alloca for pointer value). Fixed for standalone programs; some namespace call returns still affected. Root cause: `Type::Unknown` → `i64` alloca → pointer loaded as integer → comparison fails.
+- **Enum type sizes**: Self-hosted codegen creates `{i8, i64 x N}` for enums but Rust compiler uses different per-variant sizing. Enabling enum declaration parsing increases `ret_undef`. Don't parse enum declarations until sizes match.
+- **Duplicate codegen paths**: `emit_statement` exists twice (line ~907 feature path, line ~2161 inline path). Both must handle all statement types. The inline path is used by `emit_fn_body_from_source`.
 
 ## CLI Commands
 
