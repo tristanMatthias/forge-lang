@@ -453,7 +453,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
     // Use LLVM lookup (avoids map ptr-as-i64 corruption)
     let fn_val = llvm.get_named_function(CG_MOD, name)
-    if fn_val == null { return }
+    if fn_val == null {
+        eprintln("  [SKIP] fn not declared: " + name)
+        return
+    }
     cg.current_fn = fn_val
     cg_reinit_types()
 
