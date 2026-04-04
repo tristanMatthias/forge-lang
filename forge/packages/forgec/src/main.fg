@@ -275,7 +275,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
     }
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
-    // Phase 2: Single LLVM module — declare all, then emit bodies
+    // Phase 2: Single LLVM module
     codegen_init("forgec_output")
     eprintln("[BSC] before create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)

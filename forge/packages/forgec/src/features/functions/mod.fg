@@ -382,8 +382,7 @@ export fn declare_all_fns() {
         CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
         si = si + 1
     }
-    // Declare all function signatures — use i64 for all params/returns
-    // (bootstrap: resolve_type_to_llvm may return null for complex types)
+    // Declare all function signatures
     mut param_offset = 0
     mut i = 0
     while i < FN_NAMES.length {
