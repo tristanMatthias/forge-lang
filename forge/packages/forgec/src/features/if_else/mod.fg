@@ -46,12 +46,7 @@ export fn store_if_expr(condition: Expr, then_block: Block, has_else: bool, else
     feature_expr("if_else", "if_expr", id, span)
 }
 
-// Legacy exports (for old inline-emit code that may still reference these)
-export mut PENDING_IF: bool = false
-export mut CURRENT_IF_COND: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut CURRENT_IF_THEN: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-export mut CURRENT_IF_HAS_ELSE: bool = false
-export mut CURRENT_IF_ELSE: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
+// If expressions use Expr.IfExpr AST node — no PENDING_IF globals
 
 // ─── Check ──────────────────────────────────────
 

@@ -425,8 +425,6 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
 
     forge_last_val_clear()
-    PENDING_IF = false
-    PENDING_MATCH = false
     cg_reinit_types()
 
     // Parse body to AST, then emit

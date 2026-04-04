@@ -6,7 +6,7 @@ use core.token.Span
 use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
-use features.if_else.{PENDING_IF, CURRENT_IF_COND, CURRENT_IF_THEN, CURRENT_IF_HAS_ELSE, CURRENT_IF_ELSE}
+// If expressions use Expr.IfExpr AST node — no PENDING_IF globals
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
@@ -55,7 +55,7 @@ export mut CG_RT_MAP_SET: ptr = null
 // EMIT_DEPTH moved to C-side (forge_emit_depth_push/pop/get)
 
 // Top-level source fragments to inject into main
-export mut CG_TOPLEVEL_SOURCES: List<string> = []
+// CG_TOPLEVEL_SOURCES removed (was unused — only pushed to, never read)
 
 // Struct type registry uses C-side (forge_struct_type_register, forge_struct_field_index)
 // Struct type registry uses C-side (forge_struct_type_register, forge_struct_field_index, etc.)
@@ -65,14 +65,7 @@ export mut CG_TOPLEVEL_SOURCES: List<string> = []
 // CG_LAST_VAL/CG_HAS_LAST_VAL moved to C-side (forge_last_val_set/get/has/clear)
 
 // Match expression globals (PENDING pattern)
-// PENDING_MATCH: parser→codegen bridge for match expressions.
-// These store AST nodes that can't be moved to C-side (Forge struct values).
-export mut PENDING_MATCH: bool = false
-export mut MATCH_SCRUTINEE: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut MATCH_ARM_TAGS: string = ""
-export mut MATCH_ARM_BODIES: List<Block> = []
-export mut MATCH_DEFAULT: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
-export mut MATCH_HAS_DEFAULT: bool = false
+// Match/If expressions use proper AST nodes (Expr.MatchExpr, Expr.IfExpr) — no globals
 
 export type Codegen = {
     mut current_fn: ptr?,
@@ -159,10 +152,7 @@ fn mft6(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr, p4: ptr, p5: ptr) -> ptr {
     f
 }
 
-// Store a top-level statement's source text for injection into main
-export fn store_toplevel_source(src: string) {
-    CG_TOPLEVEL_SOURCES = CG_TOPLEVEL_SOURCES.push(src)
-}
+// store_toplevel_source removed (unused)
 
 // Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
 // which covers int (wastes 8 bytes), string, and list values.
@@ -1265,6 +1255,8 @@ impl Codegen {
                 if ot == "string" { return "string" }
                 return "int"
             }
+            .IfExpr(_, _, _, _, _) -> { return "int" }
+            .MatchExpr(_, _, _, _, _, _) -> { return "int" }
             _ -> { return "int" }
         }
         "int"
@@ -1373,6 +1365,12 @@ impl Codegen {
                 return ev
             }
             .Block(block) -> { return self.emit_block(block) }
+            .IfExpr(cond, then_b, else_b, has_else, span) -> {
+                return self.emit_if_expr(cond, then_b, else_b, has_else)
+            }
+            .MatchExpr(scrutinee, tags, bodies, default_b, has_default, span) -> {
+                return self.emit_match_expr(scrutinee, tags, bodies, default_b, has_default)
+            }
             .Feature(fe) -> {
                 return self.dispatch_expr(fe)
             }
@@ -1380,9 +1378,9 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
-    fn emit_if_from_globals(self) -> ptr {
+    fn emit_if_expr(self, condition: Expr, then_block: Block, else_block: Block, has_else: int) -> ptr {
         cg_reinit_types()
-        let cv = self.emit_expr(CURRENT_IF_COND)
+        let cv = self.emit_expr(condition)
         let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let tb = llvm.append_basic_block(CG_CTX, fn_val, "th")
@@ -1390,18 +1388,18 @@ impl Codegen {
         let mb = llvm.append_basic_block(CG_CTX, fn_val, "mg")
         llvm.build_cond_br(CG_B, ci, tb, eb)
         llvm.position_at_end(CG_B, tb)
-        let tv = self.emit_block(CURRENT_IF_THEN)
+        let tv = self.emit_block(then_block)
         let te = llvm.get_insert_block(CG_B)
         let tt = llvm.block_has_terminator(CG_B)
         if !tt { llvm.build_br(CG_B, mb) }
         llvm.position_at_end(CG_B, eb)
         mut ev = llvm.const_int(CG_I64, 0, 0)
-        if CURRENT_IF_HAS_ELSE { ev = self.emit_block(CURRENT_IF_ELSE) }
+        if has_else == 1 { ev = self.emit_block(else_block) }
         let ee = llvm.get_insert_block(CG_B)
         let et = llvm.block_has_terminator(CG_B)
         if !et { llvm.build_br(CG_B, mb) }
         llvm.position_at_end(CG_B, mb)
-        if CURRENT_IF_HAS_ELSE && !tt && !et {
+        if has_else == 1 && !tt && !et {
             let phi = llvm.build_phi(CG_B, CG_I64, "iv")
             llvm.add_incoming(phi, tv, te)
             llvm.add_incoming(phi, ev, ee)
@@ -1486,8 +1484,8 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
-    fn emit_match_from_globals(self) -> ptr {
-        let subj_raw = self.emit_expr(MATCH_SCRUTINEE)
+    fn emit_match_expr(self, scrutinee: Expr, arm_tags_csv: string, arm_bodies: List<Block>, default_body: Block, has_default: int) -> ptr {
+        let subj_raw = self.emit_expr(scrutinee)
         // For enum scrutinees, extract the tag byte
         mut subj = subj_raw
         // Try extract_value to get tag — returns null if not aggregate
@@ -1501,8 +1499,8 @@ impl Codegen {
         mut tags: List<int> = []
         mut tpos = 0
         mut tcur = ""
-        while tpos < MATCH_ARM_TAGS.length {
-            let ch = MATCH_ARM_TAGS[tpos]
+        while tpos < arm_tags_csv.length {
+            let ch = arm_tags_csv[tpos]
             if ch == "," {
                 tags = tags.push(int(tcur))
                 tcur = ""
@@ -1515,7 +1513,7 @@ impl Codegen {
         // Emit each arm as if-else chain
         mut phi_vals: List<ptr> = []
         mut phi_bbs: List<ptr> = []
-        let _bodies = MATCH_ARM_BODIES
+        let _bodies = arm_bodies
         mut ai = 0
         while ai < tags.length {
             cg_reinit_types()
@@ -1534,8 +1532,8 @@ impl Codegen {
             ai = ai + 1
         }
         // Default/fallthrough arm
-        if MATCH_HAS_DEFAULT {
-            let dv = self.emit_block(MATCH_DEFAULT)
+        if has_default == 1 {
+            let dv = self.emit_block(default_body)
             let de = llvm.get_insert_block(CG_B)
             if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
             phi_vals = phi_vals.push(dv)
@@ -1692,29 +1690,6 @@ impl Codegen {
         llvm.build_br(CG_B, merge_bb)
 
         // Continue at merge
-        llvm.position_at_end(CG_B, merge_bb)
-        llvm.const_int(CG_I64, 0, 0)
-    }
-
-    fn emit_if_inline(self) -> ptr {
-        let cond_val = self.emit_expr(CURRENT_IF_COND)
-        // Truncate to i1
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
-
-        let current_fn = self.current_fn
-        if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
-
-        let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "th")
-        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ic")
-
-        // No else for now — simple if { ... }
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
-
-        llvm.position_at_end(CG_B, then_bb)
-        self.emit_block(CURRENT_IF_THEN)
-        // Only add br if block didn't already terminate (e.g., with return)
-        llvm.build_br(CG_B, merge_bb)
-
         llvm.position_at_end(CG_B, merge_bb)
         llvm.const_int(CG_I64, 0, 0)
     }
@@ -2098,6 +2073,8 @@ impl Codegen {
             .NullLit(s) -> {}
             .Index(o, i, s) -> {}
             .Block(b) -> {}
+            .IfExpr(c, t, e, h, sp) -> {}
+            .MatchExpr(s2, t2, b2, d, hd, sp2) -> {}
         }
         llvm.const_int(CG_I64, 0, 0)
     }
@@ -2176,17 +2153,7 @@ impl Codegen {
 
     fn emit_statement(self, stmt: Statement) -> ptr {
         match stmt {
-            .Expr(expr) -> {
-                if PENDING_IF {
-                    PENDING_IF = false
-                    return self.emit_if_from_globals()
-                } else if PENDING_MATCH {
-                    PENDING_MATCH = false
-                    return self.emit_match_from_globals()
-                } else {
-                    return self.emit_expr(expr)
-                }
-            }
+            .Expr(expr) -> { return self.emit_expr(expr) }
             .Assign(t, v, s) -> { self.emit_assign(t, v) }
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {

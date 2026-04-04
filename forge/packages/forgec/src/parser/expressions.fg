@@ -585,14 +585,9 @@ impl Parser {
                 else_block = self.parse_block()
             }
         }
-        // Store if-data in globals, return IntLit marker
-        CURRENT_IF_COND = condition!
-        CURRENT_IF_THEN = then_block
-        CURRENT_IF_HAS_ELSE = has_else
-        CURRENT_IF_ELSE = else_block
-        PENDING_IF = true
-        // Return IntLit(-1) as marker — emit_expr checks PENDING_IF
-        Expr.IntLit(-1, start)
+        mut has_else_int = 0
+        if has_else { has_else_int = 1 }
+        Expr.IfExpr(condition!, then_block, else_block, has_else_int, start)
     }
 
     // ─── Match Expression ──────────────────────
@@ -678,8 +673,6 @@ impl Parser {
         }
         if self.check(TokenKind.RBrace) { self.advance() }
 
-        // Store match data in globals (AST nodes can't be stored in C-side)
-        MATCH_SCRUTINEE = scrutinee!
         mut tag_csv = ""
         mut ti = 0
         while ti < arm_tags.length {
@@ -687,12 +680,9 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
-        MATCH_ARM_TAGS = tag_csv
-        MATCH_ARM_BODIES = arm_bodies
-        MATCH_DEFAULT = default_body
-        MATCH_HAS_DEFAULT = has_default
-        PENDING_MATCH = true
-        Expr.IntLit(-1, start)
+        mut has_default_int = 0
+        if has_default { has_default_int = 1 }
+        Expr.MatchExpr(scrutinee!, tag_csv, arm_bodies, default_body, has_default_int, start)
     }
 
     // ─── Span Helper ───────────────────────────
@@ -709,7 +699,7 @@ impl Parser {
 
 // ─── Codegen Side Table Imports ──────────────────
 
-use codegen.{PENDING_MATCH, MATCH_SCRUTINEE, MATCH_ARM_TAGS, MATCH_ARM_BODIES, MATCH_DEFAULT, MATCH_HAS_DEFAULT, cg_var_enum_type}
+use codegen.{cg_var_enum_type}
 use parser.templates.{decompose_template}
 
 // Track the most recently parsed identifier name (for struct type lookup)
