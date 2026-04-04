@@ -913,6 +913,10 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
+    // Global variable access (i64-based)
+    llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_store_to_global", mft3(CG_VOID, CG_PTR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_load_from_global", mft3(CG_I64, CG_PTR, CG_I64, CG_STR))
 }
 
 fn cg_cleanup() {
@@ -1634,15 +1638,16 @@ impl Codegen {
         match target {
             .Ident(name, span) -> {
                 let val = self.emit_expr(value)
-                // Find alloca from cache or global
-                let alloca = forge_alloca_cache_get(name)
-                if alloca != null {
-                    llvm.build_store(CG_B, val, alloca)
+                // Find alloca from cache (returns ptr-as-i64, 0 for miss)
+                let alloca_i = forge_alloca_cache_has(name)
+                if alloca_i != 0 {
+                    llvm.build_store(CG_B, val, alloca_i)
                     return
                 }
-                let gptr = llvm.get_named_global(CG_MOD, name)
-                if gptr != null {
-                    llvm.build_store(CG_B, val, gptr)
+                // Try global variable (i64-based to avoid ptr null check issue)
+                let gptr_i = forge_get_named_global_i64(CG_MOD, name)
+                if gptr_i != 0 {
+                    forge_store_to_global(CG_B, val, gptr_i)
                     return
                 }
             }
@@ -1673,8 +1678,8 @@ impl Codegen {
                     if struct_type_name != "" {
                         let fidx = struct_field_index(struct_type_name, field)
                         if fidx >= 0 {
-                            let obj_alloca = forge_alloca_cache_get(obj_name)
-                            if obj_alloca != null {
+                            let obj_alloca = forge_alloca_cache_has(obj_name)
+                            if obj_alloca != 0 {
                                     cg_reinit_types()
                                     let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
                                     if struct_ty != null {
@@ -1828,12 +1833,11 @@ impl Codegen {
         // 1. Local variables: C-side lookup + load (returns LLVM value as i64, 0 for miss)
         let loaded = forge_alloca_cache_load(name, CG_B, CG_I64)
         if loaded != 0 { return loaded }
-        // 2. Global variables: LLVM module registry
-        let gptr = llvm.get_named_global(CG_MOD, name)
-        if gptr != null {
-            mut load_ty2 = llvm.global_get_value_type(gptr)
-            if load_ty2 == null { load_ty2 = CG_I64 }
-            return llvm.build_load(CG_B, load_ty2, gptr, name)
+        // 2. Global variables (i64-based to avoid ptr null check issue)
+        let gptr_i = forge_get_named_global_i64(CG_MOD, name)
+        if gptr_i != 0 {
+            let loaded_g = forge_load_from_global(CG_B, gptr_i, name)
+            if loaded_g != 0 { return loaded_g }
         }
         // 3. Functions
         let fn_ref = llvm.get_named_function(CG_MOD, name)

@@ -3776,6 +3776,51 @@ int64_t forge_global_var_is_str(int64_t idx) {
     return _global_var_reg[idx].is_str;
 }
 
+// Get named global as i64 (avoids ptr return type issue)
+int64_t forge_get_named_global_i64(void* module, ForgeString name) {
+    if (!module || !name.ptr || name.len <= 0) return 0;
+    typedef void* (*gng_fn)(void*, const char*);
+    static gng_fn gng = NULL;
+    if (!gng) gng = (gng_fn)dlsym(RTLD_DEFAULT, "LLVMGetNamedGlobal");
+    if (!gng) return 0;
+    char nbuf[128];
+    int nlen = name.len > 127 ? 127 : (int)name.len;
+    memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+    void* g = gng(module, nbuf);
+    return (int64_t)(uintptr_t)g;
+}
+
+// Store to global (takes global ptr as i64)
+void forge_store_to_global(void* builder, int64_t val, int64_t global_ptr) {
+    if (!builder || !global_ptr) return;
+    typedef void* (*bs_fn)(void*, void*, void*);
+    static bs_fn bs = NULL;
+    if (!bs) bs = (bs_fn)dlsym(RTLD_DEFAULT, "LLVMBuildStore");
+    if (!bs) return;
+    bs(builder, (void*)(uintptr_t)val, (void*)(uintptr_t)global_ptr);
+}
+
+// Load from global (takes global ptr as i64, type from global's value type)
+int64_t forge_load_from_global(void* builder, int64_t global_ptr, ForgeString name) {
+    if (!builder || !global_ptr) return 0;
+    typedef void* (*gvt_fn)(void*);
+    typedef void* (*bl2_fn)(void*, void*, void*, const char*);
+    static gvt_fn gvt = NULL;
+    static bl2_fn bl2 = NULL;
+    if (!gvt) gvt = (gvt_fn)dlsym(RTLD_DEFAULT, "LLVMGlobalGetValueType");
+    if (!bl2) bl2 = (bl2_fn)dlsym(RTLD_DEFAULT, "LLVMBuildLoad2");
+    if (!gvt || !bl2) return 0;
+    void* ty = gvt((void*)(uintptr_t)global_ptr);
+    if (!ty) return 0;
+    char nbuf[64];
+    int nlen = name.len > 63 ? 63 : (int)name.len;
+    if (name.ptr) memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+    void* loaded = bl2(builder, ty, (void*)(uintptr_t)global_ptr, nbuf);
+    return (int64_t)(uintptr_t)loaded;
+}
+
 // Struct type registry uses existing _struct_reg (line ~2775)
 // Additional lookup functions added below existing struct_reg code
 
