@@ -678,7 +678,7 @@ impl Parser {
         }
         if self.check(TokenKind.RBrace) { self.advance() }
 
-        // Store match data in PENDING_MATCH globals
+        // Store match data in globals (AST nodes can't be stored in C-side)
         MATCH_SCRUTINEE = scrutinee!
         mut tag_csv = ""
         mut ti = 0

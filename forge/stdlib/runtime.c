@@ -3766,6 +3766,36 @@ int64_t forge_fn_nullable_get_flag(void) { return _fn_returns_nullable; }
 int64_t forge_fn_nullable_get_inner(void) { return (int64_t)(uintptr_t)_fn_nullable_inner_ty; }
 int64_t forge_fn_nullable_get_ret(void) { return (int64_t)(uintptr_t)_fn_nullable_ret_ty; }
 
+// ---- Pending match expression state ----
+static int _pending_match = 0;
+static ForgeString _match_arm_tags = {NULL, 0};
+static char _match_arm_tags_buf[1024];
+static int _match_has_default = 0;
+// Scrutinee, arm bodies, default body stored as opaque Forge values (i64)
+static int64_t _match_scrutinee = 0;
+static int64_t _match_arm_bodies = 0;  // List<Block> as i64
+static int64_t _match_default = 0;     // Block as i64
+
+void forge_pending_match_set(int64_t scrutinee, ForgeString tags, int64_t arm_bodies, int64_t default_body, int64_t has_default) {
+    _pending_match = 1;
+    _match_scrutinee = scrutinee;
+    _match_arm_bodies = arm_bodies;
+    _match_default = default_body;
+    _match_has_default = (int)has_default;
+    int tlen = tags.len > 1023 ? 1023 : (int)tags.len;
+    if (tags.ptr && tlen > 0) memcpy(_match_arm_tags_buf, tags.ptr, tlen);
+    _match_arm_tags_buf[tlen] = '\0';
+    _match_arm_tags.ptr = _match_arm_tags_buf;
+    _match_arm_tags.len = tlen;
+}
+int64_t forge_pending_match_check(void) { int r = _pending_match; _pending_match = 0; return r; }
+int64_t forge_pending_match_scrutinee(void) { return _match_scrutinee; }
+ForgeString forge_pending_match_tags(void) { return _match_arm_tags; }
+int64_t forge_pending_match_bodies(void) { return _match_arm_bodies; }
+int64_t forge_pending_match_default(void) { return _match_default; }
+int64_t forge_pending_match_has_default(void) { return _match_has_default; }
+void forge_pending_match_clear(void) { _pending_match = 0; }
+
 // ---- Last emitted value tracking (implicit return) ----
 static void* _last_val = NULL;
 static int _has_last_val = 0;

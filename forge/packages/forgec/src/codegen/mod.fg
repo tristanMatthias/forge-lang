@@ -65,9 +65,11 @@ export mut CG_TOPLEVEL_SOURCES: List<string> = []
 // CG_LAST_VAL/CG_HAS_LAST_VAL moved to C-side (forge_last_val_set/get/has/clear)
 
 // Match expression globals (PENDING pattern)
+// PENDING_MATCH: parser→codegen bridge for match expressions.
+// These store AST nodes that can't be moved to C-side (Forge struct values).
 export mut PENDING_MATCH: bool = false
 export mut MATCH_SCRUTINEE: Expr = Expr.IntLit(0, Span { start: 0, end: 0, line: 0, col: 0 })
-export mut MATCH_ARM_TAGS: string = ""    // comma-separated tag ints
+export mut MATCH_ARM_TAGS: string = ""
 export mut MATCH_ARM_BODIES: List<Block> = []
 export mut MATCH_DEFAULT: Block = Block { statements: [], span: Span { start: 0, end: 0, line: 0, col: 0 } }
 export mut MATCH_HAS_DEFAULT: bool = false
