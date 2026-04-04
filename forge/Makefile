@@ -102,6 +102,8 @@ $(STAGE1_LL): $(MINI_BIN) $(shell find packages/forgec/src -name '*.fg' ! -path 
 STAGE1_RUST := $(BUILD)/stage1_rust
 stage1-rust: $(STAGE1_RUST)
 $(STAGE1_RUST): target/release/forgec $(STD_LLVM_LIB) $(RUNTIME_O) $(shell find packages/forgec/src -name '*.fg') | $(BUILD)
+	@echo "=== Checking runtime function registration ==="
+	@bash scripts/check_runtime_fns.sh || (echo "ERROR: Fix unregistered functions before building" && exit 1)
 	@echo "=== Rust compiler → Stage 1 binary ==="
 	$(FORGEC) build $(SOURCE) --dev -o $(STAGE1_RUST)
 	@echo "  Built: $(STAGE1_RUST)"
