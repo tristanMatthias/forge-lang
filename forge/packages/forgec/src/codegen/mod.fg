@@ -2005,15 +2005,22 @@ impl Codegen {
             .Shl -> { return llvm.build_shl(CG_B, lhs, rhs, "sl") }
             .Shr -> { return llvm.build_ashr(CG_B, lhs, rhs, "sr") }
             .And -> {
-                // Coerce operands to i64 for logical AND
-                // build_zext handles i1→i64; for i64 it returns the value unchanged
-                let al = llvm.build_zext(CG_B, lhs, CG_I64, "al")
-                let ar = llvm.build_zext(CG_B, rhs, CG_I64, "ar")
+                // Ensure both operands are i64 (icmp returns i1, needs zext)
+                let lz = llvm.build_zext(CG_B, lhs, CG_I64, "al")
+                let rz = llvm.build_zext(CG_B, rhs, CG_I64, "ar")
+                mut al = lhs
+                mut ar = rhs
+                if lz != null { al = lz }
+                if rz != null { ar = rz }
                 return llvm.build_and(CG_B, al, ar, "and")
             }
             .Or -> {
-                let ol = llvm.build_zext(CG_B, lhs, CG_I64, "ol")
-                let or2 = llvm.build_zext(CG_B, rhs, CG_I64, "or")
+                let lz = llvm.build_zext(CG_B, lhs, CG_I64, "ol")
+                let rz = llvm.build_zext(CG_B, rhs, CG_I64, "or")
+                mut ol = lhs
+                mut or2 = rhs
+                if lz != null { ol = lz }
+                if rz != null { or2 = rz }
                 return llvm.build_or(CG_B, ol, or2, "or")
             }
             .Pipe -> { return rhs }
