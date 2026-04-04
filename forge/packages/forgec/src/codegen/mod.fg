@@ -321,7 +321,7 @@ export fn list_elem_llvm_type(name: string) -> ptr {
 // ─── Enum Tagged Union Helpers ───────────────────
 export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
 // Enum variable type tracking uses alloca cache (forge_alloca_cache_set_var_type)
-export mut CG_UNIVERSAL_ENUM_TY: ptr = null // DEPRECATED — use per-enum types
+// CG_UNIVERSAL_ENUM_TY removed — use per-enum types via cg_get_enum_ty_for
 // Per-enum type cache
 mut CG_ENUM_TYPE_CACHE_NAMES: List<string> = []
 mut CG_ENUM_TYPE_CACHE_PTRS: List<ptr> = []
@@ -685,7 +685,7 @@ export fn var_struct_type(name: string) -> string {
 export fn codegen_init(name: string) {
     forge_alloca_cache_clear()
     CG_HAS_LAST_VAL = 0
-    CG_UNIVERSAL_ENUM_TY = null
+    // (CG_UNIVERSAL_ENUM_TY removed)
     CG_ENUM_TYPE_CACHE_NAMES = []
     CG_ENUM_TYPE_CACHE_PTRS = []
     CG_NULLABLE_INT_TY = null
@@ -2117,24 +2117,14 @@ impl Codegen {
                 if name == "eprintln" { return self.emit_println(args) }
                 if name == "eprint" { return self.emit_println(args) }
                 // Struct literal: __s_TypeName(field1, field2, ...)
-                if name.length > 4 {
-                    if name[0] == "_" {
-                        if name[1] == "_" {
-                            if name[2] == "s" {
-                                if name[3] == "_" {
-                                    let sn = name.substring(4, name.length)
-                                    return self.emit_struct_lit(sn, args)
-                                }
-                            }
-                        }
-                    }
+                if name.length > 4 && name.substring(0, 4) == "__s_" {
+                    let sn = name.substring(4, name.length)
+                    return self.emit_struct_lit(sn, args)
                 }
                 // Match expression: __m_pat1,pat2,...(scrutinee, body1, body2, ...)
-                if name.length > 4 {
-                    if name[0] == "_" && name[1] == "_" && name[2] == "m" && name[3] == "_" {
-                        let patterns = name.substring(4, name.length)
-                        return self.emit_match_call(patterns, args)
-                    }
+                if name.length > 4 && name.substring(0, 4) == "__m_" {
+                    let patterns = name.substring(4, name.length)
+                    return self.emit_match_call(patterns, args)
                 }
                 // Cast functions: string(x), int(x), float(x), bool(x)
                 if name == "string" && args.length > 0 {
