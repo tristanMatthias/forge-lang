@@ -211,3 +211,9 @@ This prevents the user from losing track of what's happening between session rep
 13. **Don't ignore bugs. Fix them immediately or record them.** If you find a bug while working on something else, either fix it right now (if small) or add it to SELF_HOST_EXPERIMENTS.md with a clear description so it gets fixed soon. Never silently skip over a bug hoping it doesn't matter — it always does.
 
 14. **Search for empty/stub handlers.** Empty match arms like `.Break(s) -> {}` silently swallow behavior. Periodically grep for `-> {}` and `-> { }` in codegen/mod.fg to find stubs that should have real implementations. Every empty handler is a potential silent bug.
+
+15. **NEVER work around corruption or bugs — FIX THEM.** If a data structure (Map, List, global variable) is corrupt, find and fix the root cause in the runtime or codegen. Never add parallel tracking systems, CSV string hacks, or alternative data paths to avoid the corrupt one. Every workaround becomes permanent tech debt that compounds. If Map is broken, fix Map. If List push corrupts, fix the push. The correct fix is always shorter than the workaround.
+
+16. **NEVER use mutable global state for type tracking.** Variable types come from LLVM's own type system via `get_allocated_type()` on the variable's alloca. Struct/enum types come from `get_type_by_name()` on the LLVM context. No parallel lists, no CSV strings, no global flags. LLVM is the single source of truth for all type information.
+
+17. **Use Map<string, ptr> for variable lookup, not parallel lists.** Variables should be stored in `Codegen.vars: Map<string, ptr>` (name → alloca). If Map has corruption bugs, fix the Map implementation in runtime.c — don't replace it with parallel List<string>/List<ptr> globals.
