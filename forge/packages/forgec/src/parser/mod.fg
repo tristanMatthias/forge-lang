@@ -296,12 +296,12 @@ impl Parser {
         }
         if kid == 24 { return self.parse_return() }
         if kid == 32 {
-            self.advance()
-            return Statement.Expr(Expr.IntLit(0, tok.span))
+            let bspan = self.advance().span
+            return Statement.Break(bspan)
         }
         if kid == 33 {
-            self.advance()
-            return Statement.Expr(Expr.IntLit(0, tok.span))
+            let cspan = self.advance().span
+            return Statement.Continue(cspan)
         }
         if kid == 36 {
             self.advance()

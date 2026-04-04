@@ -3941,6 +3941,36 @@ void forge_trace_i64(int64_t a, int64_t b) {
     fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);
 }
 
+// ---- Codegen trace: logs every statement/expr emission ----
+static int _cg_trace = 0;
+static int _cg_trace_depth = 0;
+void forge_cg_trace_enable(int64_t enable) { _cg_trace = (int)enable; }
+
+void forge_cg_trace_stmt(ForgeString fn_name, int64_t stmt_tag) {
+    if (!_cg_trace) return;
+    fprintf(stderr, "[CG] %.*s stmt_tag=%lld\n",
+            fn_name.ptr ? (int)fn_name.len : 0,
+            fn_name.ptr ? fn_name.ptr : "",
+            (long long)stmt_tag);
+}
+
+void forge_cg_trace_emit(ForgeString label, int64_t val) {
+    if (!_cg_trace) return;
+    fprintf(stderr, "[CG]   %.*s = %lld\n",
+            label.ptr ? (int)label.len : 0,
+            label.ptr ? label.ptr : "",
+            (long long)val);
+}
+
+// Dump an LLVM function to stderr (shows the IR being built)
+void forge_dump_function(void* fn_val) {
+    if (!fn_val) return;
+    typedef void (*dump_fn)(void*);
+    static dump_fn df = NULL;
+    if (!df) df = (dump_fn)dlsym(RTLD_DEFAULT, "LLVMDumpValue");
+    if (df) df(fn_val);
+}
+
 // Emit depth counter (recursion guard for emit_expr)
 static int _emit_depth = 0;
 int64_t forge_emit_depth_push(void) { return ++_emit_depth; }
