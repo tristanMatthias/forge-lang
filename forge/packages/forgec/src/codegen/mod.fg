@@ -659,16 +659,6 @@ export fn var_struct_type(name: string) -> string {
 
 export fn codegen_init(name: string) {
     // Reset per-module LLVM state (preserves metadata from scan phase)
-    CG_VAR_NAMES = []
-    CG_VAR_PTRS = []
-    CG_VAR_IS_STR = []
-    CG_STR_VAR_NAMES = []
-    CG_VAR_IS_MAP = []
-    CG_MAP_VAR_NAMES = []
-    CG_STRUCT_VAR_NAMES = []
-    CG_STRUCT_VAR_TYPES = []
-    CG_STRUCT_VAR_FIELDS = []
-    CG_VAR_SCOPE_START = 0
     CG_HAS_LAST_VAL = 0
     CG_UNIVERSAL_ENUM_TY = null
     CG_ENUM_TYPE_CACHE_NAMES = []
@@ -1052,13 +1042,17 @@ impl Codegen {
     fn emit_let(self, name: string, value: Expr) {
         let val_type = self.expr_type_name(value)
         let val = self.emit_expr(value)
-        let is_str = val_type == "string"
-        let is_map = val_type == "map"
         mut var_type = Type.Int
-        if is_str { var_type = Type.String }
-        if is_map { var_type = Type.MapType(Type.String, Type.Int) }
+        if val_type == "string" { var_type = Type.String }
+        if val_type == "map" { var_type = Type.MapType(Type.String, Type.Int) }
+        // Lists use ForgeString alloca ({ptr, i64})
+        if val_type.length >= 4 {
+            let c = val_type[0]
+            if (c == "l" || c == "L") && val_type[1] == "i" && val_type[2] == "s" && val_type[3] == "t" {
+                var_type = Type.String
+            }
+        }
         self.define_var(name, var_type, val)
-        if is_map { CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name) }
         CG_HAS_LAST_VAL = 0
     }
 
@@ -1248,21 +1242,35 @@ impl Codegen {
             .BoolLit(_, _) -> { return "bool" }
             .NullLit(_) -> { return "null" }
             .Ident(name, _) -> {
-                // Look up in CG_VAR_TYPES
-                mut vi = CG_VAR_NAMES.length - 1
-                while vi >= 0 {
-                    if CG_VAR_NAMES[vi] == name {
-                        if vi < CG_VAR_TYPES.length { return CG_VAR_TYPES[vi] }
-                        return "int"
+                // Check alloca cache — type from LLVM
+                let cached = forge_alloca_cache_get(name)
+                if cached != null {
+                    let ty = llvm.get_allocated_type(cached)
+                    if ty == CG_STR { return "string" }
+                    if ty == CG_PTR { return "ptr" }
+                    return "int"
+                }
+                // Check if it's a global
+                let gptr = llvm.get_named_global(CG_MOD, name)
+                if gptr != null {
+                    let ty = llvm.global_get_value_type(gptr)
+                    if ty == CG_STR { return "string" }
+                    if ty == CG_PTR { return "ptr" }
+                    return "int"
+                }
+                // Check function return types
+                mut fi = 0
+                while fi < FN_NAMES.length {
+                    if FN_NAMES[fi] == name {
+                        if fi < FN_RETURN_TYPES.length { return FN_RETURN_TYPES[fi] }
                     }
-                    vi = vi - 1
+                    fi = fi + 1
                 }
                 return "int"
             }
             .Call(callee, _, _) -> {
                 match callee {
                     .Ident(name, _) -> {
-                        // Built-in casts
                         if name == "string" { return "string" }
                         if name == "int" { return "int" }
                         if name == "float" { return "float" }
@@ -1287,7 +1295,6 @@ impl Codegen {
                         }
                     }
                     .MemberAccess(obj, method, _) -> {
-                        // String methods
                         if method == "substring" { return "string" }
                         if method == "char_at" { return "string" }
                         if method == "index_of" { return "int" }
@@ -1409,14 +1416,20 @@ impl Codegen {
             .Call(callee, args, span) -> { return self.emit_call(callee, args) }
             .MemberAccess(obj, field, span) -> { return self.emit_member_access(obj, field) }
             .Index(obj, idx, span) -> {
-                // Check if object is a known list variable BEFORE emitting
+                let obj_type = self.expr_type_name(obj)
                 mut obj_var_name = ""
                 match obj {
                     .Ident(n, s) -> { obj_var_name = n }
                     _ -> {}
                 }
-                mut is_known_list = is_list_var(obj_var_name)
-                mut is_str_list = is_str_list_var(obj_var_name)
+                mut is_known_list = false
+                if obj_type.length >= 4 {
+                    let c = obj_type[0]
+                    if (c == "l" || c == "L") && obj_type[1] == "i" && obj_type[2] == "s" && obj_type[3] == "t" {
+                        is_known_list = true
+                    }
+                }
+                mut is_str_list = obj_type == "list:string" || obj_type == "List:string"
                 let obj_type = self.expr_type_name(obj)
                 let obj_val = self.emit_expr(obj)
                 mut obj_is_str = 0
@@ -1704,18 +1717,19 @@ impl Codegen {
     }
 
     fn emit_assign(self, target: Expr, value: Expr) {
-        // target should be an Ident — find alloca directly from CG_VAR_NAMES/PTRS
         match target {
             .Ident(name, span) -> {
                 let val = self.emit_expr(value)
-                // Search CG_VAR_NAMES for the alloca pointer
-                mut vi = CG_VAR_NAMES.length - 1
-                while vi >= 0 {
-                    if CG_VAR_NAMES[vi] == name {
-                        llvm.build_store(CG_B, val, CG_VAR_PTRS[vi])
-                        return
-                    }
-                    vi = vi - 1
+                // Find alloca from cache or global
+                let alloca = forge_alloca_cache_get(name)
+                if alloca != null {
+                    llvm.build_store(CG_B, val, alloca)
+                    return
+                }
+                let gptr = llvm.get_named_global(CG_MOD, name)
+                if gptr != null {
+                    llvm.build_store(CG_B, val, gptr)
+                    return
                 }
             }
             .MemberAccess(obj, field, span) -> {
@@ -1727,34 +1741,21 @@ impl Codegen {
                     _ -> {}
                 }
                 if obj_name != "" {
-                    // Look up struct type via CSV (immune to list corruption)
-                    mut struct_type_name = ""
-                    let csv_needle = "," + obj_name + ":"
-                    let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
-                    if csv_pos >= 0 {
-                        let after = CG_STRUCT_VAR_CSV.substring(csv_pos + csv_needle.length, CG_STRUCT_VAR_CSV.length)
-                        let comma = after.index_of(",")
-                        if comma >= 0 { struct_type_name = after.substring(0, comma) }
-                    }
-                    // Fallback to corrupted list
-                    if struct_type_name == "" { struct_type_name = var_struct_type(obj_name) }
+                    let struct_type_name = var_struct_type(obj_name)
                     if struct_type_name != "" {
                         let fidx = struct_field_index(struct_type_name, field)
                         if fidx >= 0 {
-                            mut vi = CG_VAR_NAMES.length - 1
-                            while vi >= 0 {
-                                if CG_VAR_NAMES[vi] == obj_name {
+                            let obj_alloca = forge_alloca_cache_get(obj_name)
+                            if obj_alloca != null {
                                     cg_reinit_types()
                                     let struct_ty = llvm.get_type_by_name(CG_CTX, struct_type_name)
                                     if struct_ty != null {
-                                        let fp = llvm.build_struct_gep2(CG_B, struct_ty, CG_VAR_PTRS[vi], fidx, "sf")
+                                        let fp = llvm.build_struct_gep2(CG_B, struct_ty, obj_alloca, fidx, "sf")
                                         if fp != null {
                                             llvm.build_store(CG_B, val, fp)
                                         }
                                     }
                                     return
-                                }
-                                vi = vi - 1
                             }
                         }
                     }
@@ -1875,7 +1876,6 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
-        // Check local alloca cache (auto-populated by build_alloca, per-function)
         let cached = forge_alloca_cache_get(name)
         if cached != null {
             mut load_ty = llvm.get_allocated_type(cached)
@@ -2214,19 +2214,33 @@ impl Codegen {
             .Return(v, s) -> { self.emit_return(v) }
             .Let(name, val, s) -> {
                 let val_type = self.expr_type_name(val)
+                // Debug: trace what expr variant the value is
+                match val {
+                    .Call(c, _, _) -> {
+                        match c {
+                            .Ident(cn, _) -> { eprintln("  [LET] " + name + " is Call(Ident(" + cn + "))") }
+                            .MemberAccess(_, mf, _) -> { eprintln("  [LET] " + name + " is Call(MA(." + mf + "))") }
+                            _ -> { eprintln("  [LET] " + name + " is Call(OTHER)") }
+                        }
+                    }
+                    .Ident(n, _) -> { eprintln("  [LET] " + name + " is Ident(" + n + ")") }
+                    .MemberAccess(o, f, _) -> { eprintln("  [LET] " + name + " is MemberAccess(." + f + ")") }
+                    .Binary(_, _, _, _) -> { eprintln("  [LET] " + name + " is Binary") }
+                    .StringLit(_, _) -> { eprintln("  [LET] " + name + " is StringLit") }
+                    .IntLit(_, _) -> { eprintln("  [LET] " + name + " is IntLit") }
+                    _ -> { eprintln("  [LET] " + name + " is OTHER") }
+                }
+                eprintln("  [LET] " + name + " type=" + val_type)
                 let ev = self.emit_expr(val)
                 mut ty = Type.Int
                 if val_type == "string" { ty = Type.String }
-                // Lists use ForgeString alloca ({ptr, i64}) — must set BEFORE define_var
-                if val_type.length > 5 && val_type.substring(0, 5) == "list:" {
-                    ty = Type.String
-                    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
-                    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
+                if val_type.length >= 4 {
+                    let c = val_type[0]
+                    if (c == "l" || c == "L") && val_type[1] == "i" && val_type[2] == "s" && val_type[3] == "t" {
+                        ty = Type.String
+                    }
                 }
                 self.define_var(name, ty, ev)
-                if val_type == "string" || ty is .String {
-                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
-                }
                 // Check if val_type indicates a struct
                 let is_struct_val = val_type.length > 7 && val_type.substring(0, 7) == "struct:"
                 if is_struct_val {
@@ -2606,6 +2620,7 @@ impl Codegen {
     // Define a local variable: create alloca, store value, register in CG_LOCALS.
     // Type is determined by the alloca — LLVM is the source of truth.
     fn define_var(self, name: string, ty: Type, value: ptr) {
+        eprintln("  [DV] " + name + " is_str=" + string(ty is .String))
         let is_str = ty is .String
         let is_map = ty is .MapType
         cg_reinit_types()
@@ -2660,7 +2675,15 @@ impl Codegen {
         if field == "length" {
             let obj_val = self.emit_ident(var_name)
             // For lists: extract field 1 directly (it's the count)
-            if is_list_var(var_name) || is_str_list_var(var_name) {
+            let vt = self.expr_type_name(obj)
+            mut is_list = false
+            if vt.length >= 4 {
+                let c = vt[0]
+                if (c == "l" || c == "L") && vt[1] == "i" && vt[2] == "s" && vt[3] == "t" {
+                    is_list = true
+                }
+            }
+            if is_list {
                 return llvm.build_extract_value(CG_B, obj_val, 1, "len")
             }
             // For strings: call forge_string_length
