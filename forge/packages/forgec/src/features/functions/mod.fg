@@ -382,6 +382,9 @@ export fn declare_all_fns() {
         CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
         si = si + 1
     }
+    // Create core LLVM types directly (no global list pushes)
+    cg_register_core_types()
+
     // Declare all function signatures
     mut param_offset = 0
     mut i = 0
@@ -406,6 +409,10 @@ export fn declare_all_fns() {
                     let tname = FN_ALL_PARAM_TYPES[pt_idx]
                     if tname == "string" { param_ty = CG_STR }
                     else if tname == "List" || (tname.length > 4 && tname[0] == "L") { param_ty = CG_STR }
+                    else if tname != "int" && tname != "float" && tname != "bool" && tname != "ptr" && tname != "" {
+                        let resolved = resolve_type_to_llvm(tname)
+                        if resolved != null { param_ty = resolved }
+                    }
                 }
                 llvm.type_array_set(param_arr, pi, param_ty)
                 pi = pi + 1
@@ -421,6 +428,10 @@ export fn declare_all_fns() {
             } }
             if rtn == "string" { ret_ty = CG_STR }
             else if rtn == "List" || (rtn.length > 4 && rtn[0] == "L") { ret_ty = CG_STR }
+            else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
+                let resolved = resolve_type_to_llvm(rtn)
+                if resolved != null { ret_ty = resolved }
+            }
         }
         cg_reinit_types()
         if ret_ty == null { ret_ty = CG_I64 }
