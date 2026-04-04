@@ -3766,6 +3766,15 @@ int64_t forge_fn_nullable_get_flag(void) { return _fn_returns_nullable; }
 int64_t forge_fn_nullable_get_inner(void) { return (int64_t)(uintptr_t)_fn_nullable_inner_ty; }
 int64_t forge_fn_nullable_get_ret(void) { return (int64_t)(uintptr_t)_fn_nullable_ret_ty; }
 
+// ---- Last emitted value tracking (implicit return) ----
+static void* _last_val = NULL;
+static int _has_last_val = 0;
+
+void forge_last_val_set(void* val) { _last_val = val; _has_last_val = 1; }
+void forge_last_val_clear(void) { _has_last_val = 0; _last_val = NULL; }
+int64_t forge_last_val_has(void) { return _has_last_val; }
+int64_t forge_last_val_get(void) { return (int64_t)(uintptr_t)_last_val; }
+
 // Emit depth counter (recursion guard for emit_expr)
 static int _emit_depth = 0;
 int64_t forge_emit_depth_push(void) { return ++_emit_depth; }

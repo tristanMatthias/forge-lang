@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_HAS_LAST_VAL, CG_CTX, CG_STR, CG_I64, CG_I8, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_CTX, CG_STR, CG_I64, CG_I8, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -402,7 +402,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
     llvm.position_at_end(CG_B, entry)
 
-    CG_HAS_LAST_VAL = 0
+    forge_last_val_clear()
 
     // Define params — alloca auto-cached by build_alloca
     mut pi = 0
@@ -424,7 +424,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         pi = pi + 1
     }
 
-    CG_HAS_LAST_VAL = 0
+    forge_last_val_clear()
     PENDING_IF = false
     PENDING_MATCH = false
     cg_reinit_types()
@@ -452,9 +452,8 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         let body = body_parser.parse_block()
         cg_reinit_types()
         let last = cg.emit_block(body)
-        CG_LAST_VAL = last
-        CG_HAS_LAST_VAL = 1
-    }
+        forge_last_val_set(last)
+            }
 
     // Implicit return — must match declared return type
     if !llvm.block_has_terminator(CG_B) {
@@ -469,9 +468,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
             } }
             cg_reinit_types()
-            if CG_HAS_LAST_VAL == 1 {
-                CG_HAS_LAST_VAL = 0
-                llvm.build_ret(CG_B, CG_LAST_VAL)
+            if forge_last_val_has() == 1 {
+                let rv = forge_last_val_get()
+                forge_last_val_clear()
+                llvm.build_ret(CG_B, rv)
             } else {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }
@@ -568,7 +568,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         // Alloca cache handles per-function variable type tracking
 
         // Reset tracking BEFORE param definition
-        CG_HAS_LAST_VAL = 0
+        forge_last_val_clear()
 
         // Define params with correct types
         pi = 0
@@ -604,7 +604,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         param_offset = param_offset + pc
 
         // Reset type tracking flags before each function body
-        CG_HAS_LAST_VAL = 0
+        forge_last_val_clear()
 
         // Set nullable return tracking for this function
         mut nullable_flag = 0
@@ -624,30 +624,28 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         mut body_parser = parser_new(body_tokens)
             let body = body_parser.parse_block()
             let last = cg.emit_block(body)
-            // Only update CG_LAST_VAL if not already set by inline emit (e.g., PHI from if-expr)
-            if CG_HAS_LAST_VAL != 1 {
-                CG_LAST_VAL = last
-                CG_HAS_LAST_VAL = 1
-            }
+            // Only update forge_last_val_get() if not already set by inline emit (e.g., PHI from if-expr)
+            if forge_last_val_has() != 1 {
+                forge_last_val_set(last)
+                            }
         }
 
         // Add implicit return only if the block doesn't already terminate
         if !llvm.block_has_terminator(CG_B) {
             if is_main {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-            } else if fn_is_nullable && CG_HAS_LAST_VAL == 1 {
-                // Nullable function with a last value — always wrap
-                CG_HAS_LAST_VAL = 0
-                let wrapped_ret = wrap_nullable(fn_nullable_inner, CG_LAST_VAL)
+            } else if fn_is_nullable && forge_last_val_has() == 1 {
+                let lv = forge_last_val_get()
+                forge_last_val_clear()
+                let wrapped_ret = wrap_nullable(fn_nullable_inner, lv)
                 llvm.build_ret(CG_B, wrapped_ret)
             } else if fn_is_nullable {
-                // Nullable function with no last value — return null
                 let null_ret = make_null_value(fn_nullable_inner)
                 llvm.build_ret(CG_B, null_ret)
-            } else if CG_HAS_LAST_VAL == 1 {
-                // Return the last expression value from emit_block
-                CG_HAS_LAST_VAL = 0
-                llvm.build_ret(CG_B, CG_LAST_VAL)
+            } else if forge_last_val_has() == 1 {
+                let lv2 = forge_last_val_get()
+                forge_last_val_clear()
+                llvm.build_ret(CG_B, lv2)
             } else {
                 llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
             }

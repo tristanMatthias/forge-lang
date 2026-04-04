@@ -149,6 +149,10 @@ crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings"
 crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", params: [ForgeString, ForgeString, I64, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_last_val_set", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_last_val_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_last_val_has", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_last_val_get", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_emit_depth_push", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_emit_depth_pop", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_type_register", feature: "strings", params: [ForgeString, I64], ret: Void }

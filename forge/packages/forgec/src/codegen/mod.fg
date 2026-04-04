@@ -62,8 +62,7 @@ export mut CG_TOPLEVEL_SOURCES: List<string> = []
 
 // Variable struct type tracking now uses alloca cache (forge_alloca_cache_set_var_type)
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
-export mut CG_LAST_VAL: ptr = null
-export mut CG_HAS_LAST_VAL: int = 0
+// CG_LAST_VAL/CG_HAS_LAST_VAL moved to C-side (forge_last_val_set/get/has/clear)
 
 // Match expression globals (PENDING pattern)
 export mut PENDING_MATCH: bool = false
@@ -568,7 +567,7 @@ export fn var_struct_type(name: string) -> string {
 
 export fn codegen_init(name: string) {
     forge_alloca_cache_clear()
-    CG_HAS_LAST_VAL = 0
+    forge_last_val_clear()
     // (CG_UNIVERSAL_ENUM_TY removed)
     let dfns = forge_map_new()
     DECLARED_FNS = dfns
@@ -937,7 +936,7 @@ impl Codegen {
             var_type = Type.String
         }
         self.define_var(name, var_type, val)
-        CG_HAS_LAST_VAL = 0
+        forge_last_val_clear()
     }
 
     fn emit_if_stmt(self, cond: Expr, then_b: Block, else_b: Block, has_else: int) {
@@ -2010,7 +2009,7 @@ impl Codegen {
                 let fn_ref = llvm.get_named_function(CG_MOD, name)
                 if fn_ref != null {
                     let call_result = self.emit_fn_call_direct(fn_ref, name, args)
-                    CG_HAS_LAST_VAL = 0
+                    forge_last_val_clear()
                     return call_result
                 }
             }
