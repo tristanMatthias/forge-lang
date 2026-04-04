@@ -44,12 +44,9 @@ export mut CG_RT_MAP_HAS: ptr = null
 export mut CG_RT_MAP_GET: ptr = null
 export mut CG_RT_MAP_SET: ptr = null
 
-// Variable storage: Map from name → alloca pointer.
-// Type is derived from LLVM via get_allocated_type (locals) or global_get_value_type (globals).
-// No parallel lists, no CSV strings, no type flags.
-// No variable tracking globals — LLVM is the source of truth:
-// - Locals: forge_alloca_cache_get(name) → alloca, get_allocated_type(alloca) → type
-// - Globals: llvm.get_named_global(CG_MOD, name) → global, global_get_value_type(global) → type
+// Variable lookup uses:
+// - Locals: alloca cache (C-side per-function storage) → get_allocated_type → build_load
+// - Globals: llvm.get_named_global(CG_MOD, name) → global_get_value_type → build_load
 // - Functions: llvm.get_named_function(CG_MOD, name) → fn ref
 
 // CG_ACTIVE removed — parser is now a pure parser, codegen is separate
@@ -658,7 +655,7 @@ export fn var_struct_type(name: string) -> string {
 }
 
 export fn codegen_init(name: string) {
-    // Reset per-module LLVM state (preserves metadata from scan phase)
+    forge_alloca_cache_clear()
     CG_HAS_LAST_VAL = 0
     CG_UNIVERSAL_ENUM_TY = null
     CG_ENUM_TYPE_CACHE_NAMES = []
@@ -713,7 +710,8 @@ export fn cg_reinit_types() {
     CG_VOID = llvm.void_type(CG_CTX)
     CG_PTR = llvm.pointer_type(CG_CTX)
     CG_F64 = llvm.double_type(CG_CTX)
-    CG_STR = llvm.get_type_by_name(CG_CTX, "ForgeString")
+    // CG_STR is set once by cg_init_str — don't clobber it here
+    // (get_type_by_name may return null in bootstrap if string isn't null-terminated)
     CG_LIST = CG_STR
 }
 
@@ -895,6 +893,15 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_kind_id_for_keyword", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_list_push", mft2(CG_STR, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_signal_handler", mft1(CG_VOID, CG_I64))
+    // Alloca cache (C-side per-function variable storage)
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set", mft2(CG_I64, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_get", mft1(CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_has", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_type_id", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set_var_type", mft2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_get_var_type", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
 }
 
 fn cg_cleanup() {
@@ -1155,14 +1162,14 @@ impl Codegen {
             .BoolLit(_, _) -> { return "bool" }
             .NullLit(_) -> { return "null" }
             .Ident(name, _) -> {
-                // Check alloca cache — type from LLVM
-                let cached = forge_alloca_cache_get(name)
-                if cached != null {
-                    let ty = llvm.get_allocated_type(cached)
-                    if ty == CG_STR { return "string" }
-                    if ty == CG_PTR { return "ptr" }
-                    return "int"
-                }
+                // Check alloca cache for stored Forge type name
+                let var_type = forge_alloca_cache_get_var_type(name)
+                if var_type.length > 0 { return var_type }
+                // Fallback: LLVM type kind (0=miss, 8=i64, 10=struct, 12=ptr)
+                let type_kind = forge_alloca_cache_type_id(name)
+                if type_kind == 10 { return "string" }
+                if type_kind == 12 { return "ptr" }
+                if type_kind == 8 { return "int" }
                 // Check if it's a global
                 let gptr = llvm.get_named_global(CG_MOD, name)
                 if gptr != null {
@@ -1645,6 +1652,20 @@ impl Codegen {
                     return
                 }
             }
+            .Index(obj, idx, span) -> {
+                // Map index assignment: map["key"] = val → forge_map_set(map, key, val)
+                let map_val = self.emit_expr(obj)
+                let key_val = self.emit_expr(idx)
+                let rhs_val = self.emit_expr(value)
+                let sa = llvm.value_array_new(3)
+                llvm.value_array_set(sa, 0, map_val)
+                llvm.value_array_set(sa, 1, key_val)
+                llvm.value_array_set(sa, 2, rhs_val)
+                cg_reinit_types()
+                let sft = mft3(CG_VOID, CG_PTR, CG_STR, CG_I64)
+                llvm.build_call(CG_B, sft, CG_RT_MAP_SET, sa, 3, "")
+                llvm.value_array_free(sa)
+            }
             .MemberAccess(obj, field, span) -> {
                 // Struct field assignment: self.pos = val
                 let val = self.emit_expr(value)
@@ -1782,6 +1803,50 @@ impl Codegen {
         result
     }
 
+    fn emit_list_literal(self, elements: List<Expr>) -> ptr {
+        cg_reinit_types()
+        let count = elements.length
+        let count_val = llvm.const_int(CG_I64, count, 0)
+        mut elem_ty = CG_I64
+        mut elem_size = 8
+        let vals = llvm.value_array_new(count)
+        mut i = 0
+        for elem in elements {
+            let val = self.emit_expr(elem)
+            llvm.value_array_set(vals, i, val)
+            if i == 0 {
+                let ety = self.expr_type_name(elem)
+                if ety == "string" {
+                    elem_ty = CG_STR
+                    elem_size = 16
+                }
+            }
+            i = i + 1
+        }
+        let elem_size_val = llvm.const_int(CG_I64, elem_size, 0)
+        let size = llvm.build_mul(CG_B, count_val, elem_size_val, "lsz")
+        let ca = llvm.value_array_new(1)
+        llvm.value_array_set(ca, 0, size)
+        let ft = mft1(CG_PTR, CG_I64)
+        let data_ptr = llvm.build_call(CG_B, ft, CG_RT_ALLOC, ca, 1, "ld")
+        llvm.value_array_free(ca)
+        i = 0
+        while i < count {
+            let idx = llvm.const_int(CG_I64, i, 0)
+            let indices = llvm.value_array_new(1)
+            llvm.value_array_set(indices, 0, idx)
+            let elem_ptr = llvm.build_gep2(CG_B, elem_ty, data_ptr, indices, 1, "ep")
+            llvm.value_array_free(indices)
+            llvm.build_store(CG_B, llvm.value_array_get(vals, i), elem_ptr)
+            i = i + 1
+        }
+        llvm.value_array_free(vals)
+        cg_reinit_types()
+        let undef = llvm.get_undef(CG_LIST)
+        let s1 = llvm.build_insert_value(CG_B, undef, data_ptr, 0, "ls1")
+        llvm.build_insert_value(CG_B, s1, count_val, 1, "ls2")
+    }
+
     fn emit_string(self, value: string) -> ptr {
         // Create string as a constant struct (position-independent, no builder call needed)
         // This prevents forward SSA references when strings are used in loop bodies
@@ -1789,23 +1854,59 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
-        let cached = forge_alloca_cache_get(name)
-        if cached != null {
-            mut load_ty = llvm.get_allocated_type(cached)
-            if load_ty == null { load_ty = CG_I64 }
-            return llvm.build_load(CG_B, load_ty, cached, name)
-        }
-        // Check LLVM module globals (created by add_global)
+        // 1. Local variables: C-side lookup + load (returns LLVM value as i64, 0 for miss)
+        let loaded = forge_alloca_cache_load(name, CG_B, CG_I64)
+        if loaded != 0 { return loaded }
+        // 2. Global variables: LLVM module registry
         let gptr = llvm.get_named_global(CG_MOD, name)
         if gptr != null {
-            mut load_ty = llvm.global_get_value_type(gptr)
-            if load_ty == null { load_ty = CG_I64 }
-            return llvm.build_load(CG_B, load_ty, gptr, name)
+            mut load_ty2 = llvm.global_get_value_type(gptr)
+            if load_ty2 == null { load_ty2 = CG_I64 }
+            return llvm.build_load(CG_B, load_ty2, gptr, name)
         }
-        // Try function lookup
+        // 3. Functions
         let fn_ref = llvm.get_named_function(CG_MOD, name)
         if fn_ref != null { return fn_ref }
         llvm.const_int(CG_I64, 0, 0)
+    }
+
+    fn emit_member_access(self, obj: Expr, field: string) -> ptr {
+        mut var_name = ""
+        match obj {
+            .Ident(name, span) -> { var_name = name }
+            _ -> { return llvm.const_int(CG_I64, 0, 0) }
+        }
+        if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Enum constructor: Color.Green → tag value
+        let tag = match_enum_tag(var_name + "." + field)
+        if tag >= 0 {
+            return llvm.const_int(CG_I64, tag, 0)
+        }
+
+        // Special case: .length property
+        if field == "length" {
+            let obj_val = self.emit_ident(var_name)
+            let ca = llvm.value_array_new(1)
+            llvm.value_array_set(ca, 0, obj_val)
+            let ft = mft1(CG_I64, CG_STR)
+            let result = llvm.build_call(CG_B, ft, CG_RT_SLEN, ca, 1, "len")
+            llvm.value_array_free(ca)
+            return result
+        }
+
+        // Look up the variable's struct type
+        let struct_type_name = var_struct_type(var_name)
+        if struct_type_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Find the field index in the struct's field list
+        let fidx = struct_field_index(struct_type_name, field)
+        if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Load the struct value and extract the field
+        let obj_val = self.emit_ident(var_name)
+        let field_val = llvm.build_extract_value(CG_B, obj_val, fidx, field)
+        field_val
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
@@ -1846,6 +1947,13 @@ impl Codegen {
                     llvm.value_array_free(ca)
                     return llvm.build_icmp(CG_B, 32, cmp_result, llvm.const_int(CG_I64, 0, 0), "eq")
                 }
+                // Null comparison: compare against i64 0 (type-safe for both ptr and int)
+                if right_type == "null" {
+                    return llvm.build_icmp(CG_B, 32, lhs, llvm.const_int(CG_I64, 0, 0), "eq")
+                }
+                if left_type == "null" {
+                    return llvm.build_icmp(CG_B, 32, rhs, llvm.const_int(CG_I64, 0, 0), "eq")
+                }
                 return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq")
             }
             .NotEq -> {
@@ -1862,6 +1970,13 @@ impl Codegen {
                     let cmp_result = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
                     llvm.value_array_free(ca)
                     return llvm.build_icmp(CG_B, 33, cmp_result, llvm.const_int(CG_I64, 0, 0), "ne")
+                }
+                // Null comparison: compare against i64 0 (type-safe for both ptr and int)
+                if right_type == "null" {
+                    return llvm.build_icmp(CG_B, 33, lhs, llvm.const_int(CG_I64, 0, 0), "ne")
+                }
+                if left_type == "null" {
+                    return llvm.build_icmp(CG_B, 33, rhs, llvm.const_int(CG_I64, 0, 0), "ne")
                 }
                 return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne")
             }
@@ -2150,7 +2265,11 @@ impl Codegen {
                 if val_type.length >= 4 {
                     let c = val_type[0]
                     if (c == "l" || c == "L") && val_type[1] == "i" && val_type[2] == "s" && val_type[3] == "t" {
-                        ty = Type.String
+                        if val_type == "list:string" {
+                            ty = Type.ListType(Type.String)
+                        } else {
+                            ty = Type.ListType(Type.Int)
+                        }
                     }
                 }
                 self.define_var(name, ty, ev)
@@ -2231,37 +2350,6 @@ impl Codegen {
                         bpos = bpos + 1
                     }
                     if bcur != "" { all_bindings = all_bindings.push(bcur) }
-                    // Pre-create allocas before match branches (current block)
-                    // Format: "EnumType.Variant:name1,name2" — skip prefix before ':'
-                    let pre_start_idx = CG_VAR_PTRS.length  // save index for direct access
-                    mut pre_bi = 0
-                    while pre_bi < all_bindings.length {
-                        let pre_raw = all_bindings[pre_bi]
-                        // Skip variant prefix (everything before ':')
-                        mut pre_csv = pre_raw
-                        let colon = pre_raw.index_of(":")
-                        if colon >= 0 { pre_csv = pre_raw.substring(colon + 1, pre_raw.length) }
-                        mut pre_pi = 0
-                        mut pre_name = ""
-                        while pre_pi < pre_csv.length {
-                            let pc = pre_csv[pre_pi]
-                            if pc == "," {
-                                if pre_name != "_" && pre_name != "" {
-                                    cg_reinit_types()
-                                    let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
-                                }
-                                pre_name = ""
-                            } else {
-                                pre_name = pre_name + pc
-                            }
-                            pre_pi = pre_pi + 1
-                        }
-                        if pre_name != "_" && pre_name != "" {
-                            cg_reinit_types()
-                            let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
-                        }
-                        pre_bi = pre_bi + 1
-                    }
                     // Emit each arm as if-else chain
                     mut ai = 0
                     while ai < tags.length {
@@ -2272,8 +2360,6 @@ impl Codegen {
                         let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
                         llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
                         llvm.position_at_end(CG_B, arm_bb)
-                        // Save var scope for binding cleanup
-                        let saved_var_len = CG_VAR_NAMES.length
                         // Extract bindings with field-type-aware slot offsets
                         if ai < all_bindings.length {
                             let raw_bind = all_bindings[ai]
@@ -2310,7 +2396,6 @@ impl Codegen {
                                 }
                             }
                             mut field_idx = 0
-                            mut binding_ptr_idx = 0  // index into pre-created allocas
                             mut bpi = 0
                             mut bpname = ""
                             while bpi <= names_part.length {
@@ -2334,12 +2419,9 @@ impl Codegen {
                                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                                 mut fsv = fs
                                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
-                                                    llvm.build_store(CG_B, fsv, CG_VAR_PTRS[alloca_idx])
-                                                    CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(bpname)
-                                                }
-                                                binding_ptr_idx = binding_ptr_idx + 1
+                                                let ba = llvm.build_alloca(CG_B, CG_STR, bpname)
+                                                llvm.build_store(CG_B, fsv, ba)
+                                                forge_alloca_cache_set(bpname, ba)
                                             }
                                         } else if fcode == "p" {
                                             // Boxed pointer: extract ptr, load full value
@@ -2355,31 +2437,23 @@ impl Codegen {
                                                     if loaded != null { deref_val = loaded }
                                                 }
                                                 // Store the dereferenced full value
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
-                                                    // For boxed Expr: alloca needs to be Expr-sized
-                                                    // But pre-alloca is CG_STR (16 bytes). Expr is larger.
-                                                    // Create a new alloca of the right type
-                                                    if expr_ty != null {
-                                                        let big_alloca = llvm.build_alloca(CG_B, expr_ty, "bx")
-                                                        llvm.build_store(CG_B, deref_val, big_alloca)
-                                                        // Shadow with Expr-sized alloca + register as enum var
-                                                    } else {
-                                                        let ba = forge_alloca_cache_get(bpname)
-                                                        if ba != null { llvm.build_store(CG_B, ev, ba) }
-                                                    }
+                                                if expr_ty != null {
+                                                    let big_alloca = llvm.build_alloca(CG_B, expr_ty, bpname)
+                                                    llvm.build_store(CG_B, deref_val, big_alloca)
+                                                    forge_alloca_cache_set(bpname, big_alloca)
+                                                } else {
+                                                    let ba = llvm.build_alloca(CG_B, CG_I64, bpname)
+                                                    llvm.build_store(CG_B, ev, ba)
+                                                    forge_alloca_cache_set(bpname, ba)
                                                 }
-                                                binding_ptr_idx = binding_ptr_idx + 1
                                             }
                                         } else {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                let alloca_idx = pre_start_idx + binding_ptr_idx
-                                                if alloca_idx < CG_VAR_PTRS.length {
-                                                    llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
-                                                }
-                                                binding_ptr_idx = binding_ptr_idx + 1
+                                                let ba = llvm.build_alloca(CG_B, CG_I64, bpname)
+                                                llvm.build_store(CG_B, ev, ba)
+                                                forge_alloca_cache_set(bpname, ba)
                                             }
                                         }
                                     }
@@ -2396,10 +2470,7 @@ impl Codegen {
                             self.emit_block(arm_bodies[ai])
                         }
                         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
-                        // Restore var scope (remove bindings from this arm)
-                        // Truncate CG_VAR_NAMES/CG_VAR_PTRS back to saved length
-                        // (bootstrap: can't truncate lists, but pushing same names in next arm is fine
-                        //  because emit_ident searches from end — new arm's bindings shadow old ones)
+                        // Bindings are in alloca cache, scoped to current function
                         llvm.position_at_end(CG_B, next_bb)
                         ai = ai + 1
                     }
@@ -2533,15 +2604,14 @@ impl Codegen {
     // Define a local variable: create alloca, store value, register in CG_LOCALS.
     // Type is determined by the alloca — LLVM is the source of truth.
     fn define_var(self, name: string, ty: Type, value: ptr) {
-        eprintln("  [DV] " + name + " is_str=" + string(ty is .String))
         let is_str = ty is .String
+        let is_list = ty is .ListType
         let is_map = ty is .MapType
-        cg_reinit_types()
         mut alloca_ty = CG_I64
         if is_str { alloca_ty = CG_STR }
+        if is_list { alloca_ty = CG_STR }  // Lists are {ptr, i64} like strings
         if is_map { alloca_ty = CG_PTR }
         if CG_B == null { return }
-        // Create alloca in entry block
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
         let entry_bb = llvm.get_entry_basic_block(fn_val)
@@ -2554,7 +2624,21 @@ impl Codegen {
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
-        // Register in locals map
+        forge_alloca_cache_set(name, alloca)
+        // Store Forge type name for type inference
+        mut type_name = "int"
+        if is_str { type_name = "string" }
+        if is_map { type_name = "map" }
+        match ty {
+            .ListType(elem) -> {
+                match elem {
+                    .String -> { type_name = "list:string" }
+                    _ -> { type_name = "list" }
+                }
+            }
+            _ -> {}
+        }
+        forge_alloca_cache_set_var_type(name, type_name)
     }
 
     fn is_map_var(self, name: string) -> bool {

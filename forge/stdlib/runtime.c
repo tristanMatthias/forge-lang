@@ -3590,10 +3590,156 @@ void forge_debug_lexer(void* ptr) {
 }
 
 // ---- Alloca cache (immune to Forge-level ptr corruption) ----
-#define ALLOCA_CACHE_SIZE 512
+#define ALLOCA_CACHE_SIZE 4096
 static void* _ac_fn_ptr = NULL; // current LLVM function pointer — entries from other functions are stale
-static struct { char name[64]; void* ptr; void* fn; void* alloca_type; } _ac[ALLOCA_CACHE_SIZE];
+static void* _ac_builder = NULL; // LLVM builder for deriving current function
+static struct { char name[64]; char type_name[32]; void* ptr; void* fn; void* alloca_type; } _ac[ALLOCA_CACHE_SIZE];
 static int _ac_count = 0;
+
+// Derive current function from builder (avoids stale _ac_fn_ptr)
+typedef void* (*gib_fn)(void*);  // LLVMGetInsertBlock
+typedef void* (*gbbp_fn)(void*); // LLVMGetBasicBlockParent
+static void* _ac_get_current_fn(void) {
+    if (!_ac_builder) return _ac_fn_ptr;
+    static gib_fn gib = NULL;
+    static gbbp_fn gbbp = NULL;
+    if (!gib) gib = (gib_fn)dlsym(RTLD_DEFAULT, "LLVMGetInsertBlock");
+    if (!gbbp) gbbp = (gbbp_fn)dlsym(RTLD_DEFAULT, "LLVMGetBasicBlockParent");
+    if (!gib || !gbbp) return _ac_fn_ptr;
+    void* bb = gib(_ac_builder);
+    if (!bb) return _ac_fn_ptr;
+    return gbbp(bb);
+}
+
+void forge_alloca_cache_set_builder(void* builder) {
+    _ac_builder = builder;
+}
+
+// Set the Forge type name for the most recently added cache entry
+void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {
+    if (!name.ptr || name.len <= 0) return;
+    void* cur_fn = _ac_get_current_fn();
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            int tlen = type_name.len > 31 ? 31 : (int)type_name.len;
+            if (type_name.ptr && tlen > 0) {
+                memcpy(_ac[i].type_name, type_name.ptr, tlen);
+            }
+            _ac[i].type_name[tlen] = '\0';
+            return;
+        }
+    }
+}
+
+// Get the Forge type name for a variable (returns ForgeString, empty if not found)
+ForgeString forge_alloca_cache_get_var_type(ForgeString name) {
+    ForgeString empty = {NULL, 0};
+    if (!name.ptr || name.len <= 0) return empty;
+    void* cur_fn = _ac_get_current_fn();
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            int64_t tlen = (int64_t)strlen(_ac[i].type_name);
+            if (tlen > 0) {
+                ForgeString result = {_ac[i].type_name, tlen};
+                return result;
+            }
+            return empty;
+        }
+    }
+    return empty;
+}
+
+// Returns the LLVM type kind of the alloca (0=miss, 8=i64, 13=struct, 12=ptr)
+// Uses LLVMGetTypeKind on the allocated type
+typedef void* (*_gat_fn2)(void*);
+typedef int   (*_gio_fn2)(void*);
+int64_t forge_alloca_cache_type_id(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return 0;
+    void* cur_fn = _ac_get_current_fn();
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            static _gat_fn2 gat2 = NULL;
+            static _gio_fn2 gio2 = NULL;
+            static _gio_fn2 gtk2 = NULL;
+            if (!gat2) gat2 = (_gat_fn2)dlsym(RTLD_DEFAULT, "LLVMGetAllocatedType");
+            if (!gio2) gio2 = (_gio_fn2)dlsym(RTLD_DEFAULT, "LLVMGetInstructionOpcode");
+            if (!gtk2) gtk2 = (_gio_fn2)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+            if (!gat2 || !gio2 || !gtk2) return 0;
+            int opcode = gio2(_ac[i].ptr);
+            if (opcode != 26) return 0;
+            void* ty = gat2(_ac[i].ptr);
+            if (!ty) return 0;
+            return (int64_t)gtk2(ty);
+        }
+    }
+    return 0;
+}
+
+// Returns alloca pointer as i64 (0 for miss), avoiding ptr return type issues
+int64_t forge_alloca_cache_has(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return 0;
+    void* cur_fn = _ac_get_current_fn();
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            return (int64_t)(uintptr_t)_ac[i].ptr;
+        }
+    }
+    return 0;
+}
+
+// Full variable load: lookup alloca, determine type, build LLVM load instruction
+// Returns the loaded value, or null if variable not found
+// This avoids the ptr return type issue by doing everything in C
+typedef void* (*gat_fn)(void*);       // LLVMGetAllocatedType
+typedef int   (*gio_fn)(void*);       // LLVMGetInstructionOpcode
+typedef void* (*bl2_fn)(void*, void*, void*, const char*); // LLVMBuildLoad2
+int64_t forge_alloca_cache_load(ForgeString name, void* builder, void* default_ty) {
+    if (!name.ptr || name.len <= 0 || (uintptr_t)name.ptr < 4096) return 0;
+    void* cur_fn = _ac_get_current_fn();
+    void* alloca = NULL;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if (_ac[i].fn == cur_fn &&
+            (int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            alloca = _ac[i].ptr;
+            break;
+        }
+    }
+    if (!alloca) return 0;
+
+    // Determine load type from alloca
+    static gat_fn gat = NULL;
+    static gio_fn gio = NULL;
+    static bl2_fn bl2 = NULL;
+    if (!gat) gat = (gat_fn)dlsym(RTLD_DEFAULT, "LLVMGetAllocatedType");
+    if (!gio) gio = (gio_fn)dlsym(RTLD_DEFAULT, "LLVMGetInstructionOpcode");
+    if (!bl2) bl2 = (bl2_fn)dlsym(RTLD_DEFAULT, "LLVMBuildLoad2");
+    if (!gat || !gio || !bl2) return 0;
+
+    void* load_ty = default_ty;
+    int opcode = gio(alloca);
+    if (opcode == 26) { // AllocaInst
+        void* at = gat(alloca);
+        if (at) load_ty = at;
+    }
+
+    // Build name string
+    char nbuf[64];
+    int nlen = name.len > 63 ? 63 : (int)name.len;
+    memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+
+    void* result = bl2(builder, load_ty, alloca, nbuf);
+    return (int64_t)(uintptr_t)result;
+}
 
 // Clear cache AND record current function pointer for staleness detection
 // Forward declarations for trace
@@ -3629,9 +3775,10 @@ int64_t forge_alloca_cache_clear(void) {
 // Raw C-string version of cache_set — called from Rust side where name ptr is still valid
 int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void* ptr) {
     if (!name_ptr || name_len <= 0 || name_len > 63) return 0;
+    void* cur_fn = _ac_get_current_fn();
     // Update existing entry if same name AND same function
     for (int i = 0; i < _ac_count; i++) {
-        if (_ac[i].fn == _ac_fn_ptr &&
+        if (_ac[i].fn == cur_fn &&
             (int64_t)strlen(_ac[i].name) == name_len &&
             memcmp(_ac[i].name, name_ptr, name_len) == 0) {
             _ac[i].ptr = ptr;
@@ -3642,7 +3789,7 @@ int64_t forge_alloca_cache_set_raw(const char* name_ptr, int64_t name_len, void*
         memcpy(_ac[_ac_count].name, name_ptr, name_len);
         _ac[_ac_count].name[name_len] = '\0';
         _ac[_ac_count].ptr = ptr;
-        _ac[_ac_count].fn = _ac_fn_ptr;
+        _ac[_ac_count].fn = cur_fn;
         _ac[_ac_count].alloca_type = NULL;
         _ac_count++;
     }
@@ -3655,14 +3802,12 @@ void forge_alloca_cache_set_fn(void* fn) { _ac_fn_ptr = fn; }
 
 static int _ac_set_trace = 0;
 int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
-    if (_ac_set_trace > 0 && name.ptr && name.len <= 4) {
-        fprintf(stderr, "  [AC_SET] '%.*s' ptr=%p fn=%p\n", (int)name.len, name.ptr, ptr, _ac_fn_ptr);
-        _ac_set_trace--;
-    }
     if (!name.ptr || name.len <= 0 || name.len > 63 || (uintptr_t)name.ptr < 4096) return 0;
+    void* cur_fn = _ac_get_current_fn();
+    // (trace removed)
     // Update existing entry if same name AND same function
     for (int i = 0; i < _ac_count; i++) {
-        if (_ac[i].fn == _ac_fn_ptr &&
+        if (_ac[i].fn == cur_fn &&
             (int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             _ac[i].ptr = ptr;
@@ -3673,7 +3818,7 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
         memcpy(_ac[_ac_count].name, name.ptr, name.len);
         _ac[_ac_count].name[name.len] = '\0';
         _ac[_ac_count].ptr = ptr;
-        _ac[_ac_count].fn = _ac_fn_ptr;
+        _ac[_ac_count].fn = cur_fn;
         _ac_count++;
     }
     return 0;
@@ -3684,7 +3829,7 @@ int64_t forge_alloca_cache_set(ForgeString name, void* ptr) {
 void forge_alloca_cache_set_type(ForgeString name, void* type_ptr) {
     if (!name.ptr || name.len <= 0) return;
     for (int i = _ac_count - 1; i >= 0; i--) {
-        if (_ac[i].fn == _ac_fn_ptr &&
+        if (_ac[i].fn == _ac_get_current_fn() &&
             (int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             _ac[i].alloca_type = type_ptr;
@@ -3704,8 +3849,9 @@ void forge_alloca_cache_set_last_type(void* type_ptr) {
 // Returns the LLVM type pointer, or NULL if not set
 void* forge_alloca_cache_get_type(ForgeString name) {
     if (!name.ptr || name.len <= 0) return NULL;
+    void* cur_fn = _ac_get_current_fn();
     for (int i = _ac_count - 1; i >= 0; i--) {
-        if (_ac[i].fn == _ac_fn_ptr &&
+        if (_ac[i].fn == cur_fn &&
             (int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
             return _ac[i].alloca_type;
@@ -3855,32 +4001,27 @@ void* forge_alloca_cache_get(ForgeString name) {
         _ac_miss_count++;
         return NULL;
     }
-    // First pass: search current function scope
-    int sp_trace = 0;
-    if (_ac_trace > 0) {
-        fprintf(stderr, "  [AC_GET] '%.*s' len=%lld fn=%p\n", name.len > 20 ? 20 : (int)name.len, name.ptr, (long long)name.len, _ac_fn_ptr);
-        _ac_trace--;
-        sp_trace = 1;
-    }
+    // Derive current function from builder (immune to stale _ac_fn_ptr)
+    void* cur_fn = _ac_get_current_fn();
     for (int i = _ac_count - 1; i >= 0; i--) {
         if ((int64_t)strlen(_ac[i].name) == name.len &&
             memcmp(_ac[i].name, name.ptr, name.len) == 0) {
-            if (sp_trace) {
-                fprintf(stderr, "    [sp@%d] fn=%p ptr=%p %s\n", i, _ac[i].fn, _ac[i].ptr,
-                        _ac[i].fn == _ac_fn_ptr ? "MATCH" : "miss");
-            }
-            if (_ac[i].fn == _ac_fn_ptr) {
+            if (_ac[i].fn == cur_fn) {
                 _ac_hit_count++;
                 return _ac[i].ptr;
             }
         }
     }
-    // No cross-function fallback — variables are scoped to the current function
-    _ac_miss_count++;
-    if (_ac_trace > 0 && name.len <= 4) {
-        fprintf(stderr, "  [ac_miss] '%.*s' fn=%p count=%d\n", (int)name.len, name.ptr, _ac_fn_ptr, _ac_count);
-        _ac_trace--;
+    for (int i = _ac_count - 1; i >= 0; i--) {
+        if ((int64_t)strlen(_ac[i].name) == name.len &&
+            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
+            if (_ac[i].fn == cur_fn) {
+                _ac_hit_count++;
+                return _ac[i].ptr;
+            }
+        }
     }
+    _ac_miss_count++;
     return NULL;
 }
 

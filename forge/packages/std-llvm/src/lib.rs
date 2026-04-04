@@ -514,7 +514,10 @@ pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name:
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_create_builder(ctx: LLVMPtr) -> LLVMPtr {
-    unsafe { LLVMCreateBuilderInContext(ctx) }
+    extern "C" { fn forge_alloca_cache_set_builder(b: *mut c_void); }
+    let b = unsafe { LLVMCreateBuilderInContext(ctx) };
+    unsafe { forge_alloca_cache_set_builder(b); }
+    b
 }
 
 #[no_mangle]
@@ -938,6 +941,10 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
     }
     unsafe {
         // Trust the caller's type — LLVM is the source of truth
+        // Safety check: verify ptr is a valid LLVM value before calling LLVMTypeOf
+        if builder.is_null() {
+            return std::ptr::null_mut();
+        }
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { // Not PointerTypeKind
             let ty_kind = LLVMGetTypeKind(ty);

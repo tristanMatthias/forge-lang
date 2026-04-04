@@ -706,8 +706,6 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
         llvm.position_at_end(CG_B, entry)
 
-        // Set scope boundary: emit_ident should only find globals + current function's vars
-        CG_VAR_SCOPE_START = CG_VAR_NAMES.length
         // Clear per-function type tracking (prevents cross-function contamination)
         CG_STR_VAR_NAMES = []
         CG_STRUCT_VAR_NAMES = []
@@ -743,13 +741,8 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             }
             let alloca = llvm.build_alloca(CG_B, p_ty, pname)
             llvm.build_store(CG_B, param_val, alloca)
-            CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
-            CG_VAR_TYPES = CG_VAR_TYPES.push(param_type_name)
-            mut _vis2 = 0
-            if param_type_name == "string" { _vis2 = 1 }
-            CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis2)
-            CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
-            CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+            forge_alloca_cache_set(pname, alloca)
+            forge_alloca_cache_set_var_type(pname, param_type_name)
             if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
             // Register struct/enum-typed params for member access and type tracking
             if is_struct_param {

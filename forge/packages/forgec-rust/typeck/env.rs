@@ -68,6 +68,8 @@ impl TypeEnv {
         };
         // Register all built-in functions from the feature registry
         crate::registry::BuiltinFnRegistry::register_all(&mut env);
+        // Register runtime functions (C runtime) so type checker knows their signatures
+        crate::registry::RuntimeFnRegistry::register_in_env(&mut env);
 
         // channel() returns int (channel ID) — has Custom return type in registry
         env.functions.insert(

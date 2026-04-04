@@ -954,6 +954,37 @@ impl RuntimeFnRegistry {
     pub fn all() -> impl Iterator<Item = &'static RuntimeFnDecl> {
         inventory::iter::<RuntimeFnDecl>.into_iter()
     }
+
+    /// Register runtime functions in the type checker environment
+    pub fn register_in_env(env: &mut crate::typeck::env::TypeEnv) {
+        use crate::typeck::types::Type;
+        for decl in Self::all() {
+            let params: Vec<Type> = decl.params.iter().map(|p| match p {
+                RuntimeType::I64 => Type::Int,
+                RuntimeType::F64 => Type::Float,
+                RuntimeType::I8 => Type::Int,
+                RuntimeType::Ptr => Type::Ptr,
+                RuntimeType::ForgeString => Type::String,
+                RuntimeType::ForgeList => Type::List(Box::new(Type::Unknown)),
+            }).collect();
+            let return_type = match decl.ret {
+                RuntimeRetType::Void => Type::Void,
+                RuntimeRetType::I64 => Type::Int,
+                RuntimeRetType::F64 => Type::Float,
+                RuntimeRetType::I8 => Type::Int,
+                RuntimeRetType::I32 => Type::Int,
+                RuntimeRetType::Ptr => Type::Ptr,
+                RuntimeRetType::ForgeString => Type::String,
+            };
+            env.functions.insert(
+                decl.name.to_string(),
+                Type::Function {
+                    params,
+                    return_type: Box::new(return_type),
+                },
+            );
+        }
+    }
 }
 
 /// Macro for declaring a C runtime function contributed by a feature.

@@ -164,17 +164,29 @@ impl<'ctx> Codegen<'ctx> {
         op: &BinaryOp,
         rhs: BasicValueEnum<'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let lhs_int = self.builder.build_ptr_to_int(
-            lhs.into_pointer_value(),
-            self.context.i64_type(),
-            "ptr_cmp_l",
-        ).unwrap();
+        // Handle both pointer and integer values (ptr vars may be stored as i64)
+        let lhs_int = if lhs.is_pointer_value() {
+            self.builder.build_ptr_to_int(
+                lhs.into_pointer_value(),
+                self.context.i64_type(),
+                "ptr_cmp_l",
+            ).unwrap()
+        } else {
+            lhs.into_int_value()
+        };
 
-        let rhs_int = self.builder.build_ptr_to_int(
-            rhs.into_pointer_value(),
-            self.context.i64_type(),
-            "ptr_cmp_r",
-        ).unwrap();
+        let rhs_int = if rhs.is_pointer_value() {
+            self.builder.build_ptr_to_int(
+                rhs.into_pointer_value(),
+                self.context.i64_type(),
+                "ptr_cmp_r",
+            ).unwrap()
+        } else if rhs.is_int_value() {
+            rhs.into_int_value()
+        } else {
+            // rhs is a struct (null literal) — use zero
+            self.context.i64_type().const_zero()
+        };
 
         let pred = match op {
             BinaryOp::Eq => IntPredicate::EQ,

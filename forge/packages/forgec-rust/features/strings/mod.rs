@@ -139,8 +139,15 @@ crate::runtime_fn! { name: "forge_mod_csv_clear", feature: "strings", params: []
 crate::runtime_fn! { name: "forge_mod_csv_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_mod_csv_get", feature: "strings", params: [], ret: ForgeString }
 
-// Alloca cache function-scoped validation
+// Alloca cache
 crate::runtime_fn! { name: "forge_alloca_cache_set_fn", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_alloca_cache_set", feature: "strings", params: [ForgeString, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_clear", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_has", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_type_id", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
 
 // C-side function body store (immune to Forge list push corruption)
 crate::runtime_fn! { name: "forge_fn_store_clear", feature: "strings", params: [], ret: Void }
