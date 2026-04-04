@@ -660,12 +660,57 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             return CG_I64
         }
     }
-    // Check struct type via list (may be corrupted)
+    // Check struct type via list — lazily create LLVM type if not yet created
     mut sti = CG_STRUCT_NAMES.length - 1
     while sti >= 0 {
         if CG_STRUCT_NAMES[sti] == type_name {
             let sty = CG_STRUCT_TYPES[sti]
             if sty != null { return sty }
+            // Lazy LLVM type creation from field info
+            if sti < CG_STRUCT_FIELD_TYPE_NAMES.length {
+                let ftn = CG_STRUCT_FIELD_TYPE_NAMES[sti]
+                let fields_str = CG_STRUCT_FIELDS[sti]
+                // Count fields
+                mut fc = 1
+                mut ci2 = 0
+                while ci2 < fields_str.length {
+                    if fields_str[ci2] == "," { fc = fc + 1 }
+                    ci2 = ci2 + 1
+                }
+                if fields_str.length == 0 { fc = 0 }
+                // Create LLVM struct type
+                let fta = llvm.type_array_new(fc)
+                mut fi2 = 0
+                mut ftn_pos = 0
+                mut ftn_cur = ""
+                while ftn_pos < ftn.length {
+                    let ch2 = ftn[ftn_pos]
+                    if ch2 == "," {
+                        mut fty = CG_I64
+                        if ftn_cur == "string" { fty = CG_STR }
+                        llvm.type_array_set(fta, fi2, fty)
+                        fi2 = fi2 + 1
+                        ftn_cur = ""
+                    } else {
+                        ftn_cur = ftn_cur + ch2
+                    }
+                    ftn_pos = ftn_pos + 1
+                }
+                if ftn_cur != "" {
+                    mut fty = CG_I64
+                    if ftn_cur == "string" { fty = CG_STR }
+                    llvm.type_array_set(fta, fi2, fty)
+                }
+                let new_sty = llvm.struct_create_named(CG_CTX, type_name)
+                llvm.struct_set_body(new_sty, fta, fc, 0)
+                llvm.type_array_free(fta)
+                // Cache it
+                CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(new_sty)
+                CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(type_name)
+                CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields_str)
+                CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
+                return new_sty
+            }
         }
         sti = sti - 1
     }
@@ -850,6 +895,108 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_selfhost_process_exit", mft1(CG_VOID, CG_I64))
     llvm.add_function(CG_MOD, "forge_selfhost_process_run", mft2(CG_STR, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_eprintln_string", mft1(CG_VOID, CG_STR))
+    // LLVM C API functions (used by the compiler itself when self-hosting)
+    cg_reinit_types()
+    // 0-arg → ptr
+    llvm.add_function(CG_MOD, "llvm_context_create", mft0(CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_void_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_double_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_pointer_type", mft1(CG_PTR, CG_PTR))
+    // 1-arg
+    llvm.add_function(CG_MOD, "llvm_create_builder", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_dispose_builder", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_context_dispose", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_module_dispose", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_verify_module", mft1(CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_undef", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_type_of", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_allocated_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_global_get_value_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_insert_block", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_basic_block_parent", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_entry_basic_block", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_first_instruction", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_block_has_terminator", mft1(CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_ret_void", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_const_null", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_type_array_new", mft1(CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_type_array_free", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_value_array_new", mft1(CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_value_array_free", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_param", mft2(CG_PTR, CG_PTR, CG_I64))
+    // 2-arg
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "llvm_module_create", mft2(CG_PTR, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_int1_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_int8_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_int32_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_int64_type", mft1(CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_add_global", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_set_initializer", mft2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_get_named_function", mft2(CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_get_type_by_name", mft2(CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_append_basic_block", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_position_at_end", mft2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_position_before", mft2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_br", mft2(CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_ret", mft2(CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_alloca", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_store", mft3(CG_PTR, CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_print_module_to_file", mft2(CG_VOID, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_emit_object_file", mft2(CG_I64, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_const_string", mft3(CG_PTR, CG_PTR, CG_STR, CG_I64))
+    // 3-arg
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "llvm_const_int", mft3(CG_PTR, CG_PTR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_const_real", mft2(CG_PTR, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_build_load", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_add", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_sub", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_mul", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_sdiv", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_srem", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_and", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_or", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_xor", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_shl", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_ashr", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_cond_br", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_phi", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_zext", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_trunc", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_inttoptr", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_add_incoming", mft3(CG_VOID, CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_extract_value", mft4(CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_insert_value", mft5(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_gep2", mft5(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_build_struct_gep", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_build_icmp", mft5(CG_PTR, CG_PTR, CG_I64, CG_PTR, CG_PTR, CG_STR))
+    // Function types and calls
+    cg_reinit_types()
+    llvm.add_function(CG_MOD, "llvm_function_type", mft4(CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_add_function", mft3(CG_PTR, CG_PTR, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_build_call", mft6(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_type_array_set", mft3(CG_VOID, CG_PTR, CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "llvm_value_array_set", mft3(CG_VOID, CG_PTR, CG_I64, CG_PTR))
+    // Struct types
+    llvm.add_function(CG_MOD, "llvm_struct_type", mft4(CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "llvm_struct_create_named", mft2(CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "llvm_struct_set_body", mft4(CG_VOID, CG_PTR, CG_PTR, CG_I64, CG_I64))
+    // Token/parser C-side helpers
+    llvm.add_function(CG_MOD, "forge_fn_store_add", mft2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_fn_store_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_get_name", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_get_body", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_set_token_list", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_token_list_len", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_parser_get_pos", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_parser_set_pos", mft1(CG_VOID, CG_I64))
+    llvm.add_function(CG_MOD, "forge_parser_advance_pos", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_peek_kind_id", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_extract_body_source", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_kind_id_for_keyword", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_list_push", mft2(CG_STR, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_signal_handler", mft1(CG_VOID, CG_I64))
 }
 
 fn cg_cleanup() {
@@ -2593,11 +2740,8 @@ impl Codegen {
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
         }
         if is_map { alloca_ty = CG_PTR }
-        // Use LLVM type-of to detect non-i64 types (enum, struct, nullable)
-        let val_llvm_ty = llvm.type_of(value)
-        if val_llvm_ty != null && val_llvm_ty != CG_I64 && !is_str && !is_map {
-            alloca_ty = val_llvm_ty
-        }
+        // For non-primitive types, keep CG_I64 as alloca type
+        // (CG_VAR_TYPES tracks the semantic type for emit_ident)
         if CG_B == null { return }
         if alloca_ty == 0 { return }
         // Create alloca in ENTRY block (ensures dominance across all basic blocks)

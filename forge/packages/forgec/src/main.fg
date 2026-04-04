@@ -198,9 +198,8 @@ fn try_load_mod(dir: string, mod_name: string) {
 
 // Helper: scan for \nmod in remaining text, recurse
 fn scan_mods(src: string, dir: string) {
-    // Use forge_sh_indexof (declared in module, immune to desugaring corruption)
     let needle = "\nmod "
-    let found = forge_sh_indexof(src, needle)
+    let found = src.index_of(needle)
     if found < 0 { return }
     let name_start = found + 5
     let rest = src.substring(name_start, src.length)
@@ -216,7 +215,6 @@ fn collect_module_paths(filepath: string) {
     let source = fs.read(filepath)
     eprintln("  read " + string(source.length) + " bytes")
     let dir = filepath_dir(filepath)
-    // Prepend \n so "mod " at line 1 also matches "\nmod "
     let src = "\n" + source
     scan_mods(src, dir)
     MODULE_PATHS_CSV = MODULE_PATHS_CSV + filepath + "\n"
@@ -278,9 +276,7 @@ fn build_compile_separate(paths_csv: string, output: string) {
     eprintln("scanned " + string(file_idx) + " files, " + string(FN_NAMES.length) + " fns")
 
     // Phase 2: Single LLVM module — declare all, then emit bodies
-    eprintln("[BSC] before codegen_init")
     codegen_init("forgec_output")
-    eprintln("[BSC] after codegen_init")
     eprintln("[BSC] before create_globals")
     create_globals_typed(VAR_GLOBAL_NAMES, VAR_GLOBAL_STR_MASK)
     eprintln("[BSC] after create_globals")

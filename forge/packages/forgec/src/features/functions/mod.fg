@@ -424,18 +424,19 @@ export fn declare_all_fns() {
                 rtn = rtn.substring(0, rtn.length - 1)
             } }
             if rtn == "string" { ret_ty = CG_STR }
-            else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
-                cg_reinit_types()
-                let resolved = resolve_type_to_llvm(rtn)
-                if resolved != null && resolved != CG_I64 { ret_ty = resolved }
+            else if rtn == "List" || rtn.length > 4 {
+                if rtn[0] == "L" { ret_ty = CG_STR }
             }
         }
-        cg_reinit_types()        cg_reinit_types()
+        cg_reinit_types()
         if ret_ty == null { ret_ty = CG_I64 }
+        if ret_ty == 0 { ret_ty = CG_I64 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        DECLARED_FNS[name] = fn_val
+        if fn_type != null {
+            let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+            if fn_val != null { DECLARED_FNS[name] = fn_val }
+        }
         param_offset = param_offset + pc
         i = i + 1
     }
@@ -575,12 +576,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
                 ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
             } }
             cg_reinit_types()
-            let ret_ty = resolve_type_to_llvm(ret_type_name)
-            if ret_ty != null && ret_ty != CG_I64 {
-                // Struct/enum return: always use undef (body expressions may be mistyped)
-                llvm.build_ret(CG_B, llvm.get_undef(ret_ty))
-                CG_HAS_LAST_VAL = 0
-            } else if CG_HAS_LAST_VAL == 1 {
+            if CG_HAS_LAST_VAL == 1 {
                 CG_HAS_LAST_VAL = 0
                 llvm.build_ret(CG_B, CG_LAST_VAL)
             } else {
@@ -722,12 +718,15 @@ export fn emit_all_fn_bodies(cg: Codegen) {
                 ret_ty = make_nullable_type(ret_ty)
             }
         }
-        cg_reinit_types()        cg_reinit_types()
+        cg_reinit_types()
         if ret_ty == null { ret_ty = CG_I64 }
+        if ret_ty == 0 { ret_ty = CG_I64 }
         let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
         llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        DECLARED_FNS[name] = fn_val
+        if fn_type != null {
+            let fn_val = llvm.add_function(CG_MOD, name, fn_type)
+            if fn_val != null { DECLARED_FNS[name] = fn_val }
+        }
 
         // Per-file mode: skip body for functions from other files (extern declaration only)
         if EMIT_FILE_IDX >= 0 {
