@@ -702,63 +702,10 @@ fn cg_register_core_types() {
     register_struct_type_full("Param", "name,type_ann,default_value,span,mutable", "10000", "string,TypeExpr,Expr,Span,bool", param_ty)
     register_struct_type_full("Span", "start,end,line,col", "0000", "int,int,int,int", span_ty)
 
-    // Token = { kind: TokenKind, span: Span, text: string, kind_id: int }
-    // TokenKind is an enum = i64, Span = 4xi64, text = ForgeString, kind_id = i64
-    // = { i64, i64, i64, i64, i64, %ForgeString, i64 } = 7 fields
-    let tkf = llvm.type_array_new(7)
-    llvm.type_array_set(tkf, 0, CG_I64)  // kind (enum tag)
-    llvm.type_array_set(tkf, 1, CG_I64)  // span.start
-    llvm.type_array_set(tkf, 2, CG_I64)  // span.end
-    llvm.type_array_set(tkf, 3, CG_I64)  // span.line
-    llvm.type_array_set(tkf, 4, CG_I64)  // span.col
-    llvm.type_array_set(tkf, 5, CG_STR)  // text
-    llvm.type_array_set(tkf, 6, CG_I64)  // kind_id
-    let token_ty = llvm.struct_create_named(CG_CTX, "Token")
-    llvm.struct_set_body(token_ty, tkf, 7, 0)
-    llvm.type_array_free(tkf)
-    register_struct_type_full("Token", "kind,span,text,kind_id", "0010", "TokenKind,Span,string,int", token_ty)
+    // Token, Block, Diagnostic, NodeRef — registered via type declaration parsing
+    // (their layouts depend on enum variant sizes which are complex to hardcode)
 
-    // Block = { statements: List<Statement>, span: Span }
-    // = { %ForgeString, i64, i64, i64, i64 } (list + 4 span fields)
-    let blf = llvm.type_array_new(6)
-    llvm.type_array_set(blf, 0, CG_STR)  // statements list
-    llvm.type_array_set(blf, 1, CG_I64)  // span.start
-    llvm.type_array_set(blf, 2, CG_I64)  // span.end
-    llvm.type_array_set(blf, 3, CG_I64)  // span.line
-    llvm.type_array_set(blf, 4, CG_I64)  // span.col
-    // Wait — Block = { statements: List<Statement>, span: Span }
-    // List<Statement> = {ptr, i64}, Span = {i64, i64, i64, i64}
-    // = { {ptr, i64}, {i64, i64, i64, i64} } = 6 slots
-    llvm.type_array_set(blf, 5, CG_I64)
-    let block_ty = llvm.struct_create_named(CG_CTX, "Block")
-    llvm.struct_set_body(block_ty, blf, 6, 0)
-    llvm.type_array_free(blf)
-    register_struct_type_full("Block", "statements,span", "10", "List:Statement,Span", block_ty)
-
-    // Diagnostic = { code: string, message: string, severity: Severity, span: Span, help: string, note: string }
-    // = { %ForgeString, %ForgeString, i64, %Span, %ForgeString, %ForgeString }
-    let diag_f = llvm.type_array_new(6)
-    llvm.type_array_set(diag_f, 0, CG_STR)
-    llvm.type_array_set(diag_f, 1, CG_STR)
-    llvm.type_array_set(diag_f, 2, CG_I64)
-    llvm.type_array_set(diag_f, 3, span_ty)
-    llvm.type_array_set(diag_f, 4, CG_STR)
-    llvm.type_array_set(diag_f, 5, CG_STR)
-    let diag_ty = llvm.struct_create_named(CG_CTX, "Diagnostic")
-    llvm.struct_set_body(diag_ty, diag_f, 6, 0)
-    llvm.type_array_free(diag_f)
-    register_struct_type_full("Diagnostic", "code,message,severity,span,help,note", "110011", "string,string,Severity,Span,string,string", diag_ty)
-
-    // NodeRef = { node_id: int, feature: string, kind_name: string, node_span: Span }
-    let nrf = llvm.type_array_new(4)
-    llvm.type_array_set(nrf, 0, CG_I64)
-    llvm.type_array_set(nrf, 1, CG_STR)
-    llvm.type_array_set(nrf, 2, CG_STR)
-    llvm.type_array_set(nrf, 3, span_ty)
-    let noderef_ty = llvm.struct_create_named(CG_CTX, "NodeRef")
-    llvm.struct_set_body(noderef_ty, nrf, 4, 0)
-    llvm.type_array_free(nrf)
-    register_struct_type_full("NodeRef", "node_id,feature,kind_name,node_span", "0110", "int,string,string,Span", noderef_ty)
+    // Block, Diagnostic, NodeRef — registered via type declaration parsing
 }
 
 fn cg_init_runtime() {
