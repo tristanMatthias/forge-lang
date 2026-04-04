@@ -319,8 +319,19 @@ impl Parser {
             self.sync_pos()
             return r
         }
-        // trait: skip by brace counting
-        // type (35) and enum (34): handled by enum matching below (.TypeKw, .Enum)
+        // type (35): register struct types for lazy LLVM type creation
+        if kid == 35 {
+            let r = parse_type_decl(self)
+            self.sync_pos()
+            return r
+        }
+        // enum (34): register variant tags for match dispatch
+        if kid == 34 {
+            let r = parse_enum_decl(self)
+            self.sync_pos()
+            return r
+        }
+        // trait (42): skip by brace counting
         if kid == 42 {
             self.advance()
             self.expect_ident()
