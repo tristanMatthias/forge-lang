@@ -44,13 +44,31 @@ export mut CG_RT_MAP_HAS: ptr = null
 export mut CG_RT_MAP_GET: ptr = null
 export mut CG_RT_MAP_SET: ptr = null
 
-// Variable storage: Map from name → alloca pointer.
-// Type is derived from LLVM via get_allocated_type (locals) or global_get_value_type (globals).
-// No parallel lists, no CSV strings, no type flags.
-// No variable tracking globals — LLVM is the source of truth:
-// - Locals: forge_alloca_cache_get(name) → alloca, get_allocated_type(alloca) → type
-// - Globals: llvm.get_named_global(CG_MOD, name) → global, global_get_value_type(global) → type
-// - Functions: llvm.get_named_function(CG_MOD, name) → fn ref
+// Global variable storage (bootstrap workaround: struct fields don't survive method calls)
+mut CG_VAR_NAMES: List<string> = []
+mut CG_VAR_PTRS: List<ptr> = []
+export mut CG_VAR_TYPES: List<string> = []  // canonical type: "int","string","float","bool","ptr","map","list:T","nullable:T","enum:E","struct:S"
+mut CG_VAR_IS_STR: List<int> = []  // 1 = string/list type, 0 = int type (UNRELIABLE after many entries)
+export mut CG_STR_VAR_NAMES: List<string> = []  // names of string/list typed variables (reliable)
+export mut CG_VAR_IS_MAP: List<int> = []  // 1 = map type, 0 = other
+export mut CG_MAP_VAR_NAMES: List<string> = []  // names of map-typed variables
+// Track nullable variable names (for null comparison and unwrap)
+export mut CG_NULLABLE_VAR_NAMES: List<string> = []
+export mut CG_NULLABLE_VAR_INNER: List<string> = []  // inner type name ("int", "string")
+// Track list variable names as comma-separated strings (bootstrap List<string> unreliable)
+export mut CG_LIST_VAR_CSV: string = ""        // all list vars
+export mut CG_STR_GLOBALS_CSV: string = ""     // string/list globals (CSV, immune to corruption)
+export mut CG_STR_LOCALS_CSV: string = ""      // string/list locals (CSV, immune to corruption)
+export mut CG_STR_LIST_VAR_CSV: string = ""    // string-element list vars
+// Track list element type names: ",varname:typename," format
+export mut CG_LIST_ELEM_TYPE_CSV: string = ""  // e.g. ",TOKENS:Token,,IDS:int,"
+
+// Top-level global variable tracking (CSV strings — List<string> globals unreliable)
+export mut CG_GLOBAL_CSV: string = ""  // ",name:type,name:type," format
+export mut CG_GLOBAL_COUNT: int = 0
+
+// Boundary index: vars before this index are globals, after are function-locals
+export mut CG_VAR_SCOPE_START: int = 0
 
 // CG_ACTIVE removed — parser is now a pure parser, codegen is separate
 
@@ -182,20 +200,41 @@ export fn create_globals_typed(names: List<string>, str_mask: int) {
     mut i = 0
     while i < names.length {
         let name = names[i]
-        // Determine global type from bitmask
+        // Use ForgeString type for ALL globals (safe: ForgeString is 16 bytes, i64 fits in first 8)
+        // This ensures string globals work correctly with ForgeString operations
         cg_reinit_types()
-        mut gty = CG_I64
-        mut bit = 1
-        mut shift = 0
-        while shift < i { bit = bit * 2
-            shift = shift + 1 }
-        let is_str = (str_mask / bit) % 2 == 1
-        if is_str { gty = CG_STR }
-        if name.index_of("CSV") >= 0 { gty = CG_STR }
-        if name.index_of("PATHS") >= 0 { gty = CG_STR }
+        let gty = CG_STR
         let gv = llvm.add_global(CG_MOD, gty, name)
         let zero = llvm.const_null(gty)
         llvm.set_initializer(gv, zero)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
+        // Check bitmask for string type
+        mut bit = 1
+        mut shift = 0
+        while shift < i {
+            bit = bit * 2
+            shift = shift + 1
+        }
+        let is_str = (str_mask / bit) % 2 == 1
+        // Also check name patterns for string/list globals
+        mut is_str_global = is_str
+        if name.index_of("CSV") >= 0 { is_str_global = true }
+        if name.index_of("PATHS") >= 0 { is_str_global = true }
+        if name.index_of("REG_") >= 0 { is_str_global = false }
+        if name.index_of("REGISTRY") >= 0 { is_str_global = false }
+        mut gtype = "int"
+        if is_str_global { gtype = "string" }
+        CG_VAR_TYPES = CG_VAR_TYPES.push(gtype)
+        mut is_str_flag2 = 0
+        if is_str_global { is_str_flag2 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        // Register in CSV (immune to list corruption)
+        if is_str_global {
+            CG_STR_GLOBALS_CSV = CG_STR_GLOBALS_CSV + "," + name + ","
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+        }
         i = i + 1
     }
 }
@@ -242,6 +281,35 @@ export fn create_llvm_globals_from(csv: string, count: int) {
         }
         llvm.set_initializer(gv, zero)
 
+        // Register in CG_VAR system
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(gv)
+        CG_VAR_TYPES = CG_VAR_TYPES.push(type_name)
+        mut is_str_flag2 = 0
+        if type_name == "string" || is_list { is_str_flag2 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag2)
+        mut is_map_flag = 0
+        if type_name == "map" { is_map_flag = 1 }
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag)
+        if type_name == "string" || is_list {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+        }
+        if type_name == "map" {
+            CG_MAP_VAR_NAMES = CG_MAP_VAR_NAMES.push(name)
+        }
+        // Track list info
+        if is_list {
+            CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + ",${name},"
+            if type_name == "list_str" {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:string,"
+                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + ",${name},"
+            } else if is_list_struct {
+                let elem_type = type_name.substring(12, type_name.length)
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:${elem_type},"
+            } else {
+                CG_LIST_ELEM_TYPE_CSV = CG_LIST_ELEM_TYPE_CSV + ",${name}:int,"
+            }
+        }
     }
 }
 
@@ -930,7 +998,6 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_add_global", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_set_initializer", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_named_function", mft2(CG_PTR, CG_PTR, CG_STR))
-    llvm.add_function(CG_MOD, "forge_llvm_get_named_global", mft2(CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_get_type_by_name", mft2(CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_append_basic_block", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_position_at_end", mft2(CG_VOID, CG_PTR, CG_PTR))
@@ -1685,6 +1752,8 @@ impl Codegen {
             }
         }
         if struct_ty == null { return llvm.const_int(CG_I64, 0, 0) }
+
+        // Alloca + GEP stores
         let alloca = llvm.build_alloca(CG_B, struct_ty, "sl")
         llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
         mut fi = 0
@@ -1697,7 +1766,13 @@ impl Codegen {
         }
         // Load completed struct
         let sv = llvm.build_load(CG_B, struct_ty, alloca, "sv")
+        // Register as struct var
         let tmp = "_s" + string(fi)
+        CG_VAR_NAMES = CG_VAR_NAMES.push(tmp)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        CG_VAR_TYPES = CG_VAR_TYPES.push("struct:" + struct_name)
+        CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(tmp)
+        CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(struct_name)
         // Get field names for var
         mut field_names = ""
         if si >= 0 { field_names = CG_STRUCT_FIELDS[si] }
@@ -1877,19 +1952,110 @@ impl Codegen {
     }
 
     fn emit_ident(self, name: string) -> ptr {
-        // Check local alloca cache (auto-populated by build_alloca, per-function)
-        let cached = forge_alloca_cache_get(name)
-        if cached != null {
-            mut load_ty = llvm.get_allocated_type(cached)
-            if load_ty == null { load_ty = CG_I64 }
-            return llvm.build_load(CG_B, load_ty, cached, name)
+        // Search current function locals first (from END to scope start)
+        // then globals (from scope start-1 to 0)
+        mut vi = CG_VAR_NAMES.length - 1
+        while vi >= CG_VAR_SCOPE_START {
+            if CG_VAR_NAMES[vi] == name {
+                cg_reinit_types()
+                let alloca_ptr = CG_VAR_PTRS[vi]
+                // Determine load type from CG_VAR_TYPES (primary source)
+                mut load_ty = CG_I64
+                if vi < CG_VAR_TYPES.length {
+                    let vtype = CG_VAR_TYPES[vi]
+                    if vtype == "string" {
+                        load_ty = CG_STR
+                    } else if vtype == "int" || vtype == "float" || vtype == "bool" || vtype == "ptr" {
+                        load_ty = CG_I64
+                    } else if vtype == "map" {
+                        load_ty = CG_PTR
+                    } else {
+                        // Any other type: resolve via LLVM named type lookup
+                        let resolved = resolve_type_to_llvm(vtype)
+                        if resolved != null { load_ty = resolved }
+                    }
+                } else {
+                    // Fallback: use LLVM's allocated type
+                    let alloc_ty = llvm.get_allocated_type(alloca_ptr)
+                    if alloc_ty != null { load_ty = alloc_ty }
+                }
+                // Legacy fallbacks for string vars
+                mut si = CG_STR_VAR_NAMES.length - 1
+                while si >= 0 {
+                    if CG_STR_VAR_NAMES[si] == name {
+                        cg_reinit_types()
+                        load_ty = CG_STR
+                        break
+                    }
+                    si = si - 1
+                }
+                // Check nullable
+                if is_nullable_var(name) {
+                    let inner_name = nullable_var_inner_type(name)
+                    mut inner_ty = CG_I64
+                    if inner_name == "string" { inner_ty = CG_STR }
+                    load_ty = make_nullable_type(inner_ty)
+                }
+                // Check enum type
+                cg_reinit_types()
+                let vet = cg_var_enum_type(name)
+                if vet != "" {
+                    let ety = cg_get_enum_ty_for(vet)
+                    if ety != null { load_ty = ety }
+                }
+                // Check struct type
+                let struct_type_name = var_struct_type(name)
+                if struct_type_name != "" {
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
+                        if CG_STRUCT_NAMES[sti] == struct_type_name {
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null { load_ty = sty }
+                            break
+                        }
+                        sti = sti - 1
+                    }
+                }
+                return llvm.build_load(CG_B, load_ty, alloca_ptr, name)
+            }
+            vi = vi - 1
         }
-        // Check LLVM module globals
-        let gptr = llvm.get_named_global(CG_MOD, name)
-        if gptr != null {
-            mut load_ty = llvm.global_get_value_type(gptr)
-            if load_ty == null { load_ty = CG_I64 }
-            return llvm.build_load(CG_B, load_ty, gptr, name)
+        // Search globals (indices 0 to CG_VAR_SCOPE_START-1)
+        vi = CG_VAR_SCOPE_START - 1
+        while vi >= 0 {
+            if CG_VAR_NAMES[vi] == name {
+                cg_reinit_types()
+                // Check if this global is a string/list via CSV (immune to list corruption)
+                let str_needle = "," + name + ","
+                let is_str_global = CG_STR_GLOBALS_CSV.index_of(str_needle) >= 0
+                mut load_ty = CG_I64
+                if is_str_global { load_ty = CG_STR }
+                if is_nullable_var(name) {
+                    let inner_name = nullable_var_inner_type(name)
+                    mut inner_ty2 = CG_I64
+                    if inner_name == "string" { inner_ty2 = CG_STR }
+                    load_ty = make_nullable_type(inner_ty2)
+                }
+                // Check enum type
+                let g_vet = cg_var_enum_type(name)
+                if g_vet != "" {
+                    if CG_UNIVERSAL_ENUM_TY != null { load_ty = CG_UNIVERSAL_ENUM_TY }
+                }
+                let struct_type_name = var_struct_type(name)
+                if struct_type_name != "" {
+                    mut sti = CG_STRUCT_NAMES.length - 1
+                    while sti >= 0 {
+                        if CG_STRUCT_NAMES[sti] == struct_type_name {
+                            let sty = CG_STRUCT_TYPES[sti]
+                            if sty != null { load_ty = sty }
+                            break
+                        }
+                        sti = sti - 1
+                    }
+                }
+                return llvm.build_load(CG_B, load_ty, CG_VAR_PTRS[vi], name)
+            }
+            vi = vi - 1
         }
         // Try function lookup
         let fn_ref = llvm.get_named_function(CG_MOD, name)
@@ -2324,6 +2490,9 @@ impl Codegen {
                                 if pre_name != "_" && pre_name != "" {
                                     cg_reinit_types()
                                     let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
+                                    CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
+                                    CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
+                                    CG_VAR_TYPES = CG_VAR_TYPES.push("string")
                                 }
                                 pre_name = ""
                             } else {
@@ -2334,6 +2503,9 @@ impl Codegen {
                         if pre_name != "_" && pre_name != "" {
                             cg_reinit_types()
                             let pre_alloca = llvm.build_alloca(CG_B, CG_STR, "mb")
+                            CG_VAR_NAMES = CG_VAR_NAMES.push(pre_name)
+                            CG_VAR_PTRS = CG_VAR_PTRS.push(pre_alloca)
+                            CG_VAR_TYPES = CG_VAR_TYPES.push("string")
                         }
                         pre_bi = pre_bi + 1
                     }
@@ -2439,9 +2611,12 @@ impl Codegen {
                                                         let big_alloca = llvm.build_alloca(CG_B, expr_ty, "bx")
                                                         llvm.build_store(CG_B, deref_val, big_alloca)
                                                         // Shadow with Expr-sized alloca + register as enum var
+                                                        CG_VAR_NAMES = CG_VAR_NAMES.push(bpname)
+                                                        CG_VAR_PTRS = CG_VAR_PTRS.push(big_alloca)
+                                                        CG_VAR_TYPES = CG_VAR_TYPES.push("enum:Expr")
+                                                        CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + bpname + ":Expr,"
                                                     } else {
-                                                        let ba = forge_alloca_cache_get(bpname)
-                                                        if ba != null { llvm.build_store(CG_B, ev, ba) }
+                                                        llvm.build_store(CG_B, ev, CG_VAR_PTRS[alloca_idx])
                                                     }
                                                 }
                                                 binding_ptr_idx = binding_ptr_idx + 1
@@ -2553,6 +2728,9 @@ impl Codegen {
                         // Create a dummy var for the loop body to reference
                         let fv = llvm.build_alloca(CG_B, CG_I64, "iv")
                         llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fv)
+                        CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
+                        CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
+                        CG_VAR_TYPES = CG_VAR_TYPES.push("int")
                         llvm.build_br(CG_B, f4)
                         llvm.position_at_end(CG_B, f3)
                         llvm.build_br(CG_B, f1)
@@ -2565,6 +2743,15 @@ impl Codegen {
                         let fe = llvm.build_load(CG_B, elem_llvm_ty, fp, "ev")
                         let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
                         llvm.build_store(CG_B, fe, fv)
+                        CG_VAR_NAMES = CG_VAR_NAMES.push(vn)
+                        CG_VAR_PTRS = CG_VAR_PTRS.push(fv)
+                        mut loop_elem_type = "int"
+                        if elem_llvm_ty == CG_STR { loop_elem_type = "string" }
+                        CG_VAR_TYPES = CG_VAR_TYPES.push(loop_elem_type)
+                        // Register string loop vars so emit_ident loads as ForgeString
+                        if elem_llvm_ty == CG_STR {
+                            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(vn)
+                        }
                         // Register enum loop var for match
                         if for_elem_type != "" {
                             let enum_needle = "," + for_elem_type + ":"
@@ -2605,17 +2792,20 @@ impl Codegen {
 
     // ─── Variable Definition ───────────────────
 
-    // Define a local variable: create alloca, store value, register in CG_LOCALS.
-    // Type is determined by the alloca — LLVM is the source of truth.
     fn define_var(self, name: string, ty: Type, value: ptr) {
         let is_str = ty is .String
         let is_map = ty is .MapType
         cg_reinit_types()
+        // Determine alloca type from the LLVM value's type (most reliable source)
         mut alloca_ty = CG_I64
-        if is_str { alloca_ty = CG_STR }
+        if is_str {
+            alloca_ty = CG_STR
+            CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
+        }
         if is_map { alloca_ty = CG_PTR }
         if CG_B == null { return }
-        // Create alloca in entry block
+        if alloca_ty == 0 { return }
+        // Create alloca in ENTRY block (ensures dominance across all basic blocks)
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
         let entry_bb = llvm.get_entry_basic_block(fn_val)
@@ -2626,9 +2816,51 @@ impl Codegen {
             llvm.position_at_end(CG_B, entry_bb)
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
+        // Restore builder position and store value
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
-        // Register in locals map
+        CG_VAR_NAMES = CG_VAR_NAMES.push(name)
+        // Determine canonical type name from alloca type
+        mut var_type_name = "int"
+        if is_str { var_type_name = "string" }
+        if is_map { var_type_name = "map" }
+        // Detect type from alloca type when expr_type_name couldn't determine it
+        if var_type_name == "int" && alloca_ty == CG_STR {
+            var_type_name = "string"
+        }
+        if var_type_name == "int" && alloca_ty != CG_I64 {
+            // Check enum cache
+            mut ei = CG_ENUM_TYPE_CACHE_PTRS.length - 1
+            while ei >= 0 {
+                if CG_ENUM_TYPE_CACHE_PTRS[ei] == alloca_ty {
+                    var_type_name = "enum:" + CG_ENUM_TYPE_CACHE_NAMES[ei]
+                    break
+                }
+                ei = ei - 1
+            }
+            // Check struct types
+            if var_type_name == "int" {
+                mut si = CG_STRUCT_TYPES.length - 1
+                while si >= 0 {
+                    if CG_STRUCT_TYPES[si] == alloca_ty {
+                        var_type_name = "struct:" + CG_STRUCT_NAMES[si]
+                        break
+                    }
+                    si = si - 1
+                }
+            }
+        }
+        CG_VAR_TYPES = CG_VAR_TYPES.push(var_type_name)
+        mut is_str_flag3 = 0
+        if is_str { is_str_flag3 = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(is_str_flag3)
+        mut is_map_flag2 = 0
+        if is_map { is_map_flag2 = 1 }
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(is_map_flag2)
+        if is_str {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
+        }
+        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
     }
 
     fn is_map_var(self, name: string) -> bool {

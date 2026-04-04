@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_HAS_LAST_VAL, CG_CTX, CG_STR, CG_I64, CG_I8, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_ENUM_TYPE_CSV, CG_HAS_LAST_VAL, CG_ENUM_VAR_CSV, CG_STR_VAR_NAMES, CG_STRUCT_NAMES, CG_STRUCT_FIELDS, CG_STRUCT_FIELD_IS_STR, CG_STRUCT_FIELD_TYPE_NAMES, CG_STRUCT_TYPES, CG_STRUCT_VAR_NAMES, CG_STRUCT_VAR_TYPES, CG_STRUCT_VAR_FIELDS, CG_CTX, CG_STR, CG_I64, CG_I8, CG_VAR_SCOPE_START, CG_VAR_TYPES, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -472,9 +472,16 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
     llvm.position_at_end(CG_B, entry)
 
+    CG_VAR_SCOPE_START = CG_VAR_NAMES.length
+    CG_STR_VAR_NAMES = []
+    CG_STR_LOCALS_CSV = ""
+    CG_STRUCT_VAR_CSV = ""
+    CG_STRUCT_VAR_NAMES = []
+    CG_STRUCT_VAR_TYPES = []
+    CG_STRUCT_VAR_FIELDS = []
     CG_HAS_LAST_VAL = 0
 
-    // Define params — alloca auto-cached by build_alloca
+    // Define params
     mut pi = 0
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
@@ -485,11 +492,55 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if pt_idx < FN_ALL_PARAM_TYPES.length {
             param_type_name = FN_ALL_PARAM_TYPES[pt_idx]
         }
-        mut p_ty = resolve_type_to_llvm(param_type_name)
-        if p_ty == null { p_ty = CG_I64 }
+        let is_struct_param = param_type_name != "int" && param_type_name != "string" && param_type_name != "float" && param_type_name != "bool" && param_type_name != "ptr"
+        mut p_ty = CG_I64
+        if param_type_name == "string" { p_ty = CG_STR }
+        if is_struct_param {
+            let resolved = resolve_type_to_llvm(param_type_name)
+            if resolved != null && resolved != CG_I64 { p_ty = resolved }
+        }
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
-        // alloca auto-registered in C-side cache by build_alloca
+        CG_VAR_NAMES = CG_VAR_NAMES.push(pname)
+        CG_VAR_TYPES = CG_VAR_TYPES.push(param_type_name)
+        mut _vis = 0
+        if param_type_name == "string" { _vis = 1 }
+        CG_VAR_IS_STR = CG_VAR_IS_STR.push(_vis)
+        CG_VAR_IS_MAP = CG_VAR_IS_MAP.push(0)
+        CG_VAR_PTRS = CG_VAR_PTRS.push(alloca)
+        // String and List share {ptr, i64} — register in CG_STR_VAR_NAMES so emit_ident loads correctly
+        if param_type_name == "string" {
+            CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
+        } else if param_type_name.length >= 4 {
+            if param_type_name[0] == "L" {
+                CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname)
+                CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + pname + ","
+                CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + pname + ","
+            }
+        }
+        if is_struct_param {
+            let emf = cg_enum_max_fields(param_type_name)
+            // Check if type is a known enum (any payload size)
+            let enum_needle = "," + param_type_name + ":"
+            let is_enum = CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0
+            if is_enum {
+                CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
+            } else {
+                CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
+                CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
+                CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + pname + ":" + param_type_name + ","
+                mut field_info = ""
+                mut sri = CG_STRUCT_FIELDS.length - 1
+                while sri >= 0 {
+                    if CG_STRUCT_NAMES[sri] == param_type_name {
+                        field_info = CG_STRUCT_FIELDS[sri]
+                        break
+                    }
+                    sri = sri - 1
+                }
+                CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
+            }
+        }
         pi = pi + 1
     }
 
