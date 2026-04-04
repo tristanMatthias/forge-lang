@@ -1200,6 +1200,10 @@ impl Codegen {
             .Call(callee, _, _) -> {
                 match callee {
                     .Ident(name, _) -> {
+                        // Struct literal: __s_TypeName → return TypeName
+                        if name.length > 4 && name.substring(0, 4) == "__s_" {
+                            return name.substring(4, name.length)
+                        }
                         if name == "string" { return "string" }
                         if name == "int" { return "int" }
                         if name == "float" { return "float" }
