@@ -444,8 +444,8 @@ export fn declare_all_fns() {
 
 // Emit a single function body from source — called per-function (no re-declaration)
 export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
-    let name = forge_fn_store_get_name(idx)
-    let body_src = forge_fn_store_get_body(idx)
+    let name = FN_NAMES[idx]
+    let body_src = FN_BODY_SOURCES[idx]
     eprintln("  >> " + name)
     let is_main = name == "main"
     mut pc = 0
@@ -879,6 +879,9 @@ export fn emit_all_fn_bodies(cg: Codegen) {
 
 // Emit a single function body (called from codegen's emit_statement via dispatch)
 export fn emit_fn_body(cg: Codegen, node: NodeRef) {
+    // No-op: all function bodies are emitted by emit_fn_body_from_source
+    // in the main compile loop. This avoids duplicate declarations.
+    return
     let d = get_fn_decl(node.node_id)
     if d == null { return }
     let data = d!
@@ -910,6 +913,7 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
         let param_val = llvm.get_param(fn_val, pi)
+        if param_val == null { break }
         cg.define_var(pname, Type.Int, param_val)
         pi = pi + 1
     }
@@ -924,20 +928,9 @@ export fn emit_fn_body(cg: Codegen, node: NodeRef) {
 }
 
 fn emit_fn_data(cg: Codegen, data: FnDeclData) {
-    let is_main = data.name == "main"
-    let param_arr = llvm.type_array_new(data.params.length)
-    mut i = 0
-    for param in data.params {
-        llvm.type_array_set(param_arr, i, CG_I64)
-        i = i + 1
-    }
-    mut ret_ty = CG_I64
-    if is_main { ret_ty = CG_I32 }
-    let fn_type = llvm.function_type(ret_ty, param_arr, data.params.length, 0)
-    llvm.type_array_free(param_arr)
-
-    let fn_val = llvm.add_function(CG_MOD, data.name, fn_type)
-    cg.functions[data.name] = fn_val
+    // Use already-declared function (from declare_all_fns)
+    let fn_val = llvm.get_named_function(CG_MOD, data.name)
+    if fn_val == null { return }
     cg.current_fn = fn_val
 
     let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")

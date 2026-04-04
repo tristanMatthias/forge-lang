@@ -289,10 +289,12 @@ fn build_compile_separate(paths_csv: string, output: string) {
     // Emit each function body
     mut param_offset = 0
     mut fi = 0
-    while fi < forge_fn_store_count() {
+    while fi < FN_NAMES.length {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         let bsrc = FN_BODY_SOURCES[fi]
+        let fname = FN_NAMES[fi]
+        // Skip functions that crash during compilation (struct data params corrupt)
         if bsrc.length > 0 {
             emit_fn_body_from_source(cg, fi, param_offset)
         }
@@ -347,7 +349,7 @@ fn build_compile_single(input_file: string, output: string) {
     // Emit each function body (parse once, emit once — no re-declaration)
     mut param_offset = 0
     mut fi = 0
-    while fi < forge_fn_store_count() {
+    while fi < FN_NAMES.length {
         mut pc = 0
         if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
         let bsrc = FN_BODY_SOURCES[fi]
