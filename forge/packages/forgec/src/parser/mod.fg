@@ -319,8 +319,14 @@ impl Parser {
             self.sync_pos()
             return r
         }
-        // type/enum/trait: skip by brace counting
-        if kid == 42 || kid == 35 || kid == 34 {
+        // type: parse struct declarations to register field info
+        if kid == 35 {
+            let r = parse_type_decl(self)
+            self.sync_pos()
+            return r
+        }
+        // enum/trait: skip by brace counting
+        if kid == 42 || kid == 34 {
             self.advance()
             self.expect_ident()
             while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {

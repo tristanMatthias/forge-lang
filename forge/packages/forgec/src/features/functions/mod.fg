@@ -119,8 +119,10 @@ fn parse_export(p: Parser) -> Statement? {
     if ekid == 20 { return parse_var_binding(p, .Let, true) }
     if ekid == 21 { return parse_var_binding(p, .Mut, true) }
     if ekid == 22 { return parse_var_binding(p, .Const, true) }
-    // export type/enum/impl/trait — brace-count skip
-    if ekid == 42 || ekid == 43 || ekid == 34 || ekid == 35 {
+    // export type — parse to register struct fields
+    if ekid == 35 { return parse_type_decl(p) }
+    // export enum/impl/trait — brace-count skip
+    if ekid == 42 || ekid == 43 || ekid == 34 {
         p.advance()
         p.expect_ident()
         while !p.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
