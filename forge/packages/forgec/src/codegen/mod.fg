@@ -696,7 +696,19 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
 
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
-    // Try CSV first (immune to list corruption)
+    // Check alloca cache first (most reliable source)
+    let cached_type = forge_alloca_cache_get_var_type(name)
+    if cached_type.length > 0 {
+        // If the type name is a known struct type (not int/string/etc), return it
+        if cached_type != "int" && cached_type != "string" && cached_type != "float" && cached_type != "bool" && cached_type != "ptr" && cached_type != "null" && cached_type != "map" {
+            // Check for list:* types (not struct)
+            if cached_type.length > 4 {
+                if cached_type.substring(0, 4) == "list" { return "" }
+            }
+            return cached_type
+        }
+    }
+    // Try CSV (legacy fallback)
     let csv_needle = "," + name + ":"
     let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
     if csv_pos >= 0 {
@@ -704,7 +716,7 @@ export fn var_struct_type(name: string) -> string {
         let comma = after.index_of(",")
         if comma >= 0 { return after.substring(0, comma) }
     }
-    // Fallback to list (may be corrupted)
+    // Fallback to list
     mut vi = CG_STRUCT_VAR_NAMES.length - 1
     while vi >= 0 {
         if CG_STRUCT_VAR_NAMES[vi] == name {
@@ -820,6 +832,7 @@ fn cg_register_core_types() {
     let lexer_ty = llvm.struct_create_named(CG_CTX, "Lexer")
     llvm.struct_set_body(lexer_ty, lf, 6, 0)
     llvm.type_array_free(lf)
+    register_struct_type_full("Lexer", "source,pos,line,col,pos_offset,diagnostics", "100001", "string,int,int,int,int,List:Diagnostic", lexer_ty)
 
     // Parser = { tokens: List<Token>, pos: int, diagnostics: List<Diagnostic>, source: string }
     // = { %ForgeString, i64, %ForgeString, %ForgeString }
@@ -831,6 +844,7 @@ fn cg_register_core_types() {
     let parser_ty = llvm.struct_create_named(CG_CTX, "Parser")
     llvm.struct_set_body(parser_ty, pf, 4, 0)
     llvm.type_array_free(pf)
+    register_struct_type_full("Parser", "tokens,pos,diagnostics,source", "1010", "List:Token,int,List:Diagnostic,string", parser_ty)
 
     // TypeChecker = { env: TypeEnv, diagnostics: DiagnosticBag, expr_types: Map<string> }
     // = { i64, i64, i64 } (opaque internal types)
@@ -851,6 +865,7 @@ fn cg_register_core_types() {
     let cg_ty = llvm.struct_create_named(CG_CTX, "Codegen")
     llvm.struct_set_body(cg_ty, cf, 3, 0)
     llvm.type_array_free(cf)
+    register_struct_type_full("Codegen", "current_fn,functions,vars", "000", "ptr,Map:string,Map:string", cg_ty)
 
     // Param = { name: string, type_ann: TypeExpr, default_value: Expr, span: Span, mutable: bool }
     // = { %ForgeString, i64, i64, %Span, i64 }
@@ -863,6 +878,8 @@ fn cg_register_core_types() {
     let param_ty = llvm.struct_create_named(CG_CTX, "Param")
     llvm.struct_set_body(param_ty, pmf, 5, 0)
     llvm.type_array_free(pmf)
+    register_struct_type_full("Param", "name,type_ann,default_value,span,mutable", "10000", "string,TypeExpr,Expr,Span,bool", param_ty)
+    register_struct_type_full("Span", "start,end,line,col", "0000", "int,int,int,int", span_ty)
 }
 
 fn cg_init_runtime() {
