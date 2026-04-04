@@ -678,8 +678,14 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
                     ci2 = ci2 + 1
                 }
                 if fields_str.length == 0 { fc = 0 }
+                // Check if already exists as named LLVM type
+                let existing = llvm.get_type_by_name(CG_CTX, type_name)
+                if existing != null {
+                    // Update the null entry in-place (avoid duplicate)
+                    CG_STRUCT_TYPES[sti] = existing
+                    return existing
+                }
                 // Create LLVM struct type
-                eprintln("  [LAZY] creating struct " + type_name + " fc=" + string(fc) + " ftn=" + ftn)
                 let fta = llvm.type_array_new(fc)
                 mut fi2 = 0
                 mut ftn_pos = 0
@@ -705,11 +711,8 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
                 let new_sty = llvm.struct_create_named(CG_CTX, type_name)
                 llvm.struct_set_body(new_sty, fta, fc, 0)
                 llvm.type_array_free(fta)
-                // Cache it
-                CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(new_sty)
-                CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(type_name)
-                CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields_str)
-                CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
+                // Update existing entry (don't append — avoids duplicate)
+                CG_STRUCT_TYPES[sti] = new_sty
                 return new_sty
             }
         }
