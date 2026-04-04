@@ -3749,6 +3749,33 @@ ForgeString forge_enum_variant_fields_get(ForgeString key) {
     return empty;
 }
 
+// ---- Global variable registry (replaces VAR_GLOBAL_NAMES/STR_MASK) ----
+#define GLOBAL_VAR_REG_SIZE 256
+static struct { char name[64]; int is_str; } _global_var_reg[GLOBAL_VAR_REG_SIZE];
+static int _global_var_count = 0;
+
+void forge_global_var_register(ForgeString name, int64_t is_str) {
+    if (_global_var_count >= GLOBAL_VAR_REG_SIZE || !name.ptr || name.len <= 0 || name.len > 63) return;
+    memcpy(_global_var_reg[_global_var_count].name, name.ptr, name.len);
+    _global_var_reg[_global_var_count].name[name.len] = '\0';
+    _global_var_reg[_global_var_count].is_str = (int)is_str;
+    _global_var_count++;
+}
+
+int64_t forge_global_var_count(void) { return _global_var_count; }
+
+ForgeString forge_global_var_name(int64_t idx) {
+    ForgeString empty = {NULL, 0};
+    if (idx < 0 || idx >= _global_var_count) return empty;
+    ForgeString r = {_global_var_reg[idx].name, (int64_t)strlen(_global_var_reg[idx].name)};
+    return r;
+}
+
+int64_t forge_global_var_is_str(int64_t idx) {
+    if (idx < 0 || idx >= _global_var_count) return 0;
+    return _global_var_reg[idx].is_str;
+}
+
 // Struct type registry uses existing _struct_reg (line ~2775)
 // Additional lookup functions added below existing struct_reg code
 

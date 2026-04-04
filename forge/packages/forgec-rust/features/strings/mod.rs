@@ -149,6 +149,10 @@ crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings"
 crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", params: [ForgeString, ForgeString, I64, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_global_var_register", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_global_var_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_global_var_name", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_global_var_is_str", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_pending_match_set", feature: "strings", params: [I64, ForgeString, I64, I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_pending_match_check", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_pending_match_scrutinee", feature: "strings", params: [], ret: I64 }

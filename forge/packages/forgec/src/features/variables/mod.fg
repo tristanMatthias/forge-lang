@@ -39,12 +39,7 @@ fn get_var_decl(node_id: int) -> VarDeclData? {
 // Track whether we're inside a function body (to detect top-level globals)
 export mut IN_FUNCTION_BODY: int = 0
 
-// Global variable tracking
-export mut VAR_GLOBAL_COUNT: int = 0
-export mut VAR_GLOBAL_NAMES: List<string> = []
-// Bitmask: bit i = 1 if global i is string/list type
-export mut VAR_GLOBAL_STR_MASK: int = 0
-export mut VAR_GLOBAL_IS_STR: int = 0
+// Global variable tracking uses C-side (forge_global_var_register)
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     let start = p.advance().span // consume let/mut/const
@@ -93,20 +88,13 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Register top-level globals with type detection from value token
+    // Register top-level globals with type info
     if IN_FUNCTION_BODY != 1 {
-        // Set bit in bitmask if this is a string/list/map global
+        mut is_str_global = 0
         if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
-            mut bit = 1
-            mut shift = 0
-            while shift < VAR_GLOBAL_COUNT {
-                bit = bit * 2
-                shift = shift + 1
-            }
-            VAR_GLOBAL_STR_MASK = VAR_GLOBAL_STR_MASK + bit
+            is_str_global = 1
         }
-        VAR_GLOBAL_COUNT = VAR_GLOBAL_COUNT + 1
-        VAR_GLOBAL_NAMES = VAR_GLOBAL_NAMES.push(var_name)
+        forge_global_var_register(var_name, is_str_global)
     }
 
     PARSE_END_POS = forge_parser_get_pos()

@@ -154,21 +154,16 @@ fn mft6(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr, p4: ptr, p5: ptr) -> ptr {
 
 // store_toplevel_source removed (unused)
 
-// Create LLVM globals from a list of names. All globals use CG_STR type ({ptr, i64})
-// which covers int (wastes 8 bytes), string, and list values.
-export fn create_globals_typed(names: List<string>, str_mask: int) {
+// Create LLVM globals from the C-side global variable registry
+export fn create_globals_from_registry() {
+    let count = forge_global_var_count()
     mut i = 0
-    while i < names.length {
-        let name = names[i]
+    while i < count {
+        let name = forge_global_var_name(i)
+        let is_str = forge_global_var_is_str(i)
         cg_reinit_types()
-        // Determine type from bitmask
-        mut bit = 1
-        mut shift = 0
-        while shift < i { bit = bit * 2
-            shift = shift + 1 }
-        let is_str = (str_mask / bit) % 2 == 1
         mut gty = CG_I64
-        if is_str { gty = CG_STR }
+        if is_str == 1 { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
         let zero = llvm.const_null(gty)
         llvm.set_initializer(gv, zero)
