@@ -873,6 +873,74 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_store_to_global", mft3(CG_VOID, CG_PTR, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_load_from_global", mft3(CG_I64, CG_PTR, CG_I64, CG_STR))
+    // Alloca cache extras
+    llvm.add_function(CG_MOD, "forge_alloca_cache_set_type", mft2(CG_VOID, CG_STR, CG_PTR))
+    // Enum registry
+    llvm.add_function(CG_MOD, "forge_enum_type_register", mft2(CG_VOID, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_enum_type_max_fields", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_enum_type_exists", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_enum_variant_fields_set", mft2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_enum_variant_fields_get", mft1(CG_STR, CG_STR))
+    // Nullable tracking
+    llvm.add_function(CG_MOD, "forge_fn_nullable_set", mft3(CG_VOID, CG_I64, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_fn_nullable_get_flag", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_nullable_get_inner", mft0(CG_I64))
+    // Last val tracking
+    llvm.add_function(CG_MOD, "forge_last_val_set", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_last_val_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_last_val_has", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_last_val_get", mft0(CG_I64))
+    // Emit depth
+    llvm.add_function(CG_MOD, "forge_emit_depth_push", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_emit_depth_pop", mft0(CG_I64))
+    // Global var registry
+    llvm.add_function(CG_MOD, "forge_global_var_register", mft2(CG_VOID, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_name", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_is_str", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_type_kind", mft2(CG_I64, CG_PTR, CG_STR))
+    // Struct registry
+    llvm.add_function(CG_MOD, "forge_struct_type_register", mft5(CG_VOID, CG_STR, CG_STR, CG_STR, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_struct_type_get_fields", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_type_get_field_types", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_field_index", mft2(CG_I64, CG_STR, CG_STR))
+    // String operations
+    llvm.add_function(CG_MOD, "forge_bool_to_string", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_float_to_string", mft1(CG_STR, CG_F64))
+    llvm.add_function(CG_MOD, "forge_string_to_int", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_string_to_float", mft1(CG_F64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_string_contains", mft2(CG_I64, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_string_byte_at", mft2(CG_I64, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_substr", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_sh_indexof", mft2(CG_I64, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_sh_byteat", mft2(CG_I64, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_print_string", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_exit", mft1(CG_VOID, CG_I64))
+    llvm.add_function(CG_MOD, "forge_read_file", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_write_file", mft2(CG_VOID, CG_STR, CG_STR))
+    // Fn store
+    llvm.add_function(CG_MOD, "forge_fn_store_get_param_count", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_store_set_param_count", mft2(CG_VOID, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_fn_reg_get_ret", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_param_name_get", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_param_type_get", mft1(CG_STR, CG_I64))
+    // Token accumulation
+    llvm.add_function(CG_MOD, "forge_tok_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_tok_push", mft4(CG_VOID, CG_I64, CG_I64, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_tok_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_tok_to_list", mft0(CG_STR))
+    // Var type tracking (legacy)
+    llvm.add_function(CG_MOD, "forge_var_type_set", mft2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_var_type_get", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_str_var_add", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ptr_var_add", mft1(CG_VOID, CG_STR))
+    // IR output (mini compat)
+    llvm.add_function(CG_MOD, "forge_ir_open", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ir_line", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_ir_close", mft0(CG_VOID))
+    // Other
+    llvm.add_function(CG_MOD, "forge_keyword_from_range", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_selfhost_get_arg", mft1(CG_STR, CG_I64))
 }
 
 fn cg_cleanup() {
