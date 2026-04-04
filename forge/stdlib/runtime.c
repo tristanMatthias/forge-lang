@@ -3936,6 +3936,46 @@ void forge_loop_continue(void* builder) {
     if (bbr) bbr(builder, cond_bb);
 }
 
+// ---- LLVM value type introspection (central type detection) ----
+// Returns the LLVM type kind of an emitted value (not a variable — a VALUE)
+// 8=integer, 10=struct, 12=pointer, 3=double, 0=void/invalid
+int64_t forge_value_type_kind(int64_t val_as_i64) {
+    if (!val_as_i64) return 0;
+    void* val = (void*)(uintptr_t)val_as_i64;
+    typedef void* (*typeof_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    static typeof_fn tof = NULL;
+    static kind_fn kof = NULL;
+    if (!tof) tof = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kof) kof = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!tof || !kof) return 0;
+    void* ty = tof(val);
+    if (!ty) return 0;
+    return (int64_t)kof(ty);
+}
+
+// Check if an LLVM value is a ForgeString struct ({ptr, i64} — 2 elements, kind=10)
+int64_t forge_value_is_string(int64_t val_as_i64) {
+    if (!val_as_i64) return 0;
+    void* val = (void*)(uintptr_t)val_as_i64;
+    typedef void* (*typeof_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    typedef int (*count_fn)(void*);
+    static typeof_fn tof2 = NULL;
+    static kind_fn kof2 = NULL;
+    static count_fn cof2 = NULL;
+    if (!tof2) tof2 = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kof2) kof2 = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!cof2) cof2 = (count_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+    if (!tof2 || !kof2 || !cof2) return 0;
+    void* ty = tof2(val);
+    if (!ty) return 0;
+    int kind = kof2(ty);
+    if (kind != 10) return 0; // Not struct
+    int count = cof2(ty);
+    return (count == 2) ? 1 : 0; // ForgeString = {ptr, i64} = 2 elements
+}
+
 // Debug: trace two i64 values without any allocation
 void forge_trace_i64(int64_t a, int64_t b) {
     fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);

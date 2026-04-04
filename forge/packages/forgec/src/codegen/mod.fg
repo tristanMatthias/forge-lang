@@ -860,6 +860,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_value_type_kind", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_value_is_string", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_trace_i64", mft2(CG_VOID, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_loop_push", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_loop_pop", mft0(CG_VOID))
@@ -1857,15 +1859,17 @@ impl Codegen {
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
-        // Determine types BEFORE emitting (no global flag dependency)
-        let left_type = self.expr_type_name(left)
-        let right_type = self.expr_type_name(right)
-        mut lhs_is_str = 0
-        mut rhs_is_str = 0
-        if left_type == "string" { lhs_is_str = 1 }
-        if right_type == "string" { rhs_is_str = 1 }
+        // Emit both sides first
         let lhs = self.emit_expr(left)
         let rhs = self.emit_expr(right)
+        // Detect types from LLVM values (central, reliable)
+        mut lhs_is_str = forge_value_is_string(lhs)
+        mut rhs_is_str = forge_value_is_string(rhs)
+        // Also check expr_type_name as fallback (for cases where value type is i64 but Forge type is string)
+        let left_type = self.expr_type_name(left)
+        let right_type = self.expr_type_name(right)
+        if left_type == "string" { lhs_is_str = 1 }
+        if right_type == "string" { rhs_is_str = 1 }
         match op {
             .Add -> {
                 if lhs_is_str == 1 && rhs_is_str == 1 {
@@ -2001,22 +2005,15 @@ impl Codegen {
             .Shl -> { return llvm.build_shl(CG_B, lhs, rhs, "sl") }
             .Shr -> { return llvm.build_ashr(CG_B, lhs, rhs, "sr") }
             .And -> {
-                // Ensure both operands are i64 (icmp returns i1, needs zext)
-                let lz = llvm.build_zext(CG_B, lhs, CG_I64, "al")
-                let rz = llvm.build_zext(CG_B, rhs, CG_I64, "ar")
-                mut al = lhs
-                mut ar = rhs
-                if lz != null { al = lz }
-                if rz != null { ar = rz }
+                // Coerce operands to i64 for logical AND
+                // build_zext handles i1→i64; for i64 it returns the value unchanged
+                let al = llvm.build_zext(CG_B, lhs, CG_I64, "al")
+                let ar = llvm.build_zext(CG_B, rhs, CG_I64, "ar")
                 return llvm.build_and(CG_B, al, ar, "and")
             }
             .Or -> {
-                let lz = llvm.build_zext(CG_B, lhs, CG_I64, "ol")
-                let rz = llvm.build_zext(CG_B, rhs, CG_I64, "or")
-                mut ol = lhs
-                mut or2 = rhs
-                if lz != null { ol = lz }
-                if rz != null { or2 = rz }
+                let ol = llvm.build_zext(CG_B, lhs, CG_I64, "ol")
+                let or2 = llvm.build_zext(CG_B, rhs, CG_I64, "or")
                 return llvm.build_or(CG_B, ol, or2, "or")
             }
             .Pipe -> { return rhs }
@@ -2190,9 +2187,9 @@ impl Codegen {
                     }
                 }
                 _ -> {
-                    let arg_type = self.expr_type_name(arg)
                     let val = self.emit_expr(arg)
-                    if arg_type == "string" {
+                    // Use LLVM value type to detect strings (central, reliable)
+                    if forge_value_is_string(val) == 1 {
                         self.emit_println_str(val)
                     } else {
                         self.emit_println_int(val)
