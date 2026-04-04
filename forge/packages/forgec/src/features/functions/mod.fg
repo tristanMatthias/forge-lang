@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_LOCALS, CG_HAS_LAST_VAL, CG_CTX, CG_STR, CG_I64, CG_I8, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_HAS_LAST_VAL, CG_CTX, CG_STR, CG_I64, CG_I8, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, CG_FN_NULLABLE_RET_TY, CG_LAST_VAL, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -472,11 +472,9 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     }
     llvm.position_at_end(CG_B, entry)
 
-    // Clear local variables for this function
-    CG_LOCALS = {}
     CG_HAS_LAST_VAL = 0
 
-    // Define params — type from resolve_type_to_llvm, stored in CG_LOCALS
+    // Define params — alloca auto-cached by build_alloca
     mut pi = 0
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
@@ -491,7 +489,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if p_ty == null { p_ty = CG_I64 }
         let alloca = llvm.build_alloca(CG_B, p_ty, pname)
         llvm.build_store(CG_B, param_val, alloca)
-        CG_LOCALS[pname] = alloca
+        // alloca auto-registered in C-side cache by build_alloca
         pi = pi + 1
     }
 

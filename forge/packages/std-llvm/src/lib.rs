@@ -155,6 +155,7 @@ extern "C" {
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetNamedGlobal(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountParams(f: LLVMPtr) -> c_uint;
@@ -473,6 +474,17 @@ pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char)
         }
         LLVMGetNamedFunction(m, name)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
+    unsafe { LLVMGetNamedGlobal(m, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    forge_llvm_get_named_global(m, name)
 }
 
 #[no_mangle]
