@@ -3976,6 +3976,21 @@ int64_t forge_value_is_string(int64_t val_as_i64) {
     return (count == 2) ? 1 : 0; // ForgeString = {ptr, i64} = 2 elements
 }
 
+// Get named LLVM type as i64 (avoids ptr null check issue)
+int64_t forge_get_type_by_name_i64(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || !_ac_llvm_ctx) return 0;
+    typedef void* (*gtbn_fn)(void*, const char*);
+    static gtbn_fn gtbn = NULL;
+    if (!gtbn) gtbn = (gtbn_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+    if (!gtbn) return 0;
+    char nbuf[128];
+    int nlen = name.len > 127 ? 127 : (int)name.len;
+    memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+    void* ty = gtbn(_ac_llvm_ctx, nbuf);
+    return (int64_t)(uintptr_t)ty;
+}
+
 // Character classification already defined earlier (line ~653)
 
 // Debug: trace two i64 values without any allocation

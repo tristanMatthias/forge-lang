@@ -472,16 +472,8 @@ fn create_struct_llvm_type(name: string, idx: int) -> ptr {
             if c == "," { break }
             ft_name = ft_name + c
         }
-        // Determine LLVM type for this field
-        mut fty = CG_I64
-        if ft_name == "string" { fty = CG_STR }
-        if ft_name == "int" || ft_name == "float" || ft_name == "bool" { fty = CG_I64 }
-        if ft_name == "ptr" { fty = CG_PTR }
-        // List types: List or List:X → same layout as ForgeString {ptr, i64}
-        if ft_name == "List" || (ft_name.length > 5 && ft_name.substring(0, 5) == "List:") {
-            fty = CG_STR
-        }
-        // Named struct/enum types → use i64 (enums are i64, nested structs are opaque)
+        // Resolve field type via central resolve_type_to_llvm
+        let fty = resolve_type_to_llvm(ft_name)
         llvm.type_array_set(fa, fi, fty)
         fi = fi + 1
     }
@@ -508,9 +500,9 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "List" || type_name == "list" || (type_name.length > 5 && (type_name.substring(0, 5) == "List:" || type_name.substring(0, 5) == "list:")) {
         return CG_LIST
     }
-    // Use LLVM's own named type registry — no global list search
-    let named = llvm.get_type_by_name(CG_CTX, type_name)
-    if named != null { return named }
+    // Use LLVM's named type registry (i64-based to avoid ptr null check issue)
+    let named_i = forge_get_type_by_name_i64(type_name)
+    if named_i != 0 { return named_i }
     // Check enum type
     let emf = cg_enum_max_fields(type_name)
     if forge_enum_type_exists(type_name) == 1 {
@@ -860,6 +852,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_get_type_by_name_i64", mft1(CG_I64, CG_STR))
     // Character classification
     llvm.add_function(CG_MOD, "forge_is_alpha", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_is_digit", mft1(CG_I64, CG_STR))
