@@ -405,11 +405,7 @@ export fn declare_all_fns() {
                 if pt_idx < FN_ALL_PARAM_TYPES.length {
                     let tname = FN_ALL_PARAM_TYPES[pt_idx]
                     if tname == "string" { param_ty = CG_STR }
-                    else if tname != "int" && tname != "float" && tname != "bool" && tname != "ptr" && tname != "" {
-                        cg_reinit_types()
-                        let resolved = resolve_type_to_llvm(tname)
-                        if resolved != null && resolved != CG_I64 { param_ty = resolved }
-                    }
+                    else if tname == "List" || (tname.length > 4 && tname[0] == "L") { param_ty = CG_STR }
                 }
                 llvm.type_array_set(param_arr, pi, param_ty)
                 pi = pi + 1
@@ -477,6 +473,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     while pi < pc {
         let pname = FN_ALL_PARAM_NAMES[param_offset + pi]
         let param_val = llvm.get_param(fn_val, pi)
+        if param_val == null { break }
         let pt_idx = param_offset + pi
         mut param_type_name = "int"
         if pt_idx < FN_ALL_PARAM_TYPES.length {

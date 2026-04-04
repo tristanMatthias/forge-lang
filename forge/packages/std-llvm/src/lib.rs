@@ -157,6 +157,7 @@ extern "C" {
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
+    fn LLVMCountParams(f: LLVMPtr) -> c_uint;
     fn LLVMCountParamTypes(fn_ty: LLVMPtr) -> c_uint;
     fn LLVMGetParamTypes(fn_ty: LLVMPtr, dest: *mut LLVMPtr);
 
@@ -477,7 +478,14 @@ pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char)
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
     if f.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMGetParam(f, index as c_uint) }
+    unsafe {
+        let count = LLVMCountParams(f);
+        if (index as c_uint) >= count {
+            eprintln!("[GUARD] get_param index {} >= count {} for fn", index, count);
+            return std::ptr::null_mut();
+        }
+        LLVMGetParam(f, index as c_uint)
+    }
 }
 
 // ── Basic Blocks & Builder ──
