@@ -860,6 +860,15 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
+    // Character classification
+    llvm.add_function(CG_MOD, "forge_is_alpha", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_digit", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_alnum", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_ident_start", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_ident_continue", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_whitespace_not_newline", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_is_hex_digit", mft1(CG_I64, CG_STR))
+    // Value introspection
     llvm.add_function(CG_MOD, "forge_value_type_kind", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_value_is_string", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_trace_i64", mft2(CG_VOID, CG_I64, CG_I64))

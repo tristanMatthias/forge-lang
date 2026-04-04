@@ -54,29 +54,13 @@ export fn string_to_chars(s: string) -> List<string> {
     result
 }
 
-export fn is_alpha(ch: string) -> bool {
-    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
-}
-
-export fn is_digit(ch: string) -> bool {
-    ch >= "0" && ch <= "9"
-}
-
-export fn is_hex_digit(ch: string) -> bool {
-    is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
-}
-
-export fn is_alnum(ch: string) -> bool {
-    is_alpha(ch) || is_digit(ch)
-}
-
-export fn is_ident_start(ch: string) -> bool {
-    is_alpha(ch) || ch == "$"
-}
-
-export fn is_ident_continue(ch: string) -> bool {
-    is_alnum(ch) || ch == "$"
-}
+// Character classification delegates to C-side (immune to string >= codegen issues)
+export fn is_alpha(ch: string) -> bool { forge_is_alpha(ch) == 1 }
+export fn is_digit(ch: string) -> bool { forge_is_digit(ch) == 1 }
+export fn is_hex_digit(ch: string) -> bool { forge_is_hex_digit(ch) == 1 }
+export fn is_alnum(ch: string) -> bool { forge_is_alnum(ch) == 1 }
+export fn is_ident_start(ch: string) -> bool { forge_is_ident_start(ch) == 1 }
+export fn is_ident_continue(ch: string) -> bool { forge_is_ident_continue(ch) == 1 }
 
 fn is_binary_digit(ch: string) -> bool {
     ch == "0" || ch == "1"
@@ -94,8 +78,7 @@ fn is_radix_digit(ch: string, radix: int) -> bool {
 }
 
 export fn is_whitespace_not_newline(ch: string) -> bool {
-    // Note: removed \r check — bootstrap confuses "r" with "\r" in string comparison
-    ch == " " || ch == "\t"
+    forge_is_whitespace_not_newline(ch) == 1
 }
 
 // ─── Lexer Methods ─────────────────────────────

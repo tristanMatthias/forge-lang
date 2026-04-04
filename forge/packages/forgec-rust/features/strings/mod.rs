@@ -169,6 +169,13 @@ crate::runtime_fn! { name: "forge_last_val_set", feature: "strings", params: [Pt
 crate::runtime_fn! { name: "forge_last_val_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_last_val_has", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_last_val_get", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_is_alpha", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_digit", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_alnum", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_ident_start", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_ident_continue", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_whitespace_not_newline", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_is_hex_digit", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_value_type_kind", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_value_is_string", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }

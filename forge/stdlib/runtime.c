@@ -3976,6 +3976,8 @@ int64_t forge_value_is_string(int64_t val_as_i64) {
     return (count == 2) ? 1 : 0; // ForgeString = {ptr, i64} = 2 elements
 }
 
+// Character classification already defined earlier (line ~653)
+
 // Debug: trace two i64 values without any allocation
 void forge_trace_i64(int64_t a, int64_t b) {
     fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);
