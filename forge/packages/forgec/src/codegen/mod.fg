@@ -635,7 +635,6 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
-    // Check if starts with "List" — list is {ptr, i64}
     if type_name.length >= 4 {
         if type_name[0] == "L" {
             if type_name[1] == "i" {
@@ -647,9 +646,11 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             }
         }
     }
-    // Check enum type — zero-payload enums use i64 (just a tag), others use struct
+    // Use LLVM's own named type registry — no global list search
+    let named = llvm.get_type_by_name(CG_CTX, type_name)
+    if named != null { return named }
+    // Check enum type
     let emf = cg_enum_max_fields(type_name)
-    // Check if this is a known enum (name appears in CG_ENUM_TYPE_CSV)
     let enum_needle = "," + type_name + ":"
     if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
         if emf > 0 {
@@ -660,61 +661,12 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             return CG_I64
         }
     }
-    // Check struct type via list — lazily create LLVM type if not yet created
+    // Check struct type via CG_STRUCT_NAMES (legacy — used for field info lookup)
     mut sti = CG_STRUCT_NAMES.length - 1
     while sti >= 0 {
         if CG_STRUCT_NAMES[sti] == type_name {
             let sty = CG_STRUCT_TYPES[sti]
             if sty != null { return sty }
-            // Lazy LLVM type creation from field info
-            if sti < CG_STRUCT_FIELD_TYPE_NAMES.length {
-                let ftn = CG_STRUCT_FIELD_TYPE_NAMES[sti]
-                let fields_str = CG_STRUCT_FIELDS[sti]
-                // Count fields
-                mut fc = 1
-                mut ci2 = 0
-                while ci2 < fields_str.length {
-                    if fields_str[ci2] == "," { fc = fc + 1 }
-                    ci2 = ci2 + 1
-                }
-                if fields_str.length == 0 { fc = 0 }
-                // Check if already exists as named LLVM type
-                let existing = llvm.get_type_by_name(CG_CTX, type_name)
-                if existing != null {
-                    // Update the null entry in-place (avoid duplicate)
-                    CG_STRUCT_TYPES[sti] = existing
-                    return existing
-                }
-                // Create LLVM struct type
-                let fta = llvm.type_array_new(fc)
-                mut fi2 = 0
-                mut ftn_pos = 0
-                mut ftn_cur = ""
-                while ftn_pos < ftn.length {
-                    let ch2 = ftn[ftn_pos]
-                    if ch2 == "," {
-                        mut fty = CG_I64
-                        if ftn_cur == "string" { fty = CG_STR }
-                        llvm.type_array_set(fta, fi2, fty)
-                        fi2 = fi2 + 1
-                        ftn_cur = ""
-                    } else {
-                        ftn_cur = ftn_cur + ch2
-                    }
-                    ftn_pos = ftn_pos + 1
-                }
-                if ftn_cur != "" {
-                    mut fty = CG_I64
-                    if ftn_cur == "string" { fty = CG_STR }
-                    llvm.type_array_set(fta, fi2, fty)
-                }
-                let new_sty = llvm.struct_create_named(CG_CTX, type_name)
-                llvm.struct_set_body(new_sty, fta, fc, 0)
-                llvm.type_array_free(fta)
-                // Update existing entry (don't append — avoids duplicate)
-                CG_STRUCT_TYPES[sti] = new_sty
-                return new_sty
-            }
         }
         sti = sti - 1
     }
@@ -800,7 +752,6 @@ export fn codegen_init(name: string) {
     cg_init_other_types()
     cg_init_str()
     cg_init_runtime()
-    // codegen initialized
 }
 
 export fn codegen_write_ir(path: string) {
@@ -859,6 +810,113 @@ fn cg_init_str() {
     llvm.type_array_set(sf, 1, CG_I64)
     llvm.struct_set_body(CG_STR, sf, 2, 0)
     llvm.type_array_free(sf)
+}
+
+fn cg_register_core_types() {
+    // Register core struct types as LLVM named types.
+    // Uses LLVM's own type registry (get_type_by_name) — no global list pushes.
+    // Layouts match the Rust compiler's output exactly.
+    // Span = { i64, i64, i64, i64 }
+    let s4 = llvm.type_array_new(4)
+    llvm.type_array_set(s4, 0, CG_I64)
+    llvm.type_array_set(s4, 1, CG_I64)
+    llvm.type_array_set(s4, 2, CG_I64)
+    llvm.type_array_set(s4, 3, CG_I64)
+    let span_ty = llvm.struct_create_named(CG_CTX, "Span")
+    llvm.struct_set_body(span_ty, s4, 4, 0)
+    llvm.type_array_free(s4)
+    // TokenKind = { i8, ptr } (all enums use this layout)
+    let e2 = llvm.type_array_new(2)
+    llvm.type_array_set(e2, 0, CG_I8)
+    llvm.type_array_set(e2, 1, CG_PTR)
+    let tk_ty = llvm.struct_create_named(CG_CTX, "TokenKind")
+    llvm.struct_set_body(tk_ty, e2, 2, 0)
+    // Reuse same layout for all enums
+    let binop_ty = llvm.struct_create_named(CG_CTX, "BinOp")
+    llvm.struct_set_body(binop_ty, e2, 2, 0)
+    let unaryop_ty = llvm.struct_create_named(CG_CTX, "UnaryOp")
+    llvm.struct_set_body(unaryop_ty, e2, 2, 0)
+    let expr_ty = llvm.struct_create_named(CG_CTX, "Expr")
+    llvm.struct_set_body(expr_ty, e2, 2, 0)
+    let stmt_ty = llvm.struct_create_named(CG_CTX, "Statement")
+    llvm.struct_set_body(stmt_ty, e2, 2, 0)
+    let type_ty = llvm.struct_create_named(CG_CTX, "Type")
+    llvm.struct_set_body(type_ty, e2, 2, 0)
+    let sev_ty = llvm.struct_create_named(CG_CTX, "Severity")
+    llvm.struct_set_body(sev_ty, e2, 2, 0)
+    let texp_ty = llvm.struct_create_named(CG_CTX, "TypeExpr")
+    llvm.struct_set_body(texp_ty, e2, 2, 0)
+    let vk_ty = llvm.struct_create_named(CG_CTX, "VarKind")
+    llvm.struct_set_body(vk_ty, e2, 2, 0)
+    let pat_ty = llvm.struct_create_named(CG_CTX, "Pattern")
+    llvm.struct_set_body(pat_ty, e2, 2, 0)
+    llvm.type_array_free(e2)
+    // Token = { %TokenKind, %Span, %ForgeString, i64 }
+    let t4 = llvm.type_array_new(4)
+    llvm.type_array_set(t4, 0, tk_ty)
+    llvm.type_array_set(t4, 1, span_ty)
+    llvm.type_array_set(t4, 2, CG_STR)
+    llvm.type_array_set(t4, 3, CG_I64)
+    let token_ty = llvm.struct_create_named(CG_CTX, "Token")
+    llvm.struct_set_body(token_ty, t4, 4, 0)
+    llvm.type_array_free(t4)
+    // Block = { {ptr, i64}, %Span }
+    let b2 = llvm.type_array_new(2)
+    llvm.type_array_set(b2, 0, CG_STR)
+    llvm.type_array_set(b2, 1, span_ty)
+    let block_ty = llvm.struct_create_named(CG_CTX, "Block")
+    llvm.struct_set_body(block_ty, b2, 2, 0)
+    llvm.type_array_free(b2)
+    // Program = { {ptr, i64} }
+    let p1 = llvm.type_array_new(1)
+    llvm.type_array_set(p1, 0, CG_STR)
+    let prog_ty = llvm.struct_create_named(CG_CTX, "Program")
+    llvm.struct_set_body(prog_ty, p1, 1, 0)
+    llvm.type_array_free(p1)
+    // Parser = { {ptr,i64}, i64, {ptr,i64}, %ForgeString }
+    let pa4 = llvm.type_array_new(4)
+    llvm.type_array_set(pa4, 0, CG_STR)
+    llvm.type_array_set(pa4, 1, CG_I64)
+    llvm.type_array_set(pa4, 2, CG_STR)
+    llvm.type_array_set(pa4, 3, CG_STR)
+    let parser_ty = llvm.struct_create_named(CG_CTX, "Parser")
+    llvm.struct_set_body(parser_ty, pa4, 4, 0)
+    llvm.type_array_free(pa4)
+    // Codegen = { ptr, ptr, ptr }
+    let c3 = llvm.type_array_new(3)
+    llvm.type_array_set(c3, 0, CG_PTR)
+    llvm.type_array_set(c3, 1, CG_PTR)
+    llvm.type_array_set(c3, 2, CG_PTR)
+    let cg_ty = llvm.struct_create_named(CG_CTX, "Codegen")
+    llvm.struct_set_body(cg_ty, c3, 3, 0)
+    llvm.type_array_free(c3)
+    // Param = { %ForgeString, ptr, ptr, %Span, i64 }
+    let pm5 = llvm.type_array_new(5)
+    llvm.type_array_set(pm5, 0, CG_STR)
+    llvm.type_array_set(pm5, 1, CG_PTR)
+    llvm.type_array_set(pm5, 2, CG_PTR)
+    llvm.type_array_set(pm5, 3, span_ty)
+    llvm.type_array_set(pm5, 4, CG_I64)
+    let param_ty2 = llvm.struct_create_named(CG_CTX, "Param")
+    llvm.struct_set_body(param_ty2, pm5, 5, 0)
+    llvm.type_array_free(pm5)
+    // NodeRef = { i64, %ForgeString, %ForgeString, %Span }
+    let n4 = llvm.type_array_new(4)
+    llvm.type_array_set(n4, 0, CG_I64)
+    llvm.type_array_set(n4, 1, CG_STR)
+    llvm.type_array_set(n4, 2, CG_STR)
+    llvm.type_array_set(n4, 3, span_ty)
+    let noderef_ty = llvm.struct_create_named(CG_CTX, "NodeRef")
+    llvm.struct_set_body(noderef_ty, n4, 4, 0)
+    llvm.type_array_free(n4)
+    // FeatureStmt = { %NodeRef }, FeatureExpr = { %NodeRef }
+    let f1 = llvm.type_array_new(1)
+    llvm.type_array_set(f1, 0, noderef_ty)
+    let fstmt_ty = llvm.struct_create_named(CG_CTX, "FeatureStmt")
+    llvm.struct_set_body(fstmt_ty, f1, 1, 0)
+    let fexpr_ty = llvm.struct_create_named(CG_CTX, "FeatureExpr")
+    llvm.struct_set_body(fexpr_ty, f1, 1, 0)
+    llvm.type_array_free(f1)
 }
 
 fn cg_init_runtime() {
@@ -1930,6 +1988,10 @@ impl Codegen {
                         } else if vtype.substring(0, 5) == "list:" {
                             load_ty = CG_STR
                         }
+                    } else if vtype != "int" && vtype != "bool" && vtype != "ptr" {
+                        // Unknown type name — try LLVM named type lookup
+                        let resolved = resolve_type_to_llvm(vtype)
+                        if resolved != null { load_ty = resolved }
                     }
                 } else {
                     // Fallback: use LLVM's allocated type
@@ -2760,8 +2822,6 @@ impl Codegen {
             CG_STR_LOCALS_CSV = CG_STR_LOCALS_CSV + "," + name + ","
         }
         if is_map { alloca_ty = CG_PTR }
-        // All non-string/non-map types use CG_I64 alloca
-        // (struct/enum values are stored as i64 — lossy but avoids crashes)
         if CG_B == null { return }
         if alloca_ty == 0 { return }
         // Create alloca in ENTRY block (ensures dominance across all basic blocks)
