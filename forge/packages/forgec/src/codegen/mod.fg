@@ -66,11 +66,7 @@ export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
 export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
 export mut CG_STRUCT_FIELD_TYPE_NAMES: List<string> = []  // comma-separated type names per field
 
-// Track which variables are struct-typed
-export mut CG_STRUCT_VAR_NAMES: List<string> = []   // variable names
-export mut CG_STRUCT_VAR_CSV: string = ""            // ",varname:TypeName," format (immune to corruption)
-export mut CG_STRUCT_VAR_TYPES: List<string> = []   // struct type names
-export mut CG_STRUCT_VAR_FIELDS: List<string> = []  // comma-separated field names
+// Variable struct type tracking now uses alloca cache (forge_alloca_cache_set_var_type)
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
 export mut CG_LAST_VAL: ptr = null
 export mut CG_HAS_LAST_VAL: int = 0
@@ -588,11 +584,9 @@ fn create_struct_llvm_type(name: string, idx: int) -> ptr {
         if ft_name == "string" { fty = CG_STR }
         if ft_name == "int" || ft_name == "float" || ft_name == "bool" { fty = CG_I64 }
         if ft_name == "ptr" { fty = CG_PTR }
-        // List types: List:X → same layout as ForgeString {ptr, i64}
-        if ft_name.length > 4 {
-            if ft_name[0] == "L" && ft_name[1] == "i" && ft_name[2] == "s" && ft_name[3] == "t" {
-                fty = CG_STR
-            }
+        // List types: List or List:X → same layout as ForgeString {ptr, i64}
+        if ft_name == "List" || (ft_name.length > 5 && ft_name.substring(0, 5) == "List:") {
+            fty = CG_STR
         }
         // Named struct/enum types → use i64 (enums are i64, nested structs are opaque)
         // Don't recurse to avoid infinite loops and crashes with enum types
@@ -623,16 +617,8 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
-    if type_name.length >= 4 {
-        if type_name[0] == "L" {
-            if type_name[1] == "i" {
-                if type_name[2] == "s" {
-                    if type_name[3] == "t" {
-                        return CG_LIST
-                    }
-                }
-            }
-        }
+    if type_name == "List" || (type_name.length > 5 && type_name.substring(0, 5) == "List:") {
+        return CG_LIST
     }
     // Use LLVM's own named type registry — no global list search
     let named = llvm.get_type_by_name(CG_CTX, type_name)
@@ -696,33 +682,16 @@ export fn struct_field_index(struct_name: string, field_name: string) -> int {
 
 // Get the struct type name for a variable
 export fn var_struct_type(name: string) -> string {
-    // Check alloca cache first (most reliable source)
+    // Check alloca cache for the variable's Forge type name
     let cached_type = forge_alloca_cache_get_var_type(name)
     if cached_type.length > 0 {
-        // If the type name is a known struct type (not int/string/etc), return it
+        // Return only if it's a struct/enum type (not a primitive)
         if cached_type != "int" && cached_type != "string" && cached_type != "float" && cached_type != "bool" && cached_type != "ptr" && cached_type != "null" && cached_type != "map" {
-            // Check for list:* types (not struct)
-            if cached_type.length > 4 {
-                if cached_type.substring(0, 4) == "list" { return "" }
-            }
+            // Exclude list types
+            if cached_type == "list" || cached_type == "List" { return "" }
+            if cached_type.length > 5 && cached_type.substring(0, 5) == "list:" { return "" }
             return cached_type
         }
-    }
-    // Try CSV (legacy fallback)
-    let csv_needle = "," + name + ":"
-    let csv_pos = CG_STRUCT_VAR_CSV.index_of(csv_needle)
-    if csv_pos >= 0 {
-        let after = CG_STRUCT_VAR_CSV.substring(csv_pos + csv_needle.length, CG_STRUCT_VAR_CSV.length)
-        let comma = after.index_of(",")
-        if comma >= 0 { return after.substring(0, comma) }
-    }
-    // Fallback to list
-    mut vi = CG_STRUCT_VAR_NAMES.length - 1
-    while vi >= 0 {
-        if CG_STRUCT_VAR_NAMES[vi] == name {
-            return CG_STRUCT_VAR_TYPES[vi]
-        }
-        vi = vi - 1
     }
     ""
 }
@@ -1097,11 +1066,8 @@ impl Codegen {
         if val_type == "string" { var_type = Type.String }
         if val_type == "map" { var_type = Type.MapType(Type.String, Type.Int) }
         // Lists use ForgeString alloca ({ptr, i64})
-        if val_type.length >= 4 {
-            let c = val_type[0]
-            if (c == "l" || c == "L") && val_type[1] == "i" && val_type[2] == "s" && val_type[3] == "t" {
-                var_type = Type.String
-            }
+        if val_type == "list" || val_type == "List" || (val_type.length > 5 && val_type.substring(0, 5) == "list:") {
+            var_type = Type.String
         }
         self.define_var(name, var_type, val)
         CG_HAS_LAST_VAL = 0
@@ -1473,13 +1439,7 @@ impl Codegen {
                     .Ident(n, s) -> { obj_var_name = n }
                     _ -> {}
                 }
-                mut is_known_list = false
-                if obj_type.length >= 4 {
-                    let c = obj_type[0]
-                    if (c == "l" || c == "L") && obj_type[1] == "i" && obj_type[2] == "s" && obj_type[3] == "t" {
-                        is_known_list = true
-                    }
-                }
+                let is_known_list = obj_type == "list" || obj_type == "List" || (obj_type.length > 5 && obj_type.substring(0, 5) == "list:")
                 mut is_str_list = obj_type == "list:string" || obj_type == "List:string"
                 let obj_type = self.expr_type_name(obj)
                 let obj_val = self.emit_expr(obj)
@@ -1759,11 +1719,6 @@ impl Codegen {
         }
         // Load completed struct
         let sv = llvm.build_load(CG_B, struct_ty, alloca, "sv")
-        let tmp = "_s" + string(fi)
-        // Get field names for var
-        mut field_names = ""
-        if si >= 0 { field_names = CG_STRUCT_FIELDS[si] }
-        CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_names)
         sv
     }
 
@@ -2296,15 +2251,8 @@ impl Codegen {
     }
 
     fn is_string_var(self, name: string) -> bool {
-        // Use dedicated name list (more reliable than parallel int list)
-        mut si = CG_STR_VAR_NAMES.length - 1
-        while si >= 0 {
-            if CG_STR_VAR_NAMES[si] == name {
-                return true
-            }
-            si = si - 1
-        }
-        false
+        let vt = forge_alloca_cache_get_var_type(name)
+        vt == "string"
     }
 
     fn emit_println(self, args: List<Expr>) -> ptr {
@@ -2393,35 +2341,13 @@ impl Codegen {
                 let ev = self.emit_expr(val)
                 mut ty = Type.Int
                 if val_type == "string" { ty = Type.String }
-                if val_type.length >= 4 {
-                    let c = val_type[0]
-                    if (c == "l" || c == "L") && val_type[1] == "i" && val_type[2] == "s" && val_type[3] == "t" {
-                        if val_type == "list:string" {
-                            ty = Type.ListType(Type.String)
-                        } else {
-                            ty = Type.ListType(Type.Int)
-                        }
-                    }
+                if val_type == "list:string" {
+                    ty = Type.ListType(Type.String)
+                } else if val_type == "list" || val_type == "List" || (val_type.length > 5 && val_type.substring(0, 5) == "list:") {
+                    ty = Type.ListType(Type.Int)
                 }
                 self.define_var(name, ty, ev)
-                // Check if val_type indicates a struct
-                let is_struct_val = val_type.length > 7 && val_type.substring(0, 7) == "struct:"
-                if is_struct_val {
-                    let stype = val_type.substring(7, val_type.length)
-                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(name)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(stype)
-                    CG_STRUCT_VAR_CSV = CG_STRUCT_VAR_CSV + "," + name + ":" + stype + ","
-                    mut fn_str = ""
-                    mut fsi = CG_STRUCT_FIELDS.length - 1
-                    while fsi >= 0 {
-                        if CG_STRUCT_NAMES[fsi] == stype {
-                            fn_str = CG_STRUCT_FIELDS[fsi]
-                            break
-                        }
-                        fsi = fsi - 1
-                    }
-                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(fn_str)
-                }
+                // Struct variable type tracking is handled by alloca cache (set in define_var)
             }
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
@@ -2773,15 +2699,8 @@ impl Codegen {
     }
 
     fn is_map_var(self, name: string) -> bool {
-        // Search the dedicated map names list (more reliable than parallel int list)
-        mut mi = CG_MAP_VAR_NAMES.length - 1
-        while mi >= 0 {
-            if CG_MAP_VAR_NAMES[mi] == name {
-                return true
-            }
-            mi = mi - 1
-        }
-        false
+        let vt = forge_alloca_cache_get_var_type(name)
+        vt == "map"
     }
 
     fn emit_member_access(self, obj: Expr, field: string) -> ptr {
@@ -2804,13 +2723,7 @@ impl Codegen {
             let obj_val = self.emit_ident(var_name)
             // For lists: extract field 1 directly (it's the count)
             let vt = self.expr_type_name(obj)
-            mut is_list = false
-            if vt.length >= 4 {
-                let c = vt[0]
-                if (c == "l" || c == "L") && vt[1] == "i" && vt[2] == "s" && vt[3] == "t" {
-                    is_list = true
-                }
-            }
+            let is_list = vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
             if is_list {
                 return llvm.build_extract_value(CG_B, obj_val, 1, "len")
             }

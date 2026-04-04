@@ -312,77 +312,7 @@ export fn declare_all_functions(cg: Codegen) {
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
     cg_reinit_types()
-    // Skip struct LLVM type creation (bootstrap: CG_STRUCT_NAMES.length unreliable)
-    // Structs are created on-demand during codegen via resolve_type_to_llvm
-    let struct_count = 0
-    mut si = 0
-    while si < struct_count {
-        cg_reinit_types()
-        let fields = CG_STRUCT_FIELDS[si]
-        mut fc = 1
-        mut ci = 0
-        while ci < fields.length {
-            if fields[ci] == "," { fc = fc + 1 }
-            ci = ci + 1
-        }
-        if fields.length == 0 { fc = 0 }
-        mut ftn = ""
-        if si < CG_STRUCT_FIELD_TYPE_NAMES.length { ftn = CG_STRUCT_FIELD_TYPE_NAMES[si] }
-        let fta = llvm.type_array_new(fc)
-        // Save type values locally (list pushes corrupt globals)
-        let saved_i64 = CG_I64
-        let saved_str = CG_STR
-        if ftn.length > 0 {
-            mut fi = 0
-            mut ftn_pos = 0
-            mut ftn_cur = ""
-            while ftn_pos < ftn.length {
-                let ch = ftn[ftn_pos]
-                if ch == "," {
-                    // Use saved values directly to avoid corruption from string operations
-                    mut fty = saved_i64
-                    if ftn_cur == "string" { fty = saved_str }
-                    else if ftn_cur == "int" { fty = saved_i64 }
-                    else if ftn_cur == "float" { fty = saved_i64 }
-                    else if ftn_cur == "bool" { fty = saved_i64 }
-                    else if ftn_cur == "ptr" { fty = saved_i64 }
-                    else if ftn_cur.length >= 4 {
-                        if ftn_cur[0] == "L" { fty = saved_str }
-                    }
-                    llvm.type_array_set(fta, fi, fty)
-                    fi = fi + 1
-                    ftn_cur = ""
-                } else {
-                    ftn_cur = ftn_cur + ch
-                }
-                ftn_pos = ftn_pos + 1
-            }
-            if ftn_cur != "" {
-                mut fty = saved_i64
-                if ftn_cur == "string" { fty = saved_str }
-                else if ftn_cur.length >= 4 {
-                    if ftn_cur[0] == "L" { fty = saved_str }
-                }
-                llvm.type_array_set(fta, fi, fty)
-            }
-        } else {
-            mut fi = 0
-            while fi < fc {
-                llvm.type_array_set(fta, fi, saved_i64)
-                fi = fi + 1
-            }
-        }
-        let sty = llvm.struct_create_named(CG_CTX, CG_STRUCT_NAMES[si])
-        llvm.struct_set_body(sty, fta, fc, 0)
-        llvm.type_array_free(fta)
-        CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(CG_STRUCT_NAMES[si])
-        CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-        CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(CG_STRUCT_FIELD_IS_STR[si])
-        CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(ftn)
-        CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(sty)
-        si = si + 1
-    }
-    // Create core LLVM types directly (no global list pushes)
+    // Create core LLVM struct types (Lexer, Parser, etc.) with field info
     cg_register_core_types()
 
     // Declare all function signatures
@@ -706,11 +636,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
         let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
         llvm.position_at_end(CG_B, entry)
 
-        // Clear per-function type tracking (prevents cross-function contamination)
-        CG_STR_VAR_NAMES = []
-        CG_STRUCT_VAR_NAMES = []
-        CG_STRUCT_VAR_TYPES = []
-        CG_STRUCT_VAR_FIELDS = []
+        // Alloca cache handles per-function variable type tracking
 
         // Reset tracking BEFORE param definition
         CG_HAS_LAST_VAL = 0
@@ -743,31 +669,7 @@ export fn emit_all_fn_bodies(cg: Codegen) {
             llvm.build_store(CG_B, param_val, alloca)
             forge_alloca_cache_set(pname, alloca)
             forge_alloca_cache_set_var_type(pname, param_type_name)
-            if param_type_name == "string" { CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(pname) }
-            // Register struct/enum-typed params for member access and type tracking
-            if is_struct_param {
-                // Check if this is an enum type (has data-carrying variants)
-                let emf = cg_enum_max_fields(param_type_name)
-                if emf > 0 {
-                    // Enum type — register in CG_ENUM_VAR_CSV for load-time type lookup
-                    CG_ENUM_VAR_CSV = CG_ENUM_VAR_CSV + "," + pname + ":" + param_type_name + ","
-                } else {
-                    // Struct type — register for field access
-                    CG_STRUCT_VAR_NAMES = CG_STRUCT_VAR_NAMES.push(pname)
-                    CG_STRUCT_VAR_TYPES = CG_STRUCT_VAR_TYPES.push(param_type_name)
-                    // Get field info from struct registry
-                    mut field_info = ""
-                    mut sri = CG_STRUCT_FIELDS.length - 1
-                    while sri >= 0 {
-                        if CG_STRUCT_NAMES[sri] == param_type_name {
-                            field_info = CG_STRUCT_FIELDS[sri]
-                            break
-                        }
-                        sri = sri - 1
-                    }
-                    CG_STRUCT_VAR_FIELDS = CG_STRUCT_VAR_FIELDS.push(field_info)
-                }
-            }
+            // Struct/enum type info is tracked via alloca cache (set_var_type above)
             pi = pi + 1
         }
         param_offset = param_offset + pc
