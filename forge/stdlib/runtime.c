@@ -3875,18 +3875,7 @@ void* forge_alloca_cache_get(ForgeString name) {
             }
         }
     }
-    // Second pass: search ANY scope (the fn_ptr might be wrong due to clobbering)
-    for (int i = _ac_count - 1; i >= 0; i--) {
-        if ((int64_t)strlen(_ac[i].name) == name.len &&
-            memcmp(_ac[i].name, name.ptr, name.len) == 0) {
-            _ac_hit_count++;
-            if (_ac_trace > 0 && name.len <= 4) {
-                fprintf(stderr, "  [ac_hit2] '%.*s' → %p (idx=%d fn=%p expected=%p)\n", (int)name.len, name.ptr, _ac[i].ptr, i, _ac[i].fn, _ac_fn_ptr);
-                _ac_trace--;
-            }
-            return _ac[i].ptr;
-        }
-    }
+    // No cross-function fallback — variables are scoped to the current function
     _ac_miss_count++;
     if (_ac_trace > 0 && name.len <= 4) {
         fprintf(stderr, "  [ac_miss] '%.*s' fn=%p count=%d\n", (int)name.len, name.ptr, _ac_fn_ptr, _ac_count);

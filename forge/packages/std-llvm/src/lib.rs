@@ -155,6 +155,7 @@ extern "C" {
     // Functions
     fn LLVMAddFunction(m: LLVMPtr, name: *const c_char, fn_type: LLVMPtr) -> LLVMPtr;
     fn LLVMGetNamedFunction(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMGetNamedGlobal(m: LLVMPtr, name: *const c_char) -> LLVMPtr;
     fn LLVMGetBasicBlockTerminator(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetParam(f: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountParams(f: LLVMPtr) -> c_uint;
@@ -473,6 +474,17 @@ pub extern "C" fn forge_llvm_get_named_function(m: LLVMPtr, name: *const c_char)
         }
         LLVMGetNamedFunction(m, name)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    if m.is_null() || name.is_null() { return std::ptr::null_mut(); }
+    unsafe { LLVMGetNamedGlobal(m, name) }
+}
+
+#[no_mangle]
+pub extern "C" fn llvm_get_named_global(m: LLVMPtr, name: *const c_char) -> LLVMPtr {
+    forge_llvm_get_named_global(m, name)
 }
 
 #[no_mangle]
@@ -926,48 +938,7 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
         return std::ptr::null_mut();
     }
     unsafe {
-        // Trace: check what type we're actually loading with
-        // Fix: the mini corrupts the load_ty value between setting it in Forge
-        // and passing it to this Rust function. Use the C-side var_type cache
-        // to determine the correct load type, bypassing the corrupted Forge value.
-        let tk = LLVMGetTypeKind(ty);
-        if tk == 10 && !name.is_null() { // struct type but might be wrong
-            extern "C" {
-                fn forge_var_type_get_raw(name: *const c_char, name_len: i64) -> *const c_char;
-                fn forge_str_var_check_raw(name: *const c_char, name_len: i64) -> i64;
-                fn forge_ptr_var_check_raw(name: *const c_char, name_len: i64) -> i64;
-                fn forge_get_cg_ctx() -> LLVMPtr;
-            }
-            let name_bytes = std::ffi::CStr::from_ptr(name).to_bytes();
-            let nlen = name_bytes.len() as i64;
-            let vt = forge_var_type_get_raw(name, nlen);
-            if !vt.is_null() {
-                let vt_str = std::ffi::CStr::from_ptr(vt).to_str().unwrap_or("");
-                let ctx = forge_get_cg_ctx();
-                if !ctx.is_null() {
-                    if vt_str == "int" || vt_str == "bool" {
-                        return LLVMBuildLoad2(builder, LLVMInt64TypeInContext(ctx), ptr, safe_name(name));
-                    }
-                    if vt_str == "float" {
-                        return LLVMBuildLoad2(builder, LLVMDoubleTypeInContext(ctx), ptr, safe_name(name));
-                    }
-                    if vt_str == "ptr" {
-                        return LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, 0), ptr, safe_name(name));
-                    }
-                }
-            } else {
-                // No var_type entry — check str_var and ptr_var caches
-                if forge_str_var_check_raw(name, nlen) == 1 {
-                    // It's a string — ty (struct/ForgeString) is correct, proceed
-                } else if forge_ptr_var_check_raw(name, nlen) == 1 {
-                    let ctx = forge_get_cg_ctx();
-                    if !ctx.is_null() {
-                        return LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, 0), ptr, safe_name(name));
-                    }
-                }
-            }
-        }
-        // load requires a pointer operand — if not pointer, return zero/undef
+        // Trust the caller's type — LLVM is the source of truth
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { // Not PointerTypeKind
             let ty_kind = LLVMGetTypeKind(ty);
