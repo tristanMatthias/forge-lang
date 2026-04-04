@@ -860,6 +860,11 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_alloca_cache_load", mft3(CG_I64, CG_STR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_load_field", mft4(CG_I64, CG_STR, CG_STR, CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_alloca_cache_clear", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_trace_i64", mft2(CG_VOID, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_loop_push", mft2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_loop_pop", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_loop_break", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_loop_continue", mft1(CG_VOID, CG_PTR))
     // Global variable access (i64-based)
     llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_store_to_global", mft3(CG_VOID, CG_PTR, CG_I64, CG_I64))
@@ -912,10 +917,10 @@ impl Codegen {
             .For(var_name, iter, body, span) -> { self.emit_for_stmt(var_name, iter, body) }
             .Match(scrut, tags, binds, bodies, def, has_def, span) -> { self.emit_match_stmt(scrut, tags, binds, bodies, def, has_def) }
             .Break(span) -> {
-                if WHILE_END_BB != null { llvm.build_br(CG_B, WHILE_END_BB) }
+                forge_loop_break(CG_B)
             }
             .Continue(span) -> {
-                if WHILE_COND_BB != null { llvm.build_br(CG_B, WHILE_COND_BB) }
+                forge_loop_continue(CG_B)
             }
             .Feature(fe) -> { self.dispatch_stmt(fe) }
         }
@@ -961,10 +966,7 @@ impl Codegen {
         let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "wc")
         let body_bb = llvm.append_basic_block(CG_CTX, fn_val, "wb")
         let end_bb = llvm.append_basic_block(CG_CTX, fn_val, "we")
-        let save_cond = WHILE_COND_BB
-        let save_end = WHILE_END_BB
-        WHILE_COND_BB = cond_bb
-        WHILE_END_BB = end_bb
+        forge_loop_push(cond_bb, end_bb)
         llvm.build_br(CG_B, cond_bb)
         llvm.position_at_end(CG_B, cond_bb)
         let cval = self.emit_expr(cond)
@@ -976,8 +978,7 @@ impl Codegen {
         self.emit_block(body)
         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, cond_bb) }
         llvm.position_at_end(CG_B, end_bb)
-        WHILE_COND_BB = save_cond
-        WHILE_END_BB = save_end
+        forge_loop_pop()
     }
 
     fn emit_for_stmt(self, var_name: string, iter: Expr, body: Block) {
@@ -2378,6 +2379,7 @@ impl Codegen {
                     let w1 = llvm.append_basic_block(CG_CTX, wfn, "wc")
                     let w2 = llvm.append_basic_block(CG_CTX, wfn, "wb")
                     let w3 = llvm.append_basic_block(CG_CTX, wfn, "we")
+                    forge_loop_push(w1, w3)
                     llvm.build_br(CG_B, w1)
                     llvm.position_at_end(CG_B, w1)
                     let wv = self.emit_expr(cond)
@@ -2387,6 +2389,7 @@ impl Codegen {
                     self.emit_block(body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, w1) }
                     llvm.position_at_end(CG_B, w3)
+                    forge_loop_pop()
                 }
                 .For(vn, iter, body, s) -> {
                     // Check if iterable is a known string list BEFORE emitting
@@ -2468,8 +2471,8 @@ impl Codegen {
                     }
                     llvm.position_at_end(CG_B, f4)
                 }
-                .Break(s) -> {}
-                .Continue(s) -> {}
+                .Break(s) -> { forge_loop_break(CG_B) }
+                .Continue(s) -> { forge_loop_continue(CG_B) }
                 .Feature(fe) -> { self.dispatch_stmt(fe) }
             }
             llvm.const_int(CG_I64, 0, 0)

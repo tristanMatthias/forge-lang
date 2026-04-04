@@ -169,6 +169,11 @@ crate::runtime_fn! { name: "forge_last_val_set", feature: "strings", params: [Pt
 crate::runtime_fn! { name: "forge_last_val_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_last_val_has", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_last_val_get", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }
+crate::runtime_fn! { name: "forge_loop_push", feature: "strings", params: [Ptr, Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_loop_pop", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_loop_break", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_loop_continue", feature: "strings", params: [Ptr], ret: Void }
 crate::runtime_fn! { name: "forge_emit_depth_push", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_emit_depth_pop", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_type_register", feature: "strings", params: [ForgeString, I64], ret: Void }

@@ -3901,6 +3901,46 @@ void forge_last_val_clear(void) { _has_last_val = 0; _last_val = NULL; }
 int64_t forge_last_val_has(void) { return _has_last_val; }
 int64_t forge_last_val_get(void) { return (int64_t)(uintptr_t)_last_val; }
 
+// ---- While loop break/continue BB stack ----
+#define LOOP_STACK_SIZE 64
+static void* _loop_cond_stack[LOOP_STACK_SIZE];
+static void* _loop_end_stack[LOOP_STACK_SIZE];
+static int _loop_depth = 0;
+
+void forge_loop_push(void* cond_bb, void* end_bb) {
+    if (_loop_depth < LOOP_STACK_SIZE) {
+        _loop_cond_stack[_loop_depth] = cond_bb;
+        _loop_end_stack[_loop_depth] = end_bb;
+        _loop_depth++;
+    }
+}
+void forge_loop_pop(void) { if (_loop_depth > 0) _loop_depth--; }
+
+void forge_loop_break(void* builder) {
+    if (_loop_depth <= 0 || !builder) return;
+    void* end_bb = _loop_end_stack[_loop_depth - 1];
+    if (!end_bb) return;
+    typedef void* (*bbr_fn)(void*, void*);
+    static bbr_fn bbr = NULL;
+    if (!bbr) bbr = (bbr_fn)dlsym(RTLD_DEFAULT, "LLVMBuildBr");
+    if (bbr) bbr(builder, end_bb);
+}
+
+void forge_loop_continue(void* builder) {
+    if (_loop_depth <= 0 || !builder) return;
+    void* cond_bb = _loop_cond_stack[_loop_depth - 1];
+    if (!cond_bb) return;
+    typedef void* (*bbr_fn)(void*, void*);
+    static bbr_fn bbr = NULL;
+    if (!bbr) bbr = (bbr_fn)dlsym(RTLD_DEFAULT, "LLVMBuildBr");
+    if (bbr) bbr(builder, cond_bb);
+}
+
+// Debug: trace two i64 values without any allocation
+void forge_trace_i64(int64_t a, int64_t b) {
+    fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);
+}
+
 // Emit depth counter (recursion guard for emit_expr)
 static int _emit_depth = 0;
 int64_t forge_emit_depth_push(void) { return ++_emit_depth; }
