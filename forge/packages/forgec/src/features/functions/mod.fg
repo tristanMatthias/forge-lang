@@ -121,14 +121,13 @@ fn parse_export(p: Parser) -> Statement? {
     if ekid == 22 { return parse_var_binding(p, .Const, true) }
     // export type/enum/impl/trait — brace-count skip
     if ekid == 42 || ekid == 43 || ekid == 34 || ekid == 35 {
-        p.advance() // consume trait keyword
-        p.expect_ident() // name
-        // Skip to opening brace
+        p.advance()
+        p.expect_ident()
         while !p.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
             p.advance()
         }
         if forge_peek_kind_id(forge_parser_get_pos()) == 102 {
-            p.advance() // consume {
+            p.advance()
             mut bdepth = 1
             while bdepth > 0 && !p.is_at_end() {
                 let bk = forge_peek_kind_id(forge_parser_get_pos())
@@ -422,9 +421,7 @@ export fn declare_all_fns() {
                 rtn = rtn.substring(0, rtn.length - 1)
             } }
             if rtn == "string" { ret_ty = CG_STR }
-            else if rtn == "List" || rtn.length > 4 {
-                if rtn[0] == "L" { ret_ty = CG_STR }
-            }
+            else if rtn == "List" || (rtn.length > 4 && rtn[0] == "L") { ret_ty = CG_STR }
         }
         cg_reinit_types()
         if ret_ty == null { ret_ty = CG_I64 }

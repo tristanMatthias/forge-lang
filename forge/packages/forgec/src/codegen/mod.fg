@@ -679,6 +679,7 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
                 }
                 if fields_str.length == 0 { fc = 0 }
                 // Create LLVM struct type
+                eprintln("  [LAZY] creating struct " + type_name + " fc=" + string(fc) + " ftn=" + ftn)
                 let fta = llvm.type_array_new(fc)
                 mut fi2 = 0
                 mut ftn_pos = 0
