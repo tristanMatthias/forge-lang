@@ -2830,6 +2830,54 @@ void forge_struct_reg_set_llvm_type(ForgeString name, void* ty) {
     }
 }
 
+void forge_struct_type_register(ForgeString name, ForgeString fields, ForgeString field_is_str, ForgeString field_types, void* llvm_ty) {
+    forge_struct_reg_add(name, fields, field_types);
+    if (llvm_ty) forge_struct_reg_set_llvm_type(name, llvm_ty);
+}
+int64_t forge_struct_type_count(void) { return _struct_reg_count; }
+ForgeString forge_struct_type_get_fields(ForgeString name) {
+    ForgeString empty = {NULL, 0};
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if ((int64_t)strlen(_struct_reg[i].name) == name.len && name.ptr &&
+            memcmp(_struct_reg[i].name, name.ptr, name.len) == 0) {
+            ForgeString r = {_struct_reg[i].fields, (int64_t)strlen(_struct_reg[i].fields)};
+            return r;
+        }
+    }
+    return empty;
+}
+ForgeString forge_struct_type_get_field_types(ForgeString name) {
+    ForgeString empty = {NULL, 0};
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if ((int64_t)strlen(_struct_reg[i].name) == name.len && name.ptr &&
+            memcmp(_struct_reg[i].name, name.ptr, name.len) == 0) {
+            ForgeString r = {_struct_reg[i].field_types, (int64_t)strlen(_struct_reg[i].field_types)};
+            return r;
+        }
+    }
+    return empty;
+}
+int64_t forge_struct_field_index(ForgeString struct_name, ForgeString field_name) {
+    if (!struct_name.ptr || !field_name.ptr) return -1;
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if ((int64_t)strlen(_struct_reg[i].name) == struct_name.len &&
+            memcmp(_struct_reg[i].name, struct_name.ptr, struct_name.len) == 0) {
+            const char* p = _struct_reg[i].fields;
+            int idx = 0;
+            while (*p) {
+                const char* start = p;
+                while (*p && *p != ',') p++;
+                int64_t flen = p - start;
+                if (flen == field_name.len && memcmp(start, field_name.ptr, flen) == 0) return idx;
+                if (*p == ',') p++;
+                idx++;
+            }
+            return -1;
+        }
+    }
+    return -1;
+}
+
 // Sync all registry entries with canonical LLVM type pointers.
 // Call after materialize_struct_types to fix stale pointers.
 // Use dlsym to avoid linker dependency on LLVM symbols from runtime.c
@@ -3614,6 +3662,115 @@ static void* _ac_get_current_fn(void) {
 void forge_alloca_cache_set_builder(void* builder) {
     _ac_builder = builder;
 }
+
+// ---- Enum type registry (replaces CG_ENUM_TYPE_CSV global) ----
+#define ENUM_REG_SIZE 256
+static struct { char name[64]; int64_t max_slots; } _enum_reg[ENUM_REG_SIZE];
+static int _enum_reg_count = 0;
+
+void forge_enum_type_register(ForgeString name, int64_t max_slots) {
+    if (!name.ptr || name.len <= 0 || name.len > 63) return;
+    // Update existing
+    for (int i = 0; i < _enum_reg_count; i++) {
+        if ((int64_t)strlen(_enum_reg[i].name) == name.len &&
+            memcmp(_enum_reg[i].name, name.ptr, name.len) == 0) {
+            if (max_slots > _enum_reg[i].max_slots) _enum_reg[i].max_slots = max_slots;
+            return;
+        }
+    }
+    if (_enum_reg_count < ENUM_REG_SIZE) {
+        memcpy(_enum_reg[_enum_reg_count].name, name.ptr, name.len);
+        _enum_reg[_enum_reg_count].name[name.len] = '\0';
+        _enum_reg[_enum_reg_count].max_slots = max_slots;
+        _enum_reg_count++;
+    }
+}
+
+int64_t forge_enum_type_max_fields(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return 0;
+    for (int i = 0; i < _enum_reg_count; i++) {
+        if ((int64_t)strlen(_enum_reg[i].name) == name.len &&
+            memcmp(_enum_reg[i].name, name.ptr, name.len) == 0) {
+            return _enum_reg[i].max_slots;
+        }
+    }
+    return 0;
+}
+
+int64_t forge_enum_type_exists(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return 0;
+    for (int i = 0; i < _enum_reg_count; i++) {
+        if ((int64_t)strlen(_enum_reg[i].name) == name.len &&
+            memcmp(_enum_reg[i].name, name.ptr, name.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// ---- Enum variant fields registry (replaces CG_ENUM_VARIANT_FIELDS_CSV) ----
+#define ENUM_VFIELDS_SIZE 512
+static struct { char key[96]; char fields[64]; } _enum_vf[ENUM_VFIELDS_SIZE];
+static int _enum_vf_count = 0;
+
+void forge_enum_variant_fields_set(ForgeString key, ForgeString fields) {
+    if (!key.ptr || key.len <= 0 || key.len > 95) return;
+    // Update existing
+    for (int i = 0; i < _enum_vf_count; i++) {
+        if ((int64_t)strlen(_enum_vf[i].key) == key.len &&
+            memcmp(_enum_vf[i].key, key.ptr, key.len) == 0) {
+            int flen = fields.len > 63 ? 63 : (int)fields.len;
+            if (fields.ptr) memcpy(_enum_vf[i].fields, fields.ptr, flen);
+            _enum_vf[i].fields[flen] = '\0';
+            return;
+        }
+    }
+    if (_enum_vf_count < ENUM_VFIELDS_SIZE) {
+        memcpy(_enum_vf[_enum_vf_count].key, key.ptr, key.len);
+        _enum_vf[_enum_vf_count].key[key.len] = '\0';
+        int flen = fields.len > 63 ? 63 : (int)fields.len;
+        if (fields.ptr) memcpy(_enum_vf[_enum_vf_count].fields, fields.ptr, flen);
+        _enum_vf[_enum_vf_count].fields[flen] = '\0';
+        _enum_vf_count++;
+    }
+}
+
+ForgeString forge_enum_variant_fields_get(ForgeString key) {
+    ForgeString empty = {NULL, 0};
+    if (!key.ptr || key.len <= 0) return empty;
+    for (int i = 0; i < _enum_vf_count; i++) {
+        if ((int64_t)strlen(_enum_vf[i].key) == key.len &&
+            memcmp(_enum_vf[i].key, key.ptr, key.len) == 0) {
+            int64_t flen = (int64_t)strlen(_enum_vf[i].fields);
+            ForgeString result = {_enum_vf[i].fields, flen};
+            return result;
+        }
+    }
+    return empty;
+}
+
+// Struct type registry uses existing _struct_reg (line ~2775)
+// Additional lookup functions added below existing struct_reg code
+
+// ---- Per-function nullable return state ----
+static int _fn_returns_nullable = 0;
+static void* _fn_nullable_inner_ty = NULL;
+static void* _fn_nullable_ret_ty = NULL;
+
+void forge_fn_nullable_set(int64_t returns_nullable, void* inner_ty, void* ret_ty) {
+    _fn_returns_nullable = (int)returns_nullable;
+    _fn_nullable_inner_ty = inner_ty;
+    _fn_nullable_ret_ty = ret_ty;
+}
+int64_t forge_fn_nullable_get_flag(void) { return _fn_returns_nullable; }
+int64_t forge_fn_nullable_get_inner(void) { return (int64_t)(uintptr_t)_fn_nullable_inner_ty; }
+int64_t forge_fn_nullable_get_ret(void) { return (int64_t)(uintptr_t)_fn_nullable_ret_ty; }
+
+// Emit depth counter (recursion guard for emit_expr)
+static int _emit_depth = 0;
+int64_t forge_emit_depth_push(void) { return ++_emit_depth; }
+int64_t forge_emit_depth_pop(void) { return --_emit_depth; }
+int64_t forge_emit_depth_get(void) { return _emit_depth; }
 
 // Set the Forge type name for the most recently added cache entry
 void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {

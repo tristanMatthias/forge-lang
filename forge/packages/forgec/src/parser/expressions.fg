@@ -20,7 +20,7 @@
 use core.token.{Token, TokenKind, Span}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use lexer.{parse_int, parse_float}
-use codegen.{CG_ENUM_TYPE_CSV}
+// Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
 use features.is_keyword.make_is_check
 // Suppress cross-newline dot chaining inside match arm bodies
 mut IN_MATCH_ARM: bool = false
@@ -756,45 +756,17 @@ export fn register_enum_variant(enum_name: string, variant_name: string, tag: in
 }
 
 export fn register_enum_type(name: string, max_fields: int) {
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_fields},"
+    forge_enum_type_register(name, max_fields)
 }
 
-// CSV lookup: get max field count for enum. Returns 0 if not found.
 fn csv_enum_max_fields(name: string) -> int {
-    let needle = ",${name}:"
-    let nl = needle.length
-    let cl = CG_ENUM_TYPE_CSV.length
-    mut i = 0
-    while i <= cl - nl {
-        mut ok = true
-        mut j = 0
-        while j < nl {
-            if CG_ENUM_TYPE_CSV[i + j] != needle[j] { ok = false }
-            j = j + 1
-        }
-        if ok {
-            mut ns = ""
-            mut k = i + nl
-            while k < cl && CG_ENUM_TYPE_CSV[k] != "," {
-                ns = ns + CG_ENUM_TYPE_CSV[k]
-                k = k + 1
-            }
-            if ns.length > 0 { return int(ns) }
-            return 0
-        }
-        i = i + 1
-    }
-    0
+    forge_enum_type_max_fields(name)
 }
 
-// Get enum type name for a variable via alloca cache
 fn csv_var_enum_type(name: string) -> string {
     let vt = forge_alloca_cache_get_var_type(name)
     if vt.length > 0 {
-        let enum_needle = "," + vt + ":"
-        if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
-            return vt
-        }
+        if forge_enum_type_exists(vt) == 1 { return vt }
     }
     ""
 }

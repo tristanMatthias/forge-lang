@@ -9,7 +9,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr}
 use parser.expressions.{register_enum_variant}
 use checker.TypeChecker
-use codegen.{Codegen, CG_ENUM_TYPE_CSV, register_enum_variant_fields}
+use codegen.{Codegen, register_enum_variant_fields}
 use features.while_loops.PARSE_END_POS
 
 // ─── Side Tables ────────────────────────────────
@@ -131,7 +131,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
 
     p.expect(TokenKind.RBrace)
 
-    CG_ENUM_TYPE_CSV = CG_ENUM_TYPE_CSV + ",${name}:${max_slots},"
+    forge_enum_type_register(name, max_slots)
     // Enum declarations register tags + max field count.
     PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()

@@ -52,19 +52,13 @@ export mut CG_RT_MAP_SET: ptr = null
 // CG_ACTIVE removed — parser is now a pure parser, codegen is separate
 
 // Debug: recursion depth counter for emit_expr
-export mut EMIT_DEPTH: int = 0
+// EMIT_DEPTH moved to C-side (forge_emit_depth_push/pop/get)
 
 // Top-level source fragments to inject into main
 export mut CG_TOPLEVEL_SOURCES: List<string> = []
 
-// Struct type registry: maps struct names to field info
-// Each struct is stored as: name in CG_STRUCT_NAMES, fields as comma-separated
-// in CG_STRUCT_FIELDS, LLVM type in CG_STRUCT_TYPES
-export mut CG_STRUCT_NAMES: List<string> = []
-export mut CG_STRUCT_FIELDS: List<string> = []  // comma-separated field names
-export mut CG_STRUCT_TYPES: List<ptr> = []       // LLVM struct types
-export mut CG_STRUCT_FIELD_IS_STR: List<string> = []  // comma-separated "0"/"1" per field
-export mut CG_STRUCT_FIELD_TYPE_NAMES: List<string> = []  // comma-separated type names per field
+// Struct type registry uses C-side (forge_struct_type_register, forge_struct_field_index)
+// Struct type registry uses C-side (forge_struct_type_register, forge_struct_field_index, etc.)
 
 // Variable struct type tracking now uses alloca cache (forge_alloca_cache_set_var_type)
 // The most recently emitted LLVM value (for passing through call chain without AST corruption)
@@ -306,56 +300,23 @@ export fn list_elem_llvm_type(name: string) -> ptr {
     let elem = list_elem_type(name)
     if elem == "string" { return CG_STR }
     if elem == "int" || elem == "" { return CG_I64 }
-    // Struct type — look up in struct registry
-    mut si = CG_STRUCT_NAMES.length - 1
-    while si >= 0 {
-        if CG_STRUCT_NAMES[si] == elem {
-            let sty = CG_STRUCT_TYPES[si]
-            if sty != null { return sty }
-        }
-        si = si - 1
-    }
-    CG_I64
+    // Struct type — use LLVM named type or lazy creation
+    let resolved = resolve_type_to_llvm(elem)
+    resolved
 }
 
 // ─── Enum Tagged Union Helpers ───────────────────
-export mut CG_ENUM_TYPE_CSV: string = ""   // ",Name:maxslots,"  (slot count, not field count)
-// Enum variable type tracking uses alloca cache (forge_alloca_cache_set_var_type)
-// CG_UNIVERSAL_ENUM_TY removed — use per-enum types via cg_get_enum_ty_for
-// Per-enum type cache
-mut CG_ENUM_TYPE_CACHE_NAMES: List<string> = []
-mut CG_ENUM_TYPE_CACHE_PTRS: List<ptr> = []
-// Per-variant field types: ",EnumName.VariantName:si," where s=string(2 slots), i=int(1 slot)
-export mut CG_ENUM_VARIANT_FIELDS_CSV: string = ""
+// Enum type/variant registries use C-side storage (forge_enum_type_register, etc.)
 
 export fn cg_enum_max_fields(name: string) -> int {
-    let needle = "," + name + ":"
-    let idx = CG_ENUM_TYPE_CSV.index_of(needle)
-    if idx < 0 { return 0 }
-    // Extract the number after the needle
-    let start = idx + needle.length
-    mut ns = ""
-    mut k = start
-    while k < CG_ENUM_TYPE_CSV.length {
-        let ch = CG_ENUM_TYPE_CSV[k]
-        if ch == "," { break }
-        ns = ns + ch
-        k = k + 1
-    }
-    if ns.length > 0 { return int(ns) }
-    0
+    forge_enum_type_max_fields(name)
 }
 
 // Get or create the LLVM type for a specific enum (per-enum sizing like Rust)
 export fn cg_get_enum_ty_for(name: string) -> ptr {
-    // Check cache first
-    mut ci = 0
-    while ci < CG_ENUM_TYPE_CACHE_NAMES.length {
-        if CG_ENUM_TYPE_CACHE_NAMES[ci] == name {
-            return CG_ENUM_TYPE_CACHE_PTRS[ci]
-        }
-        ci = ci + 1
-    }
+    // Check LLVM named type registry first
+    let existing = llvm.get_type_by_name(CG_CTX, name)
+    if existing != null { return existing }
     // Create: {i8, i64 x max_fields}
     let mf = cg_enum_max_fields(name)
     mut fc = 2  // minimum {i8, i64}
@@ -367,13 +328,9 @@ export fn cg_get_enum_ty_for(name: string) -> ptr {
         llvm.type_array_set(fields, fi, CG_I64)
         fi = fi + 1
     }
-    // Named enum type (like Rust) for proper LLVM ABI handling
     let ty = llvm.struct_create_named(CG_CTX, name)
     llvm.struct_set_body(ty, fields, fc, 0)
     llvm.type_array_free(fields)
-    // Cache it
-    CG_ENUM_TYPE_CACHE_NAMES = CG_ENUM_TYPE_CACHE_NAMES.push(name)
-    CG_ENUM_TYPE_CACHE_PTRS = CG_ENUM_TYPE_CACHE_PTRS.push(ty)
     ty
 }
 
@@ -387,9 +344,8 @@ export fn cg_var_enum_type(name: string) -> string {
     // Check alloca cache for the variable's type name
     let vt = forge_alloca_cache_get_var_type(name)
     if vt.length > 0 {
-        // If it's an enum type (registered in CG_ENUM_TYPE_CSV), return it
-        let enum_needle = "," + vt + ":"
-        if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+        // If it's a registered enum type, return it
+        if forge_enum_type_exists(vt) == 1 {
             return vt
         }
     }
@@ -399,30 +355,8 @@ export fn cg_var_enum_type(name: string) -> string {
 // Look up variant field types string for "EnumName.VariantName"
 // Returns e.g. "si" meaning field 0 is string, field 1 is int
 export fn cg_enum_variant_field_types(enum_name: string, variant_name: string) -> string {
-    let needle = "," + enum_name + "." + variant_name + ":"
-    let nl = needle.length
-    let cl = CG_ENUM_VARIANT_FIELDS_CSV.length
-    mut i = 0
-    while i + nl <= cl {
-        mut ok = true
-        mut j = 0
-        while j < nl {
-            if CG_ENUM_VARIANT_FIELDS_CSV[i + j] != needle[j] { ok = false }
-            j = j + 1
-        }
-        if ok {
-            mut r = ""
-            mut k = i + nl
-            while k < cl {
-                if CG_ENUM_VARIANT_FIELDS_CSV[k] == "," { break }
-                r = r + CG_ENUM_VARIANT_FIELDS_CSV[k]
-                k = k + 1
-            }
-            return r
-        }
-        i = i + 1
-    }
-    ""
+    let key = enum_name + "." + variant_name
+    forge_enum_variant_fields_get(key)
 }
 
 // Compute slot offset for field index in a variant, given field types string
@@ -461,27 +395,20 @@ fn field_type_slots(code: string) -> int {
 
 // Register variant field types
 export fn register_enum_variant_fields(enum_name: string, variant_name: string, field_types: string) {
-    CG_ENUM_VARIANT_FIELDS_CSV = CG_ENUM_VARIANT_FIELDS_CSV + "," + enum_name + "." + variant_name + ":" + field_types + ","
+    let key = enum_name + "." + variant_name
+    forge_enum_variant_fields_set(key, field_types)
 }
 
 // ─── Nullable Type Helpers ───────────────────────
 
-export mut CG_FN_RETURNS_NULLABLE: int = 0
-export mut CG_FN_NULLABLE_INNER_TY: ptr = null
-export mut CG_FN_NULLABLE_RET_TY: ptr = null
-export mut CG_NULLABLE_INT_TY: ptr = null
-export mut CG_NULLABLE_STR_TY: ptr = null
-
+// Per-function nullable state uses C-side (forge_fn_nullable_set/get_flag/get_inner/get_ret)
 export fn make_nullable_type(inner_ty: ptr) -> ptr {
-    if inner_ty == CG_I64 && CG_NULLABLE_INT_TY != null { return CG_NULLABLE_INT_TY }
-    if inner_ty == CG_STR && CG_NULLABLE_STR_TY != null { return CG_NULLABLE_STR_TY }
+    // LLVM deduplicates struct types, so no caching needed
     let fields = llvm.type_array_new(2)
     llvm.type_array_set(fields, 0, CG_I8)
     llvm.type_array_set(fields, 1, inner_ty)
     let nullable_ty = llvm.struct_type(CG_CTX, fields, 2, 0)
     llvm.type_array_free(fields)
-    if inner_ty == CG_I64 { CG_NULLABLE_INT_TY = nullable_ty }
-    if inner_ty == CG_STR { CG_NULLABLE_STR_TY = nullable_ty }
     nullable_ty
 }
 
@@ -521,35 +448,29 @@ export fn nullable_var_inner_type(name: string) -> string {
 
 // Register a struct type with its fields
 export fn register_struct_type(name: string, fields: string, field_is_str: string, llvm_ty: ptr) {
-    CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(name)
-    CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-    CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(field_is_str)
-    CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(llvm_ty)
-    CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push("")
+    forge_struct_type_register(name, fields, field_is_str, "", llvm_ty)
 }
 
-// Register a struct type with field type names
 export fn register_struct_type_full(name: string, fields: string, field_is_str: string, field_type_names: string, llvm_ty: ptr) {
-    CG_STRUCT_NAMES = CG_STRUCT_NAMES.push(name)
-    CG_STRUCT_FIELDS = CG_STRUCT_FIELDS.push(fields)
-    CG_STRUCT_FIELD_IS_STR = CG_STRUCT_FIELD_IS_STR.push(field_is_str)
-    CG_STRUCT_TYPES = CG_STRUCT_TYPES.push(llvm_ty)
-    CG_STRUCT_FIELD_TYPE_NAMES = CG_STRUCT_FIELD_TYPE_NAMES.push(field_type_names)
+    forge_struct_type_register(name, fields, field_is_str, field_type_names, llvm_ty)
 }
 
 // Create an LLVM named struct type from the field info at index `idx` in CG_STRUCT_*
 fn create_struct_llvm_type(name: string, idx: int) -> ptr {
     if CG_STR == null { return null }
     if CG_I64 == null { return null }
-    // Parse field type names (comma-separated)
-    if idx >= CG_STRUCT_FIELD_TYPE_NAMES.length { return null }
-    if idx >= CG_STRUCT_FIELD_IS_STR.length { return null }
-    let field_type_csv = CG_STRUCT_FIELD_TYPE_NAMES[idx]
-    let field_is_str_csv = CG_STRUCT_FIELD_IS_STR[idx]
-    // Count fields by counting commas + 1 (or from field_is_str length)
+    // Get field info from C-side struct registry
+    let field_type_csv = forge_struct_type_get_field_types(name)
+    let field_is_str_csv = ""  // No longer needed — field_type_csv has all info
+    // Count fields by counting commas + 1 in field_type_csv
     mut field_count = 0
-    if field_is_str_csv.length > 0 {
-        field_count = field_is_str_csv.length  // each char is one field's "0"/"1"
+    if field_type_csv.length > 0 {
+        field_count = 1
+        mut ci = 0
+        while ci < field_type_csv.length {
+            if field_type_csv[ci] == "," { field_count = field_count + 1 }
+            ci = ci + 1
+        }
     }
     if field_count == 0 { return null }
     // Build LLVM field types array
@@ -575,11 +496,6 @@ fn create_struct_llvm_type(name: string, idx: int) -> ptr {
             fty = CG_STR
         }
         // Named struct/enum types → use i64 (enums are i64, nested structs are opaque)
-        // Don't recurse to avoid infinite loops and crashes with enum types
-        // Fallback: check field_is_str
-        if fi < field_is_str_csv.length {
-            if field_is_str_csv[fi] == "1" { fty = CG_STR }
-        }
         llvm.type_array_set(fa, fi, fty)
         fi = fi + 1
     }
@@ -611,8 +527,7 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if named != null { return named }
     // Check enum type
     let emf = cg_enum_max_fields(type_name)
-    let enum_needle = "," + type_name + ":"
-    if CG_ENUM_TYPE_CSV.index_of(enum_needle) >= 0 {
+    if forge_enum_type_exists(type_name) == 1 {
         if emf > 0 {
             let ety = cg_get_enum_ty_for(type_name)
             if ety != null { return ety }
@@ -621,49 +536,18 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
             return CG_I64
         }
     }
-    // Check struct type via CG_STRUCT_NAMES — create LLVM type lazily if needed
-    mut sti = CG_STRUCT_NAMES.length - 1
-    while sti >= 0 {
-        if CG_STRUCT_NAMES[sti] == type_name {
-            let sty = CG_STRUCT_TYPES[sti]
-            if sty != null { return sty }
-            // Lazily create the LLVM struct type from field info
-            let created = create_struct_llvm_type(type_name, sti)
-            if created != null { return created }
-        }
-        sti = sti - 1
+    // Check C-side struct registry — create LLVM type lazily if needed
+    let struct_fields = forge_struct_type_get_fields(type_name)
+    if struct_fields.length > 0 {
+        let created = create_struct_llvm_type(type_name, 0)
+        if created != null { return created }
     }
     CG_I64
 }
 
 // Find a struct type's field index by name. Returns -1 if not found.
 export fn struct_field_index(struct_name: string, field_name: string) -> int {
-    // Find the struct
-    mut si = 0
-    while si < CG_STRUCT_NAMES.length {
-        if CG_STRUCT_NAMES[si] == struct_name {
-            // Parse comma-separated fields
-            let fields = CG_STRUCT_FIELDS[si]
-            mut idx = 0
-            mut current = ""
-            mut fi = 0
-            while fi < fields.length {
-                let ch = fields[fi]
-                if ch == "," {
-                    if current == field_name { return idx }
-                    idx = idx + 1
-                    current = ""
-                } else {
-                    current = current + ch
-                }
-                fi = fi + 1
-            }
-            if current == field_name { return idx }
-            return -1
-        }
-        si = si + 1
-    }
-    return -1
+    forge_struct_field_index(struct_name, field_name)
 }
 
 // Get the struct type name for a variable
@@ -686,10 +570,6 @@ export fn codegen_init(name: string) {
     forge_alloca_cache_clear()
     CG_HAS_LAST_VAL = 0
     // (CG_UNIVERSAL_ENUM_TY removed)
-    CG_ENUM_TYPE_CACHE_NAMES = []
-    CG_ENUM_TYPE_CACHE_PTRS = []
-    CG_NULLABLE_INT_TY = null
-    CG_NULLABLE_STR_TY = null
     let dfns = forge_map_new()
     DECLARED_FNS = dfns
     cg_init_ctx(name)
@@ -1193,8 +1073,8 @@ impl Codegen {
     fn emit_return(self, value: Expr) {
         match value {
             .NullLit(span) -> {
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    llvm.build_ret(CG_B, make_null_value(CG_FN_NULLABLE_INNER_TY))
+                if forge_fn_nullable_get_flag() == 1 {
+                    llvm.build_ret(CG_B, make_null_value(forge_fn_nullable_get_inner()))
                 } else {
                     llvm.build_ret_void(CG_B)
                 }
@@ -1207,8 +1087,8 @@ impl Codegen {
         let ret_type = self.expr_type_name(value)
         let val = self.emit_expr(value)
         let is_nullable = ret_type == "nullable" || ret_type == "null"
-        if CG_FN_RETURNS_NULLABLE == 1 && !is_nullable {
-            llvm.build_ret(CG_B, wrap_nullable(CG_FN_NULLABLE_INNER_TY, val))
+        if forge_fn_nullable_get_flag() == 1 && !is_nullable {
+            llvm.build_ret(CG_B, wrap_nullable(forge_fn_nullable_get_inner(), val))
         } else {
             llvm.build_ret(CG_B, val)
         }
@@ -1227,13 +1107,13 @@ impl Codegen {
     // ─── Expressions ───────────────────────────
 
     fn emit_expr(self, expr: Expr) -> ptr {
-        EMIT_DEPTH = EMIT_DEPTH + 1
-        if EMIT_DEPTH > 50 {
-            EMIT_DEPTH = EMIT_DEPTH - 1
+        let depth = forge_emit_depth_push()
+        if depth > 50 {
+            forge_emit_depth_pop()
             return llvm.const_int(CG_I64, 0, 0)
         }
         let r = self.emit_expr_inner(expr)
-        EMIT_DEPTH = EMIT_DEPTH - 1
+        forge_emit_depth_pop()
         r
     }
 
@@ -1399,8 +1279,8 @@ impl Codegen {
                 return llvm.const_int(CG_I64, 0, 0)
             }
             .NullLit(span) -> {
-                if CG_FN_RETURNS_NULLABLE == 1 {
-                    return make_null_value(CG_FN_NULLABLE_INNER_TY)
+                if forge_fn_nullable_get_flag() == 1 {
+                    return make_null_value(forge_fn_nullable_get_inner())
                 }
                 return llvm.const_null(CG_PTR)
             }
@@ -1681,19 +1561,8 @@ impl Codegen {
 
     fn emit_struct_lit(self, struct_name: string, field_values: List<Expr>) -> ptr {
         cg_reinit_types()
-        mut struct_ty = llvm.get_type_by_name(CG_CTX, struct_name)
-        // Also check old list for field info index
-        mut si = CG_STRUCT_NAMES.length - 1
-        if struct_ty == null {
-            while si >= 0 {
-                if CG_STRUCT_NAMES[si] == struct_name {
-                    struct_ty = CG_STRUCT_TYPES[si]
-                    break
-                }
-                si = si - 1
-            }
-        }
-        if struct_ty == null { return llvm.const_int(CG_I64, 0, 0) }
+        let struct_ty = resolve_type_to_llvm(struct_name)
+        if struct_ty == CG_I64 { return llvm.const_int(CG_I64, 0, 0) }
         let alloca = llvm.build_alloca(CG_B, struct_ty, "sl")
         llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
         mut fi = 0

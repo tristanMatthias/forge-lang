@@ -149,6 +149,23 @@ crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings"
 crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", params: [ForgeString, ForgeString, I64, Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_emit_depth_push", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_emit_depth_pop", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_enum_type_register", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_enum_type_max_fields", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_enum_type_exists", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_enum_variant_fields_set", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_enum_variant_fields_get", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_struct_type_register", feature: "strings", params: [ForgeString, ForgeString, ForgeString, ForgeString, Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_struct_type_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_struct_type_get_fields", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_struct_type_get_field_is_str", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_struct_type_get_field_types", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_struct_field_index", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_fn_nullable_set", feature: "strings", params: [I64, Ptr, Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_fn_nullable_get_flag", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_fn_nullable_get_inner", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_fn_nullable_get_ret", feature: "strings", params: [], ret: I64 }
 
 // C-side function body store (immune to Forge list push corruption)
 crate::runtime_fn! { name: "forge_fn_store_clear", feature: "strings", params: [], ret: Void }

@@ -8,7 +8,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, CG_FN_RETURNS_NULLABLE, CG_FN_NULLABLE_INNER_TY, make_nullable_type, wrap_nullable, codegen_new, CG_NULLABLE_VAR_NAMES}
+use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, make_nullable_type, wrap_nullable, codegen_new, CG_NULLABLE_VAR_NAMES}
 use @std.llvm
 
 // ─── Data Types ──────────────────────────────────
@@ -98,8 +98,8 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     mut then_val = cg.emit_block(data.then_block)
     mut then_is_nullable = false
     // In nullable function context, wrap non-nullable then value before branching
-    if CG_FN_RETURNS_NULLABLE == 1 {
-        then_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, then_val)
+    if forge_fn_nullable_get_flag() == 1 {
+        then_val = wrap_nullable(forge_fn_nullable_get_inner(), then_val)
         then_is_nullable = true
     }
     let then_end_bb = llvm.get_insert_block(CG_B)
@@ -116,8 +116,8 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     }
     mut else_is_nullable = false
     // In nullable function context, wrap non-nullable else value before branching
-    if data.has_else && CG_FN_RETURNS_NULLABLE == 1 {
-        else_val = wrap_nullable(CG_FN_NULLABLE_INNER_TY, else_val)
+    if data.has_else && forge_fn_nullable_get_flag() == 1 {
+        else_val = wrap_nullable(forge_fn_nullable_get_inner(), else_val)
         else_is_nullable = true
     }
     let else_end_bb = llvm.get_insert_block(CG_B)
@@ -131,8 +131,8 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     // If both branches produced values (if-as-expression), use PHI
     if data.has_else && !then_terminated && !else_terminated {
         // In a nullable function, both branches are now wrapped as {i8, T}
-        if CG_FN_RETURNS_NULLABLE == 1 && (then_is_nullable || else_is_nullable) {
-            let nullable_ty = make_nullable_type(CG_FN_NULLABLE_INNER_TY)
+        if forge_fn_nullable_get_flag() == 1 && (then_is_nullable || else_is_nullable) {
+            let nullable_ty = make_nullable_type(forge_fn_nullable_get_inner())
             let phi = llvm.build_phi(CG_B, nullable_ty, "iv")
             llvm.add_incoming(phi, then_val, then_end_bb)
             llvm.add_incoming(phi, else_val, else_end_bb)
