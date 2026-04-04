@@ -1305,7 +1305,7 @@ impl Codegen {
                             _ -> {}
                         }
                         // Known namespace.method return types
-                        if obj_name == "process" && method == "args" { return "string" }
+                        if obj_name == "process" && method == "args" { return "list:string" }
                         if obj_name == "process" && method == "run" { return "string" }
                         if obj_name == "fs" && method == "read" { return "string" }
                         // Try looking up mangled name in FN_NAMES
@@ -1368,6 +1368,15 @@ impl Codegen {
             }
             .MemberAccess(obj, field, _) -> {
                 if field == "length" { return "int" }
+                return "int"
+            }
+            .Index(obj, _, _) -> {
+                // Element type of list indexing
+                let ot = self.expr_type_name(obj)
+                if ot.length > 5 && ot.substring(0, 5) == "list:" {
+                    return ot.substring(5, ot.length)
+                }
+                if ot == "string" { return "string" }
                 return "int"
             }
             _ -> { return "int" }
@@ -2329,8 +2338,14 @@ impl Codegen {
                 let ev = self.emit_expr(val)
                 mut ty = Type.Int
                 if val_type == "string" { ty = Type.String }
+                // Lists use ForgeString alloca ({ptr, i64}) — must set BEFORE define_var
+                if val_type.length > 5 && val_type.substring(0, 5) == "list:" {
+                    ty = Type.String
+                    CG_LIST_VAR_CSV = CG_LIST_VAR_CSV + "," + name + ","
+                    CG_STR_LIST_VAR_CSV = CG_STR_LIST_VAR_CSV + "," + name + ","
+                }
                 self.define_var(name, ty, ev)
-                if val_type == "string" {
+                if val_type == "string" || ty is .String {
                     CG_STR_VAR_NAMES = CG_STR_VAR_NAMES.push(name)
                 }
                 // Check if val_type indicates a struct
@@ -2833,6 +2848,11 @@ impl Codegen {
         // Special case: .length property
         if field == "length" {
             let obj_val = self.emit_ident(var_name)
+            // For lists: extract field 1 directly (it's the count)
+            if is_list_var(var_name) || is_str_list_var(var_name) {
+                return llvm.build_extract_value(CG_B, obj_val, 1, "len")
+            }
+            // For strings: call forge_string_length
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, obj_val)
             let ft = mft1(CG_I64, CG_STR)
