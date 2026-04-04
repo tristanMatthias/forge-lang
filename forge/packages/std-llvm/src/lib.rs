@@ -505,7 +505,6 @@ pub extern "C" fn forge_llvm_get_param(f: LLVMPtr, index: c_int) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name: *const c_char) -> LLVMPtr {
     if ctx.is_null() || f.is_null() { return std::ptr::null_mut(); }
-    // Auto-track current function for alloca cache scoping
     extern "C" { fn forge_alloca_cache_set_fn(f: *mut c_void); }
     unsafe {
         forge_alloca_cache_set_fn(f);
