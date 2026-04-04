@@ -87,7 +87,15 @@ Score (lower is better)
 
 ## Debugging & Analysis Tools
 
-### Scripts
+### Central Diagnostic System
+```bash
+bash scripts/diagnose.sh [output.ll]
+```
+**Run this after EVERY change.** It checks EVERYTHING: IR quality, struct types, function completeness, control flow, AST coverage, globals, code quality, and Stage 2 runtime behavior. Returns ALL errors at once.
+
+**MANDATORY RULE: When you discover a new class of issue, ADD A CHECK for it to `scripts/diagnose.sh`.** This prevents the same issue from recurring. The diagnostic system must grow over time to cover every possible failure mode.
+
+### Other Scripts
 ```bash
 # Audit Stage 2 IR quality (score, lower is better)
 bash scripts/audit_stage2.sh output.ll
