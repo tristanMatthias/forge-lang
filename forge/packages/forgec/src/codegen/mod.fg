@@ -517,8 +517,8 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     // Check C-side struct registry — create LLVM type lazily if needed
     let struct_fields = forge_struct_type_get_fields(type_name)
     if struct_fields.length > 0 {
-        let created = create_struct_llvm_type(type_name, 0)
-        if created != null { return created }
+        // create_struct_llvm_type always returns a valid type (never null)
+        return create_struct_llvm_type(type_name, 0)
     }
     CG_I64
 }
@@ -695,9 +695,37 @@ fn cg_register_core_types() {
     register_struct_type_full("Span", "start,end,line,col", "0000", "int,int,int,int", span_ty)
 
     // Token, Block, Diagnostic, NodeRef — registered via type declaration parsing
-    // (their layouts depend on enum variant sizes which are complex to hardcode)
+    // Token = { kind: TokenKind(i64), span: Span(4xi64), text: string(2), kind_id: int(1) }
+    // = { i64, %Span, %ForgeString, i64 } = 4 LLVM fields but 8 slots
+    let tkf = llvm.type_array_new(4)
+    llvm.type_array_set(tkf, 0, CG_I64)    // kind (enum tag)
+    llvm.type_array_set(tkf, 1, span_ty)   // span
+    llvm.type_array_set(tkf, 2, CG_STR)    // text
+    llvm.type_array_set(tkf, 3, CG_I64)    // kind_id
+    let token_ty = llvm.struct_create_named(CG_CTX, "Token")
+    llvm.struct_set_body(token_ty, tkf, 4, 0)
+    llvm.type_array_free(tkf)
+    register_struct_type_full("Token", "kind,span,text,kind_id", "0010", "TokenKind,Span,string,int", token_ty)
 
-    // Block, Diagnostic, NodeRef — registered via type declaration parsing
+    // Block = { statements: List<Statement>, span: Span }
+    let blf = llvm.type_array_new(2)
+    llvm.type_array_set(blf, 0, CG_STR)    // statements (list = {ptr, i64})
+    llvm.type_array_set(blf, 1, span_ty)   // span
+    let block_ty = llvm.struct_create_named(CG_CTX, "Block")
+    llvm.struct_set_body(block_ty, blf, 2, 0)
+    llvm.type_array_free(blf)
+    register_struct_type_full("Block", "statements,span", "10", "List:Statement,Span", block_ty)
+
+    // NodeRef = { node_id: int, feature: string, kind_name: string, node_span: Span }
+    let nrf = llvm.type_array_new(4)
+    llvm.type_array_set(nrf, 0, CG_I64)
+    llvm.type_array_set(nrf, 1, CG_STR)
+    llvm.type_array_set(nrf, 2, CG_STR)
+    llvm.type_array_set(nrf, 3, span_ty)
+    let noderef_ty = llvm.struct_create_named(CG_CTX, "NodeRef")
+    llvm.struct_set_body(noderef_ty, nrf, 4, 0)
+    llvm.type_array_free(nrf)
+    register_struct_type_full("NodeRef", "node_id,feature,kind_name,node_span", "0110", "int,string,string,Span", noderef_ty)
 }
 
 fn cg_init_runtime() {
