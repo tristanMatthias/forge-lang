@@ -52,20 +52,23 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Pointer operations: ptr + int, ptr - ptr, ptr == ptr, ptr != ptr, ptr == null
-        if left_type == Type::Ptr || right_type == Type::Ptr {
+        // Also handle unknown types that are actually pointers at the LLVM level
+        let lhs_is_ptr = left_type == Type::Ptr || lhs.is_pointer_value();
+        let rhs_is_ptr = right_type == Type::Ptr || rhs.is_pointer_value();
+        if lhs_is_ptr || rhs_is_ptr {
             match op {
-                BinaryOp::Add if left_type == Type::Ptr && right_type == Type::Int => {
+                BinaryOp::Add if lhs_is_ptr && (right_type == Type::Int || rhs.is_int_value()) => {
                     return self.compile_ptr_add(lhs, rhs);
                 }
-                BinaryOp::Sub if left_type == Type::Ptr && right_type == Type::Ptr => {
+                BinaryOp::Sub if lhs_is_ptr && rhs_is_ptr => {
                     return self.compile_ptr_sub(lhs, rhs);
                 }
-                BinaryOp::Eq | BinaryOp::NotEq if left_type == Type::Ptr && right_type == Type::Ptr => {
+                BinaryOp::Eq | BinaryOp::NotEq if lhs_is_ptr && rhs_is_ptr => {
                     return self.compile_ptr_compare(lhs, &op, rhs);
                 }
                 BinaryOp::Eq | BinaryOp::NotEq => {
                     // ptr == null or null == ptr: coerce null side to null pointer
-                    let (ptr_side, null_side) = if left_type == Type::Ptr {
+                    let (ptr_side, null_side) = if lhs_is_ptr {
                         (lhs, rhs)
                     } else {
                         (rhs, lhs)
