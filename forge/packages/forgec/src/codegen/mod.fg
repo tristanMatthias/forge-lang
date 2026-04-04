@@ -1927,10 +1927,74 @@ impl Codegen {
                 }
                 return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne")
             }
-            .Lt -> { return llvm.build_icmp(CG_B, 40, lhs, rhs, "lt") }
-            .LtEq -> { return llvm.build_icmp(CG_B, 41, lhs, rhs, "le") }
-            .Gt -> { return llvm.build_icmp(CG_B, 38, lhs, rhs, "gt") }
-            .GtEq -> { return llvm.build_icmp(CG_B, 39, lhs, rhs, "ge") }
+            .Lt -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 40, cmp, llvm.const_int(CG_I64, 0, 0), "lt")
+                }
+                return llvm.build_icmp(CG_B, 40, lhs, rhs, "lt")
+            }
+            .LtEq -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 41, cmp, llvm.const_int(CG_I64, 0, 0), "le")
+                }
+                return llvm.build_icmp(CG_B, 41, lhs, rhs, "le")
+            }
+            .Gt -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 38, cmp, llvm.const_int(CG_I64, 0, 0), "gt")
+                }
+                return llvm.build_icmp(CG_B, 38, lhs, rhs, "gt")
+            }
+            .GtEq -> {
+                if lhs_is_str == 1 || rhs_is_str == 1 {
+                    cg_reinit_types()
+                    let ca = llvm.value_array_new(2)
+                    llvm.value_array_set(ca, 0, lhs)
+                    llvm.value_array_set(ca, 1, rhs)
+                    let ct = llvm.type_array_new(2)
+                    llvm.type_array_set(ct, 0, CG_STR)
+                    llvm.type_array_set(ct, 1, CG_STR)
+                    let cf = llvm.function_type(CG_I64, ct, 2, 0)
+                    llvm.type_array_free(ct)
+                    let cmp = llvm.build_call(CG_B, cf, CG_RT_SCMP, ca, 2, "sc")
+                    llvm.value_array_free(ca)
+                    return llvm.build_icmp(CG_B, 39, cmp, llvm.const_int(CG_I64, 0, 0), "ge")
+                }
+                return llvm.build_icmp(CG_B, 39, lhs, rhs, "ge")
+            }
             .BitAnd -> { return llvm.build_and(CG_B, lhs, rhs, "ba") }
             .BitOr -> { return llvm.build_or(CG_B, lhs, rhs, "bo") }
             .BitXor -> { return llvm.build_xor(CG_B, lhs, rhs, "bx") }
