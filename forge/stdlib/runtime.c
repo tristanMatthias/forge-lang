@@ -3821,6 +3821,30 @@ int64_t forge_load_from_global(void* builder, int64_t global_ptr, ForgeString na
     return (int64_t)(uintptr_t)loaded;
 }
 
+// Get LLVM type kind for a global variable (returns kind, 0 if not found)
+int64_t forge_global_type_kind(void* module, ForgeString name) {
+    if (!module || !name.ptr || name.len <= 0) return 0;
+    typedef void* (*gng_fn)(void*, const char*);
+    typedef void* (*gvt_fn)(void*);
+    typedef int (*gtk_fn2)(void*);
+    static gng_fn gng2 = NULL;
+    static gvt_fn gvt2 = NULL;
+    static gtk_fn2 gtk3 = NULL;
+    if (!gng2) gng2 = (gng_fn)dlsym(RTLD_DEFAULT, "LLVMGetNamedGlobal");
+    if (!gvt2) gvt2 = (gvt_fn)dlsym(RTLD_DEFAULT, "LLVMGlobalGetValueType");
+    if (!gtk3) gtk3 = (gtk_fn2)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!gng2 || !gvt2 || !gtk3) return 0;
+    char nbuf[128];
+    int nlen = name.len > 127 ? 127 : (int)name.len;
+    memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+    void* g = gng2(module, nbuf);
+    if (!g) return 0;
+    void* ty = gvt2(g);
+    if (!ty) return 0;
+    return (int64_t)gtk3(ty);
+}
+
 // Struct type registry uses existing _struct_reg (line ~2775)
 // Additional lookup functions added below existing struct_reg code
 

@@ -152,6 +152,7 @@ crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", 
 crate::runtime_fn! { name: "forge_get_named_global_i64", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_store_to_global", feature: "strings", params: [Ptr, I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_load_from_global", feature: "strings", params: [Ptr, I64, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_global_type_kind", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_register", feature: "strings", params: [ForgeString, I64], ret: Void }
 crate::runtime_fn! { name: "forge_global_var_count", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_name", feature: "strings", params: [I64], ret: ForgeString }

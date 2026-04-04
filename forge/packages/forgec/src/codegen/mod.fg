@@ -1182,14 +1182,11 @@ impl Codegen {
                 if type_kind == 10 { return "string" }
                 if type_kind == 12 { return "ptr" }
                 if type_kind == 8 { return "int" }
-                // Check if it's a global
-                let gptr = llvm.get_named_global(CG_MOD, name)
-                if gptr != null {
-                    let ty = llvm.global_get_value_type(gptr)
-                    if ty == CG_STR { return "string" }
-                    if ty == CG_PTR { return "ptr" }
-                    return "int"
-                }
+                // Check if it's a global (i64-based to avoid ptr null check issue)
+                let gkind = forge_global_type_kind(CG_MOD, name)
+                if gkind == 10 { return "string" }  // StructTypeKind (ForgeString)
+                if gkind == 12 { return "ptr" }     // PointerTypeKind
+                if gkind == 8 { return "int" }      // IntegerTypeKind
                 // Check function return types
                 mut fi = 0
                 while fi < FN_NAMES.length {
