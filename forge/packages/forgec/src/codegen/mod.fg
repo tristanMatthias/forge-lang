@@ -510,7 +510,7 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
     if type_name == "ptr" { return CG_I64 }
-    if type_name == "List" || (type_name.length > 5 && type_name.substring(0, 5) == "List:") {
+    if type_name == "List" || type_name == "list" || (type_name.length > 5 && (type_name.substring(0, 5) == "List:" || type_name.substring(0, 5) == "list:")) {
         return CG_LIST
     }
     // Use LLVM's own named type registry — no global list search
@@ -2176,15 +2176,7 @@ impl Codegen {
                 }
                 eprintln("  [LET] " + name + " type=" + val_type)
                 let ev = self.emit_expr(val)
-                mut ty = Type.Int
-                if val_type == "string" { ty = Type.String }
-                if val_type == "list:string" {
-                    ty = Type.ListType(Type.String)
-                } else if val_type == "list" || val_type == "List" || (val_type.length > 5 && val_type.substring(0, 5) == "list:") {
-                    ty = Type.ListType(Type.Int)
-                }
-                self.define_var(name, ty, ev)
-                // Struct variable type tracking is handled by alloca cache (set in define_var)
+                self.define_var_typed(name, val_type, ev)
             }
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
@@ -2495,14 +2487,9 @@ impl Codegen {
 
     // Define a local variable: create alloca, store value, register in CG_LOCALS.
     // Type is determined by the alloca — LLVM is the source of truth.
-    fn define_var(self, name: string, ty: Type, value: ptr) {
-        let is_str = ty is .String
-        let is_list = ty is .ListType
-        let is_map = ty is .MapType
-        mut alloca_ty = CG_I64
-        if is_str { alloca_ty = CG_STR }
-        if is_list { alloca_ty = CG_STR }  // Lists are {ptr, i64} like strings
-        if is_map { alloca_ty = CG_PTR }
+    fn define_var_typed(self, name: string, type_name: string, value: ptr) {
+        // Resolve alloca type from the Forge type name
+        let alloca_ty = resolve_type_to_llvm(type_name)
         if CG_B == null { return }
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
@@ -2517,20 +2504,27 @@ impl Codegen {
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
         forge_alloca_cache_set(name, alloca)
-        // Store Forge type name for type inference
-        mut type_name = "int"
-        if is_str { type_name = "string" }
-        if is_map { type_name = "map" }
+        forge_alloca_cache_set_var_type(name, type_name)
+    }
+
+    // Legacy wrapper — callers should migrate to define_var_typed
+    fn define_var(self, name: string, ty: Type, value: ptr) {
+        mut tn = "int"
+        let is_str = ty is .String
+        let is_list = ty is .ListType
+        let is_map = ty is .MapType
+        if is_str { tn = "string" }
+        if is_map { tn = "map" }
         match ty {
             .ListType(elem) -> {
                 match elem {
-                    .String -> { type_name = "list:string" }
-                    _ -> { type_name = "list" }
+                    .String -> { tn = "list:string" }
+                    _ -> { tn = "list" }
                 }
             }
             _ -> {}
         }
-        forge_alloca_cache_set_var_type(name, type_name)
+        self.define_var_typed(name, tn, value)
     }
 
     fn is_map_var(self, name: string) -> bool {
