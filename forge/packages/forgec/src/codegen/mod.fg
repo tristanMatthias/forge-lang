@@ -1014,27 +1014,9 @@ impl Codegen {
         llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
     }
 
-    fn emit_statement(self, stmt: Statement) {
-        match stmt {
-            .Expr(expr) -> {
-                self.emit_expr(expr)
-            }
-            .Assign(target, value, span) -> { self.emit_assign(target, value) }
-            .Return(value, span) -> { self.emit_return(value) }
-            .Let(name, value, span) -> { self.emit_let(name, value) }
-            .If(cond, then_b, else_b, has_else, span) -> { self.emit_if_stmt(cond, then_b, else_b, has_else) }
-            .While(cond, body, span) -> { self.emit_while_stmt(cond, body) }
-            .For(var_name, iter, body, span) -> { self.emit_for_stmt(var_name, iter, body) }
-            .Match(scrut, tags, binds, bodies, def, has_def, span) -> { self.emit_match_stmt(scrut, tags, binds, bodies, def, has_def) }
-            .Break(span) -> {
-                forge_loop_break(CG_B)
-            }
-            .Continue(span) -> {
-                forge_loop_continue(CG_B)
-            }
-            .Feature(fe) -> { self.dispatch_stmt(fe) }
-        }
-    }
+    // Note: void-return emit_statement removed — the ptr-return version
+    // at line ~2454 handles ALL statement types. Having two methods with the
+    // same LLVM name caused the ptr-return version to be shadowed.
 
     fn emit_let(self, name: string, value: Expr) {
         let val_type = self.expr_type_name(value)
@@ -2779,8 +2761,8 @@ impl Codegen {
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
-        if _stmts.length == 4 {
-            eprintln("  [EB] stmts=4 evn=" + string(ENUM_VARIANT_NAMES.length) + " tag_S.Let=" + string(match_enum_tag("Statement.Let")) + " tag_S.Expr=" + string(match_enum_tag("Statement.Expr")))
+        if _stmts.length == 4 && ENUM_VARIANT_NAMES.length > 5 {
+            eprintln("  [EB4] evn=" + string(ENUM_VARIANT_NAMES.length) + " v0=" + ENUM_VARIANT_NAMES[0] + " v1=" + ENUM_VARIANT_NAMES[1])
         }
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
