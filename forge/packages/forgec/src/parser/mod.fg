@@ -17,7 +17,7 @@ use core.error.{Diagnostic, error, E_SYNTAX}
 use codegen.{cg_var_enum_type}
 use features.while_loops.{PARSE_END_POS}
 use features.impl_methods.parse_impl_block
-use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag}
+use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag, register_enum_variant}
 
 export mut LAST_PARAM_TYPE_NAME: string = "int"
 export mut PARSED_PARAM_TYPES: List<string> = []
@@ -380,7 +380,15 @@ impl Parser {
             return r
         }
         // enum/trait: skip by brace counting
-        if kid == 42 || kid == 34 {
+        // enum (kid 34): parse variant names and register tags
+        if kid == 34 {
+            self.advance()
+            self.parse_enum_variants()
+            PARSE_END_POS = forge_parser_get_pos()
+            return Statement.Expr(Expr.IntLit(0, tok.span))
+        }
+        // trait (kid 42): skip by brace counting
+        if kid == 42 {
             self.advance()
             self.expect_ident()
             while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
@@ -1036,6 +1044,48 @@ impl Parser {
 
     fn token_kind_key(self, kind: TokenKind) -> string {
         self.kind_to_key(kind)
+    }
+
+    // Parse enum declaration: register variant names and tags
+    fn parse_enum_variants(self) {
+        let enum_name = self.expect_ident()
+        // Skip to opening brace
+        while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
+            self.advance()
+        }
+        if forge_peek_kind_id(forge_parser_get_pos()) != 102 { return }
+        self.advance() // consume {
+        mut variant_tag = 0
+        mut max_fields = 0
+        while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 103 {
+            self.skip_newlines()
+            let vk = forge_peek_kind_id(forge_parser_get_pos())
+            if vk == 103 { break }
+            if vk == 1 {
+                let vname = self.expect_ident()
+                register_enum_variant(enum_name, vname, variant_tag)
+                mut field_count = 0
+                if forge_peek_kind_id(forge_parser_get_pos()) == 100 {
+                    self.advance() // consume (
+                    mut pdepth = 1
+                    while pdepth > 0 && !self.is_at_end() {
+                        let pk = forge_peek_kind_id(forge_parser_get_pos())
+                        if pk == 100 { pdepth = pdepth + 1 }
+                        if pk == 101 { pdepth = pdepth - 1 }
+                        if pk == 123 && pdepth == 1 { field_count = field_count + 1 }
+                        if pdepth > 0 { self.advance() }
+                    }
+                    field_count = field_count + 1
+                    if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
+                }
+                if field_count > max_fields { max_fields = field_count }
+                variant_tag = variant_tag + 1
+            } else {
+                self.advance()
+            }
+        }
+        if forge_peek_kind_id(forge_parser_get_pos()) == 103 { self.advance() }
+        forge_enum_type_register(enum_name, max_fields)
     }
 
     fn kind_to_key(self, kind: TokenKind) -> string {

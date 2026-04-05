@@ -742,10 +742,11 @@ export mut ENUM_VARIANT_NAMES: List<string> = []   // "Color.Red", "Color.Green"
 export mut ENUM_VARIANT_TAGS: List<int> = []        // 0, 1, 2, etc.
 
 export fn register_enum_variant(enum_name: string, variant_name: string, tag: int) {
-    let full_name = "${enum_name}.${variant_name}"
+    let full_name = enum_name + "." + variant_name
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(full_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
-    // Also register short name (just variant)
+    // Also register short name for backward compatibility
+    // (match_enum_tag searches reverse, so last registration wins for collisions)
     ENUM_VARIANT_NAMES = ENUM_VARIANT_NAMES.push(variant_name)
     ENUM_VARIANT_TAGS = ENUM_VARIANT_TAGS.push(tag)
 }
@@ -768,6 +769,7 @@ fn csv_var_enum_type(name: string) -> string {
 
 // Look up enum variant tag by name. Returns -1 if not found.
 fn match_enum_tag(variant_name: string) -> int {
+    // Search for exact match (qualified "Statement.Let" or unqualified "Let")
     mut vi = ENUM_VARIANT_NAMES.length - 1
     while vi >= 0 {
         if ENUM_VARIANT_NAMES[vi] == variant_name {
@@ -775,5 +777,23 @@ fn match_enum_tag(variant_name: string) -> int {
         }
         vi = vi - 1
     }
+    // If unqualified, search for any ".variant_name" suffix
+    let suffix = "." + variant_name
+    vi = ENUM_VARIANT_NAMES.length - 1
+    while vi >= 0 {
+        let n = ENUM_VARIANT_NAMES[vi]
+        if n.length > suffix.length {
+            if n.substring(n.length - suffix.length, n.length) == suffix {
+                return ENUM_VARIANT_TAGS[vi]
+            }
+        }
+        vi = vi - 1
+    }
     -1
+}
+
+// Qualified enum tag lookup: match_enum_tag_q("Statement", "Let")
+export fn match_enum_tag_q(enum_name: string, variant_name: string) -> int {
+    let qname = enum_name + "." + variant_name
+    match_enum_tag(qname)
 }

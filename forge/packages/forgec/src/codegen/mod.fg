@@ -8,6 +8,7 @@ use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 // If expressions use Expr.IfExpr AST node — no PENDING_IF globals
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
+use parser.expressions.{ENUM_VARIANT_NAMES}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -1509,7 +1510,10 @@ impl Codegen {
             }
             .IsCheck(subject, variant_name, pred, span) -> {
                 let obj_val = self.emit_expr(subject)
-                let tag = match_enum_tag(variant_name)
+                // Use qualified name for tag lookup
+                let subj_type = self.expr_type_name(subject)
+                mut tag = match_enum_tag(subj_type + "." + variant_name)
+                if tag < 0 { tag = match_enum_tag(variant_name) }
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
                 // Extract tag from enum value for comparison
                 // For struct-typed enums {i8 tag, ...}: extract field 0 and zext
@@ -1595,10 +1599,13 @@ impl Codegen {
                 llvm.build_br(CG_B, arm_bb)
             } else {
                 // Enum variant — compare tag to variant index
-                let tag_val = llvm.const_int(CG_I64, match_enum_tag(pat), 0)
+                // Use qualified name (EnumName.VariantName) to avoid collisions
+                let scrut_type = self.expr_type_name(args[0])
+                mut tag_idx = match_enum_tag(scrut_type + "." + pat)
+                if tag_idx < 0 { tag_idx = match_enum_tag(pat) }
+                let tag_val = llvm.const_int(CG_I64, tag_idx, 0)
                 // For struct-typed enums, extract tag first
                 mut cmp_lhs = subj
-                let scrut_type = self.expr_type_name(args[0])
                 let scrut_is_enum = scrut_type.length > 5 && scrut_type.substring(0, 5) == "enum:"
                 if scrut_is_enum {
                     let etag = llvm.build_extract_value(CG_B, subj, 0, "tg")
@@ -2772,6 +2779,9 @@ impl Codegen {
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
+        if _stmts.length == 4 {
+            eprintln("  [EB] stmts=4 evn=" + string(ENUM_VARIANT_NAMES.length) + " tag_S.Let=" + string(match_enum_tag("Statement.Let")) + " tag_S.Expr=" + string(match_enum_tag("Statement.Expr")))
+        }
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
             last = self.emit_statement(stmt)
