@@ -198,6 +198,8 @@ crate::runtime_fn! { name: "forge_emit_depth_pop", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_enum_type_register", feature: "strings", params: [ForgeString, I64], ret: Void }
 crate::runtime_fn! { name: "forge_enum_type_max_fields", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_type_exists", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_enum_variant_tag_set", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_enum_variant_tag_get", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_variant_fields_set", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_enum_variant_fields_get", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_struct_type_register", feature: "strings", params: [ForgeString, ForgeString, ForgeString, ForgeString, Ptr], ret: Void }

@@ -2793,6 +2793,8 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_enum_type_register(%ForgeString, i64)")
     ir_raw("declare i64 @forge_enum_type_max_fields(%ForgeString)")
     ir_raw("declare i64 @forge_enum_type_exists(%ForgeString)")
+    ir_raw("declare void @forge_enum_variant_tag_set(%ForgeString, i64)")
+    ir_raw("declare i64 @forge_enum_variant_tag_get(%ForgeString)")
     ir_raw("declare void @forge_enum_variant_fields_set(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_enum_variant_fields_get(%ForgeString)")
     // Body source extraction

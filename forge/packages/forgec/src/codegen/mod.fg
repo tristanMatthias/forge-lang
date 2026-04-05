@@ -8,7 +8,6 @@ use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 // If expressions use Expr.IfExpr AST node — no PENDING_IF globals
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
-use parser.expressions.{ENUM_VARIANT_NAMES}
 use @std.llvm
 
 // ─── LLVM state (globals) ──────────────────────
@@ -909,6 +908,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_enum_type_register", mft2(CG_VOID, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_enum_type_max_fields", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_type_exists", mft1(CG_I64, CG_STR))
+    llvm.add_function(CG_MOD, "forge_enum_variant_tag_set", mft2(CG_VOID, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_enum_variant_tag_get", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_variant_fields_set", mft2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_variant_fields_get", mft1(CG_STR, CG_STR))
     // Nullable tracking
@@ -1465,10 +1466,15 @@ impl Codegen {
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
                 mut elem_ty = CG_I64
-                // Use CG_STR for string list elements
+                // Resolve element type from list type name
+                let elt = list_elem_type(obj_var_name)
+                if elt == "string" { elem_ty = CG_STR }
+                else if elt != "" && elt != "int" {
+                    let resolved = resolve_type_to_llvm(elt)
+                    if resolved != null { elem_ty = resolved }
+                }
+                // Fallback: check explicit string list flag
                 if is_str_list { elem_ty = CG_STR }
-                // Also check if obj is string type
-                if obj_var_name != "" && obj_is_str == 1 { elem_ty = CG_STR }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
                 // Ensure index is integer (might be ForgeString)
@@ -2761,8 +2767,7 @@ impl Codegen {
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
-        if _stmts.length == 4 && ENUM_VARIANT_NAMES.length > 5 {
-            eprintln("  [EB4] evn=" + string(ENUM_VARIANT_NAMES.length) + " v0=" + ENUM_VARIANT_NAMES[0] + " v1=" + ENUM_VARIANT_NAMES[1])
+        if false {
         }
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }

@@ -3744,6 +3744,59 @@ int64_t forge_enum_type_exists(ForgeString name) {
 static struct { char key[96]; char fields[64]; } _enum_vf[ENUM_VFIELDS_SIZE];
 static int _enum_vf_count = 0;
 
+// ---- C-side enum variant TAG registry ----
+// Maps "EnumName.VariantName" → tag index. Immune to Forge List stride issues.
+#define ENUM_VTAG_SIZE 512
+static struct { char key[96]; int64_t tag; } _enum_vtag[ENUM_VTAG_SIZE];
+static int _enum_vtag_count = 0;
+
+void forge_enum_variant_tag_set(ForgeString key, int64_t tag) {
+    fprintf(stderr, "  [VT-SET] '%.*s' = %lld (count=%d)\n", (int)key.len, key.ptr, (long long)tag, _enum_vtag_count);
+    if (!key.ptr || key.len <= 0 || key.len > 95) return;
+    // Update existing
+    for (int i = 0; i < _enum_vtag_count; i++) {
+        if ((int64_t)strlen(_enum_vtag[i].key) == key.len &&
+            memcmp(_enum_vtag[i].key, key.ptr, key.len) == 0) {
+            _enum_vtag[i].tag = tag;
+            return;
+        }
+    }
+    if (_enum_vtag_count < ENUM_VTAG_SIZE) {
+        memcpy(_enum_vtag[_enum_vtag_count].key, key.ptr, key.len);
+        _enum_vtag[_enum_vtag_count].key[key.len] = '\0';
+        _enum_vtag[_enum_vtag_count].tag = tag;
+        _enum_vtag_count++;
+    }
+}
+
+int64_t forge_enum_variant_tag_get(ForgeString key) {
+    if (!key.ptr || key.len <= 0) return -1;
+    static int _vtag_get_trace = 0;
+    if (_vtag_get_trace < 200) {
+        fprintf(stderr, "  [VT-GET] '%.*s' count=%d\n", (int)key.len, key.ptr, _enum_vtag_count);
+        _vtag_get_trace++;
+    }
+    // Try exact match first
+    for (int i = 0; i < _enum_vtag_count; i++) {
+        if ((int64_t)strlen(_enum_vtag[i].key) == key.len &&
+            memcmp(_enum_vtag[i].key, key.ptr, key.len) == 0) {
+            return _enum_vtag[i].tag;
+        }
+    }
+    // Try suffix match: search for ".key" at end of registered names
+    for (int i = _enum_vtag_count - 1; i >= 0; i--) {
+        int klen = strlen(_enum_vtag[i].key);
+        if (klen > key.len + 1) {
+            int suffix_start = klen - key.len;
+            if (_enum_vtag[i].key[suffix_start - 1] == '.' &&
+                memcmp(_enum_vtag[i].key + suffix_start, key.ptr, key.len) == 0) {
+                return _enum_vtag[i].tag;
+            }
+        }
+    }
+    return -1;
+}
+
 void forge_enum_variant_fields_set(ForgeString key, ForgeString fields) {
     if (!key.ptr || key.len <= 0 || key.len > 95) return;
     // Update existing
