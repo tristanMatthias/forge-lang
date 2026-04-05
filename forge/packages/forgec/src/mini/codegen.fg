@@ -2850,6 +2850,7 @@ fn compile(source: string) -> string {
     ir_raw("declare i64 @forge_struct_field_index(%ForgeString, %ForgeString)")
     // Value introspection
     ir_raw("declare i64 @forge_value_is_string(i64)")
+    ir_raw("declare void @forge_trace_i64(i64, i64)")
     ir_raw("declare void @forge_str_var_add(%ForgeString)")
     ir_raw("declare void @forge_ptr_var_add(%ForgeString)")
     ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
