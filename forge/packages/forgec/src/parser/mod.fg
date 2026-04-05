@@ -311,6 +311,44 @@ impl Parser {
             return Statement.For(fname, fiter!, fbody, fstart)
         }
         if kid == 24 { return self.parse_return() }
+        // if (kind_id 25)
+        if kid == 25 {
+            let start = self.advance().span
+            self.skip_newlines()
+            let cond = self.parse_expr()
+            if cond == null { return null }
+            self.skip_newlines()
+            let then_block = self.parse_block()
+            self.skip_newlines()
+            mut has_else = 0
+            mut else_block = Block { statements: [], span: start }
+            if self.check(TokenKind.Else) || forge_peek_kind_id(forge_parser_get_pos()) == 26 {
+                has_else = 1
+                self.advance()
+                self.skip_newlines()
+                if forge_peek_kind_id(forge_parser_get_pos()) == 25 {
+                    let nested = self.parse_statement()
+                    if nested != null {
+                        else_block = Block { statements: [nested!], span: start }
+                    }
+                } else {
+                    else_block = self.parse_block()
+                }
+            }
+            PARSE_END_POS = forge_parser_get_pos()
+            return Statement.If(cond!, then_block, else_block, has_else, start)
+        }
+        // while (kind_id 29)
+        if kid == 29 {
+            let wstart = self.advance().span
+            self.skip_newlines()
+            let wcond = self.parse_expr()
+            if wcond == null { return null }
+            self.skip_newlines()
+            let wbody = self.parse_block()
+            PARSE_END_POS = forge_parser_get_pos()
+            return Statement.While(wcond!, wbody, wstart)
+        }
         if kid == 32 {
             let bspan = self.advance().span
             return Statement.Break(bspan)
