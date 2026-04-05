@@ -1908,12 +1908,13 @@ impl Codegen {
 
         // Special case: .length property on string/list variables
         if field == "length" {
-            let vt = self.expr_type_name(obj)
-            let is_list = vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
-            if is_list {
-                let obj_val = self.emit_ident(var_name)
-                return llvm.build_extract_value(CG_B, obj_val, 1, "len")
+            // Try struct field access (for struct-typed vars like Lexer)
+            let st = var_struct_type(var_name)
+            if st != "" {
+                let len_val = forge_alloca_cache_load_field(var_name, st, struct_field_index(st, "length"), CG_B)
+                if len_val != 0 { return len_val }
             }
+            // For strings/lists: call forge_string_length
             let obj_val = self.emit_ident(var_name)
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, obj_val)
