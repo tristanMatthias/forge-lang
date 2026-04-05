@@ -171,6 +171,10 @@ crate::runtime_fn! { name: "forge_last_val_has", feature: "strings", params: [],
 crate::runtime_fn! { name: "forge_last_val_get", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_get_type_by_name_i64", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_create_struct_type", feature: "strings", params: [ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_ftok_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_ftok_push", feature: "strings", params: [I64, ForgeString, I64, I64, I64, I64], ret: Void }
+crate::runtime_fn! { name: "forge_ftok_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_ftok_to_list", feature: "strings", params: [], ret: ForgeString }
 crate::runtime_fn! { name: "forge_is_alpha", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_is_digit", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_is_alnum", feature: "strings", params: [ForgeString], ret: I64 }

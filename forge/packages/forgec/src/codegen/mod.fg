@@ -933,6 +933,11 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_tok_push", mft4(CG_VOID, CG_I64, CG_I64, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_tok_count", mft0(CG_I64))
     llvm.add_function(CG_MOD, "forge_tok_to_list", mft0(CG_STR))
+    // Full token accumulation
+    llvm.add_function(CG_MOD, "forge_ftok_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_ftok_push", mft6(CG_VOID, CG_I64, CG_STR, CG_I64, CG_I64, CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_ftok_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_ftok_to_list", mft0(CG_STR))
     // Var type tracking (legacy)
     llvm.add_function(CG_MOD, "forge_var_type_set", mft2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_var_type_get", mft1(CG_STR, CG_STR))

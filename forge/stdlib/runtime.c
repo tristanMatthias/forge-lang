@@ -4842,6 +4842,49 @@ int64_t forge_find_slash(ForgeString src) {
 }
 
 // ---- C-side token accumulator for mini compiler ----
+// ---- Full token accumulation (for self-hosted lexer) ----
+// Token = { kind_id: i64, span: {i64,i64,i64,i64}, text: ForgeString, kind_id2: i64 }
+// But we only need kind_id, span, text for the parser.
+typedef struct {
+    int64_t kind_tag;       // TokenKind enum tag (unused in parser — always 0)
+    int64_t span_start;
+    int64_t span_end;
+    int64_t span_line;
+    int64_t span_col;
+    ForgeString text;       // {ptr, i64}
+    int64_t kind_id;        // The kind_id used by parser
+} FullTok;
+static FullTok* _ftok_buf = NULL;
+static int64_t _ftok_count = 0;
+static int64_t _ftok_cap = 0;
+
+void forge_ftok_clear(void) { _ftok_count = 0; }
+
+void forge_ftok_push(int64_t kind_id, ForgeString text, int64_t span_start, int64_t span_end, int64_t span_line, int64_t span_col) {
+    if (_ftok_count >= _ftok_cap) {
+        int64_t new_cap = _ftok_cap < 1024 ? 1024 : _ftok_cap * 2;
+        FullTok* nb = (FullTok*)malloc(new_cap * sizeof(FullTok));
+        if (_ftok_buf && _ftok_count > 0) memcpy(nb, _ftok_buf, _ftok_count * sizeof(FullTok));
+        free(_ftok_buf);
+        _ftok_buf = nb;
+        _ftok_cap = new_cap;
+    }
+    _ftok_buf[_ftok_count++] = (FullTok){0, span_start, span_end, span_line, span_col, text, kind_id};
+}
+
+int64_t forge_ftok_count(void) { return _ftok_count; }
+
+// Build a List<Token> from accumulated tokens
+// Returns ForgeString = {ptr to Token array, count}
+ForgeString forge_ftok_to_list(void) {
+    // Each FullTok matches %Token = { i64, %Span, {ptr,i64}, i64 } layout
+    // = { i64, {i64,i64,i64,i64}, {ptr,i64}, i64 } = 8 i64-sized slots = 64 bytes
+    // FullTok IS exactly this layout: kind_tag(8) + span(32) + text(16) + kind_id(8) = 64 bytes
+    FullTok* data = (FullTok*)malloc(_ftok_count * sizeof(FullTok));
+    memcpy(data, _ftok_buf, _ftok_count * sizeof(FullTok));
+    return (ForgeString){(char*)data, _ftok_count};
+}
+
 // Avoids O(n²) list push in tokenizer. Stores tokens as flat array of {i64, ForgeString, i64}.
 typedef struct { int64_t kind; ForgeString text; int64_t line; } MiniTok;
 static MiniTok* _tok_buf = NULL;
