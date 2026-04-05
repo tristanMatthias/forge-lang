@@ -230,8 +230,11 @@ export fn is_str_list_var(name: string) -> bool {
 
 export fn list_elem_type(name: string) -> string {
     let vt = forge_alloca_cache_get_var_type(name)
-    if vt.length > 5 && vt.substring(0, 5) == "list:" {
-        return vt.substring(5, vt.length)
+    if vt.length > 5 {
+        let prefix = vt.substring(0, 5)
+        if prefix == "list:" || prefix == "List:" {
+            return vt.substring(5, vt.length)
+        }
     }
     ""
 }
