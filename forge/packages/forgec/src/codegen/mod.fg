@@ -2138,6 +2138,18 @@ impl Codegen {
                     if fn_ref2 != null {
                         return self.emit_fn_call_direct(fn_ref2, prefixed, args)
                     }
+                    // Try _s suffix: forge_llvm_X_s (ForgeString-accepting wrappers)
+                    let prefixed_s = "forge_" + ns + "_" + f + "_s"
+                    let fn_ref2s = llvm.get_named_function(CG_MOD, prefixed_s)
+                    if fn_ref2s != null {
+                        return self.emit_fn_call_direct(fn_ref2s, prefixed_s, args)
+                    }
+                    // Try ns_method_s (direct _s suffix)
+                    let direct_s = ns + "_" + f + "_s"
+                    let fn_ref_ds = llvm.get_named_function(CG_MOD, direct_s)
+                    if fn_ref_ds != null {
+                        return self.emit_fn_call_direct(fn_ref_ds, direct_s, args)
+                    }
                     // Try forge_selfhost_ prefix: process.args → forge_selfhost_process_args
                     let selfhost = "forge_selfhost_" + ns + "_" + f
                     let fn_ref_sh = llvm.get_named_function(CG_MOD, selfhost)
