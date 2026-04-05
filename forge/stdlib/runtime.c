@@ -5290,3 +5290,67 @@ int64_t forge_llvm_emit_object_file_s(void* module, ForgeString filename) {
     }
     return forge_llvm_emit_object_file(module, buf);
 }
+
+// ---- build_* wrappers — name param is ignored by Rust side (safe_name) ----
+// Forward declares
+extern void* forge_llvm_build_add(void*, void*, void*, const char*);
+extern void* forge_llvm_build_sub(void*, void*, void*, const char*);
+extern void* forge_llvm_build_mul(void*, void*, void*, const char*);
+extern void* forge_llvm_build_sdiv(void*, void*, void*, const char*);
+extern void* forge_llvm_build_srem(void*, void*, void*, const char*);
+extern void* forge_llvm_build_and(void*, void*, void*, const char*);
+extern void* forge_llvm_build_or(void*, void*, void*, const char*);
+extern void* forge_llvm_build_xor(void*, void*, void*, const char*);
+extern void* forge_llvm_build_shl(void*, void*, void*, const char*);
+extern void* forge_llvm_build_ashr(void*, void*, void*, const char*);
+extern void* forge_llvm_build_icmp(void*, int, void*, void*, const char*);
+extern void* forge_llvm_build_load(void*, void*, void*, const char*);
+extern void* forge_llvm_build_call(void*, void*, void*, void*, int, const char*);
+extern void* forge_llvm_build_phi(void*, void*, const char*);
+extern void* forge_llvm_build_zext(void*, void*, void*, const char*);
+extern void* forge_llvm_build_trunc(void*, void*, void*, const char*);
+extern void* forge_llvm_build_inttoptr(void*, void*, void*, const char*);
+extern void* forge_llvm_build_extract_value(void*, void*, int, const char*);
+extern void* forge_llvm_build_insert_value(void*, void*, void*, int, const char*);
+extern void* forge_llvm_build_gep2(void*, void*, void*, void*, int64_t, const char*);
+extern void* forge_llvm_build_struct_gep2(void*, void*, void*, int, const char*);
+
+// _s wrappers: accept ForgeString name, pass .ptr to Rust
+void* forge_llvm_build_add_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_add(b, l, r, n.ptr); }
+void* forge_llvm_build_sub_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_sub(b, l, r, n.ptr); }
+void* forge_llvm_build_mul_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_mul(b, l, r, n.ptr); }
+void* forge_llvm_build_sdiv_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_sdiv(b, l, r, n.ptr); }
+void* forge_llvm_build_srem_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_srem(b, l, r, n.ptr); }
+void* forge_llvm_build_and_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_and(b, l, r, n.ptr); }
+void* forge_llvm_build_or_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_or(b, l, r, n.ptr); }
+void* forge_llvm_build_xor_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_xor(b, l, r, n.ptr); }
+void* forge_llvm_build_shl_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_shl(b, l, r, n.ptr); }
+void* forge_llvm_build_ashr_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_ashr(b, l, r, n.ptr); }
+void* forge_llvm_build_icmp_s(void* b, int p, void* l, void* r, ForgeString n) { return forge_llvm_build_icmp(b, p, l, r, n.ptr); }
+void* forge_llvm_build_load_s(void* b, void* t, void* p, ForgeString n) { return forge_llvm_build_load(b, t, p, n.ptr); }
+void* forge_llvm_build_call_s(void* b, void* ft, void* f, void* a, int c, ForgeString n) { return forge_llvm_build_call(b, ft, f, a, c, n.ptr); }
+void* forge_llvm_build_phi_s(void* b, void* t, ForgeString n) { return forge_llvm_build_phi(b, t, n.ptr); }
+void* forge_llvm_build_zext_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_zext(b, v, t, n.ptr); }
+void* forge_llvm_build_trunc_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_trunc(b, v, t, n.ptr); }
+void* forge_llvm_build_inttoptr_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_inttoptr(b, v, t, n.ptr); }
+void* forge_llvm_build_extract_value_s(void* b, void* v, int i, ForgeString n) { return forge_llvm_build_extract_value(b, v, i, n.ptr); }
+void* forge_llvm_build_insert_value_s(void* b, void* a, void* v, int i, ForgeString n) { return forge_llvm_build_insert_value(b, a, v, i, n.ptr); }
+void* forge_llvm_build_gep2_s(void* b, void* t, void* p, void* i, int64_t c, ForgeString n) { return forge_llvm_build_gep2(b, t, p, i, c, n.ptr); }
+void* forge_llvm_build_struct_gep2_s(void* b, void* t, void* p, int i, ForgeString n) { return forge_llvm_build_struct_gep2(b, t, p, i, n.ptr); }
+
+
+// Additional _s wrappers
+extern void* forge_llvm_build_global_string_ptr(void*, const char*, const char*);
+extern int forge_llvm_verify_module_to_file(void*, const char*);
+void* forge_llvm_build_global_string_ptr_s(void* b, ForgeString s, ForgeString n) {
+    char sbuf[4096] = "";
+    if (s.ptr && s.len > 0 && s.len < 4095) { memcpy(sbuf, s.ptr, s.len); sbuf[s.len] = '\0'; }
+    return forge_llvm_build_global_string_ptr(b, sbuf, n.ptr);
+}
+int64_t forge_llvm_verify_module_to_file_s(void* m, ForgeString path) {
+    char buf[512] = "";
+    if (path.ptr && path.len > 0 && path.len < 511) { memcpy(buf, path.ptr, path.len); buf[path.len] = '\0'; }
+    return forge_llvm_verify_module_to_file(m, buf);
+}
+// They only take effect in Stage 2 (Stage 1 uses the Rust library symbols directly).
+
