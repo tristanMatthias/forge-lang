@@ -175,6 +175,9 @@ crate::runtime_fn! { name: "forge_ftok_clear", feature: "strings", params: [], r
 crate::runtime_fn! { name: "forge_ftok_push", feature: "strings", params: [I64, ForgeString, I64, I64, I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_ftok_count", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_ftok_to_list", feature: "strings", params: [], ret: ForgeString }
+crate::runtime_fn! { name: "forge_ftok_kind_id", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_ftok_text", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_kind_id_to_key", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_is_alpha", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_is_digit", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_is_alnum", feature: "strings", params: [ForgeString], ret: I64 }

@@ -811,16 +811,16 @@ impl Lexer {
         if ch == "}" { return Token { kind: TokenKind.RBrace, span: self.make_span(start_pos, start_line, start_col), text: "}", kind_id: 103 } }
         if ch == "[" { return Token { kind: TokenKind.LBracket, span: self.make_span(start_pos, start_line, start_col), text: "[", kind_id: 104 } }
         if ch == "]" { return Token { kind: TokenKind.RBracket, span: self.make_span(start_pos, start_line, start_col), text: "]", kind_id: 105 } }
-        if ch == "," { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == ":" { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == ";" { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "@" { return Token { kind: TokenKind.At, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "#" { return Token { kind: TokenKind.Hash, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "+" { return Token { kind: TokenKind.Plus, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "*" { return Token { kind: TokenKind.Star, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "%" { return Token { kind: TokenKind.Percent, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "^" { return Token { kind: TokenKind.Caret, span: self.make_span(start_pos, start_line, start_col) } }
-        if ch == "~" { return Token { kind: TokenKind.Tilde, span: self.make_span(start_pos, start_line, start_col) } }
+        if ch == "," { return Token { kind: TokenKind.Comma, span: self.make_span(start_pos, start_line, start_col), text: ",", kind_id: 123 } }
+        if ch == ":" { return Token { kind: TokenKind.Colon, span: self.make_span(start_pos, start_line, start_col), text: ":", kind_id: 124 } }
+        if ch == ";" { return Token { kind: TokenKind.Semicolon, span: self.make_span(start_pos, start_line, start_col), text: ";", kind_id: 212 } }
+        if ch == "@" { return Token { kind: TokenKind.At, span: self.make_span(start_pos, start_line, start_col), text: "@", kind_id: 213 } }
+        if ch == "#" { return Token { kind: TokenKind.Hash, span: self.make_span(start_pos, start_line, start_col), text: "#", kind_id: 214 } }
+        if ch == "+" { return Token { kind: TokenKind.Plus, span: self.make_span(start_pos, start_line, start_col), text: "+", kind_id: 200 } }
+        if ch == "*" { return Token { kind: TokenKind.Star, span: self.make_span(start_pos, start_line, start_col), text: "*", kind_id: 201 } }
+        if ch == "%" { return Token { kind: TokenKind.Percent, span: self.make_span(start_pos, start_line, start_col), text: "%", kind_id: 202 } }
+        if ch == "^" { return Token { kind: TokenKind.Caret, span: self.make_span(start_pos, start_line, start_col), text: "^", kind_id: 203 } }
+        if ch == "~" { return Token { kind: TokenKind.Tilde, span: self.make_span(start_pos, start_line, start_col), text: "~", kind_id: 204 } }
 
         // Multi-character operators
         let next = self.peek_ch()
@@ -829,92 +829,92 @@ impl Lexer {
         if ch == "-" {
             if next == ">" {
                 self.advance()
-                return Token { kind: TokenKind.Arrow, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.Arrow, span: self.make_span(start_pos, start_line, start_col), text: "->", kind_id: 121 }
             }
-            return Token { kind: TokenKind.Minus, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Minus, span: self.make_span(start_pos, start_line, start_col), text: "-", kind_id: 205 }
         }
 
         // = or ==
         if ch == "=" {
             if next == "=" {
                 self.advance()
-                return Token { kind: TokenKind.EqEq, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.EqEq, span: self.make_span(start_pos, start_line, start_col), text: "==", kind_id: 206 }
             }
-            return Token { kind: TokenKind.Eq, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Eq, span: self.make_span(start_pos, start_line, start_col), text: "=", kind_id: 207 }
         }
 
         // ! or !=
         if ch == "!" {
             if next == "=" {
                 self.advance()
-                return Token { kind: TokenKind.NotEq, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.NotEq, span: self.make_span(start_pos, start_line, start_col), text: "!=", kind_id: 208 }
             }
-            return Token { kind: TokenKind.Not, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Not, span: self.make_span(start_pos, start_line, start_col), text: "!", kind_id: 209 }
         }
 
         // < or <= or <- or <<
         if ch == "<" {
             if next == "=" {
                 self.advance()
-                return Token { kind: TokenKind.LtEq, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.LtEq, span: self.make_span(start_pos, start_line, start_col), text: "<=", kind_id: 210 }
             }
             if next == "-" {
                 self.advance()
-                return Token { kind: TokenKind.LeftArrow, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.LeftArrow, span: self.make_span(start_pos, start_line, start_col), text: "<-", kind_id: 211 }
             }
             if next == "<" {
                 self.advance()
-                return Token { kind: TokenKind.ShiftLeft, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.ShiftLeft, span: self.make_span(start_pos, start_line, start_col), text: "<<", kind_id: 215 }
             }
-            return Token { kind: TokenKind.Lt, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Lt, span: self.make_span(start_pos, start_line, start_col), text: "<", kind_id: 216 }
         }
 
         // > or >= or >>
         if ch == ">" {
             if next == "=" {
                 self.advance()
-                return Token { kind: TokenKind.GtEq, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.GtEq, span: self.make_span(start_pos, start_line, start_col), text: ">=", kind_id: 217 }
             }
             if next == ">" {
                 self.advance()
-                return Token { kind: TokenKind.ShiftRight, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.ShiftRight, span: self.make_span(start_pos, start_line, start_col), text: ">>", kind_id: 218 }
             }
-            return Token { kind: TokenKind.Gt, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Gt, span: self.make_span(start_pos, start_line, start_col), text: ">", kind_id: 219 }
         }
 
         // & or &&
         if ch == "&" {
             if next == "&" {
                 self.advance()
-                return Token { kind: TokenKind.And, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.And, span: self.make_span(start_pos, start_line, start_col), text: "&&", kind_id: 220 }
             }
-            return Token { kind: TokenKind.Ampersand, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Ampersand, span: self.make_span(start_pos, start_line, start_col), text: "&", kind_id: 221 }
         }
 
         // | or || or |>
         if ch == "|" {
             if next == "|" {
                 self.advance()
-                return Token { kind: TokenKind.Or, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.Or, span: self.make_span(start_pos, start_line, start_col), text: "||", kind_id: 222 }
             }
             if next == ">" {
                 self.advance()
-                return Token { kind: TokenKind.Pipe, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.Pipe, span: self.make_span(start_pos, start_line, start_col), text: "|>", kind_id: 223 }
             }
-            return Token { kind: TokenKind.Bar, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Bar, span: self.make_span(start_pos, start_line, start_col), text: "|", kind_id: 224 }
         }
 
         // ? or ?. or ??
         if ch == "?" {
             if next == "." {
                 self.advance()
-                return Token { kind: TokenKind.QuestionDot, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.QuestionDot, span: self.make_span(start_pos, start_line, start_col), text: "?.", kind_id: 225 }
             }
             if next == "?" {
                 self.advance()
-                return Token { kind: TokenKind.DoubleQuestion, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.DoubleQuestion, span: self.make_span(start_pos, start_line, start_col), text: "??", kind_id: 226 }
             }
-            return Token { kind: TokenKind.Question, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Question, span: self.make_span(start_pos, start_line, start_col), text: "?", kind_id: 227 }
         }
 
         // . or .. or ... or ..=
@@ -928,16 +928,16 @@ impl Lexer {
                 }
                 if next2 == "=" {
                     self.advance()
-                    return Token { kind: TokenKind.DotDotEq, span: self.make_span(start_pos, start_line, start_col) }
+                    return Token { kind: TokenKind.DotDotEq, span: self.make_span(start_pos, start_line, start_col), text: "..=", kind_id: 228 }
                 }
-                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col) }
+                return Token { kind: TokenKind.DotDot, span: self.make_span(start_pos, start_line, start_col), text: "..", kind_id: 229 }
             }
-            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Dot, span: self.make_span(start_pos, start_line, start_col), text: ".", kind_id: 122 }
         }
 
         // /
         if ch == "/" {
-            return Token { kind: TokenKind.Slash, span: self.make_span(start_pos, start_line, start_col) }
+            return Token { kind: TokenKind.Slash, span: self.make_span(start_pos, start_line, start_col), text: "/", kind_id: 230 }
         }
 
         // Unknown character

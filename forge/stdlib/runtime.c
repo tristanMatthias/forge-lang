@@ -867,7 +867,13 @@ ForgeString forge_expect_ident(void) {
 ForgeString forge_peek_text(int64_t pos) {
     return forge_token_text(_c_token_list, pos);
 }
+// Forward declaration for ftok
+extern int64_t forge_ftok_count(void);
+
 int64_t forge_token_list_len(void) {
+    // Prefer ftok count if populated (self-hosted tokenizer)
+    int64_t fc = forge_ftok_count();
+    if (fc > 0) return fc;
     return _c_token_list.len;
 }
 // Extract payload ptr from any enum {i64, ptr} regardless of tag
@@ -4887,9 +4893,51 @@ void forge_ftok_push(int64_t kind_id, ForgeString text, int64_t span_start, int6
 
 int64_t forge_ftok_count(void) { return _ftok_count; }
 
+// Map kind_id → key string (reverse of kind_to_key)
+ForgeString forge_kind_id_to_key(int64_t kid) {
+    ForgeString empty = {NULL, 0};
+    // Operators
+    static struct { int64_t id; const char* key; } ops[] = {
+        // Delimiters (100-105)
+        {100, "LParen"}, {101, "RParen"}, {102, "LBrace"}, {103, "RBrace"},
+        {104, "LBracket"}, {105, "RBracket"},
+        // Operators (200+)
+        {200, "Plus"}, {201, "Star"}, {202, "Percent"}, {203, "Caret"},
+        {204, "Tilde"}, {205, "Minus"}, {206, "EqEq"}, {207, "Eq"},
+        {208, "NotEq"}, {209, "Not"}, {210, "LtEq"}, {211, "LeftArrow"},
+        {212, "Semicolon"}, {213, "At"}, {214, "Hash"},
+        {215, "ShiftLeft"}, {216, "Lt"}, {217, "GtEq"}, {218, "ShiftRight"},
+        {219, "Gt"}, {220, "And"}, {221, "Ampersand"}, {222, "Or"},
+        {223, "Pipe"}, {224, "Bar"}, {225, "QuestionDot"}, {226, "DoubleQuestion"},
+        {227, "Question"}, {228, "DotDotEq"}, {229, "DotDot"}, {230, "Slash"},
+        // Special
+        {120, "Newline"}, {121, "Arrow"}, {122, "Dot"}, {123, "Comma"}, {124, "Colon"},
+        // Keywords
+        {20, "Let"}, {21, "Mut"}, {22, "Const"}, {23, "Fn"}, {24, "Return"},
+        {25, "If"}, {26, "Else"}, {27, "Match"}, {28, "For"}, {29, "In"},
+        {30, "While"}, {31, "Loop"}, {32, "Break"}, {33, "Continue"},
+        {34, "Enum"}, {35, "TypeKw"}, {36, "Use"}, {37, "Mod"}, {38, "As"},
+        {39, "Export"}, {40, "Impl"}, {41, "Trait"},
+        {43, "Impl"}, {44, "Defer"}, {45, "Spawn"}, {46, "Select"},
+        {47, "Component"}, {48, "Is"}, {49, "Table"}, {50, "Null"},
+        // Literals
+        {1, "Ident"}, {2, "IntLiteral"}, {3, "FloatLiteral"}, {4, "StringLiteral"},
+        {5, "BoolLiteral"}, {6, "NullLiteral"},
+        {99, "Eof"},
+        {0, NULL}
+    };
+    for (int i = 0; ops[i].key; i++) {
+        if (ops[i].id == kid) {
+            ForgeString r = {(char*)ops[i].key, (int64_t)strlen(ops[i].key)};
+            return r;
+        }
+    }
+    return empty;
+}
+
 // Get token kind_id by index (for parser)
 int64_t forge_ftok_kind_id(int64_t idx) {
-    if (idx < 0 || idx >= _ftok_count) return 99; // EOF
+    if (idx < 0 || idx >= _ftok_count) return 99;
     return _ftok_buf[idx].kind_id;
 }
 

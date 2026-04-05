@@ -91,19 +91,33 @@ impl Parser {
     fn peek(self) -> Token {
         let _cpos = forge_parser_get_pos()
         if _cpos < forge_token_list_len() {
-            let tok = self.tokens[_cpos]
-            return tok
+            // Use C-side token access (immune to Token struct size mismatch between stages)
+            let kid = forge_ftok_kind_id(_cpos)
+            let txt = forge_ftok_text(_cpos)
+            Token {
+                kind: TokenKind.Eof,  // kind enum unused by parser — only kind_id matters
+                span: Span { start: 0, end: 0, line: 0, col: 0 },
+                text: txt,
+                kind_id: kid,
+            }
         } else {
-            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 }, text: "", kind_id: 99 }
         }
     }
 
     fn peek_at(self, offset: int) -> Token {
         let idx = forge_parser_get_pos() + offset
         if idx < forge_token_list_len() {
-            self.tokens[idx]
+            let kid = forge_ftok_kind_id(idx)
+            let txt = forge_ftok_text(idx)
+            Token {
+                kind: TokenKind.Eof,
+                span: Span { start: 0, end: 0, line: 0, col: 0 },
+                text: txt,
+                kind_id: kid,
+            }
         } else {
-            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } }
+            Token { kind: TokenKind.Eof, span: Span { start: 0, end: 0, line: 0, col: 0 }, text: "", kind_id: 99 }
         }
     }
 
@@ -117,9 +131,8 @@ impl Parser {
     }
 
     fn check(self, kind: TokenKind) -> bool {
-        // Bootstrap workaround: == on tagged unions compares full payload bytes.
-        // Use string key comparison instead.
-        let a = self.kind_to_key(self.peek().kind)
+        // Use kind_id comparison (avoids Token struct layout dependency)
+        let a = forge_kind_id_to_key(self.peek().kind_id)
         let b = self.kind_to_key(kind)
         a != "" && a == b
     }
@@ -154,15 +167,15 @@ impl Parser {
             return tok.text
         }
         // Keywords that can be used as identifiers
-        if tok.kind is .Is {
+        if tok.kind_id == 48 {  // Is
             self.advance()
             return "is"
         }
-        if tok.kind is .Table {
+        if tok.kind_id == 49 {  // Table
             self.advance()
             return "table"
         }
-        if tok.kind is .Underscore {
+        if tok.text == "_" {  // Underscore
             self.advance()
             return "_"
         }
@@ -209,7 +222,7 @@ impl Parser {
         mut offset = 0
         while forge_parser_get_pos() + offset < forge_token_list_len() {
             let tok = self.tokens[forge_parser_get_pos() + offset]
-            if tok.kind is not .Newline {
+            if tok.kind_id != 120 {  // not Newline
                 if count == n {
                     return tok
                 }
@@ -221,7 +234,9 @@ impl Parser {
     }
 
     fn next_meaningful_is(self, kind: TokenKind) -> bool {
-        self.peek_at_meaningful(0).kind == kind
+        let a = forge_kind_id_to_key(self.peek_at_meaningful(0).kind_id)
+        let b = self.kind_to_key(kind)
+        a != "" && a == b
     }
 
     // ─── Program Parsing ───────────────────────
