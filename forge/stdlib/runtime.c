@@ -886,20 +886,30 @@ void* forge_enum_get_payload(void* enum_ptr) {
 
 // Extract function body source between open_pos and close_pos token indices
 // Uses C-side token span access (immune to Forge struct field extraction bugs)
+// Forward declare ftok span accessors (defined later, near _ftok_buf)
+int64_t forge_ftok_span_start(int64_t idx);
+int64_t forge_ftok_span_end(int64_t idx);
+int64_t forge_ftok_count(void);
+
 ForgeString forge_extract_body_source(ForgeString source, int64_t open_pos, int64_t close_pos) {
+    fprintf(stderr, "  [EBS] called open=%lld close=%lld src=%lld\n", (long long)open_pos, (long long)close_pos, (long long)source.len);
     if (!source.ptr || source.len <= 0) return (ForgeString){NULL, 0};
-    int64_t open_span = forge_token_span_start(_c_token_list, open_pos);
-    int64_t close_span = forge_token_span_end(_c_token_list, close_pos);
-    fprintf(stderr, "  [extract_body] open_pos=%lld close_pos=%lld open_span=%lld close_span=%lld src_len=%lld tl_len=%lld\n",
-        (long long)open_pos, (long long)close_pos, (long long)open_span, (long long)close_span,
-        (long long)source.len, (long long)_c_token_list.len);
+    // Use ftok span accessors (FullTok format) if available, fall back to _c_token_list
+    int64_t ftok_n = forge_ftok_count();
+    int64_t open_span, close_span;
+    if (ftok_n > 0 && open_pos < ftok_n && close_pos < ftok_n) {
+        open_span = forge_ftok_span_start(open_pos);
+        close_span = forge_ftok_span_end(close_pos);
+    } else {
+        open_span = forge_token_span_start(_c_token_list, open_pos);
+        close_span = forge_token_span_end(_c_token_list, close_pos);
+    }
     if (open_span < 0 || close_span <= open_span || close_span > source.len) {
-        fprintf(stderr, "  [extract_body] FAIL — returning empty\n");
+        fprintf(stderr, "  [extract_body] FAIL open=%lld close=%lld src=%lld ftok=%lld\n",
+            (long long)open_span, (long long)close_span, (long long)source.len, (long long)ftok_n);
         return (ForgeString){NULL, 0};
     }
-    ForgeString result = forge_string_new(source.ptr + open_span, close_span - open_span + 1);
-    fprintf(stderr, "  [extract_body] result_len=%lld first_char='%c'\n", (long long)result.len, result.ptr[0]);
-    return result;
+    return forge_string_new(source.ptr + open_span, close_span - open_span + 1);
 }
 
 void forge_debug_parser_state(ForgeString label) {
@@ -3215,6 +3225,8 @@ void forge_fn_store_clear(void) { _fn_store_count = 0; }
 void forge_set_scan_source(ForgeString src);
 
 void forge_fn_store_add(ForgeString name, ForgeString body) {
+    fprintf(stderr, "  [FN_ADD] name='%.*s' body_len=%lld count=%d\n",
+        (int)(name.ptr ? name.len : 0), name.ptr ? name.ptr : "", (long long)body.len, _fn_store_count);
     if (_fn_store_count >= FN_STORE_MAX) return;
     if (!name.ptr || name.len <= 0 || name.len > 127) return;
     // If body is empty/corrupt, try to re-extract from source using C-side token spans
@@ -4989,6 +5001,16 @@ ForgeString forge_kind_id_to_key(int64_t kid) {
         }
     }
     return empty;
+}
+
+// Get token span start/end by index (for body extraction)
+int64_t forge_ftok_span_start(int64_t idx) {
+    if (idx < 0 || idx >= _ftok_count || !_ftok_buf) return 0;
+    return _ftok_buf[idx].span_start;
+}
+int64_t forge_ftok_span_end(int64_t idx) {
+    if (idx < 0 || idx >= _ftok_count || !_ftok_buf) return 0;
+    return _ftok_buf[idx].span_end;
 }
 
 // Get token kind_id by index (for parser)

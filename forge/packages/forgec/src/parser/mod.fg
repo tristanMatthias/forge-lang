@@ -273,6 +273,7 @@ impl Parser {
 
         // kind_id dispatch
         let kid = tok.kind_id
+        forge_trace_i64(kid, 999)
         if kid == 20 { let r = parse_let(self)
             self.sync_pos()
             return r }
@@ -338,8 +339,8 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.If(cond!, then_block, else_block, has_else, start)
         }
-        // while (kind_id 29)
-        if kid == 29 {
+        // while (kind_id 30)
+        if kid == 30 {
             let wstart = self.advance().span
             self.skip_newlines()
             let wcond = self.parse_expr()
