@@ -619,9 +619,10 @@ impl Parser {
         // Determine scrutinee's enum type from variable name
         let enum_type = cg_var_enum_type(scrutinee_var)
 
-        // Collect arms: (pattern_tag: int, body: Block)
+        // Collect arms: (pattern_tag: int, body: Block, bindings: string)
         mut arm_tags: List<int> = []
         mut arm_bodies: List<Block> = []
+        mut arm_bindings: List<string> = []
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
@@ -635,10 +636,24 @@ impl Parser {
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
-                if self.check(TokenKind.LParen) {
-                    self.advance()
-                    while !self.check(TokenKind.RParen) && !self.is_at_end() { self.advance() }
-                    if self.check(TokenKind.RParen) { self.advance() }
+                // Parse bindings: .Variant(name, val, span) → capture names
+                mut binding = ""
+                if self.check(TokenKind.LParen) || forge_peek_kind_id(forge_parser_get_pos()) == 100 {
+                    self.advance() // consume (
+                    while forge_peek_kind_id(forge_parser_get_pos()) != 101 && !self.is_at_end() {
+                        let btok = self.peek()
+                        if btok.kind_id == 1 {
+                            // Ident — binding name
+                            if binding != "" { binding = binding + "," }
+                            binding = binding + btok.text
+                        }
+                        self.advance()
+                    }
+                    if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
+                }
+                // Prefix binding with qualified variant name for field type lookup
+                if binding != "" {
+                    binding = qname + ":" + binding
                 }
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
@@ -670,6 +685,7 @@ impl Parser {
             } else {
                 arm_tags = arm_tags.push(pat_tag)
                 arm_bodies = arm_bodies.push(body)
+                arm_bindings = arm_bindings.push(binding)
             }
 
             self.skip_newlines()
@@ -685,9 +701,16 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
+        mut bindings_csv = ""
+        mut bi = 0
+        while bi < arm_bindings.length {
+            if bi > 0 { bindings_csv = bindings_csv + ";" }
+            bindings_csv = bindings_csv + arm_bindings[bi]
+            bi = bi + 1
+        }
         mut has_default_int = 0
         if has_default { has_default_int = 1 }
-        Expr.MatchExpr(scrutinee!, tag_csv, arm_bodies, default_body, has_default_int, start)
+        Expr.MatchExpr(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default_int, start)
     }
 
     // ─── Span Helper ───────────────────────────
