@@ -867,7 +867,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_peek_kind_id", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_extract_body_source", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_kind_id_for_keyword", mft1(CG_I64, CG_STR))
-    llvm.add_function(CG_MOD, "forge_list_push", mft2(CG_STR, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_list_push", mft3(CG_STR, CG_STR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_signal_handler", mft1(CG_VOID, CG_I64))
     // Alloca cache (C-side per-function variable storage)
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", mft2(CG_I64, CG_STR, CG_PTR))
@@ -2219,6 +2219,76 @@ impl Codegen {
                     let hresult = llvm.build_call(CG_B, hft, CG_RT_MAP_HAS, ha, 2, "has")
                     llvm.value_array_free(ha)
                     return llvm.build_zext(CG_B, hresult, llvm.int64_type(CG_CTX), "hx")
+                }
+
+                // List.push(elem): obj.push(val) → forge_list_push(obj, &val, elem_size)
+                if f == "push" && args.length >= 1 {
+                    let obj_val = self.emit_expr(o)
+                    let elem_val = self.emit_expr(args[0])
+                    // Determine element type from the list variable's type
+                    mut obj_var_name = ""
+                    match o {
+                        .Ident(n, _) -> { obj_var_name = n }
+                        _ -> {}
+                    }
+                    mut elem_ty = CG_I64
+                    let elt = list_elem_type(obj_var_name)
+                    if elt != "" {
+                        let resolved = resolve_type_to_llvm(elt)
+                        if resolved != null { elem_ty = resolved }
+                    }
+                    // If element is a string, use ForgeString type
+                    if forge_value_is_string(elem_val) == 1 { elem_ty = CG_STR }
+                    // Store elem to temp alloca, get its address
+                    let tmp = llvm.build_alloca(CG_B, elem_ty, "pe")
+                    llvm.build_store(CG_B, elem_val, tmp)
+                    // Compute element size via GEP trick
+                    let null_ptr = llvm.const_null(CG_PTR)
+                    let gep_args = llvm.value_array_new(1)
+                    llvm.value_array_set(gep_args, 0, llvm.const_int(CG_I64, 1, 0))
+                    let gep = llvm.build_gep2(CG_B, elem_ty, null_ptr, gep_args, 1, "sz")
+                    llvm.value_array_free(gep_args)
+                    let elem_size = llvm.build_ptrtoint(CG_B, gep, CG_I64, "es")
+                    // Call forge_list_push(list, &elem, size) → new list
+                    cg_reinit_types()
+                    let pa = llvm.value_array_new(3)
+                    llvm.value_array_set(pa, 0, obj_val)
+                    llvm.value_array_set(pa, 1, tmp)
+                    llvm.value_array_set(pa, 2, elem_size)
+                    let push_fn = llvm.get_named_function(CG_MOD, "forge_list_push")
+                    if push_fn != null {
+                        let push_ty = llvm.global_get_value_type(push_fn)
+                        let result = llvm.build_call(CG_B, push_ty, push_fn, pa, 3, "lp")
+                        llvm.value_array_free(pa)
+                        return result
+                    }
+                    llvm.value_array_free(pa)
+                    return obj_val
+                }
+
+                // Map.set(key, val): obj.set(key, val) → forge_map_set(obj, key, val)
+                if f == "set" && args.length >= 2 {
+                    let obj_val = self.emit_expr(o)
+                    let key_val = self.emit_expr(args[0])
+                    let set_val = self.emit_expr(args[1])
+                    // Convert set_val to i64 if needed
+                    mut val_i64 = set_val
+                    if forge_value_type_kind(set_val) == 12 {
+                        // Pointer value → ptrtoint
+                        val_i64 = llvm.build_ptrtoint(CG_B, set_val, CG_I64, "si")
+                    }
+                    let sa = llvm.value_array_new(3)
+                    llvm.value_array_set(sa, 0, obj_val)
+                    llvm.value_array_set(sa, 1, key_val)
+                    llvm.value_array_set(sa, 2, val_i64)
+                    cg_reinit_types()
+                    let set_fn = llvm.get_named_function(CG_MOD, "forge_map_set")
+                    if set_fn != null {
+                        let set_ty = llvm.global_get_value_type(set_fn)
+                        llvm.build_call(CG_B, set_ty, set_fn, sa, 3, "ms")
+                    }
+                    llvm.value_array_free(sa)
+                    return obj_val
                 }
 
                 // Namespace.method call: process.args(), fs.read(), llvm.build_add(), etc.
