@@ -466,6 +466,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         }
     }
 
+    if body_src == "" { eprintln("  [SKIP] empty body for " + name) }
     if body_src != "" {
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
