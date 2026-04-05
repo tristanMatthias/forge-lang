@@ -3955,6 +3955,62 @@ void forge_loop_continue(void* builder) {
     if (bbr) bbr(builder, cond_bb);
 }
 
+// ---- Conditional branch with auto-trunc to i1 ----
+// Handles the trunc-to-i1 check entirely in C, eliminating ptr null checks in Forge.
+// If cond is already i1, passes it directly. If i64, truncs to i1 first.
+void forge_build_cond_br_trunc(void* builder, void* cond, void* then_bb, void* else_bb) {
+    if (!builder || !cond || !then_bb || !else_bb) return;
+
+    // Get LLVM function pointers via dlsym
+    typedef void* (*typeof_fn)(void*);
+    typedef unsigned (*getkind_fn)(void*);
+    typedef unsigned (*getwidth_fn)(void*);
+    typedef void* (*trunc_fn)(void*, void*, void*, const char*);
+    typedef void* (*condbr_fn)(void*, void*, void*, void*);
+
+    static typeof_fn type_of = NULL;
+    static getkind_fn get_kind = NULL;
+    static getwidth_fn get_width = NULL;
+    static trunc_fn build_trunc = NULL;
+    static condbr_fn build_cond_br = NULL;
+
+    if (!type_of) type_of = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!get_kind) get_kind = (getkind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!get_width) get_width = (getwidth_fn)dlsym(RTLD_DEFAULT, "LLVMGetIntTypeWidth");
+    if (!build_trunc) build_trunc = (trunc_fn)dlsym(RTLD_DEFAULT, "LLVMBuildTrunc");
+    if (!build_cond_br) build_cond_br = (condbr_fn)dlsym(RTLD_DEFAULT, "LLVMBuildCondBr");
+
+    if (!type_of || !get_kind || !build_cond_br) return;
+
+    void* cond_type = type_of(cond);
+    unsigned kind = get_kind(cond_type);
+
+    void* cond_i1 = cond;
+    // kind 8 = LLVMIntegerTypeKind; width 1 = i1
+    if (kind == 8 && get_width && get_width(cond_type) > 1) {
+        // Need to trunc to i1
+        if (build_trunc) {
+            // Get i1 type from context
+            typedef void* (*int1_fn)(void*);
+            static int1_fn int1_type = NULL;
+            if (!int1_type) int1_type = (int1_fn)dlsym(RTLD_DEFAULT, "LLVMInt1TypeInContext");
+            if (int1_type) {
+                typedef void* (*getctx_fn)(void*);
+                static getctx_fn get_ctx = NULL;
+                if (!get_ctx) get_ctx = (getctx_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeContext");
+                if (get_ctx) {
+                    void* ctx = get_ctx(cond_type);
+                    void* i1_type = int1_type(ctx);
+                    void* trunced = build_trunc(builder, cond, i1_type, "ct");
+                    if (trunced) cond_i1 = trunced;
+                }
+            }
+        }
+    }
+
+    build_cond_br(builder, cond_i1, then_bb, else_bb);
+}
+
 // ---- LLVM value type introspection (central type detection) ----
 // Returns the LLVM type kind of an emitted value (not a variable — a VALUE)
 // 8=integer, 10=struct, 12=pointer, 3=double, 0=void/invalid

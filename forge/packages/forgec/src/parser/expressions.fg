@@ -21,7 +21,6 @@ use core.token.{Token, TokenKind, Span}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use lexer.{parse_int, parse_float}
 // Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
-use features.is_keyword.make_is_check
 // Suppress cross-newline dot chaining inside match arm bodies
 mut IN_MATCH_ARM: bool = false
 
@@ -278,7 +277,9 @@ impl Parser {
                 if self.check(TokenKind.Dot) {
                     self.advance()
                     let variant_name = self.expect_ident()
-                    result = make_is_check(result, variant_name, negated, self.current_span())
+                    mut is_pred = 32
+                    if negated { is_pred = 33 }
+                    result = Expr.IsCheck(result, variant_name, is_pred, self.current_span())
                     continue
                 }
                 // Not a .Variant — fall through
@@ -369,7 +370,7 @@ impl Parser {
             return self.parse_paren_expr()
         }
         if tok.kind_id == 102 {  // LBrace — block or map literal
-            return self.parse_block_or_map()
+            return self.parse_block_expr()
         }
         if tok.kind_id == 126 {  // LBracket — list literal
             return self.parse_list_literal()

@@ -216,67 +216,22 @@ export fn create_llvm_globals_from(csv: string, count: int) {
     }
 }
 
-// Check if a name is in a comma-separated string (e.g., ",NAMES,IDS,")
-fn csv_contains(csv: string, name: string) -> bool {
-    let needle = ",${name},"
-    let nl = needle.length
-    let cl = csv.length
-    if cl < nl { return false }
-    mut i = 0
-    while i <= cl - nl {
-        mut match_ok = true
-        mut j = 0
-        while j < nl {
-            if csv[i + j] != needle[j] {
-                match_ok = false
-                break
-            }
-            j = j + 1
-        }
-        if match_ok { return true }
-        i = i + 1
-    }
-    false
-}
-
-// Check if a variable is ANY kind of list
+// These used to search CSV globals that have been removed.
+// Variable type info now comes from the alloca cache (LLVM is source of truth).
 export fn is_list_var(name: string) -> bool {
-    csv_contains(CG_LIST_VAR_CSV, name)
+    let vt = forge_alloca_cache_get_var_type(name)
+    vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
 }
 
-// Check if a variable is a list with string elements (16-byte stride)
 export fn is_str_list_var(name: string) -> bool {
-    csv_contains(CG_STR_LIST_VAR_CSV, name)
+    let vt = forge_alloca_cache_get_var_type(name)
+    vt == "list:string"
 }
 
-// Get the element type name for a list variable. Returns "" if not found.
 export fn list_elem_type(name: string) -> string {
-    // Search CG_LIST_ELEM_TYPE_CSV for ",name:type,"
-    let needle = ",${name}:"
-    let nl = needle.length
-    let cl = CG_LIST_ELEM_TYPE_CSV.length
-    mut i = 0
-    while i <= cl - nl {
-        mut match_ok = true
-        mut j = 0
-        while j < nl {
-            if CG_LIST_ELEM_TYPE_CSV[i + j] != needle[j] {
-                match_ok = false
-                break
-            }
-            j = j + 1
-        }
-        if match_ok {
-            // Found — extract type until next comma
-            mut type_start = i + nl
-            mut type_end = type_start
-            while type_end < cl {
-                if CG_LIST_ELEM_TYPE_CSV[type_end] == "," { break }
-                type_end = type_end + 1
-            }
-            return CG_LIST_ELEM_TYPE_CSV.substring(type_start, type_end)
-        }
-        i = i + 1
+    let vt = forge_alloca_cache_get_var_type(name)
+    if vt.length > 5 && vt.substring(0, 5) == "list:" {
+        return vt.substring(5, vt.length)
     }
     ""
 }
@@ -873,6 +828,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_loop_pop", mft0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_loop_break", mft1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_loop_continue", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_build_cond_br_trunc", mft4(CG_VOID, CG_PTR, CG_PTR, CG_PTR, CG_PTR))
     // Global variable access (i64-based)
     llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_store_to_global", mft3(CG_VOID, CG_PTR, CG_I64, CG_I64))
@@ -1026,16 +982,11 @@ impl Codegen {
 
     fn emit_if_stmt(self, cond: Expr, then_b: Block, else_b: Block, has_else: int) {
         let cond_val = self.emit_expr(cond)
-        // Convert to i1: trunc only works i64→i1, not i1→i1
-        // Check if already i1 by attempting trunc; if it returns null, value is already i1
-        let trunc_result = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
-        mut cond_i1 = cond_val
-        if trunc_result != null { cond_i1 = trunc_result }
         let fn_val = self.current_fn
         let then_bb = llvm.append_basic_block(CG_CTX, fn_val, "then")
         let else_bb = llvm.append_basic_block(CG_CTX, fn_val, "else")
         let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "merge")
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, else_bb)
+        forge_build_cond_br_trunc(CG_B, cond_val, then_bb, else_bb)
         llvm.position_at_end(CG_B, then_bb)
         self.emit_block(then_b)
         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
@@ -1054,10 +1005,7 @@ impl Codegen {
         llvm.build_br(CG_B, cond_bb)
         llvm.position_at_end(CG_B, cond_bb)
         let cval = self.emit_expr(cond)
-        let trunc_w = llvm.build_trunc(CG_B, cval, llvm.int1_type(CG_CTX), "wci")
-        mut ci1 = cval
-        if trunc_w != null { ci1 = trunc_w }
-        llvm.build_cond_br(CG_B, ci1, body_bb, end_bb)
+        forge_build_cond_br_trunc(CG_B, cval, body_bb, end_bb)
         llvm.position_at_end(CG_B, body_bb)
         self.emit_block(body)
         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, cond_bb) }
@@ -1088,7 +1036,7 @@ impl Codegen {
         llvm.position_at_end(CG_B, cond_bb)
         let idx = llvm.build_load(CG_B, CG_I64, counter, "idx")
         let cmp = llvm.build_icmp(CG_B, 38, idx, len_val, "fc")
-        llvm.build_cond_br(CG_B, cmp, body_bb, end_bb)
+        forge_build_cond_br_trunc(CG_B, cmp, body_bb, end_bb)
         llvm.position_at_end(CG_B, body_bb)
         // Define loop var (just use counter as the element for now)
         self.define_var(var_name, Type.Int, idx)
@@ -1135,7 +1083,7 @@ impl Codegen {
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
             let tag_val = llvm.const_int(CG_I64, tag_list[ai], 0)
             let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
-            llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+            forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
             self.emit_block(bodies[ai])
             if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
@@ -1461,6 +1409,19 @@ impl Codegen {
             .MatchExpr(scrutinee, tags, bodies, default_b, has_default, span) -> {
                 return self.emit_match_expr(scrutinee, tags, bodies, default_b, has_default)
             }
+            .IsCheck(subject, variant_name, pred, span) -> {
+                let obj_val = self.emit_expr(subject)
+                let tag = match_enum_tag(variant_name)
+                let tag_val = llvm.const_int(CG_I64, tag, 0)
+                mut cmp_lhs = obj_val
+                let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
+                if etag != null {
+                    cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
+                }
+                let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
+                let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
+                return ext
+            }
             .Feature(fe) -> {
                 return self.dispatch_expr(fe)
             }
@@ -1471,12 +1432,11 @@ impl Codegen {
     fn emit_if_expr(self, condition: Expr, then_block: Block, else_block: Block, has_else: int) -> ptr {
         cg_reinit_types()
         let cv = self.emit_expr(condition)
-        let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let tb = llvm.append_basic_block(CG_CTX, fn_val, "th")
         let eb = llvm.append_basic_block(CG_CTX, fn_val, "el")
         let mb = llvm.append_basic_block(CG_CTX, fn_val, "mg")
-        llvm.build_cond_br(CG_B, ci, tb, eb)
+        forge_build_cond_br_trunc(CG_B, cv, tb, eb)
         llvm.position_at_end(CG_B, tb)
         let tv = self.emit_block(then_block)
         let te = llvm.get_insert_block(CG_B)
@@ -1542,7 +1502,7 @@ impl Codegen {
                     cmp_lhs = llvm.build_zext(CG_B, etag, CG_I64, "te")
                 }
                 let cmp = llvm.build_icmp(CG_B, 32, cmp_lhs, tag_val, "mc")
-                llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+                forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             }
 
             llvm.position_at_end(CG_B, arm_bb)
@@ -1611,7 +1571,7 @@ impl Codegen {
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
             let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
             let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
-            llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+            forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
             let av = self.emit_block(_bodies[ai])
             let ae = llvm.get_insert_block(CG_B)
@@ -1762,15 +1722,11 @@ impl Codegen {
             .Expr(e) -> { cond_val = self.emit_expr(e) }
             _ -> {}
         }
-        let cond_i1 = llvm.build_trunc(CG_B, cond_val, llvm.int1_type(CG_CTX), "ifc")
-
         let current_fn = self.current_fn
-        if current_fn == null { return llvm.const_int(CG_I64, 0, 0) }
+        let then_bb = llvm.append_basic_block(CG_CTX, current_fn, "th")
+        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn, "ic")
 
-        let then_bb = llvm.append_basic_block(CG_CTX, current_fn!, "th")
-        let merge_bb = llvm.append_basic_block(CG_CTX, current_fn!, "ic")
-
-        llvm.build_cond_br(CG_B, cond_i1, then_bb, merge_bb)
+        forge_build_cond_br_trunc(CG_B, cond_val, then_bb, merge_bb)
 
         // Emit then block
         llvm.position_at_end(CG_B, then_bb)
@@ -2220,6 +2176,7 @@ impl Codegen {
                     }
                 }
             }
+            .IsCheck(s, v, p, sp) -> {}
             .Feature(fe) -> {}
             .Binary(l, o, r, s) -> {}
             .Unary(o, e, s) -> {}
@@ -2339,12 +2296,11 @@ impl Codegen {
                 .If(cond, then_body, else_body, has_else, s) -> {
                     cg_reinit_types()
                     let cv = self.emit_expr(cond)
-                    let ci = llvm.build_trunc(CG_B, cv, llvm.int1_type(CG_CTX), "ic")
                     let ifn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let tb = llvm.append_basic_block(CG_CTX, ifn, "th")
                     let eb = llvm.append_basic_block(CG_CTX, ifn, "el")
                     let mb = llvm.append_basic_block(CG_CTX, ifn, "mg")
-                    llvm.build_cond_br(CG_B, ci, tb, eb)
+                    forge_build_cond_br_trunc(CG_B, cv, tb, eb)
                     llvm.position_at_end(CG_B, tb)
                     self.emit_block(then_body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }
@@ -2402,7 +2358,7 @@ impl Codegen {
                         let next_bb = llvm.append_basic_block(CG_CTX, mfn, "mn")
                         let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
                         let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
-                        llvm.build_cond_br(CG_B, cmp, arm_bb, next_bb)
+                        forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
                         llvm.position_at_end(CG_B, arm_bb)
                         // Extract bindings with field-type-aware slot offsets
                         if ai < all_bindings.length {
@@ -2534,8 +2490,7 @@ impl Codegen {
                     llvm.build_br(CG_B, w1)
                     llvm.position_at_end(CG_B, w1)
                     let wv = self.emit_expr(cond)
-                    let wi = llvm.build_trunc(CG_B, wv, llvm.int1_type(CG_CTX), "wt")
-                    llvm.build_cond_br(CG_B, wi, w2, w3)
+                    forge_build_cond_br_trunc(CG_B, wv, w2, w3)
                     llvm.position_at_end(CG_B, w2)
                     self.emit_block(body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, w1) }
@@ -2587,7 +2542,7 @@ impl Codegen {
                     llvm.position_at_end(CG_B, f1)
                     let fc = llvm.build_load(CG_B, CG_I64, fa, "ci")
                     let fx = llvm.build_icmp(CG_B, 40, fc, fln, "cc")
-                    llvm.build_cond_br(CG_B, fx, f2, f4)
+                    forge_build_cond_br_trunc(CG_B, fx, f2, f4)
                     llvm.position_at_end(CG_B, f2)
                     let fd = llvm.build_extract_value(CG_B, fl, 0, "dp")
                     if fd == null {

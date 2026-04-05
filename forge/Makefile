@@ -87,6 +87,8 @@ $(STAGE1_LL): $(MINI_BIN) $(shell find packages/forgec/src -name '*.fg' ! -path 
 	-$(MINI_BIN) build $(SOURCE) 2>&1 | tee $(BUILD)/mini.log; true
 	@if [ -f /tmp/mini_output.ll ]; then \
 		LC_ALL=C sed -i '' 's/ptr 0,/ptr null,/g; s/ptr 0$$/ptr null/; s/%ForgeString [0-9][0-9]*/%ForgeString zeroinitializer/g' /tmp/mini_output.ll; \
+		python3 scripts/fix_allocas.py /tmp/mini_output.ll /tmp/mini_output_fixed.ll && mv /tmp/mini_output_fixed.ll /tmp/mini_output.ll; \
+		python3 scripts/strip_llvm_defs.py /tmp/mini_output.ll /tmp/mini_output_stripped.ll && mv /tmp/mini_output_stripped.ll /tmp/mini_output.ll; \
 		mv /tmp/mini_output.ll $(STAGE1_LL); \
 		echo "  Stage 1 IR: $$(grep -c '^define' $(STAGE1_LL)) functions, $$(wc -l < $(STAGE1_LL)) lines"; \
 	else \

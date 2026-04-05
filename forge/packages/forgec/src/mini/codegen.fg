@@ -274,6 +274,14 @@ fn gen_expr(e: Expr) -> string {
                 set_field_type(elem_ty)
                 return ev
             }
+            // Map indexing: map[key] → forge_map_get(map, key)
+            if LAST_IS_PTR == 1 {
+                let r = new_reg()
+                ir_line(r + " = call i64 @forge_map_get(ptr " + obj + ", %ForgeString " + idx + ")")
+                LAST_IS_PTR = 0
+                LAST_IS_STR = 0
+                return r
+            }
             return obj
         }
         .StructLit -> {
@@ -2766,6 +2774,82 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_var_type_set(%ForgeString, %ForgeString)")
     ir_raw("declare %ForgeString @forge_var_type_get(%ForgeString)")
     ir_raw("declare void @forge_alloca_cache_set_type(%ForgeString, ptr)")
+    ir_raw("declare i64 @forge_alloca_cache_clear()")
+    ir_raw("declare void @forge_alloca_cache_set(%ForgeString, ptr)")
+    ir_raw("declare i64 @forge_alloca_cache_has(%ForgeString)")
+    ir_raw("declare i64 @forge_alloca_cache_load(%ForgeString, ptr, ptr)")
+    ir_raw("declare i64 @forge_alloca_cache_load_field(%ForgeString, i64, ptr, ptr)")
+    ir_raw("declare i64 @forge_alloca_cache_type_id(%ForgeString)")
+    ir_raw("declare void @forge_alloca_cache_set_var_type(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_alloca_cache_get_var_type(%ForgeString)")
+    // Conditional branch with auto-trunc
+    ir_raw("declare void @forge_build_cond_br_trunc(ptr, ptr, ptr, ptr)")
+    // Struct type creation
+    ir_raw("declare i64 @forge_create_struct_type(%ForgeString)")
+    // Emit depth tracking
+    ir_raw("declare i64 @forge_emit_depth_push()")
+    ir_raw("declare i64 @forge_emit_depth_pop()")
+    // Enum registry
+    ir_raw("declare void @forge_enum_type_register(%ForgeString, i64)")
+    ir_raw("declare i64 @forge_enum_type_max_fields(%ForgeString)")
+    ir_raw("declare i64 @forge_enum_type_exists(%ForgeString)")
+    ir_raw("declare void @forge_enum_variant_fields_set(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_enum_variant_fields_get(%ForgeString)")
+    // Body source extraction
+    ir_raw("declare %ForgeString @forge_extract_body_source(%ForgeString, i64, i64)")
+    // Function nullable tracking
+    ir_raw("declare void @forge_fn_nullable_set(i64, ptr, ptr)")
+    ir_raw("declare i64 @forge_fn_nullable_get_flag()")
+    ir_raw("declare i64 @forge_fn_nullable_get_inner()")
+    // Token accumulation
+    ir_raw("declare void @forge_ftok_clear()")
+    ir_raw("declare void @forge_ftok_push(i64, %ForgeString, i64, i64, i64, i64)")
+    ir_raw("declare i64 @forge_ftok_kind_id(i64)")
+    ir_raw("declare %ForgeString @forge_ftok_text(i64)")
+    // Global variable access (i64-based)
+    ir_raw("declare i64 @forge_get_named_global_i64(ptr, %ForgeString)")
+    ir_raw("declare i64 @forge_get_type_by_name_i64(%ForgeString)")
+    ir_raw("declare i64 @forge_global_type_kind(ptr, %ForgeString)")
+    ir_raw("declare void @forge_global_var_register(%ForgeString, i64)")
+    ir_raw("declare i64 @forge_global_var_count()")
+    ir_raw("declare i64 @forge_global_var_is_str(i64)")
+    ir_raw("declare %ForgeString @forge_global_var_name(i64)")
+    ir_raw("declare void @forge_store_to_global(ptr, i64, i64)")
+    ir_raw("declare i64 @forge_load_from_global(ptr, i64, %ForgeString)")
+    // Character classification
+    ir_raw("declare i64 @forge_is_alpha(%ForgeString)")
+    ir_raw("declare i64 @forge_is_digit(%ForgeString)")
+    ir_raw("declare i64 @forge_is_alnum(%ForgeString)")
+    ir_raw("declare i64 @forge_is_hex_digit(%ForgeString)")
+    ir_raw("declare i64 @forge_is_ident_start(%ForgeString)")
+    ir_raw("declare i64 @forge_is_ident_continue(%ForgeString)")
+    ir_raw("declare i64 @forge_is_whitespace_not_newline(%ForgeString)")
+    // Kind ID helpers
+    ir_raw("declare i64 @forge_kind_id_for_keyword(%ForgeString)")
+    ir_raw("declare %ForgeString @forge_kind_id_to_key(i64)")
+    // Last val tracking
+    ir_raw("declare void @forge_last_val_set(ptr)")
+    ir_raw("declare void @forge_last_val_clear()")
+    ir_raw("declare i64 @forge_last_val_has()")
+    ir_raw("declare i64 @forge_last_val_get()")
+    // Loop stack
+    ir_raw("declare void @forge_loop_push(ptr, ptr)")
+    ir_raw("declare void @forge_loop_pop()")
+    ir_raw("declare void @forge_loop_break(ptr)")
+    ir_raw("declare void @forge_loop_continue(ptr)")
+    // Parser state
+    ir_raw("declare void @forge_parser_advance_pos()")
+    ir_raw("declare i64 @forge_parser_get_pos()")
+    ir_raw("declare void @forge_parser_set_pos(i64)")
+    ir_raw("declare i64 @forge_peek_kind_id(i64)")
+    ir_raw("declare void @forge_set_token_list(%ForgeString)")
+    ir_raw("declare i64 @forge_token_list_len()")
+    // Struct registry
+    ir_raw("declare void @forge_struct_type_register(%ForgeString, %ForgeString, %ForgeString, %ForgeString, ptr)")
+    ir_raw("declare %ForgeString @forge_struct_type_get_fields(%ForgeString)")
+    ir_raw("declare i64 @forge_struct_field_index(%ForgeString, %ForgeString)")
+    // Value introspection
+    ir_raw("declare i64 @forge_value_is_string(i64)")
     ir_raw("declare void @forge_str_var_add(%ForgeString)")
     ir_raw("declare void @forge_ptr_var_add(%ForgeString)")
     ir_raw("declare void @forge_fn_store_add(%ForgeString, %ForgeString)")
@@ -2789,6 +2873,37 @@ fn compile(source: string) -> string {
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
     FN_NAMES = FN_NAMES.push("forge_fn_store_get_body")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    // Register return types for ForgeString-returning C functions
+    FN_NAMES = FN_NAMES.push("forge_alloca_cache_get_var_type")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_enum_variant_fields_get")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_extract_body_source")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(3)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_NAMES = FN_NAMES.push("forge_ftok_text")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_NAMES = FN_NAMES.push("forge_global_var_name")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")
+    FN_NAMES = FN_NAMES.push("forge_struct_type_get_fields")
+    FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
+    FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
+    FN_PARAM_TYPES = FN_PARAM_TYPES.push("string")
+    FN_NAMES = FN_NAMES.push("forge_kind_id_to_key")
     FN_RETTYPES = FN_RETTYPES.push("%ForgeString")
     FN_PARAMCOUNTS = FN_PARAMCOUNTS.push(1)
     FN_PARAM_TYPES = FN_PARAM_TYPES.push("int")

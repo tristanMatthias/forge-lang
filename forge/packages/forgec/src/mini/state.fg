@@ -292,6 +292,14 @@ fn set_type_from_llvm(ty: string) {
         LAST_ENUM_TYPE = ""
         return
     }
+    if ty == "i64" || ty == "i8" || ty == "i1" || ty == "void" || ty == "double" {
+        LAST_IS_PTR = 0
+        LAST_IS_STR = 0
+        LAST_IS_LIST = 0
+        LAST_STRUCT_TYPE = ""
+        LAST_ENUM_TYPE = ""
+        return
+    }
     if ty.length > 1 {
         if ty.substring(0, 1) == "%" {
             let tname = ty.substring(1, ty.length)
