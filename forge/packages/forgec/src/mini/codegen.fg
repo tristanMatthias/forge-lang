@@ -2848,6 +2848,7 @@ fn compile(source: string) -> string {
     ir_raw("declare void @forge_struct_type_register(%ForgeString, %ForgeString, %ForgeString, %ForgeString, ptr)")
     ir_raw("declare %ForgeString @forge_struct_type_get_fields(%ForgeString)")
     ir_raw("declare i64 @forge_struct_field_index(%ForgeString, %ForgeString)")
+    ir_raw("declare %ForgeString @forge_struct_type_get_field_types(%ForgeString)")
     // Value introspection
     ir_raw("declare i64 @forge_value_is_string(i64)")
     ir_raw("declare void @forge_trace_i64(i64, i64)")

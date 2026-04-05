@@ -572,6 +572,12 @@ fn cg_init_str() {
     llvm.type_array_set(sf, 1, CG_I64)
     llvm.struct_set_body(CG_STR, sf, 2, 0)
     llvm.type_array_free(sf)
+    // List type: {ptr, i64} — same layout as ForgeString but semantically different
+    let lf = llvm.type_array_new(2)
+    llvm.type_array_set(lf, 0, CG_PTR)
+    llvm.type_array_set(lf, 1, CG_I64)
+    CG_LIST = llvm.struct_type(CG_CTX, lf, 2, 0)
+    llvm.type_array_free(lf)
 }
 
 fn cg_register_core_types() {
@@ -591,10 +597,9 @@ fn cg_register_core_types() {
     forge_enum_type_register("UnaryOp", 0)
     // TokenKind: variants with up to 1 field (TemplateLiteral has List<TemplatePart>)
     forge_enum_type_register("TokenKind", 1)
-    // Type: variants with up to 2 fields
-    forge_enum_type_register("Type", 2)
-    // TypeExpr: variants with up to 2 fields
-    forge_enum_type_register("TypeExpr", 2)
+    // Note: Type, TypeExpr NOT registered as named LLVM types because the Rust compiler
+    // uses them as branch conditions (if t is .Int) which requires i64, not a struct.
+    // They stay as i64 in the self-hosted codegen.
 
     // Helper: create a named struct type
     // Span = { i64, i64, i64, i64 }
@@ -671,8 +676,52 @@ fn cg_register_core_types() {
     register_struct_type_full("Param", "name,type_ann,default_value,span,mutable", "10000", "string,TypeExpr,Expr,Span,bool", param_ty)
     register_struct_type_full("Span", "start,end,line,col", "0000", "int,int,int,int", span_ty)
 
-    // Token, Block, Diagnostic, NodeRef — registered via type declaration parsing
-    // Token, Block, NodeRef created above (immediately after Span)
+    // Block = { statements: List<Statement>, span: Span }
+    let blk_fields = llvm.type_array_new(2)
+    llvm.type_array_set(blk_fields, 0, CG_LIST)
+    llvm.type_array_set(blk_fields, 1, span_ty)
+    let block_ty = llvm.struct_create_named(CG_CTX, "Block")
+    llvm.struct_set_body(block_ty, blk_fields, 2, 0)
+    llvm.type_array_free(blk_fields)
+    register_struct_type_full("Block", "statements,span", "01", "List:Statement,Span", block_ty)
+
+    // Token = { kind: TokenKind, span: Span, text: string, kind_id: int }
+    let tok_fields = llvm.type_array_new(4)
+    llvm.type_array_set(tok_fields, 0, CG_I64)   // TokenKind enum → i64 for simplicity
+    llvm.type_array_set(tok_fields, 1, span_ty)
+    llvm.type_array_set(tok_fields, 2, CG_STR)
+    llvm.type_array_set(tok_fields, 3, CG_I64)
+    let token_ty = llvm.struct_create_named(CG_CTX, "Token")
+    llvm.struct_set_body(token_ty, tok_fields, 4, 0)
+    llvm.type_array_free(tok_fields)
+    register_struct_type_full("Token", "kind,span,text,kind_id", "0010", "TokenKind,Span,string,int", token_ty)
+
+    // NodeRef = { node_id: int, feature: string, kind_name: string, node_span: Span }
+    let nr_fields = llvm.type_array_new(4)
+    llvm.type_array_set(nr_fields, 0, CG_I64)
+    llvm.type_array_set(nr_fields, 1, CG_STR)
+    llvm.type_array_set(nr_fields, 2, CG_STR)
+    llvm.type_array_set(nr_fields, 3, span_ty)
+    let nr_ty = llvm.struct_create_named(CG_CTX, "NodeRef")
+    llvm.struct_set_body(nr_ty, nr_fields, 4, 0)
+    llvm.type_array_free(nr_fields)
+    register_struct_type_full("NodeRef", "node_id,feature,kind_name,node_span", "0110", "int,string,string,Span", nr_ty)
+
+    // FeatureExpr = { data: NodeRef }
+    let fe_fields = llvm.type_array_new(1)
+    llvm.type_array_set(fe_fields, 0, nr_ty)
+    let fe_ty = llvm.struct_create_named(CG_CTX, "FeatureExpr")
+    llvm.struct_set_body(fe_ty, fe_fields, 1, 0)
+    llvm.type_array_free(fe_fields)
+    register_struct_type_full("FeatureExpr", "data", "0", "NodeRef", fe_ty)
+
+    // FeatureStmt = { data: NodeRef }
+    let fs_fields = llvm.type_array_new(1)
+    llvm.type_array_set(fs_fields, 0, nr_ty)
+    let fs_ty = llvm.struct_create_named(CG_CTX, "FeatureStmt")
+    llvm.struct_set_body(fs_ty, fs_fields, 1, 0)
+    llvm.type_array_free(fs_fields)
+    register_struct_type_full("FeatureStmt", "data", "0", "NodeRef", fs_ty)
 }
 
 fn cg_init_runtime() {
@@ -1299,6 +1348,35 @@ impl Codegen {
             }
             .MemberAccess(obj, field, _) -> {
                 if field == "length" { return "int" }
+                // Look up struct field type via registered struct info
+                let obj_type = self.expr_type_name(obj)
+                if obj_type != "int" && obj_type != "string" && obj_type != "ptr" {
+                    // obj_type is a struct name — look up the field's type
+                    let fields_csv = forge_struct_type_get_fields(obj_type)
+                    if fields_csv.length > 0 {
+                        let fi = forge_struct_field_index(obj_type, field)
+                        if fi >= 0 {
+                            // Get field type from the struct's field_types registry
+                            let field_types = forge_struct_type_get_field_types(obj_type)
+                            if field_types.length > 0 {
+                                // Parse CSV to get the fi-th type
+                                mut fti = 0
+                                mut ft_start = 0
+                                mut ft_pos = 0
+                                while ft_pos <= field_types.length {
+                                    if ft_pos == field_types.length || field_types[ft_pos] == "," {
+                                        if fti == fi {
+                                            return field_types.substring(ft_start, ft_pos)
+                                        }
+                                        fti = fti + 1
+                                        ft_start = ft_pos + 1
+                                    }
+                                    ft_pos = ft_pos + 1
+                                }
+                            }
+                        }
+                    }
+                }
                 return "int"
             }
             .Index(obj, _, _) -> {
@@ -1430,9 +1508,14 @@ impl Codegen {
                 let obj_val = self.emit_expr(subject)
                 let tag = match_enum_tag(variant_name)
                 let tag_val = llvm.const_int(CG_I64, tag, 0)
+                // Extract tag from enum value for comparison
+                // For struct-typed enums {i8 tag, ...}: extract field 0 and zext
+                // For i64-typed enums: use the value directly (it IS the tag)
                 mut cmp_lhs = obj_val
-                let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
-                if etag != null {
+                let val_kind = forge_value_type_kind(obj_val)
+                if val_kind == 10 {
+                    // Struct type — extract tag (field 0)
+                    let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
                     cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
                 }
                 let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
