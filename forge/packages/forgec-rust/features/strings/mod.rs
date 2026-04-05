@@ -262,6 +262,45 @@ crate::runtime_fn! { name: "forge_llvm_const_string_s", feature: "strings", para
 crate::runtime_fn! { name: "forge_llvm_print_module_to_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_llvm_emit_object_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 
+crate::runtime_fn! { name: "forge_llvm_build_fadd_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fsub_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fmul_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fdiv_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_frem_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fneg_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fcmp_s", feature: "strings", params: [Ptr, I64, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_sext_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_si_to_fp_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_fp_to_si_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_bitcast_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_ptrtoint_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_not_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_int_to_ptr_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_ptr_to_int_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_add_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_sub_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_mul_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_sdiv_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_srem_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_and_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_or_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_xor_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_shl_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_ashr_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_icmp_s", feature: "strings", params: [Ptr, I64, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_load_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_call_s", feature: "strings", params: [Ptr, Ptr, Ptr, Ptr, I64, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_phi_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_zext_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_trunc_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_inttoptr_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_extract_value_s", feature: "strings", params: [Ptr, Ptr, I64, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_insert_value_s", feature: "strings", params: [Ptr, Ptr, Ptr, I64, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_gep2_s", feature: "strings", params: [Ptr, Ptr, Ptr, Ptr, I64, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_struct_gep2_s", feature: "strings", params: [Ptr, Ptr, Ptr, I64, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_global_string_ptr_s", feature: "strings", params: [Ptr, ForgeString, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_verify_module_to_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+
 // C-side functions used by self-hosted compiler (detected by check_undeclared.sh)
 crate::runtime_fn! { name: "forge_c_index_of", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_exit", feature: "strings", params: [I64], ret: Void }
