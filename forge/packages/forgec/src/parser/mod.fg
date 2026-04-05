@@ -349,85 +349,14 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.While(wcond!, wbody, wstart)
         }
-        // match (kind_id 27): parse as match statement
+        // match (kind_id 27): delegate to parse_match_expr, wrap as expression statement
         if kid == 27 {
-            let mstart = self.advance().span
-            self.skip_newlines()
-            let scrutinee = self.parse_expr()
-            if scrutinee == null { return null }
-            let scrutinee_var = LAST_IDENT_NAME
-            self.skip_newlines()
-            if forge_peek_kind_id(forge_parser_get_pos()) == 102 { self.advance() }
-            self.skip_newlines()
-            let enum_type = cg_var_enum_type(scrutinee_var)
-            mut arm_tags: List<int> = []
-            mut arm_bodies: List<Block> = []
-            mut arm_bindings_list: List<string> = []
-            mut has_default = 0
-            mut default_body = Block { statements: [], span: mstart }
-            while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 103 {
-                self.skip_newlines()
-                if forge_peek_kind_id(forge_parser_get_pos()) == 103 { break }
-                mut pat_tag = -1
-                mut binding_names = ""
-                if forge_peek_kind_id(forge_parser_get_pos()) == 122 {
-                    // .Variant pattern
-                    self.advance()
-                    let vname = self.expect_ident()
-                    let qname = enum_type + "." + vname
-                    pat_tag = match_enum_tag(qname)
-                    if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
-                    // Parse optional bindings: .Variant(a, b, c)
-                    if forge_peek_kind_id(forge_parser_get_pos()) == 100 {
-                        self.advance()
-                        while forge_peek_kind_id(forge_parser_get_pos()) != 101 && !self.is_at_end() {
-                            let bname = self.expect_ident()
-                            if binding_names != "" { binding_names = binding_names + "," }
-                            binding_names = binding_names + bname
-                            if forge_peek_kind_id(forge_parser_get_pos()) == 124 { self.advance() }
-                            if forge_peek_kind_id(forge_parser_get_pos()) == 123 { self.advance() }
-                        }
-                        if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
-                    }
-                } else if forge_peek_kind_id(forge_parser_get_pos()) == 1 && forge_ftok_text(forge_parser_get_pos()) == "_" {
-                    // Wildcard
-                    self.advance()
-                    has_default = 1
-                } else {
-                    self.advance()
-                }
-                // Expect -> then block
-                self.skip_newlines()
-                if forge_peek_kind_id(forge_parser_get_pos()) == 121 { self.advance() }
-                self.skip_newlines()
-                let abody = self.parse_block()
-                if has_default == 1 {
-                    default_body = abody
-                } else {
-                    arm_tags = arm_tags.push(pat_tag)
-                    arm_bodies = arm_bodies.push(abody)
-                    arm_bindings_list = arm_bindings_list.push(binding_names)
-                }
-                self.skip_newlines()
+            let mexpr = self.parse_match_expr()
+            if mexpr != null {
+                PARSE_END_POS = forge_parser_get_pos()
+                return Statement.Expr(mexpr!)
             }
-            if forge_peek_kind_id(forge_parser_get_pos()) == 103 { self.advance() }
-            // Build CSV strings
-            mut tags_csv = ""
-            mut bi = 0
-            while bi < arm_tags.length {
-                if bi > 0 { tags_csv = tags_csv + "," }
-                tags_csv = tags_csv + string(arm_tags[bi])
-                bi = bi + 1
-            }
-            mut bindings_csv = ""
-            bi = 0
-            while bi < arm_bindings_list.length {
-                if bi > 0 { bindings_csv = bindings_csv + ";" }
-                bindings_csv = bindings_csv + arm_bindings_list[bi]
-                bi = bi + 1
-            }
-            PARSE_END_POS = forge_parser_get_pos()
-            return Statement.Match(scrutinee!, tags_csv, bindings_csv, arm_bodies, default_body, has_default, mstart)
+            return null
         }
         if kid == 32 {
             let bspan = self.advance().span
@@ -1165,7 +1094,11 @@ impl Parser {
             }
         }
         if forge_peek_kind_id(forge_parser_get_pos()) == 103 { self.advance() }
-        forge_enum_type_register(enum_name, max_fields)
+        // Only register as LLVM type for enums that need struct representation
+        // (Statement, Expr, etc. — NOT Type, TokenKind which are used as i64)
+        if enum_name == "Statement" || enum_name == "Expr" || enum_name == "BinOp" || enum_name == "UnaryOp" {
+            forge_enum_type_register(enum_name, max_fields)
+        }
     }
 
     fn kind_to_key(self, kind: TokenKind) -> string {
