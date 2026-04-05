@@ -579,6 +579,23 @@ fn cg_register_core_types() {
     // Layouts match the source definitions. Avoids parsing type declarations
     // (which corrupts globals via list push).
 
+    // Register core enum types so resolve_type_to_llvm can find them.
+    // max_fields = number of i64 slots for the largest variant (tag excluded).
+    // Statement.Match: 7 fields (scrutinee, arm_tags, arm_bindings, arm_bodies, default_body, has_default, span)
+    forge_enum_type_register("Statement", 7)
+    // Expr.MatchExpr: 6 fields (scrutinee, arm_tags, arm_bodies, default_body, has_default, span)
+    forge_enum_type_register("Expr", 6)
+    // BinOp: simple enum, no fields
+    forge_enum_type_register("BinOp", 0)
+    // UnaryOp: simple enum, no fields
+    forge_enum_type_register("UnaryOp", 0)
+    // TokenKind: variants with up to 1 field (TemplateLiteral has List<TemplatePart>)
+    forge_enum_type_register("TokenKind", 1)
+    // Type: variants with up to 2 fields
+    forge_enum_type_register("Type", 2)
+    // TypeExpr: variants with up to 2 fields
+    forge_enum_type_register("TypeExpr", 2)
+
     // Helper: create a named struct type
     // Span = { i64, i64, i64, i64 }
     let s4 = llvm.type_array_new(4)

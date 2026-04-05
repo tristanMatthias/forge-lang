@@ -466,6 +466,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
+        eprintln("  [BODY] " + name + " stmts=" + string(body.statements.length))
         cg_reinit_types()
         let last = cg.emit_block(body)
         forge_last_val_set(last)
