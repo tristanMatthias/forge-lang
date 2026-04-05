@@ -5168,3 +5168,125 @@ int64_t forge_validate_ptr(void* ptr, const char* name) {
     }
     return 1;
 }
+
+// ---- ForgeString-accepting wrappers for forge_llvm_* functions ----
+// Stage 2 passes ForgeString ({ptr, i64}) but the Rust functions expect *const char.
+// These wrappers extract .ptr and forward the call.
+// Each is named with _s suffix and declared in the Stage 2 module.
+
+// Forward declare the Rust functions (they're in libforge_llvm.a)
+extern void* forge_llvm_module_create(const char* name, void* ctx);
+extern void* forge_llvm_add_function(void* module, const char* name, void* fn_type);
+extern void* forge_llvm_get_named_function(void* module, const char* name);
+extern void* forge_llvm_get_named_global(void* module, const char* name);
+extern void* forge_llvm_get_type_by_name(void* ctx, const char* name);
+extern void* forge_llvm_append_basic_block(void* ctx, void* fn_val, const char* name);
+extern void* forge_llvm_build_alloca(void* builder, void* ty, const char* name);
+extern void* forge_llvm_add_global(void* module, void* ty, const char* name);
+extern void* forge_llvm_struct_create_named(void* ctx, const char* name);
+extern void* forge_llvm_const_string(void* module, const char* text, int64_t len);
+extern int forge_llvm_print_module_to_file(void* module, const char* filename);
+extern int64_t forge_llvm_emit_object_file(void* module, const char* filename);
+
+void* forge_llvm_module_create_s(ForgeString name, void* ctx) {
+    char buf[256] = "module";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_module_create(buf, ctx);
+}
+
+void* forge_llvm_add_function_s(void* module, ForgeString name, void* fn_type) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_add_function(module, buf, fn_type);
+}
+
+void* forge_llvm_get_named_function_s(void* module, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_get_named_function(module, buf);
+}
+
+void* forge_llvm_get_named_global_s(void* module, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_get_named_global(module, buf);
+}
+
+void* forge_llvm_get_type_by_name_s(void* ctx, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_get_type_by_name(ctx, buf);
+}
+
+void* forge_llvm_append_basic_block_s(void* ctx, void* fn_val, ForgeString name) {
+    char buf[256] = "bb";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_append_basic_block(ctx, fn_val, buf);
+}
+
+void* forge_llvm_build_alloca_s(void* builder, void* ty, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_build_alloca(builder, ty, buf);
+}
+
+void* forge_llvm_add_global_s(void* module, void* ty, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_add_global(module, buf, ty);
+}
+
+void* forge_llvm_struct_create_named_s(void* ctx, ForgeString name) {
+    char buf[256] = "";
+    if (name.ptr && name.len > 0 && name.len < 255) {
+        memcpy(buf, name.ptr, name.len);
+        buf[name.len] = '\0';
+    }
+    return forge_llvm_struct_create_named(ctx, buf);
+}
+
+void* forge_llvm_const_string_s(void* module, ForgeString text) {
+    return forge_llvm_const_string(module, text.ptr, text.len);
+}
+
+int forge_llvm_print_module_to_file_s(void* module, ForgeString filename) {
+    char buf[512] = "";
+    if (filename.ptr && filename.len > 0 && filename.len < 511) {
+        memcpy(buf, filename.ptr, filename.len);
+        buf[filename.len] = '\0';
+    }
+    return forge_llvm_print_module_to_file(module, buf);
+}
+
+int64_t forge_llvm_emit_object_file_s(void* module, ForgeString filename) {
+    char buf[512] = "";
+    if (filename.ptr && filename.len > 0 && filename.len < 511) {
+        memcpy(buf, filename.ptr, filename.len);
+        buf[filename.len] = '\0';
+    }
+    return forge_llvm_emit_object_file(module, buf);
+}

@@ -248,6 +248,20 @@ crate::runtime_fn! { name: "forge_extract_body_source", feature: "strings", para
 crate::runtime_fn! { name: "forge_param_name_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_param_type_add", feature: "strings", params: [ForgeString], ret: Void }
 
+// ForgeString-accepting LLVM wrappers (for Stage 2 ABI compatibility)
+crate::runtime_fn! { name: "forge_llvm_module_create_s", feature: "strings", params: [ForgeString, Ptr], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_add_function_s", feature: "strings", params: [Ptr, ForgeString, Ptr], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_get_named_function_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_get_named_global_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_get_type_by_name_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_append_basic_block_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_build_alloca_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_add_global_s", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_struct_create_named_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_const_string_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
+crate::runtime_fn! { name: "forge_llvm_print_module_to_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_emit_object_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+
 // C-side functions used by self-hosted compiler (detected by check_undeclared.sh)
 crate::runtime_fn! { name: "forge_c_index_of", feature: "strings", params: [ForgeString, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_exit", feature: "strings", params: [I64], ret: Void }
