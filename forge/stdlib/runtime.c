@@ -3387,6 +3387,19 @@ ForgeString forge_list_push_str(ForgeString list, ForgeString item) {
     return (ForgeString){ .ptr = (char*)data, .len = old_count + 1 };
 }
 
+// Generic sized-element list push (handles Token, Span, etc.)
+ForgeString forge_list_push_n(ForgeString list, void* item, int64_t elem_size) {
+    int64_t old_count = list.len;
+    char* data = (char*)list.ptr;
+    data = (char*)realloc(data, (old_count + 1) * elem_size);
+    if (!data) {
+        data = (char*)malloc((old_count + 1) * elem_size);
+        if (list.ptr && old_count > 0) memcpy(data, list.ptr, old_count * elem_size);
+    }
+    memcpy(data + old_count * elem_size, item, elem_size);
+    return (ForgeString){ .ptr = data, .len = old_count + 1 };
+}
+
 // Debug: extract enum tag and payload from {i64 tag, ptr payload} struct
 int64_t forge_enum_tag(int64_t tag, void* payload) { return tag; }
 
@@ -4873,6 +4886,28 @@ void forge_ftok_push(int64_t kind_id, ForgeString text, int64_t span_start, int6
 }
 
 int64_t forge_ftok_count(void) { return _ftok_count; }
+
+// Get token kind_id by index (for parser)
+int64_t forge_ftok_kind_id(int64_t idx) {
+    if (idx < 0 || idx >= _ftok_count) return 99; // EOF
+    return _ftok_buf[idx].kind_id;
+}
+
+// Get token text by index (for parser)
+ForgeString forge_ftok_text(int64_t idx) {
+    ForgeString empty = {NULL, 0};
+    if (idx < 0 || idx >= _ftok_count) return empty;
+    return _ftok_buf[idx].text;
+}
+
+// Get token span by index (for parser)
+void forge_ftok_span(int64_t idx, int64_t* start, int64_t* end, int64_t* line, int64_t* col) {
+    if (idx < 0 || idx >= _ftok_count || !start) return;
+    *start = _ftok_buf[idx].span_start;
+    *end = _ftok_buf[idx].span_end;
+    *line = _ftok_buf[idx].span_line;
+    *col = _ftok_buf[idx].span_col;
+}
 
 // Build a List<Token> from accumulated tokens
 // Returns ForgeString = {ptr to Token array, count}

@@ -204,6 +204,8 @@ impl Lexer {
 
     fn tokenize(self) -> List<Token> {
         mut tokens: List<Token> = []
+        // Also accumulate in C-side (for Stage 2 where Forge list push truncates structs)
+        forge_ftok_clear()
 
         while !self.is_at_end() {
             self.skip_whitespace()
@@ -214,19 +216,26 @@ impl Lexer {
             }
 
             let token = self.next_token()
-            if token.kind_id != 99 {  // 99 = EOF
+            if token.kind_id != 99 {
                 tokens = tokens.push(token)
+                let sp = token.span
+                forge_ftok_push(token.kind_id, token.text, sp.start, sp.end, sp.line, sp.col)
             }
         }
 
         // Add EOF
+        let eof_span = self.current_span()
         tokens = tokens.push(Token {
             kind: TokenKind.Eof,
-            span: self.current_span(),
+            span: eof_span,
             text: "",
             kind_id: 99,
         })
+        forge_ftok_push(99, "", eof_span.start, eof_span.end, eof_span.line, eof_span.col)
 
+        // Stage 1 (Rust-compiled): tokens.push works correctly (Rust Token size)
+        // Stage 2 (self-hosted): tokens.push truncates (only 8 bytes per element)
+        // The C-side ftok list is always populated as backup
         tokens
     }
 
