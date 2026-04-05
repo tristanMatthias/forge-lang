@@ -15,6 +15,7 @@ use checker.TypeChecker
 use codegen.Codegen
 use features.while_loops.PARSE_END_POS
 use features.functions.{store_fn_source, store_fn_param_count, store_fn_param_name, store_fn_param_type, store_fn_return_type}
+use parser.{PARSED_PARAM_NAMES, PARSED_PARAM_TYPES}
 
 // ─── Side Table ─────────────────────────────────
 
@@ -143,17 +144,18 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     // Filter out 'self' param: replace it with the type name as param type
     store_fn_source(fn_name, body_src)
 
-    // Count non-self params and store param info
+    // Count non-self params and store param info (from PARSED_PARAM_NAMES/TYPES, not Param list)
     mut param_count = 0
     mut pi = 0
-    for param in params {
-        if param.name == "self" {
-            // self param is the type being impl'd — treated as struct type
+    while pi < params.length {
+        mut pname = "_"
+        if pi < PARSED_PARAM_NAMES.length { pname = PARSED_PARAM_NAMES[pi] }
+        if pname == "self" {
             store_fn_param_name("self")
             store_fn_param_type(type_name)
             param_count = param_count + 1
         } else {
-            store_fn_param_name(param.name)
+            store_fn_param_name(pname)
             if pi < PARSED_PARAM_TYPES.length {
                 store_fn_param_type(PARSED_PARAM_TYPES[pi])
             } else {
