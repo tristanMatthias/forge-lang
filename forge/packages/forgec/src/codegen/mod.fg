@@ -2294,16 +2294,13 @@ impl Codegen {
                 self.define_var_typed(name, val_type, ev)
             }
                 .If(cond, then_body, else_body, has_else, s) -> {
-                    eprintln("  [IF-INLINE] hit")
                     cg_reinit_types()
                     let cv = self.emit_expr(cond)
-                    eprintln("  [IF-INLINE] cond emitted")
                     let ifn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let tb = llvm.append_basic_block(CG_CTX, ifn, "th")
                     let eb = llvm.append_basic_block(CG_CTX, ifn, "el")
                     let mb = llvm.append_basic_block(CG_CTX, ifn, "mg")
                     forge_build_cond_br_trunc(CG_B, cv, tb, eb)
-                    eprintln("  [IF-INLINE] cond_br emitted")
                     llvm.position_at_end(CG_B, tb)
                     self.emit_block(then_body)
                     if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }

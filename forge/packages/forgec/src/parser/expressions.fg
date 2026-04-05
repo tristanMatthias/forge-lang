@@ -362,7 +362,7 @@ impl Parser {
         }
 
         // Use kind_id instead of kind enum (kind enum is always Eof in C-side token access)
-        if tok.kind_id == 6 {  // NullLiteral
+        if tok.kind_id == 8 {  // NullLiteral (kind_id 8 in runtime KW table)
             let span = self.advance().span
             return Expr.NullLit(span)
         }
