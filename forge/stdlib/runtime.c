@@ -3991,6 +3991,92 @@ int64_t forge_get_type_by_name_i64(ForgeString name) {
     return (int64_t)(uintptr_t)ty;
 }
 
+// Create an LLVM struct type from the C-side struct registry (all in C — avoids Forge ptr issues)
+int64_t forge_create_struct_type(ForgeString name) {
+    if (!name.ptr || name.len <= 0 || !_ac_llvm_ctx) return 0;
+
+    // Check if already exists
+    typedef void* (*gtbn_fn)(void*, const char*);
+    static gtbn_fn gtbn2 = NULL;
+    if (!gtbn2) gtbn2 = (gtbn_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+    if (!gtbn2) return 0;
+
+    char nbuf[128];
+    int nlen = name.len > 127 ? 127 : (int)name.len;
+    memcpy(nbuf, name.ptr, nlen);
+    nbuf[nlen] = '\0';
+
+    void* existing = gtbn2(_ac_llvm_ctx, nbuf);
+    if (existing) return (int64_t)(uintptr_t)existing;
+
+    // Look up field types from struct registry
+    ForgeString fields = forge_struct_type_get_field_types(name);
+    if (!fields.ptr || fields.len <= 0) return 0;
+
+    // Count fields
+    int field_count = 1;
+    for (int i = 0; i < fields.len; i++) {
+        if (fields.ptr[i] == ',') field_count++;
+    }
+
+    // Resolve each field type
+    typedef void* (*i64t_fn)(void*);
+    typedef void* (*str_fn)(void*, const char*);
+    typedef void* (*cna_fn)(void*, const char*);
+    typedef void  (*ssb_fn)(void*, void**, unsigned, int);
+    static i64t_fn i64t = NULL;
+    static str_fn ptr_fn = NULL;
+    static cna_fn scn = NULL;
+    static ssb_fn ssb = NULL;
+    if (!i64t) i64t = (i64t_fn)dlsym(RTLD_DEFAULT, "LLVMInt64TypeInContext");
+    if (!ptr_fn) ptr_fn = (str_fn)dlsym(RTLD_DEFAULT, "LLVMPointerTypeInContext");
+    if (!scn) scn = (cna_fn)dlsym(RTLD_DEFAULT, "LLVMStructCreateNamed");
+    if (!ssb) ssb = (ssb_fn)dlsym(RTLD_DEFAULT, "LLVMStructSetBody");
+    if (!i64t || !scn || !ssb) return 0;
+
+    void* cg_i64 = i64t(_ac_llvm_ctx);
+    // Get ForgeString type = {ptr, i64}
+    typedef void* (*st_fn)(void*, void**, unsigned, int);
+    static st_fn st2 = NULL;
+    if (!st2) st2 = (st_fn)dlsym(RTLD_DEFAULT, "LLVMStructTypeInContext");
+    void* ptr_ty = ptr_fn ? ptr_fn(_ac_llvm_ctx, NULL) : cg_i64;
+    void* str_fields[2] = { ptr_ty, cg_i64 };
+    void* cg_str = st2 ? st2(_ac_llvm_ctx, str_fields, 2, 0) : cg_i64;
+
+    // Parse field types and build array
+    void* field_types[64];
+    int fi = 0;
+    int pos = 0;
+    while (fi < field_count && fi < 64) {
+        char ft[64] = {0};
+        int fti = 0;
+        while (pos < fields.len && fields.ptr[pos] != ',') {
+            if (fti < 63) ft[fti++] = fields.ptr[pos];
+            pos++;
+        }
+        if (pos < fields.len) pos++; // skip comma
+        ft[fti] = '\0';
+
+        // Resolve type
+        void* fty = cg_i64;
+        if (strcmp(ft, "string") == 0) fty = cg_str;
+        else if (strcmp(ft, "int") == 0 || strcmp(ft, "float") == 0 || strcmp(ft, "bool") == 0) fty = cg_i64;
+        else if (strncmp(ft, "List", 4) == 0) fty = cg_str; // List = {ptr, i64}
+        else if (strlen(ft) > 0) {
+            // Try named type lookup (for Span, etc.)
+            void* named = gtbn2(_ac_llvm_ctx, ft);
+            if (named) fty = named;
+        }
+        field_types[fi] = fty;
+        fi++;
+    }
+
+    // Create the struct
+    void* sty = scn(_ac_llvm_ctx, nbuf);
+    ssb(sty, field_types, field_count, 0);
+    return (int64_t)(uintptr_t)sty;
+}
+
 // Character classification already defined earlier (line ~653)
 
 // Debug: trace two i64 values without any allocation

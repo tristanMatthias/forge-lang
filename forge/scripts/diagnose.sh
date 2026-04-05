@@ -99,14 +99,16 @@ check_struct() {
 check_struct "Lexer" 6
 check_struct "Parser" 4
 check_struct "Span" 4
-check_struct "Token" 6    # kind(enum) + span(4) + text(2) + kind_id(1) = at least 6 slots
+check_struct "Token" 4    # kind + Span + ForgeString + kind_id = 4 LLVM fields (8 slots)
 check_struct "Codegen" 3
 check_struct "ForgeString" 2
 
 # Check that Token.kind_id is at a reasonable offset
 TOKEN_TYPE=$(grep "^%Token = type" "$IR" 2>/dev/null)
 if echo "$TOKEN_TYPE" | grep -q "{ i64, i64, %ForgeString, i64 }"; then
-    err "Token type is { i64, i64, %ForgeString, i64 } — Span field not expanded (kind_id at wrong offset)"
+    err "Token type is { i64, i64, %ForgeString, i64 } — Span field not expanded"
+elif echo "$TOKEN_TYPE" | grep -q "%Span"; then
+    ok "Token has %Span field"
 fi
 
 # ─── 4. FUNCTION SIGNATURE CONSISTENCY ───────────────────────────
