@@ -10,6 +10,12 @@ use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TY
 use features.while_loops.{WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
+// ─── LLVM Type Kinds (from LLVMTypeKind enum in LLVM-C/Core.h) ────
+// Use these instead of hardcoded numbers when calling forge_value_type_kind.
+export mut LLVM_INTEGER_TYPE_KIND  = 8   // i8, i16, i32, i64
+export mut LLVM_STRUCT_TYPE_KIND   = 10  // struct types
+export mut LLVM_POINTER_TYPE_KIND  = 12  // ptr
+
 // ─── LLVM state (globals) ──────────────────────
 
 mut CG_CTX: ptr = null
@@ -1228,20 +1234,25 @@ impl Codegen {
             .StringLit(_, _) -> { return "string" }
             .BoolLit(_, _) -> { return "bool" }
             .NullLit(_) -> { return "null" }
+            .Block(b, _) -> {
+                // Empty block = list literal []; non-empty = expression block
+                if b.statements.length == 0 { return "List" }
+                return "int"
+            }
             .Ident(name, _) -> {
                 // Check alloca cache for stored Forge type name
                 let var_type = forge_alloca_cache_get_var_type(name)
                 if var_type.length > 0 { return var_type }
                 // Fallback: LLVM type kind (0=miss, 8=i64, 10=struct, 12=ptr)
                 let type_kind = forge_alloca_cache_type_id(name)
-                if type_kind == 10 { return "string" }
-                if type_kind == 12 { return "ptr" }
-                if type_kind == 8 { return "int" }
+                if type_kind == LLVM_STRUCT_TYPE_KIND { return "string" }
+                if type_kind == LLVM_POINTER_TYPE_KIND { return "ptr" }
+                if type_kind == LLVM_INTEGER_TYPE_KIND { return "int" }
                 // Check if it's a global (i64-based to avoid ptr null check issue)
                 let gkind = forge_global_type_kind(CG_MOD, name)
-                if gkind == 10 { return "string" }  // StructTypeKind (ForgeString)
-                if gkind == 12 { return "ptr" }     // PointerTypeKind
-                if gkind == 8 { return "int" }      // IntegerTypeKind
+                if gkind == LLVM_STRUCT_TYPE_KIND { return "string" }  // StructTypeKind (ForgeString)
+                if gkind == LLVM_POINTER_TYPE_KIND { return "ptr" }     // PointerTypeKind
+                if gkind == LLVM_INTEGER_TYPE_KIND { return "int" }      // IntegerTypeKind
                 // Check function return types
                 mut fi = 0
                 while fi < FN_NAMES.length {
@@ -1529,7 +1540,7 @@ impl Codegen {
                 // For i64-typed enums: use the value directly (it IS the tag)
                 mut cmp_lhs = obj_val
                 let val_kind = forge_value_type_kind(obj_val)
-                if val_kind == 10 {
+                if val_kind == LLVM_STRUCT_TYPE_KIND {
                     // Struct type — extract tag (field 0)
                     let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
                     cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
@@ -1669,7 +1680,7 @@ impl Codegen {
         // For enum scrutinees, extract the tag byte
         mut subj = subj_raw
         let val_kind = forge_value_type_kind(subj_raw)
-        if val_kind == 10 {
+        if val_kind == LLVM_STRUCT_TYPE_KIND {
             let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
             subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
         }
@@ -2167,12 +2178,12 @@ impl Codegen {
         // Unwrap nullable values for comparison: if one side is nullable {i8, T}
         // and the other is a non-nullable value, extract the inner T before comparing.
         // Only unwrap when the OTHER side is a struct (ForgeString etc), not a scalar (null/int).
-        let lhs_is_nullable = forge_value_type_kind(lhs) == 10 && forge_struct_field_is_i8(lhs, 0) == 1
-        let rhs_is_nullable = forge_value_type_kind(rhs) == 10 && forge_struct_field_is_i8(rhs, 0) == 1
-        if lhs_is_nullable == 1 && rhs_is_nullable == 0 && forge_value_type_kind(rhs) == 10 {
+        let lhs_is_nullable = forge_value_type_kind(lhs) == LLVM_STRUCT_TYPE_KIND && forge_struct_field_is_i8(lhs, 0) == 1
+        let rhs_is_nullable = forge_value_type_kind(rhs) == LLVM_STRUCT_TYPE_KIND && forge_struct_field_is_i8(rhs, 0) == 1
+        if lhs_is_nullable == 1 && rhs_is_nullable == 0 && forge_value_type_kind(rhs) == LLVM_STRUCT_TYPE_KIND {
             lhs = llvm.build_extract_value(CG_B, lhs, 1, "unwrap_lhs")
         }
-        if rhs_is_nullable == 1 && lhs_is_nullable == 0 && forge_value_type_kind(lhs) == 10 {
+        if rhs_is_nullable == 1 && lhs_is_nullable == 0 && forge_value_type_kind(lhs) == LLVM_STRUCT_TYPE_KIND {
             rhs = llvm.build_extract_value(CG_B, rhs, 1, "unwrap_rhs")
         }
         // Detect types from LLVM values (central, reliable)
@@ -2455,7 +2466,7 @@ impl Codegen {
                     let set_val = self.emit_expr(args[1])
                     // Convert set_val to i64 if needed
                     mut val_i64 = set_val
-                    if forge_value_type_kind(set_val) == 12 {
+                    if forge_value_type_kind(set_val) == LLVM_POINTER_TYPE_KIND {
                         // Pointer value → ptrtoint
                         val_i64 = llvm.build_ptrtoint(CG_B, set_val, CG_I64, "si")
                     }
@@ -2975,14 +2986,15 @@ impl Codegen {
     // Define a local variable: create alloca, store value, register in CG_LOCALS.
     // Type is determined by the alloca — LLVM is the source of truth.
     fn define_var_typed(self, name: string, type_name: string, value: ptr) {
-        // Resolve alloca type: prefer LLVM type of the value (source of truth)
-        // Falls back to type name resolution if value type is i64
-        mut alloca_ty = resolve_type_to_llvm(type_name)
-        // If resolved to i64 but value is a struct, use value's actual type
+        // Alloca type: LLVM's type_of(value) is the source of truth.
+        // Falls back to type name when value type is i64 but Forge type is struct.
+        mut alloca_ty = llvm.type_of(value)
         let val_kind = forge_value_type_kind(value)
-        if val_kind == 10 {
-            // Value is a struct — use its LLVM type for the alloca
-            alloca_ty = llvm.type_of(value)
+        if val_kind == LLVM_INTEGER_TYPE_KIND {
+            // Value is integer but Forge type might be string/list/struct.
+            if type_name == "string" || type_name == "List" { alloca_ty = CG_STR }
+            let resolved = resolve_type_to_llvm(type_name)
+            if resolved != null { alloca_ty = resolved }
         }
         if CG_B == null { return }
         let cur_bb = llvm.get_insert_block(CG_B)
