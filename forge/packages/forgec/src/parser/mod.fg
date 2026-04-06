@@ -922,11 +922,11 @@ impl Parser {
                 mutable = true
             }
             let name = self.expect_ident()
-            if name == null { return null }
+            if name.length == 0 { return null }
             if self.expect_id(KID_COLON) == null { return null }
             let ty = self.parse_type_expr()
             if ty == null { return null }
-            fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
+            fields = fields.push(TypeField { name, type_expr: ty!, mutable })
             self.skip_newlines()
             if self.peek_kind_id() == KID_COMMA {
                 self.advance()
@@ -1019,8 +1019,8 @@ impl Parser {
         while self.peek_kind_id() != KID_GT && !self.is_at_end() {
             self.skip_newlines()
             let name = self.expect_ident()
-            if name != null {
-                params = params.push(name!)
+            if name.length > 0 {
+                params = params.push(name)
             }
             // TODO: bounds (T: Clone)
             if self.peek_kind_id() == KID_COMMA {

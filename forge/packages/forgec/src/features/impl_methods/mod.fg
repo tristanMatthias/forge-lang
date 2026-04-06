@@ -192,13 +192,12 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
     let start = p.advance_span() // consume 'fn'
 
     let name = p.expect_ident()
-    if name == null {
+    if name.length == 0 {
         p.error("expected method name")
         return null
     }
 
     let params = p.parse_params()
-    if params == null { return null }
 
     mut return_type: TypeExpr? = null
     if p.peek_kind_id() == KID_ARROW {
@@ -207,12 +206,8 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
     }
 
     let body = p.parse_block()
-    if body == null {
-        p.error("expected method body")
-        return null
-    }
 
-    ImplMethod { name: name!, params: params!, return_type, body: body!, span: start }
+    ImplMethod { name, params, return_type, body, span: start }
 }
 
 // ─── Check ──────────────────────────────────────
