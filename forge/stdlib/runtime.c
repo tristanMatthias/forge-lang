@@ -3840,6 +3840,82 @@ ForgeString forge_match_binding_csv(void) {
     return forge_string_new(buf, pos);
 }
 
+// Parse binding string "EnumName.VariantName:field1,field2,field3" and return info
+// binding_idx: which binding (from forge_match_binding_get)
+// Returns: the variant qualified name (before :), or field names (after :)
+ForgeString forge_match_binding_variant(int64_t binding_idx) {
+    ForgeString raw = forge_match_binding_get(binding_idx);
+    if (!raw.ptr || raw.len <= 0) return (ForgeString){NULL, 0};
+    // Find ':'
+    for (int i = 0; i < raw.len; i++) {
+        if (raw.ptr[i] == ':') {
+            return forge_string_new(raw.ptr, i);
+        }
+    }
+    return raw;
+}
+
+ForgeString forge_match_binding_names(int64_t binding_idx) {
+    ForgeString raw = forge_match_binding_get(binding_idx);
+    if (!raw.ptr || raw.len <= 0) return (ForgeString){NULL, 0};
+    for (int i = 0; i < raw.len; i++) {
+        if (raw.ptr[i] == ':') {
+            return forge_string_new(raw.ptr + i + 1, raw.len - i - 1);
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
+// Get the N-th comma-separated name from a binding names string
+ForgeString forge_match_binding_name_at(int64_t binding_idx, int64_t name_idx) {
+    ForgeString names = forge_match_binding_names(binding_idx);
+    if (!names.ptr || names.len <= 0) return (ForgeString){NULL, 0};
+    int64_t start = 0, count = 0;
+    for (int64_t i = 0; i <= names.len; i++) {
+        if (i == names.len || names.ptr[i] == ',') {
+            if (count == name_idx) {
+                return forge_string_new(names.ptr + start, i - start);
+            }
+            count++;
+            start = i + 1;
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
+// Count the number of bindings in a binding entry
+int64_t forge_match_binding_name_count(int64_t binding_idx) {
+    ForgeString names = forge_match_binding_names(binding_idx);
+    if (!names.ptr || names.len <= 0) return 0;
+    int64_t count = 1;
+    for (int64_t i = 0; i < names.len; i++) {
+        if (names.ptr[i] == ',') count++;
+    }
+    return count;
+}
+
+// Look up field type name: key = "EnumName.VariantName.fieldIdx"
+// Avoids ForgeString concat in self-hosted codegen
+ForgeString forge_enum_field_type_name(ForgeString variant_qname, int64_t field_idx) {
+    char key[128];
+    int klen = 0;
+    if (variant_qname.ptr && variant_qname.len > 0 && variant_qname.len < 100) {
+        memcpy(key, variant_qname.ptr, variant_qname.len);
+        klen = (int)variant_qname.len;
+    }
+    key[klen++] = '.';
+    klen += snprintf(key + klen, sizeof(key) - klen, "%lld", (long long)field_idx);
+    // Search the variant fields registry
+    for (int i = 0; i < _enum_vf_count; i++) {
+        if ((int)strlen(_enum_vf[i].key) == klen &&
+            memcmp(_enum_vf[i].key, key, klen) == 0) {
+            int flen = strlen(_enum_vf[i].fields);
+            return forge_string_new(_enum_vf[i].fields, flen);
+        }
+    }
+    return (ForgeString){NULL, 0};
+}
+
 void forge_enum_variant_fields_set(ForgeString key, ForgeString fields) {
     if (!key.ptr || key.len <= 0 || key.len > 95) return;
     // Update existing

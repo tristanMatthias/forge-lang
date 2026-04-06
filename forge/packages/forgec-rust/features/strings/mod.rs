@@ -202,6 +202,11 @@ crate::runtime_fn! { name: "forge_match_binding_clear", feature: "strings", para
 crate::runtime_fn! { name: "forge_match_binding_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_match_binding_get", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_match_binding_csv", feature: "strings", params: [], ret: ForgeString }
+crate::runtime_fn! { name: "forge_enum_field_type_name", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_match_binding_variant", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_match_binding_names", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_match_binding_name_at", feature: "strings", params: [I64, I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_match_binding_name_count", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_variant_tag_set", feature: "strings", params: [ForgeString, I64], ret: Void }
 crate::runtime_fn! { name: "forge_enum_variant_tag_get", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_variant_fields_set", feature: "strings", params: [ForgeString, ForgeString], ret: Void }

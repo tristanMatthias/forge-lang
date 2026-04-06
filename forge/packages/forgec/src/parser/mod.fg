@@ -1074,18 +1074,60 @@ impl Parser {
                 let vname = self.expect_ident()
                 register_enum_variant(enum_name, vname, variant_tag)
                 mut field_count = 0
+                mut field_types: string = ""
                 if forge_peek_kind_id(forge_parser_get_pos()) == 100 {
                     self.advance() // consume (
-                    mut pdepth = 1
-                    while pdepth > 0 && !self.is_at_end() {
-                        let pk = forge_peek_kind_id(forge_parser_get_pos())
-                        if pk == 100 { pdepth = pdepth + 1 }
-                        if pk == 101 { pdepth = pdepth - 1 }
-                        if pk == 123 && pdepth == 1 { field_count = field_count + 1 }
-                        if pdepth > 0 { self.advance() }
+                    // Parse fields: name: Type, name: Type, ...
+                    while forge_peek_kind_id(forge_parser_get_pos()) != 101 && !self.is_at_end() {
+                        self.skip_newlines()
+                        let fk = forge_peek_kind_id(forge_parser_get_pos())
+                        if fk == 101 { break }
+                        // Expect field name (ident)
+                        if fk == 1 {
+                            self.advance() // consume field name
+                            // Expect colon
+                            if forge_peek_kind_id(forge_parser_get_pos()) == 124 {
+                                self.advance() // consume :
+                                // Read type name
+                                let type_tok = self.peek()
+                                mut type_code = "i"
+                                if type_tok.kind_id == 1 {
+                                    let tn = type_tok.text
+                                    if tn == "string" { type_code = "s" }
+                                    else if tn == "Span" { type_code = "4" }
+                                    else if tn == "int" || tn == "bool" || tn == "float" { type_code = "i" }
+                                    else if tn == "List" { type_code = "l" }
+                                    else { type_code = "p" }
+                                    // Store the actual field type name for p-type resolution
+                                    forge_enum_variant_fields_set(
+                                        enum_name + "." + vname + "." + string(field_count),
+                                        tn
+                                    )
+                                }
+                                field_types = field_types + type_code
+                                field_count = field_count + 1
+                                // Skip the type expression (may have generics like List<Token>)
+                                mut tdepth = 0
+                                while !self.is_at_end() {
+                                    let tk = forge_peek_kind_id(forge_parser_get_pos())
+                                    if tk == 216 { tdepth = tdepth + 1 } // <
+                                    if tk == 219 { tdepth = tdepth - 1 } // >
+                                    if tdepth == 0 && (tk == 123 || tk == 101) { break } // , or )
+                                    self.advance()
+                                }
+                            } else {
+                                // No colon — bare field name without type
+                                field_types = field_types + "i"
+                                field_count = field_count + 1
+                            }
+                        }
+                        // Skip comma
+                        if forge_peek_kind_id(forge_parser_get_pos()) == 123 { self.advance() }
                     }
-                    field_count = field_count + 1
                     if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
+                    // Register variant field types in C-side registry
+                    let variant_key = enum_name + "." + vname
+                    forge_enum_variant_fields_set(variant_key, field_types)
                 }
                 if field_count > max_fields { max_fields = field_count }
                 variant_tag = variant_tag + 1
