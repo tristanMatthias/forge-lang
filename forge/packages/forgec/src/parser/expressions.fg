@@ -750,7 +750,6 @@ impl Parser {
 
 // ─── Codegen Side Table Imports ──────────────────
 
-use codegen.{cg_var_enum_type}
 use parser.templates.{decompose_template}
 
 // Track the most recently parsed identifier name (for struct type lookup)

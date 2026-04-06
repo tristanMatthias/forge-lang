@@ -25,7 +25,6 @@ use core.kind_ids.{
     KID_PLUS, KID_MINUS, KID_NOT, KID_PIPE, KID_QUESTION,
     KID_EQ, KID_LT, KID_GT, KID_LTEQ, KID_GTEQ,
 }
-use codegen.{cg_var_enum_type}
 use features.while_loops.{PARSE_END_POS}
 use features.impl_methods.parse_impl_block
 use expressions.{LAST_IDENT_NAME, IN_MATCH_ARM, match_enum_tag, register_enum_variant}
