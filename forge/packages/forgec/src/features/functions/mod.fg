@@ -375,15 +375,25 @@ export fn declare_all_fns() {
         if is_main { ret_ty = CG_I32 }
         if !is_main && i < FN_RETURN_TYPES.length {
             mut rtn = FN_RETURN_TYPES[i]
-            // Strip nullable suffix for type resolution
-            if rtn.length > 1 { if rtn[rtn.length - 1] == "?" {
+            // Check for nullable return type (T?)
+            mut is_nullable_ret = false
+            if rtn.length > 1 && rtn[rtn.length - 1] == "?" {
+                is_nullable_ret = true
                 rtn = rtn.substring(0, rtn.length - 1)
-            } }
+            }
             if rtn == "string" { ret_ty = CG_STR }
             else if rtn == "List" || (rtn.length > 5 && rtn.substring(0, 5) == "List:") { ret_ty = CG_STR }
             else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
+            }
+            // Wrap in nullable struct {i8, InnerType} if return type had ?
+            if is_nullable_ret { eprintln("  [NR] wrapping nullable: " + name)
+                let nf = llvm.type_array_new(2)
+                llvm.type_array_set(nf, 0, CG_I8)
+                llvm.type_array_set(nf, 1, ret_ty)
+                ret_ty = llvm.struct_type(CG_CTX, nf, 2, 0)
+                llvm.type_array_free(nf)
             }
         }
         cg_reinit_types()

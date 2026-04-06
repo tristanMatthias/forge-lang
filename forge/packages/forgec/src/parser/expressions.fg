@@ -244,9 +244,10 @@ impl Parser {
                 continue
             }
 
-            // Force unwrap: expr!
-            if self.check(TokenKind.Not) {
-                self.advance()
+            // Force unwrap: expr! → extract inner value from nullable
+            if self.check(TokenKind.Not) || forge_peek_kind_id(forge_parser_get_pos()) == 209 {
+                let unwrap_span = self.advance().span
+                result = Expr.ForceUnwrap(result, unwrap_span)
                 continue
             }
 

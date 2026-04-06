@@ -117,13 +117,22 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let params = p.parse_params()
 
     mut return_type_name = ""
-    if p.check(TokenKind.Arrow) {
+    if p.check(TokenKind.Arrow) || forge_peek_kind_id(forge_parser_get_pos()) == 121 {
         p.advance()
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
             return_type_name = ret_tok.text
         }
-        p.parse_type_expr()
+        let parsed_ret = p.parse_type_expr()
+        // Check if return type is nullable (T?) and append ?
+        if parsed_ret != null {
+            match parsed_ret! {
+                .Nullable(inner, span) -> {
+                    return_type_name = return_type_name + "?"
+                }
+                _ -> {}
+            }
+        }
     }
 
     // Capture body source by brace counting (same as parse_fn_decl)

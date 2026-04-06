@@ -106,6 +106,7 @@ export enum Expr {
     IfExpr(condition: Expr, then_block: Block, else_block: Block, has_else: int, span: Span)
     MatchExpr(scrutinee: Expr, arm_tags: string, arm_bindings: string, arm_bodies: List<Block>, default_body: Block, has_default: int, span: Span)
     IsCheck(subject: Expr, variant_name: string, pred: int, span: Span)
+    ForceUnwrap(operand: Expr, span: Span)
     Feature(expr: FeatureExpr)
 }
 

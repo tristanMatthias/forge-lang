@@ -1487,16 +1487,15 @@ impl Codegen {
                 }
                 // List: extract data pointer, GEP to element, load
                 cg_reinit_types()
-                mut elem_ty = CG_I64
-                // Resolve element type from list type name
+                // Default to ForgeString for list elements (most Forge lists hold strings)
+                // Override with specific type if known from alloca cache
+                mut elem_ty = CG_STR
                 let elt = list_elem_type(obj_var_name)
-                if elt == "string" { elem_ty = CG_STR }
-                else if elt != "" && elt != "int" {
+                if elt == "int" || elt == "bool" { elem_ty = CG_I64 }
+                else if elt != "" && elt != "string" {
                     let resolved = resolve_type_to_llvm(elt)
                     if resolved != null { elem_ty = resolved }
                 }
-                // Fallback: check explicit string list flag
-                if is_str_list { elem_ty = CG_STR }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
                 // Ensure index is integer (might be ForgeString)
@@ -1538,6 +1537,14 @@ impl Codegen {
                 let cmp = llvm.build_icmp(CG_B, pred, cmp_lhs, tag_val, "ic")
                 let ext = llvm.build_zext(CG_B, cmp, llvm.int64_type(CG_CTX), "ie")
                 return ext
+            }
+            .ForceUnwrap(operand, span) -> {
+                // Force-unwrap: extract inner value from nullable {i8 tag, T value}
+                let val = self.emit_expr(operand)
+                let inner = llvm.build_extract_value(CG_B, val, 1, "unwrap")
+                if inner != null { return inner }
+                // Not a struct (already non-nullable), pass through
+                return val
             }
             .Feature(fe) -> {
                 return self.dispatch_expr(fe)
@@ -2511,6 +2518,7 @@ impl Codegen {
                 }
             }
             .IsCheck(s, v, p, sp) -> {}
+            .ForceUnwrap(o, sp) -> {}
             .Feature(fe) -> {}
             .Binary(l, o, r, s) -> {}
             .Unary(o, e, s) -> {}
@@ -2944,8 +2952,15 @@ impl Codegen {
     // Define a local variable: create alloca, store value, register in CG_LOCALS.
     // Type is determined by the alloca — LLVM is the source of truth.
     fn define_var_typed(self, name: string, type_name: string, value: ptr) {
-        // Resolve alloca type from the Forge type name
-        let alloca_ty = resolve_type_to_llvm(type_name)
+        // Resolve alloca type: prefer LLVM type of the value (source of truth)
+        // Falls back to type name resolution if value type is i64
+        mut alloca_ty = resolve_type_to_llvm(type_name)
+        // If resolved to i64 but value is a struct, use value's actual type
+        let val_kind = forge_value_type_kind(value)
+        if val_kind == 10 {
+            // Value is a struct — use its LLVM type for the alloca
+            alloca_ty = llvm.type_of(value)
+        }
         if CG_B == null { return }
         let cur_bb = llvm.get_insert_block(CG_B)
         let fn_val = llvm.get_basic_block_parent(cur_bb)
