@@ -388,7 +388,7 @@ export fn declare_all_fns() {
                 if resolved != null { ret_ty = resolved }
             }
             // Wrap in nullable struct {i8, InnerType} if return type had ?
-            if is_nullable_ret { eprintln("  [NR] wrapping nullable: " + name)
+            if is_nullable_ret {
                 let nf = llvm.type_array_new(2)
                 llvm.type_array_set(nf, 0, CG_I8)
                 llvm.type_array_set(nf, 1, ret_ty)

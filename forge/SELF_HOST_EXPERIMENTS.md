@@ -491,3 +491,41 @@ bash scripts/audit_stage2.sh output.ll
 **Lesson:** The corruption chain: Expr passed by value ({i64, ptr}) → payload ptr corrupted → name field extracted from wrong memory → wrong function called. This is an Expr struct passing bug in the mini, not a string comparison bug.
 
 Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being captured by define_var. Fixed by saving before clear. Also found double-underscore vs single-underscore naming mismatch between self-hosted source and mini output (fixed: self-hosted now uses single underscore matching mini). The alloca type and the store value must match. Currently emit_expr produces i64 for struct expressions (because of flag system). Fix must be bottom-up: first fix emit_expr to produce correctly-typed values, THEN define_var can use the annotation type for the alloca. The annotation-only string/ptr types work (491 stable) because those were already handled by existing checks.
+
+### EXP-050: Nullable return types for impl methods
+**Date:** 2026-04-05
+**Milestone:** M5 (Stage 2 functional)
+**Hypothesis:** parse_statement returns %Statement (non-nullable) because impl method parser (parse_impl_method_as_fn) didn't append ? to return type names. This causes ForceUnwrap to extract wrong field.
+**Change:** Added nullable detection in impl method return type parsing. Added ForceUnwrap as proper Expr variant. Changed list index default to CG_STR. Added define_var_typed LLVMTypeOf check for struct values.
+**Score:** 226/1000
+**Result:** ✅ parse_statement now returns {i8, %Statement}. ForceUnwrap extracts field 1. Push uses %Statement stride.
+**Kept/Reverted:** Kept
+**Lesson:** Impl methods and regular functions had DIFFERENT return type handling. Both paths must handle nullable (?) suffix consistently.
+
+### EXP-051: Tag collision in match_enum_tag (VarKind.Let vs Statement.Let)
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** match_enum_tag("Let") returns VarKind.Let tag=0 instead of Statement.Let tag=3 because VarKind is registered AFTER Statement. All match arms collapse to .Expr (tag 0).
+**Change:** Added qualified name lookup (Statement.Let vs bare Let) via cg_var_enum_type. Added C-side forge_enum_variant_tag_get with suffix matching.
+**Score:** N/A
+**Result:** ⚠️ PARTIAL — qualified lookup works when cg_var_enum_type returns the enum name. But cg_var_enum_type is self-hosted and ForgeString params lose length. Need to verify enum_type flows through parse_match_expr.
+**Kept/Reverted:** Kept
+**Lesson:** The last-registered variant wins in suffix search. File scan order determines which variant shadows others. Must use qualified names (Statement.Let not Let) for all tag lookups.
+
+### EXP-052: ForgeString corruption in self-hosted code
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** Self-hosted codegen stores ForgeString values in i64 allocas (8 bytes), losing the length field (requires 16 bytes). This affects ALL string operations in self-hosted compiled functions.
+**Change:** define_var_typed checks forge_value_type_kind(value) == 10 (struct) and uses llvm.type_of(value) for the alloca. This makes ForgeString allocas 16 bytes automatically.
+**Score:** N/A
+**Result:** ✅ ForgeString allocas are now correct size in self-hosted code. But the fix only applies when the VALUE is a struct at compile time. Values loaded from i64-strided lists still lose length.
+**Kept/Reverted:** Kept
+**Lesson:** LLVM is the source of truth for types. forge_value_type_kind + llvm.type_of gives the actual type without any string operations.
+
+### Current State (end of session 2026-04-05)
+- Stage 2: 388 functions, ~40K lines IR, score 226/1000
+- parse_statement returns {i8, %Statement} (nullable)
+- ForceUnwrap extracts field 1 from nullable
+- List push uses LLVMTypeOf for correct element stride
+- Match arm tags use C-side registry with suffix matching
+- REMAINING: Lexer_tokenize empty because emit_statement match tags collide (VarKind.Let=0 shadows Statement.Let=3). Need qualified enum name to flow through parse_match_expr. The cg_var_enum_type call may not work because of ForgeString corruption in the function parameter.
