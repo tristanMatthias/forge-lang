@@ -971,7 +971,7 @@ impl Parser {
             mutable = true
         }
         let name = self.expect_ident()
-        if name == null { return null }
+        if name.length == 0 { return null }
 
         // Optional type annotation: : Type
         // Capture the type name text before parsing (for struct type lookup)
@@ -997,7 +997,7 @@ impl Parser {
         // Store the type name for function param type tracking
         LAST_PARAM_TYPE_NAME = type_name_text
         PARSED_PARAM_TYPES = PARSED_PARAM_TYPES.push(type_name_text)
-        PARSED_PARAM_NAMES = PARSED_PARAM_NAMES.push(name!)
+        PARSED_PARAM_NAMES = PARSED_PARAM_NAMES.push(name)
 
         // Optional default value: = expr
         mut default_value: Expr? = null
@@ -1006,7 +1006,7 @@ impl Parser {
             default_value = self.parse_expr()
         }
 
-        Param { name: name!, type_ann, default_value, span: start, mutable }
+        Param { name, type_ann, default_value, span: start, mutable }
     }
 
     // ─── Type Parameters ───────────────────────

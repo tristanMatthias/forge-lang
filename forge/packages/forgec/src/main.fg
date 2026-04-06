@@ -153,27 +153,16 @@ mut MODULE_PATHS_CSV: string = ""
 
 // Helper: find directory from filepath (no assignments inside if blocks)
 fn filepath_dir(filepath: string) -> string {
-    // Find last "/" by searching for "/" in progressively shorter suffixes
-    let first = filepath.index_of("/")
-    if first < 0 { return "" }
-    // Walk forward finding all slashes
-    let after1 = filepath.substring(first + 1, filepath.length)
-    let second = after1.index_of("/")
-    if second < 0 { return filepath.substring(0, first + 1) }
-    let after2 = after1.substring(second + 1, after1.length)
-    let third = after2.index_of("/")
-    if third < 0 { return filepath.substring(0, first + 1 + second + 1) }
-    let after3 = after2.substring(third + 1, after2.length)
-    let fourth = after3.index_of("/")
-    if fourth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1) }
-    let after4 = after3.substring(fourth + 1, after3.length)
-    let fifth = after4.index_of("/")
-    if fifth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1) }
-    let after5 = after4.substring(fifth + 1, after4.length)
-    let sixth = after5.index_of("/")
-    if sixth < 0 { return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1 + fifth + 1) }
-    // 7+ levels deep — return up to 6th slash
-    return filepath.substring(0, first + 1 + second + 1 + third + 1 + fourth + 1 + fifth + 1 + sixth + 1)
+    // Find last "/" by walking the string from the end.
+    // Returns the directory path including the trailing "/", or "" if no slash.
+    mut last_slash = -1
+    mut i = 0
+    while i < filepath.length {
+        if filepath[i] == "/" { last_slash = i }
+        i = i + 1
+    }
+    if last_slash < 0 { return "" }
+    return filepath.substring(0, last_slash + 1)
 }
 
 // Helper: extract mod name (text before first newline)
