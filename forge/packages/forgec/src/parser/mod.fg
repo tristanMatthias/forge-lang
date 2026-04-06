@@ -140,6 +140,13 @@ impl Parser {
         tok
     }
 
+    // Helper: advance and return span (avoids .advance_span() chain which the
+    // self-hosted codegen doesn't emit correctly)
+    fn advance_span(self) -> Span {
+        let tok = self.advance()
+        tok.span
+    }
+
     fn check(self, kind: TokenKind) -> bool {
         // Use kind_id comparison (avoids Token struct layout dependency)
         let a = forge_kind_id_to_key(self.peek().kind_id)
@@ -299,7 +306,7 @@ impl Parser {
             self.sync_pos()
             return r }
         if kid == KID_WHILE {
-            let wstart = self.advance().span
+            let wstart = self.advance_span()
             self.skip_newlines()
             let wcond = self.parse_expr()
             if wcond == null { return null }
@@ -309,7 +316,7 @@ impl Parser {
             return Statement.While(wcond!, wbody, wstart)
         }
         if kid == KID_FOR {
-            let fstart = self.advance().span
+            let fstart = self.advance_span()
             let fname = self.expect_ident()
             if self.check(TokenKind.In) { self.advance() }
             self.skip_newlines()
@@ -322,7 +329,7 @@ impl Parser {
         }
         if kid == KID_RETURN { return self.parse_return() }
         if kid == KID_IF {
-            let start = self.advance().span
+            let start = self.advance_span()
             self.skip_newlines()
             let cond = self.parse_expr()
             if cond == null { return null }
@@ -348,7 +355,7 @@ impl Parser {
             return Statement.If(cond!, then_block, else_block, has_else, start)
         }
         if kid == KID_WHILE {
-            let wstart = self.advance().span
+            let wstart = self.advance_span()
             self.skip_newlines()
             let wcond = self.parse_expr()
             if wcond == null { return null }
@@ -366,11 +373,11 @@ impl Parser {
             return null
         }
         if kid == KID_BREAK {
-            let bspan = self.advance().span
+            let bspan = self.advance_span()
             return Statement.Break(bspan)
         }
         if kid == KID_CONTINUE {
-            let cspan = self.advance().span
+            let cspan = self.advance_span()
             return Statement.Continue(cspan)
         }
         if kid == KID_USE {
@@ -457,7 +464,7 @@ impl Parser {
                 return r
             }
             .If -> {
-                let start = self.advance().span // consume 'if'
+                let start = self.advance_span() // consume 'if'
                 self.skip_newlines()
                 let cond = self.parse_expr()
                 if cond == null { return null }
@@ -482,7 +489,7 @@ impl Parser {
                 return Statement.If(cond!, then_block, else_block, has_else, start)
             }
             .Match -> {
-                let start = self.advance().span // consume 'match'
+                let start = self.advance_span() // consume 'match'
                     self.skip_newlines()
                     let scrutinee = self.parse_expr()
                     if scrutinee == null { return null }
@@ -497,16 +504,17 @@ impl Parser {
                     mut arm_bindings_list: List<string> = []
                     mut has_default = 0
                     mut default_body = Block { statements: [], span: start }
+                    forge_match_pattern_clear()
 
                     while !self.check(TokenKind.RBrace) && !self.is_at_end() {
                         self.skip_newlines()
                         mut pat_tag = -1
+                        mut is_default = 0
                         mut arm_bind_csv = ""
                         if self.check(TokenKind.Dot) {
                             self.advance()
                             let vname = self.expect_ident()
                             let qname = enum_type + "." + vname
-                            // Store variant qualified name for field type lookup
                             arm_bind_csv = qname + ":"
                             pat_tag = match_enum_tag(qname)
                             if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
@@ -531,8 +539,15 @@ impl Parser {
                             }
                         } else if self.check(TokenKind.Underscore) {
                             self.advance()
-                            pat_tag = -1
-                            has_default = 1
+                            is_default = 1
+                        } else if self.peek().kind_id == KID_STRING_LIT {
+                            let tok = self.advance()
+                            // Store string pattern in C-side registry
+                            forge_match_pattern_add_string(tok.text)
+                            pat_tag = -2
+                        } else if self.peek().kind_id == KID_INT_LIT {
+                            let tok = self.advance()
+                            pat_tag = int(tok.text)
                         } else {
                             self.advance()
                         }
@@ -553,7 +568,8 @@ impl Parser {
                             }
                         }
                         IN_MATCH_ARM = prev_match
-                        if pat_tag == -1 && has_default == 1 {
+                        if is_default == 1 {
+                            has_default = 1
                             default_body = body
                         } else {
                             arm_tags = arm_tags.push(pat_tag)
@@ -655,7 +671,7 @@ impl Parser {
     }
 
     fn parse_return(self) -> Statement? {
-        let start = self.advance().span // consume 'return'
+        let start = self.advance_span() // consume 'return'
 
         // Bare return (no value)
         if self.is_at_end() || self.check(TokenKind.Newline) || self.check(TokenKind.RBrace) {
@@ -686,7 +702,7 @@ impl Parser {
         if self.check(TokenKind.Eq) {
             // Save target variable name before RHS parsing overwrites LAST_IDENT_NAME
             let assign_target_name = LAST_IDENT_NAME
-            let eq_span = self.advance().span // consume =
+            let eq_span = self.advance_span() // consume =
             let value = self.parse_expr()
             if value == null {
                 self.error("expected expression after '='")
@@ -765,7 +781,7 @@ impl Parser {
 
         // Check for nullable modifier: Type?
         if self.check(TokenKind.Question) {
-            let span = self.advance().span
+            let span = self.advance_span()
             return TypeExpr.Nullable(ty!, span)
         }
 
@@ -778,7 +794,7 @@ impl Parser {
         // Ident → type name (bootstrap workaround: use kind_id)
         if tok.kind_id == 1 {
             let name = tok.text
-            let start = self.advance().span
+            let start = self.advance_span()
             // Check for generic: Name<A, B>
             if self.check(TokenKind.Lt) {
                 let args = self.parse_type_args()
@@ -840,7 +856,7 @@ impl Parser {
     }
 
     fn parse_function_type(self) -> TypeExpr? {
-        let start = self.advance().span // consume 'fn'
+        let start = self.advance_span() // consume 'fn'
         if self.expect(TokenKind.LParen) == null { return null }
 
         mut params: List<TypeExpr> = []
@@ -868,7 +884,7 @@ impl Parser {
     }
 
     fn parse_tuple_or_paren_type(self) -> TypeExpr? {
-        let start = self.advance().span // consume (
+        let start = self.advance_span() // consume (
 
         if self.check(TokenKind.RParen) {
             self.advance()
@@ -920,7 +936,7 @@ impl Parser {
     }
 
     fn parse_struct_type(self) -> TypeExpr? {
-        let start = self.advance().span // consume {
+        let start = self.advance_span() // consume {
         mut fields: List<TypeField> = []
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {

@@ -11,7 +11,7 @@ use features.while_loops.{PARSE_END_POS, WHILE_COND_BB, WHILE_END_BB}
 use @std.llvm
 
 export fn parse_for(p: Parser) -> Statement? {
-    let start = p.advance().span
+    let start = p.advance_span()
     p.skip_newlines()
     let var_name = p.expect_ident()
     if var_name == "" { return null }

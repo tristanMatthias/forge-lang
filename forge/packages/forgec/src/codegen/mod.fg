@@ -606,9 +606,9 @@ fn cg_register_core_types() {
 
     // Register core enum types so resolve_type_to_llvm can find them.
     // max_fields = number of i64 slots for the largest variant (tag excluded).
-    // Statement max payload slots (with boxing): Match = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
+    // Statement max payload slots (with boxing): Match = scrutinee(1) + arm_patterns(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
     forge_enum_type_register("Statement", 13)
-    // Expr max payload slots (with boxing): MatchExpr = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
+    // Expr max payload slots (with boxing): MatchExpr = scrutinee(1) + arm_patterns(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
     forge_enum_type_register("Expr", 13)
     // BinOp: simple enum, no fields
     forge_enum_type_register("BinOp", 0)
@@ -933,6 +933,14 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_match_binding_add", mft1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_match_binding_get", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_match_binding_csv", mft0(CG_STR))
+    // Match pattern storage (C-side, avoids List<Expr> corruption)
+    llvm.add_function(CG_MOD, "forge_match_pattern_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_match_pattern_add_int", mft1(CG_VOID, CG_I64))
+    llvm.add_function(CG_MOD, "forge_match_pattern_add_string", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_match_pattern_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_match_pattern_type", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_match_pattern_int", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_match_pattern_string", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_list_elem_llvm_type", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_field_type_name", mft2(CG_STR, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_match_binding_variant", mft1(CG_STR, CG_I64))
@@ -1138,7 +1146,6 @@ impl Codegen {
 
     fn emit_match_stmt(self, scrut: Expr, tags_csv: string, binds: string, bodies: List<Block>, def: Block, has_def: int) {
         let subj_raw = self.emit_expr(scrut)
-        // Extract enum tag if scrutinee is a tagged union
         mut subj = subj_raw
         let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
         if tag_byte != null {
@@ -1152,23 +1159,33 @@ impl Codegen {
         mut tcur = ""
         while tpos < tags_csv.length {
             let ch = tags_csv[tpos]
-            if ch == "," {
-                tag_list = tag_list.push(int(tcur))
-                tcur = ""
-            } else {
-                tcur = tcur + ch
-            }
+            if ch == "," { tag_list = tag_list.push(int(tcur))
+                tcur = "" } else { tcur = tcur + ch }
             tpos = tpos + 1
         }
         if tcur != "" { tag_list = tag_list.push(int(tcur)) }
-        // Emit each arm as if-else chain
+        mut str_idx = 0
         mut ai = 0
         while ai < tag_list.length && ai < bodies.length {
             cg_reinit_types()
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
-            let tag_val = llvm.const_int(CG_I64, tag_list[ai], 0)
-            let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            mut cmp: ptr = null
+            if tag_list[ai] == -2 {
+                let pat_str = forge_match_pattern_string(str_idx)
+                str_idx = str_idx + 1
+                let pat_val = self.emit_string(pat_str)
+                let ca = llvm.value_array_new(2)
+                llvm.value_array_set(ca, 0, subj_raw)
+                llvm.value_array_set(ca, 1, pat_val)
+                let ft = mft2(CG_I8, CG_STR, CG_STR)
+                let eq = llvm.build_call(CG_B, ft, CG_RT_SEQ, ca, 2, "seq")
+                llvm.value_array_free(ca)
+                cmp = llvm.build_icmp(CG_B, 33, eq, llvm.const_int(CG_I8, 0, 0), "sc")
+            } else {
+                let tag_val = llvm.const_int(CG_I64, tag_list[ai], 0)
+                cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            }
             forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
             self.emit_block(bodies[ai])
@@ -1176,10 +1193,7 @@ impl Codegen {
             llvm.position_at_end(CG_B, next_bb)
             ai = ai + 1
         }
-        // Default arm
-        if has_def == 1 {
-            self.emit_block(def)
-        }
+        if has_def == 1 { self.emit_block(def) }
         if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, merge_bb) }
         llvm.position_at_end(CG_B, merge_bb)
     }
@@ -1712,20 +1726,31 @@ impl Codegen {
             tpos = tpos + 1
         }
         if tcur != "" { tags = tags.push(int(tcur)) }
-        // Bindings are stored in C-side registry as "__mb0", "__mb1", etc.
-        // The arm_bindings_csv is "__mb:N" where N is the count
-        // Retrieve each binding from C-side at codegen time
-        // Emit each arm as if-else chain with binding extraction
         let _bodies = arm_bodies
         mut phi_vals: List<ptr> = []
         mut phi_bbs: List<ptr> = []
+        mut str_idx = 0
         mut ai = 0
         while ai < tags.length {
             cg_reinit_types()
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
-            let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
-            let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            mut cmp: ptr = null
+            if tags[ai] == -2 {
+                let pat_str = forge_match_pattern_string(str_idx)
+                str_idx = str_idx + 1
+                let pat_val = self.emit_string(pat_str)
+                let ca = llvm.value_array_new(2)
+                llvm.value_array_set(ca, 0, subj_raw)
+                llvm.value_array_set(ca, 1, pat_val)
+                let ft = mft2(CG_I8, CG_STR, CG_STR)
+                let eq = llvm.build_call(CG_B, ft, CG_RT_SEQ, ca, 2, "seq")
+                llvm.value_array_free(ca)
+                cmp = llvm.build_icmp(CG_B, 33, eq, llvm.const_int(CG_I8, 0, 0), "sc")
+            } else {
+                let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
+                cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            }
             forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
             // Extract bindings for this arm (ALL via C-side, no string ops in self-hosted code)
@@ -1821,9 +1846,8 @@ impl Codegen {
 
     fn emit_match_expr(self, scrutinee: Expr, arm_tags_csv: string, arm_bodies: List<Block>, default_body: Block, has_default: int) -> ptr {
         let subj_raw = self.emit_expr(scrutinee)
-        // For enum scrutinees, extract the tag byte
+        // For enum scrutinees, extract the tag byte for integer comparison
         mut subj = subj_raw
-        // Try extract_value to get tag — returns null if not aggregate
         let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
         if tag_byte != null {
             subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
@@ -1849,20 +1873,35 @@ impl Codegen {
         mut phi_vals: List<ptr> = []
         mut phi_bbs: List<ptr> = []
         let _bodies = arm_bodies
+        mut str_idx = 0
         mut ai = 0
         while ai < tags.length {
             cg_reinit_types()
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
-            let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
-            let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            mut cmp: ptr = null
+            if tags[ai] == -2 {
+                // String pattern: retrieve from C-side registry
+                let pat_str = forge_match_pattern_string(str_idx)
+                str_idx = str_idx + 1
+                let pat_val = self.emit_string(pat_str)
+                let ca = llvm.value_array_new(2)
+                llvm.value_array_set(ca, 0, subj_raw)
+                llvm.value_array_set(ca, 1, pat_val)
+                let ft = mft2(CG_I8, CG_STR, CG_STR)
+                let eq = llvm.build_call(CG_B, ft, CG_RT_SEQ, ca, 2, "seq")
+                llvm.value_array_free(ca)
+                cmp = llvm.build_icmp(CG_B, 33, eq, llvm.const_int(CG_I8, 0, 0), "sc")
+            } else {
+                let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
+                cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+            }
             forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
             let av = self.emit_block(_bodies[ai])
             let ae = llvm.get_insert_block(CG_B)
             let arm_has_term = llvm.block_has_terminator(CG_B)
             if !arm_has_term { llvm.build_br(CG_B, merge_bb) }
-            // Only add PHI entry if this arm actually branches to merge (no early return)
             if !arm_has_term {
                 phi_vals = phi_vals.push(av)
                 phi_bbs = phi_bbs.push(ae)
@@ -1881,7 +1920,6 @@ impl Codegen {
                 phi_bbs = phi_bbs.push(de)
             }
         } else {
-            // No default — add empty fallthrough for PHI completeness
             let def_val = llvm.const_int(CG_I64, 0, 0)
             phi_vals = phi_vals.push(def_val)
             phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
@@ -2082,10 +2120,11 @@ impl Codegen {
         for elem in elements {
             let val = self.emit_expr(elem)
             llvm.value_array_set(vals, i, val)
-            if i == 0 {
-                let ety = self.expr_type_name(elem)
-                if ety == "string" {
-                    elem_ty = CG_STR
+            if i == 0 && val != null {
+                // Use LLVM's own type system instead of guessing
+                elem_ty = llvm.type_of(val)
+                let tk = forge_value_type_kind(val)
+                if tk == LLVM_STRUCT_TYPE_KIND {
                     elem_size = 16
                 }
             }
@@ -2712,7 +2751,6 @@ impl Codegen {
                 .Match(scrutinee, arm_tags_csv, arm_bindings_csv, arm_bodies, default_body, has_default, s) -> {
                     cg_reinit_types()
                     let subj_raw = self.emit_expr(scrutinee)
-                    // Try extracting tag from enum struct
                     mut subj = subj_raw
                     let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
                     if tag_byte != null {
@@ -2726,12 +2764,8 @@ impl Codegen {
                     mut tcur = ""
                     while tpos < arm_tags_csv.length {
                         let ch = arm_tags_csv[tpos]
-                        if ch == "," {
-                            tags = tags.push(int(tcur))
-                            tcur = ""
-                        } else {
-                            tcur = tcur + ch
-                        }
+                        if ch == "," { tags = tags.push(int(tcur))
+                            tcur = "" } else { tcur = tcur + ch }
                         tpos = tpos + 1
                     }
                     if tcur != "" { tags = tags.push(int(tcur)) }
@@ -2751,13 +2785,28 @@ impl Codegen {
                     }
                     if bcur != "" { all_bindings = all_bindings.push(bcur) }
                     // Emit each arm as if-else chain
+                    mut str_idx = 0
                     mut ai = 0
                     while ai < tags.length {
                         cg_reinit_types()
                         let arm_bb = llvm.append_basic_block(CG_CTX, mfn, "ma")
                         let next_bb = llvm.append_basic_block(CG_CTX, mfn, "mn")
-                        let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
-                        let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+                        mut cmp: ptr = null
+                        if tags[ai] == -2 {
+                            let pat_str = forge_match_pattern_string(str_idx)
+                            str_idx = str_idx + 1
+                            let pat_val = self.emit_string(pat_str)
+                            let ca = llvm.value_array_new(2)
+                            llvm.value_array_set(ca, 0, subj_raw)
+                            llvm.value_array_set(ca, 1, pat_val)
+                            let ft = mft2(CG_I8, CG_STR, CG_STR)
+                            let eq = llvm.build_call(CG_B, ft, CG_RT_SEQ, ca, 2, "seq")
+                            llvm.value_array_free(ca)
+                            cmp = llvm.build_icmp(CG_B, 33, eq, llvm.const_int(CG_I8, 0, 0), "sc")
+                        } else {
+                            let tag_val = llvm.const_int(CG_I64, tags[ai], 0)
+                            cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+                        }
                         forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
                         llvm.position_at_end(CG_B, arm_bb)
                         // Extract bindings with field-type-aware slot offsets
@@ -2842,7 +2891,7 @@ impl Codegen {
                                                     llvm.build_store(CG_B, deref_val, big_alloca)
                                                     forge_alloca_cache_set(bpname, big_alloca)
                                                 } else {
-                                                    let ba = llvm.build_alloca(CG_B, CG_I64, bpname)
+                                                    let ba = llvm.build_alloca(CG_B, llvm.type_of(ev), bpname)
                                                     llvm.build_store(CG_B, ev, ba)
                                                     forge_alloca_cache_set(bpname, ba)
                                                 }
@@ -2851,7 +2900,7 @@ impl Codegen {
                                             // Single slot (int, bool, etc.)
                                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                             if ev != null {
-                                                let ba = llvm.build_alloca(CG_B, CG_I64, bpname)
+                                                let ba = llvm.build_alloca(CG_B, llvm.type_of(ev), bpname)
                                                 llvm.build_store(CG_B, ev, ba)
                                                 forge_alloca_cache_set(bpname, ba)
                                             }

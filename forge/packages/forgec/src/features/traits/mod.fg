@@ -44,7 +44,7 @@ fn get_trait_decl(id: int) -> TraitDeclData? {
 // ─── Parse: Trait Declaration ───────────────────
 
 fn parse_trait(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'trait'
+    let start = p.advance_span() // consume 'trait'
 
     let name = p.expect_ident()
     if name == null {
@@ -81,7 +81,7 @@ fn parse_trait(p: Parser) -> Statement? {
 }
 
 fn parse_trait_method(p: Parser) -> TraitMethod? {
-    let start = p.advance().span // consume 'fn'
+    let start = p.advance_span() // consume 'fn'
 
     let name = p.expect_ident()
     if name == null { return null }

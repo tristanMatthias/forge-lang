@@ -50,7 +50,7 @@ fn get_impl_block(id: int) -> ImplBlockData? {
 // with name "TypeName__methodName" for later codegen.
 
 export fn parse_impl_block(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'impl'
+    let start = p.advance_span() // consume 'impl'
 
     let first_name = p.expect_ident()
     if first_name == "" {
@@ -104,7 +104,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
 
 // Parse a single impl method and register it as a free function
 fn parse_impl_method_as_fn(p: Parser, type_name: string) {
-    let start = p.advance().span // consume 'fn'
+    let start = p.advance_span() // consume 'fn'
 
     let method_name = p.expect_ident()
     if method_name == "" { return }
@@ -188,7 +188,7 @@ fn parse_impl(p: Parser) -> Statement? {
 }
 
 fn parse_impl_method(p: Parser) -> ImplMethod? {
-    let start = p.advance().span // consume 'fn'
+    let start = p.advance_span() // consume 'fn'
 
     let name = p.expect_ident()
     if name == null {

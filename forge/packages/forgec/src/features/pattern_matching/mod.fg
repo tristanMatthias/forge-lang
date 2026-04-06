@@ -60,7 +60,7 @@ fn make_match_expr(subject: Expr, arms: List<MatchArm>, span: Span) -> Expr {
 // This provides the full pattern-aware parsing.
 
 fn parse_match(p: Parser) -> Expr? {
-    let start = p.advance().span // consume 'match'
+    let start = p.advance_span() // consume 'match'
     p.skip_newlines()
 
     let subject = p.parse_expr()
@@ -169,13 +169,13 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
     match tok.kind {
         // Wildcard: _
         .Underscore -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Wildcard(span)
         }
 
         // Dot-prefixed enum variant: .Variant or .Variant(sub_patterns)
         .Dot -> {
-            let start = p.advance().span
+            let start = p.advance_span()
             let name = p.expect_ident()
             if name == null { return null }
 
@@ -204,36 +204,36 @@ fn parse_simple_pattern(p: Parser) -> Pattern? {
 
         // Literal patterns: int, float, string, bool, null
         .IntLiteral(value) -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             LAST_PATTERN_INT = value
             Pattern.Literal(Expr.IntLit(value, span))
         }
         .FloatLiteral(value) -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Literal(Expr.FloatLit(value, span))
         }
         .StringLiteral(value) -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Literal(Expr.StringLit(value, span))
         }
         .BoolLiteral(value) -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Literal(Expr.BoolLit(value, span))
         }
         .NullLiteral -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Literal(Expr.NullLit(span))
         }
 
         // Identifier binding or tuple pattern
         .Ident(name) -> {
-            let span = p.advance().span
+            let span = p.advance_span()
             Pattern.Ident(name, span)
         }
 
         // Tuple pattern: (p1, p2, ...)
         .LParen -> {
-            let start = p.advance().span
+            let start = p.advance_span()
             mut elements: List<Pattern> = []
             while !p.check_id(101) && !p.is_at_end() {  // RParen
                 p.skip_newlines()

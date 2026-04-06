@@ -61,7 +61,7 @@ fn get_enum_construct(id: int) -> EnumConstructData? {
 // Registers variant tags for use by match expressions.
 
 export fn parse_enum_decl(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'enum'
+    let start = p.advance_span() // consume 'enum'
 
     let name = p.expect_ident()
     if name == "" {

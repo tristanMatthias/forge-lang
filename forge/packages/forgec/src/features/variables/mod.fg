@@ -43,7 +43,7 @@ export mut IN_FUNCTION_BODY: int = 0
 // Global variable tracking uses C-side (forge_global_var_register)
 
 fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
-    let start = p.advance().span // consume let/mut/const
+    let start = p.advance_span() // consume let/mut/const
 
     let var_name = p.expect_ident()
     if var_name == "" {

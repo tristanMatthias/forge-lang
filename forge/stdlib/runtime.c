@@ -3981,6 +3981,47 @@ int64_t forge_match_binding_name_count(int64_t binding_idx) {
     return count;
 }
 
+// ─── Match Pattern Strings ────────────────────────────────────────
+// C-side storage for match pattern strings (string literals in match arms).
+// The self-hosted list can't reliably store 112-byte Expr values, so we
+// store the pattern strings here and let the codegen retrieve them by index.
+#define MATCH_PAT_MAX 64
+static char _match_patterns[MATCH_PAT_MAX][256];
+static int _match_pattern_types[MATCH_PAT_MAX]; // 0=int, 1=string, 2=bool
+static int64_t _match_pattern_ints[MATCH_PAT_MAX];
+static int _match_pattern_count = 0;
+
+void forge_match_pattern_clear(void) { _match_pattern_count = 0; }
+void forge_match_pattern_add_int(int64_t val) {
+    if (_match_pattern_count >= MATCH_PAT_MAX) return;
+    _match_pattern_types[_match_pattern_count] = 0;
+    _match_pattern_ints[_match_pattern_count] = val;
+    _match_patterns[_match_pattern_count][0] = '\0';
+    _match_pattern_count++;
+}
+void forge_match_pattern_add_string(ForgeString val) {
+    if (_match_pattern_count >= MATCH_PAT_MAX) return;
+    _match_pattern_types[_match_pattern_count] = 1;
+    int len = val.len > 255 ? 255 : (int)val.len;
+    if (val.ptr && len > 0) memcpy(_match_patterns[_match_pattern_count], val.ptr, len);
+    _match_patterns[_match_pattern_count][len] = '\0';
+    _match_pattern_count++;
+}
+int64_t forge_match_pattern_count(void) { return _match_pattern_count; }
+int64_t forge_match_pattern_type(int64_t idx) {
+    if (idx < 0 || idx >= _match_pattern_count) return -1;
+    return _match_pattern_types[idx];
+}
+int64_t forge_match_pattern_int(int64_t idx) {
+    if (idx < 0 || idx >= _match_pattern_count) return 0;
+    return _match_pattern_ints[idx];
+}
+ForgeString forge_match_pattern_string(int64_t idx) {
+    if (idx < 0 || idx >= _match_pattern_count) return (ForgeString){NULL, 0};
+    int len = strlen(_match_patterns[idx]);
+    return forge_string_new(_match_patterns[idx], len);
+}
+
 // Look up field type name: key = "EnumName.VariantName.fieldIdx"
 // Avoids ForgeString concat in self-hosted codegen
 ForgeString forge_enum_field_type_name(ForgeString variant_qname, int64_t field_idx) {

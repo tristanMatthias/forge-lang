@@ -14,7 +14,7 @@ export mut WHILE_COND_BB: ptr = null
 export mut WHILE_END_BB: ptr = null
 
 export fn parse_while(p: Parser) -> Statement? {
-    let start = p.advance().span
+    let start = p.advance_span()
     p.skip_newlines()
     let condition = p.parse_expr()
     if condition == null { return null }

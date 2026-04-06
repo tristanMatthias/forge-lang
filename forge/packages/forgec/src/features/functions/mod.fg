@@ -5,6 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
+use core.kind_ids.{KID_FN, KID_LET, KID_MUT, KID_CONST, KID_TYPE, KID_ENUM, KID_TRAIT, KID_IMPL, KID_LBRACE, KID_RBRACE, KID_LPAREN, KID_RPAREN, KID_COMMA, KID_COLON, KID_ARROW, KID_IDENT}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
@@ -42,7 +43,7 @@ fn get_fn_decl(node_id: int) -> FnDeclData? {
 // ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
-    let start = p.advance().span // consume 'fn'
+    let start = p.advance_span() // consume 'fn'
 
     let name = p.expect_ident()
     if name == "" { return null }
@@ -73,17 +74,17 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         return_type = parsed_ret
     }
 
-    // Skip body by brace counting using C-side kind_id directly
+    // Skip body by brace counting using parser's own peek
     let open_pos = forge_parser_get_pos()
-    if forge_peek_kind_id(forge_parser_get_pos()) == 102 { p.advance() }
+    if p.peek().kind_id == KID_LBRACE { p.advance() }
     mut depth = 1
     while depth > 0 && !p.is_at_end() {
-        let cur_kid = forge_peek_kind_id(forge_parser_get_pos())
-        if cur_kid == 102 { depth = depth + 1 }
-        if cur_kid == 103 { depth = depth - 1 }
+        let cur_kid = p.peek().kind_id
+        if cur_kid == KID_LBRACE { depth = depth + 1 }
+        if cur_kid == KID_RBRACE { depth = depth - 1 }
         if depth > 0 { p.advance() }
     }
-    if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
+    if p.peek().kind_id == KID_RBRACE { p.advance() }
     let close_pos = forge_parser_get_pos() - 1
     let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
@@ -115,40 +116,40 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
 fn parse_fn(p: Parser) -> Statement? { parse_fn_decl(p, false) }
 
 fn parse_export(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'export'
+    let start = p.advance_span() // consume 'export'
 
-    // kind_id dispatch (enum matching fails in bootstrap)
-    let ekid = forge_peek_kind_id(forge_parser_get_pos())
-    if ekid == 23 { return parse_fn_decl(p, true) }
-    if ekid == 20 { return parse_var_binding(p, .Let, true) }
-    if ekid == 21 { return parse_var_binding(p, .Mut, true) }
-    if ekid == 22 { return parse_var_binding(p, .Const, true) }
+    // kind_id dispatch — use parser's own peek, not C-side position
+    let ekid = p.peek().kind_id
+    if ekid == KID_FN { return parse_fn_decl(p, true) }
+    if ekid == KID_LET { return parse_var_binding(p, .Let, true) }
+    if ekid == KID_MUT { return parse_var_binding(p, .Mut, true) }
+    if ekid == KID_CONST { return parse_var_binding(p, .Const, true) }
     // export type — parse to register struct fields
-    if ekid == 35 { return parse_type_decl(p) }
+    if ekid == KID_TYPE { return parse_type_decl(p) }
     // export enum: parse variants to register tags
-    if ekid == 34 {
+    if ekid == KID_ENUM {
         p.advance()
         p.parse_enum_variants()
         PARSE_END_POS = forge_parser_get_pos()
         return Statement.Expr(Expr.IntLit(0, start))
     }
     // export impl/trait — brace-count skip
-    if ekid == 42 || ekid == 43 {
+    if ekid == KID_TRAIT || ekid == KID_IMPL {
         p.advance()
         p.expect_ident()
-        while !p.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
+        while !p.is_at_end() && p.peek().kind_id != KID_LBRACE {
             p.advance()
         }
-        if forge_peek_kind_id(forge_parser_get_pos()) == 102 {
+        if p.peek().kind_id == KID_LBRACE {
             p.advance()
             mut bdepth = 1
             while bdepth > 0 && !p.is_at_end() {
-                let bk = forge_peek_kind_id(forge_parser_get_pos())
-                if bk == 102 { bdepth = bdepth + 1 }
-                if bk == 103 { bdepth = bdepth - 1 }
+                let bk = p.peek().kind_id
+                if bk == KID_LBRACE { bdepth = bdepth + 1 }
+                if bk == KID_RBRACE { bdepth = bdepth - 1 }
                 if bdepth > 0 { p.advance() }
             }
-            if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
+            if p.peek().kind_id == KID_RBRACE { p.advance() }
         }
         PARSE_END_POS = forge_parser_get_pos()
         let id = next_node_id()

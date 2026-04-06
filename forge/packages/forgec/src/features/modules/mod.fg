@@ -30,7 +30,7 @@ fn get_use_decl(id: int) -> UseData? {
 // ─── Parse: Use Declaration ─────────────────────
 
 fn parse_use(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'use'
+    let start = p.advance_span() // consume 'use'
 
     // Parse dotted path: a.b.c
     mut path: List<string> = []

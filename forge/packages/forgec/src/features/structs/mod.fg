@@ -53,7 +53,7 @@ fn get_struct_lit(id: int) -> StructLitData? {
 // type Name<T> = { field: T, ... }
 
 fn parse_type_decl(p: Parser) -> Statement? {
-    let start = p.advance().span // consume 'type'
+    let start = p.advance_span() // consume 'type'
 
     let name = p.expect_ident()
     if name == "" {

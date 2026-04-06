@@ -22,7 +22,7 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.kind_ids.{
     KID_IDENT, KID_INT_LIT, KID_FLOAT_LIT, KID_STRING_LIT, KID_BOOL_LIT,
     KID_TEMPLATE_LIT, KID_NULL_LIT,
-    KID_LPAREN, KID_LBRACE, KID_LBRACKET, KID_DOT, KID_COMMA, KID_COLON,
+    KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_LBRACKET, KID_DOT, KID_COMMA, KID_COLON,
     KID_NEWLINE, KID_IF,
 }
 use lexer.{parse_int, parse_float}
@@ -140,7 +140,7 @@ impl Parser {
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
         if self.check(TokenKind.Not) {
-            let start = self.advance().span
+            let start = self.advance_span()
             let operand = self.parse_unary_expr() // right-associative
             if operand == null { return null }
             let span = self.merge_spans(start, self.current_span())
@@ -148,7 +148,7 @@ impl Parser {
         }
 
         if self.check(TokenKind.Minus) {
-            let start = self.advance().span
+            let start = self.advance_span()
             let operand = self.parse_unary_expr()
             if operand == null { return null }
             let span = self.merge_spans(start, self.current_span())
@@ -156,7 +156,7 @@ impl Parser {
         }
 
         if self.check(TokenKind.Tilde) {
-            let start = self.advance().span
+            let start = self.advance_span()
             let operand = self.parse_unary_expr()
             if operand == null { return null }
             let span = self.merge_spans(start, self.current_span())
@@ -190,7 +190,7 @@ impl Parser {
                 // Numeric tuple access: expr.0
                 let pk = self.peek()
                 if pk.kind_id == 2 {
-                    let field_span = self.advance().span
+                    let field_span = self.advance_span()
                     let span = self.merge_spans(self.current_span(), field_span)
                     result = Expr.Index(result, Expr.IntLit(parse_int(pk.text), field_span), span)
                     continue
@@ -252,7 +252,7 @@ impl Parser {
 
             // Force unwrap: expr! → extract inner value from nullable
             if self.check(TokenKind.Not) || forge_peek_kind_id(forge_parser_get_pos()) == 209 {
-                let unwrap_span = self.advance().span
+                let unwrap_span = self.advance_span()
                 result = Expr.ForceUnwrap(result, unwrap_span)
                 continue
             }
@@ -327,33 +327,33 @@ impl Parser {
         // Bootstrap workaround: check data-carrying variants via kind_id
         if tok.kind_id == 2 {
             // IntLiteral
-            let span = self.advance().span
+            let span = self.advance_span()
             return Expr.IntLit(parse_int(tok.text), span)
         }
         if tok.kind_id == 3 {
             // FloatLiteral — parse value from text
-            let span = self.advance().span
+            let span = self.advance_span()
             return Expr.FloatLit(parse_float(tok.text), span)
         }
         if tok.kind_id == 4 {
             // StringLiteral
-            let span = self.advance().span
+            let span = self.advance_span()
             return Expr.StringLit(tok.text, span)
         }
         if tok.kind_id == 5 {
             // BoolLiteral
-            let span = self.advance().span
+            let span = self.advance_span()
             return Expr.BoolLit(tok.text == "true", span)
         }
         if tok.kind_id == 6 {
             // TemplateLiteral / DollarString
-            let span = self.advance().span
+            let span = self.advance_span()
             return decompose_template(tok.text, span)
         }
         if tok.kind_id == 1 {
             // Identifier
             let name = tok.text
-            let span = self.advance().span
+            let span = self.advance_span()
             LAST_IDENT_NAME = name
 
             // Check for single-param closure: x -> expr
@@ -370,7 +370,7 @@ impl Parser {
 
         // Use kind_id instead of kind enum (kind enum is always Eof in C-side token access)
         if tok.kind_id == 8 {  // NullLiteral (kind_id 8 in runtime KW table)
-            let span = self.advance().span
+            let span = self.advance_span()
             return Expr.NullLit(span)
         }
         if tok.kind_id == KID_LPAREN {
@@ -419,7 +419,7 @@ impl Parser {
     // ─── Parenthesized / Tuple ─────────────────
 
     fn parse_paren_expr(self) -> Expr? {
-        let start = self.advance().span // consume (
+        let start = self.advance_span() // consume (
 
         // Empty parens: ()
         if self.check(TokenKind.RParen) {
@@ -494,7 +494,7 @@ impl Parser {
     }
 
     fn parse_struct_literal(self) -> Expr? {
-        let start = self.advance().span // consume {
+        let start = self.advance_span() // consume {
 
         // Encode as Call("__s_TypeName", [field1, field2, ...])
         // Field names are stored in C-side array for codegen to use correct GEP indices
@@ -533,7 +533,7 @@ impl Parser {
     // ─── List Literal ──────────────────────────
 
     fn parse_list_literal(self) -> Expr? {
-        let start = self.advance().span // consume [
+        let start = self.advance_span() // consume [
 
         // Parse list elements
         self.skip_newlines()
@@ -550,7 +550,7 @@ impl Parser {
     // ─── Dot Variant ───────────────────────────
 
     fn parse_dot_variant(self) -> Expr? {
-        let start = self.advance().span // consume .
+        let start = self.advance_span() // consume .
         let name = self.expect_ident()
         if name == "" { return null }
 
@@ -572,7 +572,7 @@ impl Parser {
     // Stores condition/then/else in side table for later emission by codegen.
 
     fn parse_if_expr(self) -> Expr? {
-        let start = self.advance().span // consume 'if'
+        let start = self.advance_span() // consume 'if'
         self.skip_newlines()
 
         let condition = self.parse_expr()
@@ -611,7 +611,7 @@ impl Parser {
     // Supports: integer patterns, string patterns, .Variant patterns, _ wildcard.
 
     fn parse_match_expr(self) -> Expr? {
-        let start = self.advance().span // consume 'match'
+        let start = self.advance_span() // consume 'match'
         self.skip_newlines()
 
         let scrutinee = self.parse_expr()
@@ -630,48 +630,55 @@ impl Parser {
         // Determine scrutinee's enum type from variable name
         let enum_type = cg_var_enum_type(scrutinee_var)
 
-        // Collect arms: (pattern_tag: int, body: Block, bindings: string)
+        // Collect arms with C-side pattern storage
         mut arm_tags: List<int> = []
         mut arm_bodies: List<Block> = []
-        forge_match_binding_clear()  // C-side binding storage (avoids ForgeString corruption)
+        forge_match_binding_clear()
+        forge_match_pattern_clear()
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
             mut pat_tag = -1
+            mut is_default = false
             mut binding: string = ""
             if self.check(TokenKind.Dot) {
                 self.advance()
                 let vname = self.expect_ident()
-                // Try qualified name first (Color.Green), then bare (Green)
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                 // Parse bindings: .Variant(name, val, span) → capture names
                 let bpk = forge_peek_kind_id(forge_parser_get_pos())
-                if bpk == 100 {
-                    self.advance() // consume (
-                    while forge_peek_kind_id(forge_parser_get_pos()) != 101 && !self.is_at_end() {
+                if bpk == KID_LPAREN {
+                    self.advance()
+                    while forge_peek_kind_id(forge_parser_get_pos()) != KID_RPAREN && !self.is_at_end() {
                         let btok = self.peek()
-                        if btok.kind_id == 1 {
-                            // Ident — binding name
+                        if btok.kind_id == KID_IDENT {
                             if binding != "" { binding = binding + "," }
                             binding = binding + btok.text
-                            eprintln("  [BTXT] '" + btok.text + "' binding='" + binding + "'")
                         }
                         self.advance()
                     }
-                    if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
+                    if forge_peek_kind_id(forge_parser_get_pos()) == KID_RPAREN { self.advance() }
                 }
-                // Prefix with qualified variant name for field type lookup
                 if binding != "" {
                     binding = qname + ":" + binding
                 }
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
-                pat_tag = -1
-                has_default = true
+                is_default = true
+            } else if self.peek().kind_id == KID_STRING_LIT {
+                let tok = self.advance()
+                forge_match_pattern_add_string(tok.text)
+                pat_tag = -2
+            } else if self.peek().kind_id == KID_INT_LIT {
+                let tok = self.advance()
+                pat_tag = int(tok.text)
+            } else if self.peek().kind_id == KID_BOOL_LIT {
+                let tok = self.advance()
+                pat_tag = if tok.text == "true" { 1 } else { 0 }
             } else {
                 self.advance()
             }
@@ -693,10 +700,10 @@ impl Parser {
             }
             IN_MATCH_ARM = prev_match
 
-            if pat_tag == -1 && has_default {
+            if is_default {
+                has_default = true
                 default_body = body
             } else {
-                // Store binding in C-side (integer-indexed, no string concat needed)
                 forge_match_binding_add(binding)
                 arm_tags = arm_tags.push(pat_tag)
                 arm_bodies = arm_bodies.push(body)
@@ -708,6 +715,7 @@ impl Parser {
         }
         if self.check(TokenKind.RBrace) { self.advance() }
 
+        // Build tag CSV
         mut tag_csv = ""
         mut ti = 0
         while ti < arm_tags.length {
@@ -715,8 +723,6 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
-        // Bindings stored in C-side registry as "__mb0", "__mb1", etc.
-        // Build a simple marker CSV to signal the codegen to look them up
         let bindings_csv = forge_match_binding_csv()
         mut has_default_int = 0
         if has_default { has_default_int = 1 }
