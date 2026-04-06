@@ -21,6 +21,8 @@ MODE="full"
 case "${1:-}" in
     --score)   MODE="score"; IR="${2:-output.ll}" ;;
     --stage2)  MODE="stage2" ;;
+    --stage3)  MODE="stage3" ;;
+    --pipeline) MODE="pipeline" ;;
     --kind-ids) MODE="kind-ids" ;;
     --source)  MODE="source" ;;
 esac
@@ -531,11 +533,151 @@ run_source() {
 }
 
 # ═════════════════════════════════════════════════════════════════
+# STAGE3 MODE — build and test stage 3 binary
+# ═════════════════════════════════════════════════════════════════
+run_stage3() {
+    if [ ! -f "/tmp/stage2" ]; then
+        echo "No /tmp/stage2 binary found. Run --stage2 or --pipeline first."
+        return
+    fi
+
+    echo "═══════════════════════════════════════════════"
+    echo " Stage 3 Build & Test"
+    echo "═══════════════════════════════════════════════"
+
+    pass() { printf "  [\033[32m✓\033[0m] %s\n" "$1"; }
+    fail() { printf "  [\033[31m✗\033[0m] %s — %s\n" "$1" "$2"; }
+    warn() { printf "  [\033[33m⚠\033[0m] %s — %s\n" "$1" "$2"; }
+
+    echo ""
+    echo "── Stage 2 → Stage 3 IR ──"
+    ABS_SRC="$(pwd -P)/$FORGE_SRC/main.fg"
+    pushd /tmp > /dev/null
+    rm -f /tmp/output.ll
+    /tmp/stage2 build "$ABS_SRC" >/tmp/_s3_out.log 2>&1 || true
+    popd > /dev/null
+
+    if [ ! -f /tmp/output.ll ]; then
+        fail "Stage 3 IR produced" "no /tmp/output.ll"
+        return
+    fi
+
+    SCANNED=$(grep "scanned.*fns" /tmp/_s3_out.log | head -1 | sed 's/^ *//')
+    [ -n "$SCANNED" ] && pass "$SCANNED" || warn "Files scanned" "no scan output"
+
+    if echo "$SCANNED" | grep -qE "[0-9]{2,} files"; then
+        pass "Multi-file scan (≥10 files)"
+    else
+        warn "Multi-file scan" "single file scanned only"
+    fi
+
+    grep -q "emit done\|compiled" /tmp/_s3_out.log && pass "Stage 2 emit done" || fail "Stage 2 emit done" "missing"
+
+    S3_FNS=$(grep -c '^define' /tmp/output.ll)
+    pass "Stage 3 IR has $S3_FNS functions"
+
+    echo ""
+    echo "── Stage 3 IR Quality ──"
+    bash "$0" --score /tmp/output.ll 2>&1 | grep -E "br_i1|undef|ret_undef|empty_functions|SCORE" | sed 's/^/    /'
+
+    echo ""
+    echo "── Stage 3 Binary Build ──"
+    /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
+    if [ -f /tmp/stage3.o ]; then
+        pass "llc → object file"
+    else
+        fail "llc → object file" "$(head -1 /tmp/_s3_llc.log)"
+        return
+    fi
+
+    cc -o /tmp/stage3 /tmp/stage3.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
+        packages/std-llvm/target/release/libforge_llvm.a \
+        -L/opt/homebrew/Cellar/llvm@18/18.1.8/lib -lLLVM-18 -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
+    if [ -x /tmp/stage3 ]; then
+        pass "cc → /tmp/stage3 executable"
+    else
+        fail "Linker" "$(head -1 /tmp/_s3_link.log)"
+        return
+    fi
+
+    echo ""
+    echo "── Stage 3 Run ──"
+    /tmp/stage3 build "$FORGE_SRC/main.fg" >/tmp/_s3_runlog 2>&1
+    EXIT=$?
+    if [ "$EXIT" -eq 0 ]; then
+        pass "Stage 3 exits 0"
+    else
+        fail "Stage 3 exits 0" "exit $EXIT"
+    fi
+
+    LINES=$(wc -l < /tmp/_s3_runlog | tr -d ' ')
+    if [ "${LINES:-0}" -gt 5 ]; then
+        pass "Stage 3 produced output ($LINES lines)"
+    else
+        warn "Stage 3 output" "only $LINES lines (likely empty stubs)"
+    fi
+}
+
+# ═════════════════════════════════════════════════════════════════
+# PIPELINE MODE — full Stage 1 → 2 → 3 build and test
+# ═════════════════════════════════════════════════════════════════
+run_pipeline() {
+    echo "═══════════════════════════════════════════════"
+    echo " Full Pipeline: Stage 1 → 2 → 3"
+    echo "═══════════════════════════════════════════════"
+
+    pass() { printf "  [\033[32m✓\033[0m] %s\n" "$1"; }
+    fail() { printf "  [\033[31m✗\033[0m] %s — %s\n" "$1" "$2"; }
+
+    echo ""
+    echo "── Stage 1 build (Rust → stage1_rust) ──"
+    rm -f build/stage1_rust
+    LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 ./target/release/forgec build "$FORGE_SRC/main.fg" --dev -o build/stage1_rust >/tmp/_p1.log 2>&1
+    if [ -x build/stage1_rust ]; then
+        pass "Stage 1 binary built"
+    else
+        fail "Stage 1 build" "$(tail -3 /tmp/_p1.log | tr '\n' ' ')"
+        return
+    fi
+
+    echo ""
+    echo "── Stage 1 → Stage 2 IR ──"
+    ./build/stage1_rust build "$FORGE_SRC/main.fg" >/tmp/_p2.log 2>&1
+    if [ -f output.ll ]; then
+        S2_FNS=$(grep -c '^define' output.ll)
+        pass "Stage 2 IR generated ($S2_FNS functions)"
+    else
+        fail "Stage 2 IR" "no output.ll"
+        return
+    fi
+    bash "$0" --score output.ll 2>&1 | grep -E "br_i1|undef|ret_undef|empty_functions|SCORE" | sed 's/^/    /'
+
+    echo ""
+    echo "── Stage 2 binary build ──"
+    cp output.ll /tmp/stage1_output.ll
+    /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj /tmp/stage1_output.ll -o /tmp/stage2.o 2>/tmp/_p2llc.log
+    cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
+        packages/std-llvm/target/release/libforge_llvm.a \
+        -L/opt/homebrew/Cellar/llvm@18/18.1.8/lib -lLLVM-18 -lstdc++ -lz -lcurses 2>/tmp/_p2link.log
+    if [ -x /tmp/stage2 ]; then
+        pass "Stage 2 binary built"
+    else
+        fail "Stage 2 build" "$(tail -3 /tmp/_p2link.log | tr '\n' ' ')"
+        return
+    fi
+
+    echo ""
+    run_stage3
+}
+
+# ═════════════════════════════════════════════════════════════════
 # DISPATCH
 # ═════════════════════════════════════════════════════════════════
 case "$MODE" in
     score)    run_score ;;
     stage2)   run_stage2 ;;
+    stage3)   run_stage3 ;;
+    pipeline) run_pipeline ;;
     kind-ids) run_kind_ids ;;
     source)   run_source ;;
     full)     run_full ;;
