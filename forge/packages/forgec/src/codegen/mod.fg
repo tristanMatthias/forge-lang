@@ -2266,19 +2266,44 @@ impl Codegen {
 
         // Look up the variable's struct type
         let struct_type_name = var_struct_type(var_name)
-        if struct_type_name == "" { return llvm.const_int(CG_I64, 0, 0) }
+        if struct_type_name != "" {
+            // Find the field index in the struct's field list
+            let fidx = struct_field_index(struct_type_name, field)
+            if fidx >= 0 {
+                // Use GEP to access the field directly from the alloca (avoids loading the whole struct)
+                let field_val = forge_alloca_cache_load_field(var_name, struct_type_name, fidx, CG_B)
+                if field_val != 0 { return field_val }
 
-        // Find the field index in the struct's field list
-        let fidx = struct_field_index(struct_type_name, field)
-        if fidx < 0 { return llvm.const_int(CG_I64, 0, 0) }
+                // Fallback: load whole struct and extract
+                let obj_val = self.emit_ident(var_name)
+                return llvm.build_extract_value(CG_B, obj_val, fidx, field)
+            }
+        }
 
-        // Use GEP to access the field directly from the alloca (avoids loading the whole struct)
-        let field_val = forge_alloca_cache_load_field(var_name, struct_type_name, fidx, CG_B)
-        if field_val != 0 { return field_val }
+        // No named struct type found — try LLVM alloca type directly.
+        // This handles match bindings and function returns where the Forge type isn't tracked.
+        let alloca_ptr = forge_alloca_cache_has(var_name)
+        if alloca_ptr != 0 {
+            let alloca_ty = llvm.get_allocated_type(alloca_ptr)
+            if alloca_ty != null {
+                let akind = llvm.get_type_kind(alloca_ty)
+                if akind == LLVM_STRUCT_TYPE_KIND {
+                    // Try to find the field by checking all registered struct types
+                    let ty_name = llvm.get_struct_name(alloca_ty)
+                    if ty_name != "" {
+                        let fidx2 = struct_field_index(ty_name, field)
+                        if fidx2 >= 0 {
+                            let fv2 = forge_alloca_cache_load_field(var_name, ty_name, fidx2, CG_B)
+                            if fv2 != 0 { return fv2 }
+                            let ov2 = self.emit_ident(var_name)
+                            return llvm.build_extract_value(CG_B, ov2, fidx2, field)
+                        }
+                    }
+                }
+            }
+        }
 
-        // Fallback: load whole struct and extract
-        let obj_val = self.emit_ident(var_name)
-        llvm.build_extract_value(CG_B, obj_val, fidx, field)
+        llvm.const_int(CG_I64, 0, 0)
     }
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
@@ -2872,18 +2897,29 @@ impl Codegen {
                                 field_types = cg_enum_variant_field_types(ename, vn2)
                                 // Hardcoded fallback for common Expr/Statement variants
                                 if field_types == "" {
-                                    // Expr variants: most have (value/name: s, span: 4)
+                                    // Expr variants
                                     if vn2 == "IntLit" { field_types = "i4" }
                                     if vn2 == "FloatLit" { field_types = "i4" }
                                     if vn2 == "StringLit" { field_types = "s4" }
                                     if vn2 == "BoolLit" { field_types = "i4" }
                                     if vn2 == "NullLit" { field_types = "4" }
                                     if vn2 == "Ident" { field_types = "s4" }
+                                    if vn2 == "Binary" { field_types = "pip4" }
+                                    if vn2 == "Unary" { field_types = "ip4" }
+                                    if vn2 == "Call" { field_types = "ps4" }
+                                    if vn2 == "MemberAccess" { field_types = "ps4" }
+                                    if vn2 == "Index" { field_types = "pp4" }
+                                    if vn2 == "ForceUnwrap" { field_types = "p4" }
+                                    if vn2 == "IsCheck" { field_types = "psi4" }
+                                    if vn2 == "Feature" { field_types = "p" }
                                     // Statement variants
                                     if vn2 == "Expr" { field_types = "p" }
                                     if vn2 == "Assign" { field_types = "pp4" }
                                     if vn2 == "Return" { field_types = "p4" }
                                     if vn2 == "Let" { field_types = "sp4" }
+                                    if vn2 == "Break" { field_types = "4" }
+                                    if vn2 == "Continue" { field_types = "4" }
+                                    if vn2 == "Feature" { field_types = "p" }
                                 }
                             }
                             mut field_idx = 0
@@ -3020,14 +3056,21 @@ impl Codegen {
                     }
                     let fa = llvm.build_alloca(CG_B, CG_I64, "fi")
                     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fa)
-                    let fla = llvm.value_array_new(1)
-                    llvm.value_array_set(fla, 0, fl)
-                    let flt = llvm.type_array_new(1)
-                    llvm.type_array_set(flt, 0, CG_STR)
-                    let flf = llvm.function_type(CG_I64, flt, 1, 0)
-                    llvm.type_array_free(flt)
-                    let fln = llvm.build_call(CG_B, flf, CG_RT_SLEN, fla, 1, "ln")
-                    llvm.value_array_free(fla)
+                    // Get length: try extractvalue(fl, 1) first — works when fl is {ptr, i64}.
+                    // Falls back to forge_string_length call if extractvalue fails (i64 value).
+                    let fln_ev = llvm.build_extract_value(CG_B, fl, 1, "ln")
+                    mut fln = fln_ev
+                    if fln_ev == null {
+                        // fl is scalar (i64) — call forge_string_length
+                        let fla = llvm.value_array_new(1)
+                        llvm.value_array_set(fla, 0, fl)
+                        let flt = llvm.type_array_new(1)
+                        llvm.type_array_set(flt, 0, CG_STR)
+                        let flf = llvm.function_type(CG_I64, flt, 1, 0)
+                        llvm.type_array_free(flt)
+                        fln = llvm.build_call(CG_B, flf, CG_RT_SLEN, fla, 1, "ln")
+                        llvm.value_array_free(fla)
+                    }
                     let ffn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
                     let f1 = llvm.append_basic_block(CG_CTX, ffn, "fc")
                     let f2 = llvm.append_basic_block(CG_CTX, ffn, "fb")
