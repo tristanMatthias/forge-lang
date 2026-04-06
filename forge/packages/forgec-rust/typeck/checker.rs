@@ -30,7 +30,13 @@ impl TypeChecker {
     }
 
     pub fn check_program(&mut self, program: &Program) {
-        // First pass: register all top-level declarations
+        // Two-pass type registration to handle forward references.
+        // Example: Block references Statement which is defined later.
+        // First pass creates stubs for all types/enums, second pass resolves fields.
+        for stmt in &program.statements {
+            self.register_top_level(stmt);
+        }
+        // Second pass: re-register to resolve forward references
         for stmt in &program.statements {
             self.register_top_level(stmt);
         }

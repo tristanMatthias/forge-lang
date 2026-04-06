@@ -1035,16 +1035,22 @@ impl Codegen {
     // same LLVM name caused the ptr-return version to be shadowed.
 
     fn emit_let(self, name: string, value: Expr) {
-        let val_type = self.expr_type_name(value)
+        // Check if type was pre-set by parser (e.g., List<Statement> annotation)
+        let pre_type = forge_alloca_cache_get_var_type(name)
+        mut val_type = self.expr_type_name(value)
+        if pre_type.length > 0 && (val_type == "int" || val_type == "") {
+            val_type = pre_type
+        }
         let val = self.emit_expr(value)
         mut var_type = Type.Int
         if val_type == "string" { var_type = Type.String }
         if val_type == "map" { var_type = Type.MapType(Type.String, Type.Int) }
         // Lists use ForgeString alloca ({ptr, i64})
-        if val_type == "list" || val_type == "List" || (val_type.length > 5 && val_type.substring(0, 5) == "list:") {
+        if val_type == "list" || val_type == "List" || (val_type.length > 5 && (val_type.substring(0, 5) == "list:" || val_type.substring(0, 5) == "List:")) {
             var_type = Type.String
         }
-        self.define_var(name, var_type, val)
+        // Use define_var_typed with the FULL type name (preserves list element type)
+        self.define_var_typed(name, val_type, val)
         forge_last_val_clear()
     }
 
@@ -2599,10 +2605,14 @@ impl Codegen {
     }
 
     fn emit_statement(self, stmt: Statement) -> ptr {
+        forge_trace_i64(999, 999)
         match stmt {
-            .Expr(expr) -> { return self.emit_expr(expr) }
-            .Assign(t, v, s) -> { self.emit_assign(t, v) }
-            .Return(v, s) -> { self.emit_return(v) }
+            .Expr(expr) -> { forge_trace_i64(0, 998)
+                return self.emit_expr(expr) }
+            .Assign(t, v, s) -> { forge_trace_i64(1, 998)
+                self.emit_assign(t, v) }
+            .Return(v, s) -> { forge_trace_i64(2, 998)
+                self.emit_return(v) }
             .Let(name, val, s) -> {
                 let val_type = self.expr_type_name(val)
                 // Debug: trace what expr variant the value is

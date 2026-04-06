@@ -178,6 +178,9 @@ impl<'ctx> Codegen<'ctx> {
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or_else(|| self.infer_type(&data.value));
+            if data.name == "statements" || data.name == "tokens" {
+                eprintln!("  [MUT-VAR] {} ty={:?}", data.name, ty);
+            }
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);
             let alloca = self.create_entry_block_alloca(&ty, &data.name);
