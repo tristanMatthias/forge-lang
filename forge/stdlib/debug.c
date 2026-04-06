@@ -1,23 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════
 // Forge Debug Utilities
 // ═══════════════════════════════════════════════════════════════════
-// Diagnostic functions for debugging the self-hosting compiler.
-// These are compiled into the runtime and callable from Forge source.
-// They have no effect on correctness — only produce stderr traces.
-//
-// To use: call from Forge source (e.g., forge_dump_stmt_list(stmts))
-// To disable all output: set FORGE_DEBUG=0 env var (TODO)
+// Included by runtime.c — do NOT compile separately.
+// All types (ForgeString, etc.) are already defined by runtime.c.
 // ═══════════════════════════════════════════════════════════════════
-
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-
-typedef struct { char* ptr; int64_t len; } ForgeString;
-
-// Forward declarations for token access (defined in runtime.c)
-extern int64_t forge_token_kind_id(ForgeString token_list, int64_t index);
-extern ForgeString forge_token_text(ForgeString token_list, int64_t index);
 
 // ─── Body parsing trace ─────────────────────────────────────────
 // Tracks when emit_fn_body_from_source is active, so other traces
@@ -83,3 +69,67 @@ static int _peek_trace = 0;
 void forge_enable_peek_trace(void) { _peek_trace = 1; }
 void forge_disable_peek_trace(void) { _peek_trace = 0; }
 int  forge_peek_trace_enabled(void) { return _peek_trace; }
+
+// ─── Token ABI diagnostic ───────────────────────────────────────
+// Wraps Lexer_next_token to verify the returned Token has correct field values.
+// Call: forge_debug_next_token(lexer_ptr) instead of Lexer_next_token directly.
+// This is for diagnosing sret ABI issues with 64-byte Token returns.
+
+// Token = {i64 kind, Span{4xi64}, ForgeString{ptr,i64}, i64 kind_id} = 64 bytes
+typedef struct {
+    int64_t kind;
+    int64_t span[4];
+    ForgeString text;
+    int64_t kind_id;
+} DebugToken;
+
+// External: the actual compiled function
+extern DebugToken Lexer_next_token(void* self);
+
+static int _dnt_trace = 0;
+DebugToken forge_debug_next_token(void* self) {
+    DebugToken tok = Lexer_next_token(self);
+    if (_dnt_trace < 20) {
+        fprintf(stderr, "[DBG_NEXT_TOKEN] kind=%lld kind_id=%lld text='%.*s'\n",
+                (long long)tok.kind, (long long)tok.kind_id,
+                tok.text.ptr && tok.text.len > 0 ? (int)(tok.text.len < 20 ? tok.text.len : 20) : 0,
+                tok.text.ptr ? tok.text.ptr : "");
+        _dnt_trace++;
+    }
+    return tok;
+}
+
+// ─── Token raw dump ─────────────────────────────────────────────
+// Dump raw bytes of a Token value by pointer.
+// Use to diagnose field ordering / ABI issues at runtime.
+// Call: forge_dump_token_raw(&token) from C, or pass alloca ptr from Forge.
+void forge_dump_token_raw(void* ptr) {
+    if (!ptr) { fprintf(stderr, "[TOKEN_RAW] null\n"); return; }
+    uint8_t* p = (uint8_t*)ptr;
+    // Dump first 64 bytes as i64 values (8 i64s)
+    int64_t* vals = (int64_t*)ptr;
+    fprintf(stderr, "[TOKEN_RAW] i64s:");
+    for (int i = 0; i < 8; i++) fprintf(stderr, " [%d]=%lld", i, (long long)vals[i]);
+    fprintf(stderr, "\n");
+}
+
+// Validate Token struct: checks that kind_id (last i64 field) is non-zero.
+// Token = {i64 kind, Span{4×i64}, ForgeString{ptr,i64}, i64 kind_id}
+// kind_id should be at offset 56 (byte offset) = i64 index 7.
+// Returns 1 if valid, 0 if kind_id is 0 (likely field order bug).
+int64_t forge_validate_token(void* ptr) {
+    if (!ptr) return 0;
+    int64_t* vals = (int64_t*)ptr;
+    int64_t kind_id = vals[7]; // i64 at byte offset 56
+    if (kind_id == 0) {
+        static int _vt_trace = 0;
+        if (_vt_trace < 10) {
+            fprintf(stderr, "[VALIDATE_TOKEN] kind_id=0 at offset 7! Full dump:");
+            for (int i = 0; i < 8; i++) fprintf(stderr, " [%d]=%lld", i, (long long)vals[i]);
+            fprintf(stderr, "\n");
+            _vt_trace++;
+        }
+        return 0;
+    }
+    return 1;
+}

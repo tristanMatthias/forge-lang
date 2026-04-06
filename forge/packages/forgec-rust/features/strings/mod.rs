@@ -195,6 +195,8 @@ crate::runtime_fn! { name: "forge_struct_lit_clear", feature: "strings", params:
 crate::runtime_fn! { name: "forge_struct_lit_add_field", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_struct_lit_get_field", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_struct_lit_field_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_dump_token_raw", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_validate_token", feature: "strings", params: [Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_get_init", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_has_init", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }

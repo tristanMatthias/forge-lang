@@ -259,6 +259,13 @@ typedef struct {
     int64_t len;
 } ForgeString;
 
+// Forward declarations needed by debug.c
+int64_t forge_token_kind_id(ForgeString token_list, int64_t index);
+ForgeString forge_token_text(ForgeString token_list, int64_t index);
+
+// Include debug utilities
+#include "debug.c"
+
 ForgeString forge_string_new(const char* data, int64_t len) {
     char* buf = (char*)forge_string_alloc(len + 1);
     memcpy(buf, data, len);
@@ -5381,7 +5388,16 @@ static int64_t _ftok_cap = 0;
 
 void forge_ftok_clear(void) { _ftok_count = 0; }
 
+static int _ftok_push_trace = 0;
 void forge_ftok_push(int64_t kind_id, ForgeString text, int64_t span_start, int64_t span_end, int64_t span_line, int64_t span_col) {
+    if (_ftok_push_trace < 20) {
+        fprintf(stderr, "  [FTOK_PUSH] kid=%lld text='%.*s' count=%lld\n",
+                (long long)kind_id,
+                text.ptr && text.len > 0 ? (int)(text.len < 20 ? text.len : 20) : 0,
+                text.ptr ? text.ptr : "",
+                (long long)_ftok_count);
+        _ftok_push_trace++;
+    }
     if (_ftok_count >= _ftok_cap) {
         int64_t new_cap = _ftok_cap < 1024 ? 1024 : _ftok_cap * 2;
         FullTok* nb = (FullTok*)malloc(new_cap * sizeof(FullTok));
@@ -5448,16 +5464,9 @@ int64_t forge_ftok_span_end(int64_t idx) {
 }
 
 // Get token kind_id by index (for parser)
-static int _ftok_kid_trace = 0;
 int64_t forge_ftok_kind_id(int64_t idx) {
     if (idx < 0 || idx >= _ftok_count) return 99;
-    int64_t kid = _ftok_buf[idx].kind_id;
-    if (_ftok_kid_trace < 20) {
-        fprintf(stderr, "  [FTOK_KID] idx=%lld kid=%lld count=%lld\n",
-                (long long)idx, (long long)kid, (long long)_ftok_count);
-        _ftok_kid_trace++;
-    }
-    return kid;
+    return _ftok_buf[idx].kind_id;
 }
 
 // Get token text by index (for parser)
