@@ -2210,9 +2210,18 @@ impl Codegen {
         }
         if var_name == "" { return llvm.const_int(CG_I64, 0, 0) }
 
-        // Enum constructor: Color.Green → tag value
+        // Enum constructor: Color.Green → tagged struct value
         let tag = match_enum_tag(var_name + "." + field)
         if tag >= 0 {
+            // Check if the enum has a named LLVM type (struct representation)
+            let enum_ty = llvm.get_type_by_name(CG_CTX, var_name)
+            if enum_ty != null {
+                // Create { i8 tag, i64 0 } struct
+                let tag_val = llvm.const_int(CG_I8, tag, 0)
+                let undef = llvm.get_undef(enum_ty)
+                let s1 = llvm.build_insert_value(CG_B, undef, tag_val, 0, "et")
+                return s1
+            }
             return llvm.const_int(CG_I64, tag, 0)
         }
 
@@ -2971,17 +2980,21 @@ impl Codegen {
                     mut for_elem_type = ""
                     if iter_var_name != "" { for_elem_type = list_elem_type(iter_var_name) }
                     let fl = self.emit_expr(iter)
+                    // Determine element type from LLVM (source of truth)
                     mut elem_llvm_ty = CG_I64
+                    // Try list_elem_type first (from type annotations)
                     if for_elem_type != "" {
                         cg_reinit_types()
                         let resolved = resolve_type_to_llvm(for_elem_type)
                         if resolved != null { elem_llvm_ty = resolved }
-                    }
-                    // Use ForgeString elements when iterable type is string/list
-                    if (iter_ty2 == "string" || iter_ty2.length > 5) && for_elem_type == "" {
-                        if iter_ty2 == "string" {
-                            cg_reinit_types()
-                            elem_llvm_ty = CG_STR
+                    } else if iter_ty2 == "string" {
+                        cg_reinit_types()
+                        elem_llvm_ty = CG_STR
+                    } else {
+                        // Fallback: use list_elem_llvm_type which checks alloca cache
+                        if iter_var_name != "" {
+                            let cached_ty = list_elem_llvm_type(iter_var_name)
+                            if cached_ty != null { elem_llvm_ty = cached_ty }
                         }
                     }
                     let fa = llvm.build_alloca(CG_B, CG_I64, "fi")
