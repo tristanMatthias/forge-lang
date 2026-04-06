@@ -1,4 +1,5 @@
 // ─── Structs Feature ───────────────────────────
+use core.kind_ids.{KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_COMMA, KID_COLON, KID_ARROW, KID_DOT, KID_EQ, KID_NEWLINE, KID_IDENT, KID_FN, KID_MUT}
 // Handles: type declarations (named structs), struct literals,
 // field access. Struct layout is { field1, field2, ... } in LLVM.
 
@@ -69,7 +70,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
     }
 
     // Parse the struct body { field: type, ... }
-    if p.check(TokenKind.LBrace) {
+    if p.peek_kind_id() == KID_LBRACE {
         p.advance() // consume {
         p.skip_newlines()
 
@@ -79,7 +80,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
         mut field_types_str = ""  // comma-separated type names
         mut field_count = 0
 
-        while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+        while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
             if field_count > 0 {
                 field_names = field_names + ","
                 field_is_str = field_is_str + ","
@@ -121,7 +122,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
             field_count = field_count + 1
 
             p.skip_newlines()
-            if p.check(TokenKind.Comma) { p.advance() }
+            if p.peek_kind_id() == KID_COMMA { p.advance() }
             p.skip_newlines()
         }
         p.expect(TokenKind.RBrace)

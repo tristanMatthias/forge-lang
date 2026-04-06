@@ -1,4 +1,5 @@
 // ─── Impl Methods Feature ──────────────────────
+use core.kind_ids.{KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_COMMA, KID_COLON, KID_ARROW, KID_DOT, KID_EQ, KID_NEWLINE, KID_IDENT, KID_FN, KID_MUT}
 // Handles: impl blocks with methods on types.
 // impl TypeName { fn method(self, ...) -> ... { ... } }
 // Methods are compiled as free functions with self as first param.
@@ -79,7 +80,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
     p.skip_newlines()
 
     // Parse each method and store as a function
-    while !p.check(TokenKind.RBrace) && !p.is_at_end() {
+    while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
         p.skip_newlines()
         if p.check(TokenKind.Fn) {
             // Parse method as a function, storing with mangled name
@@ -89,7 +90,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
                 p.pos = PARSE_END_POS
                 PARSE_END_POS = -1
             }
-        } else if !p.check(TokenKind.RBrace) {
+        } else if p.peek_kind_id() != KID_RBRACE {
             p.advance() // skip unexpected tokens
         }
         p.skip_newlines()
@@ -117,7 +118,7 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
     let params = p.parse_params()
 
     mut return_type_name = ""
-    if p.check(TokenKind.Arrow) || forge_peek_kind_id(forge_parser_get_pos()) == 121 {
+    if p.peek_kind_id() == KID_ARROW || forge_peek_kind_id(forge_parser_get_pos()) == 121 {
         p.advance()
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
