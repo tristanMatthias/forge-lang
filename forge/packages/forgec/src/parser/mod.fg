@@ -951,6 +951,7 @@ impl Parser {
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
+                eprintln("[PUSH] params.length now=" + string(params.length))
             }
             if self.peek_kind_id() == KID_COMMA {
                 self.advance()

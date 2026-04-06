@@ -89,6 +89,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
     // Store for codegen — name, body, param count, names, types, return type
+    eprintln("[STORE] " + name + " params.length=" + string(params.length) + " PPN.length=" + string(PARSED_PARAM_NAMES.length))
     store_fn_source(name, body_src)
     store_fn_param_count(params.length)
     store_fn_return_type(return_type_name)

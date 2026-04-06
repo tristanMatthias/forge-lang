@@ -433,11 +433,33 @@ impl<'ctx> Codegen<'ctx> {
             self.define_var(param.name.clone(), alloca, ty);
         }
 
-        // Compile body — use the previously resolved return type from fn_return_types
-        let ret_ty = self.fn_return_types.get(name).cloned()
-            .unwrap_or_else(|| return_type
-                .map(|t| self.type_checker.resolve_type_expr(t))
-                .unwrap_or(Type::Void));
+        // Compile body — re-resolve return type from the AST. The cached
+        // fn_return_types may contain Type::Error if the named type wasn't
+        // registered yet at declare time. Re-resolution at compile time
+        // (when all types are known) gives the correct Type::Nullable(Struct{name}).
+        let resolved_now = return_type
+            .map(|t| self.type_checker.resolve_type_expr(t))
+            .unwrap_or(Type::Void);
+        let cached = self.fn_return_types.get(name).cloned().unwrap_or(Type::Void);
+        // If the freshly-resolved type contains no errors, prefer it.
+        // Otherwise fall back to the cached value (or void).
+        fn type_has_error(t: &Type) -> bool {
+            match t {
+                Type::Error | Type::Unknown => true,
+                Type::Nullable(inner) => type_has_error(inner),
+                Type::List(inner) => type_has_error(inner),
+                _ => false,
+            }
+        }
+        let ret_ty = if !type_has_error(&resolved_now) {
+            resolved_now
+        } else if !type_has_error(&cached) {
+            cached
+        } else {
+            resolved_now
+        };
+        // Update the cache with the better-resolved type
+        self.fn_return_types.insert(name.to_string(), ret_ty.clone());
 
         let prev_return_type = self.current_fn_return_type.take();
         self.current_fn_return_type = Some(ret_ty.clone());
