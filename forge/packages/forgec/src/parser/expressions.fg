@@ -22,8 +22,11 @@ use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
 use core.kind_ids.{
     KID_IDENT, KID_INT_LIT, KID_FLOAT_LIT, KID_STRING_LIT, KID_BOOL_LIT,
     KID_TEMPLATE_LIT, KID_NULL_LIT,
-    KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_LBRACKET, KID_DOT, KID_COMMA, KID_COLON,
-    KID_NEWLINE, KID_IF,
+    KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_LBRACKET, KID_RBRACKET,
+    KID_DOT, KID_COMMA, KID_COLON, KID_SEMICOLON,
+    KID_NEWLINE, KID_ARROW, KID_IF, KID_ELSE, KID_IS, KID_IN,
+    KID_EQ, KID_NOT, KID_MINUS, KID_QUESTION, KID_LT, KID_GT,
+    KID_PLUS, KID_PIPE,
 }
 use lexer.{parse_int, parse_float}
 // Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
@@ -139,7 +142,7 @@ impl Parser {
 
     // Level 12: Unary prefix ! - ~
     fn parse_unary_expr(self) -> Expr? {
-        if self.check(TokenKind.Not) {
+        if self.peek_kind_id() == KID_NOT {
             let start = self.advance_span()
             let operand = self.parse_unary_expr() // right-associative
             if operand == null { return null }
@@ -147,7 +150,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Not, operand!, span)
         }
 
-        if self.check(TokenKind.Minus) {
+        if self.peek_kind_id() == KID_MINUS {
             let start = self.advance_span()
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -155,7 +158,7 @@ impl Parser {
             return Expr.Unary(UnaryOp.Neg, operand!, span)
         }
 
-        if self.check(TokenKind.Tilde) {
+        if self.peek_kind_id() == 204 {
             let start = self.advance_span()
             let operand = self.parse_unary_expr()
             if operand == null { return null }
@@ -175,7 +178,7 @@ impl Parser {
 
         while !self.is_at_end() {
             // Function call: expr(args...)
-            if self.check(TokenKind.LParen) {
+            if self.peek_kind_id() == KID_LPAREN {
                 self.advance()
                 let args = self.parse_call_args()
                 let close = self.expect(TokenKind.RParen)
@@ -185,7 +188,7 @@ impl Parser {
             }
 
             // Member access: expr.field or expr.method(args)
-            if self.check(TokenKind.Dot) {
+            if self.peek_kind_id() == KID_DOT {
                 self.advance()
                 // Numeric tuple access: expr.0
                 let pk = self.peek()
@@ -200,7 +203,7 @@ impl Parser {
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
                 // Check for method call: field followed by (
-                if self.check(TokenKind.LParen) {
+                if self.peek_kind_id() == KID_LPAREN {
                     // Desugar string method calls: obj.method(args) → forge_string_method(obj, args)
                     mut is_str_method = false
                     if field == "substring" { is_str_method = true }
@@ -230,7 +233,7 @@ impl Parser {
 
             // Cross-newline dot chaining: allow .field after newline
             // Disabled inside match arms to prevent consuming .Variant patterns
-            if !IN_MATCH_ARM && self.check(TokenKind.Newline) {
+            if !IN_MATCH_ARM && self.peek_kind_id() == KID_NEWLINE {
                 let next = self.peek_at_meaningful(0)
                 if next.kind_id == 122 {
                     self.skip_newlines()
@@ -239,7 +242,7 @@ impl Parser {
             }
 
             // Index access: expr[index]
-            if self.check(TokenKind.LBracket) {
+            if self.peek_kind_id() == KID_LBRACKET {
                 self.advance()
                 let index = self.parse_expr()
                 if index == null { return null }
@@ -251,37 +254,37 @@ impl Parser {
             }
 
             // Force unwrap: expr! → extract inner value from nullable
-            if self.check(TokenKind.Not) || forge_peek_kind_id(forge_parser_get_pos()) == 209 {
+            if self.peek_kind_id() == KID_NOT || self.peek_kind_id() == 209 {
                 let unwrap_span = self.advance_span()
                 result = Expr.ForceUnwrap(result, unwrap_span)
                 continue
             }
 
             // Null chain: expr? (also no-op for now)
-            if self.check(TokenKind.Question) {
+            if self.peek_kind_id() == KID_QUESTION {
                 self.advance()
                 continue
             }
 
             // Struct literal: Ident { field: value, ... }
-            if self.check(TokenKind.LBrace) && self.is_struct_literal() {
+            if self.peek_kind_id() == KID_LBRACE && self.is_struct_literal() {
                 let slit = self.parse_struct_literal()
                 if slit != null { result = slit! }
                 continue
             }
 
             // `is` keyword: expr is .Variant / expr is not .Variant
-            if self.check(TokenKind.Is) {
+            if self.peek_kind_id() == KID_IS {
                 self.advance() // consume 'is'
                 // Check for 'not' (! token) or 'not' (ident keyword)
-                mut negated = self.check(TokenKind.Not)
+                mut negated = self.peek_kind_id() == KID_NOT
                 if !negated && self.peek_kind_id() == 1 && self.peek_text() == "not" {
                     negated = true
                 }
                 if negated { self.advance() }
 
                 // Expect .Variant
-                if self.check(TokenKind.Dot) {
+                if self.peek_kind_id() == KID_DOT {
                     self.advance()
                     let variant_name = self.expect_ident()
                     mut is_pred = 32
@@ -304,14 +307,14 @@ impl Parser {
     fn parse_call_args(self) -> List<Expr> {
         mut args: List<Expr> = []
 
-        while !self.check(TokenKind.RParen) && !self.is_at_end() {
+        while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
             self.skip_newlines()
             let arg = self.parse_expr()
             if arg != null {
                 args = args.push(arg!)
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) {
+            if self.peek_kind_id() == KID_COMMA {
                 self.advance()
             }
         }
@@ -357,7 +360,7 @@ impl Parser {
             LAST_IDENT_NAME = name
 
             // Check for single-param closure: x -> expr
-            if self.check(TokenKind.Arrow) {
+            if self.peek_kind_id() == KID_ARROW {
                 self.advance()
                 self.skip_newlines()
                 let body = self.parse_expr()
@@ -422,7 +425,7 @@ impl Parser {
         let start = self.advance_span() // consume (
 
         // Empty parens: ()
-        if self.check(TokenKind.RParen) {
+        if self.peek_kind_id() == KID_RPAREN {
             self.advance()
             return Expr.NullLit(start) // unit/void
         }
@@ -433,14 +436,14 @@ impl Parser {
         self.skip_newlines()
 
         // Check for tuple: (a, b, ...)
-        if self.check(TokenKind.Comma) {
+        if self.peek_kind_id() == KID_COMMA {
             // TODO: create tuple expression
             self.advance()
-            while !self.check(TokenKind.RParen) && !self.is_at_end() {
+            while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
                 self.skip_newlines()
                 self.parse_expr() // consume but don't collect for now
                 self.skip_newlines()
-                if self.check(TokenKind.Comma) { self.advance() }
+                if self.peek_kind_id() == KID_COMMA { self.advance() }
             }
             self.expect(TokenKind.RParen)
             return first // TODO: return Tuple expr
@@ -501,12 +504,12 @@ impl Parser {
         let struct_name = LAST_IDENT_NAME
         forge_struct_lit_clear()
         mut field_values: List<Expr> = []
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
             self.skip_newlines()
             let field_tok = self.peek()
             if field_tok.kind_id == KID_IDENT {
                 self.advance()
-                if self.check(TokenKind.Colon) {
+                if self.peek_kind_id() == KID_COLON {
                     self.advance()
                     forge_struct_lit_add_field(field_tok.text)
                     let fval = self.parse_expr()
@@ -522,7 +525,7 @@ impl Parser {
                 break
             }
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
         self.expect(TokenKind.RBrace)
@@ -537,10 +540,10 @@ impl Parser {
 
         // Parse list elements
         self.skip_newlines()
-        while !self.check(TokenKind.RBracket) && !self.is_at_end() {
+        while self.peek_kind_id() != KID_RBRACKET && !self.is_at_end() {
             self.parse_expr()
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
         self.expect(TokenKind.RBracket)
@@ -555,7 +558,7 @@ impl Parser {
         if name == "" { return null }
 
         // .Variant(args) — enum constructor with args
-        if self.check(TokenKind.LParen) {
+        if self.peek_kind_id() == KID_LPAREN {
             self.advance()
             let args = self.parse_call_args()
             self.expect(TokenKind.RParen)
@@ -585,11 +588,11 @@ impl Parser {
         self.skip_newlines()
         mut has_else = false
         mut else_block = Block { statements: [], span: start }
-        if self.check(TokenKind.Else) {
+        if self.peek_kind_id() == KID_ELSE {
             has_else = true
             self.advance()
             self.skip_newlines()
-            if self.check(TokenKind.If) {
+            if self.peek_kind_id() == KID_IF {
                 let nested = self.parse_if_expr()
                 if nested != null {
                     else_block = Block {
@@ -638,22 +641,22 @@ impl Parser {
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
-        while !self.check(TokenKind.RBrace) && !self.is_at_end() {
+        while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
             self.skip_newlines()
             mut pat_tag = -1
             mut is_default = false
             mut binding: string = ""
-            if self.check(TokenKind.Dot) {
+            if self.peek_kind_id() == KID_DOT {
                 self.advance()
                 let vname = self.expect_ident()
                 let qname = enum_type + "." + vname
                 pat_tag = match_enum_tag(qname)
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                 // Parse bindings: .Variant(name, val, span) → capture names
-                let bpk = forge_peek_kind_id(forge_parser_get_pos())
+                let bpk = self.peek_kind_id()
                 if bpk == KID_LPAREN {
                     self.advance()
-                    while forge_peek_kind_id(forge_parser_get_pos()) != KID_RPAREN && !self.is_at_end() {
+                    while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
                         let btok = self.peek()
                         if btok.kind_id == KID_IDENT {
                             if binding != "" { binding = binding + "," }
@@ -661,12 +664,12 @@ impl Parser {
                         }
                         self.advance()
                     }
-                    if forge_peek_kind_id(forge_parser_get_pos()) == KID_RPAREN { self.advance() }
+                    if self.peek_kind_id() == KID_RPAREN { self.advance() }
                 }
                 if binding != "" {
                     binding = qname + ":" + binding
                 }
-            } else if self.check(TokenKind.Underscore) {
+            } else if self.peek_kind_id() == 90 {
                 self.advance()
                 is_default = true
             } else if self.peek_kind_id() == KID_STRING_LIT {
@@ -684,13 +687,13 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Arrow) { self.advance() }
+            if self.peek_kind_id() == KID_ARROW { self.advance() }
             self.skip_newlines()
 
             let prev_match = IN_MATCH_ARM
             IN_MATCH_ARM = true
             mut body = Block { statements: [], span: start }
-            if self.check(TokenKind.LBrace) {
+            if self.peek_kind_id() == KID_LBRACE {
                 body = self.parse_block()
             } else {
                 let e = self.parse_expr()
@@ -710,10 +713,10 @@ impl Parser {
             }
 
             self.skip_newlines()
-            if self.check(TokenKind.Comma) { self.advance() }
+            if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
-        if self.check(TokenKind.RBrace) { self.advance() }
+        if self.peek_kind_id() == KID_RBRACE { self.advance() }
 
         // Build tag CSV
         mut tag_csv = ""
