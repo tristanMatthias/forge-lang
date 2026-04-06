@@ -22,6 +22,7 @@ case "${1:-}" in
     --score)   MODE="score"; IR="${2:-output.ll}" ;;
     --stage2)  MODE="stage2" ;;
     --kind-ids) MODE="kind-ids" ;;
+    --source)  MODE="source" ;;
 esac
 
 FORGE_SRC="packages/forgec/src"
@@ -160,6 +161,10 @@ print(count)
 END { print count+0 }
 ' "$IR")
 
+    # Root cause metrics — undef arguments are the upstream cause of most issues
+    undef_args=$(grep -c 'undef)' "$IR" || true)
+    undef_length=$(grep -c 'forge_string_length(%ForgeString undef)' "$IR" || true)
+
     total_functions=$(grep -c -E '^define ' "$IR" || true)
     empty_functions=$(awk '
 /^define / { in_fn=1; lines=0; has_ret=0; next }
@@ -168,7 +173,7 @@ in_fn { lines++; if ($0 ~ /ret .* 0$/ || $0 ~ /ret .* undef/ || $0 ~ /ret void/ 
 END { print empty+0 }
 ' "$IR")
 
-    score=$(( br_i1_false * 3 + null_operands * 10 + struct_as_i64 * 5 + call_type_mismatch * 1 + load_type_mismatch * 1 ))
+    score=$(( br_i1_false * 3 + null_operands * 10 + struct_as_i64 * 5 + call_type_mismatch * 1 + load_type_mismatch * 1 + undef_args * 1 ))
 
     printf "br_i1_false:       %4d\n" "${br_i1_false:-0}"
     printf "null_operands:     %4d\n" "${null_operands:-0}"
@@ -176,6 +181,8 @@ END { print empty+0 }
     printf "struct_as_i64:     %4d\n" "${struct_as_i64:-0}"
     printf "call_type_mismatch:%4d\n" "${call_type_mismatch:-0}"
     printf "load_type_mismatch:%4d\n" "${load_type_mismatch:-0}"
+    printf "undef_args:        %4d\n" "${undef_args:-0}"
+    printf "undef_length:      %4d\n" "${undef_length:-0}"
     printf "total_functions:   %4d\n" "${total_functions:-0}"
     printf "empty_functions:   %4d\n" "${empty_functions:-0}"
     printf "SCORE: %d/1000  (lower is better)\n" "$score"
@@ -456,12 +463,81 @@ for f, c in sorted(counts.items(), key=lambda x: -x[1])[:5]:
 }
 
 # ═════════════════════════════════════════════════════════════════
+# SOURCE MODE — static analysis of .fg source files
+# ═════════════════════════════════════════════════════════════════
+run_source() {
+    echo "═══════════════════════════════════════════════"
+    echo " Source-Level Checks"
+    echo "═══════════════════════════════════════════════"
+
+    # 1. Empty match arms in codegen (silent no-ops)
+    echo ""
+    echo "── Empty Match Arms (codegen/mod.fg) ──"
+    EMPTY_ARMS=$(grep -cE '\-> \{[ ]*\}' "$CODEGEN" 2>/dev/null || echo 0)
+    if [ "${EMPTY_ARMS:-0}" -gt 0 ]; then
+        warn "$EMPTY_ARMS empty match arms found:"
+        grep -nE '-> \{\s*\}' "$CODEGEN" 2>/dev/null | head -10 | sed 's/^/      /'
+    else
+        ok "No empty match arms"
+    fi
+
+    # 2. Magic numbers in parser files (should use KID_* constants)
+    echo ""
+    echo "── Magic Numbers in Parser ──"
+    MAGIC=0
+    for PFILE in "$FORGE_SRC"/parser/*.fg; do
+        [ -f "$PFILE" ] || continue
+        # kind_id == <number> where number > 8 (small numbers are valid enum tags)
+        HITS=$(grep -cE 'kind_id == [0-9]{2,}' "$PFILE" 2>/dev/null || true)
+        if [ "$HITS" -gt 0 ]; then
+            warn "$(basename "$PFILE"): $HITS magic number comparisons"
+            grep -nE 'kind_id == [0-9]{2,}' "$PFILE" 2>/dev/null | head -5 | sed 's/^/      /'
+            MAGIC=$((MAGIC + HITS))
+        fi
+    done
+    [ "$MAGIC" -eq 0 ] && ok "No magic numbers in parser"
+
+    # 3. Undef argument breakdown by callee (shows WHERE types are lost)
+    echo ""
+    echo "── Undef Argument Breakdown ──"
+    if [ -f "output.ll" ]; then IR="output.ll"; fi
+    if [ -f "$IR" ]; then
+        grep 'undef)' "$IR" | sed 's/.*@/@/' | sed 's/(.*//' | sort | uniq -c | sort -rn | head -10 | sed 's/^/    /'
+        TOTAL=$(grep -c 'undef)' "$IR" || true)
+        echo "    ────"
+        echo "    Total: $TOTAL calls passing undef"
+    else
+        warn "No IR file to analyze"
+    fi
+
+    # 4. ret undef breakdown by return type
+    echo ""
+    echo "── Ret Undef Breakdown ──"
+    if [ -f "$IR" ]; then
+        grep 'ret.*undef' "$IR" | sed 's/.*ret //' | sort | uniq -c | sort -rn | head -10 | sed 's/^/    /'
+    fi
+
+    # 5. Missing enum variant field types (match bindings that fall through to default)
+    echo ""
+    echo "── Match Binding Coverage ──"
+    # Check which Expr/Statement variants have hardcoded field types
+    COVERED=$(grep -cE 'vn2 == "' "$CODEGEN" 2>/dev/null || true)
+    echo "    $COVERED variant field types hardcoded in match handler"
+    # List Expr variants from AST
+    echo "    Expr variants in AST:"
+    grep -E '^\s+\w+\(' "$FORGE_SRC/core/ast.fg" 2>/dev/null | sed 's/(.*//; s/^[[:space:]]*/      /' | head -20
+
+    echo ""
+}
+
+# ═════════════════════════════════════════════════════════════════
 # DISPATCH
 # ═════════════════════════════════════════════════════════════════
 case "$MODE" in
     score)    run_score ;;
     stage2)   run_stage2 ;;
     kind-ids) run_kind_ids ;;
+    source)   run_source ;;
     full)     run_full ;;
 esac
 

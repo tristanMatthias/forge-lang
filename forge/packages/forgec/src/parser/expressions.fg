@@ -235,7 +235,7 @@ impl Parser {
             // Disabled inside match arms to prevent consuming .Variant patterns
             if !IN_MATCH_ARM && self.peek_kind_id() == KID_NEWLINE {
                 let next = self.peek_at_meaningful(0)
-                if next.kind_id == 122 {
+                if next.kind_id == KID_DOT {
                     self.skip_newlines()
                     continue
                 }

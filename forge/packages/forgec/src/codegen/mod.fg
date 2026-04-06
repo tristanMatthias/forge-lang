@@ -2937,7 +2937,7 @@ impl Codegen {
                                         if field_idx < field_types.length { fcode = field_types[field_idx] }
                                         let slots = field_type_slots(fcode)
                                         if slots >= 2 {
-                                            // ForgeString/List: extract 2 slots, build struct
+                                            // ForgeString/List/Span: extract 2+ slots, build struct
                                             let ev0 = llvm.build_extract_value(CG_B, subj_raw, slot, "b0")
                                             let ev1 = llvm.build_extract_value(CG_B, subj_raw, slot + 1, "b1")
                                             if ev0 != null {
@@ -2949,6 +2949,14 @@ impl Codegen {
                                                 let ba = llvm.build_alloca(CG_B, CG_STR, bpname)
                                                 llvm.build_store(CG_B, fsv, ba)
                                                 forge_alloca_cache_set(bpname, ba)
+                                                // Track the Forge type for downstream .field access
+                                                if fcode == "4" {
+                                                    forge_alloca_cache_set_var_type(bpname, "Span")
+                                                } else if fcode == "l" {
+                                                    forge_alloca_cache_set_var_type(bpname, "List")
+                                                } else {
+                                                    forge_alloca_cache_set_var_type(bpname, "string")
+                                                }
                                             }
                                         } else if fcode == "p" {
                                             // Boxed pointer: extract ptr, load full value
@@ -2968,10 +2976,12 @@ impl Codegen {
                                                     let big_alloca = llvm.build_alloca(CG_B, expr_ty, bpname)
                                                     llvm.build_store(CG_B, deref_val, big_alloca)
                                                     forge_alloca_cache_set(bpname, big_alloca)
+                                                    forge_alloca_cache_set_var_type(bpname, "Expr")
                                                 } else {
                                                     let ba = llvm.build_alloca(CG_B, llvm.type_of(ev), bpname)
                                                     llvm.build_store(CG_B, ev, ba)
                                                     forge_alloca_cache_set(bpname, ba)
+                                                    forge_alloca_cache_set_var_type(bpname, "Expr")
                                                 }
                                             }
                                         } else {
@@ -2981,6 +2991,7 @@ impl Codegen {
                                                 let ba = llvm.build_alloca(CG_B, llvm.type_of(ev), bpname)
                                                 llvm.build_store(CG_B, ev, ba)
                                                 forge_alloca_cache_set(bpname, ba)
+                                                forge_alloca_cache_set_var_type(bpname, "int")
                                             }
                                         }
                                     }
