@@ -321,7 +321,8 @@ impl Parser {
     }
 
     fn next_meaningful_is(self, kind: TokenKind) -> bool {
-        let a = forge_kind_id_to_key(self.peek_at_meaningful(0).kind_id)
+        let mtok = self.peek_at_meaningful(0)
+        let a = forge_kind_id_to_key(mtok.kind_id)
         let b = self.kind_to_key(kind)
         a != "" && a == b
     }

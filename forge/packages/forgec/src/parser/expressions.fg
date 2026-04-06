@@ -471,27 +471,23 @@ impl Parser {
 
     fn is_struct_literal(self) -> bool {
         // { ident: ...} or { ident, ...} or { "string": ... } (map)
-        let tok1 = self.peek_at(1) // first token after {
-
-        // Skip newlines
+        // Skip newlines after {
         mut offset = 1
-        while self.peek_at(offset).kind_id == 120 {
+        mut pk = self.peek_at(offset)
+        while pk.kind_id == 120 {
             offset = offset + 1
+            pk = self.peek_at(offset)
         }
 
-        let after_brace = self.peek_at(offset)
+        let after_brace = pk
 
-        // { ident: ... } — struct literal (use kind_id for data variants)
-        // Note: { ident } alone (ident followed by }) is a block expression, not a struct literal.
-        // Only match when followed by : (named field) or , (multiple fields).
+        // { ident: ... } — struct literal
         if after_brace.kind_id == 1 {
-            let after_ident = self.peek_at(offset + 1)
             return after_ident.kind_id == 124 || after_ident.kind_id == 123
         }
         // { "string": ... } — map literal
         if after_brace.kind_id == 4 {
-            let after_str = self.peek_at(offset + 1)
-            return after_str.kind_id == 124
+            return after_ident.kind_id == 124
         }
         false
     }
