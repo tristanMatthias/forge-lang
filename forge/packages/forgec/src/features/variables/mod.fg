@@ -111,7 +111,10 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     // If type annotation says List<T>, pre-register the var type for correct list push sizing
     if ann_is_list == 1 && ann_elem_name != "" {
-        forge_alloca_cache_set_var_type(var_name, "List:" + ann_elem_name)
+        let type_str = "List:" + ann_elem_name
+        forge_alloca_cache_set_var_type(var_name, type_str)
+        // Also store in global registry for expr_type_name lookup
+        forge_global_var_set_type(var_name, type_str)
     }
 
     PARSE_END_POS = forge_parser_get_pos()

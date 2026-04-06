@@ -964,6 +964,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_global_var_count", mft0(CG_I64))
     llvm.add_function(CG_MOD, "forge_global_var_name", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_global_var_is_str", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_set_type", mft2(CG_VOID, CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_global_var_get_type", mft1(CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_global_type_kind", mft2(CG_I64, CG_PTR, CG_STR))
     // Struct registry
     llvm.add_function(CG_MOD, "forge_struct_type_register", mft5(CG_VOID, CG_STR, CG_STR, CG_STR, CG_STR, CG_PTR))
@@ -1267,6 +1269,9 @@ impl Codegen {
                 if type_kind == LLVM_STRUCT_TYPE_KIND { return "string" }
                 if type_kind == LLVM_POINTER_TYPE_KIND { return "ptr" }
                 if type_kind == LLVM_INTEGER_TYPE_KIND { return "int" }
+                // Check global type name registry (set by parse_var_binding for List<T> globals)
+                let global_type = forge_global_var_get_type(name)
+                if global_type.length > 0 { return global_type }
                 // Check if it's a global (i64-based to avoid ptr null check issue)
                 let gkind = forge_global_type_kind(CG_MOD, name)
                 if gkind == LLVM_STRUCT_TYPE_KIND { return "string" }  // StructTypeKind (ForgeString)

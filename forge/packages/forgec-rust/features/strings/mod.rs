@@ -198,6 +198,8 @@ crate::runtime_fn! { name: "forge_struct_num_fields", feature: "strings", params
 crate::runtime_fn! { name: "forge_struct_field_type_kind", feature: "strings", params: [I64, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_struct_field_is_i8", feature: "strings", params: [I64, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_set_init", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_global_var_set_type", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_global_var_get_type", feature: "strings", params: [ForgeString], ret: ForgeString }
 crate::runtime_fn! { name: "forge_struct_lit_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_struct_lit_add_field", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_struct_lit_get_field", feature: "strings", params: [I64], ret: ForgeString }

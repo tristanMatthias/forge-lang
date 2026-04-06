@@ -4082,7 +4082,7 @@ ForgeString forge_enum_variant_fields_get(ForgeString key) {
 
 // ---- Global variable registry (replaces VAR_GLOBAL_NAMES/STR_MASK) ----
 #define GLOBAL_VAR_REG_SIZE 256
-static struct { char name[64]; int is_str; int64_t init_val; int has_init; } _global_var_reg[GLOBAL_VAR_REG_SIZE];
+static struct { char name[64]; int is_str; int64_t init_val; int has_init; char type_name[64]; } _global_var_reg[GLOBAL_VAR_REG_SIZE];
 static int _global_var_count = 0;
 
 void forge_global_var_register(ForgeString name, int64_t is_str) {
@@ -4092,7 +4092,34 @@ void forge_global_var_register(ForgeString name, int64_t is_str) {
     _global_var_reg[_global_var_count].is_str = (int)is_str;
     _global_var_reg[_global_var_count].init_val = 0;
     _global_var_reg[_global_var_count].has_init = 0;
+    _global_var_reg[_global_var_count].type_name[0] = '\0';
     _global_var_count++;
+}
+
+void forge_global_var_set_type(ForgeString name, ForgeString type_name) {
+    if (!name.ptr || name.len <= 0) return;
+    for (int i = 0; i < _global_var_count; i++) {
+        if ((int64_t)strlen(_global_var_reg[i].name) == name.len &&
+            memcmp(_global_var_reg[i].name, name.ptr, name.len) == 0) {
+            int tlen = type_name.len > 63 ? 63 : (int)type_name.len;
+            if (type_name.ptr && tlen > 0) memcpy(_global_var_reg[i].type_name, type_name.ptr, tlen);
+            _global_var_reg[i].type_name[tlen] = '\0';
+            return;
+        }
+    }
+}
+
+ForgeString forge_global_var_get_type(ForgeString name) {
+    if (!name.ptr || name.len <= 0) return (ForgeString){NULL, 0};
+    for (int i = 0; i < _global_var_count; i++) {
+        if ((int64_t)strlen(_global_var_reg[i].name) == name.len &&
+            memcmp(_global_var_reg[i].name, name.ptr, name.len) == 0) {
+            int len = strlen(_global_var_reg[i].type_name);
+            if (len > 0) return forge_string_new(_global_var_reg[i].type_name, len);
+            return (ForgeString){NULL, 0};
+        }
+    }
+    return (ForgeString){NULL, 0};
 }
 
 // Set initial integer value for a global (for const-like globals like KID_*)
