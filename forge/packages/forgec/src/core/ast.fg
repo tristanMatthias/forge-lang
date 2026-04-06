@@ -90,6 +90,26 @@ export type Block = {
     span: Span,
 }
 
+// ─── Patterns ────────────────────────────────────
+// Match arm patterns. Modeled after Rust's Pat enum.
+// Each pattern carries its full structure as data — no string encoding.
+
+export enum Pattern {
+    Wildcard(span: Span)
+    Ident(name: string, span: Span)
+    Literal(value: Expr)
+    EnumVariant(variant: string, fields: List<Pattern>, span: Span)
+    Tuple(elements: List<Pattern>, span: Span)
+    Or(alternatives: List<Pattern>, span: Span)
+}
+
+// A single arm in a match expression: pattern -> body
+export type MatchArm = {
+    pattern: Pattern,
+    body: Block,
+    span: Span,
+}
+
 export enum Expr {
     IntLit(value: int, span: Span)
     FloatLit(value: float, span: Span)
