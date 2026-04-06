@@ -1918,11 +1918,174 @@ impl Codegen {
         llvm.const_int(CG_I64, 0, 0)
     }
 
-    // Phase B stub: walks Pattern AST instead of CSV. Not yet wired up.
+    // Compute the dispatch tag for a pattern.
+    //   -1 = always-match (wildcard, ident binding)
+    //   -2 = string literal (compared via forge_string_eq)
+    //   >=0 = enum variant tag or int literal
+    fn pattern_tag(self, pat: Pattern, scrutinee_type: string) -> int {
+        match pat {
+            .Wildcard(_) -> { -1 }
+            .Ident(_, _) -> { -1 }
+            .EnumVariant(variant, _, _) -> {
+                let qname = scrutinee_type + "." + variant
+                mut t = match_enum_tag(qname)
+                if t < 0 { t = match_enum_tag(variant) }
+                t
+            }
+            .Literal(value) -> {
+                match value {
+                    .IntLit(n, _) -> { n }
+                    .BoolLit(b, _) -> { if b { 1 } else { 0 } }
+                    .StringLit(_, _) -> { -2 }
+                    _ -> { -1 }
+                }
+            }
+            _ -> { -1 }
+        }
+    }
+
+    // Walk a pattern's structure and create variable bindings.
+    // For Pattern.EnumVariant, walks its fields and binds each Pattern.Ident
+    // by extracting the appropriate slot(s) from subj_raw.
+    fn emit_pattern_bindings(self, pat: Pattern, subj_raw: ptr, scrutinee_type: string) {
+        match pat {
+            .Ident(bname, _) -> {
+                // Top-level ident binding: bind whole scrutinee value
+                if bname != "_" {
+                    self.define_var_typed(bname, scrutinee_type, subj_raw)
+                }
+            }
+            .EnumVariant(variant, fields, _) -> {
+                let qname = scrutinee_type + "." + variant
+                let field_types = cg_enum_variant_field_types_from_qname(qname)
+                mut field_idx = 0
+                let _fields = fields
+                for field_pat in _fields {
+                    cg_reinit_types()
+                    let slot_off = cg_enum_field_slot_offset(field_types, field_idx)
+                    let slot = 1 + slot_off
+                    mut fcode = "i"
+                    if field_idx < field_types.length { fcode = field_types[field_idx] }
+                    let slots = field_type_slots(fcode)
+                    match field_pat {
+                        .Ident(bname, _) -> {
+                            if bname != "_" {
+                                if slots >= 2 {
+                                    // ForgeString/List/Span — 2+ slots, build struct
+                                    let ev0 = llvm.build_extract_value(CG_B, subj_raw, slot, "b0")
+                                    let ev1 = llvm.build_extract_value(CG_B, subj_raw, slot + 1, "b1")
+                                    if ev0 != null {
+                                        let ev0_ptr = llvm.build_inttoptr(CG_B, ev0, CG_PTR, "sp")
+                                        let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
+                                        mut fsv = fs
+                                        if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
+                                        mut bind_type = "string"
+                                        if fcode == "l" { bind_type = "List" }
+                                        if fcode == "4" { bind_type = "Span" }
+                                        self.define_var_typed(bname, bind_type, fsv)
+                                    }
+                                } else {
+                                    // Single slot — int, bool, or boxed value
+                                    let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
+                                    if ev != null {
+                                        self.define_var_typed(bname, "int", ev)
+                                    }
+                                }
+                            }
+                        }
+                        _ -> {}
+                    }
+                    field_idx = field_idx + 1
+                }
+            }
+            _ -> {}
+        }
+    }
+
+    // Emit a match expression using Pattern AST nodes.
+    // Generates a dispatch chain that compares the scrutinee against each
+    // arm's pattern, extracts bindings, and emits the arm body.
+    // Returns the result via PHI from each arm.
     fn emit_match_arms(self, scrutinee: Expr, arms: List<MatchArm>) -> ptr {
-        // Placeholder — implementation in Phase C
-        let _s = scrutinee
-        let _a = arms
+        let subj_raw = self.emit_expr(scrutinee)
+        let scrutinee_type = self.expr_type_name(scrutinee)
+        // For enum scrutinees, extract the tag byte for integer comparison
+        mut subj = subj_raw
+        let val_kind = forge_value_type_kind(subj_raw)
+        if val_kind == LLVM_STRUCT_TYPE_KIND {
+            let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
+            subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
+        }
+        let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
+        let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
+        mut phi_vals: List<ptr> = []
+        mut phi_bbs: List<ptr> = []
+        let _arms = arms
+        for arm in _arms {
+            cg_reinit_types()
+            let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
+            let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
+            let tag = self.pattern_tag(arm.pattern, scrutinee_type)
+            if tag == -1 {
+                // Wildcard or ident — always matches
+                llvm.build_br(CG_B, arm_bb)
+            } else if tag == -2 {
+                // String literal — call forge_string_eq
+                mut pat_str = ""
+                match arm.pattern {
+                    .Literal(v) -> {
+                        match v {
+                            .StringLit(s, _) -> { pat_str = s }
+                            _ -> {}
+                        }
+                    }
+                    _ -> {}
+                }
+                let pat_val = self.emit_string(pat_str)
+                let ca = llvm.value_array_new(2)
+                llvm.value_array_set(ca, 0, subj_raw)
+                llvm.value_array_set(ca, 1, pat_val)
+                let ft = mft2(CG_I8, CG_STR, CG_STR)
+                let eq = llvm.build_call(CG_B, ft, CG_RT_SEQ, ca, 2, "seq")
+                llvm.value_array_free(ca)
+                let cmp = llvm.build_icmp(CG_B, 33, eq, llvm.const_int(CG_I8, 0, 0), "sc")
+                forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
+            } else {
+                let tag_val = llvm.const_int(CG_I64, tag, 0)
+                let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
+                forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
+            }
+            llvm.position_at_end(CG_B, arm_bb)
+            // Walk the pattern and create bindings
+            self.emit_pattern_bindings(arm.pattern, subj_raw, scrutinee_type)
+            let av = self.emit_block(arm.body)
+            let ae = llvm.get_insert_block(CG_B)
+            let arm_has_term = llvm.block_has_terminator(CG_B)
+            if !arm_has_term { llvm.build_br(CG_B, merge_bb) }
+            if !arm_has_term {
+                phi_vals = phi_vals.push(av)
+                phi_bbs = phi_bbs.push(ae)
+            }
+            llvm.position_at_end(CG_B, next_bb)
+        }
+        // Fallthrough — no arm matched
+        let def_val = llvm.const_int(CG_I64, 0, 0)
+        phi_vals = phi_vals.push(def_val)
+        phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
+        llvm.build_br(CG_B, merge_bb)
+        llvm.position_at_end(CG_B, merge_bb)
+        if phi_vals.length > 0 {
+            let phi_ty = llvm.type_of(phi_vals[0])
+            let phi_kind = forge_value_type_kind(phi_vals[0])
+            if phi_kind == 0 { return llvm.const_int(CG_I64, 0, 0) }
+            let phi = llvm.build_phi(CG_B, phi_ty, "mv")
+            mut pi = 0
+            while pi < phi_vals.length {
+                llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
+                pi = pi + 1
+            }
+            return phi
+        }
         llvm.const_int(CG_I64, 0, 0)
     }
 
