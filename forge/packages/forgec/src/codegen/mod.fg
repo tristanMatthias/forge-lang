@@ -3,7 +3,7 @@
 
 use core.types.Type
 use core.token.Span
-use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef}
+use core.ast.{Program, Statement, Expr, Block, BinOp, UnaryOp, FeatureStmt, FeatureExpr, NodeRef, Pattern, MatchArm}
 use features.{dispatch_emit_stmt, dispatch_emit_expr}
 use features.functions.{DECLARED_FNS, FN_NAMES, FN_RETURN_TYPES, FN_ALL_PARAM_TYPES, FN_PARAM_COUNTS, emit_all_fn_bodies}
 // If expressions use Expr.IfExpr AST node — no PENDING_IF globals
@@ -1915,6 +1915,14 @@ impl Codegen {
             }
             return phi
         }
+        llvm.const_int(CG_I64, 0, 0)
+    }
+
+    // Phase B stub: walks Pattern AST instead of CSV. Not yet wired up.
+    fn emit_match_arms(self, scrutinee: Expr, arms: List<MatchArm>) -> ptr {
+        // Placeholder — implementation in Phase C
+        let _s = scrutinee
+        let _a = arms
         llvm.const_int(CG_I64, 0, 0)
     }
 
