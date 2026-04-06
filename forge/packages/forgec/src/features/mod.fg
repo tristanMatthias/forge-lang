@@ -9,7 +9,6 @@ mod if_else
 mod printing
 mod primitive_types
 mod enums
-mod pattern_matching
 mod structs
 mod impl_methods
 mod while_loops
@@ -42,7 +41,8 @@ use modules.{parse_use, check_use, top_level_use}
 use while_loops.{parse_while, check_while, emit_while}
 use for_loops.{parse_for, check_for, emit_for}
 use if_else.{check_if_expr, emit_if_expr}
-use pattern_matching.{check_match, emit_match}
+// pattern_matching: matches now use core AST (Expr.MatchExpr / Statement.Match)
+// directly via Codegen.emit_match_arms — feature dispatch not used.
 use collections.{check_collection, emit_collection}
 use ranges.{check_range, emit_range}
 use string_templates.{check_template, emit_template}
@@ -74,7 +74,7 @@ export fn dispatch_emit_stmt(cg: Codegen, node: NodeRef) {
 export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     let fid = node.feature
     if fid == "if_else" { return emit_if_expr(cg, node) }
-    else if fid == "pattern_matching" { return emit_match(cg, node) }
+    // pattern_matching feature: handled directly via Expr.MatchExpr in codegen
     else if fid == "collections" { return emit_collection(cg, node) }
     else if fid == "ranges" { return emit_range(cg, node) }
     else if fid == "string_templates" { return emit_template(cg, node) }
