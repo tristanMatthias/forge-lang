@@ -190,6 +190,13 @@ crate::runtime_fn! { name: "forge_value_is_string", feature: "strings", params: 
 crate::runtime_fn! { name: "forge_struct_num_fields", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_struct_field_type_kind", feature: "strings", params: [I64, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_struct_field_is_i8", feature: "strings", params: [I64, I64], ret: I64 }
+crate::runtime_fn! { name: "forge_global_var_set_init", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_struct_lit_clear", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_struct_lit_add_field", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_struct_lit_get_field", feature: "strings", params: [I64], ret: ForgeString }
+crate::runtime_fn! { name: "forge_struct_lit_field_count", feature: "strings", params: [], ret: I64 }
+crate::runtime_fn! { name: "forge_global_var_get_init", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_global_var_has_init", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }

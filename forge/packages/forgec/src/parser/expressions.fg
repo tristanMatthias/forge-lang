@@ -497,21 +497,25 @@ impl Parser {
         let start = self.advance().span // consume {
 
         // Encode as Call("__s_TypeName", [field1, field2, ...])
+        // Field names are stored in C-side array for codegen to use correct GEP indices
         let struct_name = LAST_IDENT_NAME
+        forge_struct_lit_clear()
         mut field_values: List<Expr> = []
         while !self.check(TokenKind.RBrace) && !self.is_at_end() {
             self.skip_newlines()
             let field_tok = self.peek()
-            if field_tok.kind_id == 1 {
+            if field_tok.kind_id == KID_IDENT {
                 self.advance()
                 if self.check(TokenKind.Colon) {
                     self.advance()
+                    forge_struct_lit_add_field(field_tok.text)
                     let fval = self.parse_expr()
                     if fval != null {
                         field_values = field_values.push(fval!)
                     }
                 } else {
                     // Shorthand: { name } means { name: name }
+                    forge_struct_lit_add_field(field_tok.text)
                     field_values = field_values.push(Expr.Ident(field_tok.text, field_tok.span))
                 }
             } else {

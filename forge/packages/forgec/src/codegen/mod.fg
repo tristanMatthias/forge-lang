@@ -171,8 +171,13 @@ export fn create_globals_from_registry() {
         mut gty = CG_I64
         if is_str == 1 { gty = CG_STR }
         let gv = llvm.add_global(CG_MOD, gty, name)
-        let zero = llvm.const_null(gty)
-        llvm.set_initializer(gv, zero)
+        // Use stored initial value if available (for const-like globals)
+        if forge_global_var_has_init(i) == 1 && is_str == 0 {
+            let init_val = forge_global_var_get_init(i)
+            llvm.set_initializer(gv, llvm.const_int(CG_I64, init_val, 0))
+        } else {
+            llvm.set_initializer(gv, llvm.const_null(gty))
+        }
         i = i + 1
     }
 }
@@ -1888,15 +1893,23 @@ impl Codegen {
         if struct_ty == CG_I64 { return llvm.const_int(CG_I64, 0, 0) }
         let alloca = llvm.build_alloca(CG_B, struct_ty, "sl")
         llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
+        // Use C-side field name list to map source fields to correct GEP indices
+        let slit_count = forge_struct_lit_field_count()
         mut fi = 0
         let _fv = field_values
         for fexpr in _fv {
             let val = self.emit_expr(fexpr)
-            let fp = llvm.build_struct_gep2(CG_B, struct_ty, alloca, fi, "sf")
+            // Look up the correct struct field index by name
+            mut gep_idx = fi
+            if fi < slit_count {
+                let fname = forge_struct_lit_get_field(fi)
+                let idx = forge_struct_field_index(struct_name, fname)
+                if idx >= 0 { gep_idx = idx }
+            }
+            let fp = llvm.build_struct_gep2(CG_B, struct_ty, alloca, gep_idx, "sf")
             llvm.build_store(CG_B, val, fp)
             fi = fi + 1
         }
-        // Load completed struct
         let sv = llvm.build_load(CG_B, struct_ty, alloca, "sv")
         sv
     }

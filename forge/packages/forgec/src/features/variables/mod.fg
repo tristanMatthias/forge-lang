@@ -88,13 +88,20 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         return null
     }
 
-    // Register top-level globals with type info
+    // Register top-level globals with type info + initial value
     if IN_FUNCTION_BODY != 1 {
         mut is_str_global = 0
         if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
             is_str_global = 1
         }
         forge_global_var_register(var_name, is_str_global)
+        // Store initial integer value for const-like globals (e.g., KID_FN = 23)
+        match value! {
+            .IntLit(n, _) -> {
+                forge_global_var_set_init(var_name, n)
+            }
+            _ -> {}
+        }
     }
 
     // If type annotation says List<T>, pre-register the var type for correct list push sizing

@@ -2916,6 +2916,14 @@ ForgeString forge_struct_type_get_field_types(ForgeString name) {
 }
 int64_t forge_struct_field_index(ForgeString struct_name, ForgeString field_name) {
     if (!struct_name.ptr || !field_name.ptr) return -1;
+    // Trace Token field lookups
+    if (struct_name.len == 5 && memcmp(struct_name.ptr, "Token", 5) == 0) {
+        static int _token_trace = 0;
+        if (_token_trace < 20) {
+            fprintf(stderr, "  [SFI] Token.%.*s → ", (int)field_name.len, field_name.ptr);
+            _token_trace++;
+        }
+    }
     for (int i = 0; i < _struct_reg_count; i++) {
         if ((int64_t)strlen(_struct_reg[i].name) == struct_name.len &&
             memcmp(_struct_reg[i].name, struct_name.ptr, struct_name.len) == 0) {
@@ -2925,7 +2933,13 @@ int64_t forge_struct_field_index(ForgeString struct_name, ForgeString field_name
                 const char* start = p;
                 while (*p && *p != ',') p++;
                 int64_t flen = p - start;
-                if (flen == field_name.len && memcmp(start, field_name.ptr, flen) == 0) return idx;
+                if (flen == field_name.len && memcmp(start, field_name.ptr, flen) == 0) {
+                    // Trace Token field index results
+                    if (struct_name.len == 5 && memcmp(struct_name.ptr, "Token", 5) == 0) {
+                        fprintf(stderr, "idx=%d (fields='%s')\n", idx, _struct_reg[i].fields);
+                    }
+                    return idx;
+                }
                 if (*p == ',') p++;
                 idx++;
             }
@@ -3218,6 +3232,34 @@ ForgeString forge_get_self_type(void) {
     int64_t len = strlen(_current_self_type);
     return forge_string_new(_current_self_type, len);
 }
+
+// ---- C-side struct literal field name storage ----
+// Stores field names in source order for the current struct literal
+// Used by emit_struct_lit to map source fields to correct GEP indices
+#define SLIT_FIELD_MAX 32
+static char _slit_fields[SLIT_FIELD_MAX][64];
+static int _slit_field_count = 0;
+
+void forge_struct_lit_clear(void) { _slit_field_count = 0; }
+static int _slit_trace = 0;
+void forge_struct_lit_add_field(ForgeString name) {
+    if (_slit_field_count >= SLIT_FIELD_MAX) return;
+    if (name.ptr && name.len > 0 && name.len < 64) {
+        memcpy(_slit_fields[_slit_field_count], name.ptr, name.len);
+        _slit_fields[_slit_field_count][name.len] = '\0';
+        if (_slit_trace < 200) {
+            fprintf(stderr, "  [SLIT] field[%d]='%s'\n", _slit_field_count, _slit_fields[_slit_field_count]);
+            _slit_trace++;
+        }
+    }
+    _slit_field_count++;
+}
+ForgeString forge_struct_lit_get_field(int64_t idx) {
+    ForgeString empty = {NULL, 0};
+    if (idx < 0 || idx >= _slit_field_count) return empty;
+    return (ForgeString){_slit_fields[idx], (int64_t)strlen(_slit_fields[idx])};
+}
+int64_t forge_struct_lit_field_count(void) { return _slit_field_count; }
 
 // ---- C-side param name storage (immune to Forge list corruption) ----
 static char _param_names[PARAM_REG_MAX][64];
@@ -3992,7 +4034,7 @@ ForgeString forge_enum_variant_fields_get(ForgeString key) {
 
 // ---- Global variable registry (replaces VAR_GLOBAL_NAMES/STR_MASK) ----
 #define GLOBAL_VAR_REG_SIZE 256
-static struct { char name[64]; int is_str; } _global_var_reg[GLOBAL_VAR_REG_SIZE];
+static struct { char name[64]; int is_str; int64_t init_val; int has_init; } _global_var_reg[GLOBAL_VAR_REG_SIZE];
 static int _global_var_count = 0;
 
 void forge_global_var_register(ForgeString name, int64_t is_str) {
@@ -4000,7 +4042,32 @@ void forge_global_var_register(ForgeString name, int64_t is_str) {
     memcpy(_global_var_reg[_global_var_count].name, name.ptr, name.len);
     _global_var_reg[_global_var_count].name[name.len] = '\0';
     _global_var_reg[_global_var_count].is_str = (int)is_str;
+    _global_var_reg[_global_var_count].init_val = 0;
+    _global_var_reg[_global_var_count].has_init = 0;
     _global_var_count++;
+}
+
+// Set initial integer value for a global (for const-like globals like KID_*)
+void forge_global_var_set_init(ForgeString name, int64_t val) {
+    if (!name.ptr || name.len <= 0) return;
+    for (int i = 0; i < _global_var_count; i++) {
+        if ((int64_t)strlen(_global_var_reg[i].name) == name.len &&
+            memcmp(_global_var_reg[i].name, name.ptr, name.len) == 0) {
+            _global_var_reg[i].init_val = val;
+            _global_var_reg[i].has_init = 1;
+            return;
+        }
+    }
+}
+
+// Get initial value for a global (returns 0 if not set, has_init tells if valid)
+int64_t forge_global_var_get_init(int64_t idx) {
+    if (idx < 0 || idx >= _global_var_count) return 0;
+    return _global_var_reg[idx].init_val;
+}
+int64_t forge_global_var_has_init(int64_t idx) {
+    if (idx < 0 || idx >= _global_var_count) return 0;
+    return _global_var_reg[idx].has_init;
 }
 
 int64_t forge_global_var_count(void) { return _global_var_count; }
@@ -5381,9 +5448,16 @@ int64_t forge_ftok_span_end(int64_t idx) {
 }
 
 // Get token kind_id by index (for parser)
+static int _ftok_kid_trace = 0;
 int64_t forge_ftok_kind_id(int64_t idx) {
     if (idx < 0 || idx >= _ftok_count) return 99;
-    return _ftok_buf[idx].kind_id;
+    int64_t kid = _ftok_buf[idx].kind_id;
+    if (_ftok_kid_trace < 20) {
+        fprintf(stderr, "  [FTOK_KID] idx=%lld kid=%lld count=%lld\n",
+                (long long)idx, (long long)kid, (long long)_ftok_count);
+        _ftok_kid_trace++;
+    }
+    return kid;
 }
 
 // Get token text by index (for parser)

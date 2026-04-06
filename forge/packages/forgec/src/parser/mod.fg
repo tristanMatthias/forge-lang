@@ -282,6 +282,7 @@ impl Parser {
 
         // kind_id dispatch (constants from core/kind_ids.fg)
         let kid = tok.kind_id
+        forge_trace_i64(kid, KID_FN)
         if kid == KID_LET { let r = parse_let(self)
             self.sync_pos()
             return r }

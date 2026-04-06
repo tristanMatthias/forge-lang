@@ -249,6 +249,7 @@ fn scan_one_file(filepath: string, idx: int) {
     mut lex = lexer_new(source)
     eprintln("[SCAN] lex")
     let tokens = lex.tokenize()
+    forge_trace_i64(tokens.length, forge_ftok_count())
     eprintln("[SCAN] toks")
     mut p = parser_new_with_source(tokens, source)
     eprintln("[SCAN] parse")
