@@ -65,7 +65,12 @@ impl<'ctx> Codegen<'ctx> {
 
             // Build the variant struct value
             let mut variant_val = variant_struct_type.get_undef();
-            for (i, arg) in args.iter().enumerate() {
+            // Only iterate args up to the variant's actual field count.
+            // Extra args beyond the variant's fields are silently dropped to
+            // avoid ExtractOutOfRange panics from inkwell during arity-mismatch
+            // refactors. The type checker reports the arity mismatch separately.
+            let valid_arg_count = args.len().min(variant.fields.len());
+            for (i, arg) in args.iter().take(valid_arg_count).enumerate() {
                 if let Some(val) = self.compile_expr(&arg.value) {
                     let stored_val = if variant.boxed_fields.contains(&i) {
                         // Box: heap-allocate the value and store pointer as i64
