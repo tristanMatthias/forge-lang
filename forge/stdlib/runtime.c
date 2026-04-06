@@ -3797,6 +3797,49 @@ int64_t forge_enum_variant_tag_get(ForgeString key) {
     return -1;
 }
 
+// ---- C-side match binding storage ----
+// Stores arm bindings keyed by "tag_index" for the current match being parsed.
+// Avoids ForgeString corruption in Forge-side string building.
+#define MATCH_BIND_MAX 32
+static char _match_bindings[MATCH_BIND_MAX][256];
+static int _match_binding_count = 0;
+
+void forge_match_binding_clear(void) { _match_binding_count = 0; }
+void forge_match_binding_add(ForgeString binding) {
+    fprintf(stderr, "  [MBA] '%.*s' len=%lld count=%d\n",
+        (int)(binding.ptr ? binding.len : 0), binding.ptr ? binding.ptr : "", (long long)binding.len, _match_binding_count);
+    if (_match_binding_count >= MATCH_BIND_MAX) return;
+    if (!binding.ptr || binding.len <= 0) {
+        _match_bindings[_match_binding_count][0] = '\0';
+    } else {
+        int len = binding.len > 255 ? 255 : (int)binding.len;
+        memcpy(_match_bindings[_match_binding_count], binding.ptr, len);
+        _match_bindings[_match_binding_count][len] = '\0';
+    }
+    _match_binding_count++;
+}
+ForgeString forge_match_binding_get(int64_t idx) {
+    if (idx < 0 || idx >= _match_binding_count) return (ForgeString){NULL, 0};
+    int len = strlen(_match_bindings[idx]);
+    return forge_string_new(_match_bindings[idx], len);
+}
+int64_t forge_match_binding_count(void) { return _match_binding_count; }
+
+// Build the full bindings CSV in C (avoids Forge string concat corruption)
+ForgeString forge_match_binding_csv(void) {
+    static char buf[4096];
+    int pos = 0;
+    for (int i = 0; i < _match_binding_count && pos < 4090; i++) {
+        if (i > 0) buf[pos++] = ';';
+        int len = strlen(_match_bindings[i]);
+        if (pos + len >= 4090) break;
+        memcpy(buf + pos, _match_bindings[i], len);
+        pos += len;
+    }
+    buf[pos] = '\0';
+    return forge_string_new(buf, pos);
+}
+
 void forge_enum_variant_fields_set(ForgeString key, ForgeString fields) {
     if (!key.ptr || key.len <= 0 || key.len > 95) return;
     // Update existing
