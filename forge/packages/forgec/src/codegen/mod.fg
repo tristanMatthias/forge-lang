@@ -1540,7 +1540,14 @@ impl Codegen {
                 let ev = llvm.build_load(CG_B, elem_ty, gp, "ev")
                 return ev
             }
-            .Block(block) -> { return self.emit_block(block) }
+            .Block(block) -> {
+                // Empty block = list literal [] → return ForgeString zeroinitializer
+                if block.statements.length == 0 {
+                    cg_reinit_types()
+                    return llvm.const_null(CG_LIST)
+                }
+                return self.emit_block(block)
+            }
             .IfExpr(cond, then_b, else_b, has_else, span) -> {
                 return self.emit_if_expr(cond, then_b, else_b, has_else)
             }
