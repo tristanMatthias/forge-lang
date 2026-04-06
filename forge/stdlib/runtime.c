@@ -2343,9 +2343,9 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
                 _list_push_count, elem, (long long)elem_size);
     }
     int64_t len = list.len;
-    // Trace all pushes (temporarily, to find crash)
-    if (_list_push_count <= 5 || _list_push_count % 1000 == 0 || len > 100) {
-        fprintf(stderr, "[list_push #%d] ptr=%p len=%lld size=%lld\n", _list_push_count, list.ptr, (long long)len, (long long)elem_size);
+    // Trace only anomalous pushes
+    if (len > 10000000 || (uintptr_t)list.ptr < 4096) {
+        fprintf(stderr, "[list_push #%d] ANOMALY ptr=%p len=%lld size=%lld\n", _list_push_count, list.ptr, (long long)len, (long long)elem_size);
     }
     if (len < 0 || len > 10000000) {
         fprintf(stderr, "[list_push #%d] BAD len=%lld, resetting to 0\n", _list_push_count, (long long)len);
@@ -5388,16 +5388,7 @@ static int64_t _ftok_cap = 0;
 
 void forge_ftok_clear(void) { _ftok_count = 0; }
 
-static int _ftok_push_trace = 0;
 void forge_ftok_push(int64_t kind_id, ForgeString text, int64_t span_start, int64_t span_end, int64_t span_line, int64_t span_col) {
-    if (_ftok_push_trace < 20) {
-        fprintf(stderr, "  [FTOK_PUSH] kid=%lld text='%.*s' count=%lld\n",
-                (long long)kind_id,
-                text.ptr && text.len > 0 ? (int)(text.len < 20 ? text.len : 20) : 0,
-                text.ptr ? text.ptr : "",
-                (long long)_ftok_count);
-        _ftok_push_trace++;
-    }
     if (_ftok_count >= _ftok_cap) {
         int64_t new_cap = _ftok_cap < 1024 ? 1024 : _ftok_cap * 2;
         FullTok* nb = (FullTok*)malloc(new_cap * sizeof(FullTok));

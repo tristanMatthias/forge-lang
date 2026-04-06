@@ -5,6 +5,7 @@
 use core.token.{TokenKind, Span}
 use core.ast.{Statement, Expr, Block, NodeRef, FeatureStmt, feature_stmt, next_node_id}
 use core.types.Type
+use core.kind_ids.{KID_LBRACKET, KID_LBRACE, KID_STRING_LIT, KID_INT_LIT}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use parser.{Parser, Param, TypeExpr}
 use checker.TypeChecker
@@ -90,10 +91,13 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
 
     // Register top-level globals with type info + initial value
     if IN_FUNCTION_BODY != 1 {
-        mut is_str_global = 0
-        if value_tok_key == "LBracket" || value_tok_key == "LBrace" || value_tok_kind == 4 {
-            is_str_global = 1
+        // Determine if global needs ForgeString alloca (16 bytes) vs i64 (8 bytes).
+        // Default to ForgeString (safe). Only use i64 for plain integer/bool literals.
+        mut is_str_global = 1
+        if value_tok_kind == KID_INT_LIT && ann_is_list == 0 {
+            is_str_global = 0
         }
+        if value_tok_kind == 5 { is_str_global = 0 } // bool literal
         forge_global_var_register(var_name, is_str_global)
         // Store initial integer value for const-like globals (e.g., KID_FN = 23)
         match value! {
