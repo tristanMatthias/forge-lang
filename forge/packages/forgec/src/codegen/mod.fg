@@ -761,6 +761,178 @@ fn cg_register_core_types() {
     llvm.struct_set_body(fs_ty, fs_fields, 1, 0)
     llvm.type_array_free(fs_fields)
     register_struct_type_full("FeatureStmt", "data", "0", "NodeRef", fs_ty)
+
+    // ─── Feature Data Types ─────────────────────────
+    // These are the side-table structs used by feature checkers/emitters.
+    // Without registration, data.field accesses fall back to i64 0.
+
+    // FnDeclData = { name: string, type_params: List<string>, params: List<Param>,
+    //                return_type: TypeExpr?, body: Block, exported: bool, span: Span }
+    let fdd_f = llvm.type_array_new(7)
+    llvm.type_array_set(fdd_f, 0, CG_STR)    // name
+    llvm.type_array_set(fdd_f, 1, CG_LIST)   // type_params
+    llvm.type_array_set(fdd_f, 2, CG_LIST)   // params
+    llvm.type_array_set(fdd_f, 3, CG_I64)    // return_type (nullable → opaque)
+    llvm.type_array_set(fdd_f, 4, block_ty)  // body
+    llvm.type_array_set(fdd_f, 5, CG_I64)    // exported
+    llvm.type_array_set(fdd_f, 6, span_ty)   // span
+    let fdd_ty = llvm.struct_create_named(CG_CTX, "FnDeclData")
+    llvm.struct_set_body(fdd_ty, fdd_f, 7, 0)
+    llvm.type_array_free(fdd_f)
+    register_struct_type_full("FnDeclData", "name,type_params,params,return_type,body,exported,span", "1110010", "string,List:string,List:Param,TypeExpr,Block,bool,Span", fdd_ty)
+
+    // VarDeclData = { var_kind: VarKind, name: string, type_ann: TypeExpr?,
+    //                 value: Expr, exported: bool, span: Span }
+    let vdd_f = llvm.type_array_new(6)
+    llvm.type_array_set(vdd_f, 0, CG_I64)    // var_kind
+    llvm.type_array_set(vdd_f, 1, CG_STR)    // name
+    llvm.type_array_set(vdd_f, 2, CG_I64)    // type_ann
+    llvm.type_array_set(vdd_f, 3, CG_I64)    // value (Expr → opaque)
+    llvm.type_array_set(vdd_f, 4, CG_I64)    // exported
+    llvm.type_array_set(vdd_f, 5, span_ty)   // span
+    let vdd_ty = llvm.struct_create_named(CG_CTX, "VarDeclData")
+    llvm.struct_set_body(vdd_ty, vdd_f, 6, 0)
+    llvm.type_array_free(vdd_f)
+    register_struct_type_full("VarDeclData", "var_kind,name,type_ann,value,exported,span", "010000", "int,string,TypeExpr,Expr,bool,Span", vdd_ty)
+
+    // IfExprData = { condition: Expr, then_block: Block, has_else: bool, else_block: Block, span: Span }
+    let ifd_f = llvm.type_array_new(5)
+    llvm.type_array_set(ifd_f, 0, CG_I64)    // condition (Expr → opaque)
+    llvm.type_array_set(ifd_f, 1, block_ty)  // then_block
+    llvm.type_array_set(ifd_f, 2, CG_I64)    // has_else
+    llvm.type_array_set(ifd_f, 3, block_ty)  // else_block
+    llvm.type_array_set(ifd_f, 4, span_ty)   // span
+    let ifd_ty = llvm.struct_create_named(CG_CTX, "IfExprData")
+    llvm.struct_set_body(ifd_ty, ifd_f, 5, 0)
+    llvm.type_array_free(ifd_f)
+    register_struct_type_full("IfExprData", "condition,then_block,has_else,else_block,span", "00000", "Expr,Block,bool,Block,Span", ifd_ty)
+
+    // EnumDeclData = { name: string, variants: List<EnumVariant>, exported: bool, span: Span }
+    let edd_f = llvm.type_array_new(4)
+    llvm.type_array_set(edd_f, 0, CG_STR)    // name
+    llvm.type_array_set(edd_f, 1, CG_LIST)   // variants
+    llvm.type_array_set(edd_f, 2, CG_I64)    // exported
+    llvm.type_array_set(edd_f, 3, span_ty)   // span
+    let edd_ty = llvm.struct_create_named(CG_CTX, "EnumDeclData")
+    llvm.struct_set_body(edd_ty, edd_f, 4, 0)
+    llvm.type_array_free(edd_f)
+    register_struct_type_full("EnumDeclData", "name,variants,exported,span", "1100", "string,List:EnumVariant,bool,Span", edd_ty)
+
+    // TypeDeclData = { name: string, type_params: List<string>, value: TypeExpr, exported: bool, span: Span }
+    let tdd_f = llvm.type_array_new(5)
+    llvm.type_array_set(tdd_f, 0, CG_STR)    // name
+    llvm.type_array_set(tdd_f, 1, CG_LIST)   // type_params
+    llvm.type_array_set(tdd_f, 2, CG_I64)    // value
+    llvm.type_array_set(tdd_f, 3, CG_I64)    // exported
+    llvm.type_array_set(tdd_f, 4, span_ty)   // span
+    let tdd_ty = llvm.struct_create_named(CG_CTX, "TypeDeclData")
+    llvm.struct_set_body(tdd_ty, tdd_f, 5, 0)
+    llvm.type_array_free(tdd_f)
+    register_struct_type_full("TypeDeclData", "name,type_params,value,exported,span", "11000", "string,List:string,TypeExpr,bool,Span", tdd_ty)
+
+    // MatchData = { subject: Expr, arms: List<MatchArm>, span: Span }
+    let md_f = llvm.type_array_new(3)
+    llvm.type_array_set(md_f, 0, CG_I64)    // subject
+    llvm.type_array_set(md_f, 1, CG_LIST)   // arms
+    llvm.type_array_set(md_f, 2, span_ty)   // span
+    let md_ty = llvm.struct_create_named(CG_CTX, "MatchData")
+    llvm.struct_set_body(md_ty, md_f, 3, 0)
+    llvm.type_array_free(md_f)
+    register_struct_type_full("MatchData", "subject,arms,span", "010", "Expr,List:MatchArm,Span", md_ty)
+
+    // ImplBlockData = { trait_name: string?, type_name: string, type_params: List<string>,
+    //                   methods: List<ImplMethod>, span: Span }
+    let ibd_f = llvm.type_array_new(5)
+    llvm.type_array_set(ibd_f, 0, CG_STR)    // trait_name
+    llvm.type_array_set(ibd_f, 1, CG_STR)    // type_name
+    llvm.type_array_set(ibd_f, 2, CG_LIST)   // type_params
+    llvm.type_array_set(ibd_f, 3, CG_LIST)   // methods
+    llvm.type_array_set(ibd_f, 4, span_ty)   // span
+    let ibd_ty = llvm.struct_create_named(CG_CTX, "ImplBlockData")
+    llvm.struct_set_body(ibd_ty, ibd_f, 5, 0)
+    llvm.type_array_free(ibd_f)
+    register_struct_type_full("ImplBlockData", "trait_name,type_name,type_params,methods,span", "11110", "string,string,List:string,List:ImplMethod,Span", ibd_ty)
+
+    // TraitDeclData = { name: string, methods: List<TraitMethod>, exported: bool, span: Span }
+    let trdd_f = llvm.type_array_new(4)
+    llvm.type_array_set(trdd_f, 0, CG_STR)    // name
+    llvm.type_array_set(trdd_f, 1, CG_LIST)   // methods
+    llvm.type_array_set(trdd_f, 2, CG_I64)    // exported
+    llvm.type_array_set(trdd_f, 3, span_ty)   // span
+    let trdd_ty = llvm.struct_create_named(CG_CTX, "TraitDeclData")
+    llvm.struct_set_body(trdd_ty, trdd_f, 4, 0)
+    llvm.type_array_free(trdd_f)
+    register_struct_type_full("TraitDeclData", "name,methods,exported,span", "1100", "string,List:TraitMethod,bool,Span", trdd_ty)
+
+    // UseData = { path: List<string>, items: List<string>, span: Span }
+    let ud_f = llvm.type_array_new(3)
+    llvm.type_array_set(ud_f, 0, CG_LIST)   // path
+    llvm.type_array_set(ud_f, 1, CG_LIST)   // items
+    llvm.type_array_set(ud_f, 2, span_ty)   // span
+    let ud_ty = llvm.struct_create_named(CG_CTX, "UseData")
+    llvm.struct_set_body(ud_ty, ud_f, 3, 0)
+    llvm.type_array_free(ud_f)
+    register_struct_type_full("UseData", "path,items,span", "110", "List:string,List:string,Span", ud_ty)
+
+    // StructLitData = { type_name: string, fields: List<StructLitField>, span: Span }
+    let sld_f = llvm.type_array_new(3)
+    llvm.type_array_set(sld_f, 0, CG_STR)   // type_name
+    llvm.type_array_set(sld_f, 1, CG_LIST)  // fields
+    llvm.type_array_set(sld_f, 2, span_ty)  // span
+    let sld_ty = llvm.struct_create_named(CG_CTX, "StructLitData")
+    llvm.struct_set_body(sld_ty, sld_f, 3, 0)
+    llvm.type_array_free(sld_f)
+    register_struct_type_full("StructLitData", "type_name,fields,span", "110", "string,List:StructLitField,Span", sld_ty)
+
+    // ClosureData = { params: List<ClosureParam>, body: Expr, span: Span }
+    let cld_f = llvm.type_array_new(3)
+    llvm.type_array_set(cld_f, 0, CG_LIST)  // params
+    llvm.type_array_set(cld_f, 1, CG_I64)   // body (Expr → opaque)
+    llvm.type_array_set(cld_f, 2, span_ty)  // span
+    let cld_ty = llvm.struct_create_named(CG_CTX, "ClosureData")
+    llvm.struct_set_body(cld_ty, cld_f, 3, 0)
+    llvm.type_array_free(cld_f)
+    register_struct_type_full("ClosureData", "params,body,span", "100", "List:ClosureParam,Expr,Span", cld_ty)
+
+    // EnumConstructData = { enum_name: string, variant_name: string, args: List<Expr>, span: Span }
+    let ecd_f = llvm.type_array_new(4)
+    llvm.type_array_set(ecd_f, 0, CG_STR)   // enum_name
+    llvm.type_array_set(ecd_f, 1, CG_STR)   // variant_name
+    llvm.type_array_set(ecd_f, 2, CG_LIST)  // args
+    llvm.type_array_set(ecd_f, 3, span_ty)  // span
+    let ecd_ty = llvm.struct_create_named(CG_CTX, "EnumConstructData")
+    llvm.struct_set_body(ecd_ty, ecd_f, 4, 0)
+    llvm.type_array_free(ecd_f)
+    register_struct_type_full("EnumConstructData", "enum_name,variant_name,args,span", "1110", "string,string,List:Expr,Span", ecd_ty)
+
+    // ListLitData = { elements: List<Expr>, span: Span }
+    let lld_f = llvm.type_array_new(2)
+    llvm.type_array_set(lld_f, 0, CG_LIST)  // elements
+    llvm.type_array_set(lld_f, 1, span_ty)  // span
+    let lld_ty = llvm.struct_create_named(CG_CTX, "ListLitData")
+    llvm.struct_set_body(lld_ty, lld_f, 2, 0)
+    llvm.type_array_free(lld_f)
+    register_struct_type_full("ListLitData", "elements,span", "10", "List:Expr,Span", lld_ty)
+
+    // RangeData = { start_expr: Expr, end_expr: Expr, inclusive: bool, span: Span }
+    let rd_f = llvm.type_array_new(4)
+    llvm.type_array_set(rd_f, 0, CG_I64)    // start_expr
+    llvm.type_array_set(rd_f, 1, CG_I64)    // end_expr
+    llvm.type_array_set(rd_f, 2, CG_I64)    // inclusive
+    llvm.type_array_set(rd_f, 3, span_ty)   // span
+    let rd_ty = llvm.struct_create_named(CG_CTX, "RangeData")
+    llvm.struct_set_body(rd_ty, rd_f, 4, 0)
+    llvm.type_array_free(rd_f)
+    register_struct_type_full("RangeData", "start_expr,end_expr,inclusive,span", "0000", "Expr,Expr,bool,Span", rd_ty)
+
+    // UnwrapData = { expr: Expr, span: Span }
+    let uwd_f = llvm.type_array_new(2)
+    llvm.type_array_set(uwd_f, 0, CG_I64)   // expr
+    llvm.type_array_set(uwd_f, 1, span_ty)  // span
+    let uwd_ty = llvm.struct_create_named(CG_CTX, "UnwrapData")
+    llvm.struct_set_body(uwd_ty, uwd_f, 2, 0)
+    llvm.type_array_free(uwd_f)
+    register_struct_type_full("UnwrapData", "expr,span", "00", "Expr,Span", uwd_ty)
 }
 
 fn cg_init_runtime() {
@@ -1451,6 +1623,15 @@ impl Codegen {
                 }
                 if ot == "string" { return "string" }
                 return "int"
+            }
+            .ForceUnwrap(operand, _) -> {
+                // Force unwrap strips nullable: T? → T
+                let inner_type = self.expr_type_name(operand)
+                // Strip trailing ? if present
+                if inner_type.length > 1 && inner_type[inner_type.length - 1] == "?" {
+                    return inner_type.substring(0, inner_type.length - 1)
+                }
+                return inner_type
             }
             .IfExpr(_, _, _, _, _) -> { return "int" }
             .MatchExpr(_, _, _, _, _, _, _) -> { return "int" }

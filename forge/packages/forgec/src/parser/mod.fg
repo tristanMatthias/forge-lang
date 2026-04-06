@@ -1089,10 +1089,18 @@ impl Parser {
         mut type_ann: TypeExpr? = null
         if self.peek_kind_id() == KID_COLON {
             self.advance()
-            // Capture the next token's text as the type name
+            // Capture the type name including generic params: List<Expr> → "List:Expr"
             let type_tok = self.peek()
-            if type_tok.kind_id == 1 {
+            if type_tok.kind_id == KID_IDENT {
                 type_name_text = type_tok.text
+                // Check for generic: Name<T> → "Name:T"
+                let next_tok = self.peek_at(1)
+                if next_tok.kind_id == KID_LT {
+                    let generic_tok = self.peek_at(2)
+                    if generic_tok.kind_id == KID_IDENT {
+                        type_name_text = type_tok.text + ":" + generic_tok.text
+                    }
+                }
             }
             type_ann = self.parse_type_expr()
         }
