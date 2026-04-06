@@ -45,6 +45,7 @@ export mut KID_TRAIT       = 42
 export mut KID_IMPL        = 43
 export mut KID_IS          = 55
 export mut KID_TABLE       = 56
+export mut KID_UNDERSCORE  = 60   // _
 
 // ─── Special ─────────────────────────────────────────
 export mut KID_EOF         = 99

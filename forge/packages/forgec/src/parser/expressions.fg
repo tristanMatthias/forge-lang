@@ -18,7 +18,7 @@
 // 13. Postfix:       ()  .  []  ?  !
 
 use core.token.{Token, TokenKind, Span}
-use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
+use core.ast.{Expr, BinOp, UnaryOp, Block, Statement, Pattern, MatchArm}
 use core.kind_ids.{
     KID_IDENT, KID_INT_LIT, KID_FLOAT_LIT, KID_STRING_LIT, KID_BOOL_LIT,
     KID_TEMPLATE_LIT, KID_NULL_LIT,
@@ -26,7 +26,7 @@ use core.kind_ids.{
     KID_DOT, KID_COMMA, KID_COLON, KID_SEMICOLON,
     KID_NEWLINE, KID_ARROW, KID_IF, KID_ELSE, KID_IS, KID_IN,
     KID_EQ, KID_NOT, KID_MINUS, KID_QUESTION, KID_LT, KID_GT,
-    KID_PLUS, KID_PIPE,
+    KID_PLUS, KID_PIPE, KID_UNDERSCORE,
 }
 use lexer.{parse_int, parse_float}
 // Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
@@ -618,6 +618,76 @@ impl Parser {
     // Compiles match to an if-else chain with inline LLVM IR emit.
     // Supports: integer patterns, string patterns, .Variant patterns, _ wildcard.
 
+    // Parse a single pattern. Builds Pattern AST nodes — no string encoding.
+    fn parse_pattern(self) -> Pattern? {
+        let tok = self.peek()
+        let pk = tok.kind_id
+
+        // Wildcard: _
+        if pk == KID_UNDERSCORE {
+            let span = self.advance_span()
+            return Pattern.Wildcard(span)
+        }
+
+        // .Variant or .Variant(sub_patterns)
+        if pk == KID_DOT {
+            let start = self.advance_span()
+            let vname = self.expect_ident()
+            if vname == null { return null }
+            mut fields: List<Pattern> = []
+            if self.peek_kind_id() == KID_LPAREN {
+                self.advance()
+                self.skip_newlines()
+                while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
+                    let sub = self.parse_pattern()
+                    if sub != null { fields = fields.push(sub!) }
+                    self.skip_newlines()
+                    if self.peek_kind_id() == KID_COMMA { self.advance() }
+                    self.skip_newlines()
+                }
+                if self.peek_kind_id() == KID_RPAREN { self.advance() }
+            }
+            return Pattern.EnumVariant(vname!, fields, start)
+        }
+
+        // Literal patterns
+        if pk == KID_INT_LIT {
+            let span = tok.span
+            let txt = tok.text
+            self.advance()
+            return Pattern.Literal(Expr.IntLit(int(txt), span))
+        }
+        if pk == KID_STRING_LIT {
+            let span = tok.span
+            let txt = tok.text
+            self.advance()
+            return Pattern.Literal(Expr.StringLit(txt, span))
+        }
+        if pk == KID_BOOL_LIT {
+            let span = tok.span
+            let txt = tok.text
+            self.advance()
+            mut bv = false
+            if txt == "true" { bv = true }
+            return Pattern.Literal(Expr.BoolLit(bv, span))
+        }
+        if pk == KID_NULL_LIT {
+            let span = self.advance_span()
+            return Pattern.Literal(Expr.NullLit(span))
+        }
+
+        // Identifier: wildcard "_" or binding name
+        if pk == KID_IDENT {
+            let span = tok.span
+            let name = tok.text
+            self.advance()
+            if name == "_" { return Pattern.Wildcard(span) }
+            return Pattern.Ident(name, span)
+        }
+
+        null
+    }
+
     fn parse_match_expr(self) -> Expr? {
         let start = self.advance_span() // consume 'match'
         self.skip_newlines()
@@ -625,71 +695,18 @@ impl Parser {
         let scrutinee = self.parse_expr()
         if scrutinee == null { return null }
 
-        // Track scrutinee type
-        let scrutinee_var = LAST_IDENT_NAME
-
         self.skip_newlines()
         if self.expect_id(KID_LBRACE) == null { return null }
-
-        // Parse match arms with PENDING_MATCH
-        // Note: { was already consumed by expect(LBrace) above
         self.skip_newlines()
 
-        // Determine scrutinee's enum type from variable name
-        let enum_type = cg_var_enum_type(scrutinee_var)
-
-        // Collect arms with C-side pattern storage
-        mut arm_tags: List<int> = []
-        mut arm_bodies: List<Block> = []
-        forge_match_binding_clear()
-        forge_match_pattern_clear()
-        mut has_default = false
-        mut default_body = Block { statements: [], span: start }
+        mut arms: List<MatchArm> = []
 
         while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
             self.skip_newlines()
-            mut pat_tag = -1
-            mut is_default = false
-            mut binding: string = ""
-            if self.peek_kind_id() == KID_DOT {
-                self.advance()
-                let vname = self.expect_ident()
-                let qname = enum_type + "." + vname
-                pat_tag = match_enum_tag(qname)
-                if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
-                // Parse bindings: .Variant(name, val, span) → capture names
-                let bpk = self.peek_kind_id()
-                if bpk == KID_LPAREN {
-                    self.advance()
-                    while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
-                        let btok = self.peek()
-                        if btok.kind_id == KID_IDENT {
-                            if binding != "" { binding = binding + "," }
-                            binding = binding + btok.text
-                        }
-                        self.advance()
-                    }
-                    if self.peek_kind_id() == KID_RPAREN { self.advance() }
-                }
-                if binding != "" {
-                    binding = qname + ":" + binding
-                }
-            } else if self.peek_kind_id() == 90 {
-                self.advance()
-                is_default = true
-            } else if self.peek_kind_id() == KID_STRING_LIT {
-                let tok = self.advance()
-                forge_match_pattern_add_string(tok.text)
-                pat_tag = -2
-            } else if self.peek_kind_id() == KID_INT_LIT {
-                let tok = self.advance()
-                pat_tag = int(tok.text)
-            } else if self.peek_kind_id() == KID_BOOL_LIT {
-                let tok = self.advance()
-                pat_tag = if tok.text == "true" { 1 } else { 0 }
-            } else {
-                self.advance()
-            }
+            let arm_start = self.current_span()
+
+            let pat = self.parse_pattern()
+            if pat == null { break }
 
             self.skip_newlines()
             if self.peek_kind_id() == KID_ARROW { self.advance() }
@@ -697,25 +714,18 @@ impl Parser {
 
             let prev_match = IN_MATCH_ARM
             IN_MATCH_ARM = true
-            mut body = Block { statements: [], span: start }
+            mut body = Block { statements: [], span: arm_start }
             if self.peek_kind_id() == KID_LBRACE {
                 body = self.parse_block()
             } else {
                 let e = self.parse_expr()
                 mut body_stmts: List<Statement> = []
                 if e != null { body_stmts = [Statement.Expr(e!)] }
-                body = Block { statements: body_stmts, span: start }
+                body = Block { statements: body_stmts, span: arm_start }
             }
             IN_MATCH_ARM = prev_match
 
-            if is_default {
-                has_default = true
-                default_body = body
-            } else {
-                forge_match_binding_add(binding)
-                arm_tags = arm_tags.push(pat_tag)
-                arm_bodies = arm_bodies.push(body)
-            }
+            arms = arms.push(MatchArm { pattern: pat!, body, span: arm_start })
 
             self.skip_newlines()
             if self.peek_kind_id() == KID_COMMA { self.advance() }
@@ -723,18 +733,7 @@ impl Parser {
         }
         if self.peek_kind_id() == KID_RBRACE { self.advance() }
 
-        // Build tag CSV
-        mut tag_csv = ""
-        mut ti = 0
-        while ti < arm_tags.length {
-            if ti > 0 { tag_csv = tag_csv + "," }
-            tag_csv = tag_csv + string(arm_tags[ti])
-            ti = ti + 1
-        }
-        let bindings_csv = forge_match_binding_csv()
-        mut has_default_int = 0
-        if has_default { has_default_int = 1 }
-        Expr.MatchExpr(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default_int, start)
+        Expr.MatchExpr(scrutinee!, arms, start)
     }
 
     // ─── Span Helper ───────────────────────────

@@ -110,7 +110,19 @@ impl<'ctx> Codegen<'ctx> {
                     }
                     let final_val = if let Some(rt) = result_type {
                         if val.get_type() != rt {
-                            self.coerce_value(val, rt)
+                            let coerced = self.coerce_value(val, rt);
+                            // If coerce_value couldn't actually convert, fall back
+                            // to a zero default of the target type. This avoids
+                            // PHI type mismatches that crash the LLVM verifier.
+                            if coerced.get_type() != rt {
+                                match rt {
+                                    BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                                    BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                                    BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                                    BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                                    _ => coerced,
+                                }
+                            } else { coerced }
                         } else { val }
                     } else { val };
                     // Re-get current block after possible coercion
@@ -178,10 +190,38 @@ impl<'ctx> Codegen<'ctx> {
         let function = self.current_function();
         let merge_bb = self.context.append_basic_block(function, "match_end");
 
-        // Fallback: if-else chain for complex patterns (guards, nested, non-enum)
-        let mut arm_results: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
-            Vec::new();
-        let mut result_type: Option<BasicTypeEnum<'ctx>> = None;
+        // Determine the result type by inferring from the AST.
+        // This avoids PHI type mismatches where different arms produce
+        // values of different LLVM types.
+        let inferred_result_type = self.infer_match_result_type(arms);
+        let result_alloca = if let Some(rty) = inferred_result_type {
+            // Insert alloca at the start of the entry block (mem2reg will promote it)
+            let tmp_builder = self.context.create_builder();
+            let entry = function.get_first_basic_block().unwrap();
+            if let Some(first) = entry.get_first_instruction() {
+                tmp_builder.position_before(&first);
+            } else {
+                tmp_builder.position_at_end(entry);
+            }
+            let alloca = tmp_builder.build_alloca(rty, "match_result_tmp").unwrap();
+            // Zero-initialize so unreached arms still produce a defined value
+            let zero: BasicValueEnum<'ctx> = match rty {
+                BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                BasicTypeEnum::ArrayType(at) => at.const_zero().into(),
+                BasicTypeEnum::VectorType(vt) => vt.const_zero().into(),
+                BasicTypeEnum::ScalableVectorType(vt) => vt.const_zero().into(),
+            };
+            tmp_builder.build_store(alloca, zero).unwrap();
+            Some((alloca, rty))
+        } else {
+            None
+        };
+
+        // Track whether ANY arm reached merge_bb (so we know if it has predecessors).
+        let mut any_arm_reached_merge = false;
 
         for (i, arm) in arms.iter().enumerate() {
             let is_last = i == arms.len() - 1;
@@ -229,50 +269,37 @@ impl<'ctx> Codegen<'ctx> {
             let arm_val = self.compile_expr(&arm.body);
             self.pop_scope();
 
+            // After compiling the arm body, the builder may be positioned in
+            // a different block (if the body contained nested control flow).
+            // Use the CURRENT block — that's where we need to store and branch.
             let arm_end_bb = self.builder.get_insert_block().unwrap();
             if arm_end_bb.get_terminator().is_none() {
-                if let Some(val) = arm_val {
-                    if result_type.is_none() {
-                        result_type = Some(val.get_type());
-                    }
-                    // Coerce value to match result_type
-                    let final_val = if let Some(rt) = result_type {
-                        if val.get_type() != rt {
-                            if matches!(&arm.body, Expr::NullLit(_)) {
-                                match rt {
-                                    BasicTypeEnum::StructType(st) => st.const_zero().into(),
-                                    BasicTypeEnum::IntType(it) => it.const_zero().into(),
-                                    _ => self.coerce_value(val, rt),
-                                }
-                            } else {
-                                self.coerce_value(val, rt)
-                            }
-                        } else {
+                // Store the arm value into the result slot (if we have one)
+                if let Some((alloca, rty)) = result_alloca {
+                    if let Some(val) = arm_val {
+                        let store_val = if val.get_type() == rty {
                             val
-                        }
-                    } else {
-                        val
-                    };
-                    let final_bb = self.builder.get_insert_block().unwrap();
-                    self.builder.build_unconditional_branch(merge_bb).unwrap();
-                    arm_results.push((final_val, final_bb));
-                } else {
-                    // Arm produced no value — add default to maintain PHI consistency
-                    if let Some(rt) = result_type {
-                        let default_val = match rt {
-                            BasicTypeEnum::StructType(st) => st.const_zero().into(),
-                            BasicTypeEnum::IntType(it) => it.const_zero().into(),
-                            BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
-                            BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
-                            _ => self.context.i64_type().const_zero().into(),
+                        } else {
+                            // Try coercion; fall back to zero default of target type
+                            let coerced = self.coerce_value(val, rty);
+                            if coerced.get_type() == rty {
+                                coerced
+                            } else {
+                                match rty {
+                                    BasicTypeEnum::IntType(it) => it.const_zero().into(),
+                                    BasicTypeEnum::FloatType(ft) => ft.const_float(0.0).into(),
+                                    BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
+                                    BasicTypeEnum::StructType(st) => st.const_zero().into(),
+                                    _ => coerced,
+                                }
+                            }
                         };
-                        let branch_bb = self.builder.get_insert_block().unwrap();
-                        self.builder.build_unconditional_branch(merge_bb).unwrap();
-                        arm_results.push((default_val, branch_bb));
-                    } else {
-                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        self.builder.build_store(alloca, store_val).unwrap();
                     }
+                    // If arm_val is None, the slot keeps its zero default.
                 }
+                self.builder.build_unconditional_branch(merge_bb).unwrap();
+                any_arm_reached_merge = true;
             }
 
             if !is_last {
@@ -280,29 +307,41 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // Position at merge_bb. If no arm branched here, add an unreachable.
         self.builder.position_at_end(merge_bb);
 
-        // Build phi for results — coerce all arm values to the same LLVM type
-        if let Some(rtype) = result_type {
-            if !arm_results.is_empty() {
-                self.builder.position_at_end(merge_bb);
-                let phi = self.builder.build_phi(rtype, "match_result").unwrap();
-                let incoming: Vec<(&dyn BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
-                    arm_results.iter().map(|(v, bb)| (v as &dyn BasicValue, *bb)).collect();
-                phi.add_incoming(&incoming);
-                return Some(phi.as_basic_value());
-            }
-        }
-
-        // If all arms had early returns, merge_bb has no predecessors.
-        // Don't add unreachable — subsequent code may follow the match.
-        if arm_results.is_empty() {
-            // Return a default value of the expected type so the caller doesn't get None
+        if !any_arm_reached_merge {
+            // All arms early-returned; merge_bb is dead. Return default.
+            self.builder.build_unreachable().unwrap();
             let match_type = self.infer_type(subject);
             return Some(self.default_value(&match_type));
         }
 
-        None
+        if let Some((alloca, rty)) = result_alloca {
+            // Load the result from the slot
+            let result = self.builder.build_load(rty, alloca, "match_result").unwrap();
+            return Some(result);
+        }
+
+        // No result type — the match is being used as a statement
+        let match_type = self.infer_type(subject);
+        Some(self.default_value(&match_type))
+    }
+
+    /// Walk all arms and infer the LLVM result type from the first arm that
+    /// has a determinable type. We do this BEFORE generating any code so the
+    /// alloca slot has a fixed type that all arms must conform to.
+    fn infer_match_result_type(&mut self, arms: &[MatchArm]) -> Option<BasicTypeEnum<'ctx>> {
+        for arm in arms {
+            let arm_ty = self.infer_type(&arm.body);
+            // Skip Unknown/Void — try the next arm
+            if matches!(arm_ty, Type::Unknown | Type::Void) {
+                continue;
+            }
+            return Some(self.type_to_llvm_basic(&arm_ty));
+        }
+        // Default: i64 for matches that don't have a clear type
+        Some(self.context.i64_type().into())
     }
 
     pub(crate) fn compile_pattern_check(
