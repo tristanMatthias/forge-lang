@@ -2211,11 +2211,19 @@ impl Codegen {
                     llvm.value_array_free(ca)
                     return llvm.build_icmp(CG_B, 32, cmp_result, llvm.const_int(CG_I64, 0, 0), "eq")
                 }
-                // Null comparison: compare against i64 0 (type-safe for both ptr and int)
+                // Null comparison: for nullable structs, check tag (field 0); for scalars, compare with 0
                 if right_type == "null" {
+                    if lhs_is_nullable == 1 {
+                        let tag = llvm.build_extract_value(CG_B, lhs, 0, "null_tag")
+                        return llvm.build_icmp(CG_B, 32, tag, llvm.const_int(CG_I8, 0, 0), "eq")
+                    }
                     return llvm.build_icmp(CG_B, 32, lhs, llvm.const_int(CG_I64, 0, 0), "eq")
                 }
                 if left_type == "null" {
+                    if rhs_is_nullable == 1 {
+                        let tag = llvm.build_extract_value(CG_B, rhs, 0, "null_tag")
+                        return llvm.build_icmp(CG_B, 32, tag, llvm.const_int(CG_I8, 0, 0), "eq")
+                    }
                     return llvm.build_icmp(CG_B, 32, rhs, llvm.const_int(CG_I64, 0, 0), "eq")
                 }
                 return llvm.build_icmp(CG_B, 32, lhs, rhs, "eq")
@@ -2235,11 +2243,19 @@ impl Codegen {
                     llvm.value_array_free(ca)
                     return llvm.build_icmp(CG_B, 33, cmp_result, llvm.const_int(CG_I64, 0, 0), "ne")
                 }
-                // Null comparison: compare against i64 0 (type-safe for both ptr and int)
+                // Null comparison: for nullable structs, check tag (field 0); for scalars, compare with 0
                 if right_type == "null" {
+                    if lhs_is_nullable == 1 {
+                        let tag = llvm.build_extract_value(CG_B, lhs, 0, "null_tag")
+                        return llvm.build_icmp(CG_B, 33, tag, llvm.const_int(CG_I8, 0, 0), "ne")
+                    }
                     return llvm.build_icmp(CG_B, 33, lhs, llvm.const_int(CG_I64, 0, 0), "ne")
                 }
                 if left_type == "null" {
+                    if rhs_is_nullable == 1 {
+                        let tag = llvm.build_extract_value(CG_B, rhs, 0, "null_tag")
+                        return llvm.build_icmp(CG_B, 33, tag, llvm.const_int(CG_I8, 0, 0), "ne")
+                    }
                     return llvm.build_icmp(CG_B, 33, rhs, llvm.const_int(CG_I64, 0, 0), "ne")
                 }
                 return llvm.build_icmp(CG_B, 33, lhs, rhs, "ne")

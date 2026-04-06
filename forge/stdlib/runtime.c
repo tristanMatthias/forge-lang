@@ -4204,26 +4204,32 @@ int64_t forge_value_type_kind(int64_t val_as_i64) {
     return (int64_t)kof(ty);
 }
 
-// Check if an LLVM value is a ForgeString struct ({ptr, i64} — 2 elements, kind=10)
+// Check if an LLVM value is a ForgeString struct ({ptr, i64} — field 0 = ptr, field 1 = i64)
+// Distinguishes from nullable {i8, T} which also has 2 fields but field 0 is i8.
 int64_t forge_value_is_string(int64_t val_as_i64) {
     if (!val_as_i64) return 0;
     void* val = (void*)(uintptr_t)val_as_i64;
     typedef void* (*typeof_fn)(void*);
     typedef int (*kind_fn)(void*);
     typedef int (*count_fn)(void*);
+    typedef void* (*elem_fn)(void*, unsigned);
     static typeof_fn tof2 = NULL;
     static kind_fn kof2 = NULL;
     static count_fn cof2 = NULL;
+    static elem_fn eof2 = NULL;
     if (!tof2) tof2 = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
     if (!kof2) kof2 = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
     if (!cof2) cof2 = (count_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
-    if (!tof2 || !kof2 || !cof2) return 0;
+    if (!eof2) eof2 = (elem_fn)dlsym(RTLD_DEFAULT, "LLVMStructGetTypeAtIndex");
+    if (!tof2 || !kof2 || !cof2 || !eof2) return 0;
     void* ty = tof2(val);
     if (!ty) return 0;
-    int kind = kof2(ty);
-    if (kind != 10) return 0; // Not struct
-    int count = cof2(ty);
-    return (count == 2) ? 1 : 0; // ForgeString = {ptr, i64} = 2 elements
+    if (kof2(ty) != 10) return 0; // 10 = struct
+    if (cof2(ty) != 2) return 0;  // Must have exactly 2 fields
+    // ForgeString = {ptr, i64}: field 0 must be pointer (kind=12), not i8/i64
+    void* f0 = eof2(ty, 0);
+    if (!f0 || kof2(f0) != 12) return 0; // 12 = pointer
+    return 1;
 }
 
 // Get number of struct fields from an LLVM value's type
