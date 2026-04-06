@@ -43,13 +43,19 @@ fn get_fn_decl(node_id: int) -> FnDeclData? {
 // ─── Parse ──────────────────────────────────────
 
 fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
+    eprintln("[FND] enter pos=" + string(forge_parser_get_pos()))
     let start = p.advance_span() // consume 'fn'
+    eprintln("[FND] after adv pos=" + string(forge_parser_get_pos()))
 
     let name = p.expect_ident()
+    eprintln("[FND] name='" + name + "' pos=" + string(forge_parser_get_pos()))
     if name == "" { return null }
 
+    eprintln("[FND] before params pos=" + string(forge_parser_get_pos()))
     let type_params = p.parse_type_params()
+    eprintln("[FND] after type_params pos=" + string(forge_parser_get_pos()))
     let params = p.parse_params()
+    eprintln("[FND] after params pos=" + string(forge_parser_get_pos()))
 
     mut return_type_name = ""
     mut return_type: TypeExpr? = null
@@ -120,6 +126,7 @@ fn parse_export(p: Parser) -> Statement? {
 
     // kind_id dispatch — use parser's own peek, not C-side position
     let ekid = p.peek_kind_id()
+    eprintln("[EXPORT] ekid=" + string(ekid) + " pos=" + string(forge_parser_get_pos()))
     if ekid == KID_FN { return parse_fn_decl(p, true) }
     if ekid == KID_LET { return parse_var_binding(p, .Let, true) }
     if ekid == KID_MUT { return parse_var_binding(p, .Mut, true) }

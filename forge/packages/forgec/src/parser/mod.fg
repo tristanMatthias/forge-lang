@@ -165,10 +165,60 @@ impl Parser {
     }
 
     fn check(self, kind: TokenKind) -> bool {
-        // Use kind_id comparison (avoids Token struct layout dependency)
+        let kid = self.kind_to_kid(kind)
+        if kid >= 0 { return self.peek_kind_id() == kid }
+        // Fallback to string comparison
         let a = forge_kind_id_to_key(self.peek_kind_id())
         let b = self.kind_to_key(kind)
         a != "" && a == b
+    }
+
+    fn kind_to_kid(self, kind: TokenKind) -> int {
+        match kind {
+            .LParen -> KID_LPAREN
+            .RParen -> KID_RPAREN
+            .LBrace -> KID_LBRACE
+            .RBrace -> KID_RBRACE
+            .LBracket -> KID_LBRACKET
+            .RBracket -> KID_RBRACKET
+            .Newline -> KID_NEWLINE
+            .Arrow -> KID_ARROW
+            .Dot -> KID_DOT
+            .Comma -> KID_COMMA
+            .Colon -> KID_COLON
+            .Eq -> KID_EQ
+            .Semicolon -> KID_SEMICOLON
+            .Let -> KID_LET
+            .Mut -> KID_MUT
+            .Const -> KID_CONST
+            .Fn -> KID_FN
+            .Return -> KID_RETURN
+            .If -> KID_IF
+            .Else -> KID_ELSE
+            .Match -> KID_MATCH
+            .For -> KID_FOR
+            .In -> KID_IN
+            .While -> KID_WHILE
+            .Break -> KID_BREAK
+            .Continue -> KID_CONTINUE
+            .Enum -> KID_ENUM
+            .TypeKw -> KID_TYPE
+            .Use -> KID_USE
+            .Mod -> KID_MOD
+            .Export -> KID_EXPORT
+            .Trait -> KID_TRAIT
+            .Impl -> KID_IMPL
+            .Is -> KID_IS
+            .Not -> KID_NOT
+            .Minus -> KID_MINUS
+            .Plus -> KID_PLUS
+            .Pipe -> KID_PIPE
+            .Question -> KID_QUESTION
+            .Lt -> KID_LT
+            .Gt -> KID_GT
+            .Eof -> KID_EOF
+            _ -> -1
+        }
     }
 
     fn check_id(self, kid: int) -> bool {
@@ -185,7 +235,10 @@ impl Parser {
     }
 
     fn expect(self, kind: TokenKind) -> Token? {
-        if self.check(kind) {
+        let expected_kid = self.kind_to_kid(kind)
+        if expected_kid >= 0 && self.peek_kind_id() == expected_kid {
+            self.advance()
+        } else if self.check(kind) {
             self.advance()
         } else {
             self.error("expected token")
@@ -218,7 +271,7 @@ impl Parser {
     }
 
     fn skip_newlines(self) {
-        while self.peek_kind_id() == KID_NEWLINE {
+        while !self.is_at_end() && self.peek_kind_id() == KID_NEWLINE {
             self.advance()
         }
     }
@@ -277,11 +330,15 @@ impl Parser {
 
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
+        eprintln("[PP] start pos=" + string(forge_parser_get_pos()) + " len=" + string(forge_token_list_len()))
         self.skip_newlines()
+        eprintln("[PP] after skip pos=" + string(forge_parser_get_pos()))
 
         while !self.is_at_end() {
             let before = forge_parser_get_pos()
+            eprintln("[PP_LOOP] pos=" + string(before))
             let stmt = self.parse_statement()
+            eprintln("[PP_STMT] pos=" + string(forge_parser_get_pos()))
             if stmt != null {
                 statements = statements.push(stmt!)
             }
@@ -989,6 +1046,7 @@ impl Parser {
 
         while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
             self.skip_newlines()
+            let before_param = forge_parser_get_pos()
             let param = self.parse_param()
             if param != null {
                 params = params.push(param!)
@@ -996,6 +1054,8 @@ impl Parser {
             if self.peek_kind_id() == KID_COMMA {
                 self.advance()
             }
+            // Safety: advance if parse_param didn't advance
+            if forge_parser_get_pos() == before_param { self.advance() }
         }
 
         self.expect(TokenKind.RParen)
