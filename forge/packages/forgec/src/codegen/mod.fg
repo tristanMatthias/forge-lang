@@ -3292,9 +3292,9 @@ impl Codegen {
                         let fe = llvm.build_load(CG_B, elem_llvm_ty, fp, "ev")
                         let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
                         llvm.build_store(CG_B, fe, fv)
-                        // Register loop var type in alloca cache
+                        // Register loop var in alloca cache (always — even without type info)
+                        forge_alloca_cache_set(vn, fv)
                         if for_elem_type != "" {
-                            forge_alloca_cache_set(vn, fv)
                             forge_alloca_cache_set_var_type(vn, for_elem_type)
                         }
                         self.emit_block(body)
