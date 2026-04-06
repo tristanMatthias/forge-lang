@@ -593,9 +593,7 @@ fn cg_register_core_types() {
     // Statement max payload slots: Match = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(1) + has_default(1) + span(4) = 13
     forge_enum_type_register("Statement", 13)
     // Expr max payload slots: MatchExpr = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(6) + has_default(1) + span(4) = 18
-    // But the Rust compiler boxes complex fields (Expr→ptr, Block→ptr, List→{ptr,i64}=2)
-    // Actual: MatchExpr with boxing = 1 + 2 + 2 + 2 + 1 + 1 + 4 = 13
-    forge_enum_type_register("Expr", 13)
+    forge_enum_type_register("Expr", 18)
     // BinOp: simple enum, no fields
     forge_enum_type_register("BinOp", 0)
     // UnaryOp: simple enum, no fields
