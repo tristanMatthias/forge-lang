@@ -1074,6 +1074,7 @@ impl Parser {
             if vk == 103 { break }
             if vk == 1 {
                 let vname = self.expect_ident()
+                if vname == "" { self.advance() }
                 register_enum_variant(enum_name, vname, variant_tag)
                 mut field_count = 0
                 mut field_types: string = ""
