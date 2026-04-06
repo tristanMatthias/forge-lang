@@ -108,6 +108,11 @@ static void forge_signal_handler(int signum) {
         write(STDERR_FILENO, "\n", 1);
     }
 
+    // Print last list_push context (ring buffer)
+    extern int _list_push_count;
+    extern void forge_crash_dump_list_push(void);
+    forge_crash_dump_list_push();
+
     // Print backtrace for debugging
     void* frames[32];
     int nframes = backtrace(frames, 32);
@@ -2291,12 +2296,34 @@ void forge_mini_write_file(ForgeString path, ForgeString content) {
 // ---- Efficient list push (amortized O(1) via capacity doubling) ----
 // Capacity is stored in 8 bytes BEFORE the data pointer.
 // Layout: [cap:i64][elem0][elem1]...  data_ptr points to elem0.
+//
+// Crash diagnostics: ring buffer of last 8 push states for post-mortem.
+#define PUSH_RING_SIZE 8
+static struct { void* ptr; int64_t len; int64_t size; int count; } _push_ring[PUSH_RING_SIZE];
+static int _push_ring_idx = 0;
 
-static int _list_push_count = 0;
+void forge_crash_dump_list_push(void) {
+    char buf[256];
+    const char* hdr = "\nLast list_push calls:\n";
+    write(STDERR_FILENO, hdr, strlen(hdr));
+    for (int i = 0; i < PUSH_RING_SIZE; i++) {
+        int idx = (_push_ring_idx + i) % PUSH_RING_SIZE;
+        if (_push_ring[idx].count == 0) continue;
+        int n = snprintf(buf, sizeof(buf), "  #%d ptr=%p len=%lld size=%lld\n",
+                _push_ring[idx].count, _push_ring[idx].ptr,
+                (long long)_push_ring[idx].len, (long long)_push_ring[idx].size);
+        write(STDERR_FILENO, buf, n);
+    }
+}
+
+int _list_push_count = 0;
 static int _list_push_diag = 0;  // set to 1 to enable diagnostics
 
 ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
     _list_push_count++;
+    // Record in ring buffer for crash diagnostics
+    _push_ring[_push_ring_idx % PUSH_RING_SIZE] = (typeof(_push_ring[0])){list.ptr, list.len, elem_size, _list_push_count};
+    _push_ring_idx++;
     // Guard: reject null elements or unreasonable sizes
     if (!elem || elem_size <= 0 || elem_size > 1000000) {
         fprintf(stderr, "[list_push #%d] BAD: elem=%p size=%lld — skipping\n", _list_push_count, elem, (long long)elem_size);
@@ -2309,11 +2336,12 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
                 _list_push_count, elem, (long long)elem_size);
     }
     int64_t len = list.len;
-    if (_list_push_diag && (_list_push_count <= 50 || _list_push_count % 100 == 0)) {
-        fprintf(stderr, "[list_push #%d] ptr=%p len=%lld elem_size=%lld\n", _list_push_count, list.ptr, (long long)len, (long long)elem_size);
+    // Trace all pushes (temporarily, to find crash)
+    if (_list_push_count <= 5 || _list_push_count % 1000 == 0 || len > 100) {
+        fprintf(stderr, "[list_push #%d] ptr=%p len=%lld size=%lld\n", _list_push_count, list.ptr, (long long)len, (long long)elem_size);
     }
     if (len < 0 || len > 10000000) {
-        if (_list_push_diag) fprintf(stderr, "[list_push #%d] BAD len=%lld, resetting to 0\n", _list_push_count, (long long)len);
+        fprintf(stderr, "[list_push #%d] BAD len=%lld, resetting to 0\n", _list_push_count, (long long)len);
         len = 0;
     }
     int64_t cap = 0;
@@ -2322,7 +2350,15 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
     if (list.ptr && len > 0) {
         // Read capacity from before data pointer
         raw = (char*)list.ptr - sizeof(int64_t);
-        cap = *(int64_t*)raw;
+        // Guard: check that raw pointer is in a reasonable range
+        if ((uintptr_t)raw < 4096 || (uintptr_t)raw > 0x800000000000ULL) {
+            fprintf(stderr, "[list_push #%d] BAD raw=%p (list.ptr=%p) — skipping capacity read\n",
+                    _list_push_count, raw, list.ptr);
+            cap = 0;
+            raw = NULL;
+        } else {
+            cap = *(int64_t*)raw;
+        }
         // Validate: cap must be >= len and reasonable
         if (cap < len || cap > len * 4 + 16 || cap > 1000000) {
             // Invalid header — this list was allocated by forge_alloc (no capacity prefix).
@@ -2359,8 +2395,19 @@ ForgeList forge_list_push(ForgeList list, void* elem, int64_t elem_size) {
         raw = new_raw;
     }
 
-    // Append element
-    memcpy((char*)list.ptr + len * elem_size, elem, elem_size);
+    // Append element — validate pointers before memcpy
+    char* dest = (char*)list.ptr + len * elem_size;
+    if (!list.ptr || (uintptr_t)list.ptr < 4096) {
+        fprintf(stderr, "[list_push #%d] CRASH: list.ptr=%p is invalid! len=%lld size=%lld\n",
+                _list_push_count, list.ptr, (long long)len, (long long)elem_size);
+        return list;
+    }
+    if (!elem || (uintptr_t)elem < 4096) {
+        fprintf(stderr, "[list_push #%d] CRASH: elem=%p is invalid! len=%lld size=%lld\n",
+                _list_push_count, elem, (long long)len, (long long)elem_size);
+        return list;
+    }
+    memcpy(dest, elem, elem_size);
     list.len = len + 1;
     return list;
 }

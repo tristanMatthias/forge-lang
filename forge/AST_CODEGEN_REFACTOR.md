@@ -2,35 +2,36 @@
 
 ## Current State
 
-- **Stage 2 IR:** 388 functions, ~40K lines, score 135/1000, **0 empty functions**
-- **Stage 2 binary:** Compiles, links, runs. Reads 39 files. Resolves modules. Creates lexer. Tokenizes. **Crashes in `forge_string_compare` inside `Lexer_next_token`.**
+- **Stage 2 IR:** 388 functions, ~45K lines, score 135/1000, **0 empty functions**
+- **Stage 2 binary:** Compiles, links, runs. Reads all files. Scans 40 files. Tokenizes + parses ~15 files. **Crashes in `forge_list_push` during tokenization** of ~16th file.
 - **Build:** `make stage1-rust` → `./build/stage1_rust build packages/forgec/src/main.fg` → `output.ll`
 - **Fixes applied this session:**
   1. Param alloca uses `llvm.type_of(param_val)` — score 226→135
   2. Nullable `return null` convention fixed (`maybe_wrap_nullable`)
   3. Expression parser kind_id mismatch fixed (LParen 104→100, LBracket 126→104)
+  4. Nullable unwrap in `emit_binary` — extracts inner value before string comparison
+  5. `forge_value_is_string` precision — checks field 0 is pointer, not just "has 2 fields"
+  6. Nullable null-check in `emit_binary` — extracts tag (field 0) instead of comparing whole struct
 
-## The Blocker: Stage 2 crashes in Lexer_next_token
+## The Blocker: List alloca too small for `mut tokens: List<Token> = []`
 
-Stage 2 now gets much further: reads all files, resolves modules, creates a lexer, calls `Lexer_tokenize`, enters the while loop, calls `Lexer_next_token`, then crashes in `forge_string_compare`.
+Stage 2 crashes in `forge_list_push` because the token list variable has an i64 alloca (8 bytes) instead of `%ForgeString` alloca (16 bytes). When `forge_list_push` returns `{ptr, i64}`, only the first 8 bytes are stored — the `ptr` field. The `len` field overflows into adjacent stack, and on reload the list has `ptr=NULL, len=94`.
 
-**Backtrace:**
+**Root cause:** In `Lexer_tokenize`, `mut tokens: List<Token> = []` creates an empty list `{null, 0}`. The `define_var_typed` function checks `forge_value_type_kind(value) == 10` (struct) to use `llvm.type_of`. But the empty list `{null, 0}` might not be recognized as a struct by `forge_value_type_kind` — if it's a zeroinitializer, the LLVM value might have kind != 10.
+
+**Evidence from crash dump:**
 ```
-forge_string_compare + 592
-Lexer_next_token + 152
-Lexer_tokenize + 76
-scan_one_file + 116
+Last list_push calls:
+  #7507 ptr=0x0 len=94 size=64
 ```
+ptr=NULL but len=94 — the list state is corrupt. The i64 alloca only stores 8 bytes of the 16-byte `{ptr, i64}` return value.
 
-### Previous Blocker (FIXED): All Statement tags were 0
-`Lexer_tokenize` had empty IR because `parse_expr` couldn't parse `[]` (list literal). The expression parser used kind_id 126 for LBracket but the tokenizer uses 104. Fix: corrected kind_id constants in `parser/expressions.fg`.
+**Fix needed:** Ensure `define_var_typed` always uses `%ForgeString` (16 bytes) for list/string variables, even when the initial value is zeroinitializer.
 
-## Bug Chain 0: Stage 2 crashes in forge_string_compare (ACTIVE)
-
-**Symptom:** Stage 2 crashes with SIGSEGV in `forge_string_compare` called from `Lexer_next_token`.
-**Location:** `Lexer_next_token` compares the current character against keyword strings.
-**Likely cause:** The character comparison loads a ForgeString from `self.peek_ch()` or similar, but the ForgeString pointer or length is corrupt in the Stage 2 compiled code.
-**Investigation needed:** Check `Lexer_next_token` IR in output.ll — does it load ForgeString correctly? Does the char comparison use the right type?
+### Previous Blockers (ALL FIXED)
+1. **All Statement tags were 0** — kind_id mismatch in expression parser (LBracket 126→104)
+2. **Crash in Lexer_next_token string compare** — nullable `peek_at` returned undef; fixed by unwrapping nullable in `emit_binary`
+3. **Crash in Parser_parse_program null check** — `forge_value_is_string` misidentified nullable as ForgeString; fixed by checking field 0 is pointer
 
 ## Bug Chain 1: ALL Statement tags were 0 (FIXED)
 

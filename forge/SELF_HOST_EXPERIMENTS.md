@@ -581,3 +581,28 @@ All parse_statement returns store the tag at offset 8, not offset 0 as `{i8, ptr
 - **NEW BLOCKER:** Stage 2 crashes in `forge_string_compare` inside `Lexer_next_token` during tokenization of first source file
 - Stage 2 functional: reads 39 files → resolves modules → creates lexer → tokenize → crash at string compare
 - Previous state: read 39 files → scan → find only 18 functions → crash at empty char_at
+
+### EXP-057: Nullable unwrap in emit_binary
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** `peek_at(1) == "/"` passes undef ForgeString to forge_string_compare because nullable {i8, ForgeString} isn't unwrapped.
+**Change:** emit_binary auto-unwraps nullable values before comparison (when other side is struct, not scalar). Also fixed forge_value_is_string to check field 0 is pointer (distinguishes from nullable {i8, T}).
+**Score:** 132→135 (slight increase from call_type_mismatch)
+**Result:** ✅ Lexer_next_token undef eliminated, Stage 2 tokenizes files
+**Kept/Reverted:** Kept
+
+### EXP-058: Nullable null-check extracts tag
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** `stmt != null` for nullable Statement was comparing whole struct with i64 0 (type mismatch → undef). Should extract i8 tag and compare with i8 0.
+**Change:** emit_binary Eq/NotEq paths: when comparing nullable with null, extract field 0 (tag) and icmp with i8 0.
+**Score:** 135
+**Result:** ✅ Parser_parse_program no longer crashes on null check. Stage 2 parses 15+ files.
+**Kept/Reverted:** Kept
+
+### EXP-059: forge_list_push crash diagnosis
+**Date:** 2026-04-05
+**Milestone:** M5
+**Change:** Added ring buffer crash dump to signal handler, showing last 8 list_push states.
+**Result:** ⚠️ DISCOVERY — crash at push #7507 shows ptr=0x0 len=94 size=64. Token list has NULL pointer but 94 elements. Root cause: `mut tokens: List<Token> = []` gets i64 alloca (8 bytes) instead of ForgeString alloca (16 bytes). The list return value {ptr, i64} only stores the ptr field; len overflows into adjacent stack.
+**Lesson:** define_var_typed's struct detection (`val_kind == 10`) may not trigger for zeroinitializer values. Need to handle list/string variables by type name, not just value kind.
