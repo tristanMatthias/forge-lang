@@ -1,4 +1,5 @@
 // ─── Traits Feature ───────────────────────────
+use core.kind_ids.{KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_COMMA, KID_COLON, KID_ARROW, KID_DOT, KID_FN, KID_MUT}
 // Handles: trait declarations — trait Name { fn method(self) -> Type }
 // Side table for trait data. Parse handler for "trait" token.
 // Traits are type-only: check registers them, emit does nothing.
@@ -57,9 +58,9 @@ fn parse_trait(p: Parser) -> Statement? {
 
     mut methods: List<TraitMethod> = []
 
-    while !p.check(.RBrace) && !p.is_at_end() {
+    while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
         p.skip_newlines()
-        if p.check(.Fn) {
+        if p.peek_kind_id() == KID_FN {
             let method = parse_trait_method(p)
             if method != null {
                 methods = methods.push(method!)
@@ -89,27 +90,27 @@ fn parse_trait_method(p: Parser) -> TraitMethod? {
     if p.expect(.LParen) == null { return null }
 
     mut params: List<TraitMethodParam> = []
-    while !p.check(.RParen) && !p.is_at_end() {
+    while p.peek_kind_id() != KID_RPAREN && !p.is_at_end() {
         p.skip_newlines()
         let param_name = p.expect_ident()
         if param_name == null { break }
 
         let is_self = param_name! == "self"
         mut type_ann: TypeExpr? = null
-        if p.check(.Colon) {
+        if p.peek_kind_id() == KID_COLON {
             p.advance()
             type_ann = p.parse_type_expr()
         }
 
         params = params.push(TraitMethodParam { name: param_name!, type_ann, is_self })
 
-        if p.check(.Comma) { p.advance() }
+        if p.peek_kind_id() == KID_COMMA { p.advance() }
     }
     if p.expect(.RParen) == null { return null }
 
     // Optional return type: -> Type
     mut return_type: TypeExpr? = null
-    if p.check(.Arrow) {
+    if p.peek_kind_id() == KID_ARROW {
         p.advance()
         return_type = p.parse_type_expr()
     }

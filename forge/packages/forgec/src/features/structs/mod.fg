@@ -81,19 +81,20 @@ fn parse_type_decl(p: Parser) -> Statement? {
         mut field_count = 0
 
         while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
+            let before_field = forge_parser_get_pos()
             if field_count > 0 {
                 field_names = field_names + ","
                 field_is_str = field_is_str + ","
                 field_types_str = field_types_str + ","
             }
             // Skip optional 'mut' modifier on fields
-            if p.check(TokenKind.Mut) { p.advance() }
+            if p.peek_kind_id() == KID_MUT { p.advance() }
             let fname = p.expect_ident()
             p.expect(TokenKind.Colon)
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
             // Capture generic arg for List<T> → store as "List:T"
-            if p.check(TokenKind.Lt) {
+            if p.peek_kind_id() == 216 { // LT
                 p.advance()
                 let gen_arg = p.expect_ident()
                 // Store as "List:Diagnostic" so element type is recoverable
@@ -103,14 +104,14 @@ fn parse_type_decl(p: Parser) -> Statement? {
                 // Skip remaining generic args
                 mut depth = 1
                 while depth > 0 && !p.is_at_end() {
-                    if p.check(TokenKind.Lt) { depth = depth + 1 }
-                    if p.check(TokenKind.Gt) { depth = depth - 1 }
+                    if p.peek_kind_id() == 216 { depth = depth + 1 }
+                    if p.peek_kind_id() == 219 { depth = depth - 1 }
                     if depth > 0 { p.advance() }
                 }
-                if p.check(TokenKind.Gt) { p.advance() }
+                if p.peek_kind_id() == 219 { p.advance() }
             }
             // Check for nullable ?
-            if p.check(TokenKind.Question) { p.advance() }
+            if p.peek_kind_id() == 227 { p.advance() } // Question
 
             if ftype_name == "string" {
                 field_is_str = field_is_str + "1"
@@ -124,6 +125,8 @@ fn parse_type_decl(p: Parser) -> Statement? {
             p.skip_newlines()
             if p.peek_kind_id() == KID_COMMA { p.advance() }
             p.skip_newlines()
+            // Safety advance if nothing moved
+            if forge_parser_get_pos() == before_field { p.advance() }
         }
         p.expect(TokenKind.RBrace)
 

@@ -330,15 +330,11 @@ impl Parser {
 
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
-        eprintln("[PP] start pos=" + string(forge_parser_get_pos()) + " len=" + string(forge_token_list_len()))
         self.skip_newlines()
-        eprintln("[PP] after skip pos=" + string(forge_parser_get_pos()))
 
         while !self.is_at_end() {
             let before = forge_parser_get_pos()
-            eprintln("[PP_LOOP] pos=" + string(before))
             let stmt = self.parse_statement()
-            eprintln("[PP_STMT] pos=" + string(forge_parser_get_pos()))
             if stmt != null {
                 statements = statements.push(stmt!)
             }
@@ -1176,6 +1172,7 @@ impl Parser {
                     // Parse fields: name: Type, name: Type, ...
                     while self.peek_kind_id() != 101 && !self.is_at_end() {
                         self.skip_newlines()
+                        let before_field = forge_parser_get_pos()
                         let fk = self.peek_kind_id()
                         if fk == 101 { break }
                         // Expect field name (ident)
@@ -1219,6 +1216,8 @@ impl Parser {
                         }
                         // Skip comma
                         if self.peek_kind_id() == 123 { self.advance() }
+                        // Safety advance if nothing moved
+                        if forge_parser_get_pos() == before_field { self.advance() }
                     }
                     if self.peek_kind_id() == 101 { self.advance() }
                     // Register variant field types in C-side registry

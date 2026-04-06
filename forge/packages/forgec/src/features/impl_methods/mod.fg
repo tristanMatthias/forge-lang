@@ -201,7 +201,7 @@ fn parse_impl_method(p: Parser) -> ImplMethod? {
     if params == null { return null }
 
     mut return_type: TypeExpr? = null
-    if p.check(.Arrow) {
+    if p.peek_kind_id() == KID_ARROW {
         p.advance()
         return_type = p.parse_type_expr()
     }
