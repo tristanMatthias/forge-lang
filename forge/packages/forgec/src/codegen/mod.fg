@@ -595,10 +595,10 @@ fn cg_register_core_types() {
 
     // Register core enum types so resolve_type_to_llvm can find them.
     // max_fields = number of i64 slots for the largest variant (tag excluded).
-    // Statement max payload slots: Match = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(6) + has_default(1) + span(4) = 18
-    forge_enum_type_register("Statement", 18)
-    // Expr max payload slots: MatchExpr = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(6) + has_default(1) + span(4) = 18
-    forge_enum_type_register("Expr", 18)
+    // Statement max payload slots (with boxing): Match = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
+    forge_enum_type_register("Statement", 13)
+    // Expr max payload slots (with boxing): MatchExpr = scrutinee(1) + arm_tags(2) + arm_bindings(2) + arm_bodies(2) + default_body(1,boxed) + has_default(1) + span(4) = 13
+    forge_enum_type_register("Expr", 13)
     // BinOp: simple enum, no fields
     forge_enum_type_register("BinOp", 0)
     // UnaryOp: simple enum, no fields
