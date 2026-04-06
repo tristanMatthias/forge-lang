@@ -331,6 +331,8 @@ impl Parser {
     fn parse_program(self) -> Program {
         mut statements: List<Statement> = []
         self.skip_newlines()
+        mut stuck_count = 0
+        mut last_pos = forge_parser_get_pos()
 
         while !self.is_at_end() {
             let before = forge_parser_get_pos()
@@ -339,8 +341,20 @@ impl Parser {
                 statements = statements.push(stmt!)
             }
             // Safety: skip token if parser didn't advance
-            if forge_parser_get_pos() == before {
+            let after = forge_parser_get_pos()
+            if after == before {
                 self.advance()
+            }
+            // Detect stuck parser — if position hasn't changed in 3 iterations, force advance
+            if forge_parser_get_pos() == last_pos {
+                stuck_count = stuck_count + 1
+                if stuck_count > 3 {
+                    self.advance()
+                    stuck_count = 0
+                }
+            } else {
+                stuck_count = 0
+                last_pos = forge_parser_get_pos()
             }
             self.skip_newlines()
         }
