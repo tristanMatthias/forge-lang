@@ -69,7 +69,7 @@ $(BUILD):
 runtime: $(RUNTIME_O)
 $(RUNTIME_O): $(RUNTIME_SRC) | $(BUILD)
 	@echo "=== Compiling runtime ==="
-	cc -c -O0 $(RUNTIME_SRC) -o $(RUNTIME_O)
+	cc -c -O0 -DFORGE_SELF_HOST $(RUNTIME_SRC) -o $(RUNTIME_O)
 
 # ─── Step 2: Mini Compiler ───────────────────────────────────────
 

@@ -5290,7 +5290,8 @@ int64_t forge_validate_ptr(void* ptr, const char* name) {
 // ---- ForgeString-accepting wrappers for forge_llvm_* functions ----
 // Stage 2 passes ForgeString ({ptr, i64}) but the Rust functions expect *const char.
 // These wrappers extract .ptr and forward the call.
-// Each is named with _s suffix and declared in the Stage 2 module.
+// Only compiled when FORGE_SELF_HOST is defined (set by Makefile for self-hosting builds).
+#ifdef FORGE_SELF_HOST
 
 // Forward declare the Rust functions (they're in libforge_llvm.a)
 extern void* forge_llvm_module_create(const char* name, void* ctx);
@@ -5506,5 +5507,5 @@ extern void* forge_llvm_build_ptr_to_int(void*, void*, void*, const char*);
 void* forge_llvm_build_int_to_ptr_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_int_to_ptr(b, v, t, n.ptr); }
 void* forge_llvm_build_ptr_to_int_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_ptr_to_int(b, v, t, n.ptr);
 }
-// They only take effect in Stage 2 (Stage 1 uses the Rust library symbols directly).
+#endif // FORGE_SELF_HOST
 
