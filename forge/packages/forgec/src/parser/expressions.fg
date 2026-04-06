@@ -622,7 +622,7 @@ impl Parser {
         // Collect arms: (pattern_tag: int, body: Block, bindings: string)
         mut arm_tags: List<int> = []
         mut arm_bodies: List<Block> = []
-        mut arm_bindings: List<string> = []
+        mut bindings_csv = ""  // built incrementally (avoids List<string> push issues)
         mut has_default = false
         mut default_body = Block { statements: [], span: start }
 
@@ -638,7 +638,8 @@ impl Parser {
                 if pat_tag < 0 { pat_tag = match_enum_tag(vname) }
                 // Parse bindings: .Variant(name, val, span) → capture names
                 mut binding = ""
-                if self.check(TokenKind.LParen) || forge_peek_kind_id(forge_parser_get_pos()) == 100 {
+                let bpk = forge_peek_kind_id(forge_parser_get_pos())
+                if bpk == 100 {
                     self.advance() // consume (
                     while forge_peek_kind_id(forge_parser_get_pos()) != 101 && !self.is_at_end() {
                         let btok = self.peek()
@@ -651,9 +652,13 @@ impl Parser {
                     }
                     if forge_peek_kind_id(forge_parser_get_pos()) == 101 { self.advance() }
                 }
-                // Prefix binding with qualified variant name for field type lookup
+                // Store binding in C-side registry for codegen to retrieve
                 if binding != "" {
-                    binding = qname + ":" + binding
+                    let bind_key = qname + ":" + binding
+                    // Use the variant field registry to store bindings keyed by "qname:BIND"
+                    let bstore_key = qname + ":BIND"
+                    forge_enum_variant_fields_set(bstore_key, binding)
+                    binding = bind_key
                 }
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
@@ -683,9 +688,12 @@ impl Parser {
             if pat_tag == -1 && has_default {
                 default_body = body
             } else {
+                // Build bindings CSV BEFORE list pushes (push may corrupt stack)
+                eprintln("  [ELSE-HIT]")
+                if bindings_csv != "" { bindings_csv = bindings_csv + ";" }
+                bindings_csv = bindings_csv + binding
                 arm_tags = arm_tags.push(pat_tag)
                 arm_bodies = arm_bodies.push(body)
-                arm_bindings = arm_bindings.push(binding)
             }
 
             self.skip_newlines()
@@ -700,13 +708,6 @@ impl Parser {
             if ti > 0 { tag_csv = tag_csv + "," }
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
-        }
-        mut bindings_csv = ""
-        mut bi = 0
-        while bi < arm_bindings.length {
-            if bi > 0 { bindings_csv = bindings_csv + ";" }
-            bindings_csv = bindings_csv + arm_bindings[bi]
-            bi = bi + 1
         }
         mut has_default_int = 0
         if has_default { has_default_int = 1 }
