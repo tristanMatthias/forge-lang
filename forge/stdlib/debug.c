@@ -71,10 +71,6 @@ void forge_disable_peek_trace(void) { _peek_trace = 0; }
 int  forge_peek_trace_enabled(void) { return _peek_trace; }
 
 // ─── Token ABI diagnostic ───────────────────────────────────────
-// Wraps Lexer_next_token to verify the returned Token has correct field values.
-// Call: forge_debug_next_token(lexer_ptr) instead of Lexer_next_token directly.
-// This is for diagnosing sret ABI issues with 64-byte Token returns.
-
 // Token = {i64 kind, Span{4xi64}, ForgeString{ptr,i64}, i64 kind_id} = 64 bytes
 typedef struct {
     int64_t kind;
@@ -83,20 +79,18 @@ typedef struct {
     int64_t kind_id;
 } DebugToken;
 
-// External: the actual compiled function
-extern DebugToken Lexer_next_token(void* self);
-
-static int _dnt_trace = 0;
-DebugToken forge_debug_next_token(void* self) {
-    DebugToken tok = Lexer_next_token(self);
-    if (_dnt_trace < 20) {
-        fprintf(stderr, "[DBG_NEXT_TOKEN] kind=%lld kind_id=%lld text='%.*s'\n",
-                (long long)tok.kind, (long long)tok.kind_id,
-                tok.text.ptr && tok.text.len > 0 ? (int)(tok.text.len < 20 ? tok.text.len : 20) : 0,
-                tok.text.ptr ? tok.text.ptr : "");
-        _dnt_trace++;
+// Dump a Token struct (passed by pointer to 64-byte memory)
+void forge_debug_dump_token(DebugToken* tok) {
+    if (!tok) return;
+    static int _ddt = 0;
+    if (_ddt < 20) {
+        fprintf(stderr, "[DBG_TOKEN] kind=%lld kid=%lld text='%.*s' span.start=%lld\n",
+                (long long)tok->kind, (long long)tok->kind_id,
+                tok->text.ptr && tok->text.len > 0 ? (int)(tok->text.len < 20 ? tok->text.len : 20) : 0,
+                tok->text.ptr ? tok->text.ptr : "",
+                (long long)tok->span[0]);
+        _ddt++;
     }
-    return tok;
 }
 
 // ─── Token raw dump ─────────────────────────────────────────────

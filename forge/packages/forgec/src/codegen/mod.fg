@@ -1590,10 +1590,16 @@ impl Codegen {
         if !et { llvm.build_br(CG_B, mb) }
         llvm.position_at_end(CG_B, mb)
         if has_else == 1 && !tt && !et {
-            let phi = llvm.build_phi(CG_B, CG_I64, "iv")
-            llvm.add_incoming(phi, tv, te)
-            llvm.add_incoming(phi, ev, ee)
-            return phi
+            // Use the then-value's type for the PHI (not always i64)
+            let phi_kind = forge_value_type_kind(tv)
+            // Skip PHI for void returns (kind 0 = void)
+            if phi_kind != 0 {
+                let phi_ty = llvm.type_of(tv)
+                let phi = llvm.build_phi(CG_B, phi_ty, "iv")
+                llvm.add_incoming(phi, tv, te)
+                llvm.add_incoming(phi, ev, ee)
+                return phi
+            }
         }
         llvm.const_int(CG_I64, 0, 0)
     }
@@ -2690,20 +2696,8 @@ impl Codegen {
                 self.define_var_typed(name, val_type, ev)
             }
                 .If(cond, then_body, else_body, has_else, s) -> {
-                    cg_reinit_types()
-                    let cv = self.emit_expr(cond)
-                    let ifn = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
-                    let tb = llvm.append_basic_block(CG_CTX, ifn, "th")
-                    let eb = llvm.append_basic_block(CG_CTX, ifn, "el")
-                    let mb = llvm.append_basic_block(CG_CTX, ifn, "mg")
-                    forge_build_cond_br_trunc(CG_B, cv, tb, eb)
-                    llvm.position_at_end(CG_B, tb)
-                    self.emit_block(then_body)
-                    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }
-                    llvm.position_at_end(CG_B, eb)
-                    if has_else == 1 { self.emit_block(else_body) }
-                    if !llvm.block_has_terminator(CG_B) { llvm.build_br(CG_B, mb) }
-                    llvm.position_at_end(CG_B, mb)
+                    // Use emit_if_expr to capture both branch results via PHI
+                    return self.emit_if_expr(cond, then_body, else_body, has_else)
                 }
                 .Match(scrutinee, arm_tags_csv, arm_bindings_csv, arm_bodies, default_body, has_default, s) -> {
                     cg_reinit_types()
