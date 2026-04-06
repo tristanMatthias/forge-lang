@@ -922,6 +922,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_match_binding_add", mft1(CG_VOID, CG_STR))
     llvm.add_function(CG_MOD, "forge_match_binding_get", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_match_binding_csv", mft0(CG_STR))
+    llvm.add_function(CG_MOD, "forge_list_elem_llvm_type", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_field_type_name", mft2(CG_STR, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_match_binding_variant", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_match_binding_names", mft1(CG_STR, CG_I64))
@@ -2384,14 +2385,9 @@ impl Codegen {
                         .Ident(n, _) -> { obj_var_name = n }
                         _ -> {}
                     }
-                    mut elem_ty = CG_I64
-                    let elt = list_elem_type(obj_var_name)
-                    if elt != "" {
-                        let resolved = resolve_type_to_llvm(elt)
-                        if resolved != null { elem_ty = resolved }
-                    }
-                    // If element is a string, use ForgeString type
-                    if forge_value_is_string(elem_val) == 1 { elem_ty = CG_STR }
+                    // Detect element type from LLVM value (source of truth — no string ops needed)
+                    mut elem_ty = llvm.type_of(elem_val)
+                    if elem_ty == null { elem_ty = CG_I64 }
                     // Store elem to temp alloca, get its address
                     let tmp = llvm.build_alloca(CG_B, elem_ty, "pe")
                     llvm.build_store(CG_B, elem_val, tmp)
@@ -2964,7 +2960,11 @@ impl Codegen {
         llvm.position_at_end(CG_B, cur_bb)
         llvm.build_store(CG_B, value, alloca)
         forge_alloca_cache_set(name, alloca)
-        forge_alloca_cache_set_var_type(name, type_name)
+        // Preserve pre-set types (e.g., "List:Statement" from parser annotations)
+        let existing = forge_alloca_cache_get_var_type(name)
+        if existing.length == 0 {
+            forge_alloca_cache_set_var_type(name, type_name)
+        }
     }
 
     // Legacy wrapper — callers should migrate to define_var_typed

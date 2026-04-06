@@ -4252,6 +4252,73 @@ int64_t forge_get_type_by_name_i64(ForgeString name) {
     return (int64_t)(uintptr_t)ty;
 }
 
+// Get the LLVM element type for a list variable — entire chain in C
+// Reads var type from alloca cache, extracts element name, resolves to LLVM type
+// Returns i64 (LLVM type pointer) or 0 if not found
+extern ForgeString forge_alloca_cache_get_var_type(ForgeString name);
+extern int64_t forge_enum_type_exists(ForgeString name);
+extern int64_t forge_enum_type_max_fields(ForgeString name);
+
+int64_t forge_list_elem_llvm_type(ForgeString var_name) {
+    ForgeString vt = forge_alloca_cache_get_var_type(var_name);
+    if (!vt.ptr || vt.len <= 5) return 0;
+    // Check "List:" or "list:" prefix
+    if (memcmp(vt.ptr, "List:", 5) != 0 && memcmp(vt.ptr, "list:", 5) != 0) return 0;
+    // Extract element type name
+    char elem[128];
+    int elen = (int)(vt.len - 5);
+    if (elen <= 0 || elen > 127) return 0;
+    memcpy(elem, vt.ptr + 5, elen);
+    elem[elen] = '\0';
+    // Try LLVM named type first
+    ForgeString elem_fs = forge_string_new(elem, elen);
+    int64_t ty = forge_get_type_by_name_i64(elem_fs);
+    if (ty) return ty;
+    // Try creating from enum registry
+    if (forge_enum_type_exists(elem_fs)) {
+        // Build enum type: {i8, i64 x max_fields}
+        int64_t mf = forge_enum_type_max_fields(elem_fs);
+        if (mf <= 0) mf = 1;
+        // Look up or create the named struct
+        typedef void* (*gtbn_fn)(void*, const char*);
+        typedef void* (*scn_fn)(void*, const char*);
+        static gtbn_fn gtbn = NULL;
+        static scn_fn scn = NULL;
+        if (!gtbn) gtbn = (gtbn_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeByName2");
+        if (!scn) scn = (scn_fn)dlsym(RTLD_DEFAULT, "LLVMStructCreateNamed");
+        if (!gtbn || !_ac_llvm_ctx) return 0;
+        void* existing = gtbn(_ac_llvm_ctx, elem);
+        if (existing) return (int64_t)(uintptr_t)existing;
+        // Create new struct type for the enum
+        if (scn) {
+            void* sty = scn(_ac_llvm_ctx, elem);
+            if (sty) {
+                // Set body: {i8, i64 x mf}
+                typedef void* (*i8fn)(void*);
+                typedef void* (*i64fn)(void*);
+                typedef void (*setbody_fn)(void*, void**, unsigned, int);
+                static i8fn i8t = NULL;
+                static i64fn i64t = NULL;
+                static setbody_fn sb = NULL;
+                if (!i8t) i8t = (i8fn)dlsym(RTLD_DEFAULT, "LLVMInt8TypeInContext");
+                if (!i64t) i64t = (i64fn)dlsym(RTLD_DEFAULT, "LLVMInt64TypeInContext");
+                if (!sb) sb = (setbody_fn)dlsym(RTLD_DEFAULT, "LLVMStructSetBody");
+                if (i8t && i64t && sb) {
+                    int fc = (int)mf + 1;
+                    void* fields[64];
+                    fields[0] = i8t(_ac_llvm_ctx);
+                    for (int i = 1; i < fc && i < 64; i++) {
+                        fields[i] = i64t(_ac_llvm_ctx);
+                    }
+                    sb(sty, fields, fc, 0);
+                }
+                return (int64_t)(uintptr_t)sty;
+            }
+        }
+    }
+    return 0;
+}
+
 // Create an LLVM struct type from the C-side struct registry (all in C — avoids Forge ptr issues)
 int64_t forge_create_struct_type(ForgeString name) {
     if (!name.ptr || name.len <= 0 || !_ac_llvm_ctx) return 0;

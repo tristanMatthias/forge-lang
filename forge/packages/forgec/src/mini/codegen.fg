@@ -2798,6 +2798,7 @@ fn compile(source: string) -> string {
     ir_raw("declare %ForgeString @forge_match_binding_csv()")
     ir_raw("declare void @forge_enum_variant_tag_set(%ForgeString, i64)")
     ir_raw("declare i64 @forge_enum_variant_tag_get(%ForgeString)")
+    ir_raw("declare i64 @forge_list_elem_llvm_type(%ForgeString)")
     ir_raw("declare %ForgeString @forge_enum_field_type_name(%ForgeString, i64)")
     ir_raw("declare %ForgeString @forge_match_binding_variant(i64)")
     ir_raw("declare %ForgeString @forge_match_binding_names(i64)")

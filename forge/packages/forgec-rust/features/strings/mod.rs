@@ -202,6 +202,7 @@ crate::runtime_fn! { name: "forge_match_binding_clear", feature: "strings", para
 crate::runtime_fn! { name: "forge_match_binding_add", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_match_binding_get", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_match_binding_csv", feature: "strings", params: [], ret: ForgeString }
+crate::runtime_fn! { name: "forge_list_elem_llvm_type", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_enum_field_type_name", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_match_binding_variant", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_match_binding_names", feature: "strings", params: [I64], ret: ForgeString }
