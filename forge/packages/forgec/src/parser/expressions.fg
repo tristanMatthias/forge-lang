@@ -181,7 +181,7 @@ impl Parser {
             if self.peek_kind_id() == KID_LPAREN {
                 self.advance()
                 let args = self.parse_call_args()
-                let close = self.expect(TokenKind.RParen)
+                let close = self.expect_id(KID_RPAREN)
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                 result = Expr.Call(result, args, span)
                 continue
@@ -212,7 +212,7 @@ impl Parser {
                     if is_str_method {
                         self.advance()
                         let ma = self.parse_call_args()
-                        self.expect(TokenKind.RParen)
+                        self.expect_id(KID_RPAREN)
                         let sp2 = self.merge_spans(self.current_span(), self.peek_at(-1).span)
                         mut aa: List<Expr> = [result]
                         for a in ma { aa = aa.push(a) }
@@ -222,7 +222,7 @@ impl Parser {
                     // AST mode: produce Call(MemberAccess(...), args) node
                     self.advance() // consume (
                     let mc_args = self.parse_call_args()
-                    self.expect(TokenKind.RParen)
+                    self.expect_id(KID_RPAREN)
                     result = Expr.Call(Expr.MemberAccess(result, field, span), mc_args, span)
                     continue
                 }
@@ -246,7 +246,7 @@ impl Parser {
                 self.advance()
                 let index = self.parse_expr()
                 if index == null { return null }
-                if self.expect(TokenKind.RBracket) == null { return null }
+                if self.expect_id(KID_RBRACKET) == null { return null }
                 let span = self.merge_spans(self.current_span(), self.peek_at(-1).span)
 
                 result = Expr.Index(result, index!, span)
@@ -445,12 +445,12 @@ impl Parser {
                 self.skip_newlines()
                 if self.peek_kind_id() == KID_COMMA { self.advance() }
             }
-            self.expect(TokenKind.RParen)
+            self.expect_id(KID_RPAREN)
             return first // TODO: return Tuple expr
         }
 
         self.skip_newlines()
-        if self.expect(TokenKind.RParen) == null { return null }
+        if self.expect_id(KID_RPAREN) == null { return null }
 
         first // parenthesized expression (inner expr already emitted inline if in codegen)
     }
@@ -528,7 +528,7 @@ impl Parser {
             if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBrace)
+        self.expect_id(KID_RBRACE)
         // Return Call-encoded struct lit
         Expr.Call(Expr.Ident("__s_" + struct_name, start), field_values, start)
     }
@@ -546,7 +546,7 @@ impl Parser {
             if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
-        self.expect(TokenKind.RBracket)
+        self.expect_id(KID_RBRACKET)
         Expr.Block(Block { statements: [], span: start })
     }
 
@@ -561,7 +561,7 @@ impl Parser {
         if self.peek_kind_id() == KID_LPAREN {
             self.advance()
             let args = self.parse_call_args()
-            self.expect(TokenKind.RParen)
+            self.expect_id(KID_RPAREN)
             let span = self.merge_spans(start, self.peek_at(-1).span)
             return Expr.Ident(".${name}", span)
         }
@@ -624,7 +624,7 @@ impl Parser {
         let scrutinee_var = LAST_IDENT_NAME
 
         self.skip_newlines()
-        if self.expect(TokenKind.LBrace) == null { return null }
+        if self.expect_id(KID_LBRACE) == null { return null }
 
         // Parse match arms with PENDING_MATCH
         // Note: { was already consumed by expect(LBrace) above

@@ -72,16 +72,14 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     }
 
     // Expect = value
-    if p.expect(TokenKind.Eq) == null {
+    if p.expect_id(KID_EQ) == null {
         p.error("expected '=' in variable declaration")
         return null
     }
 
     // Peek at value token to detect type for globals (before parse_expr consumes it)
     let value_tok_kind = p.peek_kind_id()
-    // kind_id 4 = StringLit, 2 = IntLit, 3 = FloatLit
-    // LBracket = list literal, LBrace = map literal
-    let value_tok_key = p.kind_to_key(p.peek().kind)
+    let value_tok_key = forge_kind_id_to_key(value_tok_kind)
 
     let value = p.parse_expr()
     if value == null {

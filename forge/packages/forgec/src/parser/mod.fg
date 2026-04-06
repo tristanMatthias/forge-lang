@@ -579,7 +579,7 @@ impl Parser {
                     if scrutinee == null { return null }
                     let scrutinee_var = LAST_IDENT_NAME
                     self.skip_newlines()
-                    if self.expect(TokenKind.LBrace) == null { return null }
+                    if self.expect_id(KID_LBRACE) == null { return null }
                     self.skip_newlines()
 
                     let enum_type = cg_var_enum_type(scrutinee_var)
@@ -814,7 +814,7 @@ impl Parser {
     fn parse_block(self) -> Block {
         let start = self.current_span()
         let empty = Block { statements: [], span: start }
-        if self.expect(TokenKind.LBrace) == null { return empty }
+        if self.expect_id(KID_LBRACE) == null { return empty }
 
         self.skip_newlines()
         mut statements: List<Statement> = []
@@ -829,7 +829,7 @@ impl Parser {
             self.skip_newlines()
         }
 
-        self.expect(TokenKind.RBrace)
+        self.expect_id(KID_RBRACE)
 
         Block {
             statements,
@@ -913,7 +913,7 @@ impl Parser {
     }
 
     fn parse_type_args(self) -> List<TypeExpr>? {
-        if self.expect(TokenKind.Lt) == null { return null }
+        if self.expect_id(KID_LT) == null { return null }
         mut args: List<TypeExpr> = []
 
         while self.peek_kind_id() != KID_GT && !self.is_at_end() {
@@ -933,7 +933,7 @@ impl Parser {
             // TODO: proper token splitting
             self.advance()
         } else {
-            if self.expect(TokenKind.Gt) == null { return null }
+            if self.expect_id(KID_GT) == null { return null }
         }
 
         args
@@ -941,7 +941,7 @@ impl Parser {
 
     fn parse_function_type(self) -> TypeExpr? {
         let start = self.advance_span() // consume 'fn'
-        if self.expect(TokenKind.LParen) == null { return null }
+        if self.expect_id(KID_LPAREN) == null { return null }
 
         mut params: List<TypeExpr> = []
         while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
@@ -954,7 +954,7 @@ impl Parser {
                 self.advance()
             }
         }
-        if self.expect(TokenKind.RParen) == null { return null }
+        if self.expect_id(KID_RPAREN) == null { return null }
 
         // -> ReturnType
         mut ret: TypeExpr? = TypeExpr.Named("void", start)
@@ -992,7 +992,7 @@ impl Parser {
                     self.advance()
                 }
             }
-            if self.expect(TokenKind.RParen) == null { return null }
+            if self.expect_id(KID_RPAREN) == null { return null }
 
             // Check for -> ReturnType (function type)
             if self.peek_kind_id() == KID_ARROW {
@@ -1005,7 +1005,7 @@ impl Parser {
             return TypeExpr.Tuple(elements, start)
         }
 
-        if self.expect(TokenKind.RParen) == null { return null }
+        if self.expect_id(KID_RPAREN) == null { return null }
 
         // Check for -> ReturnType (single-param function type)
         if self.peek_kind_id() == KID_ARROW {
@@ -1032,7 +1032,7 @@ impl Parser {
             }
             let name = self.expect_ident()
             if name == null { return null }
-            if self.expect(TokenKind.Colon) == null { return null }
+            if self.expect_id(KID_COLON) == null { return null }
             let ty = self.parse_type_expr()
             if ty == null { return null }
             fields = fields.push(TypeField { name: name!, type_expr: ty!, mutable })
@@ -1042,7 +1042,7 @@ impl Parser {
             }
         }
 
-        if self.expect(TokenKind.RBrace) == null { return null }
+        if self.expect_id(KID_RBRACE) == null { return null }
         TypeExpr.Struct(fields, start)
     }
 
@@ -1051,7 +1051,7 @@ impl Parser {
     fn parse_params(self) -> List<Param> {
         PARSED_PARAM_TYPES = []
         PARSED_PARAM_NAMES = []
-        self.expect(TokenKind.LParen)
+        self.expect_id(KID_LPAREN)
         mut params: List<Param> = []
 
         while self.peek_kind_id() != KID_RPAREN && !self.is_at_end() {
@@ -1068,7 +1068,7 @@ impl Parser {
             if forge_parser_get_pos() == before_param { self.advance() }
         }
 
-        self.expect(TokenKind.RParen)
+        self.expect_id(KID_RPAREN)
         params
     }
 
@@ -1129,7 +1129,7 @@ impl Parser {
             }
         }
 
-        if self.expect(TokenKind.Gt) == null { return params }
+        if self.expect_id(KID_GT) == null { return params }
         params
     }
 

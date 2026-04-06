@@ -76,7 +76,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
         p.parse_type_params()
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(KID_LBRACE) == null { return null }
     p.skip_newlines()
 
     // Parse each method and store as a function
@@ -96,7 +96,7 @@ export fn parse_impl_block(p: Parser) -> Statement? {
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(KID_RBRACE)
 
     PARSE_END_POS = forge_parser_get_pos()
     let id = next_node_id()

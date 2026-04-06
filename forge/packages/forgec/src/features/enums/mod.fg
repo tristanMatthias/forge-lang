@@ -70,7 +70,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         return null
     }
 
-    if p.expect(TokenKind.LBrace) == null { return null }
+    if p.expect_id(KID_LBRACE) == null { return null }
     p.skip_newlines()
 
     mut tag = 0
@@ -116,7 +116,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                 field_types_str = field_types_str + field_code
                 if p.peek_kind_id() == KID_COMMA { p.advance() }
             }
-            p.expect(TokenKind.RParen)
+            p.expect_id(KID_RPAREN)
         }
         if variant_slots > max_slots { max_slots = variant_slots }
         // Register per-variant field type info
@@ -130,7 +130,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
         p.skip_newlines()
     }
 
-    p.expect(TokenKind.RBrace)
+    p.expect_id(KID_RBRACE)
 
     forge_enum_type_register(name, max_slots)
     // Enum declarations register tags + max field count.

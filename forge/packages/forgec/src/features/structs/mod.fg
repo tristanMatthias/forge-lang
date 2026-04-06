@@ -64,7 +64,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
 
     let type_params = p.parse_type_params()
 
-    if p.expect(TokenKind.Eq) == null {
+    if p.expect_id(KID_EQ) == null {
         p.error("expected '=' in type declaration")
         return null
     }
@@ -90,7 +90,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
             // Skip optional 'mut' modifier on fields
             if p.peek_kind_id() == KID_MUT { p.advance() }
             let fname = p.expect_ident()
-            p.expect(TokenKind.Colon)
+            p.expect_id(KID_COLON)
             // Parse type — might be generic like List<Token>
             mut ftype_name = p.expect_ident()
             // Capture generic arg for List<T> → store as "List:T"
@@ -128,7 +128,7 @@ fn parse_type_decl(p: Parser) -> Statement? {
             // Safety advance if nothing moved
             if forge_parser_get_pos() == before_field { p.advance() }
         }
-        p.expect(TokenKind.RBrace)
+        p.expect_id(KID_RBRACE)
 
         // Store field info for lazy LLVM type creation during codegen
         register_struct_type_full(name, field_names, field_is_str, field_types_str, null)
