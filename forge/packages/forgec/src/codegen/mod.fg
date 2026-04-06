@@ -1651,7 +1651,7 @@ impl Codegen {
     }
 
     fn emit_match_expr_with_bindings(self, scrutinee: Expr, arm_tags_csv: string, arm_bindings_csv: string, arm_bodies: List<Block>, default_body: Block, has_default: int) -> ptr {
-        eprintln("  [MEWB] tags=" + arm_tags_csv + " bindings=" + arm_bindings_csv)
+        forge_trace_i64(tags.length, 888)
         let subj_raw = self.emit_expr(scrutinee)
         // For enum scrutinees, extract the tag byte
         mut subj = subj_raw
@@ -1714,35 +1714,23 @@ impl Codegen {
                                 let fs = llvm.build_insert_value(CG_B, llvm.get_undef(CG_STR), ev0_ptr, 0, "fs")
                                 mut fsv = fs
                                 if ev1 != null { fsv = llvm.build_insert_value(CG_B, fs, ev1, 1, "fs") }
-                                let ba = llvm.build_alloca(CG_B, CG_STR, bpname)
-                                llvm.build_store(CG_B, fsv, ba)
-                                forge_alloca_cache_set(bpname, ba)
-                                forge_alloca_cache_set_var_type(bpname, "string")
+                                // Use define_var_typed to create entry-block alloca
+                                self.define_var_typed(bpname, "string", fsv)
                             }
                         } else if fcode == "p" {
                             // Pointer/enum: look up actual type from registry
                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                             if ev != null {
                                 let field_type_name = forge_enum_field_type_name(variant_qname, fi)
-                                mut alloca_ty = CG_I64
-                                if field_type_name.length > 0 {
-                                    let resolved = resolve_type_to_llvm(field_type_name)
-                                    if resolved != null { alloca_ty = resolved }
-                                }
-                                let ba = llvm.build_alloca(CG_B, alloca_ty, bpname)
-                                llvm.build_store(CG_B, ev, ba)
-                                forge_alloca_cache_set(bpname, ba)
-                                if field_type_name.length > 0 {
-                                    forge_alloca_cache_set_var_type(bpname, field_type_name)
-                                }
+                                mut type_str = "int"
+                                if field_type_name.length > 0 { type_str = field_type_name }
+                                self.define_var_typed(bpname, type_str, ev)
                             }
                         } else {
                             // Integer/bool: extract single slot
                             let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                             if ev != null {
-                                let ba = llvm.build_alloca(CG_B, CG_I64, bpname)
-                                llvm.build_store(CG_B, ev, ba)
-                                forge_alloca_cache_set(bpname, ba)
+                                self.define_var_typed(bpname, "int", ev)
                             }
                         }
                     }

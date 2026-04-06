@@ -3845,6 +3845,8 @@ ForgeString forge_match_binding_csv(void) {
 // Returns: the variant qualified name (before :), or field names (after :)
 ForgeString forge_match_binding_variant(int64_t binding_idx) {
     ForgeString raw = forge_match_binding_get(binding_idx);
+    fprintf(stderr, "  [MBV] idx=%lld raw='%.*s'\n", (long long)binding_idx,
+        (int)(raw.ptr ? raw.len : 0), raw.ptr ? raw.ptr : "");
     if (!raw.ptr || raw.len <= 0) return (ForgeString){NULL, 0};
     // Find ':'
     for (int i = 0; i < raw.len; i++) {

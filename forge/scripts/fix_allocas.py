@@ -9,7 +9,7 @@ null initialization so loads from unexecuted branches get safe defaults.
 import sys
 import re
 
-ALLOCA_RE = re.compile(r'^(\s+)(%r\d+) = alloca (.+)$')
+ALLOCA_RE = re.compile(r'^(\s+)(%r?\d+) = alloca (.+)$')
 
 def fix_allocas(input_path, output_path):
     with open(input_path, 'r') as f:
