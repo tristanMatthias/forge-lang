@@ -76,15 +76,15 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
 
     // Skip body by brace counting using parser's own peek
     let open_pos = forge_parser_get_pos()
-    if p.peek().kind_id == KID_LBRACE { p.advance() }
+    if p.peek_kind_id() == KID_LBRACE { p.advance() }
     mut depth = 1
     while depth > 0 && !p.is_at_end() {
-        let cur_kid = p.peek().kind_id
+        let cur_kid = p.peek_kind_id()
         if cur_kid == KID_LBRACE { depth = depth + 1 }
         if cur_kid == KID_RBRACE { depth = depth - 1 }
         if depth > 0 { p.advance() }
     }
-    if p.peek().kind_id == KID_RBRACE { p.advance() }
+    if p.peek_kind_id() == KID_RBRACE { p.advance() }
     let close_pos = forge_parser_get_pos() - 1
     let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 
@@ -119,7 +119,7 @@ fn parse_export(p: Parser) -> Statement? {
     let start = p.advance_span() // consume 'export'
 
     // kind_id dispatch — use parser's own peek, not C-side position
-    let ekid = p.peek().kind_id
+    let ekid = p.peek_kind_id()
     if ekid == KID_FN { return parse_fn_decl(p, true) }
     if ekid == KID_LET { return parse_var_binding(p, .Let, true) }
     if ekid == KID_MUT { return parse_var_binding(p, .Mut, true) }
@@ -137,19 +137,19 @@ fn parse_export(p: Parser) -> Statement? {
     if ekid == KID_TRAIT || ekid == KID_IMPL {
         p.advance()
         p.expect_ident()
-        while !p.is_at_end() && p.peek().kind_id != KID_LBRACE {
+        while !p.is_at_end() && p.peek_kind_id() != KID_LBRACE {
             p.advance()
         }
-        if p.peek().kind_id == KID_LBRACE {
+        if p.peek_kind_id() == KID_LBRACE {
             p.advance()
             mut bdepth = 1
             while bdepth > 0 && !p.is_at_end() {
-                let bk = p.peek().kind_id
+                let bk = p.peek_kind_id()
                 if bk == KID_LBRACE { bdepth = bdepth + 1 }
                 if bk == KID_RBRACE { bdepth = bdepth - 1 }
                 if bdepth > 0 { p.advance() }
             }
-            if p.peek().kind_id == KID_RBRACE { p.advance() }
+            if p.peek_kind_id() == KID_RBRACE { p.advance() }
         }
         PARSE_END_POS = forge_parser_get_pos()
         let id = next_node_id()

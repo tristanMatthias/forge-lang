@@ -94,7 +94,7 @@ export fn parse_enum_decl(p: Parser) -> Statement? {
                 if p.check(TokenKind.Colon) {
                     p.advance()
                     // Check the type name BEFORE parse_type_expr consumes it
-                    let type_text = p.peek().text
+                    let type_text = p.peek_text()
                     // string and List<T> are 2 i64 slots ({ptr, i64})
                     if type_text == "string" {
                         field_slots = 2

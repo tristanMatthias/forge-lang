@@ -44,7 +44,7 @@ impl Parser {
     // Map current token to BinOp for a given precedence level.
     // Returns "" for no match (bootstrap workaround: nullable returns unreliable)
     fn token_to_binop_key(self, level: int) -> string {
-        let k = forge_kind_id_to_key(self.peek().kind_id)
+        let k = forge_kind_id_to_key(self.peek_kind_id())
         match level {
             1  -> if k == "Pipe" { "Pipe" } else { "" }
             2  -> if k == "Or" { "Or" } else { "" }
@@ -275,7 +275,7 @@ impl Parser {
                 self.advance() // consume 'is'
                 // Check for 'not' (! token) or 'not' (ident keyword)
                 mut negated = self.check(TokenKind.Not)
-                if !negated && self.peek().kind_id == 1 && self.peek().text == "not" {
+                if !negated && self.peek_kind_id() == 1 && self.peek_text() == "not" {
                     negated = true
                 }
                 if negated { self.advance() }
@@ -669,14 +669,14 @@ impl Parser {
             } else if self.check(TokenKind.Underscore) {
                 self.advance()
                 is_default = true
-            } else if self.peek().kind_id == KID_STRING_LIT {
+            } else if self.peek_kind_id() == KID_STRING_LIT {
                 let tok = self.advance()
                 forge_match_pattern_add_string(tok.text)
                 pat_tag = -2
-            } else if self.peek().kind_id == KID_INT_LIT {
+            } else if self.peek_kind_id() == KID_INT_LIT {
                 let tok = self.advance()
                 pat_tag = int(tok.text)
-            } else if self.peek().kind_id == KID_BOOL_LIT {
+            } else if self.peek_kind_id() == KID_BOOL_LIT {
                 let tok = self.advance()
                 pat_tag = if tok.text == "true" { 1 } else { 0 }
             } else {

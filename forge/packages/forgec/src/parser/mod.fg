@@ -140,16 +140,31 @@ impl Parser {
         tok
     }
 
-    // Helper: advance and return span (avoids .advance_span() chain which the
-    // self-hosted codegen doesn't emit correctly)
+    // Helpers: avoid method().field chains which the self-hosted codegen
+    // doesn't emit correctly (the method call is dropped, only field access runs)
     fn advance_span(self) -> Span {
         let tok = self.advance()
         tok.span
     }
 
+    fn peek_kind_id(self) -> int {
+        let tok = self.peek()
+        tok.kind_id
+    }
+
+    fn peek_text(self) -> string {
+        let tok = self.peek()
+        tok.text
+    }
+
+    fn peek_span(self) -> Span {
+        let tok = self.peek()
+        tok.span
+    }
+
     fn check(self, kind: TokenKind) -> bool {
         // Use kind_id comparison (avoids Token struct layout dependency)
-        let a = forge_kind_id_to_key(self.peek().kind_id)
+        let a = forge_kind_id_to_key(self.peek_kind_id())
         let b = self.kind_to_key(kind)
         a != "" && a == b
     }
@@ -222,7 +237,7 @@ impl Parser {
     }
 
     fn current_span(self) -> Span {
-        self.peek().span
+        self.peek_span()
     }
 
     fn error(self, message: string) {
@@ -540,12 +555,12 @@ impl Parser {
                         } else if self.check(TokenKind.Underscore) {
                             self.advance()
                             is_default = 1
-                        } else if self.peek().kind_id == KID_STRING_LIT {
+                        } else if self.peek_kind_id() == KID_STRING_LIT {
                             let tok = self.advance()
                             // Store string pattern in C-side registry
                             forge_match_pattern_add_string(tok.text)
                             pat_tag = -2
-                        } else if self.peek().kind_id == KID_INT_LIT {
+                        } else if self.peek_kind_id() == KID_INT_LIT {
                             let tok = self.advance()
                             pat_tag = int(tok.text)
                         } else {
