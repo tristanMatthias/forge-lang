@@ -389,12 +389,22 @@ export fn declare_all_fns() {
                 if resolved != null { ret_ty = resolved }
             }
             // Wrap in nullable struct {i8, InnerType} if return type had ?
+            // Use a named struct (Nullable_<TypeName>) so that callers and
+            // emit_return can find/recreate it consistently. This matches
+            // what the Rust compiler does.
             if is_nullable_ret {
-                let nf = llvm.type_array_new(2)
-                llvm.type_array_set(nf, 0, CG_I8)
-                llvm.type_array_set(nf, 1, ret_ty)
-                ret_ty = llvm.struct_type(CG_CTX, nf, 2, 0)
-                llvm.type_array_free(nf)
+                let nullable_name = "Nullable_" + rtn
+                mut existing = llvm.get_type_by_name(CG_CTX, nullable_name)
+                if existing == null {
+                    let nf = llvm.type_array_new(2)
+                    llvm.type_array_set(nf, 0, CG_I8)
+                    llvm.type_array_set(nf, 1, ret_ty)
+                    let named = llvm.struct_create_named(CG_CTX, nullable_name)
+                    llvm.struct_set_body(named, nf, 2, 0)
+                    llvm.type_array_free(nf)
+                    existing = named
+                }
+                ret_ty = existing
             }
         }
         cg_reinit_types()
