@@ -684,8 +684,10 @@ impl Parser {
             if pat_tag == -1 && has_default {
                 default_body = body
             } else {
-                // Store binding in C-side (avoids ForgeString corruption in string concat chains)
-                forge_match_binding_add(binding)
+                // Store binding in C-side using existing callable function
+                // Key: "__match_bind_N" where N is the arm index
+                let bind_key = "__mb" + string(arm_tags.length)
+                forge_enum_variant_fields_set(bind_key, binding)
                 arm_tags = arm_tags.push(pat_tag)
                 arm_bodies = arm_bodies.push(body)
             }
@@ -703,7 +705,9 @@ impl Parser {
             tag_csv = tag_csv + string(arm_tags[ti])
             ti = ti + 1
         }
-        let bindings_csv = forge_match_binding_csv()
+        // Bindings stored in C-side registry as "__mb0", "__mb1", etc.
+        // Build a simple marker CSV to signal the codegen to look them up
+        let bindings_csv = "__mb:" + string(arm_tags.length)
         mut has_default_int = 0
         if has_default { has_default_int = 1 }
         Expr.MatchExpr(scrutinee!, tag_csv, bindings_csv, arm_bodies, default_body, has_default_int, start)
