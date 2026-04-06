@@ -129,6 +129,42 @@ cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
 /tmp/stage2 build packages/forgec/src/main.fg
 ```
 
+---
+
+## Future: TypedValue Refactor
+
+Once self-hosting works, the codegen should be refactored so every expression emission returns both a value AND its type:
+
+```forge
+type TypedValue = {
+    val: ptr,          // LLVM value
+    ty: ptr,           // LLVM type (CG_I64, CG_STR, %Token, etc.)
+    type_name: string, // Forge type name ("int", "string", "Token", etc.)
+}
+```
+
+This eliminates ALL global type flags, CSV caches, and guessing. The type flows through the expression tree.
+
+| Old (flags)                              | New (TypedValue)                    |
+|------------------------------------------|-------------------------------------|
+| `CG_LAST_IS_STR = 1`                    | `result.type_name == "string"`      |
+| `CG_LAST_IS_PTR = 1`                    | `result.ty == CG_PTR`              |
+| `CG_LAST_STRUCT_TYPE = "Token"`         | `result.type_name == "Token"`       |
+
+Key principle: **The type flows DOWN from the declaration, not UP from runtime flags.**
+
+```
+Declaration: let x: Token = parser.peek()
+                 ↓
+Type check:  x has type Token
+                 ↓
+Codegen:     alloca %Token; store %Token result; load %Token
+```
+
+Never guess. Never use flags. Read the type from the source.
+
+---
+
 ## File Map
 
 | File | Role |
