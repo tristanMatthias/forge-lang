@@ -912,6 +912,11 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_enum_variant_tag_get", mft1(CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_variant_fields_set", mft2(CG_VOID, CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_enum_variant_fields_get", mft1(CG_STR, CG_STR))
+    // Match binding storage (integer-indexed, avoids ForgeString corruption)
+    llvm.add_function(CG_MOD, "forge_match_binding_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_match_binding_add", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_match_binding_get", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_match_binding_csv", mft0(CG_STR))
     // Nullable tracking
     llvm.add_function(CG_MOD, "forge_fn_nullable_set", mft3(CG_VOID, CG_I64, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_fn_nullable_get_flag", mft0(CG_I64))
@@ -1674,9 +1679,8 @@ impl Codegen {
             let cmp = llvm.build_icmp(CG_B, 32, subj, tag_val, "mc")
             forge_build_cond_br_trunc(CG_B, cmp, arm_bb, next_bb)
             llvm.position_at_end(CG_B, arm_bb)
-            // Extract bindings for this arm (from C-side registry)
-            let bind_key = "__mb" + string(ai)
-            let raw_bind = forge_enum_variant_fields_get(bind_key)
+            // Extract bindings for this arm (from C-side registry, indexed by int)
+            let raw_bind = forge_match_binding_get(ai)
             if raw_bind.length > 0 {
                 let colon_pos = raw_bind.index_of(":")
                 mut variant_qname = ""

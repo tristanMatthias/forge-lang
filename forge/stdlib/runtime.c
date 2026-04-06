@@ -5290,222 +5290,166 @@ int64_t forge_validate_ptr(void* ptr, const char* name) {
 // ---- ForgeString-accepting wrappers for forge_llvm_* functions ----
 // Stage 2 passes ForgeString ({ptr, i64}) but the Rust functions expect *const char.
 // These wrappers extract .ptr and forward the call.
-// Only compiled when FORGE_SELF_HOST is defined (set by Makefile for self-hosting builds).
-#ifdef FORGE_SELF_HOST
+// These wrappers use dlsym to find the Rust LLVM functions at runtime,
+// so they compile and link in ALL builds (no unresolved symbols).
 
-// Forward declare the Rust functions (they're in libforge_llvm.a)
-extern void* forge_llvm_module_create(const char* name, void* ctx);
-extern void* forge_llvm_add_function(void* module, const char* name, void* fn_type);
-extern void* forge_llvm_get_named_function(void* module, const char* name);
-extern void* forge_llvm_get_named_global(void* module, const char* name);
-extern void* forge_llvm_get_type_by_name(void* ctx, const char* name);
-extern void* forge_llvm_append_basic_block(void* ctx, void* fn_val, const char* name);
-extern void* forge_llvm_build_alloca(void* builder, void* ty, const char* name);
-extern void* forge_llvm_add_global(void* module, void* ty, const char* name);
-extern void* forge_llvm_struct_create_named(void* ctx, const char* name);
-extern void* forge_llvm_const_string(void* module, const char* text, int64_t len);
-extern int forge_llvm_print_module_to_file(void* module, const char* filename);
-extern int64_t forge_llvm_emit_object_file(void* module, const char* filename);
+// Forward declare the Rust LLVM functions (resolved at link time via libforge_llvm.a)
+// Using dlsym to avoid hard link dependency — allows runtime.o to compile standalone.
+#define LLVM_FN(ret, name, ...) \
+    static ret _call_##name(__VA_ARGS__);
 
+// Semantic wrappers (module/function/type creation — name matters)
 void* forge_llvm_module_create_s(ForgeString name, void* ctx) {
     char buf[256] = "module";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_module_create(buf, ctx);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(const char*, void*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_module_create");
+    return fn ? fn(buf, ctx) : NULL;
 }
-
 void* forge_llvm_add_function_s(void* module, ForgeString name, void* fn_type) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_add_function(module, buf, fn_type);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, const char*, void*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_add_function");
+    return fn ? fn(module, buf, fn_type) : NULL;
 }
-
 void* forge_llvm_get_named_function_s(void* module, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_get_named_function(module, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_get_named_function");
+    return fn ? fn(module, buf) : NULL;
 }
-
 void* forge_llvm_get_named_global_s(void* module, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_get_named_global(module, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_get_named_global");
+    return fn ? fn(module, buf) : NULL;
 }
-
 void* forge_llvm_get_type_by_name_s(void* ctx, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_get_type_by_name(ctx, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_get_type_by_name");
+    return fn ? fn(ctx, buf) : NULL;
 }
-
 void* forge_llvm_append_basic_block_s(void* ctx, void* fn_val, ForgeString name) {
     char buf[256] = "bb";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_append_basic_block(ctx, fn_val, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_append_basic_block");
+    return fn ? fn(ctx, fn_val, buf) : NULL;
 }
-
 void* forge_llvm_build_alloca_s(void* builder, void* ty, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_build_alloca(builder, ty, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_build_alloca");
+    return fn ? fn(builder, ty, buf) : NULL;
 }
-
 void* forge_llvm_add_global_s(void* module, void* ty, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_add_global(module, ty, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_add_global");
+    return fn ? fn(module, ty, buf) : NULL;
 }
-
 void* forge_llvm_struct_create_named_s(void* ctx, ForgeString name) {
     char buf[256] = "";
-    if (name.ptr && name.len > 0 && name.len < 255) {
-        memcpy(buf, name.ptr, name.len);
-        buf[name.len] = '\0';
-    }
-    return forge_llvm_struct_create_named(ctx, buf);
+    if (name.ptr && name.len > 0 && name.len < 255) { memcpy(buf, name.ptr, name.len); buf[name.len] = '\0'; }
+    typedef void* (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_struct_create_named");
+    return fn ? fn(ctx, buf) : NULL;
 }
-
 void* forge_llvm_const_string_s(void* module, ForgeString text) {
-    return forge_llvm_const_string(module, text.ptr, text.len);
+    typedef void* (*fn_t)(void*, const char*, int64_t);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_const_string");
+    return fn ? fn(module, text.ptr, text.len) : NULL;
 }
-
 int forge_llvm_print_module_to_file_s(void* module, ForgeString filename) {
     char buf[512] = "";
-    if (filename.ptr && filename.len > 0 && filename.len < 511) {
-        memcpy(buf, filename.ptr, filename.len);
-        buf[filename.len] = '\0';
-    }
-    return forge_llvm_print_module_to_file(module, buf);
+    if (filename.ptr && filename.len > 0 && filename.len < 511) { memcpy(buf, filename.ptr, filename.len); buf[filename.len] = '\0'; }
+    typedef int (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_print_module_to_file");
+    return fn ? fn(module, buf) : -1;
 }
-
 int64_t forge_llvm_emit_object_file_s(void* module, ForgeString filename) {
     char buf[512] = "";
-    if (filename.ptr && filename.len > 0 && filename.len < 511) {
-        memcpy(buf, filename.ptr, filename.len);
-        buf[filename.len] = '\0';
-    }
-    return forge_llvm_emit_object_file(module, buf);
+    if (filename.ptr && filename.len > 0 && filename.len < 511) { memcpy(buf, filename.ptr, filename.len); buf[filename.len] = '\0'; }
+    typedef int64_t (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_emit_object_file");
+    return fn ? fn(module, buf) : -1;
 }
 
-// ---- build_* wrappers — name param is ignored by Rust side (safe_name) ----
-// Forward declares
-extern void* forge_llvm_build_add(void*, void*, void*, const char*);
-extern void* forge_llvm_build_sub(void*, void*, void*, const char*);
-extern void* forge_llvm_build_mul(void*, void*, void*, const char*);
-extern void* forge_llvm_build_sdiv(void*, void*, void*, const char*);
-extern void* forge_llvm_build_srem(void*, void*, void*, const char*);
-extern void* forge_llvm_build_and(void*, void*, void*, const char*);
-extern void* forge_llvm_build_or(void*, void*, void*, const char*);
-extern void* forge_llvm_build_xor(void*, void*, void*, const char*);
-extern void* forge_llvm_build_shl(void*, void*, void*, const char*);
-extern void* forge_llvm_build_ashr(void*, void*, void*, const char*);
-extern void* forge_llvm_build_icmp(void*, int, void*, void*, const char*);
-extern void* forge_llvm_build_load(void*, void*, void*, const char*);
-extern void* forge_llvm_build_call(void*, void*, void*, void*, int, const char*);
-extern void* forge_llvm_build_phi(void*, void*, const char*);
-extern void* forge_llvm_build_zext(void*, void*, void*, const char*);
-extern void* forge_llvm_build_trunc(void*, void*, void*, const char*);
-extern void* forge_llvm_build_inttoptr(void*, void*, void*, const char*);
-extern void* forge_llvm_build_extract_value(void*, void*, int, const char*);
-extern void* forge_llvm_build_insert_value(void*, void*, void*, int, const char*);
-extern void* forge_llvm_build_gep2(void*, void*, void*, void*, int64_t, const char*);
-extern void* forge_llvm_build_struct_gep2(void*, void*, void*, int, const char*);
+// Debug-name wrappers: name is ignored by the Rust side (safe_name), so just pass .ptr
+#define LLVM_BUILD_S(name, ...) \
+    typedef void* (*name##_fn_t)(__VA_ARGS__); \
+    static name##_fn_t _##name = NULL; \
+    if (!_##name) _##name = (name##_fn_t)dlsym(RTLD_DEFAULT, #name);
 
-// _s wrappers: accept ForgeString name, pass .ptr to Rust
-void* forge_llvm_build_add_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_add(b, l, r, n.ptr); }
-void* forge_llvm_build_sub_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_sub(b, l, r, n.ptr); }
-void* forge_llvm_build_mul_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_mul(b, l, r, n.ptr); }
-void* forge_llvm_build_sdiv_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_sdiv(b, l, r, n.ptr); }
-void* forge_llvm_build_srem_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_srem(b, l, r, n.ptr); }
-void* forge_llvm_build_and_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_and(b, l, r, n.ptr); }
-void* forge_llvm_build_or_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_or(b, l, r, n.ptr); }
-void* forge_llvm_build_xor_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_xor(b, l, r, n.ptr); }
-void* forge_llvm_build_shl_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_shl(b, l, r, n.ptr); }
-void* forge_llvm_build_ashr_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_ashr(b, l, r, n.ptr); }
-void* forge_llvm_build_icmp_s(void* b, int p, void* l, void* r, ForgeString n) { return forge_llvm_build_icmp(b, p, l, r, n.ptr); }
-void* forge_llvm_build_load_s(void* b, void* t, void* p, ForgeString n) { return forge_llvm_build_load(b, t, p, n.ptr); }
-void* forge_llvm_build_call_s(void* b, void* ft, void* f, void* a, int c, ForgeString n) { return forge_llvm_build_call(b, ft, f, a, c, n.ptr); }
-void* forge_llvm_build_phi_s(void* b, void* t, ForgeString n) { return forge_llvm_build_phi(b, t, n.ptr); }
-void* forge_llvm_build_zext_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_zext(b, v, t, n.ptr); }
-void* forge_llvm_build_trunc_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_trunc(b, v, t, n.ptr); }
-void* forge_llvm_build_inttoptr_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_inttoptr(b, v, t, n.ptr); }
-void* forge_llvm_build_extract_value_s(void* b, void* v, int i, ForgeString n) { return forge_llvm_build_extract_value(b, v, i, n.ptr); }
-void* forge_llvm_build_insert_value_s(void* b, void* a, void* v, int i, ForgeString n) { return forge_llvm_build_insert_value(b, a, v, i, n.ptr); }
-void* forge_llvm_build_gep2_s(void* b, void* t, void* p, void* i, int64_t c, ForgeString n) { return forge_llvm_build_gep2(b, t, p, i, c, n.ptr); }
-void* forge_llvm_build_struct_gep2_s(void* b, void* t, void* p, int i, ForgeString n) { return forge_llvm_build_struct_gep2(b, t, p, i, n.ptr); }
-
-
-// Additional _s wrappers
-extern void* forge_llvm_build_global_string_ptr(void*, const char*, const char*);
-extern int forge_llvm_verify_module_to_file(void*, const char*);
+void* forge_llvm_build_add_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_add, void*, void*, void*, const char*) return _forge_llvm_build_add ? _forge_llvm_build_add(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_sub_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_sub, void*, void*, void*, const char*) return _forge_llvm_build_sub ? _forge_llvm_build_sub(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_mul_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_mul, void*, void*, void*, const char*) return _forge_llvm_build_mul ? _forge_llvm_build_mul(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_sdiv_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_sdiv, void*, void*, void*, const char*) return _forge_llvm_build_sdiv ? _forge_llvm_build_sdiv(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_srem_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_srem, void*, void*, void*, const char*) return _forge_llvm_build_srem ? _forge_llvm_build_srem(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_and_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_and, void*, void*, void*, const char*) return _forge_llvm_build_and ? _forge_llvm_build_and(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_or_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_or, void*, void*, void*, const char*) return _forge_llvm_build_or ? _forge_llvm_build_or(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_xor_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_xor, void*, void*, void*, const char*) return _forge_llvm_build_xor ? _forge_llvm_build_xor(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_shl_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_shl, void*, void*, void*, const char*) return _forge_llvm_build_shl ? _forge_llvm_build_shl(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_ashr_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_ashr, void*, void*, void*, const char*) return _forge_llvm_build_ashr ? _forge_llvm_build_ashr(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_icmp_s(void* b, int p, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_icmp, void*, int, void*, void*, const char*) return _forge_llvm_build_icmp ? _forge_llvm_build_icmp(b, p, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_load_s(void* b, void* t, void* p2, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_load, void*, void*, void*, const char*) return _forge_llvm_build_load ? _forge_llvm_build_load(b, t, p2, n.ptr) : NULL; }
+void* forge_llvm_build_call_s(void* b, void* ft, void* f, void* a, int c, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_call, void*, void*, void*, void*, int, const char*) return _forge_llvm_build_call ? _forge_llvm_build_call(b, ft, f, a, c, n.ptr) : NULL; }
+void* forge_llvm_build_phi_s(void* b, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_phi, void*, void*, const char*) return _forge_llvm_build_phi ? _forge_llvm_build_phi(b, t, n.ptr) : NULL; }
+void* forge_llvm_build_zext_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_zext, void*, void*, void*, const char*) return _forge_llvm_build_zext ? _forge_llvm_build_zext(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_trunc_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_trunc, void*, void*, void*, const char*) return _forge_llvm_build_trunc ? _forge_llvm_build_trunc(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_inttoptr_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_inttoptr, void*, void*, void*, const char*) return _forge_llvm_build_inttoptr ? _forge_llvm_build_inttoptr(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_extract_value_s(void* b, void* v, int i, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_extract_value, void*, void*, int, const char*) return _forge_llvm_build_extract_value ? _forge_llvm_build_extract_value(b, v, i, n.ptr) : NULL; }
+void* forge_llvm_build_insert_value_s(void* b, void* a, void* v, int i, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_insert_value, void*, void*, void*, int, const char*) return _forge_llvm_build_insert_value ? _forge_llvm_build_insert_value(b, a, v, i, n.ptr) : NULL; }
+void* forge_llvm_build_gep2_s(void* b, void* t, void* p2, void* i2, int64_t c, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_gep2, void*, void*, void*, void*, int64_t, const char*) return _forge_llvm_build_gep2 ? _forge_llvm_build_gep2(b, t, p2, i2, c, n.ptr) : NULL; }
+void* forge_llvm_build_struct_gep2_s(void* b, void* t, void* p2, int i, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_struct_gep2, void*, void*, void*, int, const char*) return _forge_llvm_build_struct_gep2 ? _forge_llvm_build_struct_gep2(b, t, p2, i, n.ptr) : NULL; }
 void* forge_llvm_build_global_string_ptr_s(void* b, ForgeString s, ForgeString n) {
     char sbuf[4096] = "";
     if (s.ptr && s.len > 0 && s.len < 4095) { memcpy(sbuf, s.ptr, s.len); sbuf[s.len] = '\0'; }
-    return forge_llvm_build_global_string_ptr(b, sbuf, n.ptr);
+    typedef void* (*fn_t)(void*, const char*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_build_global_string_ptr");
+    return fn ? fn(b, sbuf, n.ptr) : NULL;
 }
 int64_t forge_llvm_verify_module_to_file_s(void* m, ForgeString path) {
     char buf[512] = "";
     if (path.ptr && path.len > 0 && path.len < 511) { memcpy(buf, path.ptr, path.len); buf[path.len] = '\0'; }
-    return forge_llvm_verify_module_to_file(m, buf);
+    typedef int64_t (*fn_t)(void*, const char*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_verify_module_to_file");
+    return fn ? fn(m, buf) : -1;
 }
-
-// Float/bitwise/conversion _s wrappers
-extern void* forge_llvm_build_fadd(void*, void*, void*, const char*);
-extern void* forge_llvm_build_fsub(void*, void*, void*, const char*);
-extern void* forge_llvm_build_fmul(void*, void*, void*, const char*);
-extern void* forge_llvm_build_fdiv(void*, void*, void*, const char*);
-extern void* forge_llvm_build_frem(void*, void*, void*, const char*);
-extern void* forge_llvm_build_fneg(void*, void*, const char*);
-extern void* forge_llvm_build_fcmp(void*, int, void*, void*, const char*);
-extern void* forge_llvm_build_sext(void*, void*, void*, const char*);
-extern void* forge_llvm_build_si_to_fp(void*, void*, void*, const char*);
-extern void* forge_llvm_build_fp_to_si(void*, void*, void*, const char*);
-extern void* forge_llvm_build_bitcast(void*, void*, void*, const char*);
-extern void* forge_llvm_build_ptrtoint(void*, void*, void*, const char*);
-extern void* forge_llvm_build_not(void*, void*, const char*);
-
-void* forge_llvm_build_fadd_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_fadd(b, l, r, n.ptr); }
-void* forge_llvm_build_fsub_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_fsub(b, l, r, n.ptr); }
-void* forge_llvm_build_fmul_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_fmul(b, l, r, n.ptr); }
-void* forge_llvm_build_fdiv_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_fdiv(b, l, r, n.ptr); }
-void* forge_llvm_build_frem_s(void* b, void* l, void* r, ForgeString n) { return forge_llvm_build_frem(b, l, r, n.ptr); }
-void* forge_llvm_build_fneg_s(void* b, void* v, ForgeString n) { return forge_llvm_build_fneg(b, v, n.ptr); }
-void* forge_llvm_build_fcmp_s(void* b, int p, void* l, void* r, ForgeString n) { return forge_llvm_build_fcmp(b, p, l, r, n.ptr); }
-void* forge_llvm_build_sext_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_sext(b, v, t, n.ptr); }
-void* forge_llvm_build_si_to_fp_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_si_to_fp(b, v, t, n.ptr); }
-void* forge_llvm_build_fp_to_si_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_fp_to_si(b, v, t, n.ptr); }
-void* forge_llvm_build_bitcast_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_bitcast(b, v, t, n.ptr); }
-void* forge_llvm_build_ptrtoint_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_ptrtoint(b, v, t, n.ptr); }
-void* forge_llvm_build_not_s(void* b, void* v, ForgeString n) { return forge_llvm_build_not(b, v, n.ptr); }
-
-// Additional aliases for _s variants with different naming
-extern void* forge_llvm_build_int_to_ptr(void*, void*, void*, const char*);
-extern void* forge_llvm_build_ptr_to_int(void*, void*, void*, const char*);
-void* forge_llvm_build_int_to_ptr_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_int_to_ptr(b, v, t, n.ptr); }
-void* forge_llvm_build_ptr_to_int_s(void* b, void* v, void* t, ForgeString n) { return forge_llvm_build_ptr_to_int(b, v, t, n.ptr);
-}
-#endif // FORGE_SELF_HOST
+void* forge_llvm_build_fadd_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fadd, void*, void*, void*, const char*) return _forge_llvm_build_fadd ? _forge_llvm_build_fadd(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_fsub_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fsub, void*, void*, void*, const char*) return _forge_llvm_build_fsub ? _forge_llvm_build_fsub(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_fmul_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fmul, void*, void*, void*, const char*) return _forge_llvm_build_fmul ? _forge_llvm_build_fmul(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_fdiv_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fdiv, void*, void*, void*, const char*) return _forge_llvm_build_fdiv ? _forge_llvm_build_fdiv(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_frem_s(void* b, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_frem, void*, void*, void*, const char*) return _forge_llvm_build_frem ? _forge_llvm_build_frem(b, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_fneg_s(void* b, void* v, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fneg, void*, void*, const char*) return _forge_llvm_build_fneg ? _forge_llvm_build_fneg(b, v, n.ptr) : NULL; }
+void* forge_llvm_build_fcmp_s(void* b, int p, void* l, void* r, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fcmp, void*, int, void*, void*, const char*) return _forge_llvm_build_fcmp ? _forge_llvm_build_fcmp(b, p, l, r, n.ptr) : NULL; }
+void* forge_llvm_build_sext_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_sext, void*, void*, void*, const char*) return _forge_llvm_build_sext ? _forge_llvm_build_sext(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_si_to_fp_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_si_to_fp, void*, void*, void*, const char*) return _forge_llvm_build_si_to_fp ? _forge_llvm_build_si_to_fp(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_fp_to_si_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_fp_to_si, void*, void*, void*, const char*) return _forge_llvm_build_fp_to_si ? _forge_llvm_build_fp_to_si(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_bitcast_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_bitcast, void*, void*, void*, const char*) return _forge_llvm_build_bitcast ? _forge_llvm_build_bitcast(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_ptrtoint_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_ptrtoint, void*, void*, void*, const char*) return _forge_llvm_build_ptrtoint ? _forge_llvm_build_ptrtoint(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_not_s(void* b, void* v, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_not, void*, void*, const char*) return _forge_llvm_build_not ? _forge_llvm_build_not(b, v, n.ptr) : NULL; }
+void* forge_llvm_build_int_to_ptr_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_int_to_ptr, void*, void*, void*, const char*) return _forge_llvm_build_int_to_ptr ? _forge_llvm_build_int_to_ptr(b, v, t, n.ptr) : NULL; }
+void* forge_llvm_build_ptr_to_int_s(void* b, void* v, void* t, ForgeString n) { LLVM_BUILD_S(forge_llvm_build_ptr_to_int, void*, void*, void*, const char*) return _forge_llvm_build_ptr_to_int ? _forge_llvm_build_ptr_to_int(b, v, t, n.ptr) : NULL; }
 

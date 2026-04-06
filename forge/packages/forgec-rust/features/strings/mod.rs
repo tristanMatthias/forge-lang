@@ -200,6 +200,7 @@ crate::runtime_fn! { name: "forge_enum_type_max_fields", feature: "strings", par
 crate::runtime_fn! { name: "forge_enum_type_exists", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_match_binding_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_match_binding_add", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_match_binding_get", feature: "strings", params: [I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_match_binding_csv", feature: "strings", params: [], ret: ForgeString }
 crate::runtime_fn! { name: "forge_enum_variant_tag_set", feature: "strings", params: [ForgeString, I64], ret: Void }
 crate::runtime_fn! { name: "forge_enum_variant_tag_get", feature: "strings", params: [ForgeString], ret: I64 }
