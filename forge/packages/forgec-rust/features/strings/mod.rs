@@ -187,6 +187,9 @@ crate::runtime_fn! { name: "forge_is_whitespace_not_newline", feature: "strings"
 crate::runtime_fn! { name: "forge_is_hex_digit", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_value_type_kind", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_value_is_string", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_struct_num_fields", feature: "strings", params: [I64], ret: I64 }
+crate::runtime_fn! { name: "forge_struct_field_type_kind", feature: "strings", params: [I64, I64], ret: I64 }
+crate::runtime_fn! { name: "forge_struct_field_is_i8", feature: "strings", params: [I64, I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }

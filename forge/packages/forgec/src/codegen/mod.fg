@@ -2162,8 +2162,19 @@ impl Codegen {
 
     fn emit_binary(self, left: Expr, op: BinOp, right: Expr) -> ptr {
         // Emit both sides first
-        let lhs = self.emit_expr(left)
-        let rhs = self.emit_expr(right)
+        mut lhs = self.emit_expr(left)
+        mut rhs = self.emit_expr(right)
+        // Unwrap nullable values for comparison: if one side is nullable {i8, T}
+        // and the other is a non-nullable value, extract the inner T before comparing.
+        // Only unwrap when the OTHER side is a struct (ForgeString etc), not a scalar (null/int).
+        let lhs_is_nullable = forge_value_type_kind(lhs) == 10 && forge_struct_field_is_i8(lhs, 0) == 1
+        let rhs_is_nullable = forge_value_type_kind(rhs) == 10 && forge_struct_field_is_i8(rhs, 0) == 1
+        if lhs_is_nullable == 1 && rhs_is_nullable == 0 && forge_value_type_kind(rhs) == 10 {
+            lhs = llvm.build_extract_value(CG_B, lhs, 1, "unwrap_lhs")
+        }
+        if rhs_is_nullable == 1 && lhs_is_nullable == 0 && forge_value_type_kind(lhs) == 10 {
+            rhs = llvm.build_extract_value(CG_B, rhs, 1, "unwrap_rhs")
+        }
         // Detect types from LLVM values (central, reliable)
         mut lhs_is_str = forge_value_is_string(lhs)
         mut rhs_is_str = forge_value_is_string(rhs)

@@ -416,7 +416,33 @@ run_full() {
     TAGS=$(grep -A500 "^define.*@Codegen_emit_statement" "$IR" 2>/dev/null | grep "icmp eq.*%.*,[[:space:]]*[1-9]" | wc -l | tr -d ' ')
     [ "$TAGS" -ge 6 ] && ok "emit_statement: $TAGS tag checks" || err "emit_statement: only $TAGS tag checks (need >=6)"
 
-    # ─── 11. Kind ID Consistency ──────────────────────────────
+    # ─── 11. Undef Arguments ──────────────────────────────────
+    echo ""
+    echo "── 11. Undef Arguments ──"
+    UNDEF_ARGS=$(grep -c "call.*undef" "$IR" 2>/dev/null || echo 0)
+    if [ "$UNDEF_ARGS" -gt 0 ]; then
+        err "$UNDEF_ARGS calls pass undef arguments (will crash at runtime)"
+        # Show which functions have the most
+        echo "    Top functions with undef args:"
+        python3 -c "
+import re
+with open('$IR') as f:
+    lines = f.readlines()
+fn = ''
+counts = {}
+for line in lines:
+    m = re.match(r'define .* @(\w+)', line)
+    if m: fn = m.group(1)
+    if 'call ' in line and 'undef' in line and 'zeroinitializer' not in line:
+        counts[fn] = counts.get(fn, 0) + 1
+for f, c in sorted(counts.items(), key=lambda x: -x[1])[:5]:
+    print(f'      {c:3d}  {f}')
+" 2>/dev/null
+    else
+        ok "No undef arguments in calls"
+    fi
+
+    # ─── 12. Kind ID Consistency ──────────────────────────────
     run_kind_ids
 
     # ─── 12. Stage 2 Binary ───────────────────────────────────

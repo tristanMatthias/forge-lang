@@ -4226,6 +4226,83 @@ int64_t forge_value_is_string(int64_t val_as_i64) {
     return (count == 2) ? 1 : 0; // ForgeString = {ptr, i64} = 2 elements
 }
 
+// Get number of struct fields from an LLVM value's type
+// Returns 0 if not a struct
+int64_t forge_struct_num_fields(int64_t val_as_i64) {
+    if (!val_as_i64) return 0;
+    void* val = (void*)(uintptr_t)val_as_i64;
+    typedef void* (*typeof_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    typedef int (*count_fn)(void*);
+    static typeof_fn tof = NULL;
+    static kind_fn kof = NULL;
+    static count_fn cof = NULL;
+    if (!tof) tof = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kof) kof = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!cof) cof = (count_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+    if (!tof || !kof || !cof) return 0;
+    void* ty = tof(val);
+    if (!ty || kof(ty) != 10) return 0; // 10 = struct
+    return (int64_t)cof(ty);
+}
+
+// Get the LLVM type kind of a struct field at index `idx`
+// Returns 0 if not a struct or index out of range
+// Type kinds: 8=integer, 10=struct, 12=ptr, etc. (LLVM 18 values)
+int64_t forge_struct_field_type_kind(int64_t val_as_i64, int64_t idx) {
+    if (!val_as_i64) return 0;
+    void* val = (void*)(uintptr_t)val_as_i64;
+    typedef void* (*typeof_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    typedef int (*count_fn)(void*);
+    typedef void* (*elem_fn)(void*, unsigned);
+    static typeof_fn tof = NULL;
+    static kind_fn kof = NULL;
+    static count_fn cof = NULL;
+    static elem_fn eof = NULL;
+    if (!tof) tof = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kof) kof = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!cof) cof = (count_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+    if (!eof) eof = (elem_fn)dlsym(RTLD_DEFAULT, "LLVMStructGetTypeAtIndex");
+    if (!tof || !kof || !cof || !eof) return 0;
+    void* ty = tof(val);
+    if (!ty || kof(ty) != 10) return 0; // 10 = LLVMStructTypeKind
+    if (idx < 0 || idx >= cof(ty)) return 0;
+    void* field_ty = eof(ty, (unsigned)idx);
+    if (!field_ty) return 0;
+    return (int64_t)kof(field_ty);
+}
+
+// Check if a struct value's field at `idx` is an i8 (nullable tag indicator)
+// Returns 1 if field is integer with bit width 8, 0 otherwise
+int64_t forge_struct_field_is_i8(int64_t val_as_i64, int64_t idx) {
+    if (!val_as_i64) return 0;
+    void* val = (void*)(uintptr_t)val_as_i64;
+    typedef void* (*typeof_fn)(void*);
+    typedef int (*kind_fn)(void*);
+    typedef int (*count_fn)(void*);
+    typedef void* (*elem_fn)(void*, unsigned);
+    typedef unsigned (*width_fn)(void*);
+    static typeof_fn tof = NULL;
+    static kind_fn kof = NULL;
+    static count_fn cof = NULL;
+    static elem_fn eof = NULL;
+    static width_fn wof = NULL;
+    if (!tof) tof = (typeof_fn)dlsym(RTLD_DEFAULT, "LLVMTypeOf");
+    if (!kof) kof = (kind_fn)dlsym(RTLD_DEFAULT, "LLVMGetTypeKind");
+    if (!cof) cof = (count_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+    if (!eof) eof = (elem_fn)dlsym(RTLD_DEFAULT, "LLVMStructGetTypeAtIndex");
+    if (!wof) wof = (width_fn)dlsym(RTLD_DEFAULT, "LLVMGetIntTypeWidth");
+    if (!tof || !kof || !cof || !eof || !wof) return 0;
+    void* ty = tof(val);
+    if (!ty || kof(ty) != 10) return 0; // 10 = struct
+    if (idx < 0 || idx >= cof(ty)) return 0;
+    void* field_ty = eof(ty, (unsigned)idx);
+    if (!field_ty) return 0;
+    if (kof(field_ty) != 8) return 0; // 8 = LLVMIntegerTypeKind
+    return wof(field_ty) == 8 ? 1 : 0; // 8-bit integer = i8
+}
+
 // Get named LLVM type as i64 (avoids ptr null check issue)
 int64_t forge_get_type_by_name_i64(ForgeString name) {
     if (!name.ptr || name.len <= 0 || !_ac_llvm_ctx) return 0;
