@@ -478,8 +478,10 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
 
     if body_src == "" { eprintln("  [SKIP] empty body for " + name) }
     if body_src != "" {
+        eprintln("  [TOK] tokenizing " + name + " (" + string(body_src.length) + " chars)")
         mut body_lex = lexer_new(body_src)
         let body_tokens = body_lex.tokenize()
+        eprintln("  [TOK] done " + name + " tokens=" + string(body_tokens.length))
         forge_set_token_list(body_tokens)
         forge_parser_set_pos(0)
         mut body_parser = parser_new(body_tokens)
