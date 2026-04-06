@@ -378,7 +378,7 @@ export fn declare_all_fns() {
             mut rtn = FN_RETURN_TYPES[i]
             // Check for nullable return type (T?)
             mut is_nullable_ret = false
-            if rtn.length > 1 && rtn[rtn.length - 1] == "?" {
+            if rtn.length > 1 && rtn.substring(rtn.length - 1, rtn.length) == "?" {
                 is_nullable_ret = true
                 rtn = rtn.substring(0, rtn.length - 1)
             }
