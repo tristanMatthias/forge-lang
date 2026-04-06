@@ -231,7 +231,19 @@ export fn create_llvm_globals_from(csv: string, count: int) {
 // Variable type info now comes from the alloca cache (LLVM is source of truth).
 export fn is_list_var(name: string) -> bool {
     let vt = forge_alloca_cache_get_var_type(name)
-    vt == "list" || vt == "List" || (vt.length > 5 && vt.substring(0, 5) == "list:")
+    if vt == "list" || vt == "List" { return true }
+    if vt.length > 5 {
+        let prefix = vt.substring(0, 5)
+        if prefix == "list:" || prefix == "List:" { return true }
+    }
+    // Also check global type registry
+    let gvt = forge_global_var_get_type(name)
+    if gvt == "list" || gvt == "List" { return true }
+    if gvt.length > 5 {
+        let gprefix = gvt.substring(0, 5)
+        if gprefix == "list:" || gprefix == "List:" { return true }
+    }
+    false
 }
 
 export fn is_str_list_var(name: string) -> bool {
@@ -245,6 +257,14 @@ export fn list_elem_type(name: string) -> string {
         let prefix = vt.substring(0, 5)
         if prefix == "list:" || prefix == "List:" {
             return vt.substring(5, vt.length)
+        }
+    }
+    // Also check global type registry
+    let gvt = forge_global_var_get_type(name)
+    if gvt.length > 5 {
+        let gprefix = gvt.substring(0, 5)
+        if gprefix == "list:" || gprefix == "List:" {
+            return gvt.substring(5, gvt.length)
         }
     }
     ""
@@ -1476,7 +1496,7 @@ impl Codegen {
                     .Ident(n, s) -> { obj_var_name = n }
                     _ -> {}
                 }
-                let is_known_list = obj_type == "list" || obj_type == "List" || (obj_type.length > 5 && obj_type.substring(0, 5) == "list:")
+                let is_known_list = obj_type == "list" || obj_type == "List" || (obj_type.length > 5 && (obj_type.substring(0, 5) == "list:" || obj_type.substring(0, 5) == "List:"))
                 mut is_str_list = obj_type == "list:string" || obj_type == "List:string"
                 let obj_type = self.expr_type_name(obj)
                 let obj_val = self.emit_expr(obj)
@@ -1486,7 +1506,8 @@ impl Codegen {
                 if obj_type == "map" { obj_is_map = 1 }
                 mut obj_is_list = 0
                 if obj_type.length > 5 {
-                    if obj_type.substring(0, 5) == "list:" { obj_is_list = 1 }
+                    let prefix = obj_type.substring(0, 5)
+                    if prefix == "list:" || prefix == "List:" { obj_is_list = 1 }
                 }
                 let idx_val = self.emit_expr(idx)
                 cg_reinit_types()
