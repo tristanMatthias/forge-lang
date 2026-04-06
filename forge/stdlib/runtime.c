@@ -4532,7 +4532,7 @@ int64_t forge_alloca_cache_load_field(ForgeString var_name, ForgeString struct_t
             break;
         }
     }
-    if (!alloca || !builder) return 0;
+    if (!alloca || !builder || field_idx < 0) return 0;
 
     // Get the struct LLVM type
     static gstn_fn gstn = NULL;
