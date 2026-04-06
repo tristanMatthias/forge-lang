@@ -3082,6 +3082,7 @@ impl Codegen {
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
+        forge_alloca_cache_set_var_type("_stmts", "List:Statement")
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
             last = self.emit_statement(stmt)
