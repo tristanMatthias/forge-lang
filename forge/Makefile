@@ -138,7 +138,7 @@ $(STAGE2_LL): $(STAGE1_BIN)
 
 audit: $(STAGE2_LL)
 	@echo "=== Auditing Stage 2 IR ==="
-	bash scripts/audit_stage2.sh $(STAGE2_LL)
+	bash scripts/diagnose.sh --score $(STAGE2_LL)
 
 # ─── Test: mini compiles hello world ─────────────────────────────
 

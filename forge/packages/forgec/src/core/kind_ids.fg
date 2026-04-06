@@ -1,0 +1,80 @@
+// ─── Token Kind IDs ──────────────────────────────────
+// Single source of truth for all token kind_id values.
+// The lexer assigns these, the parser dispatches on them.
+// NEVER hardcode kind_id numbers — use KID_* constants instead.
+//
+// NOTE: These are int constants, not an enum, because the Rust compiler
+// does not yet support enums with explicit integer values (= N).
+// Once it does, convert this to: enum KID { Let = 20, Mut = 21, ... }
+//
+// If you add a new kind_id, add it here AND update
+// forge_kind_id_for_keyword() in stdlib/runtime.c for keywords.
+
+// ─── Literals ────────────────────────────────────────
+export mut KID_IDENT       = 1
+export mut KID_INT_LIT     = 2
+export mut KID_FLOAT_LIT   = 3
+export mut KID_STRING_LIT  = 4
+export mut KID_BOOL_LIT    = 5
+export mut KID_TEMPLATE_LIT = 6
+export mut KID_NULL_LIT    = 8
+
+// ─── Keywords ────────────────────────────────────────
+// Must match forge_kind_id_for_keyword() in runtime.c
+export mut KID_LET         = 20
+export mut KID_MUT         = 21
+export mut KID_CONST       = 22
+export mut KID_FN          = 23
+export mut KID_RETURN      = 24
+export mut KID_IF          = 25
+export mut KID_ELSE        = 26
+export mut KID_MATCH       = 27
+export mut KID_FOR         = 28
+export mut KID_IN          = 29
+export mut KID_WHILE       = 30
+export mut KID_LOOP        = 31
+export mut KID_BREAK       = 32
+export mut KID_CONTINUE    = 33
+export mut KID_ENUM        = 34
+export mut KID_TYPE        = 35
+export mut KID_USE         = 36
+export mut KID_MOD         = 37
+export mut KID_AS          = 38
+export mut KID_EXPORT      = 39
+export mut KID_TRAIT       = 42
+export mut KID_IMPL        = 43
+export mut KID_IS          = 55
+export mut KID_TABLE       = 56
+
+// ─── Special ─────────────────────────────────────────
+export mut KID_EOF         = 99
+
+// ─── Punctuation / Delimiters ────────────────────────
+export mut KID_LPAREN      = 100   // (
+export mut KID_RPAREN      = 101   // )
+export mut KID_LBRACE      = 102   // {
+export mut KID_RBRACE      = 103   // }
+export mut KID_LBRACKET    = 104   // [
+export mut KID_RBRACKET    = 105   // ]
+export mut KID_NEWLINE     = 120   // \n
+export mut KID_ARROW       = 121   // ->
+export mut KID_DOT         = 122   // .
+export mut KID_COMMA       = 123   // ,
+export mut KID_COLON       = 124   // :
+export mut KID_PLUS        = 200   // +
+export mut KID_STAR        = 201   // *
+export mut KID_PERCENT     = 202   // %
+export mut KID_MINUS       = 205   // -
+export mut KID_EQEQ        = 206   // ==
+export mut KID_EQ          = 207   // =
+export mut KID_NOTEQ       = 208   // !=
+export mut KID_NOT         = 209   // !
+export mut KID_LTEQ        = 210   // <=
+export mut KID_SEMICOLON   = 212   // ;
+export mut KID_LT          = 216   // <
+export mut KID_GTEQ        = 217   // >=
+export mut KID_GT          = 219   // >
+export mut KID_AND         = 220   // &&
+export mut KID_OR          = 222   // ||
+export mut KID_PIPE        = 223   // |>
+export mut KID_QUESTION    = 227   // ?

@@ -27,7 +27,7 @@ LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 ./target/release/forgec run packag
 cc -o /tmp/stage1 /tmp/stage1.o /tmp/mini_runtime.o -lm -Wl,-stack_size,0x10000000 packages/std-llvm/target/release/libforge_llvm.a /opt/homebrew/opt/llvm@18/lib/libLLVM-18.dylib -lstdc++ -lz -lcurses
 /tmp/stage1 build packages/forgec/src/main.fg
 # 3. Run audit:
-bash scripts/audit_stage2.sh output.ll
+bash scripts/diagnose.sh --score output.ll
 # 4. Compare SCORE with baseline
 ```
 
@@ -223,7 +223,7 @@ bash scripts/audit_stage2.sh output.ll
 **Score:** 6919 → 1924 (not a real improvement — measurement correction)
 **Result:** ✅ CRITICAL — reveals true baseline. load_type_mismatch was 1792 false positives → real: 0. call_type_mismatch was 3449 → real: 245.
 **Kept/Reverted:** Kept
-**Verify:** `bash scripts/audit_stage2.sh output.ll`
+**Verify:** `bash scripts/diagnose.sh --score output.ll`
 **Lesson:** M1 (load types) was ALREADY COMPLETE — zero actual load mismatches within any function. The 1792 count was entirely cross-function register name collisions. Always validate metrics before optimizing them. Real remaining work: 245 call mismatches, 103 br_i1_false, 170 ret_undef.
 
 ### EXP-019: Verify LLVM type before routing Eq/NotEq through forge_string_compare
@@ -522,10 +522,62 @@ Also found: CG_LAST_STRUCT_TYPE was cleared by cg_reinit_types() before being ca
 **Kept/Reverted:** Kept
 **Lesson:** LLVM is the source of truth for types. forge_value_type_kind + llvm.type_of gives the actual type without any string operations.
 
-### Current State (end of session 2026-04-05)
-- Stage 2: 388 functions, ~40K lines IR, score 226/1000
-- parse_statement returns {i8, %Statement} (nullable)
-- ForceUnwrap extracts field 1 from nullable
-- List push uses LLVMTypeOf for correct element stride
-- Match arm tags use C-side registry with suffix matching
-- REMAINING: Lexer_tokenize empty because emit_statement match tags collide (VarKind.Let=0 shadows Statement.Let=3). Need qualified enum name to flow through parse_match_expr. The cg_var_enum_type call may not work because of ForgeString corruption in the function parameter.
+### EXP-053: Param alloca uses llvm.type_of(param_val)
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** emit_fn_body_from_source creates i64 allocas for ALL params because resolve_type_to_llvm is itself a self-hosted function with broken string params (circular dependency). Using llvm.type_of(param_val) instead uses the LLVM type from declare_all_fns, which is always correct.
+**Change:** `features/functions/mod.fg` line ~452: replaced `resolve_type_to_llvm(param_type_name)` with `llvm.type_of(param_val)`
+**Score:** 226 → 135
+**Result:** ✅ IMPROVEMENT — Stage 2 IR now has correct param allocas. ForgeString params get 16-byte allocas.
+**Kept/Reverted:** Kept
+**Lesson:** LLVM param values from declare_all_fns ALWAYS have the correct type. Using llvm.type_of() is the only non-circular way to get param types in self-hosted code.
+
+### EXP-054: Statement enum memory layout investigation
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** Qualified tag lookups (Statement.Let=3) should fix the match dispatch. But Lexer_tokenize body still produces empty IR even with correct tag constants in Stage 2 IR.
+**Change:** Added forge_dump_stmt_list to dump raw bytes of Statement lists, forge_list_push verification traces.
+**Score:** N/A (diagnostic only)
+**Result:** ⚠️ DISCOVERY — Found the ACTUAL root cause: `%Statement = type { i8, ptr }` but in memory, the pointer is at offset 0 and the i8 tag is at offset 8. `extractvalue %Statement %v, 0` reads offset 0 which is the pointer, getting wrong tag value. This is a RUST COMPILER bug in how it stores function return values or creates enum structs.
+**Evidence:**
+```
+List push source bytes: d0 48 19 03 00 60 00 00 03 00 00 00 00 00 00 00
+                        ^^^^^^^^^^^^^^^^^^^^^^^^ ^^
+                        ptr value (8 bytes)       tag=3 at offset 8
+```
+All parse_statement returns store the tag at offset 8, not offset 0 as `{i8, ptr}` declares.
+**Kept/Reverted:** Diagnostic traces kept temporarily
+**Lesson:** The Rust compiler has a bug in enum memory layout for `{i8, ptr}` structs. On ARM64, returning `{i8, ptr}` from functions stores fields in reverse order (ptr first, tag second). This affects ALL enum types in the self-hosted compiler (Statement, Expr, TokenKind, TypeExpr, etc.).
+
+### EXP-055: Nullable return convention fix (maybe_wrap_nullable)
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** `return null` in nullable functions wraps null value with tag=1 (has value) instead of tag=0 (null), causing null returns to be treated as valid Statements with tag=0 (Expr).
+**Change:** `statements.rs` and `features/functions/codegen.rs`: changed `wrap_in_nullable` to `maybe_wrap_nullable` for return values. `maybe_wrap_nullable` detects const_zero (null) values and calls `create_null_value` instead.
+**Score:** No change (135)
+**Result:** ✅ BUG FIXED but not the root cause. The IR now correctly uses `ret %Nullable_Statement zeroinitializer` for null returns. Previously used `store i8 1` (has value) with zeroed inner.
+**Kept/Reverted:** Kept
+**Lesson:** The nullable convention (0=null, 1=has_value) was correct in `extract_tag_is_set` but `wrap_in_nullable` always sets tag=1. For null values, must use `create_null_value` or `maybe_wrap_nullable`.
+
+### EXP-056: Expression parser kind_id mismatch fix
+**Date:** 2026-04-05
+**Milestone:** M5
+**Hypothesis:** `parse_expr`'s kind_id dispatch had wrong IDs: LParen was 104 (should be 100), LBracket was 126 (should be 104). This caused `[]` (list literal) to not parse, making `parse_var_binding` return null for all `let/mut` with list values.
+**Change:** `parser/expressions.fg` line ~370: changed 104→100 (LParen), 126→104 (LBracket).
+**Score:** 135 (same, but Stage 2 functional behavior changed dramatically)
+**Result:** ✅ BREAKTHROUGH
+- `Lexer_tokenize` now has 7 statements with correct tags (3,0,6,3,1,0,0)
+- ALL 388 functions now have non-empty bodies (0 empty functions, was 2)
+- Stage 2 binary now reads all files, resolves modules, creates lexer, and calls Lexer_tokenize
+- Crashes in `forge_string_compare` inside `Lexer_next_token` (new crash point = progress)
+**Kept/Reverted:** Kept
+**Lesson:** Kind_id dispatch is the CRITICAL path. A single wrong kind_id causes cascading parse failures. Must verify all kind_id constants against the actual tokenizer output.
+
+### Current State (end of session 2026-04-05, session 2)
+- Stage 2: 388 functions, ~40K lines IR, score 135/1000, **0 empty functions**
+- Param alloca fix (EXP-053): score 226→135
+- Nullable convention fix (EXP-055): null returns now correct
+- Kind_id fix (EXP-056): ALL function bodies parse correctly, Stage 2 tokenizes
+- **NEW BLOCKER:** Stage 2 crashes in `forge_string_compare` inside `Lexer_next_token` during tokenization of first source file
+- Stage 2 functional: reads 39 files → resolves modules → creates lexer → tokenize → crash at string compare
+- Previous state: read 39 files → scan → find only 18 functions → crash at empty char_at

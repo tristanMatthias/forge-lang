@@ -14,6 +14,15 @@ use core.ast.{
 }
 use core.types.Type
 use core.error.{Diagnostic, error, E_SYNTAX}
+use core.kind_ids.{
+    KID_IDENT, KID_INT_LIT, KID_STRING_LIT, KID_BOOL_LIT, KID_NULL_LIT,
+    KID_LET, KID_MUT, KID_CONST, KID_FN, KID_RETURN, KID_IF, KID_ELSE,
+    KID_MATCH, KID_FOR, KID_IN, KID_WHILE, KID_BREAK, KID_CONTINUE,
+    KID_ENUM, KID_TYPE, KID_USE, KID_MOD, KID_EXPORT, KID_IMPL, KID_TRAIT,
+    KID_IS, KID_TABLE, KID_EOF,
+    KID_LPAREN, KID_RPAREN, KID_LBRACE, KID_RBRACE, KID_LBRACKET, KID_RBRACKET,
+    KID_NEWLINE, KID_ARROW, KID_DOT, KID_COMMA, KID_COLON, KID_EQ,
+}
 use codegen.{cg_var_enum_type}
 use features.while_loops.{PARSE_END_POS}
 use features.impl_methods.parse_impl_block
@@ -139,7 +148,7 @@ impl Parser {
     }
 
     fn check_id(self, kid: int) -> bool {
-        if forge_parser_get_pos() >= forge_token_list_len() { return kid == 99 }
+        if forge_parser_get_pos() >= forge_token_list_len() { return kid == KID_EOF }
         forge_peek_kind_id(forge_parser_get_pos()) == kid
     }
 
@@ -163,16 +172,16 @@ impl Parser {
     fn expect_ident(self) -> string {
         let tok = self.peek()
         // Bootstrap workaround: use kind_id instead of pattern matching on .Ident(name)
-        if tok.kind_id == 1 {
+        if tok.kind_id == KID_IDENT {
             self.advance()
             return tok.text
         }
         // Keywords that can be used as identifiers
-        if tok.kind_id == 48 {  // Is
+        if tok.kind_id == KID_IS {
             self.advance()
             return "is"
         }
-        if tok.kind_id == 49 {  // Table
+        if tok.kind_id == KID_TABLE {
             self.advance()
             return "table"
         }
@@ -271,24 +280,24 @@ impl Parser {
 
         let tok = self.peek()
 
-        // kind_id dispatch
+        // kind_id dispatch (constants from core/kind_ids.fg)
         let kid = tok.kind_id
-        if kid == 20 { let r = parse_let(self)
+        if kid == KID_LET { let r = parse_let(self)
             self.sync_pos()
             return r }
-        if kid == 21 { let r = parse_mut(self)
+        if kid == KID_MUT { let r = parse_mut(self)
             self.sync_pos()
             return r }
-        if kid == 22 { let r = parse_const(self)
+        if kid == KID_CONST { let r = parse_const(self)
             self.sync_pos()
             return r }
-        if kid == 23 { let r = parse_fn(self)
+        if kid == KID_FN { let r = parse_fn(self)
             self.sync_pos()
             return r }
-        if kid == 39 { let r = parse_export(self)
+        if kid == KID_EXPORT { let r = parse_export(self)
             self.sync_pos()
             return r }
-        if kid == 30 {
+        if kid == KID_WHILE {
             let wstart = self.advance().span
             self.skip_newlines()
             let wcond = self.parse_expr()
@@ -298,7 +307,7 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.While(wcond!, wbody, wstart)
         }
-        if kid == 28 {
+        if kid == KID_FOR {
             let fstart = self.advance().span
             let fname = self.expect_ident()
             if self.check(TokenKind.In) { self.advance() }
@@ -310,9 +319,8 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.For(fname, fiter!, fbody, fstart)
         }
-        if kid == 24 { return self.parse_return() }
-        // if (kind_id 25)
-        if kid == 25 {
+        if kid == KID_RETURN { return self.parse_return() }
+        if kid == KID_IF {
             let start = self.advance().span
             self.skip_newlines()
             let cond = self.parse_expr()
@@ -322,11 +330,11 @@ impl Parser {
             self.skip_newlines()
             mut has_else = 0
             mut else_block = Block { statements: [], span: start }
-            if self.check(TokenKind.Else) || forge_peek_kind_id(forge_parser_get_pos()) == 26 {
+            if self.check(TokenKind.Else) || forge_peek_kind_id(forge_parser_get_pos()) == KID_ELSE {
                 has_else = 1
                 self.advance()
                 self.skip_newlines()
-                if forge_peek_kind_id(forge_parser_get_pos()) == 25 {
+                if forge_peek_kind_id(forge_parser_get_pos()) == KID_IF {
                     let nested = self.parse_statement()
                     if nested != null {
                         else_block = Block { statements: [nested!], span: start }
@@ -338,8 +346,7 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.If(cond!, then_block, else_block, has_else, start)
         }
-        // while (kind_id 30)
-        if kid == 30 {
+        if kid == KID_WHILE {
             let wstart = self.advance().span
             self.skip_newlines()
             let wcond = self.parse_expr()
@@ -349,8 +356,7 @@ impl Parser {
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.While(wcond!, wbody, wstart)
         }
-        // match (kind_id 27): delegate to parse_match_expr, wrap as expression statement
-        if kid == 27 {
+        if kid == KID_MATCH {
             let mexpr = self.parse_match_expr()
             if mexpr != null {
                 PARSE_END_POS = forge_parser_get_pos()
@@ -358,49 +364,44 @@ impl Parser {
             }
             return null
         }
-        if kid == 32 {
+        if kid == KID_BREAK {
             let bspan = self.advance().span
             return Statement.Break(bspan)
         }
-        if kid == 33 {
+        if kid == KID_CONTINUE {
             let cspan = self.advance().span
             return Statement.Continue(cspan)
         }
-        if kid == 36 {
+        if kid == KID_USE {
             self.advance()
             while !self.is_at_end() && !self.check(TokenKind.Newline) { self.advance() }
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        if kid == 37 {
+        if kid == KID_MOD {
             self.advance()
             self.expect_ident()
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        // Parse impl blocks to register methods for later codegen
-        if kid == 43 {
+        if kid == KID_IMPL {
             let r = parse_impl_block(self)
             self.sync_pos()
             return r
         }
-        // type: parse struct declarations to register field info
-        if kid == 35 {
+        if kid == KID_TYPE {
             let r = parse_type_decl(self)
             self.sync_pos()
             return r
         }
-        // enum/trait: skip by brace counting
-        // enum (kid 34): parse variant names and register tags
-        if kid == 34 {
+        if kid == KID_ENUM {
             self.advance()
             self.parse_enum_variants()
             PARSE_END_POS = forge_parser_get_pos()
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
-        // trait (kid 42): skip by brace counting
-        if kid == 42 {
+        if kid == KID_TRAIT {
             self.advance()
             self.expect_ident()
-            while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != 102 {
+            while !self.is_at_end() && forge_peek_kind_id(forge_parser_get_pos()) != KID_LBRACE {
                 self.advance()
             }
             if forge_peek_kind_id(forge_parser_get_pos()) == 102 {

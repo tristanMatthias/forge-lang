@@ -188,6 +188,13 @@ crate::runtime_fn! { name: "forge_is_hex_digit", feature: "strings", params: [Fo
 crate::runtime_fn! { name: "forge_value_type_kind", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_value_is_string", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }
+crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
+crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_enable_peek_trace", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_dump_token_kids", feature: "strings", params: [ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_emit_fn_body_start", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_emit_fn_body_end", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_parse_return_path", feature: "strings", params: [I64], ret: Void }
 crate::runtime_fn! { name: "forge_loop_push", feature: "strings", params: [Ptr, Ptr], ret: Void }
 crate::runtime_fn! { name: "forge_loop_pop", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_loop_break", feature: "strings", params: [Ptr], ret: Void }

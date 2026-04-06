@@ -768,15 +768,9 @@ int64_t forge_token_span_end(ForgeString token_list, int64_t index) {
     return *(int64_t*)(base + 64);
 }
 // Quick kind_id lookup from C-side stored token list (no struct return needed)
-static int _peek_trace = 0;
 int64_t forge_peek_kind_id(int64_t pos) {
-    int64_t kid = forge_token_kind_id(_c_token_list, pos);
-    if (_peek_trace && pos < 20) {
-        fprintf(stderr, "  [peek_kid] pos=%lld kid=%lld\n", (long long)pos, (long long)kid);
-    }
-    return kid;
+    return forge_token_kind_id(_c_token_list, pos);
 }
-void forge_enable_peek_trace(void) { _peek_trace = 1; }
 // C-side expect_id: check kind_id at current pos, advance if match
 int64_t forge_parser_expect_id(int64_t kid) {
     if (forge_token_kind_id(_c_token_list, _c_parser_pos) == kid) {
@@ -3771,11 +3765,6 @@ void forge_enum_variant_tag_set(ForgeString key, int64_t tag) {
 
 int64_t forge_enum_variant_tag_get(ForgeString key) {
     if (!key.ptr || key.len <= 0) return -1;
-    static int _vtag_get_trace = 0;
-    if (_vtag_get_trace < 200) {
-        fprintf(stderr, "  [VT-GET] '%.*s' count=%d\n", (int)key.len, key.ptr, _enum_vtag_count);
-        _vtag_get_trace++;
-    }
     // Try exact match first
     for (int i = 0; i < _enum_vtag_count; i++) {
         if ((int64_t)strlen(_enum_vtag[i].key) == key.len &&
@@ -4412,6 +4401,14 @@ void forge_trace_i64(int64_t a, int64_t b) {
     fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);
 }
 
+// Dump a Statement passed by value: {i8 tag, ptr payload} on ARM64
+void forge_trace_stmt(int64_t first_half, int64_t second_half) {
+    int tag = (int)(first_half & 0xFF);
+    void* ptr = (void*)second_half;
+    fprintf(stderr, "  [STMT_TRACE] tag=%d ptr=%p raw_first=0x%llx raw_second=0x%llx\n",
+            tag, ptr, (unsigned long long)first_half, (unsigned long long)second_half);
+}
+
 // ---- Codegen trace: logs every statement/expr emission ----
 static int _cg_trace = 0;
 static int _cg_trace_depth = 0;
@@ -4466,7 +4463,6 @@ void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {
     }
 }
 
-// Debug: trace set_var_type
 // Get the Forge type name for a variable (returns ForgeString, empty if not found)
 ForgeString forge_alloca_cache_get_var_type(ForgeString name) {
     ForgeString empty = {NULL, 0};

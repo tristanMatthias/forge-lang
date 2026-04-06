@@ -449,8 +449,7 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             forge_alloca_cache_set(pname, param_val)
             forge_alloca_cache_set_var_type(pname, param_type_name)
         } else {
-            mut p_ty = resolve_type_to_llvm(param_type_name)
-            if p_ty == null { p_ty = CG_I64 }
+            let p_ty = llvm.type_of(param_val)
             let alloca = llvm.build_alloca(CG_B, p_ty, pname)
             llvm.build_store(CG_B, param_val, alloca)
             forge_alloca_cache_set(pname, alloca)

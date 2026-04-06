@@ -245,7 +245,7 @@ impl<'ctx> Codegen<'ctx> {
                                 self.builder.build_return(Some(&v)).unwrap();
                             } else if let Some(Type::Nullable(_)) = &self.current_fn_return_type {
                                 let ret_ty = self.current_fn_return_type.clone().unwrap();
-                                let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                let wrapped = self.maybe_wrap_nullable(v, &ret_ty);
                                 self.builder.build_return(Some(&wrapped)).unwrap();
                             } else {
                                 let coerced = self.coerce_value(v, fn_ret_ty);
@@ -480,7 +480,7 @@ impl<'ctx> Codegen<'ctx> {
                                 self.builder.build_return(Some(&v)).unwrap();
                             } else if let Some(Type::Nullable(_)) = &self.current_fn_return_type {
                                 let ret_ty = self.current_fn_return_type.clone().unwrap();
-                                let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                let wrapped = self.maybe_wrap_nullable(v, &ret_ty);
                                 self.builder.build_return(Some(&wrapped)).unwrap();
                             } else {
                                 let coerced = self.coerce_value(v, fn_ret_ty);

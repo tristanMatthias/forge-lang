@@ -1665,7 +1665,6 @@ impl Codegen {
     }
 
     fn emit_match_expr_with_bindings(self, scrutinee: Expr, arm_tags_csv: string, arm_bindings_csv: string, arm_bodies: List<Block>, default_body: Block, has_default: int) -> ptr {
-        forge_trace_i64(tags.length, 888)
         let subj_raw = self.emit_expr(scrutinee)
         // For enum scrutinees, extract the tag byte
         mut subj = subj_raw
@@ -2933,9 +2932,6 @@ impl Codegen {
     fn emit_block(self, block: Block) -> ptr {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
-        forge_trace_i64(_stmts.length, 777)
-        if false {
-        }
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
             last = self.emit_statement(stmt)

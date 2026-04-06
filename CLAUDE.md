@@ -87,29 +87,46 @@ Score (lower is better)
 
 ## Debugging & Analysis Tools
 
-### Central Diagnostic System
+### Diagnostic System (`scripts/diagnose.sh`)
+ONE script for all diagnostics. Run after EVERY change:
 ```bash
-bash scripts/diagnose.sh [output.ll]
-```
-**Run this after EVERY change.** It checks EVERYTHING: IR quality, struct types, function completeness, control flow, AST coverage, globals, code quality, and Stage 2 runtime behavior. Returns ALL errors at once.
-
-**MANDATORY RULE: When you discover a new class of issue, ADD A CHECK for it to `scripts/diagnose.sh`.** This prevents the same issue from recurring. The diagnostic system must grow over time to cover every possible failure mode.
-
-### Other Scripts
-```bash
-# Audit Stage 2 IR quality (score, lower is better)
-bash scripts/audit_stage2.sh output.ll
-
-# Check a specific function's IR for patterns
-bash scripts/check_function.sh <function_name> [keyword]
-# Example: bash scripts/check_function.sh Lexer_skip_whitespace forge_loop
-
-# Run Stage 2 functional tests (11 milestones)
-bash scripts/test_stage2.sh
+bash scripts/diagnose.sh [output.ll]     # Full diagnostics (IR + source + Stage 2)
+bash scripts/diagnose.sh --score         # Just the IR quality score (lower is better)
+bash scripts/diagnose.sh --kind-ids      # Kind ID consistency across lexer/parser/runtime
+bash scripts/diagnose.sh --stage2        # Stage 2 functional tests (reads files? tokenizes? etc.)
 ```
 
-### C-side Debug Functions (runtime.c)
-Call from Forge source — no string allocation overhead:
+**MANDATORY RULE: When you discover a new class of issue, ADD A CHECK for it to `scripts/diagnose.sh`.** The diagnostic system must grow over time to cover every possible failure mode.
+
+Other scripts:
+- `scripts/check_function.sh <name> [keyword]` — inspect one function's IR in output.ll
+- `scripts/check_runtime_fns.sh` — pre-build check (run by Makefile)
+- `scripts/lint-errors.sh` — error system quality
+
+### Kind IDs (`core/kind_ids.fg`)
+Token kind_id values are defined ONCE in `packages/forgec/src/core/kind_ids.fg`. The parser imports named constants (`KID_LET`, `KID_LBRACKET`, etc.) instead of magic numbers.
+
+**Rules:**
+- NEVER hardcode kind_id numbers in parser code — use `KID_*` constants
+- If you add a new keyword, update BOTH `kind_ids.fg` AND `forge_kind_id_for_keyword()` in `runtime.c`
+- Run `bash scripts/diagnose.sh --kind-ids` to verify consistency
+- Constants use `export mut` (not `let`) because the Rust compiler compiles `let` as local allocas, not globals
+
+### Debug Utilities (`stdlib/debug.c`)
+Reusable debug functions for diagnosing self-hosting issues. These are NOT compiled into the runtime by default — include `debug.c` in your build when needed.
+
+Available functions (call from Forge source):
+```forge
+forge_dump_stmt_list(stmts)          // Dump Statement list tags + raw bytes (112-byte stride)
+forge_dump_token_kids(tokens, count) // Dump first N token kind_ids from a token list
+forge_emit_fn_body_start()           // Mark body parsing active (filters other traces)
+forge_emit_fn_body_end()             // Mark body parsing done
+forge_parse_return_path(path_id)     // Trace which return path a parse function takes
+forge_enable_peek_trace()            // Enable verbose forge_peek_kind_id tracing
+```
+
+### C-side Runtime Functions (runtime.c)
+Tracing (no string allocation — safe in hot paths):
 ```forge
 forge_trace_i64(val1, val2)          // Print two i64s to stderr: "[T] val1 val2"
 forge_cg_trace_enable(1)             // Enable codegen tracing
@@ -180,7 +197,7 @@ F0001 (syntax), F0002 (unterminated string), F0003 (unterminated template), F000
 
 ## Self-Hosting — MANDATORY RULES
 
-**Read `forge/SELF_HOST_PLAN.md` for the milestone plan and `forge/scripts/audit_stage2.sh` for progress tracking.**
+**Read `forge/SELF_HOST_PLAN.md` for the milestone plan and `forge/scripts/diagnose.sh --score` for progress tracking.**
 
 **BEFORE trying any experiment, check `forge/SELF_HOST_EXPERIMENTS.md` to see if it was already tried. AFTER every experiment, log it there with the score result.**
 
@@ -197,7 +214,7 @@ Stage 2 → Stage 3 IR (goal: identical to Stage 2 IR)
 ### Progress Tracking — ALWAYS DO THIS
 After EVERY change, run the audit:
 ```bash
-scripts/audit_stage2.sh output.ll
+bash scripts/diagnose.sh --score output.ll
 ```
 This produces a SCORE (lower is better). Current baseline: **7076**. If score goes DOWN, you're making progress. If it goes UP, revert.
 
@@ -225,12 +242,12 @@ TURN: [what changed] | Score: X → Y | [key finding or next step]
 This prevents the user from losing track of what's happening between session reports.
 
 ### Key Learnings (from weeks of debugging)
-- **The `{i64, ptr}` enum representation** matches the mini compiler. Was `{i8, ptr}` — fixed.
-- **`Expr.IsCheck`** AST node handles `is` expressions in the codegen phase (was inline-only during parsing with CG_ACTIVE=true).
-- **`resolve_type_to_llvm("ptr")`** must return `CG_PTR` not `CG_I64`.
+- **Kind_id mismatches are silent killers.** A single wrong kind_id (e.g., LBracket 126 vs 104) makes `parse_expr` fail for list literals, which makes `parse_var_binding` return null, which makes ALL function bodies contain only Expr statements. No error is reported. Always use `KID_*` constants from `core/kind_ids.fg` and run `--kind-ids` to validate.
+- **Statement is 112 bytes, not 16.** The Rust compiler represents `Statement` as `{i8, i64×13}` = 112 bytes. Token is also 112 bytes. Don't assume `{i8, ptr}` = 16 bytes.
+- **`export let` compiles to local allocas, not globals.** Use `export mut` for cross-module constants that need to be accessible at runtime. The Rust compiler treats `let` as function-local.
+- **Nullable `return null` must use `maybe_wrap_nullable`, not `wrap_in_nullable`.** `wrap_in_nullable` always sets tag=1 (has value). For null literals, `maybe_wrap_nullable` detects const_zero and calls `create_null_value` (tag=0).
 - **`LLVMGetAllocatedType`** is the right way to determine load types — don't guess from flags.
-- **Expression statements get dropped** when Statement.Expr tag doesn't match in `emit_statement`. This is a SYMPTOM of the type system — fix the types, not the expressions.
-- **The 100 alloca cache misses are harmless** — they fall through to CG_VAR_NAMES lookup.
+- **`llvm.type_of(param_val)`** for parameter allocas — not `resolve_type_to_llvm` (circular dependency in self-hosted code).
 - **C-side workaround functions DO NOT SCALE** — we added 15+ and they didn't fix the root cause.
 - **The forge-lang repo** (`../forge-lang`) already solved enum representation. Check it for reference.
 
@@ -244,7 +261,7 @@ This prevents the user from losing track of what's happening between session rep
 
 4. **NEVER rewrite working Forge source to work around codegen bugs.** Fix the codegen, not the source it compiles.
 
-5. **ALWAYS run `scripts/audit_stage2.sh output.ll` after changes.** This is how we track progress. No exceptions.
+5. **ALWAYS run `bash scripts/diagnose.sh --score output.ll` after changes.** This is how we track progress. No exceptions.
 
 6. **Follow `SELF_HOST_PLAN.md` milestones in order.** M1 (load types) → M2 (call types) → M3 (branch conditions) → M4 (ret undef) → M5 (hello world) → M6 (self-compile) → M7 (fixed point).
 

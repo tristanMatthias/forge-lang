@@ -19,6 +19,12 @@
 
 use core.token.{Token, TokenKind, Span}
 use core.ast.{Expr, BinOp, UnaryOp, Block, Statement}
+use core.kind_ids.{
+    KID_IDENT, KID_INT_LIT, KID_FLOAT_LIT, KID_STRING_LIT, KID_BOOL_LIT,
+    KID_TEMPLATE_LIT, KID_NULL_LIT,
+    KID_LPAREN, KID_LBRACE, KID_LBRACKET, KID_DOT, KID_COMMA, KID_COLON,
+    KID_NEWLINE, KID_IF,
+}
 use lexer.{parse_int, parse_float}
 // Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
 // Suppress cross-newline dot chaining inside match arm bodies
@@ -367,13 +373,13 @@ impl Parser {
             let span = self.advance().span
             return Expr.NullLit(span)
         }
-        if tok.kind_id == 104 {  // LParen
+        if tok.kind_id == KID_LPAREN {
             return self.parse_paren_expr()
         }
-        if tok.kind_id == 102 {  // LBrace — block or map literal
+        if tok.kind_id == KID_LBRACE {
             return self.parse_block_expr()
         }
-        if tok.kind_id == 126 {  // LBracket — list literal
+        if tok.kind_id == KID_LBRACKET {
             return self.parse_list_literal()
         }
         match tok.kind {

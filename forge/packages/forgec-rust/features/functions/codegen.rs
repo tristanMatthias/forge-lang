@@ -36,7 +36,7 @@ impl<'ctx> Codegen<'ctx> {
                                 if let crate::typeck::types::Type::Nullable(_) = &ret_ty {
                                     let expected = self.type_to_llvm_basic(&ret_ty);
                                     if v.get_type() != expected {
-                                        let wrapped = self.wrap_in_nullable(v, &ret_ty);
+                                        let wrapped = self.maybe_wrap_nullable(v, &ret_ty);
                                         self.builder.build_return(Some(&wrapped)).unwrap();
                                     } else {
                                         self.builder.build_return(Some(&v)).unwrap();

@@ -2,80 +2,101 @@
 
 ## Current State
 
-- **Stage 2 IR:** 388 functions, ~40K lines, score 226/1000
-- **Stage 2 binary:** Compiles, links, runs. Reads 39 files. Finds 18 functions (should be ~400).
+- **Stage 2 IR:** 388 functions, ~40K lines, score 135/1000, **0 empty functions**
+- **Stage 2 binary:** Compiles, links, runs. Reads 39 files. Resolves modules. Creates lexer. Tokenizes. **Crashes in `forge_string_compare` inside `Lexer_next_token`.**
 - **Build:** `make stage1-rust` → `./build/stage1_rust build packages/forgec/src/main.fg` → `output.ll`
+- **Fixes applied this session:**
+  1. Param alloca uses `llvm.type_of(param_val)` — score 226→135
+  2. Nullable `return null` convention fixed (`maybe_wrap_nullable`)
+  3. Expression parser kind_id mismatch fixed (LParen 104→100, LBracket 126→104)
 
-## The Blocker: Why Stage 2 only finds 18 functions
+## The Blocker: Stage 2 crashes in Lexer_next_token
 
-`Lexer_tokenize` produces empty IR (`ret zeroinitializer`). Without the tokenizer, the scanner can't tokenize source files, the parser gets no tokens, and no functions are found.
+Stage 2 now gets much further: reads all files, resolves modules, creates a lexer, calls `Lexer_tokenize`, enters the while loop, calls `Lexer_next_token`, then crashes in `forge_string_compare`.
 
-`Lexer_tokenize`'s body has 4 statements. `emit_block` iterates them and calls `emit_statement` for each. But ALL 4 statements dispatch as `.Expr` (tag 0) instead of their actual types (`.Let`=3, `.Expr`=0, `.While`=6, `.Expr`=0).
-
-## The Bug Chain (in order of causation)
-
-### Bug 1: `emit_statement` match uses wrong tags
-**Symptom:** ALL Statement values match `.Expr` (tag 0), even `.Let` and `.While`.
-**Location:** `codegen/mod.fg` line ~2615, the `match stmt { ... }` compiled by the self-hosted codegen.
-**Mechanism:** The match handler calls `match_enum_tag("Let")` at parse time to get the tag for comparison. This returns 0 instead of 3.
-
-### Bug 2: `match_enum_tag("Let")` returns wrong tag (0 instead of 3)
-**Symptom:** Unqualified name "Let" resolves to VarKind.Let (tag=0) instead of Statement.Let (tag=3).
-**Location:** `forge_enum_variant_tag_get` in `runtime.c` — does reverse search, last registered wins.
-**Root cause:** VarKind is defined in `features/variables/mod.fg` which is scanned AFTER `core/ast.fg`. VarKind.Let (count=177) shadows Statement.Let (count=139).
-**Fix available:** Use QUALIFIED name "Statement.Let" → tag 3. The qualified lookup works.
-
-### Bug 3: Qualified name not used because `cg_var_enum_type("stmt")` returns ""
-**Symptom:** `enum_type` is empty, so `qname = ".Let"` instead of `"Statement.Let"`.
-**Location:** `parse_match_expr` in `parser/expressions.fg` line ~620.
-**Mechanism:** `cg_var_enum_type(scrutinee_var)` calls `forge_alloca_cache_get_var_type("stmt")`. Should return "Statement". But returns "" because the ForgeString parameter loses its length.
-
-### Bug 4: ForgeString parameters lose length in self-hosted compiled functions
-**Symptom:** ForgeString `{ptr, i64}` stored in i64 alloca (8 bytes). Length field (second i64) is lost. All strings appear as length=0.
-**Location:** `emit_fn_body_from_source` in `features/functions/mod.fg` line ~442, parameter alloca creation.
-**Root cause:** Parameter allocas use `resolve_type_to_llvm(param_type_name)`. If `param_type_name` is "string", this returns `CG_STR` ({ptr, i64}). BUT `param_type_name` itself is a ForgeString loaded from C-side (`forge_param_type_get`), and `resolve_type_to_llvm` is self-hosted compiled code that receives it via a ForgeString parameter — which also has the same truncation.
-
-### Bug 5: `resolve_type_to_llvm` receives truncated ForgeString
-**Symptom:** The function parameter `type_name: string` gets stored in an i64 alloca. `type_name == "string"` comparison fails (length=0).
-**Location:** `codegen/mod.fg` line ~451, `resolve_type_to_llvm` function.
-**Root cause:** `resolve_type_to_llvm` IS a self-hosted compiled function. Its parameter alloca is created by `emit_fn_body_from_source`. The alloca type comes from `resolve_type_to_llvm(param_type_name)` — circular dependency.
-
-## The Root Root Cause
-
-**Function parameters in `emit_fn_body_from_source` get i64 allocas regardless of their actual type.** This is because:
-
-1. `emit_fn_body_from_source` at line ~442 calls `resolve_type_to_llvm(param_type_name)` to get the alloca type
-2. `param_type_name` comes from `forge_param_type_get(idx)` (C-side, returns correct ForgeString)
-3. BUT `resolve_type_to_llvm` is itself a self-hosted function, and it receives `param_type_name` as a parameter
-4. That parameter's alloca is ALSO created by step 1 — so the first function compiled this way gets an i64 alloca for its string params
-5. From then on, ALL self-hosted functions have broken string parameters
-
-## The Fix
-
-**In `emit_fn_body_from_source`, use `llvm.type_of(param_val)` for parameter alloca types instead of `resolve_type_to_llvm(param_type_name)`.**
-
-The function parameter LLVM value (`llvm.get_param(fn_val, pi)`) has the correct LLVM type — it was declared by `declare_all_fns` with the proper type. `llvm.type_of(param_val)` returns this type. Use it for the alloca.
-
-```forge
-// CURRENT (broken):
-mut p_ty = resolve_type_to_llvm(param_type_name)
-if p_ty == null { p_ty = CG_I64 }
-let alloca = llvm.build_alloca(CG_B, p_ty, pname)
-
-// FIX:
-let p_ty = llvm.type_of(param_val)
-let alloca = llvm.build_alloca(CG_B, p_ty, pname)
+**Backtrace:**
+```
+forge_string_compare + 592
+Lexer_next_token + 152
+Lexer_tokenize + 76
+scan_one_file + 116
 ```
 
-This one change fixes the ENTIRE chain:
-- Parameter allocas match the declared type (ForgeString gets 16-byte alloca)
-- `resolve_type_to_llvm` receives ForgeString with correct length
-- `cg_var_enum_type("stmt")` returns "Statement"
-- `match_enum_tag("Statement.Let")` returns 3
-- `emit_statement` dispatches correctly
-- `Lexer_tokenize` body produces code
-- Scanner finds all ~400 functions
-- Stage 2 compiles itself
+### Previous Blocker (FIXED): All Statement tags were 0
+`Lexer_tokenize` had empty IR because `parse_expr` couldn't parse `[]` (list literal). The expression parser used kind_id 126 for LBracket but the tokenizer uses 104. Fix: corrected kind_id constants in `parser/expressions.fg`.
+
+## Bug Chain 0: Stage 2 crashes in forge_string_compare (ACTIVE)
+
+**Symptom:** Stage 2 crashes with SIGSEGV in `forge_string_compare` called from `Lexer_next_token`.
+**Location:** `Lexer_next_token` compares the current character against keyword strings.
+**Likely cause:** The character comparison loads a ForgeString from `self.peek_ch()` or similar, but the ForgeString pointer or length is corrupt in the Stage 2 compiled code.
+**Investigation needed:** Check `Lexer_next_token` IR in output.ll — does it load ForgeString correctly? Does the char comparison use the right type?
+
+## Bug Chain 1: ALL Statement tags were 0 (FIXED)
+
+### Key Discovery: Statement is 112 bytes, NOT 16 bytes
+
+**CRITICAL:** The Rust compiler represents Statement as `{i8, i64×13}` = 112 bytes, NOT `{i8, ptr}` = 16 bytes. Earlier investigation used 16-byte stride which gave garbled data. With correct 112-byte stride, the tag at byte 0 IS genuinely 0 for all statements.
+
+```
+Rust compiler actual types:
+  %Statement    = anonymous { i8, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64 } = 112 bytes
+  %Token        = { {i8, i64×6}, %Span, %ForgeString, i64 } = 112 bytes (SAME size!)
+  %Nullable_Statement = { i8, Statement } = 120 bytes
+  %Block        = { {ptr, i64}, %Span }
+```
+
+### Bug 1A: `parse_statement` returns Statements with tag=0 for ALL body statements
+**Symptom:** Every function body parsed by Stage 1 has ALL statements with tag=0 (`.Expr`). `Lexer_tokenize` has 4 statements: should be Let, Expr, While, Expr. All are tag=0.
+**Evidence:** `forge_dump_stmt_list` with 112-byte stride:
+```
+stmt[0] tag=0 first_i64=0x3001e2840
+stmt[1] tag=0 first_i64=0x3001e2920
+stmt[2] tag=0 first_i64=0x3001e2a00
+stmt[3] tag=0 first_i64=0x3001e2a70
+```
+**Impact:** `emit_statement` match dispatch treats ALL statements as `.Expr` → function bodies produce wrong/empty code → `Lexer_tokenize` body is empty → tokenizer doesn't work → scanner finds only 18 functions.
+
+### Bug 1B: Suspected cause — `tok.kind_id` reads 0 from body tokens
+**Hypothesis:** `parse_statement` dispatches on `tok.kind_id`. If kind_id is 0 for all body tokens, all statements fall through to the expression parser fallback, which creates `Statement.Expr(...)` with tag=0.
+**Investigation needed:** Check if `Parser.peek()` correctly loads Token structs from the body token list. The Token stride is 112 bytes; the kind_id field is at offset 104. If the list indexing uses wrong stride, kind_id reads garbage.
+
+### Bug 1C: Rust compiler nullable wrapping may be inverted
+**Evidence:** In `parse_statement`'s `return null` path (when `is_at_end()`):
+```llvm
+store i8 1, ptr %tag_ptr   ; nullable tag = 1 (but should be 0 for null!)
+; ... zeroinitialize inner Statement
+```
+The nullable convention uses 0=null, !=0=has_value. But `return null` sets tag to 1 (has value) and zeroes the inner Statement. This creates a "valid" Statement with tag=0 (`.Expr`).
+**Impact:** May cause null returns to be treated as valid Expr statements.
+
+### Bug 1D: Some Statement pushes DO have correct tags
+**Evidence:** Overall push statistics show tags 3(Let)=1631, 5(Match)=4135, 2(Return)=4834, 10(Feature)=1173 occurring. So `parse_statement` DOES create correct tags for SOME code paths. The bug is specific to certain contexts (body parsing? re-tokenized source?).
+
+## Bug Chain 2: ForgeString parameter alloca size (FIXED)
+
+### Bug 2A: `emit_fn_body_from_source` used `resolve_type_to_llvm` for param allocas
+**Status:** FIXED — now uses `llvm.type_of(param_val)`.
+**Impact:** Score dropped 226→135.
+**What it fixed:** Stage 2 IR now has correct `%ForgeString` allocas for function parameters. Stage 2 code can correctly handle string operations.
+
+### Bug 2B: `cg_var_enum_type` returns "" for nullable types
+**Status:** Partial — stores "Statement?" (with ?) for nullable parameters. `forge_enum_type_exists("Statement?")` returns false.
+**Fix needed:** Strip trailing "?" before checking `forge_enum_type_exists`.
+
+## Bug Chain 3: Qualified enum tag lookup (WORKING)
+
+### Bug 3A: Tag lookup with qualified names IS correct
+**Status:** VERIFIED — all Statement variants resolve to correct tags.
+```
+Statement.Expr=0, Statement.Assign=1, Statement.Return=2, Statement.Let=3,
+Statement.If=4, Statement.Match=5, Statement.While=6, Statement.For=7,
+Statement.Break=8, Statement.Continue=9, Statement.Feature=10
+```
+
+### Bug 3B: Tag constants in Stage 2 IR ARE correct
+**Status:** VERIFIED — `Codegen_emit_statement` compares against 0,1,2,3,4,5,6.
+**But:** This doesn't help if Statement tag byte is always 0 (Bug Chain 1).
 
 ## Already Fixed (don't re-break)
 
@@ -117,7 +138,7 @@ make stage1-rust
 ./build/stage1_rust build packages/forgec/src/main.fg
 
 # Audit Stage 2 IR quality:
-bash scripts/audit_stage2.sh output.ll
+bash scripts/diagnose.sh --score output.ll
 
 # Compile + link Stage 2 binary:
 /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj output.ll -o /tmp/stage2.o
@@ -178,5 +199,5 @@ Never guess. Never use flags. Read the type from the source.
 | `stdlib/runtime.c` | C runtime + all C-side registries |
 | `packages/forgec-rust/` | Rust compiler (compiles Forge source) |
 | `packages/std-llvm/src/package.fg` | LLVM C API Forge wrappers (_s suffix) |
-| `scripts/audit_stage2.sh` | Stage 2 IR quality audit |
+| `scripts/diagnose.sh` | All diagnostics (--score, --stage2, --kind-ids) |
 | `scripts/diagnose.sh` | Comprehensive diagnostic |
