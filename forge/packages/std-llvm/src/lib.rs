@@ -2157,6 +2157,18 @@ pub extern "C" fn forge_llvm_block_has_terminator(builder: LLVMPtr) -> c_int {
     }
 }
 
+/// Check whether a SPECIFIC basic block has a terminator. Used by
+/// emit_match_arms to detect "the arm body returned, leaving the
+/// builder at a fresh dead block created by start_dead_block_after_terminator".
+#[no_mangle]
+pub extern "C" fn forge_bb_has_terminator(bb: LLVMPtr) -> i64 {
+    if bb.is_null() { return 0; }
+    unsafe {
+        let term = LLVMGetBasicBlockTerminator(bb);
+        if term.is_null() { 0 } else { 1 }
+    }
+}
+
 /// High-level: emit an LLVM module to an object file. Returns 0 on success.
 #[no_mangle]
 pub extern "C" fn forge_llvm_emit_object_file(m: LLVMPtr, filename: *const c_char) -> c_int {

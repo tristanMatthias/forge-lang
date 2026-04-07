@@ -2000,15 +2000,33 @@ impl Codegen {
         let tv = self.emit_block(then_block)
         let te = llvm.get_insert_block(CG_B)
         let tt = llvm.block_has_terminator(CG_B)
-        if !tt { llvm.build_br(CG_B, mb) }
+        // If the then-block returned, start_dead_block_after_terminator
+        // left CG_B at a fresh empty dead block. Detect this by looking
+        // at tb's own terminator (not the current builder's), and
+        // terminate the dead block with `unreachable` instead of br mb.
+        let tb_term = forge_bb_has_terminator(tb)
+        if tb_term == 1 && !tt {
+            llvm.build_unreachable(CG_B)
+        } else if !tt {
+            llvm.build_br(CG_B, mb)
+        }
         llvm.position_at_end(CG_B, eb)
         mut ev = llvm.const_int(CG_I64, 0, 0)
         if has_else == 1 { ev = self.emit_block(else_block) }
         let ee = llvm.get_insert_block(CG_B)
         let et = llvm.block_has_terminator(CG_B)
-        if !et { llvm.build_br(CG_B, mb) }
+        let eb_term = forge_bb_has_terminator(eb)
+        if eb_term == 1 && !et {
+            llvm.build_unreachable(CG_B)
+        } else if !et {
+            llvm.build_br(CG_B, mb)
+        }
         llvm.position_at_end(CG_B, mb)
-        if has_else == 1 && !tt && !et {
+        // Treat the original then/else block as terminated for phi
+        // purposes when the dead block trick was applied.
+        let then_terminated = tt || tb_term == 1
+        let else_terminated = et || eb_term == 1
+        if has_else == 1 && !then_terminated && !else_terminated {
             // Use the then-value's type for the PHI (not always i64)
             let phi_kind = forge_value_type_kind(tv)
             // Skip PHI for void returns (kind 0 = void)
@@ -2292,9 +2310,22 @@ impl Codegen {
             // Normalize the arm value to the function's expected return
             // type so all phi incoming values share the same LLVM type.
             av = coerce_to_fn_return(av)
-            let ae = llvm.get_insert_block(CG_B)
+            // CRITICAL: emit_return calls start_dead_block_after_terminator
+            // which creates a fresh empty block and positions there. If
+            // the arm body returned, CG_B's current block is that dead
+            // block — NOT the arm body. We need to detect "the arm body
+            // already terminated" by looking at arm_bb's terminator, not
+            // the current block. If arm_bb has a terminator, the body's
+            // first statement was a (transitively) terminating one and we
+            // should NOT add a fall-through br/phi from the dead block.
             let arm_has_term = llvm.block_has_terminator(CG_B)
-            if !arm_has_term {
+            let arm_bb_has_term = forge_bb_has_terminator(arm_bb)
+            if arm_bb_has_term == 1 && !arm_has_term {
+                // Dead block created by emit_return — terminate it as
+                // unreachable so it doesn't show up as an orphan.
+                llvm.build_unreachable(CG_B)
+            } else if !arm_has_term {
+                let ae = llvm.get_insert_block(CG_B)
                 llvm.build_br(CG_B, merge_bb)
                 forge_phi_push(av, ae)
             }
