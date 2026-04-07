@@ -1286,6 +1286,9 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_global_var_set_init", mft2(CG_VOID, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_global_var_get_init", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_global_var_has_init", mft1(CG_I64, CG_I64))
+    // Direct (struct_name, idx) → field type lookup. Replaces the in-Forge
+    // CSV walking loops that were tripping on `||` short-circuit-eval edges.
+    llvm.add_function(CG_MOD, "forge_struct_field_type_at", mft2(CG_STR, CG_STR, CG_I64))
     // Token accumulation
     llvm.add_function(CG_MOD, "forge_tok_clear", mft0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_tok_push", mft4(CG_VOID, CG_I64, CG_I64, CG_STR, CG_I64))
@@ -1629,30 +1632,16 @@ impl Codegen {
                 // Look up struct field type via registered struct info
                 let obj_type = self.expr_type_name(obj)
                 if obj_type != "int" && obj_type != "string" && obj_type != "ptr" {
-                    // obj_type is a struct name — look up the field's type
-                    let fields_csv = forge_struct_type_get_fields(obj_type)
-                    if fields_csv.length > 0 {
-                        let fi = forge_struct_field_index(obj_type, field)
-                        if fi >= 0 {
-                            // Get field type from the struct's field_types registry
-                            let field_types = forge_struct_type_get_field_types(obj_type)
-                            if field_types.length > 0 {
-                                // Parse CSV to get the fi-th type
-                                mut fti = 0
-                                mut ft_start = 0
-                                mut ft_pos = 0
-                                while ft_pos <= field_types.length {
-                                    if ft_pos == field_types.length || field_types[ft_pos] == "," {
-                                        if fti == fi {
-                                            return field_types.substring(ft_start, ft_pos)
-                                        }
-                                        fti = fti + 1
-                                        ft_start = ft_pos + 1
-                                    }
-                                    ft_pos = ft_pos + 1
-                                }
-                            }
-                        }
+                    // obj_type is a struct name — look up the field's type via
+                    // the C-side direct (struct, idx) → field_type helper.
+                    // Previously this used in-Forge CSV walking with a
+                    // `while pos <= len; if pos == len || s[pos] == ','`
+                    // pattern that tripped on `||` short-circuit-eval and
+                    // ran char_at(len) past the end of the string.
+                    let fi = forge_struct_field_index(obj_type, field)
+                    if fi >= 0 {
+                        let ft = forge_struct_field_type_at(obj_type, fi)
+                        if ft.length > 0 { return ft }
                     }
                 }
                 return "int"

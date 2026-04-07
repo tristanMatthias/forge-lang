@@ -2967,6 +2967,36 @@ ForgeString forge_struct_type_get_field_types(ForgeString name) {
     }
     return empty;
 }
+
+// Direct lookup of a struct's idx-th field type — replaces the
+// CSV-walking loops in self-hosted source that were tripping up on
+// short-circuit-eval edge cases (`while pos <= len; if pos == len || s[pos] == ','`).
+// Walks the comma-separated field_types string in C and returns the idx-th
+// segment as a fresh ForgeString. Returns empty if struct unknown or idx OOB.
+ForgeString forge_struct_field_type_at(ForgeString struct_name, int64_t idx) {
+    ForgeString empty = {NULL, 0};
+    if (!struct_name.ptr || idx < 0) return empty;
+    for (int i = 0; i < _struct_reg_count; i++) {
+        if ((int64_t)strlen(_struct_reg[i].name) == struct_name.len &&
+            memcmp(_struct_reg[i].name, struct_name.ptr, struct_name.len) == 0) {
+            const char* csv = _struct_reg[i].field_types;
+            int64_t total_len = (int64_t)strlen(csv);
+            int64_t cur_idx = 0;
+            int64_t seg_start = 0;
+            for (int64_t p = 0; p <= total_len; p++) {
+                if (p == total_len || csv[p] == ',') {
+                    if (cur_idx == idx) {
+                        return forge_string_new(csv + seg_start, p - seg_start);
+                    }
+                    cur_idx++;
+                    seg_start = p + 1;
+                }
+            }
+            return empty;
+        }
+    }
+    return empty;
+}
 int64_t forge_struct_field_index(ForgeString struct_name, ForgeString field_name) {
     if (!struct_name.ptr || !field_name.ptr) return -1;
     // Trace Token field lookups
