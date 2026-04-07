@@ -352,6 +352,11 @@ export fn declare_all_fns() {
                     } else if tname == "string" { param_ty = CG_STR }
                     else if tname == "List" || (tname.length > 5 && tname.substring(0, 5) == "List:") { param_ty = CG_STR }
                     else if tname == "ptr" { param_ty = CG_PTR }
+                    // NOTE: bool params left as i64 — changing to i8 broke
+                    // stage 2 binary's hello-world compilation. The Forge
+                    // self-host stores bools as i64 in alloca cache and a
+                    // narrowing wouldn't match. Revisit when alloca cache
+                    // tracks types.
                     else if tname != "int" && tname != "float" && tname != "bool" && tname != "" {
                         let resolved = resolve_type_to_llvm(tname)
                         if resolved != null { param_ty = resolved }
@@ -380,8 +385,9 @@ export fn declare_all_fns() {
             else if rtn == "string" { ret_ty = CG_STR }
             else if rtn == "List" || (rtn.length > 5 && rtn.substring(0, 5) == "List:") { ret_ty = CG_STR }
             else if rtn == "ptr" { ret_ty = CG_PTR }
-            else if rtn == "bool" { ret_ty = CG_I8 }
-            else if rtn != "int" && rtn != "float" {
+            // NOTE: bool returns left as i64 (default). See bool param
+            // comment above — narrowing breaks stage 2 binary.
+            else if rtn != "int" && rtn != "float" && rtn != "bool" {
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
             }
@@ -525,16 +531,27 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
         } else {
-            // The forge_fn_nullable_set state is already configured from
-            // the function's declared return type (above). All wrapping
-            // logic lives in the single coerce_to_fn_return helper.
-            cg_reinit_types()
-            if forge_last_val_has() == 1 {
-                let rv = forge_last_val_get()
-                forge_last_val_clear()
-                llvm.build_ret(CG_B, coerce_to_fn_return(rv))
+            // Detect void-returning functions: declared with no `-> X`
+            // (FN_RETURN_TYPES[idx] empty) or `-> void`. Emit ret void
+            // instead of `ret void <bogus_value>`, which produces
+            // `ret void <badref>` and a broken IR file.
+            mut declared_rtn = ""
+            if idx < FN_RETURN_TYPES.length { declared_rtn = FN_RETURN_TYPES[idx] }
+            if declared_rtn == "" || declared_rtn == "void" {
+                llvm.build_ret_void(CG_B)
             } else {
-                llvm.build_ret(CG_B, coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0)))
+                // The forge_fn_nullable_set state is already configured
+                // from the function's declared return type (above). All
+                // wrapping logic lives in the single coerce_to_fn_return
+                // helper.
+                cg_reinit_types()
+                if forge_last_val_has() == 1 {
+                    let rv = forge_last_val_get()
+                    forge_last_val_clear()
+                    llvm.build_ret(CG_B, coerce_to_fn_return(rv))
+                } else {
+                    llvm.build_ret(CG_B, coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0)))
+                }
             }
         }
     }

@@ -844,9 +844,16 @@ fn cg_register_core_types() {
     // a non-aggregate — `variant` is then resolved to literal 0 in the
     // arm body, which collapses every match dispatch to its first arm.
     forge_enum_type_register("Pattern", 8)
-    // Note: Type, TypeExpr NOT registered as named LLVM types because the Rust compiler
-    // uses them as branch conditions (if t is .Int) which requires i64, not a struct.
-    // They stay as i64 in the self-hosted codegen.
+    // Type: largest variant is Function(params, return_type) = 3 slots,
+    // or Struct(name, fields)/Enum(name, variants) = 2+2 = 4 slots.
+    // Rust emits %Type = type { i8, i64, i64, i64, i64 } = 4 payload slots.
+    // Without this registration, every TypeChecker function with a Type
+    // param/return widens to i64 (~15 functions), and the type-diff
+    // tool catches them as a cluster.
+    forge_enum_type_register("Type", 4)
+    forge_enum_type_register("TypeExpr", 8)
+    // VarKind: simple enum (Let / Mut / Const), zero payload.
+    forge_enum_type_register("VarKind", 0)
 
     // Helper: create a named struct type
     // Span = { i64, i64, i64, i64 }
