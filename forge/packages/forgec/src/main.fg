@@ -303,8 +303,15 @@ fn build_compile_separate(paths_csv: string, output: string) {
     let runtime_obj = "/tmp/forgec_runtime.o"
     let rt_result = process.run("cc", ["-c", "-O0", "stdlib/runtime.c", "-o", runtime_obj])
 
-    // Link
-    let link_result = process.run("cc", ["-o", output, obj_path, runtime_obj, "-lm"])
+    // Link with all libs the self-hosted compiler depends on
+    let link_result = process.run("cc", [
+        "-o", output, obj_path, runtime_obj,
+        "packages/std-process/target/release/libforge_process.a",
+        "packages/std-llvm/target/release/libforge_llvm.a",
+        "-L/opt/homebrew/Cellar/llvm@19/19.1.7/lib",
+        "-lLLVM-19", "-lstdc++", "-lz", "-lcurses",
+        "-lm", "-Wl,-stack_size,0x10000000"
+    ])
 
     println("compiled: " + output)
 }

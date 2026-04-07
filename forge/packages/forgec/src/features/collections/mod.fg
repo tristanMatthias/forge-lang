@@ -90,9 +90,15 @@ fn check_collection(tc: TypeChecker, node: NodeRef) -> Type {
 }
 
 fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {
-    // TODO: emit runtime calls to construct List/Map values
-    // For now, placeholder
-    llvm.const_int(CG_I64, 0, 0)
+    match node.kind_name {
+        "list_lit" -> {
+            let d = get_list_lit(node.node_id)
+            if d == null { return llvm.const_int(CG_I64, 0, 0) }
+            let data = d!
+            cg.emit_list_literal(data.elements)
+        }
+        _ -> llvm.const_int(CG_I64, 0, 0)
+    }
 }
 
 // ─── Registration ───────────────────────────────

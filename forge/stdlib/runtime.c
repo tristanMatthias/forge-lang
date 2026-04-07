@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <execinfo.h>
 #include <setjmp.h>
@@ -2487,10 +2489,50 @@ void forge_selfhost_process_exit(int64_t code) {
     exit((int)code);
 }
 
-// process.run(cmd, args) → string (JSON result)
-ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_json) {
-    // Simplified: just return empty for now
-    return forge_string_new("{\"code\":0}", 10);
+// process.run(cmd, args) where args is List<string>. Forge List<T> is
+// ABI-compatible with { ptr, i64 }: ptr points to a contiguous array of
+// ForgeString structs, len is the element count.
+ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_list) {
+    char cmd_buf[4096];
+    if (cmd.len >= sizeof(cmd_buf)) {
+        return forge_string_new("{\"code\":1}", 10);
+    }
+    memcpy(cmd_buf, cmd.ptr, cmd.len);
+    cmd_buf[cmd.len] = '\0';
+
+    char* argv[257];
+    static char arg_storage[256][4096];
+    int argc = 0;
+    argv[argc++] = cmd_buf;
+
+    ForgeString* elems = (ForgeString*)args_list.ptr;
+    int64_t n = args_list.len;
+    if (n > 256) n = 256;
+    for (int64_t i = 0; i < n; i++) {
+        ForgeString s = elems[i];
+        size_t slen = (size_t)s.len;
+        if (slen >= sizeof(arg_storage[i])) slen = sizeof(arg_storage[i]) - 1;
+        if (s.ptr && slen > 0) memcpy(arg_storage[i], s.ptr, slen);
+        arg_storage[i][slen] = '\0';
+        argv[argc++] = arg_storage[i];
+    }
+    argv[argc] = NULL;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        return forge_string_new("{\"code\":1}", 10);
+    }
+    if (pid == 0) {
+        execvp(cmd_buf, argv);
+        _exit(127);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+
+    char result[64];
+    int rlen = snprintf(result, sizeof(result), "{\"code\":%d}", code);
+    return forge_string_new(result, rlen);
 }
 
 // span stub removed — conflicts with @span global in full compiler IR
