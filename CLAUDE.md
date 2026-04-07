@@ -197,6 +197,37 @@ F0001 (syntax), F0002 (unterminated string), F0003 (unterminated template), F000
 
 ## Self-Hosting — MANDATORY RULES
 
+### ⚠️ DIFF-DRIVEN APPROACH IS THE ONLY ALLOWED WORKFLOW ⚠️
+
+**Before doing ANY self-hosting work, read `forge/AST_CODEGEN_REFACTOR.md`'s
+"MANDATORY APPROACH: DIFF-DRIVEN BUG HUNTING" section at the very top.**
+
+The remaining stage 2 → stage 3 bugs are all divergences between
+rust-emitted IR and self-hosted-emitted IR for the same `mod.fg` source.
+The two codegens MUST produce equivalent IR. **Every divergence is the
+bug.** Find them with `bash scripts/diagnose.sh --diff <fn_name>`, fix
+the rust codegen path responsible, repeat. ONE fix typically unblocks
+10-50 broken sites.
+
+**DO NOT**:
+- Bisect runtime crashes with eprintlns or lldb (symptoms, not cause)
+- Add C-side workaround functions (15+ already added, none fixed roots)
+- Rewrite mod.fg source to avoid codegen bugs (fix the codegen)
+- Trust "stage 3 builds ✓" without verifying `/tmp/stage3` actually
+  compiles a real test file and produces correct output (the diagnose
+  script had a stale-artifact bug for most of one entire session;
+  always be paranoid and re-check by hand)
+
+**DO**:
+- Diff one function at a time. The diff IS the bug.
+- Fix rust codegen so its output matches what mod.fg expects
+- After every fix, re-diff the same function to verify
+- Then re-run the full pipeline and check the next function
+
+This is documented in detail in `forge/AST_CODEGEN_REFACTOR.md`.
+
+---
+
 **Read `forge/SELF_HOST_PLAN.md` for the milestone plan and `forge/scripts/diagnose.sh --score` for progress tracking.**
 
 **BEFORE trying any experiment, check `forge/SELF_HOST_EXPERIMENTS.md` to see if it was already tried. AFTER every experiment, log it there with the score result.**

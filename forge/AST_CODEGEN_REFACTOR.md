@@ -1,5 +1,83 @@
 # Self-Hosting Status & Next Steps
 
+## ⚠️ MANDATORY APPROACH: DIFF-DRIVEN BUG HUNTING ⚠️
+
+**Read this first. Do not skip. Do not improvise a different approach.**
+
+Every bug remaining in the stage 2 → stage 3 pipeline manifests as a
+**divergence between rust-emitted IR and self-hosted-emitted IR for the
+same source function**. Stage 1 IR (rust-emitted) and stage 2 IR
+(self-hosted-emitted) should be byte-for-byte equivalent. They aren't.
+**Every place they differ is exactly one bug.**
+
+The two compilers (rust codegen and self-hosted codegen) MUST emit
+equivalent IR for the same source. Any divergence is the bug surface.
+
+### The ONLY workflow that's allowed for self-hosting work
+
+1. **Pick ONE function that's broken in stage 3 IR.** Start with the
+   smallest, most-called function (`Codegen_emit_binary`,
+   `Codegen_emit_ident`, `Codegen_emit_call`).
+2. **Diff stage 1 IR vs stage 2 IR for that function**:
+   ```bash
+   # Make sure both IR files are fresh:
+   ./target/release/forgec build packages/forgec/src/main.fg --dev --emit-ir > /tmp/stage1.ll
+   ./build/stage1_rust build packages/forgec/src/main.fg   # writes /tmp/stage1_output.ll
+   bash scripts/diagnose.sh --diff <fn_name> /tmp/stage1.ll /tmp/stage1_output.ll
+   ```
+3. **Read the diff. The diff IS the bug.** It will show exactly which
+   instructions stage 2's runtime emit dropped, replaced with `undef`,
+   constant-folded to `false`, or substituted with `i64 0`.
+4. **Identify the source pattern in `mod.fg`** that produces the
+   divergent instruction. Usually it's a method call (`self.X(...)`),
+   an enum destructure, a generic return type, or a namespace method.
+5. **Fix the rust codegen path** that compiles that pattern. ONE fix
+   typically unblocks 10-50 broken sites because the same pattern is
+   used everywhere in `mod.fg`.
+6. **Re-run the diff.** The function should now be byte-equivalent.
+   If it still diverges, you fixed the wrong thing.
+7. **Re-run the full pipeline.** Stage 3 IR should have meaningfully
+   fewer `br i1 false`, `undef args`, and `ret undef` instructions.
+   Score should drop noticeably.
+8. **Commit. Repeat from step 1 with the next broken function.**
+
+### Why diff-driven, not runtime-driven
+
+- Runtime crashes (segfaults, "garbage value", "wrong tag") are
+  **symptoms**, not bugs. They tell you the cascade has reached a
+  failure point but not where the cascade started.
+- The IR diff shows the cascade origin directly. No bisection. No
+  eprintln tracing. No lldb sessions.
+- Bugs cluster: one rust codegen path generates ~30 broken sites in
+  mod.fg. Fixing it once fixes all 30.
+- Each iteration is bounded: a function diff is ~100 lines you can
+  read in 2 minutes.
+
+### Anti-patterns that have wasted entire sessions
+
+- ❌ Adding `eprintln!` to runtime code paths to bisect what's failing
+- ❌ Running stage 3 in lldb and looking at register values
+- ❌ Writing minimal test programs and hoping they reproduce the bug
+- ❌ Adding C-side workaround functions to bypass codegen issues
+- ❌ Trusting "stage 3 builds ✓" from `diagnose.sh` (it had a stale
+  artifact bug — fixed in commit `4b82f02`, but be paranoid)
+- ❌ Claiming progress before running stage 3 on a real test file and
+  verifying the output
+
+### What success looks like
+
+After each diff-fix iteration, the divergence count for that one
+function should drop to zero. After 5–10 iterations, stage 2 IR ≡
+stage 1 IR for the entire codegen module. At that point stage 2 → stage
+3 will produce IR that's also equivalent, llc will succeed, and stage 3
+will actually compile programs.
+
+**There is no shortcut that hasn't already been tried and failed.**
+Mini approach failed. Inline-rewriting failed. Runtime bisection failed.
+Diff-driven is what's left.
+
+---
+
 ## Current State (latest commit: `55261f4`)
 
 **Stage 3 compiles and runs hello world end-to-end.** Full pipeline:
