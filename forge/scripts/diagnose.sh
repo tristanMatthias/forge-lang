@@ -25,6 +25,8 @@ case "${1:-}" in
     --pipeline) MODE="pipeline" ;;
     --kind-ids) MODE="kind-ids" ;;
     --source)  MODE="source" ;;
+    --diff)    MODE="diff"; DIFF_FN="${2:-}"; DIFF_A="${3:-build/stage2_input.ll}"; DIFF_B="${4:-/tmp/output.ll}" ;;
+    --ir-sanity) MODE="ir-sanity"; IR="${2:-/tmp/output.ll}" ;;
 esac
 
 FORGE_SRC="packages/forgec/src"
@@ -671,6 +673,128 @@ run_pipeline() {
 }
 
 # ═════════════════════════════════════════════════════════════════
+# DIFF MODE — compare one function's IR between two .ll files
+# ═════════════════════════════════════════════════════════════════
+# Usage: diagnose.sh --diff <fn_name> [file_a.ll] [file_b.ll]
+# Defaults: file_a=build/stage2_input.ll, file_b=/tmp/output.ll
+# Use case: identify where self-hosted codegen drifts from rust codegen
+# for the same source function.
+run_diff() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --diff <fn_name> [file_a.ll] [file_b.ll]" >&2
+        exit 1
+    fi
+    if [ ! -f "$DIFF_A" ]; then echo "ERROR: $DIFF_A not found" >&2; exit 1; fi
+    if [ ! -f "$DIFF_B" ]; then echo "ERROR: $DIFF_B not found" >&2; exit 1; fi
+    local tmp_a="/tmp/_diff_a.ll"
+    local tmp_b="/tmp/_diff_b.ll"
+    awk -v fn="$DIFF_FN" '
+        $0 ~ "^define .*@"fn"\\(" { in_fn=1 }
+        in_fn { print }
+        in_fn && /^}/ { exit }
+    ' "$DIFF_A" > "$tmp_a"
+    awk -v fn="$DIFF_FN" '
+        $0 ~ "^define .*@"fn"\\(" { in_fn=1 }
+        in_fn { print }
+        in_fn && /^}/ { exit }
+    ' "$DIFF_B" > "$tmp_b"
+    local la=$(wc -l < "$tmp_a")
+    local lb=$(wc -l < "$tmp_b")
+    echo "═══ IR Diff: @$DIFF_FN ═══"
+    echo "  $DIFF_A: $la lines"
+    echo "  $DIFF_B: $lb lines"
+    if [ "$la" = "0" ]; then red "  not found in $DIFF_A"; exit 1; fi
+    if [ "$lb" = "0" ]; then red "  not found in $DIFF_B"; exit 1; fi
+    echo ""
+    diff -u "$tmp_a" "$tmp_b" | head -200
+    echo ""
+    echo "(full diff: diff -u $tmp_a $tmp_b)"
+}
+
+# ═════════════════════════════════════════════════════════════════
+# IR SANITY MODE — scan for known anti-patterns
+# ═════════════════════════════════════════════════════════════════
+# Usage: diagnose.sh --ir-sanity [file.ll]
+# Flags common codegen bugs where LLVM types don't match.
+run_ir_sanity() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ IR Sanity: $IR ═══"
+    local issues=0
+
+    # 1. `load T, ptr %X` where %X was declared as `alloca U` with U != T
+    #    Detects the "alloca i64 but load %Expr" class of bug.
+    echo ""
+    echo "── Mismatched load/alloca types ──"
+    python3 - "$IR" <<'PY'
+import re, sys
+path = sys.argv[1]
+alloca_ty = {}
+bad = []
+fn = ""
+with open(path) as f:
+    for ln, line in enumerate(f, 1):
+        m = re.match(r'^define .* @(\w+)\(', line)
+        if m: fn = m.group(1); alloca_ty = {}; continue
+        m = re.match(r'\s*(%\S+)\s*=\s*alloca\s+([^,]+)', line)
+        if m: alloca_ty[m.group(1)] = m.group(2).strip(); continue
+        m = re.match(r'\s*%\S+\s*=\s*load\s+([^,]+),\s*ptr\s+(%\S+)', line)
+        if m:
+            lt, p = m.group(1).strip(), m.group(2)
+            if p in alloca_ty and alloca_ty[p] != lt:
+                bad.append((fn, ln, p, alloca_ty[p], lt))
+for fn, ln, p, at, lt in bad[:20]:
+    print(f"  {fn}:{ln}  alloca {p}: {at}  but load as {lt}")
+if len(bad) > 20:
+    print(f"  ... and {len(bad)-20} more")
+print(f"  TOTAL: {len(bad)}")
+PY
+
+    # 2. String methods called on List-shaped values (phi_vals[0] → string_char_at)
+    echo ""
+    echo "── forge_string_char_at on List-named vars ──"
+    grep -nE 'forge_string_char_at.*(phi_vals|bbs|_list|items|stmts|tokens|args|params|fields|arms|elems|vars)' "$IR" | head -10
+
+    # 3. undef args to non-variadic functions
+    echo ""
+    echo "── Calls with undef args ──"
+    grep -nE 'call .* @\w+\(.*undef' "$IR" | grep -v '@printf\|@forge_trace' | head -10 | sed 's/^/  /'
+    local undef_count=$(grep -cE 'call .* @\w+\(.*undef' "$IR" || true)
+    echo "  TOTAL: $undef_count"
+
+    # 4. Stores of wrong-sized values
+    echo ""
+    echo "── Store type/alloca mismatches ──"
+    python3 - "$IR" <<'PY'
+import re, sys
+path = sys.argv[1]
+alloca_ty = {}
+bad = []
+fn = ""
+with open(path) as f:
+    for ln, line in enumerate(f, 1):
+        m = re.match(r'^define .* @(\w+)\(', line)
+        if m: fn = m.group(1); alloca_ty = {}; continue
+        m = re.match(r'\s*(%\S+)\s*=\s*alloca\s+([^,]+)', line)
+        if m: alloca_ty[m.group(1)] = m.group(2).strip(); continue
+        m = re.match(r'\s*store\s+([^,]+?)\s+\S+,\s*ptr\s+(%\S+)', line)
+        if m:
+            st, p = m.group(1).strip(), m.group(2)
+            if p in alloca_ty and alloca_ty[p] != st:
+                bad.append((fn, ln, p, alloca_ty[p], st))
+for fn, ln, p, at, st in bad[:20]:
+    print(f"  {fn}:{ln}  alloca {p}: {at}  but store {st}")
+if len(bad) > 20:
+    print(f"  ... and {len(bad)-20} more")
+print(f"  TOTAL: {len(bad)}")
+PY
+
+    # 5. br i1 false (dead branches — usually bad null-checks)
+    echo ""
+    echo "── Dead conditional branches (br i1 false) ──"
+    grep -c 'br i1 false' "$IR" | sed 's/^/  count: /'
+}
+
+# ═════════════════════════════════════════════════════════════════
 # DISPATCH
 # ═════════════════════════════════════════════════════════════════
 case "$MODE" in
@@ -680,6 +804,8 @@ case "$MODE" in
     pipeline) run_pipeline ;;
     kind-ids) run_kind_ids ;;
     source)   run_source ;;
+    diff)     run_diff ;;
+    ir-sanity) run_ir_sanity ;;
     full)     run_full ;;
 esac
 

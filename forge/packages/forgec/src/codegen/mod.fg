@@ -1647,6 +1647,16 @@ impl Codegen {
             }
             .IfExpr(_, _, _, _, _) -> { return "int" }
             .MatchExpr(_, _, _) -> { return "int" }
+            .Feature(fe) -> {
+                // Feature-backed expressions: dispatch by kind_name so .Index
+                // and define_var_typed can correctly distinguish List literals
+                // (`[]`) from scalar features. Without this, `mut xs: List<T> = []`
+                // ends up tagged "int" and xs[i] routes through string_char_at.
+                let kn = fe.data.kind_name
+                if kn == "list_lit" { return "List" }
+                if kn == "map_lit" { return "map" }
+                return "int"
+            }
             _ -> { return "int" }
         }
         "int"

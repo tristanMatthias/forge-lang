@@ -279,11 +279,20 @@ impl<'ctx> Codegen<'ctx> {
                 for _ in 0..max_slots {
                     field_types.push(self.context.i64_type().into());
                 }
-                let anon = self.context.struct_type(
-                    &field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                // Use the NAMED LLVM struct type so it matches function signatures,
+                // parameter allocas, and storage. Anonymous `{i8, i64xN}` would
+                // type-mismatch with the named `%Expr`/`%Statement`/etc. used
+                // elsewhere in codegen.
+                if let Some(existing) = self.context.get_struct_type(name) {
+                    return existing.into();
+                }
+                let named = self.context.opaque_struct_type(name);
+                let body: Vec<inkwell::types::BasicTypeEnum<'ctx>> = field_types.clone();
+                named.set_body(
+                    &body.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
                     false,
                 );
-                anon.into()
+                named.into()
             }
             Type::DynTrait(_) => {
                 // Fat pointer: { data_ptr, vtable_ptr }
