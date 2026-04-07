@@ -36,6 +36,28 @@ case "${1:-}" in
         DIFF_A="${2:-/tmp/stage1.ll}"
         DIFF_B="${3:-/tmp/stage2.ll}"
         ;;
+    --cfg-summary)
+        # #4 — CFG summary for one function in two .ll files. Prints
+        # (num_blocks, num_orphans, num_phi, num_calls, num_returns,
+        #  max_pred_count) side-by-side. Two-line semantic comparison
+        # that surfaces structural divergences immediately.
+        MODE="cfg-summary"
+        DIFF_FN="${2:-}"
+        DIFF_A="${3:-/tmp/stage1.ll}"
+        DIFF_B="${4:-/tmp/stage2.ll}"
+        ;;
+    --orphans)
+        # Print all functions that have orphan blocks, ranked.
+        MODE="orphans"
+        IR="${2:-/tmp/stage2.ll}"
+        ;;
+    --cfg)
+        # #7 — Generate CFG dot+png for one function. Wraps
+        # `opt -passes=dot-cfg`. Output: /tmp/cfg/<fn>.dot and .png.
+        MODE="cfg"
+        DIFF_FN="${2:-}"
+        IR="${3:-/tmp/stage2.ll}"
+        ;;
     --ir-sanity) MODE="ir-sanity"; IR="${2:-/tmp/output.ll}" ;;
 esac
 
@@ -779,6 +801,103 @@ run_rank_diff() {
     echo "(full ranking: sort -n $results)"
 }
 
+# Tool #4 — CFG summary for one function. Counts blocks, orphans,
+# phis, calls, returns, max pred count. Two-line side-by-side.
+cfg_stats_for() {
+    local file="$1"
+    local fn="$2"
+    local tmp="/tmp/_cfg_stats.ll"
+    extract_llvm_fn "$file" "$fn" > "$tmp"
+    python3 <<PY
+import re
+text = open("$tmp").read()
+if not text.strip():
+    print("  not found")
+    raise SystemExit(0)
+blocks = re.findall(r'^([a-zA-Z_][\w\.]*):.*\$', text, re.MULTILINE)
+n_blocks = len(blocks)
+n_orphans = text.count('No predecessors!')
+n_phi = len(re.findall(r'=\s*phi\b', text))
+n_calls = len(re.findall(r'\bcall\b', text))
+n_ret = len(re.findall(r'^\s*ret\b', text, re.MULTILINE))
+max_preds = 0
+for line in text.split('\n'):
+    m = re.search(r';\s*preds\s*=\s*(.*)\$', line)
+    if m:
+        c = len(m.group(1).split(','))
+        if c > max_preds: max_preds = c
+print(f"  blocks={n_blocks:4d} orphans={n_orphans:3d} phi={n_phi:3d} calls={n_calls:3d} ret={n_ret:2d} max_preds={max_preds:2d}")
+PY
+}
+
+run_cfg_summary() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --cfg-summary <fn_name> [file_a.ll] [file_b.ll]" >&2
+        exit 1
+    fi
+    if [ ! -f "$DIFF_A" ]; then echo "ERROR: $DIFF_A not found" >&2; exit 1; fi
+    if [ ! -f "$DIFF_B" ]; then echo "ERROR: $DIFF_B not found" >&2; exit 1; fi
+    echo "═══ CFG Summary: @$DIFF_FN ═══"
+    echo "  A: $DIFF_A"
+    cfg_stats_for "$DIFF_A" "$DIFF_FN"
+    echo "  B: $DIFF_B"
+    cfg_stats_for "$DIFF_B" "$DIFF_FN"
+}
+
+# Tool #7 — Generate CFG dot + png for one function via `opt -passes=dot-cfg`.
+# Output: /tmp/cfg/<fn>.dot and /tmp/cfg/<fn>.png.
+run_cfg() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --cfg <fn_name> [file.ll]" >&2
+        exit 1
+    fi
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    local LLVM_PREFIX="${LLVM_SYS_191_PREFIX:-/opt/homebrew/opt/llvm@19}"
+    local OPT="$LLVM_PREFIX/bin/opt"
+    if [ ! -x "$OPT" ]; then OPT=$(command -v opt); fi
+    if [ -z "$OPT" ]; then echo "ERROR: opt not found" >&2; exit 1; fi
+    local DOT=$(command -v dot)
+    mkdir -p /tmp/cfg
+    rm -f /tmp/cfg/*.dot /tmp/cfg/*.png 2>/dev/null
+    pushd /tmp/cfg >/dev/null
+    "$OPT" -passes=dot-cfg "$IR" -o /dev/null >/dev/null 2>&1
+    local dot_file=".${DIFF_FN}.dot"
+    if [ ! -f "$dot_file" ]; then
+        echo "ERROR: opt did not produce $dot_file (function may not exist in $IR)" >&2
+        ls .${DIFF_FN}*.dot 2>/dev/null || true
+        popd >/dev/null
+        exit 1
+    fi
+    local out_dot="${DIFF_FN}.dot"
+    mv "$dot_file" "$out_dot"
+    echo "═══ CFG: @$DIFF_FN from $IR ═══"
+    echo "  dot: /tmp/cfg/$out_dot"
+    if [ -n "$DOT" ]; then
+        "$DOT" -Tpng "$out_dot" -o "${DIFF_FN}.png" 2>/dev/null && echo "  png: /tmp/cfg/${DIFF_FN}.png"
+    else
+        echo "  (graphviz 'dot' not in PATH; install for png output)"
+    fi
+    # Quick stats
+    local nodes=$(grep -c "^Node" "$out_dot" || echo 0)
+    local edges=$(grep -c -- "->" "$out_dot" || echo 0)
+    echo "  nodes=$nodes edges=$edges"
+    popd >/dev/null
+}
+
+# Print all functions with orphan blocks, ranked by orphan count.
+run_orphans() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ Functions with orphan blocks: $IR ═══"
+    awk '
+        /^define / { name=$0; sub(/^define [^@]*@/, "", name); sub(/\(.*/, "", name); count=0 }
+        /No predecessors/ { count++ }
+        /^}/ { if (count > 0) print count, name; count=0; name="" }
+    ' "$IR" | sort -rn | head -30
+    echo ""
+    local total=$(awk '/No predecessors/{c++} END{print c+0}' "$IR")
+    echo "  TOTAL orphan blocks: $total"
+}
+
 # ═════════════════════════════════════════════════════════════════
 # IR SANITY MODE — scan for known anti-patterns
 # ═════════════════════════════════════════════════════════════════
@@ -874,6 +993,9 @@ case "$MODE" in
     source)   run_source ;;
     diff)     run_diff ;;
     rank-diff) run_rank_diff ;;
+    cfg-summary) run_cfg_summary ;;
+    orphans)  run_orphans ;;
+    cfg)      run_cfg ;;
     ir-sanity) run_ir_sanity ;;
     full)     run_full ;;
 esac

@@ -219,6 +219,17 @@ crate::runtime_fn! { name: "forge_llvm_dump_blocks", feature: "strings", params:
 crate::runtime_fn! { name: "forge_dbg_enter", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_dbg_exit", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_env_int", feature: "strings", params: [ForgeString], ret: I64 }
+// Diagnostic helpers (#1, #2, #3, #5, #6, #7, #9, #11)
+crate::runtime_fn! { name: "forge_dbg_dump_pos_ring", feature: "strings", params: [], ret: Void }
+crate::runtime_fn! { name: "forge_dbg_was_positioned_at", feature: "strings", params: [Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_dbg_block_provenance", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_dbg_set_site_id", feature: "strings", params: [I64], ret: Void }
+crate::runtime_fn! { name: "forge_llvm_phi_audit", feature: "strings", params: [Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_snapshot_fn", feature: "strings", params: [Ptr, ForgeString, I64], ret: Void }
+crate::runtime_fn! { name: "forge_dbg_shadow_verify_after", feature: "strings", params: [Ptr, ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_llvm_emit_cfg_dot", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_assert_invariants", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_oracle_match_dispatch_int", feature: "strings", params: [Ptr, Ptr, Ptr, I64, Ptr, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_enable_peek_trace", feature: "strings", params: [], ret: Void }

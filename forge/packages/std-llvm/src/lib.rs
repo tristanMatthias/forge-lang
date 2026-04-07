@@ -12,6 +12,145 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicI64, AtomicBool, Ordering};
 use std::io::Write;
 
+// ─── Tool #1 + #3: Builder snapshot ring buffer + block provenance ──
+//
+// Every position_at_end and append_basic_block goes through here so we
+// can answer two questions after the fact:
+//
+//   "Did anyone ever position the builder at this orphan block?"
+//      → check the position-change ring buffer
+//   "Where was this block created from?"
+//      → check the per-block creation site table
+//
+// Both are tiny, fixed-size, allocation-free. They're populated
+// unconditionally (cheap) but only printed when something asks.
+
+const POS_RING_SIZE: usize = 256;
+const APPEND_RING_SIZE: usize = 1024;
+
+struct PosEvent {
+    bb: LLVMPtr,
+    op: u8, // 0 = position_at_end, 1 = position_before, 2 = append
+    op_id: i64,
+    site_id: i64,
+}
+
+impl Default for PosEvent {
+    fn default() -> Self {
+        Self { bb: std::ptr::null_mut(), op: 0, op_id: 0, site_id: 0 }
+    }
+}
+
+struct AppendRecord {
+    bb: LLVMPtr,
+    fn_val: LLVMPtr,
+    site_id: i64,
+    op_id: i64,
+}
+
+impl Default for AppendRecord {
+    fn default() -> Self {
+        Self { bb: std::ptr::null_mut(), fn_val: std::ptr::null_mut(), site_id: 0, op_id: 0 }
+    }
+}
+
+thread_local! {
+    static POS_RING: RefCell<[PosEvent; POS_RING_SIZE]> =
+        RefCell::new(std::array::from_fn(|_| PosEvent::default()));
+    static POS_RING_HEAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static APPEND_RING: RefCell<[AppendRecord; APPEND_RING_SIZE]> =
+        RefCell::new(std::array::from_fn(|_| AppendRecord::default()));
+    static APPEND_RING_HEAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn record_pos(bb: LLVMPtr, op: u8, site_id: i64) {
+    let op_id = BLD_OP_ID.load(Ordering::Relaxed);
+    POS_RING.with(|ring| {
+        POS_RING_HEAD.with(|head| {
+            let h = head.get();
+            let mut r = ring.borrow_mut();
+            r[h % POS_RING_SIZE] = PosEvent { bb, op, op_id, site_id };
+            head.set(h + 1);
+        });
+    });
+}
+
+fn record_append(bb: LLVMPtr, fn_val: LLVMPtr, site_id: i64) {
+    let op_id = BLD_OP_ID.load(Ordering::Relaxed);
+    APPEND_RING.with(|ring| {
+        APPEND_RING_HEAD.with(|head| {
+            let h = head.get();
+            let mut r = ring.borrow_mut();
+            r[h % APPEND_RING_SIZE] = AppendRecord { bb, fn_val, site_id, op_id };
+            head.set(h + 1);
+        });
+    });
+}
+
+/// Tool #1 — print the last 50 builder-position changes. Useful when
+/// you see an orphan block: "did anyone ever position there?"
+#[no_mangle]
+pub extern "C" fn forge_dbg_dump_pos_ring() {
+    POS_RING.with(|ring| {
+        POS_RING_HEAD.with(|head| {
+            let h = head.get();
+            let r = ring.borrow();
+            let n = h.min(POS_RING_SIZE);
+            let start = if h > POS_RING_SIZE { h - POS_RING_SIZE } else { 0 };
+            eprintln!("[POS RING] last {} position events (newest first):", n);
+            for i in (0..n).rev() {
+                let idx = (start + i) % POS_RING_SIZE;
+                let e = &r[idx];
+                let op_str = match e.op { 0 => "pos_at_end", 1 => "pos_before", 2 => "append", _ => "?" };
+                eprintln!("  #{:06} {:10} bb={:p} site={}", e.op_id, op_str, e.bb, e.site_id);
+            }
+        });
+    });
+}
+
+/// Tool #1 — answer "did the builder ever position at this block?"
+/// Returns 1 if yes, 0 if no (orphan: appended but never positioned).
+#[no_mangle]
+pub extern "C" fn forge_dbg_was_positioned_at(bb: LLVMPtr) -> i64 {
+    let mut found = 0i64;
+    POS_RING.with(|ring| {
+        let r = ring.borrow();
+        for e in r.iter() {
+            if e.bb == bb && (e.op == 0 || e.op == 1) {
+                found = 1;
+                return;
+            }
+        }
+    });
+    found
+}
+
+/// Tool #3 — print where a block was created from.
+#[no_mangle]
+pub extern "C" fn forge_dbg_block_provenance(bb: LLVMPtr) {
+    APPEND_RING.with(|ring| {
+        let r = ring.borrow();
+        for e in r.iter() {
+            if e.bb == bb {
+                eprintln!("[BLOCK PROV] bb={:p} fn={:p} site_id={} op_id={}",
+                    e.bb, e.fn_val, e.site_id, e.op_id);
+                return;
+            }
+        }
+        eprintln!("[BLOCK PROV] bb={:p} (not found in append ring)", bb);
+    });
+}
+
+/// Tool #3 — set the current append site_id from Forge code. Pair with
+/// `set_site_id` calls before `append_basic_block` to label which line
+/// of source created which block.
+static CURRENT_SITE_ID: AtomicI64 = AtomicI64::new(0);
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_set_site_id(id: i64) {
+    CURRENT_SITE_ID.store(id, Ordering::Relaxed);
+}
+
 // ─── Builder Trace (FORGE_DEBUG_BUILDER) ─────────────────────────
 //
 // When the env var FORGE_DEBUG_BUILDER=1 is set, every builder-mutating
@@ -37,6 +176,7 @@ fn bld_trace_enabled() -> bool {
 
 #[inline]
 fn bld_trace(op: &str, builder: LLVMPtr, arg: LLVMPtr) {
+    rec(op, builder, arg, std::ptr::null_mut());
     if !bld_trace_enabled() { return; }
     let id = BLD_OP_ID.fetch_add(1, Ordering::Relaxed);
     let cur = if builder.is_null() {
@@ -53,6 +193,7 @@ fn bld_trace(op: &str, builder: LLVMPtr, arg: LLVMPtr) {
 
 #[inline]
 fn bld_trace2(op: &str, builder: LLVMPtr, a: LLVMPtr, b: LLVMPtr) {
+    rec(op, builder, a, b);
     if !bld_trace_enabled() { return; }
     let id = BLD_OP_ID.fetch_add(1, Ordering::Relaxed);
     let cur = if builder.is_null() {
@@ -577,6 +718,9 @@ pub extern "C" fn forge_llvm_append_basic_block(ctx: LLVMPtr, f: LLVMPtr, _name:
         forge_alloca_cache_set_fn(f);
         let bb = LLVMAppendBasicBlockInContext(ctx, f, unique_block_name());
         bld_trace("append_basic_block", std::ptr::null_mut(), bb);
+        let site = CURRENT_SITE_ID.load(Ordering::Relaxed);
+        record_pos(bb, 2, site);
+        record_append(bb, f, site);
         bb
     }
 }
@@ -598,6 +742,7 @@ pub extern "C" fn forge_llvm_create_builder(ctx: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn forge_llvm_position_at_end(builder: LLVMPtr, bb: LLVMPtr) {
     bld_trace("position_at_end", builder, bb);
+    record_pos(bb, 0, CURRENT_SITE_ID.load(Ordering::Relaxed));
     unsafe { LLVMPositionBuilderAtEnd(builder, bb) }
 }
 
@@ -1916,6 +2061,13 @@ pub extern "C" fn forge_llvm_position_builder_before(builder: LLVMPtr, instr: LL
 #[no_mangle]
 pub extern "C" fn forge_llvm_position_before(builder: LLVMPtr, instr: LLVMPtr) {
     bld_trace("position_before", builder, instr);
+    // Record the parent block of the instruction (best-effort).
+    let bb = if !instr.is_null() {
+        unsafe { LLVMGetInstructionParent(instr) }
+    } else {
+        std::ptr::null_mut()
+    };
+    record_pos(bb, 1, CURRENT_SITE_ID.load(Ordering::Relaxed));
     unsafe { LLVMPositionBuilderBefore(builder, instr) }
 }
 
@@ -2183,5 +2335,413 @@ pub extern "C" fn forge_dbg_exit(name_ptr: *const c_char, name_len: i64) {
     } else { "?" };
     let pad = "  ".repeat(depth.max(0) as usize);
     eprintln!("{}[EXIT  {}]", pad, name);
+}
+
+// ─── Tool #2: phi/edge consistency audit ─────────────────────────
+//
+// LLVMVerifyFunction catches some phi inconsistencies but not all.
+// This walker explicitly checks: for every (value, incoming_block)
+// pair on every phi in the function, does `incoming_block` have a
+// terminator that actually targets the phi's parent block?
+//
+// If not → "phantom phi entry" — the bug we hit this session.
+
+extern "C" {
+    fn LLVMIsAPHINode(val: LLVMPtr) -> LLVMPtr;
+    fn LLVMCountIncoming(phi: LLVMPtr) -> c_uint;
+    fn LLVMGetIncomingBlock(phi: LLVMPtr, idx: c_uint) -> LLVMPtr;
+    fn LLVMGetNumSuccessors(term: LLVMPtr) -> c_uint;
+    fn LLVMGetSuccessor(term: LLVMPtr, idx: c_uint) -> LLVMPtr;
+    fn LLVMIsATerminatorInst(val: LLVMPtr) -> LLVMPtr;
+}
+
+/// Tool #2 — audit every phi in the function. Returns count of bad
+/// phi-edge mismatches. Prints details when bad ones are found.
+#[no_mangle]
+pub extern "C" fn forge_llvm_phi_audit(f: LLVMPtr) -> i64 {
+    if f.is_null() { return -1; }
+    let mut bad: i64 = 0;
+    unsafe {
+        let mut bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let mut instr = LLVMGetFirstInstruction(bb);
+            while !instr.is_null() {
+                if !LLVMIsAPHINode(instr).is_null() {
+                    let n = LLVMCountIncoming(instr);
+                    for i in 0..n {
+                        let in_bb = LLVMGetIncomingBlock(instr, i);
+                        // Does in_bb's terminator branch to bb?
+                        let term = LLVMGetBasicBlockTerminator(in_bb);
+                        if term.is_null() {
+                            eprintln!("[PHI AUDIT] phi in bb={:p} lists in_bb={:p} but in_bb has NO terminator", bb, in_bb);
+                            bad += 1;
+                            continue;
+                        }
+                        let succs = LLVMGetNumSuccessors(term);
+                        let mut found = false;
+                        for s in 0..succs {
+                            if LLVMGetSuccessor(term, s) == bb {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            eprintln!("[PHI AUDIT] phi in bb={:p} lists in_bb={:p} but in_bb's terminator does not branch to bb (succs={})", bb, in_bb, succs);
+                            bad += 1;
+                        }
+                    }
+                } else if LLVMIsATerminatorInst(instr).is_null() {
+                    // Phis must come before non-phi instructions; once we see
+                    // a non-phi non-terminator, no more phis in this block.
+                    // (But we keep walking to find the terminator; safer to
+                    // let the loop continue and exit on null next.)
+                }
+                instr = LLVMGetNextInstruction(instr);
+            }
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+    }
+    bad
+}
+
+// ─── Tool #5: per-statement IR snapshots ─────────────────────────
+//
+// Write the function's current IR text to /tmp/snap_<fn>_<idx>.ll.
+// Pair with a counter incremented after each emit_statement so the
+// next agent can `diff -u snap_X_5.ll snap_X_6.ll` and see exactly
+// which statement introduced an orphan or broken phi.
+
+extern "C" {
+    fn LLVMPrintValueToString(val: LLVMPtr) -> *mut c_char;
+}
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_snapshot_fn(f: LLVMPtr, label_ptr: *const c_char, label_len: i64, idx: i64) {
+    if f.is_null() { return; }
+    let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize) };
+        std::str::from_utf8(s).unwrap_or("snap").to_string()
+    } else {
+        "snap".to_string()
+    };
+    let safe: String = label.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    let path = format!("/tmp/snap_{}_{}.ll", safe, idx);
+    unsafe {
+        let s = LLVMPrintValueToString(f);
+        if s.is_null() { return; }
+        let bytes = std::ffi::CStr::from_ptr(s).to_bytes();
+        let _ = std::fs::write(&path, bytes);
+        LLVMDisposeMessage(s);
+    }
+}
+
+// ─── Tool #6: shadow verify (on every build call) ────────────────
+//
+// When FORGE_DEBUG_VERIFY_AGGRESSIVE=1, every build_* call checks
+// LLVMVerifyFunction immediately after landing the instruction.
+// This is O(N²) so it's only enabled by an env var. The first
+// build call to break verification is the bug site — and the BLD
+// trace pinpoints which Forge call made it.
+
+static SHADOW_VERIFY_INIT: AtomicBool = AtomicBool::new(false);
+static SHADOW_VERIFY_ON: AtomicBool = AtomicBool::new(false);
+
+fn shadow_verify_enabled() -> bool {
+    if !SHADOW_VERIFY_INIT.load(Ordering::Relaxed) {
+        let on = std::env::var("FORGE_DEBUG_VERIFY_AGGRESSIVE")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+        SHADOW_VERIFY_ON.store(on, Ordering::Relaxed);
+        SHADOW_VERIFY_INIT.store(true, Ordering::Relaxed);
+    }
+    SHADOW_VERIFY_ON.load(Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub extern "C" fn forge_dbg_shadow_verify_after(builder: LLVMPtr, label_ptr: *const c_char, label_len: i64) {
+    if !shadow_verify_enabled() { return; }
+    if builder.is_null() { return; }
+    unsafe {
+        let bb = LLVMGetInsertBlock(builder);
+        if bb.is_null() { return; }
+        let f = LLVMGetBasicBlockParent(bb);
+        if f.is_null() { return; }
+        // ReturnStatus: don't abort, let caller see the count.
+        let rc = LLVMVerifyFunction(f, 2);
+        if rc != 0 {
+            let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+                let s = std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize);
+                std::str::from_utf8(s).unwrap_or("?")
+            } else { "?" };
+            eprintln!("[SHADOW VERIFY FAIL] after {} (op #{}) bld={:p} fn={:p}",
+                label, BLD_OP_ID.load(Ordering::Relaxed), builder, f);
+            // Print the current function's text so we can grep for the bug.
+            let s = LLVMPrintValueToString(f);
+            if !s.is_null() {
+                let bytes = std::ffi::CStr::from_ptr(s).to_bytes();
+                let path = format!("/tmp/shadow_fail_{}.ll", BLD_OP_ID.load(Ordering::Relaxed));
+                let _ = std::fs::write(&path, bytes);
+                eprintln!("[SHADOW VERIFY FAIL] full IR written to {}", path);
+                LLVMDisposeMessage(s);
+            }
+        }
+    }
+}
+
+// ─── Tool #7: CFG visualization (Graphviz dot output) ────────────
+//
+// One picture > a thousand text diffs. Walks the function's CFG and
+// writes a dot file with: nodes = blocks, edges = branch successors,
+// orphans painted red, phis annotated. `dot -Tpng cfg.dot > cfg.png`
+// makes the disconnected island visible at a glance.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_emit_cfg_dot(f: LLVMPtr, path_ptr: *const c_char, path_len: i64) -> i64 {
+    if f.is_null() { return -1; }
+    let path = if !path_ptr.is_null() && path_len > 0 && path_len < 1024 {
+        let s = unsafe { std::slice::from_raw_parts(path_ptr as *const u8, path_len as usize) };
+        std::str::from_utf8(s).unwrap_or("/tmp/cfg.dot").to_string()
+    } else {
+        "/tmp/cfg.dot".to_string()
+    };
+    let mut out = String::new();
+    out.push_str("digraph CFG {\n");
+    out.push_str("  rankdir=TB;\n");
+    out.push_str("  node [shape=box, fontname=monospace, fontsize=10];\n");
+    unsafe {
+        // Pass 1: nodes
+        let mut bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let name_ptr = LLVMGetBasicBlockName(bb);
+            let name = if !name_ptr.is_null() {
+                std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+            } else {
+                format!("bb_{:p}", bb)
+            };
+            // Count instructions, phis
+            let mut instr_count = 0;
+            let mut phi_count = 0;
+            let mut instr = LLVMGetFirstInstruction(bb);
+            while !instr.is_null() {
+                instr_count += 1;
+                if !LLVMIsAPHINode(instr).is_null() { phi_count += 1; }
+                instr = LLVMGetNextInstruction(instr);
+            }
+            // Predecessor count via LLVMGetFirstUse
+            let mut pred_count = 0;
+            let mut u = LLVMGetFirstUse(bb);
+            while !u.is_null() {
+                pred_count += 1;
+                u = LLVMGetNextUse(u);
+                if pred_count > 9999 { break; }
+            }
+            let term = LLVMGetBasicBlockTerminator(bb);
+            let term_str = if term.is_null() { "NO_TERM" } else { "ok" };
+            // Color: red for orphan (no preds AND not entry), grey for entry
+            let is_entry = bb == LLVMGetEntryBasicBlock(f);
+            let color = if is_entry {
+                "lightgrey"
+            } else if pred_count == 0 {
+                "lightcoral"  // ORPHAN
+            } else if term.is_null() {
+                "khaki"  // missing terminator
+            } else {
+                "lightblue"
+            };
+            out.push_str(&format!(
+                "  \"{}\" [style=filled, fillcolor={}, label=\"{}\\nphi={} instr={} preds={} term={}\"];\n",
+                name, color, name, phi_count, instr_count, pred_count, term_str
+            ));
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+        // Pass 2: edges (terminator successors)
+        bb = LLVMGetFirstBasicBlock(f);
+        while !bb.is_null() {
+            let from_name_ptr = LLVMGetBasicBlockName(bb);
+            let from_name = if !from_name_ptr.is_null() {
+                std::ffi::CStr::from_ptr(from_name_ptr).to_string_lossy().into_owned()
+            } else {
+                format!("bb_{:p}", bb)
+            };
+            let term = LLVMGetBasicBlockTerminator(bb);
+            if !term.is_null() {
+                let succs = LLVMGetNumSuccessors(term);
+                for i in 0..succs {
+                    let s_bb = LLVMGetSuccessor(term, i);
+                    let s_name_ptr = LLVMGetBasicBlockName(s_bb);
+                    let s_name = if !s_name_ptr.is_null() {
+                        std::ffi::CStr::from_ptr(s_name_ptr).to_string_lossy().into_owned()
+                    } else {
+                        format!("bb_{:p}", s_bb)
+                    };
+                    out.push_str(&format!("  \"{}\" -> \"{}\";\n", from_name, s_name));
+                }
+            }
+            bb = LLVMGetNextBasicBlock(bb);
+        }
+    }
+    out.push_str("}\n");
+    if std::fs::write(&path, out).is_err() { return -2; }
+    eprintln!("[CFG DOT] wrote {} (run: dot -Tpng {} > /tmp/cfg.png)", path, path);
+    0
+}
+
+// ─── Tool #9: invariant assertion ────────────────────────────────
+//
+// Run a battery of consistency checks at any point in codegen. Active
+// when FORGE_DEBUG_BUILDER is set. Returns 0 on success, non-zero on
+// the first failed invariant.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_assert_invariants(builder: LLVMPtr, label_ptr: *const c_char, label_len: i64) -> i64 {
+    if !bld_trace_enabled() { return 0; }
+    if builder.is_null() { return 1; }
+    let label = if !label_ptr.is_null() && label_len > 0 && label_len < 256 {
+        let s = unsafe { std::slice::from_raw_parts(label_ptr as *const u8, label_len as usize) };
+        std::str::from_utf8(s).unwrap_or("?")
+    } else { "?" };
+    unsafe {
+        let bb = LLVMGetInsertBlock(builder);
+        if bb.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] builder has no insert block", label);
+            return 2;
+        }
+        let f = LLVMGetBasicBlockParent(bb);
+        if f.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] insert block has no parent function", label);
+            return 3;
+        }
+        let term = LLVMGetBasicBlockTerminator(bb);
+        if !term.is_null() {
+            eprintln!("[INVARIANT FAIL @{}] insert block already terminated; further inserts will be invalid", label);
+            return 4;
+        }
+        // Walk all blocks looking for orphans (skip entry).
+        let entry = LLVMGetEntryBasicBlock(f);
+        let mut walk = LLVMGetFirstBasicBlock(f);
+        let mut orphans = 0;
+        while !walk.is_null() {
+            if walk != entry {
+                let mut u = LLVMGetFirstUse(walk);
+                if u.is_null() {
+                    orphans += 1;
+                }
+                let _ = u;
+            }
+            walk = LLVMGetNextBasicBlock(walk);
+        }
+        if orphans > 0 {
+            eprintln!("[INVARIANT FAIL @{}] function has {} orphan basic blocks", label, orphans);
+            return 5;
+        }
+    }
+    0
+}
+
+// ─── Tool #10: record / replay ───────────────────────────────────
+//
+// When FORGE_DEBUG_RECORD=<path> is set, every builder call appends a
+// minimal CSV record to the file. The replay tool (a small Rust binary
+// or python script) can then re-execute the calls in order against a
+// fresh LLVM context to reproduce the exact same IR. Bisecting the log
+// (drop calls one at a time, see when the bug disappears) finds the
+// minimal sequence that produces an orphan or broken phi.
+//
+// Format: csv lines `op_id,op_name,builder_addr,arg1_addr,arg2_addr`.
+
+static REC_INIT: AtomicBool = AtomicBool::new(false);
+static REC_ON: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static REC_FILE: RefCell<Option<std::fs::File>> = RefCell::new(None);
+}
+
+fn rec_enabled() -> bool {
+    if !REC_INIT.load(Ordering::Relaxed) {
+        if let Ok(path) = std::env::var("FORGE_DEBUG_RECORD") {
+            if let Ok(f) = std::fs::File::create(&path) {
+                REC_FILE.with(|cell| { *cell.borrow_mut() = Some(f); });
+                REC_ON.store(true, Ordering::Relaxed);
+            }
+        }
+        REC_INIT.store(true, Ordering::Relaxed);
+    }
+    REC_ON.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn rec(op: &str, builder: LLVMPtr, a: LLVMPtr, b: LLVMPtr) {
+    if !rec_enabled() { return; }
+    REC_FILE.with(|cell| {
+        if let Some(f) = cell.borrow_mut().as_mut() {
+            let id = BLD_OP_ID.load(Ordering::Relaxed);
+            let _ = writeln!(f, "{},{},{:p},{:p},{:p}", id, op, builder, a, b);
+        }
+    });
+}
+
+// Note: record() is called from the existing bld_trace() wrappers via
+// a unified hook below. We don't need to add new instrumentation
+// points; we just teach bld_trace to also call rec().
+
+// ─── Tool #11: oracle escape hatch ───────────────────────────────
+//
+// A pure-Rust implementation of integer match dispatch, callable
+// from Forge as `forge_llvm_oracle_match_dispatch_int`. Bypasses the
+// buggy self-host emit_match_arms entirely for the cases that matter
+// most (integer-tagged dispatch, the bulk of all matches).
+//
+// Inputs: builder, scrutinee i64 value, function, count, tag values
+// (i64*), arm bb's (LLVMPtr*), default bb. Output: emits a chain of
+// `icmp eq + cond_br` from the current insert block; positions the
+// builder at the default bb at the end. Caller is responsible for
+// emitting arm bodies into each arm bb.
+//
+// This is NOT a workaround for the codegen bug — it's a deliberate
+// bootstrap-only delegation while the underlying bug is being
+// investigated. Mark every call site with a TODO and remove once
+// the self-host emit_match_arms produces clean IR.
+
+#[no_mangle]
+pub extern "C" fn forge_llvm_oracle_match_dispatch_int(
+    builder: LLVMPtr,
+    scrutinee: LLVMPtr,
+    f: LLVMPtr,
+    count: i64,
+    tags: *const i64,
+    arm_bbs: *const LLVMPtr,
+    default_bb: LLVMPtr,
+) -> i64 {
+    if builder.is_null() || scrutinee.is_null() || f.is_null() || tags.is_null() || arm_bbs.is_null() || default_bb.is_null() {
+        return -1;
+    }
+    if count <= 0 { return -2; }
+    let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
+    if i64_ty.is_null() { return -3; }
+    unsafe {
+        // Walk arms; for each, append a "next" block, emit icmp + cond_br
+        // into the current block, then position at the next block.
+        for i in 0..count {
+            let tag = *tags.offset(i as isize);
+            let arm_bb = *arm_bbs.offset(i as isize);
+            if arm_bb.is_null() { return -4; }
+            let tag_val = LLVMConstInt(i64_ty, tag as c_ulonglong, 0);
+            let cmp_name = b"oracle_eq\0".as_ptr() as *const c_char;
+            let cmp = LLVMBuildICmp(builder, 32 /* LLVMIntEQ */, scrutinee, tag_val, cmp_name);
+            let next_bb = if i == count - 1 {
+                default_bb
+            } else {
+                LLVMAppendBasicBlockInContext(
+                    LLVMGetGlobalContext(),
+                    f,
+                    unique_block_name(),
+                )
+            };
+            LLVMBuildCondBr(builder, cmp, arm_bb, next_bb);
+            LLVMPositionBuilderAtEnd(builder, next_bb);
+        }
+        // After the chain, builder is positioned at the default_bb (or
+        // the last "next" which IS default_bb on the last iteration).
+    }
+    0
 }
 // rebuild Sat Mar 28 23:33:49 PDT 2026
