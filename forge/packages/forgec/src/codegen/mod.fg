@@ -1266,6 +1266,26 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_fn_reg_get_ret", mft1(CG_STR, CG_STR))
     llvm.add_function(CG_MOD, "forge_param_name_get", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_param_type_get", mft1(CG_STR, CG_I64))
+    // Without these declarations, the self-hosted codegen drops every call
+    // to forge_param_type_add / forge_param_name_add etc. from
+    // store_fn_param_type / store_fn_param_name. Param info never reaches
+    // the C-side registry, and declare_all_fns at codegen time reads "int"
+    // for every parameter — every function ends up with all-i64 params,
+    // every method call ABI-mismatches, and stage 3 IR is unusable.
+    //
+    // RULE: every forge_* function called from any .fg file MUST be declared
+    // here. Use `comm -23 <(grep -oE 'forge_[a-z_]+\(' src/...) <(grep -oE
+    // 'add_function.*"forge_[a-z_]+"' codegen/mod.fg)` to find missing ones.
+    llvm.add_function(CG_MOD, "forge_param_type_add", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_param_type_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_param_name_add", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_lit_clear", mft0(CG_VOID))
+    llvm.add_function(CG_MOD, "forge_struct_lit_add_field", mft1(CG_VOID, CG_STR))
+    llvm.add_function(CG_MOD, "forge_struct_lit_field_count", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_lit_get_field", mft1(CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_set_init", mft2(CG_VOID, CG_STR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_get_init", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_global_var_has_init", mft1(CG_I64, CG_I64))
     // Token accumulation
     llvm.add_function(CG_MOD, "forge_tok_clear", mft0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_tok_push", mft4(CG_VOID, CG_I64, CG_I64, CG_STR, CG_I64))
