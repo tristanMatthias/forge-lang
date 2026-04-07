@@ -136,14 +136,10 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
             }
         }
         let parsed_ret = p.parse_type_expr()
-        // Check if return type is nullable (T?) and append ?
-        if parsed_ret != null {
-            match parsed_ret! {
-                .Nullable(inner, span) -> {
-                    return_type_name = return_type_name + "?"
-                }
-                _ -> {}
-            }
+        // Detect nullable via last token kind_id — enum match unreliable.
+        let last_pos = forge_parser_get_pos() - 1
+        if last_pos >= 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
+            return_type_name = return_type_name + "?"
         }
     }
 
